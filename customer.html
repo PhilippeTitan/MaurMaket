@@ -9,13 +9,22 @@
     
     <style>
         /* DIAGNOSTIC: CSS Reset to eliminate conflicts */
+        /* Outer container centers the carousel in the viewport (accounts for header/footer) */
+        #carousel-outer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 60vh;
+            padding: 20px 0;
+        }
+
         #carousel-inner {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: wrap !important;
             gap: 80px !important; /* larger gap for clearer visual separation */
             justify-content: center !important;
-            align-items: flex-start !important;
+            align-items: center !important; /* vertically center cards within the inner row */
             padding: 40px 36px;
         }
 
@@ -51,28 +60,29 @@
         
         .product-card {
             position: relative;
-            /* Adjusted sizes for improved spacing */
-            width: 240px;
-            height: 360px;
-            border-radius: 12px;
+            /* Increased size for better visibility */
+            width: 320px;
+            height: 440px;
+            border-radius: 14px;
             overflow: hidden;
             flex-shrink: 0;
-            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.09);
             transition: all 0.45s ease;
-            margin-bottom: 18px; /* extra vertical space when cards wrap */
+            margin-bottom: 20px; /* extra vertical space when cards wrap */
+            background: linear-gradient(180deg, #ffffff, rgba(0,0,0,0.02));
         }
 
           /* Inner Content (Image/Video Placeholder) */
-          .card-media {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 80px;
-            color: white;
-            background-color: #333; /* Dark background for visibility */
-        }
+                    .card-media {
+                        width: 100%;
+                        height: 100%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 110px;
+                        color: white;
+                        background-color: #333; /* Dark background for visibility */
+                }
         
         /* Product Name Overlay (Bottom-Left) */
         .product-name-overlay {
