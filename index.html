@@ -3,71 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>MaurMaket — Home</title>
+  <title>MaurMaket</title>
   <style>
-    :root{--accent:#1e90ff;--bg:#f7f9fc;--card:#ffffff}
-    html,body{height:100%;margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:#111}
-    header{display:flex;align-items:center;gap:.5rem;padding:1rem 1.25rem;background:linear-gradient(90deg,#fff, #fbfdff);box-shadow:0 1px 0 rgba(0,0,0,.04)}
-    header img{height:40px}
-    nav{padding: .75rem 1.25rem;display:flex;gap:1rem}
-    a{color:var(--accent);text-decoration:none}
-    .container{max-width:960px;margin:2rem auto;padding:0 1rem}
-    .hero{background:var(--card);padding:1.5rem;border-radius:8px;box-shadow:0 6px 18px rgba(30,30,30,.06)}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-top:1rem}
-    .card{background:var(--card);padding:1rem;border-radius:8px;border:1px solid rgba(0,0,0,.04)}
-    footer{padding:1rem;text-align:center;color:#666}
-    button{background:var(--accent);color:white;border:0;padding:.5rem .75rem;border-radius:6px;cursor:pointer}
+    html,body{height:100%;margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(180deg,#f7f9fc,#ffffff);}
+    .splash{height:100vh;display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .logo{width:220px;max-width:60%;opacity:0;animation:fadeIn 900ms ease-in-out 200ms forwards}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    .visually-hidden{position:absolute;left:-9999px}
   </style>
 </head>
-<body>
-  <header>
-    <img src="assets/images/logo.svg" alt="MaurMaket logo">
-    <div>
-      <h1 style="margin:0;font-size:1.15rem">MaurMaket</h1>
-      <div style="font-size:.9rem;color:#555">Local marketplace prototype</div>
-    </div>
-  </header>
-  <nav>
-    <a href="index.html">Home</a>
-    <a href="customer.html">Customer</a>
-    <a href="seller.html">Seller</a>
-  </nav>
-  <main class="container">
-    <section class="hero">
-      <h2 style="margin-top:0">Welcome to MaurMaket</h2>
-      <p>Simple static prototype with inline CSS and JS — open the pages to explore customer and seller views.</p>
-      <div style="margin-top:1rem;display:flex;gap:.5rem">
-        <a href="customer.html"><button>Open Customer</button></a>
-        <a href="seller.html"><button style="background:#2bb673">Open Seller</button></a>
-      </div>
-    </section>
-
-    <div class="grid">
-      <div class="card">
-        <h3>Browse</h3>
-        <p>View listings, filter by category, and contact sellers.</p>
-      </div>
-      <div class="card">
-        <h3>Sell</h3>
-        <p>Create a listing, set price, upload images (placeholder assets included).</p>
-      </div>
-      <div class="card">
-        <h3>Local</h3>
-        <p>Prototype focusing on easy local transactions and clear UX.</p>
-      </div>
-    </div>
-  </main>
-  <footer>
-    MaurMaket • Prototype — Open `index.html` in your browser to view
-  </footer>
-  <script>
-    // Minimal script: show an alert once when visiting home (demo only)
-    (function(){
-      if(!localStorage.getItem('mm-welcome')){
-        console.log('Welcome to MaurMaket prototype');
-        localStorage.setItem('mm-welcome','1');
-      }
-    })();
-  </script>
+<body onclick="window.location.href='home.html'" aria-label="MaurMaket splash - click to enter">
+  <div class="splash">
+    <img src="assets/images/logo.svg" alt="MaurMaket logo" class="logo" onclick="window.location.href='home.html'">
+  </div>
 </body>
 </html>
