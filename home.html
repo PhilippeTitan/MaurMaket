@@ -1,73 +1,207 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>MaurMaket — Home</title>
-  <style>
-    :root{--accent:#1e90ff;--bg:#f7f9fc;--card:#ffffff}
-    html,body{height:100%;margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:#111}
-    header{display:flex;align-items:center;gap:.5rem;padding:1rem 1.25rem;background:linear-gradient(90deg,#fff, #fbfdff);box-shadow:0 1px 0 rgba(0,0,0,.04)}
-    header img{height:40px}
-    nav{padding: .75rem 1.25rem;display:flex;gap:1rem}
-    a{color:var(--accent);text-decoration:none}
-    .container{max-width:960px;margin:2rem auto;padding:0 1rem}
-    .hero{background:var(--card);padding:1.5rem;border-radius:8px;box-shadow:0 6px 18px rgba(30,30,30,.06)}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-top:1rem}
-    .card{background:var(--card);padding:1rem;border-radius:8px;border:1px solid rgba(0,0,0,.04)}
-    footer{padding:1rem;text-align:center;color:#666}
-    button{background:var(--accent);color:white;border:0;padding:.5rem .75rem;border-radius:6px;cursor:pointer}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MaurMaket | Home</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        /* A. Color Palette Definitions (Soft Caribbean Pastels) */
+        :root {
+            --color-primary: #104084; /* Deep Blue from original spec, used for strong text */
+            --soft-teal: #A8E6E1;
+            --pastel-orange: #FFD3A5;
+            --pale-yellow: #FFF3B0;
+            --light-coral: #FFB5A7;
+            --baby-blue: #A0D8F1;
+            --soft-lavender: #DCC7FF;
+        }
+
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #fcfcfc; /* Near-white background */
+        }
+
+        /* Utility Classes for Shadows and Buttons */
+        .soft-shadow {
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+        .btn-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Custom Gradient for Hero Section */
+        .hero-gradient {
+            background: linear-gradient(135deg, var(--soft-teal) 0%, var(--pale-yellow) 100%);
+        }
+
+        /* Custom Gradient for Footer Border */
+        .footer-border {
+            border-top: 2px solid;
+            border-image: linear-gradient(to right, var(--soft-teal), var(--pale-yellow), var(--light-coral)) 1;
+            padding-top: 1.5rem;
+        }
+    </style>
 </head>
-<body>
-  <header>
-    <img src="assets/images/logo.svg" alt="MaurMaket logo">
-    <div>
-      <h1 style="margin:0;font-size:1.15rem">MaurMaket</h1>
-      <div style="font-size:.9rem;color:#555">Local marketplace prototype</div>
-    </div>
-  </header>
-  <nav>
-    <a href="home.html">Home</a>
-    <a href="customer.html">Customer</a>
-    <a href="seller.html">Seller</a>
-  </nav>
-  <main class="container">
-    <section class="hero">
-      <h2 style="margin-top:0">Welcome to MaurMaket</h2>
-      <p>Simple static prototype with inline CSS and JS — open the pages to explore customer and seller views.</p>
-      <div style="margin-top:1rem;display:flex;gap:.5rem">
-        <a href="customer.html"><button>Open Customer</button></a>
-        <a href="seller.html"><button style="background:#2bb673">Open Seller</button></a>
-      </div>
+
+<body class="min-h-screen flex flex-col antialiased">
+
+    <!-- A. HEADER -->
+    <header class="bg-white sticky top-0 z-10 soft-shadow">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
+            <h1 class="text-2xl font-extrabold" id="logo-link">
+                <a href="#top" class="text-[var(--color-primary)] hover:text-blue-700 transition duration-150 cursor-pointer">
+                    MaurMaket
+                </a>
+            </h1>
+            <a href="seller.html" class="bg-[var(--soft-teal)] text-white px-5 py-2 rounded-full font-semibold soft-shadow transition duration-200 hover:bg-opacity-80 btn-hover">
+                Start Selling
+            </a>
+        </div>
+    </header>
+
+    <!-- B. HERO SECTION -->
+    <section class="hero-gradient py-20 sm:py-24 lg:py-32 rounded-b-[40px] mb-16 soft-shadow">
+        <div class="max-w-4xl mx-auto px-4 text-center">
+            <h2 class="text-6xl sm:text-7xl font-extrabold text-[var(--color-primary)] mb-4 leading-tight">
+                Welcome to MaurMaket
+            </h2>
+            <p class="text-xl sm:text-2xl text-gray-800 mb-10 font-medium max-w-2xl mx-auto">
+                Buy and sell locally with confidence. The trusted marketplace built for Haiti.
+            </p>
+            <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6">
+                <a href="customer.html" class="bg-[var(--pastel-orange)] text-white px-8 py-3 rounded-full text-lg font-bold soft-shadow transition duration-200 hover:bg-opacity-90 btn-hover">
+                    Browse Products
+                </a>
+                <a href="seller.html" class="bg-[var(--soft-teal)] text-white px-8 py-3 rounded-full text-lg font-bold soft-shadow transition duration-200 hover:bg-opacity-90 btn-hover">
+                    Start Selling
+                </a>
+            </div>
+        </div>
     </section>
 
-    <div class="grid">
-      <div class="card">
-        <h3>Browse</h3>
-        <p>View listings, filter by category, and contact sellers.</p>
-      </div>
-      <div class="card">
-        <h3>Sell</h3>
-        <p>Create a listing, set price, upload images (placeholder assets included).</p>
-      </div>
-      <div class="card">
-        <h3>Local</h3>
-        <p>Prototype focusing on easy local transactions and clear UX.</p>
-      </div>
-    </div>
-  </main>
-  <footer>
-    MaurMaket • Prototype — Open `home.html` in your browser to view
-  </footer>
-  <script>
-    // Minimal script: show an alert once when visiting home (demo only)
-    (function(){
-      if(!localStorage.getItem('mm-welcome')){
-        console.log('Welcome to MaurMaket prototype');
-        localStorage.setItem('mm-welcome','1');
-      }
-    })();
-  </script>
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        <!-- C. CATEGORIES GRID -->
+        <section class="mb-16">
+            <h3 class="text-3xl font-bold text-gray-800 mb-8 text-center sm:text-left">Shop by Popular Categories</h3>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+                <!-- Category Card Template -->
+                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--pale-yellow);">
+                    <span class="text-5xl mb-2 block">🍜</span>
+                    <p class="font-bold text-gray-800">Food</p>
+                </div>
+                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--light-coral);">
+                    <span class="text-5xl mb-2 block">🧵</span>
+                    <p class="font-bold text-gray-800">Handmade</p>
+                </div>
+                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--soft-lavender);">
+                    <span class="text-5xl mb-2 block">💅</span>
+                    <p class="font-bold text-gray-800">Beauty</p>
+                </div>
+                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--baby-blue);">
+                    <span class="text-5xl mb-2 block">💡</span>
+                    <p class="font-bold text-gray-800">Electronics</p>
+                </div>
+                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--soft-teal);">
+                    <span class="text-5xl mb-2 block">🔨</span>
+                    <p class="font-bold text-gray-800">Home Tools</p>
+                </div>
+                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--pastel-orange);">
+                    <span class="text-5xl mb-2 block">👚</span>
+                    <p class="font-bold text-gray-800">Apparel</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- D. FEATURED LISTINGS -->
+        <section class="mb-16">
+            <h3 class="text-3xl font-bold text-gray-800 mb-8 text-center sm:text-left">Featured Today</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                
+                <!-- Featured Product Card 1 -->
+                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--pastel-orange)]">
+                    <div class="w-full h-40 bg-gray-100 rounded-lg mb-4 flex items-center justify-center text-gray-500 font-medium">Placeholder Image</div>
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 class="text-xl font-semibold text-gray-800">Designer Backpack</h4>
+                        <div class="bg-[var(--pastel-orange)] text-white text-sm font-bold px-3 py-1 rounded-full soft-shadow">
+                            7,500 HTG
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-600 mb-3">Durable canvas, perfect for school or work.</p>
+                    <span class="bg-[var(--soft-teal)] bg-opacity-10 text-gray-700 text-xs font-medium px-3 py-1 rounded-full">
+                        <i class="opacity-70">📍</i> Local Seller
+                    </span>
+                </div>
+
+                <!-- Featured Product Card 2 -->
+                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--baby-blue)]">
+                    <div class="w-full h-40 bg-gray-100 rounded-lg mb-4 flex items-center justify-center text-gray-500 font-medium">Placeholder Image</div>
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 class="text-xl font-semibold text-gray-800">Fresh Mango Boxes</h4>
+                        <div class="bg-[var(--pastel-orange)] text-white text-sm font-bold px-3 py-1 rounded-full soft-shadow">
+                            1,200 HTG
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-600 mb-3">Kent variety, shipped same-day from farm.</p>
+                    <span class="bg-[var(--soft-teal)] bg-opacity-10 text-gray-700 text-xs font-medium px-3 py-1 rounded-full">
+                        <i class="opacity-70">📍</i> Local Seller
+                    </span>
+                </div>
+
+                <!-- Featured Product Card 3 -->
+                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--light-coral)]">
+                    <div class="w-full h-40 bg-gray-100 rounded-lg mb-4 flex items-center justify-center text-gray-500 font-medium">Placeholder Image</div>
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 class="text-xl font-semibold text-gray-800">Smart Home Security Kit</h4>
+                        <div class="bg-[var(--pastel-orange)] text-white text-sm font-bold px-3 py-1 rounded-full soft-shadow">
+                            19,000 HTG
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-600 mb-3">Wireless setup, perfect for securing your home.</p>
+                    <span class="bg-[var(--soft-teal)] bg-opacity-10 text-gray-700 text-xs font-medium px-3 py-1 rounded-full">
+                        <i class="opacity-70">📍</i> Local Seller
+                    </span>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- E. ABOUT SECTION -->
+        <section class="mt-16 py-16 text-center rounded-2xl soft-shadow" style="background-color: rgba(220, 199, 255, 0.1);">
+            <div class="max-w-3xl mx-auto px-4">
+                <h3 class="text-3xl font-extrabold text-[var(--color-primary)] mb-4">Our Vision</h3>
+                <p class="text-xl text-gray-700 leading-relaxed">
+                    MaurMaket is building a simple, safe, and vibrant space for Haitians to buy and sell locally. Made for our culture, crafted with care to elevate commerce through trust and accessibility.
+                </p>
+            </div>
+        </section>
+    </main>
+
+    <!-- F. FOOTER -->
+    <footer class="mt-20 px-6 pb-6">
+        <div class="footer-border max-w-7xl mx-auto text-center text-sm text-gray-600">
+            MaurMaket &copy; 2025 — Built for local commerce in Haiti. A Maurinex Project.
+        </div>
+    </footer>
+
+    <!-- JAVASCRIPT REQUIREMENTS -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const logoLink = document.getElementById('logo-link');
+
+            // Smooth scroll to top of page when logo is clicked
+            logoLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
 </body>
 </html>
