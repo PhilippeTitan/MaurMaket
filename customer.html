@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MaurMaket — Customer</title>
+  <style>
+    body{font-family:Segoe UI,Roboto,Arial,sans-serif;background:#f5f7fb;margin:0;color:#111}
+    header{padding:1rem 1.25rem;background:#fff;border-bottom:1px solid rgba(0,0,0,.04);display:flex;align-items:center;gap:.75rem}
+    main{max-width:900px;margin:1.5rem auto;padding:0 1rem}
+    .listing{background:#fff;padding:1rem;border-radius:8px;margin-bottom:1rem;border:1px solid rgba(0,0,0,.04);display:flex;gap:1rem}
+    .listing img{width:120px;height:80px;object-fit:cover;border-radius:6px;background:#eee}
+    .actions{margin-left:auto;display:flex;gap:.5rem;align-items:center}
+    .pill{background:#eef6ff;color:#0066cc;padding:.35rem .6rem;border-radius:999px;font-size:.85rem}
+  </style>
+</head>
+<body>
+  <header>
+    <a href="index.html">← Home</a>
+    <h2 style="margin:0">Customer View</h2>
+  </header>
+  <main>
+    <section>
+      <h3>Listings</h3>
+      <div class="listing">
+        <img src="assets/images/placeholder.svg" alt="placeholder">
+        <div>
+          <strong>Handmade basket</strong>
+          <div style="color:#666">Description: locally made basket — good for produce</div>
+        </div>
+        <div class="actions">
+          <div class="pill">$15</div>
+          <button onclick="contactSeller('Handmade basket')">Contact</button>
+        </div>
+      </div>
+      <div class="listing">
+        <img src="assets/images/placeholder.svg" alt="placeholder">
+        <div>
+          <strong>Fresh honey (500g)</strong>
+          <div style="color:#666">Raw honey from local apiary</div>
+        </div>
+        <div class="actions">
+          <div class="pill">$9</div>
+          <button onclick="contactSeller('Fresh honey')">Contact</button>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script>
+    function contactSeller(item){
+      alert('Contacting seller for: ' + item + '\n(This is a static prototype)');
+    }
+  </script>
+</body>
+</html>

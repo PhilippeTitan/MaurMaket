@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MaurMaket — Seller</title>
+  <style>
+    body{font-family:Segoe UI,Roboto,Arial,sans-serif;background:#f5f7fb;margin:0;color:#111}
+    header{padding:1rem 1.25rem;background:#fff;border-bottom:1px solid rgba(0,0,0,.04);display:flex;align-items:center;gap:.75rem}
+    main{max-width:900px;margin:1.5rem auto;padding:0 1rem}
+    form{background:#fff;padding:1rem;border-radius:8px;border:1px solid rgba(0,0,0,.04)}
+    label{display:block;margin-top:.5rem;font-size:.95rem}
+    input,textarea{width:100%;padding:.5rem;margin-top:.25rem;border:1px solid #ddd;border-radius:6px}
+    .row{display:flex;gap:.5rem}
+  </style>
+</head>
+<body>
+  <header>
+    <a href="index.html">← Home</a>
+    <h2 style="margin:0">Seller View</h2>
+  </header>
+  <main>
+    <section>
+      <h3>Create Listing</h3>
+      <form onsubmit="submitListing(event)">
+        <label>Title<input id="title" required></label>
+        <label>Price (USD)<input id="price" type="number" required></label>
+        <label>Description<textarea id="desc" rows="4"></textarea></label>
+        <label>Image URL<input id="img" placeholder="assets/images/placeholder.svg"></label>
+        <div style="margin-top:.75rem"><button type="submit">Create</button></div>
+      </form>
+    </section>
+  </main>
+  <script>
+    function submitListing(e){
+      e.preventDefault();
+      const title = document.getElementById('title').value;
+      const price = document.getElementById('price').value;
+      alert('Listing created:\n' + title + ' — $' + price + '\n(This is a static demo)');
+      e.target.reset();
+    }
+  </script>
+</body>
+</html>
