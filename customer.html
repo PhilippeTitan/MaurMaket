@@ -12,6 +12,11 @@
         #carousel-inner {
             display: flex !important;
             flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 80px !important; /* larger gap for clearer visual separation */
+            justify-content: center !important;
+            align-items: flex-start !important;
+            padding: 40px 36px;
         }
 
         .product-card {
@@ -46,15 +51,15 @@
         
         .product-card {
             position: relative;
-            /* DIAGNOSTIC: Simple fixed sizes for testing */
-            width: 275px;
-            height: 400px;
+            /* Adjusted sizes for improved spacing */
+            width: 240px;
+            height: 360px;
             border-radius: 12px;
             overflow: hidden;
             flex-shrink: 0;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            transition: all 0.6s ease;
-            margin-bottom: 144px; /* extra vertical space when cards wrap */
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+            transition: all 0.45s ease;
+            margin-bottom: 18px; /* extra vertical space when cards wrap */
         }
 
           /* Inner Content (Image/Video Placeholder) */
@@ -64,7 +69,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 100px;
+            font-size: 80px;
             color: white;
             background-color: #333; /* Dark background for visibility */
         }
@@ -154,17 +159,8 @@
 
         /* Set transition (vertical slide simulation on content load) */
         /* DIAGNOSTIC: Explicit flexbox settings */
-        .carousel-inner {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: wrap !important;
-            gap: 40px !important; /* increased gap for clearer spacing */
-            justify-content: center !important;
-            align-items: flex-start !important;
-            padding: 28px;
-            opacity: 1;
-            transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
-        }
+        /* legacy .carousel-inner rules removed in favor of #carousel-inner above */
+        
         .carousel-slide-up {
             opacity: 0;
             transform: translateY(20px);
@@ -533,7 +529,8 @@
                             console.log('Carousel Justify Content:', computedCarousel.justifyContent);
                             
                             console.log('\n--- PRODUCT CARDS ---');
-                            document.querySelectorAll('.product-card').forEach((card, idx) => {
+                            const cards = Array.from(document.querySelectorAll('.product-card'));
+                            cards.forEach((card, idx) => {
                                 const computed = window.getComputedStyle(card);
                                 const rect = card.getBoundingClientRect();
                                 console.log(`Card ${idx + 1}:`);
@@ -543,18 +540,31 @@
                                 console.log('  Flex Shrink:', computed.flexShrink);
                                 console.log('  Display:', computed.display);
                             });
-                            
-                            // Check if cards are side-by-side or stacked
-                            const cards = Array.from(document.querySelectorAll('.product-card'));
+
+                            // Measure gaps between adjacent cards (horizontal and vertical)
                             if (cards.length >= 2) {
-                                const card1Y = cards[0].getBoundingClientRect().top;
-                                const card2Y = cards[1].getBoundingClientRect().top;
-                                const isSideBySide = Math.abs(card1Y - card2Y) < 10;
+                                console.log('\n--- MEASURED GAPS BETWEEN ADJACENT CARDS ---');
+                                for (let i = 0; i < cards.length - 1; i++) {
+                                    const a = cards[i].getBoundingClientRect();
+                                    const b = cards[i + 1].getBoundingClientRect();
+
+                                    // Horizontal gap: distance from right edge of a to left edge of b
+                                    const horizontalGap = +(b.left - a.right).toFixed(2);
+                                    // Vertical gap: distance from bottom of a to top of b
+                                    const verticalGap = +(b.top - a.bottom).toFixed(2);
+
+                                    console.log(`Between card ${i + 1} and ${i + 2}: Horizontal gap = ${horizontalGap}px, Vertical gap = ${verticalGap}px`);
+                                }
+
+                                // Quick summary whether first two cards are side-by-side
+                                const firstY = cards[0].getBoundingClientRect().top;
+                                const secondY = cards[1].getBoundingClientRect().top;
+                                const isSideBySide = Math.abs(firstY - secondY) < 10;
                                 console.log('\n--- LAYOUT RESULT ---');
                                 console.log('Cards are:', isSideBySide ? '✅ SIDE-BY-SIDE' : '❌ STACKED VERTICALLY');
-                                console.log('Card 1 Y position:', card1Y.toFixed(2));
-                                console.log('Card 2 Y position:', card2Y.toFixed(2));
-                                console.log('Y difference:', Math.abs(card1Y - card2Y).toFixed(2), 'px');
+                                console.log('Card 1 Y position:', firstY.toFixed(2));
+                                console.log('Card 2 Y position:', secondY.toFixed(2));
+                                console.log('Y difference:', Math.abs(firstY - secondY).toFixed(2), 'px');
                             }
                             
                             console.log('=== END DIAGNOSTICS ===\n');
