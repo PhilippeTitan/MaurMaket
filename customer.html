@@ -12,6 +12,11 @@
         #carousel-inner {
             display: flex !important;
             flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 80px !important; /* larger gap for clearer visual separation */
+            justify-content: center !important;
+            align-items: flex-start !important;
+            padding: 40px 36px;
         }
 
         .product-card {
@@ -46,18 +51,19 @@
         
         .product-card {
             position: relative;
-            /* ADJUSTED: Increased card size for better visual presence */
-            width: 280px; /* INCREASED from 220px */
-            height: 400px; /* INCREASED from 320px */
+            /* Adjusted sizes for improved spacing */
+            width: 240px;
+            height: 360px;
             border-radius: 12px;
             overflow: hidden;
             flex-shrink: 0;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            transition: all 0.6s ease;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+            transition: all 0.45s ease;
+            margin-bottom: 18px; /* extra vertical space when cards wrap */
         }
 
-        /* Inner Content (Image/Video Placeholder) */
-        .card-media {
+          /* Inner Content (Image/Video Placeholder) */
+          .card-media {
             width: 100%;
             height: 100%;
             display: flex;
@@ -152,20 +158,9 @@
         }
 
         /* Set transition (vertical slide simulation on content load) */
-        /* DIAGNOSTIC: Explicit flexbox settings (ADJUSTED GAP/PADDING) */
-        .carousel-inner {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: wrap !important;
-            gap: 32px !important; /* Increased gap */
-            justify-content: center !important;
-            align-items: flex-start !important;
-            padding: 24px; /* Adjusted padding */
-            opacity: 1;
-            transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
-            /* DIAGNOSTIC: Temporary visibility */
-            background-color: rgba(255, 0, 0, 0.00); /* Removed tint */
-        }
+        /* DIAGNOSTIC: Explicit flexbox settings */
+        /* legacy .carousel-inner rules removed in favor of #carousel-inner above */
+        
         .carousel-slide-up {
             opacity: 0;
             transform: translateY(20px);
@@ -263,16 +258,16 @@
         }
 
         /* Add Mobile Override for very small screens */
-        /* Mobile-only: stack cards vertically on very small screens (ADJUSTED FOR NEW SIZE) */
+        /* Mobile-only: stack cards vertically on very small screens */
         @media (max-width: 480px) {
             .carousel-inner {
                 flex-direction: column;
-                gap: 24px; /* Slightly larger gap for mobile */
+                gap: 20px;
             }
             
             .product-card {
-                width: min(90vw, 420px); /* Slightly wider max */
-                height: 550px; /* Significantly taller for mobile viewing */
+                width: min(90vw, 400px);
+                height: 450px;
             }
         }
     </style>
@@ -284,7 +279,7 @@
     <header class="bg-white soft-shadow p-4 sticky top-0 z-50">
         <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
             <!-- Logo -->
-            <a href="#" class="text-3xl font-extrabold text-[var(--mango-orange)] hover:text-[var(--papaya-coral)] transition duration-150">
+            <a href="home.html" class="text-3xl font-extrabold text-[var(--mango-orange)] hover:text-[var(--papaya-coral)] transition duration-150">
                 MaurMaket
             </a>
             
@@ -304,7 +299,7 @@
                 </div>
                 
                 <!-- Home Link -->
-                <a href="#" class="text-lg font-semibold text-[var(--color-primary)] hover:text-[var(--deep-sky-blue)] transition duration-150">
+                <a href="home.html" class="text-lg font-semibold text-[var(--color-primary)] hover:text-[var(--deep-sky-blue)] transition duration-150">
                     🏠 Home
                 </a>
             </div>
@@ -521,7 +516,7 @@
                     if (index === set.length - 1) {
                         // Log after all cards are rendered
                         setTimeout(() => {
-                            console.log('=== LAYOUT DIAGNOSTICS (POST-RESIZE) ===');
+                            console.log('=== LAYOUT DIAGNOSTICS ===');
                             console.log('Screen Width:', window.innerWidth, 'px');
                             console.log('Screen Height:', window.innerHeight, 'px');
                             console.log('Carousel Container Width:', carouselInner.offsetWidth, 'px');
@@ -534,7 +529,8 @@
                             console.log('Carousel Justify Content:', computedCarousel.justifyContent);
                             
                             console.log('\n--- PRODUCT CARDS ---');
-                            document.querySelectorAll('.product-card').forEach((card, idx) => {
+                            const cards = Array.from(document.querySelectorAll('.product-card'));
+                            cards.forEach((card, idx) => {
                                 const computed = window.getComputedStyle(card);
                                 const rect = card.getBoundingClientRect();
                                 console.log(`Card ${idx + 1}:`);
@@ -544,18 +540,31 @@
                                 console.log('  Flex Shrink:', computed.flexShrink);
                                 console.log('  Display:', computed.display);
                             });
-                            
-                            // Check if cards are side-by-side or stacked
-                            const cards = Array.from(document.querySelectorAll('.product-card'));
+
+                            // Measure gaps between adjacent cards (horizontal and vertical)
                             if (cards.length >= 2) {
-                                const card1Y = cards[0].getBoundingClientRect().top;
-                                const card2Y = cards[1].getBoundingClientRect().top;
-                                const isSideBySide = Math.abs(card1Y - card2Y) < 10;
+                                console.log('\n--- MEASURED GAPS BETWEEN ADJACENT CARDS ---');
+                                for (let i = 0; i < cards.length - 1; i++) {
+                                    const a = cards[i].getBoundingClientRect();
+                                    const b = cards[i + 1].getBoundingClientRect();
+
+                                    // Horizontal gap: distance from right edge of a to left edge of b
+                                    const horizontalGap = +(b.left - a.right).toFixed(2);
+                                    // Vertical gap: distance from bottom of a to top of b
+                                    const verticalGap = +(b.top - a.bottom).toFixed(2);
+
+                                    console.log(`Between card ${i + 1} and ${i + 2}: Horizontal gap = ${horizontalGap}px, Vertical gap = ${verticalGap}px`);
+                                }
+
+                                // Quick summary whether first two cards are side-by-side
+                                const firstY = cards[0].getBoundingClientRect().top;
+                                const secondY = cards[1].getBoundingClientRect().top;
+                                const isSideBySide = Math.abs(firstY - secondY) < 10;
                                 console.log('\n--- LAYOUT RESULT ---');
                                 console.log('Cards are:', isSideBySide ? '✅ SIDE-BY-SIDE' : '❌ STACKED VERTICALLY');
-                                console.log('Card 1 Y position:', card1Y.toFixed(2));
-                                console.log('Card 2 Y position:', card2Y.toFixed(2));
-                                console.log('Y difference:', Math.abs(card1Y - card2Y).toFixed(2), 'px');
+                                console.log('Card 1 Y position:', firstY.toFixed(2));
+                                console.log('Card 2 Y position:', secondY.toFixed(2));
+                                console.log('Y difference:', Math.abs(firstY - secondY).toFixed(2), 'px');
                             }
                             
                             console.log('=== END DIAGNOSTICS ===\n');
