@@ -54,7 +54,8 @@
             flex-shrink: 0;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             transition: all 0.6s ease;
-          }
+            margin-bottom: 144px; /* extra vertical space when cards wrap */
+        }
 
           /* Inner Content (Image/Video Placeholder) */
           .card-media {
@@ -157,14 +158,12 @@
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: wrap !important;
-            gap: 28px !important;
+            gap: 40px !important; /* increased gap for clearer spacing */
             justify-content: center !important;
             align-items: flex-start !important;
-            padding: 24px;
+            padding: 28px;
             opacity: 1;
             transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
-            /* DIAGNOSTIC: Temporary visibility */
-            background-color: rgba(255, 0, 0, 0.05); /* Light red tint to see container */
         }
         .carousel-slide-up {
             opacity: 0;
