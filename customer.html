@@ -8,6 +8,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <style>
+        /* DIAGNOSTIC: CSS Reset to eliminate conflicts */
+        #carousel-inner {
+            display: flex !important;
+            flex-direction: row !important;
+        }
+
+        .product-card {
+            float: none !important;
+            position: relative !important;
+        }
+
         /* A. Color Palette Definitions (Tropical Haiti) */
         :root {
             --mango-orange: #FFA726; 
@@ -35,9 +46,9 @@
         
         .product-card {
             position: relative;
-            /* CHANGE 3: Apply clamp() for fluid, responsive width and height */
-            width: clamp(240px, 28vw, 320px);
-            height: clamp(350px, 40vw, 450px);
+            /* DIAGNOSTIC: Simple fixed sizes for testing */
+            width: 220px;
+            height: 320px;
             border-radius: 12px;
             overflow: hidden;
             flex-shrink: 0;
@@ -45,8 +56,6 @@
             transition: all 0.6s ease;
         }
 
-        /* CHANGE 1: Deleted the old @media (max-width: 768px) block that was here */
-        
         /* Inner Content (Image/Video Placeholder) */
         .card-media {
             width: 100%;
@@ -143,17 +152,19 @@
         }
 
         /* Set transition (vertical slide simulation on content load) */
-        /* CHANGE 2: Update .carousel-inner CSS for adaptive wrapping */
+        /* DIAGNOSTIC: Explicit flexbox settings */
         .carousel-inner {
-            display: flex;
-            flex-direction: row; /* Added: Ensures horizontal layout first */
-            flex-wrap: wrap; /* Added: Allows cards to wrap onto new lines */
-            gap: clamp(16px, 3vw, 24px); /* Changed: Fluid gap */
-            justify-content: center;
-            align-items: flex-start;
-            padding: 20px; /* Added: Padding for edge spacing */
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 20px !important; 
+            justify-content: center !important;
+            align-items: flex-start !important;
+            padding: 20px;
             opacity: 1;
             transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
+            /* DIAGNOSTIC: Temporary visibility */
+            background-color: rgba(255, 0, 0, 0.05); /* Light red tint to see container */
         }
         .carousel-slide-up {
             opacity: 0;
@@ -251,7 +262,7 @@
             box-shadow: none;
         }
 
-        /* CHANGE 4: Add Mobile Override for very small screens */
+        /* Add Mobile Override for very small screens */
         /* Mobile-only: stack cards vertically on very small screens */
         @media (max-width: 480px) {
             .carousel-inner {
@@ -367,7 +378,7 @@
         </div>
     </div>
 
-    <!-- JAVASCRIPT LOGIC (Untouched) -->
+    <!-- JAVASCRIPT LOGIC -->
     <script>
         // --- MOCK DATA ---
         // Playback Duration (constant 7s)
@@ -506,6 +517,52 @@
                     `;
                     carouselInner.appendChild(card);
 
+                    // DIAGNOSTIC LOGGING - Remove after troubleshooting
+                    if (index === set.length - 1) {
+                        // Log after all cards are rendered
+                        setTimeout(() => {
+                            console.log('=== LAYOUT DIAGNOSTICS ===');
+                            console.log('Screen Width:', window.innerWidth, 'px');
+                            console.log('Screen Height:', window.innerHeight, 'px');
+                            console.log('Carousel Container Width:', carouselInner.offsetWidth, 'px');
+                            
+                            const computedCarousel = window.getComputedStyle(carouselInner);
+                            console.log('Carousel Display:', computedCarousel.display);
+                            console.log('Carousel Flex Direction:', computedCarousel.flexDirection);
+                            console.log('Carousel Flex Wrap:', computedCarousel.flexWrap);
+                            console.log('Carousel Gap:', computedCarousel.gap);
+                            console.log('Carousel Justify Content:', computedCarousel.justifyContent);
+                            
+                            console.log('\n--- PRODUCT CARDS ---');
+                            document.querySelectorAll('.product-card').forEach((card, idx) => {
+                                const computed = window.getComputedStyle(card);
+                                const rect = card.getBoundingClientRect();
+                                console.log(`Card ${idx + 1}:`);
+                                console.log('  Computed Width:', computed.width);
+                                console.log('  Computed Height:', computed.height);
+                                console.log('  Actual Position - X:', rect.left.toFixed(2), 'Y:', rect.top.toFixed(2));
+                                console.log('  Flex Shrink:', computed.flexShrink);
+                                console.log('  Display:', computed.display);
+                            });
+                            
+                            // Check if cards are side-by-side or stacked
+                            const cards = Array.from(document.querySelectorAll('.product-card'));
+                            if (cards.length >= 2) {
+                                const card1Y = cards[0].getBoundingClientRect().top;
+                                const card2Y = cards[1].getBoundingClientRect().top;
+                                const isSideBySide = Math.abs(card1Y - card2Y) < 10;
+                                console.log('\n--- LAYOUT RESULT ---');
+                                console.log('Cards are:', isSideBySide ? '✅ SIDE-BY-SIDE' : '❌ STACKED VERTICALLY');
+                                console.log('Card 1 Y position:', card1Y.toFixed(2));
+                                console.log('Card 2 Y position:', card2Y.toFixed(2));
+                                console.log('Y difference:', Math.abs(card1Y - card2Y).toFixed(2), 'px');
+                            }
+                            
+                            console.log('=== END DIAGNOSTICS ===\n');
+                        }, 100);
+                    }
+
+
                     // Attach sound toggle listener
                     card.querySelector('.sound-toggle').addEventListener('click', toggleMute);
                 });
@@ -596,7 +653,7 @@
             updateControls();
         }
 
-        // --- INTERACTION HANDLERS (Untouched) ---
+        // --- INTERACTION HANDLERS ---
         
         function toggleMute() {
             isMuted = !isMuted;
@@ -638,7 +695,7 @@
             }
         });
 
-        // --- NAVIGATION HANDLERS (Untouched) ---
+        // --- NAVIGATION HANDLERS ---
         
         function navigateSet(direction) {
             if (!allFinished || isModalOpen) return;
@@ -686,7 +743,7 @@
             }
         }
 
-        // --- CATEGORY FILTER HANDLER (Untouched) ---
+        // --- CATEGORY FILTER HANDLER ---
 
         categoryFilter.addEventListener('change', (e) => {
             const selectedCategory = e.target.value;
@@ -709,7 +766,7 @@
             }
         });
 
-        // --- MODAL FUNCTIONS (Untouched) ---
+        // --- MODAL FUNCTIONS ---
 
         function openModal(product) {
             if (isModalOpen) return;
@@ -812,7 +869,7 @@
         });
 
 
-        // --- INITIALIZATION (Untouched) ---
+        // --- INITIALIZATION ---
         window.addEventListener('load', () => {
             renderSet(filteredSets[currentSetIndex], 'in');
             
