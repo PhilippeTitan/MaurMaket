@@ -5,24 +5,88 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>MaurMaket</title>
   <style>
-    html,body{height:100%;margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(180deg,#f7f9fc,#ffffff);}
-    .splash{height:100vh;display:flex;align-items:center;justify-content:center;cursor:pointer}
-    .logo{width:220px;max-width:60%;opacity:0;animation:fadeIn 900ms ease-in-out 200ms forwards}
+    html,body{
+      height:100%;
+      margin:0;
+      font-family:Segoe UI,Roboto,Arial,sans-serif;
+      background:linear-gradient(180deg,#f7f9fc,#ffffff);
+    }
+    .splash{
+      height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+    }
+    /* Circular logo container */
+    .logo-container{
+      width:220px;
+      height:220px;
+      max-width:60vw;
+      max-height:60vw;
+      border-radius:50%;
+      background:#ffffff;
+      box-shadow:0 8px 32px rgba(0,0,0,0.08);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      opacity:0;
+      animation:fadeIn 900ms ease-in-out 200ms forwards;
+      position:relative;
+      overflow:hidden;
+    }
+    .logo{
+      width:100%;
+      height:100%;
+      object-fit:contain;
+      display:block;
+    }
     /* Top header logo - responsive and unobtrusive */
-    .top-header{position:absolute;top:12px;left:0;right:0;display:flex;justify-content:center;pointer-events:auto}
-    .header-logo{height:48px;max-height:9vh;max-width:220px;width:auto;display:block}
-    @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-    .visually-hidden{position:absolute;left:-9999px}
+    .top-header{
+      position:absolute;
+      top:12px;
+      left:0;
+      right:0;
+      display:flex;
+      justify-content:center;
+      pointer-events:auto;
+      z-index:10;
+    }
+    .header-logo{
+      height:48px;
+      max-height:9vh;
+      max-width:220px;
+      width:auto;
+      display:block;
+      object-fit:contain;
+    }
+    @keyframes fadeIn{
+      from{
+        opacity:0;
+        transform:translateY(8px) scale(0.95);
+      }
+      to{
+        opacity:1;
+        transform:translateY(0) scale(1);
+      }
+    }
+    .visually-hidden{
+      position:absolute;
+      left:-9999px;
+    }
   </style>
 </head>
 <body onclick="window.location.href='home.html'" aria-label="MaurMaket splash - click to enter">
   <header class="top-header">
     <a href="home.html" aria-label="MaurMaket home">
-      <img src="assets/images/logo.svg" alt="MaurMaket logo" class="header-logo">
+      <img src="https://i.ibb.co/Cp983n6v/Maur-Market-Logo.png" alt="MaurMaket logo" class="header-logo">
     </a>
   </header>
   <div class="splash">
-    <img src="assets/images/logo.svg" alt="MaurMaket logo" class="logo" onclick="window.location.href='home.html'">
+    <div class="logo-container" onclick="window.location.href='home.html'">
+      <img src="https://i.ibb.co/Cp983n6v/Maur-Market-Logo.png" alt="MaurMaket logo" class="logo">
+    </div>
   </div>
 </body>
 </html>
