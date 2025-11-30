@@ -75,6 +75,20 @@
       border-radius:4px;
       cursor:pointer;
     }
+    /* Full-screen transparent click area so user can tap anywhere */
+    #splash-click-area {
+      position:fixed;
+      top:0;
+      left:0;
+      width:100vw;
+      height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:transparent;
+      cursor:pointer;
+      z-index:2;
+    }
     /* Top header removed — splash uses centered bottom logo only */
     .visually-hidden{
       position:absolute;
@@ -84,25 +98,26 @@
 </head>
 <body aria-label="MaurMaket splash - click to enter">
   <!-- top header removed; only center splash logo remains -->
-  <div class="splash">
-    <div class="frame-square">
+  <div id="splash-click-area">
+    <div class="frame-square" aria-hidden="true">
       <div class="logo-container" id="splash-logo">
         <img src="https://i.ibb.co/3y6cPdkn/Logo-Without-name.png" alt="MaurMaket logo" class="logo">
       </div>
     </div>
   </div>
   <script>
+    const area = document.getElementById("splash-click-area");
     const logo = document.getElementById("splash-logo");
-    if (logo) {
-      logo.style.cursor = 'pointer';
-      logo.addEventListener("click", () => {
-        // disable further clicks
+    if (area && logo) {
+      // Make sure clicking anywhere triggers the exit animation on the logo
+      area.addEventListener("click", () => {
+        // prevent further clicks
+        area.style.pointerEvents = 'none';
         logo.style.pointerEvents = 'none';
-        // add exit animation class
+        // animate only the logo container
         logo.classList.add("logo-exit");
 
         setTimeout(() => {
-          // navigate after animation completes
           window.location.href = "home.html";
         }, 1500);
       });
