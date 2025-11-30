@@ -8,72 +8,125 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     
     <style>
-        /* A. Color Palette Definitions (Tropical Haiti - Bold Yet Soft) */
+        /* Theme variables (light by default) */
         :root {
-            /* Tropical Palette */
-            --mango-orange: #FFA726; 
-            --caribbean-teal: #26C6DA;
-            --papaya-coral: #FF7043;
-            --lime-green: #9CCC65;
-            --sunny-yellow: #FFCA28;
-            --hibiscus-pink: #EC407A;
-            --deep-sky-blue: #42A5F5;
+            --bg: #fefefe;
+            --surface: #ffffff;
+            --muted: #f4f4f6;
+            --text-primary: #10203a;
+            --accent-1: #FFA726; /* mango orange */
+            --accent-2: #26C6DA; /* caribbean teal */
+            --accent-3: #FF7043; /* papaya coral */
+            --card-glow: rgba(255,200,70,0.12);
+            --card-shadow: 0 6px 18px rgba(16,32,58,0.06);
+        }
 
-            /* Base Colors (Unchanged primary text color) */
-            --color-primary: #104084; /* Deep Blue, used for strong text */
+        /* Dark theme overrides */
+        html[data-theme='dark'] {
+            --bg: #061025; /* deep navy */
+            --surface: #071427;
+            --muted: #042033;
+            --text-primary: #e6f3ff;
+            --accent-1: #FFB74D;
+            --accent-2: #2DD4BF;
+            --accent-3: #FF8A65;
+            --card-glow: rgba(40,200,160,0.06);
+            --card-shadow: 0 8px 22px rgba(0,0,0,0.45);
         }
 
         body { 
             font-family: 'Inter', sans-serif; 
-            background-color: #fefefe; /* Soft cream/near-white background for breathability */
+            background-color: var(--bg);
+            color: var(--text-primary);
+            transition: background-color .35s ease, color .35s ease;
         }
 
-        /* Utility Classes for Shadows and Buttons */
+        /* Soft shadows and glow accents */
         .soft-shadow {
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.03);
+            box-shadow: var(--card-shadow);
+        }
+        .glow-soft {
+            box-shadow: 0 0 18px var(--card-glow);
         }
         .btn-hover:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.15); /* Slightly bolder shadow on hover */
+            transform: translateY(-3px) scale(1.01);
+            box-shadow: 0 10px 22px rgba(0,0,0,0.12);
         }
 
-        /* Custom Gradient for Hero Section (Mango Orange → Sunny Yellow) */
+        /* Page-load reveal: fade + rise */
+        .fade-in-section {
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 520ms ease-out, transform 520ms ease-out;
+            will-change: opacity, transform;
+        }
+        .fade-in-section.in-view {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* subtle floating/breathing for header brand */
+        .brand-breathe {
+            display:inline-block;
+            transform-origin:center center;
+            animation: brandBreath 8s ease-in-out infinite;
+        }
+        @keyframes brandBreath {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.01); }
+            100% { transform: scale(1); }
+        }
+
+        /* Hero gradient uses accent variables */
         .hero-gradient {
-            background: linear-gradient(135deg, var(--mango-orange) 0%, var(--sunny-yellow) 100%);
+            background: linear-gradient(135deg, var(--accent-1) 0%, #ffd07a 100%);
         }
 
-        /* Footer Border: Single color accent line (Caribbean Teal) */
-        .footer-border {
-            border-top: 2px solid var(--caribbean-teal);
-            padding-top: 1.5rem;
+        /* Product card hover/tactile lift */
+        .product-card {
+            transition: transform .22s ease, box-shadow .22s ease;
+        }
+        .product-card:hover {
+            transform: translateY(-6px) scale(1.02);
+            box-shadow: 0 18px 34px rgba(16,32,58,0.12);
+            border-color: color-mix(in srgb, var(--accent-1) 18%, transparent);
         }
 
-        /* Helper for Category Card Text Contrast */
-        .dark-text { color: #1f2937; } /* Dark Gray */
-        .light-text { color: white; }
+        /* Category card glow on hover */
+        .category-card:hover {
+            box-shadow: 0 8px 24px rgba(255,200,70,0.12);
+            transform: translateY(-4px);
+        }
+
+        /* Floating subtle wave divider */
+        .wave-divider { display:block; width:100%; height:56px; opacity:0.18; }
+
+        /* Mobile micro-shadows */
+        @media (max-width: 600px) {
+            .soft-shadow { box-shadow: 0 10px 30px rgba(16,32,58,0.14); }
+        }
     </style>
 </head>
 
 <body class="min-h-screen flex flex-col antialiased">
 
     <!-- A. HEADER (Revised button and logo color) -->
-    <header class="bg-white sticky top-0 z-10 soft-shadow">
+    <header class="bg-white sticky top-0 z-10 soft-shadow" role="banner">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
             <h1 class="text-2xl font-extrabold" id="logo-link">
-                <!-- Logo text now Mango Orange -->
-                <a href="#top" class="text-[var(--mango-orange)] hover:text-[var(--papaya-coral)] transition duration-150 cursor-pointer">
-                    MaurMaket
-                </a>
+                <a href="#top" class="brand-breathe text-[var(--accent-1)] hover:text-[var(--accent-3)] transition duration-150 cursor-pointer">MaurMaket</a>
             </h1>
-            <!-- Start Selling button now Caribbean Teal -->
-            <a href="seller.html" class="bg-[var(--caribbean-teal)] text-white px-5 py-2 rounded-full font-semibold soft-shadow transition duration-200 hover:bg-opacity-90 btn-hover">
-                Start Selling
-            </a>
+            <div class="flex items-center space-x-3">
+                <button id="theme-btn" aria-label="Toggle theme" class="px-3 py-2 rounded-md border soft-shadow" title="Toggle light/dark">☾</button>
+                <a href="seller.html" class="bg-[var(--accent-2)] text-white px-5 py-2 rounded-full font-semibold soft-shadow transition duration-200 hover:bg-opacity-90 btn-hover">
+                    Start Selling
+                </a>
+            </div>
         </div>
     </header>
 
     <!-- B. HERO SECTION (Revised gradient and button colors) -->
-    <section class="hero-gradient py-20 sm:py-24 lg:py-32 rounded-b-[40px] mb-16 soft-shadow">
+    <section class="hero-gradient py-20 sm:py-24 lg:py-32 rounded-b-[40px] mb-16 soft-shadow fade-in-section">
         <div class="max-w-4xl mx-auto px-4 text-center">
             <h2 class="text-6xl sm:text-7xl font-extrabold text-[var(--color-primary)] mb-4 leading-tight">
                 Welcome to MaurMaket
@@ -93,27 +146,31 @@
             </div>
         </div>
     </section>
+    <!-- subtle wave divider -->
+    <svg class="wave-divider" viewBox="0 0 1200 60" preserveAspectRatio="none" aria-hidden>
+      <path d="M0,30 C150,60 350,0 600,30 C850,60 1050,0 1200,30 L1200 60 L0 60 Z" fill="var(--surface)" opacity="0.6"></path>
+    </svg>
 
     <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         <!-- C. CATEGORIES GRID (Revised card colors and text contrast) -->
-        <section class="mb-16">
-            <h3 class="text-3xl font-bold text-gray-800 mb-8 text-center sm:text-left">Shop by Popular Categories</h3>
+        <section class="mb-16 fade-in-section">
+            <h3 class="text-3xl font-bold text-[var(--text-primary)] mb-8 text-center sm:text-left">Shop by Popular Categories</h3>
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
                 <!-- Food - Sunny Yellow (Light background -> Dark text) -->
-                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--sunny-yellow);">
-                    <span class="text-5xl mb-2 block dark-text">🍜</span>
-                    <p class="font-bold dark-text">Food</p>
+                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center category-card" style="background-color: var(--accent-1);">
+                    <span class="text-5xl mb-2 block">🍜</span>
+                    <p class="font-bold">Food</p>
                 </div>
                 <!-- Handmade - Papaya Coral (Medium background -> Dark text) -->
-                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--papaya-coral);">
-                    <span class="text-5xl mb-2 block dark-text">🧵</span>
-                    <p class="font-bold dark-text">Handmade</p>
+                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center category-card" style="background-color: var(--accent-3);">
+                    <span class="text-5xl mb-2 block">🧵</span>
+                    <p class="font-bold">Handmade</p>
                 </div>
                 <!-- Beauty - Hibiscus Pink (Dark background -> White text) -->
-                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--hibiscus-pink);">
-                    <span class="text-5xl mb-2 block light-text">💅</span>
-                    <p class="font-bold light-text">Beauty</p>
+                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center category-card" style="background-color: var(--hibiscus-pink);">
+                    <span class="text-5xl mb-2 block">💅</span>
+                    <p class="font-bold">Beauty</p>
                 </div>
                 <!-- Electronics - Deep Sky Blue (Dark background -> White text) -->
                 <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--deep-sky-blue);">
@@ -134,17 +191,17 @@
         </section>
 
         <!-- D. FEATURED LISTINGS (Revised borders, price pill, seller tag) -->
-        <section class="mb-16">
-            <h3 class="text-3xl font-bold text-gray-800 mb-8 text-center sm:text-left">Featured Today</h3>
+        <section class="mb-16 fade-in-section">
+            <h3 class="text-3xl font-bold text-[var(--text-primary)] mb-8 text-center sm:text-left">Featured Today</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                 
                 <!-- Featured Product Card 1 - Border Mango Orange -->
-                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--mango-orange)]">
+                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--accent-1)] product-card" style="background:var(--surface);">
                     <div class="w-full h-40 bg-gray-100 rounded-lg mb-4 flex items-center justify-center text-gray-500 font-medium">Placeholder Image</div>
                     <div class="flex justify-between items-start mb-2">
                         <h4 class="text-xl font-semibold text-gray-800">Designer Backpack</h4>
                         <!-- Price Pill now Mango Orange -->
-                        <div class="bg-[var(--mango-orange)] text-white text-sm font-bold px-3 py-1 rounded-full soft-shadow">
+                        <div class="bg-[var(--accent-1)] text-white text-sm font-bold px-3 py-1 rounded-full soft-shadow">
                             7,500 HTG
                         </div>
                     </div>
@@ -156,7 +213,7 @@
                 </div>
 
                 <!-- Featured Product Card 2 - Border Deep Sky Blue -->
-                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--deep-sky-blue)]">
+                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--accent-2)] product-card" style="background:var(--surface);">
                     <div class="w-full h-40 bg-gray-100 rounded-lg mb-4 flex items-center justify-center text-gray-500 font-medium">Placeholder Image</div>
                     <div class="flex justify-between items-start mb-2">
                         <h4 class="text-xl font-semibold text-gray-800">Fresh Mango Boxes</h4>
@@ -173,7 +230,7 @@
                 </div>
 
                 <!-- Featured Product Card 3 - Border Hibiscus Pink -->
-                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--hibiscus-pink)]">
+                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--hibiscus-pink)] product-card" style="background:var(--surface);">
                     <div class="w-full h-40 bg-gray-100 rounded-lg mb-4 flex items-center justify-center text-gray-500 font-medium">Placeholder Image</div>
                     <div class="flex justify-between items-start mb-2">
                         <h4 class="text-xl font-semibold text-gray-800">Smart Home Security Kit</h4>
@@ -214,15 +271,51 @@
     <!-- JAVASCRIPT REQUIREMENTS -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const logoLink = document.getElementById('logo-link');
-
             // Smooth scroll to top of page when logo is clicked
-            logoLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                window.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
+            const logoLink = document.getElementById('logo-link');
+            if (logoLink) {
+                logoLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 });
+            }
+
+            // Theme toggle: read stored preference or system preference
+            const themeBtn = document.getElementById('theme-btn');
+            const htmlEl = document.documentElement;
+            const stored = localStorage.getItem('maur_theme');
+            if (stored) htmlEl.setAttribute('data-theme', stored);
+            else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) htmlEl.setAttribute('data-theme','dark');
+
+            if (themeBtn) {
+                themeBtn.addEventListener('click', () => {
+                    const current = htmlEl.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+                    const next = current === 'dark' ? 'light' : 'dark';
+                    htmlEl.setAttribute('data-theme', next);
+                    localStorage.setItem('maur_theme', next);
+                });
+            }
+
+            // Page-load reveal for primary blocks
+            const fades = document.querySelectorAll('.fade-in-section');
+            fades.forEach((el, i) => {
+                // stagger entrance slightly
+                setTimeout(() => el.classList.add('in-view'), i * 120);
+            });
+
+            // Scroll-triggered reveals for items not yet visible
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('in-view');
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, {threshold: 0.12});
+
+            document.querySelectorAll('.category-card, .product-card').forEach(node => {
+                node.classList.add('fade-in-section');
+                observer.observe(node);
             });
         });
     </script>
