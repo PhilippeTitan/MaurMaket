@@ -33,8 +33,9 @@
             position: relative !important;
         }
 
-        /* A. Color Palette Definitions (Tropical Haiti) */
+        /* A. Color Palette Definitions (Tropical Haiti - Light & Dark themes) */
         :root {
+            /* Tropical Palette - Vibrant & Consistent */
             --mango-orange: #FFA726; 
             --caribbean-teal: #26C6DA;
             --papaya-coral: #FF7043;
@@ -42,18 +43,84 @@
             --sunny-yellow: #FFCA28;
             --hibiscus-pink: #EC407A;
             --deep-sky-blue: #42A5F5;
-            --color-primary: #104084; /* Deep Blue for strong text/logo */
-            --bg-cream: #FFFEF7; /* Soft Cream Background */
+
+            /* Light Theme Colors */
+            --bg: #fefefe;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: rgba(255, 202, 40, 0.08);
+            --text: #1f2937;
+            --text-secondary: #6b7280;
+            --text-muted: #9ca3af;
+            --card-bg: #ffffff;
+            --card-border: transparent;
+            --placeholder-bg: #f3f4f6;
+            --placeholder-text: #9ca3af;
+            --color-primary: #104084; /* Deep Blue */
+            --input-bg: #ffffff;
+            --input-border: #d1d5db;
+            --overlay-bg: rgba(0, 0, 0, 0.75);
+        }
+
+        /* Dark Theme Overrides */
+        .dark {
+            --bg: #0b1220; /* deep navy */
+            --bg-secondary: #1a2a3f; /* slightly lighter than main */
+            --bg-tertiary: rgba(255, 202, 40, 0.06);
+            --text: #e6eef8; /* very light */
+            --text-secondary: #b8c5d6;
+            --text-muted: #7a8794;
+            --card-bg: #1a2a3f;
+            --card-border: rgba(255, 255, 255, 0.06);
+            --placeholder-bg: #2a3a50;
+            --placeholder-text: #7a8794;
+            --color-primary: #c7e3ff;
+            --input-bg: #2a3a50;
+            --input-border: #3a4a60;
+            --overlay-bg: rgba(0, 0, 0, 0.85);
         }
 
         body { 
             font-family: 'Inter', sans-serif; 
-            background-color: var(--bg-cream);
+            background-color: var(--bg);
+            color: var(--text);
             min-height: 100vh;
+            transition: background-color 220ms ease, color 220ms ease;
         }
         
         .soft-shadow {
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Floating Theme Toggle - Sticky Right Side */
+        .floating-theme-toggle {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 48px;
+            height: 48px;
+            border-radius: 9999px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--card-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 40;
+            transition: all 200ms ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .floating-theme-toggle:hover {
+            transform: translateY(-50%) scale(1.08);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        }
+        .floating-theme-toggle svg {
+            width: 24px;
+            height: 24px;
+            color: var(--text);
+        }
+        .dark .floating-theme-toggle {
+            border-color: rgba(255, 255, 255, 0.08);
         }
 
         /* --- PRODUCT CARD STYLING (The Visual Focus) --- */
@@ -190,7 +257,7 @@
             position: fixed;
             top: 0; left: 0;
             width: 100vw; height: 100vh;
-            background: rgba(0, 0, 0, 0.75);
+            background: var(--overlay-bg);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -207,6 +274,8 @@
             max-height: 90vh;
             max-width: 800px;
             width: 90%;
+            background-color: var(--bg-secondary);
+            color: var(--text);
         }
         .modal-price {
             font-size: 28px;
@@ -286,7 +355,7 @@
 <body>
     
     <!-- HEADER -->
-    <header class="bg-white soft-shadow p-4 sticky top-0 z-50">
+    <header class="soft-shadow p-4 sticky top-0 z-50" style="background-color: var(--bg-secondary);">
         <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
                 <a href="#" class="text-3xl font-extrabold text-[var(--mango-orange)] hover:text-[var(--papaya-coral)] transition duration-150">
                     MaurMaket
@@ -295,8 +364,8 @@
             <div class="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-6">
                 <!-- Category Filter -->
                 <div class="flex items-center space-x-2">
-                    <label for="category-filter" class="text-gray-700 font-medium whitespace-nowrap">Filter by:</label>
-                    <select id="category-filter" class="p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--caribbean-teal)] focus:border-[var(--caribbean-teal)] bg-white transition duration-200 text-sm">
+                    <label for="category-filter" class="font-medium whitespace-nowrap" style="color: var(--text);">Filter by:</label>
+                    <select id="category-filter" class="p-2 border rounded-lg focus:ring-2 focus:ring-[var(--caribbean-teal)] focus:border-[var(--caribbean-teal)] transition duration-200 text-sm" style="background-color: var(--input-bg); color: var(--text); border-color: var(--input-border);">
                         <option value="All Categories">All Categories</option>
                         <option value="Food">Food</option>
                         <option value="Handmade">Handmade</option>
@@ -337,11 +406,20 @@
         </div>
         
         <!-- Navigation Instructions -->
-        <p id="nav-instructions" class="text-center text-gray-500 mt-8 text-base font-medium hidden">
+        <p id="nav-instructions" class="text-center mt-8 text-base font-medium hidden" style="color: var(--text-muted);">
             <span class="text-xl">👆</span> Scroll Up / <span class="text-xl">👇</span> Scroll Down, or use ↑↓ Arrow keys to navigate sets.
         </p>
 
     </main>
+
+    <!-- Floating Theme Toggle -->
+    <button id="floating-theme-toggle" class="floating-theme-toggle" aria-label="Toggle light/dark theme" title="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <!-- sun icon (default) -->
+            <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5 5l-1.4-1.4M20.4 20.4 19 19M19 5l1.4-1.4M5 19l-1.4 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+    </button>
 
     <!-- PRODUCT DETAIL MODAL -->
     <div id="product-modal" class="modal-overlay">
@@ -384,6 +462,53 @@
 
     <!-- JAVASCRIPT LOGIC -->
     <script>
+        // --- THEME TOGGLE SETUP ---
+        function setupThemeToggle() {
+            const themeBtn = document.getElementById('floating-theme-toggle');
+            const root = document.documentElement;
+
+            function applyTheme(theme) {
+                if(theme === 'dark') {
+                    root.classList.add('dark');
+                    themeBtn.setAttribute('aria-pressed', 'true');
+                    // moon icon
+                    themeBtn.innerHTML = `
+                      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>`;
+                } else {
+                    root.classList.remove('dark');
+                    themeBtn.setAttribute('aria-pressed', 'false');
+                    // sun icon
+                    themeBtn.innerHTML = `
+                      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5 5l-1.4-1.4M20.4 20.4 19 19M19 5l1.4-1.4M5 19l-1.4 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
+                      </svg>`;
+                }
+            }
+
+            // Initialize theme from localStorage or system preference
+            const saved = localStorage.getItem('theme');
+            if(saved) {
+                applyTheme(saved);
+            } else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                applyTheme('dark');
+            } else {
+                applyTheme('light');
+            }
+
+            // Theme toggle click handler
+            if(themeBtn) {
+                themeBtn.addEventListener('click', () => {
+                    const nowDark = root.classList.contains('dark');
+                    const next = nowDark ? 'light' : 'dark';
+                    applyTheme(next);
+                    localStorage.setItem('theme', next);
+                });
+            }
+        }
+
         // --- MOCK DATA ---
         // Playback Duration (constant 7s)
         const PLAY_DURATION_MS = 7000;
@@ -889,6 +1014,7 @@
 
         // --- INITIALIZATION ---
         window.addEventListener('load', () => {
+            setupThemeToggle();
             renderSet(filteredSets[currentSetIndex], 'in');
             
             // Global listeners for vertical navigation

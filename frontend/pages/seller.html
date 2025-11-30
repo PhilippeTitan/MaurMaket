@@ -8,8 +8,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     
     <style>
-        /* A. Color Palette Definitions (Tropical Haiti - Consistent with Home) */
+        /* A. Color Palette Definitions (Tropical Haiti - Light & Dark themes) */
         :root {
+            /* Tropical Palette - Vibrant & Consistent */
             --mango-orange: #FFA726; 
             --caribbean-teal: #26C6DA;
             --papaya-coral: #FF7043;
@@ -17,23 +18,87 @@
             --sunny-yellow: #FFCA28;
             --hibiscus-pink: #EC407A;
             --deep-sky-blue: #42A5F5;
-            --color-primary: #104084; /* Deep Blue for strong text/logo */
-            --bg-cream: #fefefe; /* Soft cream/near-white */
-            --bg-sidebar: #ffffff;
+
+            /* Light Theme Colors */
+            --bg: #fefefe;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: rgba(255, 202, 40, 0.08);
+            --text: #1f2937;
+            --text-secondary: #6b7280;
+            --text-muted: #9ca3af;
+            --card-bg: #ffffff;
+            --card-border: transparent;
+            --placeholder-bg: #f3f4f6;
+            --placeholder-text: #9ca3af;
+            --color-primary: #104084; /* Deep Blue */
+            --input-bg: #ffffff;
+            --input-border: #d1d5db;
+            --overlay-bg: rgba(0, 0, 0, 0.75);
+        }
+
+        /* Dark Theme Overrides */
+        .dark {
+            --bg: #0b1220; /* deep navy */
+            --bg-secondary: #1a2a3f; /* slightly lighter than main */
+            --bg-tertiary: rgba(255, 202, 40, 0.06);
+            --text: #e6eef8; /* very light */
+            --text-secondary: #b8c5d6;
+            --text-muted: #7a8794;
+            --card-bg: #1a2a3f;
+            --card-border: rgba(255, 255, 255, 0.06);
+            --placeholder-bg: #2a3a50;
+            --placeholder-text: #7a8794;
+            --color-primary: #c7e3ff;
+            --input-bg: #2a3a50;
+            --input-border: #3a4a60;
+            --overlay-bg: rgba(0, 0, 0, 0.85);
         }
 
         body { 
             font-family: 'Inter', sans-serif; 
-            background-color: var(--bg-cream);
+            background-color: var(--bg);
+            color: var(--text);
+            transition: background-color 220ms ease, color 220ms ease;
         }
 
-        /* Utility Classes for Shadows, Buttons, and Layout */
         .soft-shadow {
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.03);
         }
         .btn-hover:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 18px rgba(0, 0, 0, 0.15); 
+        }
+
+        /* Floating Theme Toggle - Sticky Right Side */
+        .floating-theme-toggle {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 48px;
+            height: 48px;
+            border-radius: 9999px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--card-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 40;
+            transition: all 200ms ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .floating-theme-toggle:hover {
+            transform: translateY(-50%) scale(1.08);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        }
+        .floating-theme-toggle svg {
+            width: 24px;
+            height: 24px;
+            color: var(--text);
+        }
+        .dark .floating-theme-toggle {
+            border-color: rgba(255, 255, 255, 0.08);
         }
 
         /* Active Sidebar Link Glow Animation */
@@ -88,14 +153,23 @@
 <body class="dashboard-layout">
 
     <!-- Mobile Hamburger Menu Button -->
-    <button id="menu-toggle" class="md:hidden fixed top-4 left-4 p-3 rounded-full bg-white soft-shadow z-30" style="color: var(--caribbean-teal);">
+    <button id="menu-toggle" class="md:hidden fixed top-4 left-4 p-3 rounded-full soft-shadow z-30" style="background-color: var(--bg-secondary); color: var(--caribbean-teal);">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
         </svg>
     </button>
 
+    <!-- Floating Theme Toggle -->
+    <button id="floating-theme-toggle" class="floating-theme-toggle" aria-label="Toggle light/dark theme" title="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <!-- sun icon (default) -->
+            <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5 5l-1.4-1.4M20.4 20.4 19 19M19 5l1.4-1.4M5 19l-1.4 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+    </button>
+
     <!-- LEFT SIDEBAR (Fixed Navigation) -->
-    <aside id="sidebar" class="sidebar bg-white w-full md:w-1/5 max-w-xs p-6 flex flex-col justify-between soft-shadow transition duration-300">
+    <aside id="sidebar" class="sidebar w-full md:w-1/5 max-w-xs p-6 flex flex-col justify-between soft-shadow transition duration-300" style="background-color: var(--bg-secondary);">
         
         <!-- Top Section: Logo and Navigation -->
         <div>
@@ -107,33 +181,33 @@
 
             <!-- Navigation Menu -->
             <nav id="sidebar-nav" class="space-y-2">
-                <a href="#dashboard" data-view="dashboard" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200 nav-active">
+                <a href="#dashboard" data-view="dashboard" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200 nav-active" style="background-color: var(--caribbean-teal); color: white;">
                     <span class="text-xl mr-3">📊</span> Dashboard
                 </a>
-                <a href="#add-product" data-view="add-product" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200 text-gray-700">
+                <a href="#add-product" data-view="add-product" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200" style="color: var(--text);">
                     <span class="text-xl mr-3" style="color: var(--lime-green);">➕</span> Add Product
                 </a>
-                <a href="#my-listings" data-view="my-listings" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200 text-gray-700">
+                <a href="#my-listings" data-view="my-listings" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200" style="color: var(--text);">
                     <span class="text-xl mr-3" style="color: var(--papaya-coral);">📦</span> My Listings
                 </a>
-                <a href="#stats" data-view="stats" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200 text-gray-700">
+                <a href="#stats" data-view="stats" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200" style="color: var(--text);">
                     <span class="text-xl mr-3" style="color: var(--deep-sky-blue);">📈</span> Stats
                 </a>
-                <a href="#info" data-view="info" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200 text-gray-700">
+                <a href="#info" data-view="info" class="nav-item flex items-center p-3 rounded-xl font-semibold transition duration-200" style="color: var(--text);">
                     <span class="text-xl mr-3" style="color: var(--sunny-yellow);">ℹ️</span> Info
                 </a>
             </nav>
         </div>
 
         <!-- Bottom Section: Seller Info -->
-        <div class="border-t pt-4 mt-6 border-gray-100">
-            <p class="text-sm font-medium text-gray-600">Logged in as:</p>
+        <div class="border-t pt-4 mt-6" style="border-color: var(--card-border);">
+            <p class="text-sm font-medium" style="color: var(--text-secondary);">Logged in as:</p>
             <p class="font-bold text-lg text-[var(--color-primary)]">[Seller Name]</p>
         </div>
     </aside>
 
     <!-- RIGHT CONTENT AREA (Dynamic) -->
-    <main id="content-area" class="flex-grow p-8 md:p-10 lg:p-12 transition duration-300 md:w-4/5">
+    <main id="content-area" class="flex-grow p-8 md:p-10 lg:p-12 transition duration-300 md:w-4/5" style="background-color: var(--bg);">
         
         <!-- Overlay for Mobile Menu -->
         <div id="overlay" class="fixed inset-0 bg-black bg-opacity-30 z-10 hidden md:hidden"></div>
@@ -141,38 +215,38 @@
         <!-- 1. DASHBOARD VIEW (Default) -->
         <section id="dashboard-view" class="view-content">
             <h1 class="text-4xl font-extrabold text-[var(--color-primary)] mb-2">Welcome back, [Seller Name]</h1>
-            <p class="text-xl text-gray-600 mb-8">Here's what's happening with your store.</p>
+            <p class="text-xl mb-8" style="color: var(--text-secondary);">Here's what's happening with your store.</p>
 
             <!-- Stats Cards Grid -->
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
                 <!-- Stat Card 1: Total Products (Mango Orange) -->
-                <div class="bg-white p-6 rounded-xl soft-shadow border-t-4 border-[var(--mango-orange)]">
-                    <p class="text-sm font-semibold text-gray-500 mb-1">Total Products</p>
+                <div class="p-6 rounded-xl soft-shadow border-t-4 border-[var(--mango-orange)]" style="background-color: var(--card-bg); border: 1px solid var(--card-border);">
+                    <p class="text-sm font-semibold mb-1" style="color: var(--text-secondary);">Total Products</p>
                     <p class="text-4xl font-bold text-[var(--mango-orange)]">3</p>
-                    <p class="text-xs text-gray-500 mt-2">Currently listed</p>
+                    <p class="text-xs mt-2" style="color: var(--text-secondary);">Currently listed</p>
                 </div>
                 <!-- Stat Card 2: Total Views (Caribbean Teal) -->
-                <div class="bg-white p-6 rounded-xl soft-shadow border-t-4 border-[var(--caribbean-teal)]">
-                    <p class="text-sm font-semibold text-gray-500 mb-1">Total Views</p>
+                <div class="p-6 rounded-xl soft-shadow border-t-4 border-[var(--caribbean-teal)]" style="background-color: var(--card-bg); border: 1px solid var(--card-border);">
+                    <p class="text-sm font-semibold mb-1" style="color: var(--text-secondary);">Total Views</p>
                     <p class="text-4xl font-bold text-[var(--caribbean-teal)]">127</p>
-                    <p class="text-xs text-gray-500 mt-2">Across all listings</p>
+                    <p class="text-xs mt-2" style="color: var(--text-secondary);">Across all listings</p>
                 </div>
                 <!-- Stat Card 3: Messages (Hibiscus Pink) -->
-                <div class="bg-white p-6 rounded-xl soft-shadow border-t-4 border-[var(--hibiscus-pink)]">
-                    <p class="text-sm font-semibold text-gray-500 mb-1">Messages</p>
+                <div class="p-6 rounded-xl soft-shadow border-t-4 border-[var(--hibiscus-pink)]" style="background-color: var(--card-bg); border: 1px solid var(--card-border);">
+                    <p class="text-sm font-semibold mb-1" style="color: var(--text-secondary);">Messages</p>
                     <p class="text-4xl font-bold text-[var(--hibiscus-pink)]">5</p>
-                    <p class="text-xs text-gray-500 mt-2">Unread seller messages</p>
+                    <p class="text-xs mt-2" style="color: var(--text-secondary);">Unread seller messages</p>
                 </div>
                 <!-- Stat Card 4: Active Listings (Lime Green) -->
-                <div class="bg-white p-6 rounded-xl soft-shadow border-t-4 border-[var(--lime-green)]">
-                    <p class="text-sm font-semibold text-gray-500 mb-1">Active Listings</p>
+                <div class="p-6 rounded-xl soft-shadow border-t-4 border-[var(--lime-green)]" style="background-color: var(--card-bg); border: 1px solid var(--card-border);">
+                    <p class="text-sm font-semibold mb-1" style="color: var(--text-secondary);">Active Listings</p>
                     <p class="text-4xl font-bold text-[var(--lime-green)]">3</p>
-                    <p class="text-xs text-gray-500 mt-2">Currently visible to buyers</p>
+                    <p class="text-xs mt-2" style="color: var(--text-secondary);">Currently visible to buyers</p>
                 </div>
             </div>
 
             <!-- Quick Actions -->
-            <h3 class="text-2xl font-bold text-gray-800 mb-4">Quick Actions</h3>
+            <h3 class="text-2xl font-bold mb-4" style="color: var(--text);">Quick Actions</h3>
             <div class="flex space-x-4">
                 <button data-action-view="add-product" class="quick-action-btn bg-[var(--lime-green)] text-white px-6 py-3 rounded-full font-bold soft-shadow transition duration-200 hover:opacity-90 btn-hover">
                     ➕ Add New Product
@@ -405,7 +479,55 @@
 
     <!-- JAVASCRIPT FOR NAVIGATION AND FORM INTERACTION -->
     <script>
+        // --- THEME TOGGLE SETUP ---
+        function setupThemeToggle() {
+            const themeBtn = document.getElementById('floating-theme-toggle');
+            const root = document.documentElement;
+
+            function applyTheme(theme) {
+                if(theme === 'dark') {
+                    root.classList.add('dark');
+                    themeBtn.setAttribute('aria-pressed', 'true');
+                    // moon icon
+                    themeBtn.innerHTML = `
+                      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>`;
+                } else {
+                    root.classList.remove('dark');
+                    themeBtn.setAttribute('aria-pressed', 'false');
+                    // sun icon
+                    themeBtn.innerHTML = `
+                      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5 5l-1.4-1.4M20.4 20.4 19 19M19 5l1.4-1.4M5 19l-1.4 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
+                      </svg>`;
+                }
+            }
+
+            // Initialize theme from localStorage or system preference
+            const saved = localStorage.getItem('theme');
+            if(saved) {
+                applyTheme(saved);
+            } else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                applyTheme('dark');
+            } else {
+                applyTheme('light');
+            }
+
+            // Theme toggle click handler
+            if(themeBtn) {
+                themeBtn.addEventListener('click', () => {
+                    const nowDark = root.classList.contains('dark');
+                    const next = nowDark ? 'light' : 'dark';
+                    applyTheme(next);
+                    localStorage.setItem('theme', next);
+                });
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            setupThemeToggle();
             const sidebarNav = document.getElementById('sidebar-nav');
             const contentArea = document.getElementById('content-area');
             const menuToggle = document.getElementById('menu-toggle');
