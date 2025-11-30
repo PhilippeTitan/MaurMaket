@@ -9,7 +9,7 @@
       height:100%;
       margin:0;
       font-family:Segoe UI,Roboto,Arial,sans-serif;
-      background:linear-gradient(180deg,#f7f9fc,#ffffff);
+      background:#F66C00;
     }
     .splash{
       height:100vh;
@@ -18,15 +18,14 @@
       justify-content:center;
       cursor:pointer;
     }
-    /* Circular logo container */
+    /* Logo container - transparent, glow only */
     .logo-container{
       width:220px;
       height:220px;
       max-width:60vw;
       max-height:60vw;
       border-radius:50%;
-      background:#ffffff;
-      box-shadow:0 8px 32px rgba(0,0,0,0.08);
+      background:transparent; /* Transparent instead of white */
       display:flex;
       align-items:center;
       justify-content:center;
@@ -34,15 +33,21 @@
       opacity:0;
       animation:fadeIn 900ms ease-in-out 200ms forwards;
       position:relative;
-      overflow:hidden;
+      overflow:visible; /* Allow glow to extend beyond bounds */
+      filter:drop-shadow(0 0 30px rgba(246, 108, 0, 0.6)) 
+             drop-shadow(0 0 60px rgba(246, 108, 0, 0.4));
+    }
+    /* Pulsing glow animation on container */
+    .logo-container{
+      animation:fadeIn 900ms ease-in-out 200ms forwards, 
+                goldenGlow 3s ease-in-out 1.1s infinite;
     }
     .logo{
       width:100%;
       height:100%;
-      object-fit:cover;
-      transform-origin:center center;
-      transform:scale(1.3);
+      object-fit:contain; /* Changed from cover to contain */
       display:block;
+      filter:drop-shadow(0 4px 8px rgba(0,0,0,0.2)); /* Subtle shadow on logo itself */
     }
     /* Top header logo - responsive and unobtrusive */
     .top-header{
@@ -62,6 +67,7 @@
       width:auto;
       display:block;
       object-fit:contain;
+      filter:drop-shadow(0 2px 4px rgba(0,0,0,0.15));
     }
     @keyframes fadeIn{
       from{
@@ -73,24 +79,36 @@
         transform:translateY(0) scale(1);
       }
     }
+    @keyframes goldenGlow{
+      0%{
+        filter:drop-shadow(0 0 30px rgba(246, 108, 0, 0.6)) 
+               drop-shadow(0 0 60px rgba(246, 108, 0, 0.4));
+      }
+      50%{
+        filter:drop-shadow(0 0 50px rgba(246, 108, 0, 0.9)) 
+               drop-shadow(0 0 90px rgba(246, 108, 0, 0.6));
+      }
+      100%{
+        filter:drop-shadow(0 0 30px rgba(246, 108, 0, 0.6)) 
+               drop-shadow(0 0 60px rgba(246, 108, 0, 0.4));
+      }
+    }
     .visually-hidden{
       position:absolute;
       left:-9999px;
     }
   </style>
 </head>
-<body aria-label="MaurMaket splash - click to enter">
+<body onclick="window.location.href='home.html'" aria-label="MaurMaket splash - click to enter">
   <header class="top-header">
     <a href="home.html" aria-label="MaurMaket home">
-      <img src="https://i.ibb.co/Cp983n6v/Maur-Market-Logo.png" alt="MaurMaket logo" class="header-logo">
+      <img src="https://i.ibb.co/6R94Z9Jd/Maur-Market-Logo-zoomed.png" alt="MaurMaket logo" class="header-logo">
     </a>
   </header>
   <div class="splash">
-    <div class="logo-container">
-      <img src="https://i.ibb.co/Cp983n6v/Maur-Market-Logo.png" alt="MaurMaket logo" class="logo">
+    <div class="logo-container" onclick="window.location.href='home.html'">
+      <img src="https://i.ibb.co/6R94Z9Jd/Maur-Market-Logo-zoomed.png" alt="MaurMaket logo" class="logo">
     </div>
   </div>
-  
-  
 </body>
 </html>
