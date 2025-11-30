@@ -75,25 +75,7 @@
       border-radius:4px;
       cursor:pointer;
     }
-    /* Top header logo - responsive and unobtrusive */
-    .top-header{
-      position:absolute;
-      top:12px;
-      left:0;
-      right:0;
-      display:flex;
-      justify-content:center;
-      pointer-events:auto;
-      z-index:10;
-    }
-    .header-logo{
-      height:48px;
-      max-height:9vh;
-      max-width:220px;
-      width:auto;
-      display:block;
-      object-fit:contain;
-    }
+    /* Top header removed — splash uses centered bottom logo only */
     .visually-hidden{
       position:absolute;
       left:-9999px;
@@ -101,11 +83,7 @@
   </style>
 </head>
 <body aria-label="MaurMaket splash - click to enter">
-    <header class="top-header">
-    <a href="home.html" aria-label="MaurMaket home">
-      <img src="https://i.ibb.co/3y6cPdkn/Logo-Without-name.png" alt="MaurMaket logo" class="header-logo">
-    </a>
-  </header>
+  <!-- top header removed; only center splash logo remains -->
   <div class="splash">
     <div class="frame-square">
       <div class="logo-container" id="splash-logo">
