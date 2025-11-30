@@ -99,6 +99,7 @@
             backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.25);
             border-radius: 20px;
+            overflow: hidden;
             padding: 28px 18px;
             transition: all 0.35s ease;
             cursor: pointer;
@@ -124,6 +125,43 @@
             box-shadow: 0 12px 32px rgba(255, 255, 255, 0.12);
         }
 
+        /* Sheen / glass sweep effect (quick pass) */
+        :root { --category-sheen-color: rgba(255,255,255,0.55); }
+        .dark { --category-sheen-color: rgba(255,255,255,0.12); }
+
+        .category-card > * { position: relative; z-index: 3; }
+
+        .category-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 2; /* above background, below content */
+            pointer-events: none;
+            background: linear-gradient(120deg, transparent 0%, var(--category-sheen-color) 50%, transparent 100%);
+            transform: translateX(-120%) skewX(-15deg);
+            opacity: 0;
+            transition: opacity 120ms linear;
+            border-radius: inherit;
+        }
+
+        .category-card:hover::after,
+        .category-card:focus-within::after {
+            animation: sheen-pass 0.8s ease-out 1;
+            opacity: 1;
+        }
+
+        @keyframes sheen-pass {
+            0% {
+                transform: translateX(-120%) skewX(-15deg);
+                opacity: 0;
+            }
+            10% { opacity: 0.8; }
+            100% {
+                transform: translateX(120%) skewX(-15deg);
+                opacity: 0;
+            }
+        }
+
         .category-card span {
             font-size: 2.5rem;
             margin-bottom: 0.75rem;
@@ -136,121 +174,59 @@
             color: var(--text);
         }
 
-                /* Electronics loader (scoped to electronics card) - from Uiverse by Nawsome, scoped and adapted */
-                .electronics-loader {
-                        position: relative;
-                        width: 160px;
-                        height: 100px;
-                        display: inline-block;
-                        margin: 0 auto 0.75rem auto;
-                }
+        /* Modifier: full-panel image for a category (Electronics) */
+        .category-card.category-image-panel {
+            position: relative;
+            overflow: hidden;
+            padding: 0; /* image covers full panel so remove inner padding */
+            min-height: 160px;
+        }
 
-                .electronics-loader .loader {
-                        position: absolute;
-                        top: 50%;
-                        left: 50%;
-                        z-index: 10;
-                        width: 160px;
-                        height: 100px;
-                        margin-left: -80px;
-                        margin-top: -50px;
-                        border-radius: 5px;
-                        background: #1e3f57;
-                        animation: dot1_ 3s cubic-bezier(0.55,0.3,0.24,0.99) infinite;
-                }
+        .category-card.category-image-panel::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: var(--category-image, url('../assets/images/Electronics.jpg')) center/cover no-repeat;
+            z-index: 1;
+            /* default opacity (light theme) — lowered when not hovered */
+            opacity: var(--category-image-opacity, 0.85);
+            transform-origin: center;
+            transition: opacity 0.35s ease, transform 0.45s ease, filter 0.35s ease;
+        }
 
-                .electronics-loader .loader:nth-child(2) {
-                        z-index: 11;
-                        width: 150px;
-                        height: 90px;
-                        margin-top: -45px;
-                        margin-left: -75px;
-                        border-radius: 3px;
-                        background: #3c517d;
-                        animation-name: dot2_;
-                }
+        /* Hover/tap: increase image opacity and give subtle scale */
+        .category-card.category-image-panel:hover::before,
+        .category-card.category-image-panel:focus-within::before {
+            opacity: var(--category-image-opacity-hover, 0.98);
+            transform: scale(1.02);
+        }
 
-                .electronics-loader .loader:nth-child(3) {
-                        z-index: 12;
-                        width: 40px;
-                        height: 20px;
-                        margin-top: 50px;
-                        margin-left: -20px;
-                        border-radius: 0 0 5px 5px;
-                        background: #6bb2cd;
-                        animation-name: dot3_;
-                }
+        /* Dark theme: use lower base opacity and slightly lower hover target */
+        .dark .category-card.category-image-panel::before {
+            --category-image-opacity: 0.5;
+            --category-image-opacity-hover: 0.85;
+        }
 
-                @keyframes dot1_ {
-                    3%,97% {
-                        width: 160px;
-                        height: 100px;
-                        margin-top: -50px;
-                        margin-left: -80px;
-                    }
+        .category-card.category-image-panel > * {
+            position: relative;
+            z-index: 2;
+        }
 
-                    30%,36% {
-                        width: 80px;
-                        height: 120px;
-                        margin-top: -60px;
-                        margin-left: -40px;
-                    }
+        .category-card.category-image-panel p {
+            color: var(--text);
+            padding: 18px;
+        }
 
-                    63%,69% {
-                        width: 40px;
-                        height: 80px;
-                        margin-top: -40px;
-                        margin-left: -20px;
-                    }
-                }
-
-                @keyframes dot2_ {
-                    3%,97% {
-                        height: 90px;
-                        width: 150px;
-                        margin-left: -75px;
-                        margin-top: -45px;
-                    }
-
-                    30%,36% {
-                        width: 70px;
-                        height: 96px;
-                        margin-left: -35px;
-                        margin-top: -48px;
-                    }
-
-                    63%,69% {
-                        width: 32px;
-                        height: 60px;
-                        margin-left: -16px;
-                        margin-top: -30px;
-                    }
-                }
-
-                @keyframes dot3_ {
-                    3%,97% {
-                        height: 20px;
-                        width: 40px;
-                        margin-left: -20px;
-                        margin-top: 50px;
-                    }
-
-                    30%,36% {
-                        width: 8px;
-                        height: 8px;
-                        margin-left: -5px;
-                        margin-top: 49px;
-                        border-radius: 8px;
-                    }
-
-                    63%,69% {
-                        width: 16px;
-                        height: 4px;
-                        margin-left: -8px;
-                        margin-top: -37px;
-                        border-radius: 10px;
-                    }
-                }
+        /* Electronics image inside category card */
+        .category-card img.category-image {
+            display: block;
+            max-width: 120px;
+            width: 60%;
+            height: auto;
+            margin-bottom: 0.75rem;
+            border-radius: 8px;
+            object-fit: cover;
+        }
 
         /* Footer Border: Single color accent line (Caribbean Teal) */
         .footer-border {
@@ -453,13 +429,8 @@
                     <span>💅</span>
                     <p>Beauty</p>
                 </div>
-                <!-- Electronics (animated loader) -->
-                <div class="category-card">
-                    <div class="electronics-loader" aria-hidden="true">
-                        <div class="loader"></div>
-                        <div class="loader"></div>
-                        <div class="loader"></div>
-                    </div>
+                <!-- Electronics (full-panel image) -->
+                <div class="category-card category-image-panel" aria-label="Electronics" data-image="../assets/images/Electronics.jpg">
                     <p>Electronics</p>
                 </div>
                 <!-- Home Tools -->
@@ -544,6 +515,18 @@
             </div>
         </section>
     </main>
+
+    <script>
+        // Apply category images from data-image attributes to CSS variable for ::before background
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.category-card[data-image]').forEach(el => {
+                const img = el.getAttribute('data-image');
+                if (img) {
+                    el.style.setProperty('--category-image', `url('${img}')`);
+                }
+            });
+        });
+    </script>
 
     <!-- F. FOOTER (Responsive colors) -->
     <footer class="mt-20 px-6 pb-6">
