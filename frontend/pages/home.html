@@ -271,51 +271,15 @@
     <!-- JAVASCRIPT REQUIREMENTS -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // Smooth scroll to top of page when logo is clicked
             const logoLink = document.getElementById('logo-link');
-            if (logoLink) {
-                logoLink.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Smooth scroll to top of page when logo is clicked
+            logoLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
                 });
-            }
-
-            // Theme toggle: read stored preference or system preference
-            const themeBtn = document.getElementById('theme-btn');
-            const htmlEl = document.documentElement;
-            const stored = localStorage.getItem('maur_theme');
-            if (stored) htmlEl.setAttribute('data-theme', stored);
-            else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) htmlEl.setAttribute('data-theme','dark');
-
-            if (themeBtn) {
-                themeBtn.addEventListener('click', () => {
-                    const current = htmlEl.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-                    const next = current === 'dark' ? 'light' : 'dark';
-                    htmlEl.setAttribute('data-theme', next);
-                    localStorage.setItem('maur_theme', next);
-                });
-            }
-
-            // Page-load reveal for primary blocks
-            const fades = document.querySelectorAll('.fade-in-section');
-            fades.forEach((el, i) => {
-                // stagger entrance slightly
-                setTimeout(() => el.classList.add('in-view'), i * 120);
-            });
-
-            // Scroll-triggered reveals for items not yet visible
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        entry.target.classList.add('in-view');
-                        observer.unobserve(entry.target);
-                    }
-                });
-            }, {threshold: 0.12});
-
-            document.querySelectorAll('.category-card, .product-card').forEach(node => {
-                node.classList.add('fade-in-section');
-                observer.observe(node);
             });
         });
     </script>
