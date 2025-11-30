@@ -10,7 +10,7 @@
     <style>
         /* A. Color Palette Definitions (Tropical Haiti - Light & Dark themes) */
         :root {
-            /* Tropical Palette - Light */
+            /* Tropical Palette - Vibrant & Consistent */
             --mango-orange: #FFA726; 
             --caribbean-teal: #26C6DA;
             --papaya-coral: #FF7043;
@@ -19,18 +19,32 @@
             --hibiscus-pink: #EC407A;
             --deep-sky-blue: #42A5F5;
 
-            /* Base Colors - Light Theme */
+            /* Light Theme Colors */
             --bg: #fefefe;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: rgba(255, 202, 40, 0.08);
             --text: #1f2937;
-            --muted: #6b7280;
-            --color-primary: #104084; /* Deep Blue, used for strong text */
+            --text-secondary: #6b7280;
+            --text-muted: #9ca3af;
+            --card-bg: #ffffff;
+            --card-border: transparent;
+            --placeholder-bg: #f3f4f6;
+            --placeholder-text: #9ca3af;
+            --color-primary: #104084; /* Deep Blue */
         }
 
-        /* Dark theme overrides */
+        /* Dark Theme Overrides */
         .dark {
             --bg: #0b1220; /* deep navy */
+            --bg-secondary: #1a2a3f; /* slightly lighter than main */
+            --bg-tertiary: rgba(255, 202, 40, 0.06);
             --text: #e6eef8; /* very light */
-            --muted: #9aa6b2;
+            --text-secondary: #b8c5d6;
+            --text-muted: #7a8794;
+            --card-bg: #1a2a3f;
+            --card-border: rgba(255, 255, 255, 0.06);
+            --placeholder-bg: #2a3a50;
+            --placeholder-text: #7a8794;
             --color-primary: #c7e3ff;
         }
 
@@ -87,8 +101,8 @@
 
 <body class="min-h-screen flex flex-col antialiased">
 
-    <!-- A. HEADER (Revised button and logo color) -->
-    <header class="bg-white sticky top-0 z-10 soft-shadow">
+    <!-- A. HEADER (Responsive light/dark) -->
+    <header class="sticky top-0 z-10 soft-shadow" style="background-color: var(--bg-secondary);">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
             <h1 class="text-2xl font-extrabold" id="logo-link">
                 <!-- Logo text now Mango Orange -->
@@ -116,10 +130,10 @@
     <!-- B. HERO SECTION (Revised gradient and button colors) -->
     <section class="hero-gradient py-20 sm:py-24 lg:py-32 rounded-b-[40px] mb-16 soft-shadow">
         <div class="max-w-4xl mx-auto px-4 text-center">
-            <h2 class="text-6xl sm:text-7xl font-extrabold text-[var(--color-primary)] mb-4 leading-tight">
+            <h2 class="text-6xl sm:text-7xl font-extrabold mb-4 leading-tight" style="color: var(--text);">
                 Welcome to MaurMaket
             </h2>
-            <p class="text-xl sm:text-2xl text-gray-800 mb-10 font-medium max-w-2xl mx-auto">
+            <p class="text-xl sm:text-2xl mb-10 font-medium max-w-2xl mx-auto" style="color: var(--text-secondary);">
                 Buy and sell locally with confidence. The trusted marketplace built for Haiti.
             </p>
             <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6">
@@ -139,7 +153,7 @@
 
         <!-- C. CATEGORIES GRID (Revised card colors and text contrast) -->
         <section class="mb-16">
-            <h3 class="text-3xl font-bold text-gray-800 mb-8 text-center sm:text-left">Shop by Popular Categories</h3>
+            <h3 class="text-3xl font-bold mb-8 text-center sm:text-left" style="color: var(--text);">Shop by Popular Categories</h3>
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
                 <!-- Food - Sunny Yellow (Light background -> Dark text) -->
                 <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--sunny-yellow);">
@@ -176,56 +190,56 @@
 
         <!-- D. FEATURED LISTINGS (Revised borders, price pill, seller tag) -->
         <section class="mb-16">
-            <h3 class="text-3xl font-bold text-gray-800 mb-8 text-center sm:text-left">Featured Today</h3>
+            <h3 class="text-3xl font-bold mb-8 text-center sm:text-left" style="color: var(--text);">Featured Today</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                 
                 <!-- Featured Product Card 1 - Border Mango Orange -->
-                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--mango-orange)]">
-                    <div class="w-full h-40 bg-gray-100 rounded-lg mb-4 flex items-center justify-center text-gray-500 font-medium">Placeholder Image</div>
+                <div class="rounded-xl soft-shadow p-5 border-t-4 border-[var(--mango-orange)]" style="background-color: var(--card-bg); border: 1px solid var(--card-border);">
+                    <div class="w-full h-40 rounded-lg mb-4 flex items-center justify-center font-medium" style="background-color: var(--placeholder-bg); color: var(--placeholder-text);">Placeholder Image</div>
                     <div class="flex justify-between items-start mb-2">
-                        <h4 class="text-xl font-semibold text-gray-800">Designer Backpack</h4>
+                        <h4 class="text-xl font-semibold" style="color: var(--text);">Designer Backpack</h4>
                         <!-- Price Pill now Mango Orange -->
                         <div class="bg-[var(--mango-orange)] text-white text-sm font-bold px-3 py-1 rounded-full soft-shadow">
                             7,500 HTG
                         </div>
                     </div>
-                    <p class="text-sm text-gray-600 mb-3">Durable canvas, perfect for school or work.</p>
+                    <p class="text-sm mb-3" style="color: var(--text-secondary);">Durable canvas, perfect for school or work.</p>
                     <!-- Seller Tag now Caribbean Teal at 10% opacity -->
-                    <span class="bg-[var(--caribbean-teal)] bg-opacity-10 text-[var(--caribbean-teal)] text-xs font-medium px-3 py-1 rounded-full">
+                    <span class="text-xs font-medium px-3 py-1 rounded-full" style="background-color: rgba(38, 198, 218, 0.12); color: var(--caribbean-teal);">
                         <i class="opacity-70">📍</i> Local Seller
                     </span>
                 </div>
 
                 <!-- Featured Product Card 2 - Border Deep Sky Blue -->
-                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--deep-sky-blue)]">
-                    <div class="w-full h-40 bg-gray-100 rounded-lg mb-4 flex items-center justify-center text-gray-500 font-medium">Placeholder Image</div>
+                <div class="rounded-xl soft-shadow p-5 border-t-4 border-[var(--deep-sky-blue)]" style="background-color: var(--card-bg); border: 1px solid var(--card-border);">
+                    <div class="w-full h-40 rounded-lg mb-4 flex items-center justify-center font-medium" style="background-color: var(--placeholder-bg); color: var(--placeholder-text);">Placeholder Image</div>
                     <div class="flex justify-between items-start mb-2">
-                        <h4 class="text-xl font-semibold text-gray-800">Fresh Mango Boxes</h4>
+                        <h4 class="text-xl font-semibold" style="color: var(--text);">Fresh Mango Boxes</h4>
                         <!-- Price Pill now Mango Orange -->
                         <div class="bg-[var(--mango-orange)] text-white text-sm font-bold px-3 py-1 rounded-full soft-shadow">
                             1,200 HTG
                         </div>
                     </div>
-                    <p class="text-sm text-gray-600 mb-3">Kent variety, shipped same-day from farm.</p>
+                    <p class="text-sm mb-3" style="color: var(--text-secondary);">Kent variety, shipped same-day from farm.</p>
                     <!-- Seller Tag now Caribbean Teal at 10% opacity -->
-                    <span class="bg-[var(--caribbean-teal)] bg-opacity-10 text-[var(--caribbean-teal)] text-xs font-medium px-3 py-1 rounded-full">
+                    <span class="text-xs font-medium px-3 py-1 rounded-full" style="background-color: rgba(38, 198, 218, 0.12); color: var(--caribbean-teal);">
                         <i class="opacity-70">📍</i> Local Seller
                     </span>
                 </div>
 
                 <!-- Featured Product Card 3 - Border Hibiscus Pink -->
-                <div class="bg-white rounded-xl soft-shadow p-5 border-t-4 border-[var(--hibiscus-pink)]">
-                    <div class="w-full h-40 bg-gray-100 rounded-lg mb-4 flex items-center justify-center text-gray-500 font-medium">Placeholder Image</div>
+                <div class="rounded-xl soft-shadow p-5 border-t-4 border-[var(--hibiscus-pink)]" style="background-color: var(--card-bg); border: 1px solid var(--card-border);">
+                    <div class="w-full h-40 rounded-lg mb-4 flex items-center justify-center font-medium" style="background-color: var(--placeholder-bg); color: var(--placeholder-text);">Placeholder Image</div>
                     <div class="flex justify-between items-start mb-2">
-                        <h4 class="text-xl font-semibold text-gray-800">Smart Home Security Kit</h4>
+                        <h4 class="text-xl font-semibold" style="color: var(--text);">Smart Home Security Kit</h4>
                         <!-- Price Pill now Mango Orange -->
                         <div class="bg-[var(--mango-orange)] text-white text-sm font-bold px-3 py-1 rounded-full soft-shadow">
                             19,000 HTG
                         </div>
                     </div>
-                    <p class="text-sm text-gray-600 mb-3">Wireless setup, perfect for securing your home.</p>
+                    <p class="text-sm mb-3" style="color: var(--text-secondary);">Wireless setup, perfect for securing your home.</p>
                     <!-- Seller Tag now Caribbean Teal at 10% opacity -->
-                    <span class="bg-[var(--caribbean-teal)] bg-opacity-10 text-[var(--caribbean-teal)] text-xs font-medium px-3 py-1 rounded-full">
+                    <span class="text-xs font-medium px-3 py-1 rounded-full" style="background-color: rgba(38, 198, 218, 0.12); color: var(--caribbean-teal);">
                         <i class="opacity-70">📍</i> Local Seller
                     </span>
                 </div>
@@ -233,21 +247,20 @@
             </div>
         </section>
 
-        <!-- E. ABOUT SECTION (Revised background color) -->
-        <!-- Background: Very light tint of Sunny Yellow (#FFCA28) at ~10% opacity -->
-        <section class="mt-16 py-16 text-center rounded-2xl soft-shadow" style="background-color: rgba(255, 202, 40, 0.1);">
+        <!-- E. ABOUT SECTION (Responsive light/dark) -->
+        <section class="mt-16 py-16 text-center rounded-2xl soft-shadow" style="background-color: var(--bg-tertiary);">
             <div class="max-w-3xl mx-auto px-4">
-                <h3 class="text-3xl font-extrabold text-[var(--color-primary)] mb-4">Our Vision</h3>
-                <p class="text-xl text-gray-700 leading-relaxed">
+                <h3 class="text-3xl font-extrabold mb-4" style="color: var(--color-primary);">Our Vision</h3>
+                <p class="text-xl leading-relaxed" style="color: var(--text);">
                     MaurMaket is building a simple, safe, and vibrant space for Haitians to buy and sell locally. Made for our culture, crafted with care to elevate commerce through trust and accessibility.
                 </p>
             </div>
         </section>
     </main>
 
-    <!-- F. FOOTER (Revised border) -->
+    <!-- F. FOOTER (Responsive colors) -->
     <footer class="mt-20 px-6 pb-6">
-        <div class="footer-border max-w-7xl mx-auto text-center text-sm text-gray-600">
+        <div class="footer-border max-w-7xl mx-auto text-center text-sm" style="color: var(--text-secondary);">
             MaurMaket &copy; 2025 — Built for local commerce in Haiti. A Maurinex Project.
         </div>
     </footer>
