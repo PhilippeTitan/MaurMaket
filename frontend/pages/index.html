@@ -43,6 +43,22 @@
       transform-origin:center center;
     }
 
+    /* Exit animation applied to the logo container on click */
+    .logo-exit {
+      animation: logoExit 1.5s forwards ease-in-out;
+    }
+
+    @keyframes logoExit {
+      0% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      100% {
+        transform: scale(2.2);
+        opacity: 0;
+      }
+    }
+
     /* Square frame that sits around the circular logo */
     .frame-square{
       width:256px;
@@ -84,18 +100,35 @@
     }
   </style>
 </head>
-<body onclick="window.location.href='home.html'" aria-label="MaurMaket splash - click to enter">
+<body aria-label="MaurMaket splash - click to enter">
   <header class="top-header">
     <a href="home.html" aria-label="MaurMaket home">
       <img src="../assets/images/Logo-Without-name.png" alt="MaurMaket logo" class="header-logo">
     </a>
   </header>
   <div class="splash">
-    <div class="frame-square" onclick="window.location.href='home.html'">
-      <div class="logo-container">
+    <div class="frame-square">
+      <div class="logo-container" id="splash-logo">
         <img src="../assets/images/Logo-Without-name.png" alt="MaurMaket logo" class="logo">
       </div>
     </div>
   </div>
+  <script>
+    const logo = document.getElementById("splash-logo");
+    if (logo) {
+      logo.style.cursor = 'pointer';
+      logo.addEventListener("click", () => {
+        // disable further clicks
+        logo.style.pointerEvents = 'none';
+        // add exit animation class
+        logo.classList.add("logo-exit");
+
+        setTimeout(() => {
+          // navigate after animation completes
+          window.location.href = "home.html";
+        }, 1500);
+      });
+    }
+  </script>
 </body>
 </html>
