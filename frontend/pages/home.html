@@ -393,15 +393,10 @@
                 }
             }
 
-            // initialize theme from localStorage or system preference
+            // initialize theme from localStorage only (no automatic overrides)
             const saved = localStorage.getItem('theme');
-            // Force light theme as default to reset any previous dark theme persistence
-            if(saved === 'dark'){
-                applyTheme('dark');
-            } else {
-                // Default to light theme
-                applyTheme('light');
-                localStorage.setItem('theme', 'light');
+            if (saved) {
+                applyTheme(saved);
             }
 
             if(themeCheckbox){
