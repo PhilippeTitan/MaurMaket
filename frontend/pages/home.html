@@ -65,10 +65,192 @@
             box-shadow: 0 8px 18px rgba(0, 0, 0, 0.15); /* Slightly bolder shadow on hover */
         }
 
-        /* Custom Gradient for Hero Section (Mango Orange → Sunny Yellow) */
+        /* Custom Hero Section with background image and text overlay */
         .hero-gradient {
-            background: linear-gradient(135deg, var(--mango-orange) 0%, var(--sunny-yellow) 100%);
+            position: relative;
+            background: transparent;
         }
+        
+        .hero-gradient::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('../assets/images/Sunrise (home).jpg') center/cover no-repeat;
+            opacity: 0.9;
+            z-index: 1;
+        }
+        
+        .hero-gradient > * {
+            position: relative;
+            z-index: 2;
+        }
+
+        /* Dark theme: reduce image opacity */
+        .dark .hero-gradient::before {
+            opacity: 0.5;
+        }
+
+        /* Glassmorphism Category Cards */
+        .category-card {
+            background: rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 20px;
+            padding: 28px 18px;
+            transition: all 0.35s ease;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .dark .category-card {
+            background: rgba(0, 0, 0, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .category-card:hover {
+            transform: scale(1.03);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+        }
+
+        .dark .category-card:hover {
+            box-shadow: 0 12px 32px rgba(255, 255, 255, 0.12);
+        }
+
+        .category-card span {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+            display: block;
+        }
+
+        .category-card p {
+            font-weight: 600;
+            font-size: 1.05rem;
+            color: var(--text);
+        }
+
+                /* Electronics loader (scoped to electronics card) - from Uiverse by Nawsome, scoped and adapted */
+                .electronics-loader {
+                        position: relative;
+                        width: 160px;
+                        height: 100px;
+                        display: inline-block;
+                        margin: 0 auto 0.75rem auto;
+                }
+
+                .electronics-loader .loader {
+                        position: absolute;
+                        top: 50%;
+                        left: 50%;
+                        z-index: 10;
+                        width: 160px;
+                        height: 100px;
+                        margin-left: -80px;
+                        margin-top: -50px;
+                        border-radius: 5px;
+                        background: #1e3f57;
+                        animation: dot1_ 3s cubic-bezier(0.55,0.3,0.24,0.99) infinite;
+                }
+
+                .electronics-loader .loader:nth-child(2) {
+                        z-index: 11;
+                        width: 150px;
+                        height: 90px;
+                        margin-top: -45px;
+                        margin-left: -75px;
+                        border-radius: 3px;
+                        background: #3c517d;
+                        animation-name: dot2_;
+                }
+
+                .electronics-loader .loader:nth-child(3) {
+                        z-index: 12;
+                        width: 40px;
+                        height: 20px;
+                        margin-top: 50px;
+                        margin-left: -20px;
+                        border-radius: 0 0 5px 5px;
+                        background: #6bb2cd;
+                        animation-name: dot3_;
+                }
+
+                @keyframes dot1_ {
+                    3%,97% {
+                        width: 160px;
+                        height: 100px;
+                        margin-top: -50px;
+                        margin-left: -80px;
+                    }
+
+                    30%,36% {
+                        width: 80px;
+                        height: 120px;
+                        margin-top: -60px;
+                        margin-left: -40px;
+                    }
+
+                    63%,69% {
+                        width: 40px;
+                        height: 80px;
+                        margin-top: -40px;
+                        margin-left: -20px;
+                    }
+                }
+
+                @keyframes dot2_ {
+                    3%,97% {
+                        height: 90px;
+                        width: 150px;
+                        margin-left: -75px;
+                        margin-top: -45px;
+                    }
+
+                    30%,36% {
+                        width: 70px;
+                        height: 96px;
+                        margin-left: -35px;
+                        margin-top: -48px;
+                    }
+
+                    63%,69% {
+                        width: 32px;
+                        height: 60px;
+                        margin-left: -16px;
+                        margin-top: -30px;
+                    }
+                }
+
+                @keyframes dot3_ {
+                    3%,97% {
+                        height: 20px;
+                        width: 40px;
+                        margin-left: -20px;
+                        margin-top: 50px;
+                    }
+
+                    30%,36% {
+                        width: 8px;
+                        height: 8px;
+                        margin-left: -5px;
+                        margin-top: 49px;
+                        border-radius: 8px;
+                    }
+
+                    63%,69% {
+                        width: 16px;
+                        height: 4px;
+                        margin-left: -8px;
+                        margin-top: -37px;
+                        border-radius: 10px;
+                    }
+                }
 
         /* Footer Border: Single color accent line (Caribbean Teal) */
         .footer-border {
@@ -252,39 +434,43 @@
 
     <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
-        <!-- C. CATEGORIES GRID (Revised card colors and text contrast) -->
+        <!-- C. CATEGORIES GRID (Modern Glass Panel redesign) -->
         <section class="mb-16">
             <h3 class="text-3xl font-bold mb-8 text-center sm:text-left" style="color: var(--text);">Shop by Popular Categories</h3>
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
-                <!-- Food - Sunny Yellow (Light background -> Dark text) -->
-                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--sunny-yellow);">
-                    <span class="text-5xl mb-2 block dark-text">🍜</span>
-                    <p class="font-bold dark-text">Food</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Food -->
+                <div class="category-card">
+                    <span>🍜</span>
+                    <p>Food</p>
                 </div>
-                <!-- Handmade - Papaya Coral (Medium background -> Dark text) -->
-                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--papaya-coral);">
-                    <span class="text-5xl mb-2 block dark-text">🧵</span>
-                    <p class="font-bold dark-text">Handmade</p>
+                <!-- Handmade -->
+                <div class="category-card">
+                    <span>🧵</span>
+                    <p>Handmade</p>
                 </div>
-                <!-- Beauty - Hibiscus Pink (Dark background -> White text) -->
-                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--hibiscus-pink);">
-                    <span class="text-5xl mb-2 block light-text">💅</span>
-                    <p class="font-bold light-text">Beauty</p>
+                <!-- Beauty -->
+                <div class="category-card">
+                    <span>💅</span>
+                    <p>Beauty</p>
                 </div>
-                <!-- Electronics - Deep Sky Blue (Dark background -> White text) -->
-                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--deep-sky-blue);">
-                    <span class="text-5xl mb-2 block light-text">💡</span>
-                    <p class="font-bold light-text">Electronics</p>
+                <!-- Electronics (animated loader) -->
+                <div class="category-card">
+                    <div class="electronics-loader" aria-hidden="true">
+                        <div class="loader"></div>
+                        <div class="loader"></div>
+                        <div class="loader"></div>
+                    </div>
+                    <p>Electronics</p>
                 </div>
-                <!-- Home Tools - Caribbean Teal (Dark background -> White text) -->
-                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--caribbean-teal);">
-                    <span class="text-5xl mb-2 block light-text">🔨</span>
-                    <p class="font-bold light-text">Home Tools</p>
+                <!-- Home Tools -->
+                <div class="category-card">
+                    <span>🔨</span>
+                    <p>Home Tools</p>
                 </div>
-                <!-- Apparel - Mango Orange (Medium background -> White text) -->
-                <div class="p-6 rounded-2xl soft-shadow transition duration-300 transform hover:scale-[1.03] cursor-pointer text-center" style="background-color: var(--mango-orange);">
-                    <span class="text-5xl mb-2 block light-text">👚</span>
-                    <p class="font-bold light-text">Apparel</p>
+                <!-- Apparel -->
+                <div class="category-card">
+                    <span>👚</span>
+                    <p>Apparel</p>
                 </div>
             </div>
         </section>

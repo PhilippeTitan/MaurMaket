@@ -92,6 +92,9 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
+        /* Semantic muted text for theme-aware greys */
+        .muted-text { color: var(--text-secondary); }
+
         /* Floating Toggle Container - Sticks to right side */
         .floating-toggle-panel {
             position: fixed;
@@ -486,32 +489,32 @@
     <!-- PRODUCT DETAIL MODAL -->
     <div id="product-modal" class="modal-overlay">
         <div class="modal-content bg-white p-6 md:p-10 rounded-2xl soft-shadow overflow-y-auto transform transition duration-300 scale-90 opacity-0">
-            <button id="close-modal-btn" class="modal-close absolute top-4 right-4 text-gray-500 text-2xl hover:text-red-500 transition duration-150">✕</button>
+            <button id="close-modal-btn" class="modal-close absolute top-4 right-4 muted-text text-2xl hover:text-red-500 transition duration-150">✕</button>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <!-- Media Area -->
                 <div>
                     <!-- Support multiple media items side-by-side on md+ screens -->
                     <div id="modal-media-container" class="w-full mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="h-72 bg-gray-200 rounded-xl flex items-center justify-center text-gray-600 text-6xl overflow-hidden" id="modal-media-0">🖼️</div>
-                        <div class="h-72 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500 text-6xl overflow-hidden" id="modal-media-1">🎥</div>
+                        <div class="h-72 bg-gray-200 rounded-xl flex items-center justify-center muted-text text-6xl overflow-hidden" id="modal-media-0">🖼️</div>
+                        <div class="h-72 bg-gray-100 rounded-xl flex items-center justify-center muted-text text-6xl overflow-hidden" id="modal-media-1">🎥</div>
                     </div>
-                    <p class="text-sm font-medium text-gray-500 mt-2">Seller: <span id="modal-seller-name" class="text-[var(--color-primary)] font-semibold"></span></p>
-                    <p class="text-sm text-gray-500">Location: <span id="modal-seller-location"></span></p>
+                    <p class="text-sm font-medium muted-text mt-2">Seller: <span id="modal-seller-name" class="text-[var(--color-primary)] font-semibold"></span></p>
+                    <p class="text-sm muted-text">Location: <span id="modal-seller-location"></span></p>
                     <p class="text-sm font-bold text-yellow-500 mt-1" id="modal-seller-rating">⭐⭐⭐⭐⭐</p>
                 </div>
 
                 <!-- Info Area -->
                 <div>
-                    <h2 id="modal-product-name" class="text-3xl font-extrabold text-gray-800 mb-2">Product Name</h2>
+                    <h2 id="modal-product-name" class="text-3xl font-extrabold text-[var(--text)] mb-2">Product Name</h2>
                     
                     <p id="modal-price" class="modal-price"></p>
                     
                     <span id="modal-category-badge" class="modal-category" style="background-color: var(--caribbean-teal);">Category</span>
                     
                     <div class="modal-description mt-6 p-4 bg-[var(--bg-cream)] rounded-xl border border-gray-100">
-                        <h3 class="text-lg font-semibold text-gray-800 mb-2">Description</h3>
-                        <p id="modal-description" class="text-gray-700 leading-relaxed"></p>
+                        <h3 class="text-lg font-semibold text-[var(--text)] mb-2">Description</h3>
+                        <p id="modal-description" class="muted-text leading-relaxed"></p>
                     </div>
 
                     <button class="contact-seller-btn w-full text-white text-lg font-bold py-3 rounded-xl soft-shadow transition duration-200 hover:opacity-90">
@@ -946,7 +949,7 @@
 
             currentSetIndex = 0;
             if (filteredSets.length === 0) {
-                carouselInner.innerHTML = '<p class="text-xl text-gray-500 p-8 text-center w-full">No products found in this category.</p>';
+                carouselInner.innerHTML = '<p class="text-xl muted-text p-8 text-center w-full">No products found in this category.</p>';
                 clearTimers();
                 allFinished = true;
                 updateControls();
@@ -1022,13 +1025,13 @@
             } else {
                 // Fallback behavior: show a mock icon and, if product.type is 'video', show a video placeholder next to an image placeholder
                 if (product.type === 'video') {
-                    mediaSlot0.innerHTML = `<span class="text-9xl text-gray-500">${product.mockIcon}</span>`;
-                    mediaSlot1.innerHTML = `<span class="text-6xl text-gray-400">📷</span>`;
+                    mediaSlot0.innerHTML = `<span class="text-9xl muted-text">${product.mockIcon}</span>`;
+                    mediaSlot1.innerHTML = `<span class="text-6xl muted-text">📷</span>`;
                 } else if (product.type === 'image') {
-                    mediaSlot0.innerHTML = `<span class="text-9xl text-gray-500">${product.mockIcon}</span>`;
-                    mediaSlot1.innerHTML = `<span class="text-6xl text-gray-400">🎞️</span>`;
+                    mediaSlot0.innerHTML = `<span class="text-9xl muted-text">${product.mockIcon}</span>`;
+                    mediaSlot1.innerHTML = `<span class="text-6xl muted-text">🎞️</span>`;
                 } else {
-                    mediaSlot0.innerHTML = `<span class="text-9xl text-gray-500">${product.mockIcon}</span>`;
+                    mediaSlot0.innerHTML = `<span class="text-9xl muted-text">${product.mockIcon}</span>`;
                     mediaSlot1.innerHTML = '';
                 }
             }
