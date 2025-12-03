@@ -40,7 +40,7 @@
             display: flex;
             flex-direction: row;
             flex-wrap: wrap;
-            gap: 84px;
+            gap: 64px;
             justify-content: center;
             align-items: start;
             padding: 20px 16px;
@@ -239,6 +239,24 @@
             transition: all 450ms cubic-bezier(0.4, 0, 0.2, 1);
             width: 4rem;
         }
+
+        /* Small arrow controls that sit above/below the theme toggle */
+        .control-arrow {
+            width: 2.2rem;
+            height: 2.2rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.6rem;
+            margin: 6px 0;
+            background: var(--text);
+            color: var(--bg);
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+            transition: transform 180ms ease, background 180ms ease;
+        }
+        .control-arrow:hover { transform: translateY(-3px); }
 
         /* Panel background intentionally inverted relative to page theme */
         .toggle-article {
@@ -614,11 +632,8 @@
             </div>
         </div>
 
-        <!-- Playback Controls - Redesigned -->
+        <!-- Playback Controls (kept container for fade-in behaviour; Next button removed) -->
         <div id="playback-controls" class="fixed bottom-8 left-1/2 transform -translate-x-1/2 flex gap-4 opacity-0 pointer-events-none transition-opacity 300ms ease">
-            <button id="next-btn" class="control-button bg-[var(--caribbean-teal)]">
-                Next →
-            </button>
         </div>
 
         <!-- Debug badge for key detection (temporary) -->
@@ -636,6 +651,7 @@
     <!-- Floating Toggle Panel - Sticky Right Side -->
     <div class="floating-toggle-panel">
         <div class="toggle-panel-content">
+            <button id="arrow-up" class="control-arrow" title="Previous set">▲</button>
             <article class="toggle-article">
                 <label for="theme-toggle" class="toggle-label">
                     <input class="hidden peer/expand" type="checkbox" id="theme-toggle" />
@@ -646,6 +662,7 @@
                     </svg>
                 </label>
             </article>
+            <button id="arrow-down" class="control-arrow" title="Next set">▼</button>
         </div>
     </div>
 
@@ -833,6 +850,12 @@
                 carouselInner.appendChild(card);
             });
 
+            // Reset any progress bars created for grid mode
+            document.querySelectorAll('.progress-fill').forEach(bar => {
+                bar.style.transition = 'none';
+                bar.style.width = '0%';
+            });
+
             // Update pagination display
             const itemsPerPage = 12; // 4 columns × 3 rows
             const totalPages = Math.ceil(products.length / itemsPerPage);
@@ -922,7 +945,6 @@
         const carouselInner = document.getElementById('carousel-inner');
         const categoryFilter = document.getElementById('category-filter');
         const pauseIcon = document.getElementById('pause-icon');
-        const nextBtn = document.getElementById('next-btn');
         const playbackControls = document.getElementById('playback-controls');
         const gridPagination = document.getElementById('grid-pagination');
         const currentPageSpan = document.getElementById('current-page');
@@ -945,7 +967,10 @@
         }
 
         function clearTimers() {
-            if (currentTimeout) clearTimeout(currentTimeout);
+            if (currentTimeout) {
+                clearTimeout(currentTimeout);
+                currentTimeout = null;
+            }
         }
 
         function pausePlayback() {
@@ -1011,21 +1036,27 @@
 
         function updateControls() {
             const setLength = filteredSets[currentSetIndex]?.length || 0;
-
             // Show/hide controls based on layout mode
+            const arrowUpEl = document.getElementById('arrow-up');
+            const arrowDownEl = document.getElementById('arrow-down');
+
             if (layoutMode === 'grid') {
                 playbackControls.classList.add('hidden');
                 gridPagination.classList.remove('hidden');
+                if (arrowUpEl) arrowUpEl.style.display = 'none';
+                if (arrowDownEl) arrowDownEl.style.display = 'none';
             } else {
                 gridPagination.classList.add('hidden');
-                
+                if (arrowUpEl) arrowUpEl.style.display = 'inline-flex';
+                if (arrowDownEl) arrowDownEl.style.display = 'inline-flex';
+
                 if (allFinished) {
-                    // Fade in Next button at the end
+                    // Fade in Next-area (container) at the end
                     playbackControls.classList.remove('hidden');
                     playbackControls.style.opacity = '1';
                     playbackControls.style.pointerEvents = 'auto';
                 } else {
-                    // Fade out Next button during playback
+                    // Fade out Next-area during playback
                     playbackControls.style.opacity = '0';
                     playbackControls.style.pointerEvents = 'none';
                 }
@@ -1148,6 +1179,12 @@
                     // Attach sound toggle listener
                     card.querySelector('.sound-toggle').addEventListener('click', toggleMute);
                 });
+
+                // Ensure all progress bars start from 0 with no transition (prevents cached/locked transitions)
+                document.querySelectorAll('.progress-fill').forEach(bar => {
+                    bar.style.transition = 'none';
+                    bar.style.width = '0%';
+                });
                 
                 // Attach click listeners for product card
                 document.querySelectorAll('.product-card').forEach(card => {
@@ -1215,25 +1252,31 @@
 
             // 3. Start Playback Timer (Simulation)
             const progressBar = document.getElementById(`progress-${product.id}`);
-            progressBar.style.width = '0%';
-            progressBar.style.transition = 'width 0s linear'; // Reset transition instantly
-            
-            // Start fill animation
-            requestAnimationFrame(() => {
+            if (progressBar) {
+                // Reset any inline transition/width from previous cycles
+                progressBar.style.transition = 'none';
+                progressBar.style.width = '0%';
+                // force reflow so the '0%' state takes effect
+                void progressBar.offsetWidth;
+
                 if (isPlaying) {
+                    // animate to 100% over the configured duration
                     progressBar.style.transition = `width ${PLAY_DURATION_MS / 1000}s linear`;
-                    progressBar.style.width = '100%';
+                    // start the animation on the next frame for reliability
+                    requestAnimationFrame(() => { progressBar.style.width = '100%'; });
                     // record start time for pause/resume
                     playbackStart = Date.now();
                     remainingMs = PLAY_DURATION_MS;
-                }
-            });
 
-            // Main timeout for product finish
-            currentTimeout = setTimeout(() => {
-                currentProductIndex++;
-                playNextProduct();
-            }, PLAY_DURATION_MS);
+                    // Main timeout for product finish
+                    currentTimeout = setTimeout(() => {
+                        currentProductIndex++;
+                        playNextProduct();
+                    }, PLAY_DURATION_MS);
+                } else {
+                    currentTimeout = null;
+                }
+            }
             
             updateControls();
         }
@@ -1251,18 +1294,30 @@
             });
         }
 
-        nextBtn.addEventListener('click', () => {
-            // Move to next set
-            currentSetIndex++;
-            currentProductIndex = 0;
-            
-            if (currentSetIndex >= filteredSets.length) {
-                currentSetIndex = 0; // Loop back to first set
+        // Arrow skip handlers (allow skipping sets mid-playback)
+        function skipSet(direction) {
+            if (isModalOpen) return;
+            if (!filteredSets || filteredSets.length === 0) return;
+            clearTimers();
+
+            if (direction === 'next' || direction === 'down') {
+                currentSetIndex++;
+                if (currentSetIndex >= filteredSets.length) currentSetIndex = 0; // wrap
+            } else if (direction === 'prev' || direction === 'up') {
+                currentSetIndex--;
+                if (currentSetIndex < 0) currentSetIndex = filteredSets.length - 1; // wrap
             }
-            
-            renderSet(filteredSets[currentSetIndex], 'in');
+
+            currentProductIndex = 0;
+            const slideDir = direction === 'prev' || direction === 'up' ? 'up' : 'down';
+            renderSet(filteredSets[currentSetIndex], slideDir);
             updateControls();
-        });
+        }
+
+        const arrowUp = document.getElementById('arrow-up');
+        const arrowDown = document.getElementById('arrow-down');
+        if (arrowUp) arrowUp.addEventListener('click', () => skipSet('prev'));
+        if (arrowDown) arrowDown.addEventListener('click', () => skipSet('next'));
 
         // --- NAVIGATION HANDLERS ---
         
