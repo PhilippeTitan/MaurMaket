@@ -551,6 +551,22 @@
                 height: 450px;
             }
         }
+
+        /* Center the grid pagination across the full viewport (compensate for left side-panel)
+           Uses relative left offset that matches the side-panel width (280px). */
+        .grid-pagination-centred {
+            /* Center the pagination in the viewport horizontally regardless of side-panel.
+               Positioning fixed anchors it to viewport so it won't be pushed by left-docked panels. */
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: 48px; /* sit above the bottom edge (adjust if needed) */
+            width: fit-content; /* keep the box only as wide as its content */
+            max-width: 640px;
+            display: flex;
+            justify-content: center;
+            z-index: 60;
+        }
     </style>
 </head>
 
@@ -640,7 +656,7 @@
         <div id="key-debug-badge" style="position:fixed;bottom:20px;right:20px;padding:8px 10px;background:rgba(0,0,0,0.6);color:#fff;border-radius:8px;font-size:13px;display:none;z-index:9999;">Key:</div>
 
         <!-- Grid Mode Pagination -->
-        <div id="grid-pagination" class="hidden flex justify-center items-center mt-10 p-4 bg-white rounded-xl soft-shadow max-w-sm mx-auto">
+        <div id="grid-pagination" class="hidden grid-pagination-centred items-center mt-10 p-4 bg-white rounded-xl soft-shadow">
             <span id="pagination-text" class="text-center font-semibold" style="color: var(--text);">
                 Page <span id="current-page">1</span> of <span id="total-pages">1</span>
             </span>
