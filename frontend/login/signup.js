@@ -1,9 +1,9 @@
-// ===== STACK AUTH LOGIN INTEGRATION =====
+// ===== STACK AUTH SIGNUP INTEGRATION =====
 // Use the universal Stack Auth base for the claimed project
 const STACK_PROJECT_ID = 'd76f939c-645c-4af5-8517-41a53c1d4cbf';
 const STACK_BASE = `https://api.stack-auth.com/api/v1/projects/${STACK_PROJECT_ID}`;
 const STACK_PCK = 'pck_gmbav8g165j74b0k0k13ab5d38trgmy6rf1aj834jbgcr'; // Publishable Client Key
-const LOGIN_API_URL = `${STACK_BASE}/auth/sessions`;
+const SIGNUP_API_URL = `${STACK_BASE}/users`;
 const TOKEN_VERIFY_URL = `${STACK_BASE}/auth/verify`;
 
 // ===== TOAST NOTIFICATION SYSTEM =====
@@ -40,26 +40,80 @@ function showToast(message, type = 'info', duration = 4000) {
     }, duration);
 }
 
+// ===== VALIDATION FUNCTIONS =====
+function validateEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+}
+
+function validatePassword(password) {
+    // At least 8 characters (adjust as needed)
+    return password.length >= 8;
+}
+
+function validateUsername(username) {
+    // At least 3 characters, alphanumeric + underscore
+    const usernameRegex = /^[a-zA-Z0-9_]{3,}$/;
+    return usernameRegex.test(username);
+}
+
 // ===== FORM HANDLING =====
 document.addEventListener('DOMContentLoaded', () => {
-    const loginForm = document.getElementById('login-form');
+    const signupForm = document.getElementById('signup-form');
+    const emailInput = document.getElementById('email');
     const usernameInput = document.getElementById('username');
     const passwordInput = document.getElementById('password');
-    const submitBtn = document.getElementById('login-submit-btn');
+    const confirmPasswordInput = document.getElementById('confirm-password');
+    const submitBtn = document.getElementById('signup-submit-btn');
     const btnText = document.getElementById('btn-text');
     const btnSpinner = document.getElementById('btn-spinner');
     const errorMessage = document.getElementById('error-message');
 
-    if (!loginForm) return;
+    if (!signupForm) return;
 
-    loginForm.addEventListener('submit', async (e) => {
+    signupForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
+        const email = emailInput.value.trim();
         const username = usernameInput.value.trim();
         const password = passwordInput.value.trim();
+        const confirmPassword = confirmPasswordInput.value.trim();
         
-        if (!username || !password) {
+        // Validation
+        if (!email || !username || !password || !confirmPassword) {
             showToast('Please fill in all fields', 'error');
+            return;
+        }
+
+        if (!validateEmail(email)) {
+            const msg = 'Please enter a valid email address';
+            errorMessage.textContent = msg;
+            errorMessage.classList.remove('hidden');
+            showToast(msg, 'error');
+            return;
+        }
+
+        if (!validateUsername(username)) {
+            const msg = 'Username must be at least 3 characters (letters, numbers, underscores only)';
+            errorMessage.textContent = msg;
+            errorMessage.classList.remove('hidden');
+            showToast(msg, 'error');
+            return;
+        }
+
+        if (!validatePassword(password)) {
+            const msg = 'Password must be at least 8 characters long';
+            errorMessage.textContent = msg;
+            errorMessage.classList.remove('hidden');
+            showToast(msg, 'error');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            const msg = 'Passwords do not match';
+            errorMessage.textContent = msg;
+            errorMessage.classList.remove('hidden');
+            showToast(msg, 'error');
             return;
         }
 
@@ -70,17 +124,17 @@ document.addEventListener('DOMContentLoaded', () => {
         errorMessage.classList.add('hidden');
 
         try {
-            // Prepare payload for Neon: if user entered an email use 'email', otherwise send 'username'.
-            const payload = {};
-            if (username.includes('@')) {
-                payload.email = username;
-            } else {
-                payload.username = username;
-            }
-            payload.password = password;
-            payload.metadata = { source: 'maurmaket' };
+            // Prepare payload for Neon: include email/username/password and optional metadata
+            const payload = {
+                email: email,
+                password: password,
+                username: username,
+                metadata: {
+                    source: 'maurmaket'
+                }
+            };
 
-            const response = await fetch(LOGIN_API_URL, {
+            const response = await fetch(SIGNUP_API_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -91,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Get the response text first to handle non-JSON responses
             const responseText = await response.text();
-            console.log('Login API Response:', responseText);
+            console.log('Signup API Response:', responseText);
             console.log('Response Status:', response.status);
             console.log('Response Headers:', response.headers);
 
@@ -109,7 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!response.ok) {
                 // Show error from API
-                const errorMsg = data.error || data.message || 'Login failed. Please try again.';
+                const errorMsg = data.error || data.message || 'Signup failed. Please try again.';
                 errorMessage.textContent = errorMsg;
                 errorMessage.classList.remove('hidden');
                 showToast(errorMsg, 'error');
@@ -118,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Success: extract token and user data (be tolerant of different key names)
             const accessToken = data.access_token || data.token || data.accessToken || data.id_token || data.idToken || (data.data && (data.data.access_token || data.data.token || data.data.id_token));
-            const user = data.user || (data.data && data.data.user) || (data.user_id ? { id: data.user_id, email: username } : null) || null;
+            const user = data.user || (data.data && data.data.user) || (data.user_id ? { id: data.user_id, email: email, username: username } : null) || null;
 
             if (!accessToken) {
                 throw new Error('No access token received from server');
@@ -128,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setAuthSession(accessToken, user);
 
             // Show success toast
-            showToast('Login successful! Redirecting...', 'success', 2000);
+            showToast('Account created! Redirecting...', 'success', 2000);
 
             // Redirect to index after a brief delay
             setTimeout(() => {
@@ -136,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 500);
 
         } catch (err) {
-            console.error('Login error:', err);
+            console.error('Signup error:', err);
             const errorMsg = err.message || 'An error occurred. Please try again.';
             errorMessage.textContent = errorMsg;
             errorMessage.classList.remove('hidden');
@@ -150,27 +204,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// ===== SESSION MANAGEMENT =====
-function getAuthToken() {
-    return localStorage.getItem(TOKEN_KEY);
-}
-
-function getUser() {
-    const userJson = localStorage.getItem(USER_KEY);
-    return userJson ? JSON.parse(userJson) : null;
-}
-
-function logout() {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    window.location.href = '/login/login.html';
-}
-
 // ===== PAGE LOAD CHECK =====
-// If user is already logged in and visits /login, redirect to /index
+// If user is already logged in and visits /signup, redirect to /index
 window.addEventListener('load', () => {
     const token = getAuthToken();
-    if (token && window.location.pathname.includes('/login')) {
+    if (token && window.location.pathname.includes('/signup')) {
         window.location.href = '/index.html';
     }
 });
@@ -200,7 +238,7 @@ style.textContent = `
         }
     }
 
-    #login-form {
+    #signup-form {
         animation: fadeInUp 500ms ease;
     }
 
@@ -215,17 +253,17 @@ style.textContent = `
         }
     }
 
-    #login-submit-btn:hover:not(:disabled) {
+    #signup-submit-btn:hover:not(:disabled) {
         opacity: 0.9;
         transform: translateY(-2px);
         box-shadow: 0 6px 16px rgba(38, 198, 218, 0.3);
     }
 
-    #login-submit-btn:active:not(:disabled) {
+    #signup-submit-btn:active:not(:disabled) {
         transform: translateY(0);
     }
 
-    #login-submit-btn:disabled {
+    #signup-submit-btn:disabled {
         opacity: 0.6;
         cursor: not-allowed;
     }
