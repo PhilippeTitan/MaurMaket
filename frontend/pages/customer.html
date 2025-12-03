@@ -621,6 +621,9 @@
             </button>
         </div>
 
+        <!-- Debug badge for key detection (temporary) -->
+        <div id="key-debug-badge" style="position:fixed;bottom:20px;right:20px;padding:8px 10px;background:rgba(0,0,0,0.6);color:#fff;border-radius:8px;font-size:13px;display:none;z-index:9999;">Key:</div>
+
         <!-- Grid Mode Pagination -->
         <div id="grid-pagination" class="hidden flex justify-center items-center mt-10 p-4 bg-white rounded-xl soft-shadow max-w-sm mx-auto">
             <span id="pagination-text" class="text-center font-semibold" style="color: var(--text);">
@@ -910,6 +913,8 @@
         let allFinished = false;
         let currentTimeout = null;
         let isMuted = false;
+        let playbackStart = null; // timestamp when current product started (ms)
+        let remainingMs = 0;     // remaining ms when paused/resumed
         let filteredSets = allProductSets;
         let isModalOpen = false;
 
@@ -941,6 +946,67 @@
 
         function clearTimers() {
             if (currentTimeout) clearTimeout(currentTimeout);
+        }
+
+        function pausePlayback() {
+            if (!isPlaying) return;
+            // compute elapsed
+            if (!playbackStart) return;
+            const elapsed = Date.now() - playbackStart;
+            remainingMs = Math.max(0, PLAY_DURATION_MS - elapsed);
+            clearTimers();
+
+            // freeze progress bar(s) using percent so resume interpolation is consistent
+            document.querySelectorAll('.product-card.active .progress-fill').forEach(bar => {
+                const computedStyle = window.getComputedStyle(bar);
+                const currentWidthPx = parseFloat(computedStyle.getPropertyValue('width')) || 0;
+                const parent = bar.parentElement;
+                const parentWidth = parent ? parent.clientWidth : 1;
+                const percent = Math.min(100, (currentWidthPx / parentWidth) * 100);
+                // set width in percent and remove transition to freeze immediately
+                bar.style.transition = 'none';
+                bar.style.width = percent + '%';
+                console.log('[PAUSE] elapsed=', elapsed, 'remainingMs=', remainingMs, 'currentPx=', currentWidthPx, 'parentW=', parentWidth, 'percent=', percent);
+            });
+            // mark that playback is paused
+            playbackStart = null;
+            currentTimeout = null;
+        }
+
+        function resumePlayback() {
+            if (isPlaying) return;
+            const activeCard = document.querySelector('.product-card.active');
+            if (!activeCard) return;
+            const progressBar = activeCard.querySelector('.progress-fill');
+            if (!progressBar) return;
+
+            // If remainingMs is not set (e.g., first resume), default to full duration
+            const useMs = remainingMs > 0 ? remainingMs : PLAY_DURATION_MS;
+            // compute current percent from width style (could be px)
+            const computedStyle = window.getComputedStyle(progressBar);
+            const currentWidthPx = parseFloat(computedStyle.getPropertyValue('width')) || 0;
+            const parent = progressBar.parentElement;
+            const parentWidth = parent ? parent.clientWidth : 1;
+            const currentPercent = Math.min(100, (currentWidthPx / parentWidth) * 100);
+
+            // Ensure progressBar is at currentPercent without transition, then animate to 100% in remaining time
+            progressBar.style.transition = 'none';
+            progressBar.style.width = currentPercent + '%';
+            // force reflow
+            void progressBar.offsetWidth;
+            // now set transition for remaining time and go to 100%
+            progressBar.style.transition = `width ${useMs / 1000}s linear`;
+            progressBar.style.width = '100%';
+
+            playbackStart = Date.now();
+            // set timeout for remainingMs
+            clearTimers();
+            currentTimeout = setTimeout(() => {
+                currentProductIndex++;
+                playNextProduct();
+            }, useMs);
+            // reset remainingMs
+            remainingMs = 0;
         }
 
         function updateControls() {
@@ -1157,6 +1223,9 @@
                 if (isPlaying) {
                     progressBar.style.transition = `width ${PLAY_DURATION_MS / 1000}s linear`;
                     progressBar.style.width = '100%';
+                    // record start time for pause/resume
+                    playbackStart = Date.now();
+                    remainingMs = PLAY_DURATION_MS;
                 }
             });
 
@@ -1231,7 +1300,28 @@
 
         function handleKeyDown(e) {
             if (e.key === ' ') {
+                // Debug: log and show badge when space pressed
+                console.log('[KEY-DETECT] Space pressed, isPlaying=', isPlaying, 'layoutMode=', layoutMode);
+                const dbg = document.getElementById('key-debug-badge');
+                if (dbg) {
+                    dbg.textContent = 'Key: Space';
+                    dbg.style.display = 'block';
+                    setTimeout(() => { dbg.style.display = 'none'; }, 800);
+                }
                 e.preventDefault(); // Prevent spacebar from scrolling
+                // Toggle play/pause
+                if (!allFinished && layoutMode === 'carousel') {
+                    if (isPlaying) {
+                        // pause: call pausePlayback first, then flip state
+                        pausePlayback();
+                        isPlaying = false;
+                    } else {
+                        // resume: call resumePlayback first, then flip state
+                        resumePlayback();
+                        isPlaying = true;
+                    }
+                    updateControls();
+                }
                 return;
             }
             
