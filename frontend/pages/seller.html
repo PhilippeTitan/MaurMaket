@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="page-loading">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +8,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     
     <style>
+        /* Page Transition Protocol: hide content until fully loaded, then fade in */
+        html.page-loading body { opacity: 0; transform: translateY(6px) scale(0.998); }
+        body { transition: opacity 420ms ease, transform 420ms cubic-bezier(.2,.9,.2,1); }
+        @media (prefers-reduced-motion: reduce) {
+            html.page-loading body { opacity: 1 !important; transform: none !important; }
+            body { transition: none !important; }
+        }
         /* A. Color Palette Definitions (Tropical Haiti - Light & Dark themes) */
         :root {
             /* Tropical Palette - Vibrant & Consistent */
@@ -708,6 +715,27 @@
                 });
             });
         });
+    </script>
+
+    <script>
+    (function(){
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+        window.addEventListener('load', function() {
+            requestAnimationFrame(function() { document.documentElement.classList.remove('page-loading'); });
+        });
+
+        document.addEventListener('click', function (e) {
+            const a = e.target.closest && e.target.closest('a');
+            if (!a) return;
+            if (a.target || a.hasAttribute('download') || a.getAttribute('href')?.startsWith('#')) return;
+            const href = a.href;
+            try { const url = new URL(href, location.href); if (url.origin !== location.origin) return; } catch (err) { return; }
+            e.preventDefault();
+            document.documentElement.classList.add('page-loading');
+            setTimeout(function() { location.href = href; }, 350);
+        }, true);
+    })();
     </script>
 </body>
 </html>

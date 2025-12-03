@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="page-loading">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +8,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <style>
+        /* Page Transition Protocol: hide content until fully loaded, then fade in */
+        html.page-loading body { opacity: 0; transform: translateY(6px) scale(0.998); }
+        body { transition: opacity 420ms ease, transform 420ms cubic-bezier(.2,.9,.2,1); }
+        @media (prefers-reduced-motion: reduce) {
+            html.page-loading body { opacity: 1 !important; transform: none !important; }
+            body { transition: none !important; }
+        }
         /* DIAGNOSTIC: CSS Reset to eliminate conflicts */
         /* Outer container centers the carousel in the viewport (accounts for header/footer) */
         #carousel-outer {
@@ -1272,6 +1279,21 @@
             if (e.target === modalOverlay) closeModal();
         });
 
+        // Intercept link clicks for exit fade when navigating away
+        (function(){
+            if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            document.addEventListener('click', function (e) {
+                const a = e.target.closest && e.target.closest('a');
+                if (!a) return;
+                if (a.target || a.hasAttribute('download') || a.getAttribute('href')?.startsWith('#')) return;
+                const href = a.href;
+                try { const url = new URL(href, location.href); if (url.origin !== location.origin) return; } catch (err) { return; }
+                e.preventDefault();
+                document.documentElement.classList.add('page-loading');
+                setTimeout(function() { location.href = href; }, 350);
+            }, true);
+        })();
+
 
         // --- INITIALIZATION ---
         window.addEventListener('load', () => {
@@ -1292,6 +1314,13 @@
             document.addEventListener('keydown', handleKeyDown);
             // Attach wheel listener to the main wrapper to avoid body scrolling interference
             document.getElementById('carousel-outer').addEventListener('wheel', handleScroll, { passive: false });
+
+            // Page transition: remove loading class so content fades in
+            if (!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+                requestAnimationFrame(() => document.documentElement.classList.remove('page-loading'));
+            } else {
+                document.documentElement.classList.remove('page-loading');
+            }
         });
 
     </script>

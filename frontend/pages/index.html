@@ -44,20 +44,154 @@
     }
 
     /* Exit animation applied to the logo container on click */
+    /* Legacy simple exit (kept for reference) */
     .logo-exit {
       animation: logoExit 1.5s forwards ease-in-out;
     }
 
     @keyframes logoExit {
-      0% {
-        transform: scale(1);
-        opacity: 1;
-      }
-      100% {
-        transform: scale(2.2);
-        opacity: 0;
+      0% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+
+    /* === Glitch + Scanline Burst Exit ===
+       A layered approach: duplicate the logo as two colored pseudo-layers
+       (red/blue) for RGB-split glitch, plus a scanline overlay that bursts
+       upward while fading. Respects prefers-reduced-motion. */
+
+    .glitch-active #splash-logo .logo { opacity: 0; }
+
+    /* Duplicate logo layers using pseudo-elements on the logo container */
+    .logo-container { position: relative; }
+    .logo-container::before,
+    .logo-container::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url('https://i.ibb.co/3y6cPdkn/Logo-Without-name.png');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      pointer-events: none;
+      mix-blend-mode: screen;
+      opacity: 0;
+      transform: translateZ(0);
+    }
+
+    /* Left (red) and right (blue) channel layers */
+    .logo-container::before { filter: hue-rotate(-10deg) saturate(1.2) brightness(1.05); }
+    .logo-container::after { filter: hue-rotate(30deg) saturate(1.2) brightness(1.05); }
+
+    /* Quick flicker / RGB split */
+    @keyframes glitch-split {
+      0% { opacity: 0; transform: translateX(0) translateY(0); }
+      10% { opacity: 1; transform: translateX(-8px) translateY(-2px); }
+      25% { transform: translateX(6px) translateY(2px); }
+      40% { transform: translateX(-4px) translateY(-1px); }
+      55% { transform: translateX(6px) translateY(1px); }
+      70% { transform: translateX(-6px) translateY(0); }
+      85% { transform: translateX(3px) translateY(-1px); }
+      100% { opacity: 0; transform: translateX(0) translateY(0); }
+    }
+
+    /* Scanline overlay that bursts upward and fades */
+    .frame-square::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.06) 0px,
+        rgba(255,255,255,0.03) 1px,
+        transparent 2px,
+        transparent 6px
+      );
+      opacity: 0;
+      transform-origin: center bottom;
+    }
+
+    @keyframes scanline-burst {
+      0% { opacity: 0.9; transform: translateY(0) scaleY(1); }
+      40% { opacity: 1; transform: translateY(-8%) scaleY(1.1); }
+      75% { opacity: 0.6; transform: translateY(-60%) scaleY(1.6); }
+      100% { opacity: 0; transform: translateY(-120%) scaleY(2); }
+    }
+
+    /* When glitch is active, animate layers */
+    .glitch-active .logo-container::before { animation: glitch-split 900ms cubic-bezier(.2,.8,.2,1); opacity:1; }
+    .glitch-active .logo-container::after  { animation: glitch-split 900ms cubic-bezier(.2,.8,.2,1) 80ms; opacity:1; }
+    .glitch-active .frame-square::after     { animation: scanline-burst 1000ms cubic-bezier(.15,.9,.25,1); }
+
+    /* A small scale/blur pop for the container as the scanline bursts */
+    @keyframes pop-scale {
+      0% { transform: scale(1) translateZ(0); filter: none; }
+      50% { transform: scale(1.06) translateZ(0); filter: blur(1px); }
+      100% { transform: scale(1.12) translateZ(0); filter: blur(2px); opacity: 0; }
+    }
+    .glitch-active .logo-container { animation: pop-scale 1000ms ease-in; }
+
+    /* Reduced motion fallback: use a simple fade to home */
+    @media (prefers-reduced-motion: reduce) {
+      .logo-exit, .glitch-active .logo-container, .glitch-active .logo-container::before, .glitch-active .logo-container::after, .glitch-active .frame-square::after {
+        animation: none !important;
+        transition: none !important;
+        opacity: 0 !important;
       }
     }
+
+    /* === Background glitch layers for the full splash area === */
+    #splash-click-area { position: fixed; left:0; top:0; right:0; bottom:0; }
+
+    #splash-click-area::before,
+    #splash-click-area::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0; /* sit behind the logo/frame but above body */
+      opacity: 0;
+      transform: translateZ(0);
+      background-repeat: no-repeat;
+      background-size: cover;
+      background-position: center;
+      mix-blend-mode: screen;
+    }
+
+    /* warm gradient base used for both layers; hue-shifted for RGB split */
+    #splash-click-area::before {
+      background: linear-gradient(135deg, #F26900 0%, #FF8A00 60%);
+      filter: hue-rotate(-6deg) saturate(1.1) brightness(1.02);
+    }
+    #splash-click-area::after {
+      background: linear-gradient(135deg, #F26900 0%, #FF8A00 60%);
+      filter: hue-rotate(10deg) saturate(1.15) brightness(1.03);
+      mix-blend-mode: overlay;
+    }
+
+    @keyframes glitch-bg {
+      0% { opacity: 0; transform: translateX(0) translateY(0) scale(1); filter: blur(0px) hue-rotate(0deg); }
+      15% { opacity: 1; transform: translateX(-12px) translateY(-6px) scale(1.02); filter: blur(0.6px) hue-rotate(-8deg); }
+      35% { transform: translateX(14px) translateY(6px) scale(1.03) ; filter: blur(1px) hue-rotate(6deg); }
+      60% { transform: translateX(-8px) translateY(-4px) scale(1.05); filter: blur(1.6px) hue-rotate(-4deg); }
+      85% { transform: translateX(6px) translateY(3px) scale(1.08); filter: blur(2px) hue-rotate(2deg); }
+      100% { opacity: 0; transform: translateX(0) translateY(-120%) scale(1.12); filter: blur(3px) hue-rotate(0deg); }
+    }
+
+    /* Trigger background glitch when splash is active */
+    .glitch-active #splash-click-area::before { animation: glitch-bg 1000ms cubic-bezier(.2,.8,.2,1); }
+    .glitch-active #splash-click-area::after  { animation: glitch-bg 1000ms cubic-bezier(.2,.8,.2,1) 60ms; }
+
+    /* Ensure the logo image does not reappear: force hidden during glitch */
+    .glitch-active .logo-container img,
+    .glitch-active .logo-container .logo {
+      opacity: 0 !important;
+      visibility: hidden !important;
+      display: none !important;
+    }
+
+    /* Make splash take top-most visual during the glitch to avoid background flashes */
+    .glitch-active #splash-click-area { z-index: 9999; }
 
     /* Square frame that sits around the circular logo */
     .frame-square{
@@ -111,15 +245,42 @@
     if (area && logo) {
       // Make sure clicking anywhere triggers the exit animation on the logo
       area.addEventListener("click", () => {
-        // prevent further clicks
-        area.style.pointerEvents = 'none';
-        logo.style.pointerEvents = 'none';
-        // animate only the logo container
-        logo.classList.add("logo-exit");
+        // prevent further clicks while animation runs
+          area.style.pointerEvents = 'none';
+          logo.style.pointerEvents = 'none';
 
-        setTimeout(() => {
-          window.location.href = "home.html";
-        }, 1500);
+          // Immediately hide the raster logo to avoid flicker/repaint on navigation
+          const logoImg = logo.querySelector('.logo');
+          if (logoImg) {
+            // hide visually right away
+            logoImg.style.opacity = '0';
+            logoImg.style.visibility = 'hidden';
+            // remove it from DOM shortly after to be safe
+            setTimeout(() => {
+              try { logoImg.remove(); } catch (e) {}
+            }, 80);
+          }
+
+          // Start the glitch+scanline exit: add class to root container
+          document.documentElement.classList.add('glitch-active');
+
+          // Also add a helper class for scoping to the splash area
+          area.classList.add('glitch-active');
+
+          // After the visual completes, remove the logo container just before navigation
+          // Total visual time ~= 1000ms; add a small buffer
+          const NAV_AFTER_MS = 1100;
+
+          // Remove the entire logo container shortly before navigation so
+          // pseudo-elements and raster copies can't reappear at the end.
+          const REMOVE_LOGO_BEFORE_NAV = 120; // ms before navigation
+          setTimeout(() => {
+            try { logo.remove(); } catch (e) {}
+          }, Math.max(0, NAV_AFTER_MS - REMOVE_LOGO_BEFORE_NAV));
+
+          setTimeout(() => {
+            window.location.href = "home.html";
+          }, NAV_AFTER_MS);
       });
     }
   </script>
