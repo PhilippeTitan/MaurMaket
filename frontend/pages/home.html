@@ -34,8 +34,8 @@
             --text: #1f2937;
             --text-secondary: #6b7280;
             --text-muted: #9ca3af;
-            --card-bg: #FFFFFF;
-            --card-border: transparent;
+            --card-bg: rgba(255,255,255,0.96);
+            --card-border: rgba(16,24,40,0.06);
             --placeholder-bg: #f3f4f6;
             --placeholder-text: #FFFFFF;
             --color-primary: #104084; /* Deep Blue */
@@ -103,9 +103,10 @@
 
         /* Glassmorphism Category Cards */
         .category-card {
-            background: rgba(255, 255, 255, 0.12);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.25);
+            /* Use theme-aware card background + subtle border for strong default visibility */
+            background: var(--card-bg);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--card-border);
             border-radius: 20px;
             overflow: hidden;
             padding: 28px 18px;
@@ -119,8 +120,9 @@
         }
 
         .dark .category-card {
-            background: rgba(0, 0, 0, 0.18);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(12,18,28,0.6);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            color: var(--text);
         }
 
         .category-card:hover {
@@ -197,8 +199,8 @@
             inset: 0;
             background: var(--category-image, url('../assets/images/Electronics.jpg')) center/cover no-repeat;
             z-index: 1;
-            /* default opacity (light theme) — lowered when not hovered */
-            opacity: var(--category-image-opacity, 0.85);
+            /* default opacity (light theme) — slightly reduced so images don't wash out */
+            opacity: var(--category-image-opacity, 0.95);
             transform-origin: center;
             transition: opacity 0.35s ease, transform 0.45s ease, filter 0.35s ease;
         }
@@ -214,8 +216,9 @@
 
         /* Dark theme: use lower base opacity and slightly lower hover target */
         .dark .category-card.category-image-panel::before {
-            --category-image-opacity: 0.5;
-            --category-image-opacity-hover: 0.85;
+            /* keep images visible in dark mode as well (less dimming) */
+            --category-image-opacity: 1;
+            --category-image-opacity-hover: 1;
         }
 
         .category-card.category-image-panel > * {
