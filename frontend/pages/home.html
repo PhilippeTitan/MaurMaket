@@ -125,9 +125,9 @@
             box-shadow: 0 12px 32px rgba(255, 255, 255, 0.12);
         }
 
-        /* Sheen / glass sweep effect (quick pass) */
-        :root { --category-sheen-color: rgba(255,255,255,0.55); }
-        .dark { --category-sheen-color: rgba(255,255,255,0.12); }
+        /* Sheen / glass sweep effect (brighter, smoother, expressive) */
+        :root { --category-sheen-color: rgba(255,255,255,0.75); }
+        .dark { --category-sheen-color: rgba(255,255,255,0.25); }
 
         .category-card > * { position: relative; z-index: 3; }
 
@@ -137,27 +137,28 @@
             inset: 0;
             z-index: 2; /* above background, below content */
             pointer-events: none;
-            background: linear-gradient(120deg, transparent 0%, var(--category-sheen-color) 50%, transparent 100%);
-            transform: translateX(-120%) skewX(-15deg);
+            background: linear-gradient(110deg, transparent 0%, var(--category-sheen-color) 45%, var(--category-sheen-color) 55%, transparent 100%);
+            transform: translateX(-130%) skewX(-20deg);
             opacity: 0;
-            transition: opacity 120ms linear;
+            transition: opacity 100ms ease-out;
             border-radius: inherit;
         }
 
         .category-card:hover::after,
         .category-card:focus-within::after {
-            animation: sheen-pass 0.8s ease-out 1;
+            animation: sheen-pass 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94) 1;
             opacity: 1;
         }
 
         @keyframes sheen-pass {
             0% {
-                transform: translateX(-120%) skewX(-15deg);
+                transform: translateX(-130%) skewX(-20deg);
                 opacity: 0;
             }
-            10% { opacity: 0.8; }
+            15% { opacity: 0.95; }
+            85% { opacity: 0.8; }
             100% {
-                transform: translateX(120%) skewX(-15deg);
+                transform: translateX(130%) skewX(-20deg);
                 opacity: 0;
             }
         }
@@ -414,35 +415,63 @@
         <section class="mb-16">
             <h3 class="text-3xl font-bold mb-8 text-center sm:text-left" style="color: var(--text);">Shop by Popular Categories</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <!-- Food -->
-                <div class="category-card">
-                    <span>🍜</span>
-                    <p>Food</p>
+                
+                <!-- Electronics & Appliances -->
+                <div class="category-card category-image-panel" aria-label="Electronics & Appliances" data-image="url('../assets/images/Electronics.jpg')">
+                    <p>Electronics & Appliances</p>
                 </div>
-                <!-- Handmade -->
-                <div class="category-card">
-                    <span>🧵</span>
-                    <p>Handmade</p>
+                
+                <!-- Fashion & Accessories -->
+                <div class="category-card category-image-panel" aria-label="Fashion & Accessories" data-image="url('../assets/images/Fashion & Accessories.jpg')">
+                    <p>Fashion & Accessories</p>
                 </div>
-                <!-- Beauty -->
-                <div class="category-card">
-                    <span>💅</span>
-                    <p>Beauty</p>
+                
+                <!-- Beauty & Personal Care -->
+                <div class="category-card category-image-panel" aria-label="Beauty & Personal Care" data-image="url('../assets/images/Beauty & Personal Care.jpg')">
+                    <p>Beauty & Personal Care</p>
                 </div>
-                <!-- Electronics (full-panel image) -->
-                <div class="category-card category-image-panel" aria-label="Electronics" data-image="../assets/images/Electronics.jpg">
-                    <p>Electronics</p>
+                
+                <!-- Home Tools & Hardware -->
+                <div class="category-card category-image-panel" aria-label="Home Tools & Hardware" data-image="url('../assets/images/Tools.jpg')">
+                    <p>Home Tools & Hardware</p>
                 </div>
-                <!-- Home Tools -->
-                <div class="category-card">
-                    <span>🔨</span>
-                    <p>Home Tools</p>
+                
+                <!-- Kids & Baby -->
+                <div class="category-card category-image-panel" aria-label="Kids & Baby" data-image="url('../assets/images/Kids & Baby.jpg')">
+                    <p>Kids & Baby</p>
                 </div>
-                <!-- Apparel -->
-                <div class="category-card">
-                    <span>👚</span>
-                    <p>Apparel</p>
+                
+                <!-- Auto & Moto -->
+                <div class="category-card category-image-panel" aria-label="Auto & Moto" data-image="url('../assets/images/Auto & Moto.jpg')">
+                    <p>Auto & Moto</p>
                 </div>
+                
+                <!-- Sports & Outdoors (optional for later expansion) -->
+                <div class="category-card category-image-panel" aria-label="Sports & Outdoors" data-image="url('../assets/images/Sports & Outdoors.jpg')">
+                    <p>Sports & Outdoors</p>
+                </div>
+                
+            </div>
+        </section>
+
+        <!-- SOCIAL & SERVICES SECTION (Food & Home - separate, social-focused) -->
+        <section class="mb-16">
+            <div class="mb-4">
+                <h3 class="text-3xl font-bold text-center sm:text-left" style="color: var(--text);">Services & Community</h3>
+                <p class="text-lg muted-text text-center sm:text-left mt-2">Connect with local restaurants, food stations, and home services</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                <!-- Food & Grocery (Social Service) -->
+                <div class="category-card category-image-panel" aria-label="Food & Grocery" data-image="url('../assets/images/Food.jpg')">
+                    <p>Food & Grocery</p>
+                </div>
+                
+                <!-- Home & Living (Social Service) -->
+                <div class="category-card category-image-panel" aria-label="Home & Living" data-image="url('../assets/images/Home.jpg')">
+                    <p>Home & Living</p>
+                </div>
+                
             </div>
         </section>
 
@@ -522,7 +551,9 @@
             document.querySelectorAll('.category-card[data-image]').forEach(el => {
                 const img = el.getAttribute('data-image');
                 if (img) {
-                    el.style.setProperty('--category-image', `url('${img}')`);
+                    // If data-image is already a url(...) format, use as-is; otherwise wrap it
+                    const imageValue = img.includes('url(') ? img : `url('${img}')`;
+                    el.style.setProperty('--category-image', imageValue);
                 }
             });
         });
