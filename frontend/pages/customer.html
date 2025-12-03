@@ -19,10 +19,11 @@
         /* Outer container centers the carousel in the viewport (accounts for header/footer) */
         #carousel-outer {
             display: flex;
-            align-items: center;
-            justify-content: center;
+            align-items: flex-start;
+            justify-content: flex-start;
             min-height: 60vh;
             padding: 20px 0;
+            width: 100%;
         }
 
         #carousel-inner {
@@ -38,19 +39,27 @@
         /* Grid mode overrides */
         #carousel-inner[data-layout="grid"] {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 24px;
-            justify-content: unset;
+            grid-template-columns: repeat(4, 246px);
+            gap: 8px;
+            justify-content: start;
             align-items: start;
-            padding: 20px 16px;
+            padding: 8px;
+            width: auto;
+        }
+
+        #carousel-inner[data-layout="grid"] .product-card {
+            width: 246px !important;
+            height: 200px !important;
+            aspect-ratio: unset;
         }
 
         .product-card {
             float: none !important;
             position: relative !important;
-            width: 300px;
+            width: 100%;
             max-width: 100%;
             flex-shrink: 0;
+            aspect-ratio: 1;
         }
 
         /* A. Color Palette Definitions (Tropical Haiti - Light & Dark themes) */
@@ -523,10 +532,10 @@
     </aside>
 
     <!-- MAIN CAROUSEL AREA -->
-    <main class="max-w-7xl mx-auto py-8 md:py-12 px-4">
+    <main class="py-8 md:py-12 px-4" style="margin-left: 300px;">
         
         <!-- Product Cards Container -->
-        <div id="carousel-outer" class="relative overflow-hidden">
+        <div id="carousel-outer" class="relative overflow-visible">
             <!-- Inner container handles content and transition -->
             <div id="carousel-inner" class="carousel-slide-in">
                 <!-- Product cards will be dynamically inserted here -->
