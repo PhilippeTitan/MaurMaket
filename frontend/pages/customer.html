@@ -1230,6 +1230,11 @@
         }
 
         function handleKeyDown(e) {
+            if (e.key === ' ') {
+                e.preventDefault(); // Prevent spacebar from scrolling
+                return;
+            }
+            
             if (allFinished && !isModalOpen) {
                 if (e.key === 'ArrowUp') {
                     e.preventDefault();
