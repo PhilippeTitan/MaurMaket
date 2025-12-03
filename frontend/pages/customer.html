@@ -26,18 +26,31 @@
         }
 
         #carousel-inner {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: wrap !important;
-            gap: 80px !important; /* larger gap for clearer visual separation */
-            justify-content: center !important;
-            align-items: center !important; /* vertically center cards within the inner row */
-            padding: 40px 36px;
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 24px;
+            justify-content: center;
+            align-items: start;
+            padding: 20px 16px;
+        }
+
+        /* Grid mode overrides */
+        #carousel-inner[data-layout="grid"] {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            justify-content: unset;
+            align-items: start;
+            padding: 20px 16px;
         }
 
         .product-card {
             float: none !important;
             position: relative !important;
+            width: 300px;
+            max-width: 100%;
+            flex-shrink: 0;
         }
 
         /* A. Color Palette Definitions (Tropical Haiti - Light & Dark themes) */
@@ -729,16 +742,11 @@
 
         function renderGrid(products) {
             carouselInner.innerHTML = '';
-            carouselInner.style.display = 'grid';
-            carouselInner.style.gridTemplateColumns = 'repeat(auto-fill, minmax(220px, 1fr))';
-            carouselInner.style.gap = '24px';
-            carouselInner.style.alignItems = 'start';
-
+            carouselInner.setAttribute('data-layout', 'grid');
+            
             products.forEach(product => {
                 const card = createProductCard(product);
                 card.classList.remove('waiting','active','finished');
-                card.style.width = '100%';
-                card.style.height = 'auto';
                 carouselInner.appendChild(card);
             });
         }
@@ -867,6 +875,7 @@
         function renderSet(set, direction = 'in') {
             clearTimers();
             carouselInner.innerHTML = '';
+            carouselInner.removeAttribute('data-layout');  // Remove grid layout attribute for carousel mode
             
             // Apply slide animation class for transition out
             carouselInner.classList.remove('carousel-slide-up', 'carousel-slide-down', 'carousel-slide-in');
@@ -1326,3 +1335,6 @@
     </script>
 </body>
 </html>
+
+
+
