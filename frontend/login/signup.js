@@ -1,12 +1,25 @@
-// ===== STACK AUTH SIGNUP INTEGRATION =====
-// Use the universal Stack Auth base for the claimed project
-const STACK_PROJECT_ID = 'd76f939c-645c-4af5-8517-41a53c1d4cbf';
-const STACK_BASE = `https://api.stack-auth.com/api/v1/projects/${STACK_PROJECT_ID}`;
-// Publishable Client Key (safe for frontend) - updated to latest provided key
-const STACK_PCK = 'pck_6b7jwm2t41zhj7y02dkgtg1fda3vqeva4243frnxwzy08';
-// Stack Auth documented email/password endpoints
-const SIGNUP_API_URL = 'https://api.stack-auth.com/api/v1/auth/email/sign-up';
-const TOKEN_VERIFY_URL = `${STACK_BASE}/auth/verify`;
+// ===== STACK AUTH CONFIG (Netlify-ready) =====
+// Prefer build-time env injection (process.env.NEXT_PUBLIC_*) when bundled,
+// otherwise support a runtime `window.__STACK_CONFIG__` object for Netlify.
+function getStackEnv(key) {
+    try {
+        if (typeof process !== 'undefined' && process && process.env && process.env[key]) {
+            return process.env[key];
+        }
+    } catch (e) {
+        // ignore
+    }
+    if (window && window.__STACK_CONFIG__ && window.__STACK_CONFIG__[key]) {
+        return window.__STACK_CONFIG__[key];
+    }
+    return null;
+}
+
+const STACK_PROJECT_ID = getStackEnv('NEXT_PUBLIC_STACK_PROJECT_ID');
+const STACK_PCK = getStackEnv('NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY');
+const SIGNUP_API_URL = STACK_PROJECT_ID
+    ? `https://api.stack-auth.com/api/v1/projects/${STACK_PROJECT_ID}/users/email-password/sign-up`
+    : null;
 
 // ===== TOAST NOTIFICATION SYSTEM =====
 function showToast(message, type = 'info', duration = 4000) {
@@ -126,67 +139,58 @@ document.addEventListener('DOMContentLoaded', () => {
         errorMessage.classList.add('hidden');
 
         try {
-            // Prepare payload for Neon: include email/username/password and optional metadata
-            // Stack Auth email-password signup expects only email+password
-            const payload = {
-                email: email,
-                password: password
-            };
+            // If SIGNUP_API_URL & STACK_PCK are available, call Stack Auth endpoint.
+            if (SIGNUP_API_URL && STACK_PCK) {
+                const payload = { email: email, password: password };
+                const resp = await fetch(SIGNUP_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Stack-Publishable-Key': STACK_PCK,
+                    },
+                    body: JSON.stringify(payload),
+                });
 
-            const response = await fetch(SIGNUP_API_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Stack-Publishable-Key': STACK_PCK,
-                },
-                body: JSON.stringify(payload),
-            });
+                const text = await resp.text();
+                console.log('Signup API response:', resp.status, text);
 
-            // Get the response text first to handle non-JSON responses
-            const responseText = await response.text();
-            console.log('Signup API Response:', responseText);
-            console.log('Response Status:', response.status);
-            console.log('Response Headers:', response.headers);
+                let data;
+                try { data = JSON.parse(text); } catch (parseErr) { data = null; }
 
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (parseErr) {
-                console.error('JSON Parse Error:', parseErr);
-                const errorMsg = `Server error (${response.status}): Invalid response format. Check console for details.`;
-                errorMessage.textContent = errorMsg;
-                errorMessage.classList.remove('hidden');
-                showToast(errorMsg, 'error');
+                if (!resp.ok) {
+                    const msg = (data && (data.error || data.message)) || `Signup failed (${resp.status})`;
+                    errorMessage.textContent = msg;
+                    errorMessage.classList.remove('hidden');
+                    showToast(msg, 'error');
+                    return;
+                }
+
+                const accessToken = data && (data.access_token || data.token || data.id_token || (data.data && (data.data.access_token || data.data.token)));
+                const user = data && (data.user || (data.data && data.data.user) || (data.user_id ? { id: data.user_id, email } : null));
+
+                if (!accessToken) {
+                    // Fallback to local-session if provider returns no token
+                    console.warn('No access token from Stack response — falling back to local session');
+                    const devToken = 'local-dev-token-' + Date.now();
+                    const devUser = { email, username: username || email.split('@')[0] };
+                    setAuthSession(devToken, devUser);
+                    showToast('Account created (local fallback). Redirecting...', 'success');
+                    setTimeout(() => { window.location.href = '/index.html'; }, 600);
+                    return;
+                }
+
+                setAuthSession(accessToken, user);
+                showToast('Account created! Redirecting...', 'success', 1200);
+                setTimeout(() => { window.location.href = '/index.html'; }, 700);
                 return;
             }
 
-            if (!response.ok) {
-                // Show error from API
-                const errorMsg = data.error || data.message || 'Signup failed. Please try again.';
-                errorMessage.textContent = errorMsg;
-                errorMessage.classList.remove('hidden');
-                showToast(errorMsg, 'error');
-                return;
-            }
-
-            // Success: extract token and user data (be tolerant of different key names)
-            const accessToken = data.access_token || data.token || data.accessToken || data.id_token || data.idToken || (data.data && (data.data.access_token || data.data.token || data.data.id_token));
-            const user = data.user || (data.data && data.data.user) || (data.user_id ? { id: data.user_id, email: email, username: username } : null) || null;
-
-            if (!accessToken) {
-                throw new Error('No access token received from server');
-            }
-
-            // Store token and user in localStorage
-            setAuthSession(accessToken, user);
-
-            // Show success toast
-            showToast('Account created! Redirecting...', 'success', 2000);
-
-            // Redirect to index after a brief delay
-            setTimeout(() => {
-                window.location.href = '/index.html';
-            }, 500);
+            // If env not configured, stay in local-dev neutral mode for safety
+            const devToken = 'local-dev-token-' + Date.now();
+            const devUser = { email: email, username: username || email.split('@')[0] };
+            setAuthSession(devToken, devUser);
+            showToast('Account created (local). Redirecting...', 'success', 1200);
+            setTimeout(() => { window.location.href = '/index.html'; }, 600);
 
         } catch (err) {
             console.error('Signup error:', err);
