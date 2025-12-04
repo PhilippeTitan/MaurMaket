@@ -3,7 +3,8 @@
 const STACK_PROJECT_ID = 'd76f939c-645c-4af5-8517-41a53c1d4cbf';
 const STACK_BASE = `https://api.stack-auth.com/api/v1/projects/${STACK_PROJECT_ID}`;
 const STACK_PCK = 'pck_gmbav8g165j74b0k0k13ab5d38trgmy6rf1aj834jbgcr'; // Publishable Client Key (safe for frontend)
-const LOGIN_API_URL = `${STACK_BASE}/auth/sessions`;
+// Use the email-password sign-in route
+const LOGIN_API_URL = `${STACK_BASE}/users/email-password/sign-in`;
 const TOKEN_VERIFY_URL = `${STACK_BASE}/auth/verify`;
 
 // ===== TOAST NOTIFICATION SYSTEM =====
@@ -70,15 +71,11 @@ document.addEventListener('DOMContentLoaded', () => {
         errorMessage.classList.add('hidden');
 
         try {
-            // Prepare payload for Neon: if user entered an email use 'email', otherwise send 'username'.
-            const payload = {};
-            if (username.includes('@')) {
-                payload.email = username;
-            } else {
-                payload.username = username;
-            }
-            payload.password = password;
-            payload.metadata = { source: 'maurmaket' };
+            // Stack Auth email-password login expects { email, password }
+            const payload = {
+                email: username,
+                password: password
+            };
 
             const response = await fetch(LOGIN_API_URL, {
                 method: 'POST',
