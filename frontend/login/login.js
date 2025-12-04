@@ -2,7 +2,8 @@
 // Use the universal Stack Auth base for the claimed project
 const STACK_PROJECT_ID = 'd76f939c-645c-4af5-8517-41a53c1d4cbf';
 const STACK_BASE = `https://api.stack-auth.com/api/v1/projects/${STACK_PROJECT_ID}`;
-const STACK_PCK = 'pck_gmbav8g165j74b0k0k13ab5d38trgmy6rf1aj834jbgcr'; // Publishable Client Key (safe for frontend)
+// Publishable Client Key (safe for frontend) - updated to latest provided key
+const STACK_PCK = 'pck_6b7jwm2t41zhj7y02dkgtg1fda3vqeva4243frnxwzy08';
 // Use the email-password sign-in route
 const LOGIN_API_URL = `${STACK_BASE}/users/email-password/sign-in`;
 const TOKEN_VERIFY_URL = `${STACK_BASE}/auth/verify`;
