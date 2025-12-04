@@ -4,8 +4,8 @@ const STACK_PROJECT_ID = 'd76f939c-645c-4af5-8517-41a53c1d4cbf';
 const STACK_BASE = `https://api.stack-auth.com/api/v1/projects/${STACK_PROJECT_ID}`;
 // Publishable Client Key (safe for frontend) - updated to latest provided key
 const STACK_PCK = 'pck_6b7jwm2t41zhj7y02dkgtg1fda3vqeva4243frnxwzy08';
-// Use the email-password sign-in route
-const LOGIN_API_URL = `${STACK_BASE}/users/email-password/sign-in`;
+// Stack Auth documented email/password endpoints
+const LOGIN_API_URL = 'https://api.stack-auth.com/api/v1/auth/email/sign-in';
 const TOKEN_VERIFY_URL = `${STACK_BASE}/auth/verify`;
 
 // ===== TOAST NOTIFICATION SYSTEM =====
@@ -82,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${STACK_PCK}`,
+                    'X-Stack-Publishable-Key': STACK_PCK,
                 },
                 body: JSON.stringify(payload),
             });
