@@ -1,0 +1,45 @@
+{
+  "version": "mvp-v1",
+  "entities": {
+    "user": {
+      "id": "string",
+      "role": "buyer|seller|both",
+      "display_name": "string",
+      "region": "string",
+      "created_at": "iso_datetime"
+    },
+    "listing": {
+      "id": "string",
+      "seller_id": "string",
+      "title": "string",
+      "description": "string",
+      "price_htg": "number",
+      "region": "string",
+      "image_url": "string",
+      "status": "draft|active|paused|archived",
+      "created_at": "iso_datetime",
+      "updated_at": "iso_datetime"
+    },
+    "purchase_request": {
+      "id": "string",
+      "listing_id": "string",
+      "buyer_id": "string",
+      "seller_id": "string",
+      "offered_price_htg": "number",
+      "note": "string",
+      "status": "requested|accepted|declined|completed|cancelled",
+      "fulfillment_mode": "none|meetup|delivery",
+      "meetup_region": "string|null",
+      "delivery_region": "string|null",
+      "created_at": "iso_datetime",
+      "updated_at": "iso_datetime"
+    }
+  },
+  "state_rules": [
+    "Only active listings can receive purchase requests.",
+    "Only seller can move purchase_request from requested to accepted or declined.",
+    "Fulfillment mode can be set only after request is accepted.",
+    "Only accepted requests can move to completed.",
+    "Requested or accepted requests can move to cancelled."
+  ]
+}

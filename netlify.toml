@@ -1,0 +1,22 @@
+[build]
+  publish = "frontend"
+
+[[redirects]]
+  from = "/"
+  to = "/pages/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/:page.html"
+  to = "/pages/:page.html"
+  status = 200
+
+[[redirects]]
+  from = "/login"
+  to = "/login/login.html"
+  status = 200
+
+[[redirects]]
+  from = "/signup"
+  to = "/login/signup.html"
+  status = 200
