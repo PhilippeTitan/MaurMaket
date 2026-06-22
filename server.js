@@ -398,10 +398,15 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
       }
     );
 
+    if (!moncashRes.ok) {
+      const errorText = await moncashRes.text();
+      console.error(`MonCashConnect HTTP ${moncashRes.status}:`, errorText);
+      return res.status(502).json({ error: `MonCashConnect returned ${moncashRes.status}`, details: errorText });
+    }
     const data = await moncashRes.json();
     if (!data.paymentUrl) {
-      console.error('MonCashConnect error:', data);
-      return res.status(502).json({ error: 'Payment provider error' });
+      console.error('MonCashConnect missing paymentUrl:', data);
+      return res.status(502).json({ error: 'Payment provider error', details: data });
     }
 
     await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [orderId, orderId]);
