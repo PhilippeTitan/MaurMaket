@@ -486,7 +486,7 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+const isMain = typeof import.meta !== 'undefined' && import.meta.url && process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
   app.listen(PORT, () => {
     console.log(`MaurMaket API running on http://localhost:${PORT}`);
