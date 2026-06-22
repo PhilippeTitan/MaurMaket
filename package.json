@@ -1,18 +1,24 @@
 {
   "name": "maurmaket",
   "version": "1.0.0",
-  "description": "",
-  "main": "test_moncash.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently \"node server.js\" \"vite\"",
+    "server": "node server.js",
+    "client": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.5",
     "dotenv": "^17.4.2",
-    "ejs": "^6.0.1",
     "express": "^5.2.1",
-    "pg": "^8.22.0"
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.22.0",
+    "serverless-http": "^3.2.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "vite": "^6.3.5"
   }
 }

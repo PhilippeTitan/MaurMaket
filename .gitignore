@@ -14,6 +14,9 @@ dist/
 *.sln
 *.sw?
 
+# Vite cache
+.vite/
+
 # Netlify local configuration
 .netlify/
 
