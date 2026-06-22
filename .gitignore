@@ -1,8 +1,27 @@
+# Node.js dependencies
 node_modules/
-.DS_Store
-*.log
+dist/
 .env
-.vscode
+.env.local
+.env.*.local
 
-# Local Netlify folder
-.netlify
+# IDE configuration
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Netlify local configuration
+.netlify/
+
+# System files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Keys & Secrets
+MonCashConnect KEYS.txt

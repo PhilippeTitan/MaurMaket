@@ -1,5 +1,18 @@
 {
+  "name": "maurmaket",
+  "version": "1.0.0",
+  "description": "",
+  "main": "test_moncash.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "@stackframe/js": "^2.8.54"
+    "dotenv": "^17.4.2",
+    "ejs": "^6.0.1",
+    "express": "^5.2.1",
+    "pg": "^8.22.0"
   }
 }
