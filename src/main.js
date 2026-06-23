@@ -6,6 +6,7 @@ import LoginPage from './views/Login.js';
 import SignupPage from './views/Signup.js';
 import ProductDetailPage from './views/ProductDetail.js';
 import CartPage from './views/Cart.js';
+import OrdersPage from './views/Orders.js';
 import SellerPage from './views/Seller.js';
 import ProfilePage from './views/Profile.js';
 import SettingsPage from './views/Settings.js';
@@ -14,11 +15,11 @@ const tabRoutes = {
   home:    { path: '/', label: 'Home', icon: 'ti-home', view: HomePage },
   explore: { path: '/explore', label: 'Explore', icon: 'ti-search', view: ExplorePage },
   sell:    { path: '/seller', label: 'Sell', icon: 'ti-plus', view: SellerPage },
-  cart:    { path: '/cart', label: 'Cart', icon: 'ti-shopping-cart', view: CartPage },
+  orders:  { path: '/orders', label: 'Orders', icon: 'ti-truck', view: OrdersPage },
   profile: { path: '/profile', label: 'Profile', icon: 'ti-user', view: ProfilePage },
 };
 
-const fullscreenRoutes = ['/login', '/signup', '/product', '/payment', '/profile/settings'];
+const fullscreenRoutes = ['/login', '/signup', '/product', '/payment', '/profile/settings', '/cart'];
 
 function renderShell() {
   const app = document.getElementById('app');
@@ -42,7 +43,6 @@ function renderTabBar(activeKey) {
       <button class="tab-btn ${isActive ? 'active' : ''}" data-tab="${key}">
         <i class="ti ${tab.icon}"></i>
         <span>${tab.label}</span>
-        ${key === 'cart' && store.cartCount > 0 ? `<span class="tab-badge">${store.cartCount}</span>` : ''}
       </button>
     `;
   }).join('');
@@ -83,6 +83,8 @@ export function navigate(path, params = {}) {
   if (path === '/signup') { SignupPage(page); return; }
   if (path.startsWith('/product')) { ProductDetailPage(page, params); return; }
   if (path === '/profile/settings') { SettingsPage(page); return; }
+
+  if (path === '/cart') { CartPage(page); return; }
 
   if (path === '/payment/return') {
     const orderId = new URLSearchParams(window.location.search).get('order');

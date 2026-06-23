@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import multer from 'multer';
 
 dotenv.config();
 
@@ -37,6 +38,25 @@ async function runMigrations() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    await c.query(`
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_lat DECIMAL(10,7);
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_lng DECIMAL(10,7);
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_address TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_note TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_confirmed BOOLEAN DEFAULT false;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_proposed_by UUID REFERENCES users(id);
+    `);
+    await c.query(`
+      ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+    `).catch(() => {});
+    await c.query(`
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20) DEFAULT 'meetup';
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_name TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_phone TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_city TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_note TEXT;
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -51,6 +71,13 @@ app.use(express.json({
 }));
 
 app.use(express.static(path.join(__dirname, 'dist')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, path.join(__dirname, 'uploads')),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`),
+});
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Auth middleware
 function authRequired(req, res, next) {
@@ -152,10 +179,34 @@ app.put('/api/auth/profile', authRequired, async (req, res) => {
   }
 });
 
+app.put('/api/auth/password', authRequired, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current and new password required' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  }
+  try {
+    const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const currentHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
+    if (currentHash !== result.rows[0].password_hash) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+    const newHash = crypto.createHash('sha256').update(newPassword).digest('hex');
+    await pool.query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [newHash, req.user.id]);
+    res.json({ updated: true });
+  } catch (err) {
+    console.error('Password change error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ───── Product routes ─────
 
 app.get('/api/products', async (req, res) => {
-  const { category, search, seller, page = 1, limit = 20 } = req.query;
+  const { category, search, seller, minPrice, maxPrice, sort, page = 1, limit = 20 } = req.query;
   const offset = (Math.max(1, page) - 1) * Math.min(limit, 50);
   const params = [];
   const conditions = ['p.is_available = TRUE'];
@@ -174,8 +225,20 @@ app.get('/api/products', async (req, res) => {
     conditions.push(`p.seller_id = $${paramIndex++}`);
     params.push(seller);
   }
+  if (minPrice) {
+    conditions.push(`p.price >= $${paramIndex++}`);
+    params.push(minPrice);
+  }
+  if (maxPrice) {
+    conditions.push(`p.price <= $${paramIndex++}`);
+    params.push(maxPrice);
+  }
 
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+  let orderBy = 'p.created_at DESC';
+  if (sort === 'price_asc') orderBy = 'p.price ASC';
+  else if (sort === 'price_desc') orderBy = 'p.price DESC';
+  else if (sort === 'oldest') orderBy = 'p.created_at ASC';
 
   try {
     const countResult = await pool.query(
@@ -193,7 +256,7 @@ app.get('/api/products', async (req, res) => {
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
        ${where}
-       ORDER BY p.created_at DESC
+       ORDER BY ${orderBy}
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       [...params, Math.min(limit, 50), offset]
     );
@@ -309,9 +372,15 @@ app.get('/api/categories', async (_req, res) => {
 
 app.get('/api/orders/:id', authRequired, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM orders WHERE id = $1 AND buyer_id = $2', [req.params.id, req.user.id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    res.json({ order: result.rows[0] });
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const items = await pool.query(
+      `SELECT oi.*, p.name AS product_name, p.price AS product_price
+       FROM order_items oi JOIN products p ON oi.product_id = p.id
+       WHERE oi.order_id = $1`,
+      [req.params.id]
+    );
+    res.json({ order: { ...order, items: items.rows } });
   } catch (err) {
     console.error('Order fetch error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -319,22 +388,28 @@ app.get('/api/orders/:id', authRequired, async (req, res) => {
 });
 
 app.get('/api/orders', authRequired, async (req, res) => {
-  const isSeller = req.user.role === 'seller' || req.user.role === 'admin';
   try {
-    let query;
-    let params;
-    if (isSeller) {
-      query = `SELECT DISTINCT o.* FROM orders o
-               JOIN order_items oi ON o.id = oi.order_id
-               WHERE oi.seller_id = $1 OR o.buyer_id = $1
-               ORDER BY o.created_at DESC`;
-      params = [req.user.id];
-    } else {
-      query = 'SELECT * FROM orders WHERE buyer_id = $1 ORDER BY created_at DESC';
-      params = [req.user.id];
-    }
-    const result = await pool.query(query, params);
-    res.json({ orders: result.rows });
+    const buyerOrders = await pool.query(
+      `SELECT o.*, u.full_name AS seller_name, u.phone AS seller_phone,
+              'buyer' AS my_role
+       FROM orders o
+       JOIN order_items oi ON o.id = oi.order_id
+       JOIN users u ON oi.seller_id = u.id
+       WHERE o.buyer_id = $1
+       ORDER BY o.created_at DESC`,
+      [req.user.id]
+    );
+    const sellerOrders = await pool.query(
+      `SELECT o.*, u.full_name AS buyer_name, u.phone AS buyer_phone,
+              'seller' AS my_role
+       FROM orders o
+       JOIN order_items oi ON o.id = oi.order_id
+       JOIN users u ON o.buyer_id = u.id
+       WHERE oi.seller_id = $1
+       ORDER BY o.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ buyerOrders: buyerOrders.rows, sellerOrders: sellerOrders.rows });
   } catch (err) {
     console.error('Orders error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -342,7 +417,7 @@ app.get('/api/orders', authRequired, async (req, res) => {
 });
 
 app.post('/api/orders', authRequired, async (req, res) => {
-  const { items } = req.body;
+  const { items, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote } = req.body;
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'Cart is empty' });
   }
@@ -366,9 +441,11 @@ app.post('/api/orders', authRequired, async (req, res) => {
       orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id });
     }
 
+    const method = deliveryMethod === 'delivery' ? 'delivery' : 'meetup';
     const orderResult = await client.query(
-      `INSERT INTO orders (buyer_id, total_amount, status) VALUES ($1, $2, 'pending') RETURNING *`,
-      [req.user.id, total]
+      `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note)
+       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [req.user.id, total, method, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null]
     );
     const order = orderResult.rows[0];
 
@@ -388,6 +465,145 @@ app.post('/api/orders', authRequired, async (req, res) => {
     res.status(400).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const order = await client.query(
+      'SELECT * FROM orders WHERE id = $1 AND buyer_id = $2 FOR UPDATE',
+      [req.params.id, req.user.id]
+    );
+    if (order.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (order.rows[0].status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Only pending orders can be cancelled' });
+    }
+    const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
+    for (const item of items.rows) {
+      await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
+    }
+    await client.query(
+      "UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+      [req.params.id]
+    );
+    await client.query('COMMIT');
+    res.json({ cancelled: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Order cancel error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+async function canAccessOrder(userId, orderId) {
+  const result = await pool.query(
+    `SELECT o.* FROM orders o
+     LEFT JOIN order_items oi ON o.id = oi.order_id
+     WHERE o.id = $1 AND (o.buyer_id = $2 OR oi.seller_id = $2)
+     LIMIT 1`,
+    [orderId, userId]
+  );
+  return result.rows[0] || null;
+}
+
+app.put('/api/orders/:id/meetup', authRequired, async (req, res) => {
+  const { lat, lng, address, note } = req.body;
+  if (!lat || !lng) return res.status(400).json({ error: 'Latitude and longitude required' });
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status !== 'paid' && order.status !== 'pending') return res.status(400).json({ error: 'Order must be paid or pending' });
+    await pool.query(
+      `UPDATE orders SET meetup_lat = $1, meetup_lng = $2, meetup_address = $3, meetup_note = $4, meetup_confirmed = false, meetup_proposed_by = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6`,
+      [lat, lng, address || null, note || null, req.user.id, req.params.id]
+    );
+    res.json({ updated: true });
+  } catch (err) {
+    console.error('Meetup error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/orders/:id/meetup/confirm', authRequired, async (req, res) => {
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status !== 'paid' && order.status !== 'pending') return res.status(400).json({ error: 'Order must be paid or pending' });
+    if (!order.meetup_lat || !order.meetup_lng) return res.status(400).json({ error: 'No meetup location proposed yet' });
+    if (order.meetup_proposed_by === req.user.id) return res.status(400).json({ error: 'You proposed this location, wait for the other party to confirm' });
+    await pool.query(
+      `UPDATE orders SET meetup_confirmed = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [req.params.id]
+    );
+    res.json({ updated: true });
+  } catch (err) {
+    console.error('Meetup confirm error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status === 'completed') return res.status(400).json({ error: 'Order already completed' });
+    if (order.status === 'cancelled') return res.status(400).json({ error: 'Order was cancelled' });
+    await pool.query(
+      `UPDATE orders SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [req.params.id]
+    );
+    res.json({ updated: true, status: 'completed' });
+  } catch (err) {
+    console.error('Order complete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const orderResult = await pool.query(
+      "SELECT * FROM orders WHERE id = $1 AND buyer_id = $2 AND status = 'pending'",
+      [orderId, req.user.id]
+    );
+    if (orderResult.rows.length === 0) return res.status(404).json({ error: 'Pending order not found' });
+    const order = orderResult.rows[0];
+
+    const moncashRes = await fetch(
+      process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.MCC_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: parseFloat(order.total_amount),
+          referenceId: orderId,
+          returnUrl: `${req.protocol}://${req.get('host')}/payment/return?order=${orderId}`,
+        }),
+      }
+    );
+
+    if (!moncashRes.ok) {
+      const errorText = await moncashRes.text();
+      return res.status(502).json({ error: `MonCashConnect returned ${moncashRes.status}`, details: errorText });
+    }
+    const data = await moncashRes.json();
+    if (!data.paymentUrl) return res.status(502).json({ error: 'Payment provider error' });
+
+    res.json({ paymentUrl: data.paymentUrl });
+  } catch (err) {
+    console.error('Payment retry error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -587,6 +803,36 @@ app.post('/api/payments/webhook', async (req, res) => {
         client.release();
       }
       console.log(`Order ${reference} cancelled via webhook`);
+    } else if (event === 'payout.completed') {
+      await pool.query(
+        `UPDATE payouts SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [reference]
+      );
+      console.log(`Payout ${reference} completed via webhook`);
+    } else if (event === 'payout.failed') {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const payout = await client.query('SELECT seller_id, amount FROM payouts WHERE id = $1', [reference]);
+        if (payout.rows.length > 0) {
+          const { seller_id, amount } = payout.rows[0];
+          await client.query(
+            'UPDATE seller_balances SET balance = balance + $1, total_paid_out = total_paid_out - $1, updated_at = CURRENT_TIMESTAMP WHERE seller_id = $2',
+            [amount, seller_id]
+          );
+        }
+        await client.query(
+          `UPDATE payouts SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [reference]
+        );
+        await client.query('COMMIT');
+        console.log(`Payout ${reference} failed, balance refunded`);
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
     }
 
     res.json({ received: true });
@@ -740,6 +986,18 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
   } finally {
     c.release();
   }
+});
+
+// ───── Upload ─────
+
+import fs from 'fs';
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+app.post('/api/upload', authRequired, upload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const url = `/uploads/${req.file.filename}`;
+  res.json({ url });
 });
 
 // ───── Health check ─────

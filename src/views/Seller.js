@@ -193,8 +193,11 @@ export default function SellerPage(page) {
           <select id="p-category"><option value="">Select...</option></select>
         </div>
         <div class="form-group">
-          <label>Image URLs (one per line)</label>
-          <textarea id="p-images" placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.jpg" rows="3"></textarea>
+          <label>Images</label>
+          <input type="file" id="p-images-file" accept="image/*" multiple style="display:none;" />
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;" id="image-previews"></div>
+          <button type="button" class="btn btn-sm btn-outline" id="upload-btn" style="padding:8px 14px;font-size:0.8rem;border-radius:10px;">+ Upload Images</button>
+          <textarea id="p-images" placeholder="Or paste image URLs (one per line)" rows="2" style="margin-top:6px;font-size:0.75rem;"></textarea>
         </div>
         <button type="submit" class="btn btn-primary" style="width:100%;border-radius:14px;padding:14px;">Add Product</button>
       </form>
@@ -209,6 +212,35 @@ export default function SellerPage(page) {
       });
     }).catch(() => {});
 
+    const uploadedUrls = [];
+
+    page.querySelector('#upload-btn').addEventListener('click', () => {
+      page.querySelector('#p-images-file').click();
+    });
+
+    page.querySelector('#p-images-file').addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        try {
+          const data = await api.uploadImage(file);
+          if (data.url) {
+            uploadedUrls.push(data.url);
+            const preview = document.createElement('div');
+            preview.style.cssText = 'width:60px;height:60px;border-radius:8px;overflow:hidden;position:relative;';
+            preview.innerHTML = `<img src="${data.url}" style="width:100%;height:100%;object-fit:cover;" /><span style="position:absolute;top:2px;right:2px;background:var(--coral);color:white;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;">×</span>`;
+            preview.querySelector('span').addEventListener('click', () => {
+              const idx = uploadedUrls.indexOf(data.url);
+              if (idx > -1) uploadedUrls.splice(idx, 1);
+              preview.remove();
+            });
+            page.querySelector('#image-previews').appendChild(preview);
+          }
+        } catch (err) {
+          showToast('Upload failed: ' + err.message, 'error');
+        }
+      }
+    });
+
     page.querySelector('#product-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = page.querySelector('#p-name').value;
@@ -217,7 +249,8 @@ export default function SellerPage(page) {
       const stock = parseInt(page.querySelector('#p-stock').value) || 0;
       const categoryId = page.querySelector('#p-category').value || null;
       const imagesRaw = page.querySelector('#p-images').value;
-      const images = imagesRaw ? imagesRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
+      const urlsFromText = imagesRaw ? imagesRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
+      const images = [...uploadedUrls, ...urlsFromText];
       const btn = page.querySelector('button[type="submit"]');
       btn.disabled = true; btn.textContent = 'Adding...';
       try {

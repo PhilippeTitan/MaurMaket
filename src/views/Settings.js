@@ -38,6 +38,21 @@ export default async function SettingsPage(page) {
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%;border-radius:14px;padding:14px;margin-top:8px;">Save Changes</button>
           </form>
+
+          <hr style="border:none;border-top:1px solid var(--border);margin:24px 0;" />
+
+          <h3 style="font-size:1rem;margin:0 0 12px 0;color:var(--text);">Change Password</h3>
+          <form id="password-form">
+            <div class="form-group">
+              <label>Current Password</label>
+              <input type="password" id="s-current-pw" placeholder="Enter current password" required />
+            </div>
+            <div class="form-group">
+              <label>New Password</label>
+              <input type="password" id="s-new-pw" placeholder="At least 6 characters" required minlength="6" />
+            </div>
+            <button type="submit" class="btn btn-outline" style="width:100%;border-radius:14px;padding:14px;">Change Password</button>
+          </form>
         </div>
       </div>
     `;
@@ -61,6 +76,24 @@ export default async function SettingsPage(page) {
       } catch (err) {
         showToast(err.message, 'error');
         btn.disabled = false; btn.textContent = 'Save Changes';
+      }
+    });
+
+    page.querySelector('#password-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const currentPassword = page.querySelector('#s-current-pw').value;
+      const newPassword = page.querySelector('#s-new-pw').value;
+      const btn = page.querySelector('#password-form button[type="submit"]');
+      btn.disabled = true; btn.textContent = 'Changing...';
+      try {
+        await api.changePassword(currentPassword, newPassword);
+        showToast('Password changed!', 'success');
+        page.querySelector('#s-current-pw').value = '';
+        page.querySelector('#s-new-pw').value = '';
+        btn.disabled = false; btn.textContent = 'Change Password';
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Change Password';
       }
     });
   } catch (err) {

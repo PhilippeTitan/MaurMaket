@@ -16,11 +16,15 @@ const emojis = ['☕', '📱', '👟', '🎧', '💻', '🕶️', '🎮', '👜'
 export default async function HomePage(page) {
   page.innerHTML = `
     <div class="home-page">
-      <div class="topbar">
-        <span class="logo">Maur<span>Maket</span></span>
-        <div class="topbar-right">
+      <div class="topbar" style="justify-content:space-between;">
+        <div style="display:flex;gap:16px;align-items:center;">
           <i class="ti ti-bell"></i>
           <i class="ti ti-heart"></i>
+        </div>
+        <span class="logo">Maur<span>Maket</span></span>
+        <div style="display:flex;gap:16px;align-items:center;position:relative;">
+          <i class="ti ti-shopping-cart" id="home-cart-btn"></i>
+          <span id="home-cart-badge" style="display:${store.cartCount > 0 ? 'flex' : 'none'};position:absolute;top:-4px;right:-6px;background:var(--coral);color:#fff;font-size:0.55rem;font-weight:700;padding:1px 5px;border-radius:8px;min-width:15px;text-align:center;height:15px;align-items:center;justify-content:center;">${store.cartCount}</span>
         </div>
       </div>
       <div id="ig-feed" class="ig-feed">
@@ -122,6 +126,16 @@ export default async function HomePage(page) {
       `;
     }
   }
+
+  page.querySelector('#home-cart-btn')?.addEventListener('click', () => navigate('/cart'));
+
+  store.onChange(() => {
+    const badge = page.querySelector('#home-cart-badge');
+    if (badge) {
+      badge.textContent = store.cartCount;
+      badge.style.display = store.cartCount > 0 ? 'flex' : 'none';
+    }
+  });
 
   loadProducts(false);
 }

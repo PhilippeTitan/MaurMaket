@@ -23,7 +23,7 @@ export default async function ExplorePage(page) {
     <div class="explore-page">
       <div class="topbar">
         <span class="logo">Maur<span>Maket</span></span>
-        <div class="topbar-right"><i class="ti ti-adjustments-horizontal"></i></div>
+        <div class="topbar-right"><i class="ti ti-adjustments-horizontal" id="filter-toggle"></i></div>
       </div>
       <div class="explore-top">
         <div class="search-bar">
@@ -36,6 +36,19 @@ export default async function ExplorePage(page) {
           `).join('')}
         </div>
       </div>
+      <div id="filter-panel" style="display:none;padding:0 16px 12px;background:var(--bg);">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="sort-select" style="flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 10px;color:var(--text);font-size:0.8rem;">
+            <option value="">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="price_asc">Price: Low to High</option>
+            <option value="price_desc">Price: High to Low</option>
+          </select>
+          <input type="number" id="min-price" placeholder="Min Rs" style="flex:1;min-width:80px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 10px;color:var(--text);font-size:0.8rem;" />
+          <input type="number" id="max-price" placeholder="Max Rs" style="flex:1;min-width:80px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 10px;color:var(--text);font-size:0.8rem;" />
+          <button class="btn btn-sm btn-primary" id="apply-filters" style="padding:8px 14px;font-size:0.8rem;border-radius:10px;">Apply</button>
+        </div>
+      </div>
       <div id="explore-grid" class="pin-grid">
         <div class="loading" style="height:40vh;"><div class="spinner"></div></div>
       </div>
@@ -45,6 +58,9 @@ export default async function ExplorePage(page) {
   let allProducts = [];
   let currentSearch = '';
   let currentCategory = '';
+  let currentSort = '';
+  let currentMinPrice = '';
+  let currentMaxPrice = '';
 
   async function loadProducts() {
     const container = page.querySelector('#explore-grid');
@@ -53,6 +69,9 @@ export default async function ExplorePage(page) {
       const params = { limit: 50 };
       if (currentSearch) params.search = currentSearch;
       if (currentCategory) params.category = currentCategory;
+      if (currentSort) params.sort = currentSort;
+      if (currentMinPrice) params.minPrice = currentMinPrice;
+      if (currentMaxPrice) params.maxPrice = currentMaxPrice;
       const data = await api.getProducts(params);
       allProducts = data.products;
       renderMasonry();
@@ -111,6 +130,25 @@ export default async function ExplorePage(page) {
       currentSearch = e.target.value.trim();
       loadProducts();
     }
+  });
+
+  let filterVisible = false;
+  page.querySelector('#filter-toggle').addEventListener('click', () => {
+    filterVisible = !filterVisible;
+    const panel = page.querySelector('#filter-panel');
+    panel.style.display = filterVisible ? 'block' : 'none';
+  });
+
+  page.querySelector('#apply-filters').addEventListener('click', () => {
+    currentSort = page.querySelector('#sort-select').value;
+    currentMinPrice = page.querySelector('#min-price').value;
+    currentMaxPrice = page.querySelector('#max-price').value;
+    loadProducts();
+  });
+
+  page.querySelector('#sort-select').addEventListener('change', () => {
+    currentSort = page.querySelector('#sort-select').value;
+    loadProducts();
   });
 
   loadProducts();

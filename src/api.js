@@ -52,12 +52,16 @@ export function getCategories() {
   return request('/categories');
 }
 
-export function createOrder(items) {
-  return request('/orders', { method: 'POST', body: JSON.stringify({ items }) });
+export function createOrder(data) {
+  return request('/orders', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export function getOrders() {
   return request('/orders');
+}
+
+export function getOrder(id) {
+  return request(`/orders/${id}`);
 }
 
 export function getSellerProducts() {
@@ -86,4 +90,39 @@ export function requestPayout(amount) {
 
 export function updateOrderStatus(orderId, status) {
   return request(`/seller/orders/${orderId}/status`, { method: 'PUT', body: JSON.stringify({ status }) });
+}
+
+export function cancelOrder(orderId) {
+  return request(`/orders/${orderId}/cancel`, { method: 'PUT' });
+}
+
+export function retryPayment(orderId) {
+  return request(`/payments/retry/${orderId}`, { method: 'POST' });
+}
+
+export function changePassword(currentPassword, newPassword) {
+  return request('/auth/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) });
+}
+
+export function proposeMeetup(orderId, lat, lng, address, note) {
+  return request(`/orders/${orderId}/meetup`, { method: 'PUT', body: JSON.stringify({ lat, lng, address, note }) });
+}
+
+export function confirmMeetup(orderId) {
+  return request(`/orders/${orderId}/meetup/confirm`, { method: 'PUT' });
+}
+
+export function completeOrder(orderId) {
+  return request(`/orders/${orderId}/complete`, { method: 'PUT' });
+}
+
+export function uploadImage(file) {
+  const token = localStorage.getItem('mm_token');
+  const formData = new FormData();
+  formData.append('image', file);
+  return fetch('/api/upload', {
+    method: 'POST',
+    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    body: formData,
+  }).then(res => res.json());
 }

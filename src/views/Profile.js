@@ -11,7 +11,8 @@ export default function ProfilePage(page) {
   api.getMe().then(({ user }) => {
     store.state.user = user;
 
-    api.getOrders().then(({ orders }) => {
+    api.getOrders().then(({ buyerOrders, sellerOrders }) => {
+      const orders = [...(buyerOrders || []), ...(sellerOrders || [])];
       page.innerHTML = `
         <div style="height:100%;display:flex;flex-direction:column;background:var(--bg);">
           <div class="topbar">
@@ -48,6 +49,12 @@ export default function ProfilePage(page) {
                   <div style="text-align:right;">
                     <div class="order-amt">Rs ${parseFloat(o.total_amount).toFixed(0)}</div>
                     <span class="badge ${o.status === 'completed' || o.status === 'delivered' ? 'badge-green' : 'badge-blue'}">${o.status}</span>
+                    ${o.status === 'pending' ? `
+                      <div style="display:flex;gap:4px;margin-top:4px;">
+                        <button class="btn btn-sm btn-outline retry-payment-btn" data-id="${o.id}" style="padding:2px 8px;font-size:0.65rem;">Retry</button>
+                        <button class="btn btn-sm btn-ghost cancel-order-btn" data-id="${o.id}" style="padding:2px 8px;font-size:0.65rem;color:var(--coral);">Cancel</button>
+                      </div>
+                    ` : ''}
                   </div>
                 </div>
               `).join('') : '<div style="text-align:center;padding:20px 0;color:var(--text2);font-size:0.85rem;">No orders yet</div>'}
@@ -63,6 +70,51 @@ export default function ProfilePage(page) {
         store.logout();
         showToast('Signed out', 'info');
         navigate('/');
+      });
+      page.querySelector('#my-orders')?.addEventListener('click', async (e) => {
+        const retryBtn = e.target.closest('.retry-payment-btn');
+        if (retryBtn) {
+          const orderId = retryBtn.dataset.id;
+          retryBtn.disabled = true; retryBtn.textContent = '...';
+          try {
+            const { paymentUrl } = await api.retryPayment(orderId);
+            window.location.href = paymentUrl;
+          } catch (err) {
+            showToast(err.message, 'error');
+            retryBtn.disabled = false; retryBtn.textContent = 'Retry';
+          }
+          return;
+        }
+        const cancelBtn = e.target.closest('.cancel-order-btn');
+        if (cancelBtn) {
+          const orderId = cancelBtn.dataset.id;
+          if (!confirm('Cancel this order?')) return;
+          cancelBtn.disabled = true; cancelBtn.textContent = '...';
+          try {
+            await api.cancelOrder(orderId);
+            showToast('Order cancelled', 'info');
+            // Refresh the profile section
+            api.getOrders().then(({ buyerOrders, sellerOrders }) => {
+              const orders = [...(buyerOrders || []), ...(sellerOrders || [])];
+              const container = page.querySelector('#my-orders');
+              if (!container) return;
+              container.innerHTML = orders.map(o => `
+                <div class="order-row">
+                  <div>
+                    <div class="order-id-text">${o.id.slice(0, 8)}...</div>
+                    <div class="order-date">${new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                  </div>
+                  <div style="text-align:right;">
+                    <div class="order-amt">Rs ${parseFloat(o.total_amount).toFixed(0)}</div>
+                    <span class="badge ${o.status === 'completed' || o.status === 'delivered' ? 'badge-green' : 'badge-blue'}">${o.status}</span>
+                  </div>
+                </div>
+              `).join('');
+            }).catch(() => {});
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        }
       });
     }).catch(() => {
       page.innerHTML = `<div style="height:100%;display:flex;flex-direction:column;background:var(--bg);">

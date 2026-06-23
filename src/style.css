@@ -469,3 +469,15 @@ label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 4px
 
 /* ───── Home page container ───── */
 .home-page { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ───── Orders / Meetup ───── */
+.order-card-clickable { cursor: pointer; transition: transform 0.1s; }
+.order-card-clickable:active { transform: scale(0.98); }
+.order-card .status.meetup_confirmed { background: rgba(0,194,255,0.12); color: var(--blue); }
+.order-card .status.completed { background: rgba(0,229,160,0.12); color: var(--green); }
+
+/* Leaflet overrides for dark theme */
+.leaflet-container { background: #1a1a2e !important; }
+.leaflet-control-zoom a { background: var(--surface) !important; color: var(--text) !important; border-color: var(--border) !important; }
+.leaflet-popup-content-wrapper { background: var(--surface) !important; color: var(--text) !important; }
+.leaflet-popup-tip { background: var(--surface) !important; }

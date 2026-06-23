@@ -28,3 +28,11 @@ Desktop.ini
 
 # Keys & Secrets
 MonCashConnect KEYS.txt
+
+# Fly.io machine files
+oid.txt
+pid.txt
+token2.txt
+
+# Uploaded images (local dev)
+uploads/
