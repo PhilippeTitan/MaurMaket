@@ -85,6 +85,7 @@ export function navigate(path, params = {}) {
   if (path === '/profile/settings') { SettingsPage(page); return; }
 
   if (path === '/payment/return') {
+    const orderId = new URLSearchParams(window.location.search).get('order');
     page.innerHTML = `
       <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
         <div class="spinner" style="margin-bottom:16px;"></div>
@@ -93,10 +94,14 @@ export function navigate(path, params = {}) {
       </div>
     `;
 
-    import('./api.js').then(({ getOrders }) => {
-      getOrders().then(({ orders }) => {
-        const latest = orders[0];
-        if (latest && (latest.status === 'paid' || latest.status === 'processing')) {
+    async function checkOrder() {
+      try {
+        const res = await fetch('/api/orders/' + orderId, {
+          headers: { 'Authorization': 'Bearer ' + (store.token || localStorage.getItem('mm_token')) }
+        });
+        const data = await res.json();
+        const status = data.order?.status;
+        if (status === 'paid' || status === 'processing') {
           page.innerHTML = `
             <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
               <div style="font-size:3rem;margin-bottom:8px;">✅</div>
@@ -105,8 +110,7 @@ export function navigate(path, params = {}) {
               <button class="btn btn-primary" id="goto-profile">View Orders</button>
             </div>
           `;
-          page.querySelector('#goto-profile')?.addEventListener('click', () => navigate('/profile'));
-        } else {
+        } else if (status === 'pending') {
           page.innerHTML = `
             <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
               <div style="font-size:3rem;margin-bottom:8px;">⏳</div>
@@ -115,9 +119,17 @@ export function navigate(path, params = {}) {
               <button class="btn btn-primary" id="goto-profile">View Orders</button>
             </div>
           `;
-          page.querySelector('#goto-profile')?.addEventListener('click', () => navigate('/profile'));
+        } else {
+          page.innerHTML = `
+            <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
+              <div style="font-size:3rem;margin-bottom:8px;">❌</div>
+              <h3 style="margin-bottom:4px;">Payment Failed</h3>
+              <p style="color:var(--text2);font-size:0.85rem;margin-bottom:16px;">Please try again</p>
+              <button class="btn btn-primary" id="goto-cart">Back to Cart</button>
+            </div>
+          `;
         }
-      }).catch(() => {
+      } catch {
         page.innerHTML = `
           <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
             <div style="font-size:3rem;margin-bottom:8px;">✅</div>
@@ -126,8 +138,14 @@ export function navigate(path, params = {}) {
             <button class="btn btn-primary" id="goto-profile">View Orders</button>
           </div>
         `;
-        page.querySelector('#goto-profile')?.addEventListener('click', () => navigate('/profile'));
-      });
+      }
+      page.querySelector('#goto-profile')?.addEventListener('click', () => navigate('/profile'));
+      page.querySelector('#goto-cart')?.addEventListener('click', () => navigate('/cart'));
+    }
+
+    // Retry a few times since the webhook may not have fired yet
+    checkOrder().then(() => {
+      setTimeout(checkOrder, 3000);
     });
     return;
   }

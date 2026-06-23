@@ -20,7 +20,11 @@ export default function SignupPage(page) {
           </div>
           <div class="form-group">
             <label>Phone (optional)</label>
-            <input type="tel" id="phone" placeholder="5XXX XXXX" />
+            <div style="display:flex;gap:0;align-items:stretch;">
+              <div style="background:var(--surface);border:1px solid var(--border);border-right:none;border-radius:14px 0 0 14px;padding:14px 10px;color:var(--text2);font-size:1rem;font-weight:600;white-space:nowrap;display:flex;align-items:center;">+509</div>
+              <input type="tel" id="phone" placeholder="XX XX XXXX" style="border-radius:0 14px 14px 0;" />
+            </div>
+            <div style="font-size:0.75rem;color:var(--text2);margin-top:4px;">Enter your 8-digit MonCash number</div>
           </div>
           <div class="form-group">
             <label>Password</label>
@@ -40,7 +44,8 @@ export default function SignupPage(page) {
     e.preventDefault();
     const fullName = page.querySelector('#fullName').value;
     const email = page.querySelector('#email').value;
-    const phone = page.querySelector('#phone').value;
+    const rawPhone = page.querySelector('#phone').value.replace(/\s/g, '');
+    const phone = rawPhone ? '+509' + rawPhone : '';
     const password = page.querySelector('#password').value;
     const btn = page.querySelector('button[type="submit"]');
     btn.disabled = true; btn.textContent = 'Creating account...';

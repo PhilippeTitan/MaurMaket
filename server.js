@@ -80,11 +80,12 @@ app.post('/api/auth/signup', async (req, res) => {
   }
   try {
     const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+    const cleanPhone = phone ? phone.replace(/^\+/, '') : null;
     const result = await pool.query(
       `INSERT INTO users (full_name, email, password_hash, phone, role)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, full_name, email, phone, role, avatar_url, created_at`,
-      [fullName, email, passwordHash, phone || null, role || 'buyer']
+      [fullName, email, passwordHash, cleanPhone, role || 'buyer']
     );
     const user = result.rows[0];
     const token = Buffer.from(JSON.stringify({ id: user.id, email: user.email, role: user.role })).toString('base64url');
@@ -136,14 +137,16 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
 });
 
 app.put('/api/auth/profile', authRequired, async (req, res) => {
-  const { fullName, phone, bio, avatarUrl } = req.body;
+  let { fullName, email, phone, bio, avatarUrl } = req.body;
+  if (phone) phone = phone.replace(/^\+/, '');
   try {
     const result = await pool.query(
-      `UPDATE users SET full_name = COALESCE($1, full_name), phone = COALESCE($2, phone), bio = COALESCE($3, bio), avatar_url = COALESCE($4, avatar_url), updated_at = CURRENT_TIMESTAMP WHERE id = $5 RETURNING id, full_name, email, phone, role, avatar_url, bio`,
-      [fullName, phone, bio, avatarUrl, req.user.id]
+      `UPDATE users SET full_name = COALESCE($1, full_name), email = COALESCE($2, email), phone = COALESCE($3, phone), bio = COALESCE($4, bio), avatar_url = COALESCE($5, avatar_url), updated_at = CURRENT_TIMESTAMP WHERE id = $6 RETURNING id, full_name, email, phone, role, avatar_url, bio`,
+      [fullName, email || null, phone, bio, avatarUrl, req.user.id]
     );
     res.json({ user: result.rows[0] });
   } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Email already in use' });
     console.error('Profile update error:', err);
     res.status(500).json({ error: 'Server error' });
   }
@@ -304,6 +307,17 @@ app.get('/api/categories', async (_req, res) => {
 
 // ───── Order routes ─────
 
+app.get('/api/orders/:id', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM orders WHERE id = $1 AND buyer_id = $2', [req.params.id, req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    res.json({ order: result.rows[0] });
+  } catch (err) {
+    console.error('Order fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/orders', authRequired, async (req, res) => {
   const isSeller = req.user.role === 'seller' || req.user.role === 'admin';
   try {
@@ -412,6 +426,36 @@ app.get('/api/seller/orders', authRequired, sellerRequired, async (req, res) => 
     res.json({ orders: result.rows });
   } catch (err) {
     console.error('Seller orders error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async (req, res) => {
+  const { status } = req.body;
+  const allowed = ['paid', 'processing', 'shipped', 'delivered'];
+  if (!allowed.includes(status)) {
+    return res.status(400).json({ error: `Status must be one of: ${allowed.join(', ')}` });
+  }
+  try {
+    const check = await pool.query(
+      `SELECT o.id, o.status FROM orders o
+       JOIN order_items oi ON o.id = oi.order_id
+       WHERE o.id = $1 AND oi.seller_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    const current = check.rows[0].status;
+    const transitions = { paid: 'processing', processing: 'shipped', shipped: 'delivered' };
+    if (transitions[current] !== status) {
+      return res.status(400).json({ error: `Cannot transition from ${current} to ${status}` });
+    }
+    await pool.query(
+      `UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [status, req.params.id]
+    );
+    res.json({ updated: true, status });
+  } catch (err) {
+    console.error('Order status update error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

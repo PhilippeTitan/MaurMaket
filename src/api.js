@@ -83,3 +83,7 @@ export function getSellerPayouts() {
 export function requestPayout(amount) {
   return request('/seller/payouts/request', { method: 'POST', body: JSON.stringify({ amount }) });
 }
+
+export function updateOrderStatus(orderId, status) {
+  return request(`/seller/orders/${orderId}/status`, { method: 'PUT', body: JSON.stringify({ status }) });
+}

@@ -131,7 +131,10 @@ export default function SellerPage(page) {
         container.innerHTML = '<div class="empty-state"><h3>No orders</h3><p>Orders from buyers will show here</p></div>';
         return;
       }
-      container.innerHTML = orders.map(o => `
+      const nextStatus = { paid: 'processing', processing: 'shipped', shipped: 'delivered' };
+      container.innerHTML = orders.map(o => {
+        const next = nextStatus[o.status];
+        return `
         <div class="order-card">
           <div class="row1">
             <span class="order-id">${o.id.slice(0, 8)}...</span>
@@ -141,8 +144,25 @@ export default function SellerPage(page) {
           ${o.buyer_phone ? `<div style="font-size:0.75rem;color:var(--text2);">${o.buyer_phone}</div>` : ''}
           <div style="font-weight:700;color:var(--coral);margin-top:6px;font-size:0.95rem;">Rs ${parseFloat(o.total_amount).toFixed(2)}</div>
           <div style="font-size:0.7rem;color:var(--text2);margin-top:2px;">${new Date(o.created_at).toLocaleString()}</div>
+          ${next ? `<button class="btn btn-sm btn-primary status-update-btn" data-id="${o.id}" data-next="${next}" style="margin-top:8px;padding:6px 14px;font-size:0.75rem;border-radius:10px;">Mark as ${next}</button>` : ''}
         </div>
-      `).join('');
+      `}).join('');
+
+      container.querySelectorAll('.status-update-btn').forEach(el => {
+        el.addEventListener('click', async () => {
+          const id = el.dataset.id;
+          const next = el.dataset.next;
+          el.disabled = true; el.textContent = 'Updating...';
+          try {
+            await api.updateOrderStatus(id, next);
+            showToast(`Order ${next}!`, 'success');
+            loadOrders();
+          } catch (err) {
+            showToast(err.message, 'error');
+            el.disabled = false; el.textContent = `Mark as ${next}`;
+          }
+        });
+      });
     } catch (err) {
       container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${err.message}</p></div>`;
     }

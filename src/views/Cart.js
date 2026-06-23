@@ -84,9 +84,8 @@ export default function CartPage(page) {
       btn.disabled = true; btn.textContent = 'Processing...';
       try {
         const { order } = await api.createOrder(store.cart.map(item => ({ productId: item.id, quantity: item.quantity })));
-        const returnUrl = window.location.origin + '/payment/return';
+        const returnUrl = window.location.origin + '/payment/return?order=' + order.id;
         const { paymentUrl } = await api.createPayment(order.id, returnUrl);
-        store.clearCart();
 
         // Show MonCash payment modal
         const overlay = document.createElement('div');
@@ -102,12 +101,18 @@ export default function CartPage(page) {
               <div style="display:flex;gap:8px;"><span style="color:var(--coral);">3.</span> You'll be brought back automatically</div>
             </div>
             <button id="moncash-proceed" class="btn btn-primary" style="width:100%;border-radius:14px;padding:14px;">Continue to MonCash</button>
+            <button id="moncash-cancel" class="btn btn-ghost" style="width:100%;margin-top:6px;">Cancel</button>
           </div>
         `;
         document.body.appendChild(overlay);
 
         overlay.querySelector('#moncash-proceed').addEventListener('click', () => {
+          store.clearCart();
           window.location.href = paymentUrl;
+        });
+        overlay.querySelector('#moncash-cancel').addEventListener('click', () => {
+          document.body.removeChild(overlay);
+          render();
         });
       } catch (err) {
         showToast(err.message, 'error');
