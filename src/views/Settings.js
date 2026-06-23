@@ -10,6 +10,41 @@ export default async function SettingsPage(page) {
 
   try {
     const { user } = await api.getMe();
+    const { addresses } = await api.getAddresses();
+
+    function renderAddresses() {
+      const container = page.querySelector('#saved-addresses-list');
+      if (!container) return;
+      if (addresses.length === 0) {
+        container.innerHTML = '<div style="font-size:0.8rem;color:var(--text2);padding:4px 0;">No saved addresses yet</div>';
+        return;
+      }
+      container.innerHTML = addresses.map((addr, idx) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="flex:1;">
+            <div style="font-size:0.85rem;color:var(--text);">${addr.label ? `<strong>${addr.label}</strong> — ` : ''}${addr.address}, ${addr.city}</div>
+            <div style="font-size:0.7rem;color:var(--text2);">${addr.name} — +509${addr.phone}${addr.is_default ? ' <span style="color:var(--blue);">(default)</span>' : ''}</div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <i class="ti ti-trash" data-idx="${idx}" style="color:var(--coral);cursor:pointer;font-size:1.1rem;padding:4px;"></i>
+          </div>
+        </div>
+      `).join('');
+      container.querySelectorAll('.ti-trash').forEach(el => {
+        el.addEventListener('click', async () => {
+          const addr = addresses[parseInt(el.dataset.idx)];
+          if (!confirm(`Delete this address?`)) return;
+          try {
+            await api.deleteAddress(addr.id);
+            addresses.splice(parseInt(el.dataset.idx), 1);
+            renderAddresses();
+            showToast('Address deleted', 'info');
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        });
+      });
+    }
 
     page.innerHTML = `
       <div class="fullscreen-page">
@@ -53,9 +88,18 @@ export default async function SettingsPage(page) {
             </div>
             <button type="submit" class="btn btn-outline" style="width:100%;border-radius:14px;padding:14px;">Change Password</button>
           </form>
+
+          <hr style="border:none;border-top:1px solid var(--border);margin:24px 0;" />
+
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="font-size:1rem;margin:0;color:var(--text);">Saved Addresses</h3>
+          </div>
+          <div id="saved-addresses-list"></div>
         </div>
       </div>
     `;
+
+    renderAddresses();
 
     page.querySelector('#settings-back').addEventListener('click', () => navigate('/profile'));
 

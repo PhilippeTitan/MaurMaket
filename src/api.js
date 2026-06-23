@@ -100,6 +100,34 @@ export function retryPayment(orderId) {
   return request(`/payments/retry/${orderId}`, { method: 'POST' });
 }
 
+export function becomeSeller() {
+  return request('/auth/become-seller', { method: 'PUT' });
+}
+
+export function toggleWishlist(productId) {
+  return request(`/wishlist/${productId}`, { method: 'POST' });
+}
+
+export function getWishlist() {
+  return request('/wishlist');
+}
+
+export function checkWishlist(productId) {
+  return request(`/wishlist/check/${productId}`);
+}
+
+export function toggleFollow(sellerId) {
+  return request(`/follow/${sellerId}`, { method: 'POST' });
+}
+
+export function getFollowing() {
+  return request('/following');
+}
+
+export function getFollowerCount(sellerId) {
+  return request(`/followers/count/${sellerId}`);
+}
+
 export function changePassword(currentPassword, newPassword) {
   return request('/auth/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) });
 }
@@ -114,6 +142,42 @@ export function confirmMeetup(orderId) {
 
 export function completeOrder(orderId) {
   return request(`/orders/${orderId}/complete`, { method: 'PUT' });
+}
+
+export function getOrderTimeline(orderId) {
+  return request(`/orders/${orderId}/timeline`);
+}
+
+export function createReview(orderId, rating, comment) {
+  return request('/reviews', { method: 'POST', body: JSON.stringify({ orderId, rating, comment }) });
+}
+
+export function getSellerReviews(sellerId) {
+  return request(`/reviews/seller/${sellerId}`);
+}
+
+export function getSellerProfile(sellerId) {
+  return request(`/sellers/${sellerId}`);
+}
+
+export function reorder(orderId) {
+  return request(`/orders/${orderId}/reorder`, { method: 'POST' });
+}
+
+export function getAddresses() {
+  return request('/addresses');
+}
+
+export function createAddress(data) {
+  return request('/addresses', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateAddress(id, data) {
+  return request(`/addresses/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export function deleteAddress(id) {
+  return request(`/addresses/${id}`, { method: 'DELETE' });
 }
 
 export function uploadImage(file) {

@@ -91,12 +91,44 @@ export default function ProfilePage(page) {
               `).join('') : '<div style="text-align:center;padding:20px 0;color:var(--text2);font-size:0.85rem;">No orders yet</div>'}
             </div>
 
+            <div class="section-label">Wishlist</div>
+            <div id="wishlist-section" style="font-size:0.85rem;color:var(--text2);padding:8px 0;text-align:center;">Loading...</div>
+
+            ${store.user?.role !== 'seller' ? `
+              <button class="btn btn-primary" id="become-seller-btn" style="width:100%;border-radius:14px;padding:14px;margin-top:16px;">Become a Seller</button>
+            ` : ''}
             <button class="btn btn-outline" id="logout-btn" style="width:100%;border-radius:14px;padding:14px;margin-top:16px;">Sign Out</button>
           </div>
         </div>
       `;
 
       page.querySelector('#profile-settings-btn').addEventListener('click', () => navigate('/profile/settings'));
+
+      api.getWishlist().then(({ wishlist }) => {
+        const ws = page.querySelector('#wishlist-section');
+        if (!ws) return;
+        if (wishlist.length === 0) {
+          ws.innerHTML = '<div style="color:var(--text2);font-size:0.85rem;padding:8px 0;">No saved items</div>';
+        } else {
+          ws.innerHTML = wishlist.map(w => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+              <span style="color:var(--text);font-size:0.85rem;">${w.name}</span>
+              <span style="color:var(--coral);font-weight:600;font-size:0.85rem;">Rs ${parseFloat(w.price).toFixed(0)}</span>
+            </div>
+          `).join('');
+        }
+      }).catch(() => {});
+
+      page.querySelector('#become-seller-btn')?.addEventListener('click', async () => {
+        try {
+          const { user } = await api.becomeSeller();
+          store.setUser(user, store.token);
+          showToast('You are now a seller!', 'success');
+          navigate('/seller');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
       page.querySelector('#logout-btn').addEventListener('click', () => {
         store.logout();
         showToast('Signed out', 'info');

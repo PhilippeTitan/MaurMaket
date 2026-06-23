@@ -3,6 +3,8 @@ import cors from 'cors';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import multer from 'multer';
@@ -13,6 +15,8 @@ const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const app = express();
 const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'maurmaket_dev_secret_change_in_production';
+const BCRYPT_ROUNDS = 10;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function runMigrations() {
@@ -57,6 +61,65 @@ async function runMigrations() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_city TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_note TEXT;
     `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS order_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) NOT NULL,
+        event_type VARCHAR(50) NOT NULL,
+        actor_id UUID REFERENCES users(id),
+        old_value TEXT,
+        new_value TEXT,
+        note TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS saved_addresses (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        label VARCHAR(50),
+        name TEXT NOT NULL,
+        phone VARCHAR(20) NOT NULL,
+        address TEXT NOT NULL,
+        city TEXT NOT NULL,
+        is_default BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) NOT NULL,
+        reviewer_id UUID REFERENCES users(id) NOT NULL,
+        seller_id UUID REFERENCES users(id) NOT NULL,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        comment TEXT,
+        seller_response TEXT,
+        seller_responded_at TIMESTAMP,
+        is_edited BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(order_id, reviewer_id)
+      );
+    `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS wishlists (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        product_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, product_id)
+      );
+    `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS follows (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        follower_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        seller_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(follower_id, seller_id)
+      );
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -79,6 +142,30 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
+// Event logging helper
+async function logOrderEvent(orderId, eventType, actorId, oldValue, newValue, note, db) {
+  const exec = db || pool;
+  try {
+    await exec.query(
+      `INSERT INTO order_events (order_id, event_type, actor_id, old_value, new_value, note) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [orderId, eventType, actorId || null, oldValue || null, newValue || null, note || null]
+    );
+  } catch (err) {
+    console.error('Failed to log order event:', err);
+  }
+}
+
+// Optional auth middleware
+function optionalAuth(req, _res, next) {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) {
+    try {
+      req.user = jwt.verify(auth.slice(7), JWT_SECRET);
+    } catch {}
+  }
+  next();
+}
+
 // Auth middleware
 function authRequired(req, res, next) {
   const auth = req.headers.authorization;
@@ -86,7 +173,7 @@ function authRequired(req, res, next) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7), 'base64url').toString());
+    const payload = jwt.verify(auth.slice(7), JWT_SECRET);
     req.user = payload;
     next();
   } catch {
@@ -95,27 +182,30 @@ function authRequired(req, res, next) {
 }
 
 function sellerRequired(req, res, next) {
+  if (req.user.role !== 'seller') {
+    return res.status(403).json({ error: 'Seller access required' });
+  }
   next();
 }
 
 // ───── Auth routes ─────
 
 app.post('/api/auth/signup', async (req, res) => {
-  const { fullName, email, password, phone, role } = req.body;
+  const { fullName, email, password, phone } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email, and password required' });
   }
   try {
-    const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const cleanPhone = phone ? phone.replace(/^\+/, '') : null;
     const result = await pool.query(
       `INSERT INTO users (full_name, email, password_hash, phone, role)
-       VALUES ($1, $2, $3, $4, $5)
+       VALUES ($1, $2, $3, $4, 'buyer')
        RETURNING id, full_name, email, phone, role, avatar_url, created_at`,
-      [fullName, email, passwordHash, cleanPhone, role || 'buyer']
+      [fullName, email, passwordHash, cleanPhone]
     );
     const user = result.rows[0];
-    const token = Buffer.from(JSON.stringify({ id: user.id, email: user.email, role: user.role })).toString('base64url');
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.status(201).json({ user, token });
   } catch (err) {
     if (err.code === '23505') {
@@ -132,16 +222,31 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(400).json({ error: 'Email and password required' });
   }
   try {
-    const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio FROM users WHERE email = $1 AND password_hash = $2`,
-      [email, passwordHash]
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, password_hash FROM users WHERE email = $1`,
+      [email]
     );
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
     const user = result.rows[0];
-    const token = Buffer.from(JSON.stringify({ id: user.id, email: user.email, role: user.role })).toString('base64url');
+    let passwordValid = false;
+    try {
+      passwordValid = await bcrypt.compare(password, user.password_hash);
+    } catch {}
+    if (!passwordValid) {
+      const shaHash = crypto.createHash('sha256').update(password).digest('hex');
+      if (shaHash === user.password_hash) {
+        passwordValid = true;
+        const bcryptHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+        await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [bcryptHash, user.id]);
+      }
+    }
+    if (!passwordValid) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    delete user.password_hash;
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ user, token });
   } catch (err) {
     console.error('Login error:', err);
@@ -190,15 +295,316 @@ app.put('/api/auth/password', authRequired, async (req, res) => {
   try {
     const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    const currentHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
-    if (currentHash !== result.rows[0].password_hash) {
+    let valid = false;
+    try { valid = await bcrypt.compare(currentPassword, result.rows[0].password_hash); } catch {}
+    if (!valid) {
+      const shaHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
+      if (shaHash === result.rows[0].password_hash) valid = true;
+    }
+    if (!valid) {
       return res.status(400).json({ error: 'Current password is incorrect' });
     }
-    const newHash = crypto.createHash('sha256').update(newPassword).digest('hex');
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await pool.query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [newHash, req.user.id]);
     res.json({ updated: true });
   } catch (err) {
     console.error('Password change error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Become a Seller ─────
+
+app.put('/api/auth/become-seller', authRequired, async (req, res) => {
+  try {
+    if (req.user.role === 'seller') {
+      return res.status(400).json({ error: 'You are already a seller' });
+    }
+    const result = await pool.query(
+      `UPDATE users SET role = 'seller', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id, full_name, email, phone, role, avatar_url, bio`,
+      [req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json({ user: result.rows[0] });
+  } catch (err) {
+    console.error('Become seller error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Saved Addresses ─────
+
+app.get('/api/addresses', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM saved_addresses WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ addresses: result.rows });
+  } catch (err) {
+    console.error('Addresses fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/addresses', authRequired, async (req, res) => {
+  const { label, name, phone, address, city, isDefault } = req.body;
+  if (!name || !phone || !address || !city) {
+    return res.status(400).json({ error: 'Name, phone, address, and city required' });
+  }
+  try {
+    const cleanPhone = phone.replace(/^\+/, '');
+    if (isDefault) {
+      await pool.query('UPDATE saved_addresses SET is_default = false WHERE user_id = $1', [req.user.id]);
+    }
+    const result = await pool.query(
+      `INSERT INTO saved_addresses (user_id, label, name, phone, address, city, is_default)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [req.user.id, label || null, name, cleanPhone, address, city, isDefault || false]
+    );
+    res.status(201).json({ address: result.rows[0] });
+  } catch (err) {
+    console.error('Address create error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/addresses/:id', authRequired, async (req, res) => {
+  const { label, name, phone, address, city, isDefault } = req.body;
+  try {
+    const check = await pool.query('SELECT id FROM saved_addresses WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Address not found' });
+    const cleanPhone = phone ? phone.replace(/^\+/, '') : undefined;
+    if (isDefault) {
+      await pool.query('UPDATE saved_addresses SET is_default = false WHERE user_id = $1', [req.user.id]);
+    }
+    const result = await pool.query(
+      `UPDATE saved_addresses SET label = COALESCE($1, label), name = COALESCE($2, name), phone = COALESCE($3, phone), address = COALESCE($4, address), city = COALESCE($5, city), is_default = COALESCE($6, is_default) WHERE id = $7 RETURNING *`,
+      [label, name, cleanPhone, address, city, isDefault, req.params.id]
+    );
+    res.json({ address: result.rows[0] });
+  } catch (err) {
+    console.error('Address update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/addresses/:id', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM saved_addresses WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Address not found' });
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error('Address delete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Reviews & Ratings ─────
+
+app.post('/api/reviews', authRequired, async (req, res) => {
+  const { orderId, rating, comment } = req.body;
+  if (!orderId || !rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ error: 'orderId and rating (1-5) required' });
+  }
+  try {
+    const order = await pool.query(
+      "SELECT * FROM orders WHERE id = $1 AND buyer_id = $2 AND status = 'completed'",
+      [orderId, req.user.id]
+    );
+    if (order.rows.length === 0) {
+      return res.status(400).json({ error: 'Only completed orders can be reviewed' });
+    }
+    const sellerResult = await pool.query(
+      'SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1 LIMIT 1',
+      [orderId]
+    );
+    const sellerId = sellerResult.rows[0]?.seller_id;
+    if (!sellerId) return res.status(400).json({ error: 'No seller found for this order' });
+    const result = await pool.query(
+      `INSERT INTO reviews (order_id, reviewer_id, seller_id, rating, comment)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [orderId, req.user.id, sellerId, rating, comment || null]
+    );
+    res.status(201).json({ review: result.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'You already reviewed this order' });
+    console.error('Review create error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/reviews/:id', authRequired, async (req, res) => {
+  const { rating, comment } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE reviews SET rating = COALESCE($1, rating), comment = COALESCE($2, comment), is_edited = true, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND reviewer_id = $4 RETURNING *`,
+      [rating, comment, req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Review not found' });
+    res.json({ review: result.rows[0] });
+  } catch (err) {
+    console.error('Review update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/reviews/seller/:sellerId', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT r.*, u.full_name AS reviewer_name, u.avatar_url AS reviewer_avatar
+       FROM reviews r JOIN users u ON r.reviewer_id = u.id
+       WHERE r.seller_id = $1
+       ORDER BY r.created_at DESC`,
+      [req.params.sellerId]
+    );
+    const statsResult = await pool.query(
+      `SELECT COALESCE(AVG(rating)::numeric(3,2), 0) AS avg_rating, COUNT(*) AS review_count FROM reviews WHERE seller_id = $1`,
+      [req.params.sellerId]
+    );
+    res.json({ reviews: result.rows, stats: statsResult.rows[0] });
+  } catch (err) {
+    console.error('Seller reviews error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/reviews/product/:productId', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT r.*, u.full_name AS reviewer_name
+       FROM reviews r
+       JOIN order_items oi ON r.order_id = oi.order_id
+       JOIN users u ON r.reviewer_id = u.id
+       WHERE oi.product_id = $1
+       ORDER BY r.created_at DESC`,
+      [req.params.productId]
+    );
+    res.json({ reviews: result.rows });
+  } catch (err) {
+    console.error('Product reviews error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Wishlist ─────
+
+app.post('/api/wishlist/:productId', authRequired, async (req, res) => {
+  try {
+    const existing = await pool.query('SELECT id FROM wishlists WHERE user_id = $1 AND product_id = $2', [req.user.id, req.params.productId]);
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM wishlists WHERE id = $1', [existing.rows[0].id]);
+      return res.json({ wishlisted: false });
+    }
+    await pool.query('INSERT INTO wishlists (user_id, product_id) VALUES ($1, $2)', [req.user.id, req.params.productId]);
+    res.json({ wishlisted: true });
+  } catch (err) {
+    console.error('Wishlist toggle error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/wishlist', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT w.*, p.name, p.price, p.stock,
+              (SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS image_url
+       FROM wishlists w JOIN products p ON w.product_id = p.id
+       WHERE w.user_id = $1
+       ORDER BY w.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ wishlist: result.rows });
+  } catch (err) {
+    console.error('Wishlist fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/wishlist/check/:productId', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id FROM wishlists WHERE user_id = $1 AND product_id = $2', [req.user.id, req.params.productId]);
+    res.json({ wishlisted: result.rows.length > 0 });
+  } catch (err) {
+    console.error('Wishlist check error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Follow Sellers ─────
+
+app.post('/api/follow/:sellerId', authRequired, async (req, res) => {
+  if (req.user.id === req.params.sellerId) return res.status(400).json({ error: 'Cannot follow yourself' });
+  try {
+    const existing = await pool.query('SELECT id FROM follows WHERE follower_id = $1 AND seller_id = $2', [req.user.id, req.params.sellerId]);
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM follows WHERE id = $1', [existing.rows[0].id]);
+      return res.json({ following: false });
+    }
+    await pool.query('INSERT INTO follows (follower_id, seller_id) VALUES ($1, $2)', [req.user.id, req.params.sellerId]);
+    res.json({ following: true });
+  } catch (err) {
+    console.error('Follow toggle error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/following', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT f.*, u.full_name, u.avatar_url
+       FROM follows f JOIN users u ON f.seller_id = u.id
+       WHERE f.follower_id = $1
+       ORDER BY f.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ following: result.rows });
+  } catch (err) {
+    console.error('Following fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/followers/count/:sellerId', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT COUNT(*) AS count FROM follows WHERE seller_id = $1', [req.params.sellerId]);
+    res.json({ count: parseInt(result.rows[0].count) });
+  } catch (err) {
+    console.error('Followers count error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Seller Profile / Stats (used by storefront) ─────
+
+app.get('/api/sellers/:id', async (req, res) => {
+  try {
+    const userResult = await pool.query(
+      `SELECT id, full_name, email, phone, avatar_url, bio, created_at FROM users WHERE id = $1 AND role = 'seller'`,
+      [req.params.id]
+    );
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'Seller not found' });
+    const seller = userResult.rows[0];
+    const productResult = await pool.query('SELECT COUNT(*) AS count FROM products WHERE seller_id = $1 AND is_available = true', [req.params.id]);
+    const reviewResult = await pool.query(
+      `SELECT COALESCE(AVG(rating)::numeric(3,2), 0) AS avg_rating, COUNT(*) AS review_count FROM reviews WHERE seller_id = $1`,
+      [req.params.id]
+    );
+    const orderResult = await pool.query(
+      `SELECT COUNT(*) AS count FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.seller_id = $1 AND o.status = 'completed'`,
+      [req.params.id]
+    );
+    res.json({
+      seller: {
+        ...seller,
+        product_count: parseInt(productResult.rows[0].count),
+        avg_rating: parseFloat(reviewResult.rows[0].avg_rating),
+        review_count: parseInt(reviewResult.rows[0].review_count),
+        sales_count: parseInt(orderResult.rows[0].count),
+      }
+    });
+  } catch (err) {
+    console.error('Seller profile error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -397,6 +803,25 @@ app.get('/api/orders/:id', authRequired, async (req, res) => {
   }
 });
 
+app.get('/api/orders/:id/timeline', authRequired, async (req, res) => {
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const result = await pool.query(
+      `SELECT e.*, u.full_name AS actor_name
+       FROM order_events e
+       LEFT JOIN users u ON e.actor_id = u.id
+       WHERE e.order_id = $1
+       ORDER BY e.created_at ASC`,
+      [req.params.id]
+    );
+    res.json({ events: result.rows });
+  } catch (err) {
+    console.error('Timeline fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/orders', authRequired, async (req, res) => {
   try {
     const buyerOrders = await pool.query(
@@ -443,6 +868,9 @@ app.post('/api/orders', authRequired, async (req, res) => {
       if (prod.rows.length === 0) {
         throw new Error(`Product ${item.productId} not found or unavailable`);
       }
+      if (prod.rows[0].seller_id === req.user.id) {
+        throw new Error(`You cannot purchase your own product`);
+      }
       if (prod.rows[0].stock < (item.quantity || 1)) {
         throw new Error(`Insufficient stock for product ${item.productId}`);
       }
@@ -468,6 +896,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
+    logOrderEvent(order.id, 'order_placed', req.user.id, null, 'pending', 'Order placed');
     res.status(201).json({ order });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -507,6 +936,7 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
       [req.params.id]
     );
     await client.query('COMMIT');
+    logOrderEvent(req.params.id, 'status_change', req.user.id, 'pending', 'cancelled', 'Cancelled by buyer');
     res.json({ cancelled: true });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -514,6 +944,26 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   } finally {
     client.release();
+  }
+});
+
+app.post('/api/orders/:id/reorder', authRequired, async (req, res) => {
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const items = await pool.query(
+      `SELECT oi.product_id, oi.quantity, p.name, p.price, p.stock, p.is_available
+       FROM order_items oi JOIN products p ON oi.product_id = p.id
+       WHERE oi.order_id = $1`,
+      [req.params.id]
+    );
+    const availableItems = items.rows
+      .filter(item => item.is_available && item.stock > 0)
+      .map(item => ({ productId: item.product_id, name: item.name, price: item.price, stock: item.stock }));
+    res.json({ items: availableItems });
+  } catch (err) {
+    console.error('Reorder error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -538,6 +988,7 @@ app.put('/api/orders/:id/meetup', authRequired, async (req, res) => {
       `UPDATE orders SET meetup_lat = $1, meetup_lng = $2, meetup_address = $3, meetup_note = $4, meetup_confirmed = false, meetup_proposed_by = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6`,
       [lat, lng, address || null, note || null, req.user.id, req.params.id]
     );
+    logOrderEvent(req.params.id, 'meetup_proposed', req.user.id, null, null, `Meetup proposed at ${address || `${lat}, ${lng}`}`);
     res.json({ updated: true });
   } catch (err) {
     console.error('Meetup error:', err);
@@ -556,6 +1007,7 @@ app.put('/api/orders/:id/meetup/confirm', authRequired, async (req, res) => {
       `UPDATE orders SET meetup_confirmed = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [req.params.id]
     );
+    logOrderEvent(req.params.id, 'meetup_confirmed', req.user.id, null, null, 'Meetup location confirmed');
     res.json({ updated: true });
   } catch (err) {
     console.error('Meetup confirm error:', err);
@@ -573,6 +1025,7 @@ app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
       `UPDATE orders SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [req.params.id]
     );
+    logOrderEvent(req.params.id, 'status_change', req.user.id, order.status, 'completed', 'Order completed');
     res.json({ updated: true, status: 'completed' });
   } catch (err) {
     console.error('Order complete error:', err);
@@ -682,6 +1135,7 @@ app.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async (re
       `UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
       [status, req.params.id]
     );
+    logOrderEvent(req.params.id, 'status_change', req.user.id, current, status, `Seller updated status`);
     res.json({ updated: true, status });
   } catch (err) {
     console.error('Order status update error:', err);
@@ -774,6 +1228,7 @@ app.post('/api/payments/webhook', async (req, res) => {
           `UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'`,
           [reference]
         );
+        await logOrderEvent(reference, 'payment_received', null, 'pending', 'paid', 'Payment completed via MonCash', client);
         const items = await client.query(
           'SELECT seller_id, SUM(price * quantity) AS total FROM order_items WHERE order_id = $1 GROUP BY seller_id',
           [reference]
@@ -808,6 +1263,7 @@ app.post('/api/payments/webhook', async (req, res) => {
           await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
         }
         await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [reference]);
+        await logOrderEvent(reference, 'status_change', null, 'pending', 'cancelled', 'Payment failed', client);
         await client.query('COMMIT');
       } catch (e) {
         await client.query('ROLLBACK');

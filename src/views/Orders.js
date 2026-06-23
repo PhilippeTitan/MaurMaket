@@ -5,6 +5,15 @@ import * as api from '../api.js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+const TIMELINE_ICONS = {
+  order_placed: '🛍️',
+  payment_received: '💳',
+  status_change: '🔄',
+  meetup_proposed: '📍',
+  meetup_confirmed: '✅',
+  note_added: '📝',
+};
+
 export default function OrdersPage(page) {
   if (!store.isLoggedIn) { navigate('/login'); return; }
 
@@ -148,6 +157,16 @@ export default function OrdersPage(page) {
           </div>
         ` : ''}
 
+        <div id="timeline-section" style="background:var(--surface);border-radius:16px;padding:12px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" id="timeline-toggle">
+            <div style="font-size:0.8rem;font-weight:600;color:var(--text2);">Order Timeline</div>
+            <i class="ti ti-chevron-down" id="timeline-chevron" style="color:var(--text2);font-size:1.1rem;"></i>
+          </div>
+          <div id="timeline-body" style="display:none;margin-top:8px;">
+            <div style="text-align:center;padding:12px;"><div class="spinner" style="width:20px;height:20px;border-width:2px;margin:0 auto;"></div></div>
+          </div>
+        </div>
+
         <div id="meetup-section">
           ${renderMeetupSection(order, isBuyer)}
         </div>
@@ -158,6 +177,51 @@ export default function OrdersPage(page) {
           </a>
         ` : ''}
       `;
+
+      // Timeline toggle
+      const timelineToggle = body.querySelector('#timeline-toggle');
+      const timelineBody = body.querySelector('#timeline-body');
+      const timelineChevron = body.querySelector('#timeline-chevron');
+      let timelineLoaded = false;
+
+      timelineToggle.addEventListener('click', async () => {
+        const isOpen = timelineBody.style.display !== 'none';
+        if (isOpen) {
+          timelineBody.style.display = 'none';
+          timelineChevron.style.transform = '';
+        } else {
+          timelineBody.style.display = 'block';
+          timelineChevron.style.transform = 'rotate(180deg)';
+          if (!timelineLoaded) {
+            timelineLoaded = true;
+            try {
+              const { events } = await api.getOrderTimeline(orderId);
+              if (events.length === 0) {
+                timelineBody.innerHTML = '<div style="text-align:center;color:var(--text2);font-size:0.8rem;padding:8px;">No events recorded yet</div>';
+              } else {
+                timelineBody.innerHTML = events.map(e => {
+                  const icon = TIMELINE_ICONS[e.event_type] || '📌';
+                  const label = e.event_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                  const when = new Date(e.created_at).toLocaleString();
+                  return `
+                    <div style="display:flex;gap:10px;padding:6px 0;border-left:2px solid var(--border);padding-left:12px;margin-left:4px;position:relative;">
+                      <div style="position:absolute;left:-9px;top:8px;font-size:0.9rem;">${icon}</div>
+                      <div style="flex:1;">
+                        <div style="font-size:0.8rem;color:var(--text);font-weight:500;">${label}</div>
+                        ${e.note ? `<div style="font-size:0.7rem;color:var(--text2);">${e.note}</div>` : ''}
+                        ${e.old_value && e.new_value ? `<div style="font-size:0.7rem;color:var(--text2);">${e.old_value} → ${e.new_value}</div>` : ''}
+                        <div style="font-size:0.65rem;color:var(--text2);margin-top:2px;">${when}${e.actor_name ? ` by ${e.actor_name}` : ''}</div>
+                      </div>
+                    </div>
+                  `;
+                }).join('');
+              }
+            } catch {
+              timelineBody.innerHTML = '<div style="text-align:center;color:var(--coral);font-size:0.8rem;padding:8px;">Failed to load timeline</div>';
+            }
+          }
+        }
+      });
 
       // Init static maps
       if (order.meetup_lat && order.meetup_lng) {
@@ -201,6 +265,64 @@ export default function OrdersPage(page) {
           }
         });
       }
+
+      body.querySelector('#reorder-btn')?.addEventListener('click', async () => {
+        try {
+          const { items } = await api.reorder(order.id);
+          if (items.length === 0) { showToast('No items available to re-order', 'info'); return; }
+          items.forEach(item => store.addToCart({ id: item.productId, name: item.name, price: item.price, image_url: null }));
+          showToast('Items added to cart!', 'success');
+          navigate('/cart');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+
+      body.querySelector('#review-btn')?.addEventListener('click', () => {
+        const reviewOverlay = document.createElement('div');
+        reviewOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1002;display:flex;align-items:center;justify-content:center;padding:16px;';
+        reviewOverlay.innerHTML = `
+          <div style="background:var(--surface);border-radius:20px;padding:24px;max-width:320px;width:100%;text-align:center;">
+            <h3 style="margin-bottom:8px;">Rate Your Experience</h3>
+            <div id="star-picker" style="font-size:2rem;margin-bottom:12px;cursor:pointer;">
+              ${[1,2,3,4,5].map(i => `<span class="star" data-val="${i}" style="color:var(--text2);padding:0 2px;">★</span>`).join('')}
+            </div>
+            <div class="form-group">
+              <textarea id="review-comment" placeholder="Share your experience (optional)" rows="3" style="font-size:0.85rem;padding:10px;"></textarea>
+            </div>
+            <button class="btn btn-primary" id="review-submit" style="width:100%;border-radius:14px;padding:14px;" disabled>Submit Review</button>
+            <button class="btn btn-ghost" id="review-cancel" style="width:100%;margin-top:6px;">Cancel</button>
+          </div>
+        `;
+        overlay.appendChild(reviewOverlay);
+
+        let selectedRating = 0;
+        reviewOverlay.querySelectorAll('.star').forEach(el => {
+          el.addEventListener('click', () => {
+            selectedRating = parseInt(el.dataset.val);
+            reviewOverlay.querySelectorAll('.star').forEach(s => {
+              s.style.color = parseInt(s.dataset.val) <= selectedRating ? 'var(--coral)' : 'var(--text2)';
+            });
+            reviewOverlay.querySelector('#review-submit').disabled = false;
+          });
+        });
+
+        reviewOverlay.querySelector('#review-submit').addEventListener('click', async () => {
+          const comment = reviewOverlay.querySelector('#review-comment').value;
+          const btn = reviewOverlay.querySelector('#review-submit');
+          btn.disabled = true; btn.textContent = 'Submitting...';
+          try {
+            await api.createReview(order.id, selectedRating, comment);
+            showToast('Review submitted!', 'success');
+            overlay.removeChild(reviewOverlay);
+          } catch (err) {
+            showToast(err.message, 'error');
+            btn.disabled = false; btn.textContent = 'Submit Review';
+          }
+        });
+
+        reviewOverlay.querySelector('#review-cancel').addEventListener('click', () => overlay.removeChild(reviewOverlay));
+      });
     } catch (err) {
       body.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${err.message}</p></div>`;
     }
@@ -213,6 +335,8 @@ export default function OrdersPage(page) {
           <div style="font-size:2rem;margin-bottom:4px;">✅</div>
           <div style="font-weight:600;color:var(--green);">Order Completed</div>
           ${order.meetup_address ? `<div style="font-size:0.8rem;color:var(--text2);margin-top:4px;">Met at: ${order.meetup_address}</div>` : ''}
+          <button class="btn btn-outline" id="reorder-btn" style="width:100%;border-radius:14px;padding:12px;margin-top:10px;">Re-order</button>
+          ${order.my_role === 'buyer' ? `<button class="btn btn-ghost" id="review-btn" style="width:100%;border-radius:14px;padding:10px;margin-top:6px;">Leave a Review</button>` : ''}
         </div>
       `;
     }

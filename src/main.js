@@ -10,6 +10,7 @@ import OrdersPage from './views/Orders.js';
 import SellerPage from './views/Seller.js';
 import ProfilePage from './views/Profile.js';
 import SettingsPage from './views/Settings.js';
+import StorefrontPage from './views/Storefront.js';
 
 const tabRoutes = {
   home:    { path: '/', label: 'Home', icon: 'ti-home', view: HomePage },
@@ -19,7 +20,7 @@ const tabRoutes = {
   profile: { path: '/profile', label: 'Profile', icon: 'ti-user', view: ProfilePage },
 };
 
-const fullscreenRoutes = ['/login', '/signup', '/product', '/payment', '/profile/settings', '/cart'];
+const fullscreenRoutes = ['/login', '/signup', '/product', '/payment', '/profile/settings', '/cart', '/store'];
 
 function renderShell() {
   const app = document.getElementById('app');
@@ -83,6 +84,7 @@ export function navigate(path, params = {}) {
   if (path === '/signup') { SignupPage(page); return; }
   if (path.startsWith('/product')) { ProductDetailPage(page, params); return; }
   if (path === '/profile/settings') { SettingsPage(page); return; }
+  if (path.startsWith('/store')) { StorefrontPage(page, params); return; }
 
   if (path === '/cart') { CartPage(page); return; }
 

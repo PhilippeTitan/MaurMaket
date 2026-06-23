@@ -113,6 +113,12 @@ export default function CartPage(page) {
 
           <div id="delivery-fields" style="display:none;">
             <div class="form-group">
+              <label>Saved Addresses</label>
+              <select id="d-saved" style="padding:10px 14px;font-size:0.85rem;">
+                <option value="">— Enter new address —</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label>Full Name</label>
               <input type="text" id="d-name" value="${store.user?.full_name || ''}" placeholder="Recipient name" />
             </div>
@@ -135,6 +141,9 @@ export default function CartPage(page) {
               <label>Delivery Notes (optional)</label>
               <textarea id="d-note" placeholder="e.g. Call when arriving, leave at gate" rows="2"></textarea>
             </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text2);cursor:pointer;">
+              <input type="checkbox" id="d-save-address" /> Save this address for next time
+            </label>
           </div>
 
           <div style="display:flex;justify-content:space-between;font-size:0.9rem;margin-bottom:14px;padding-top:6px;border-top:1px solid var(--border);">
@@ -149,6 +158,35 @@ export default function CartPage(page) {
       document.body.appendChild(overlay);
 
       let method = 'meetup';
+      let savedAddresses = [];
+
+      // Load saved addresses
+      api.getAddresses().then(data => {
+        savedAddresses = data.addresses || [];
+        const select = overlay.querySelector('#d-saved');
+        savedAddresses.forEach(addr => {
+          const opt = document.createElement('option');
+          opt.value = addr.id;
+          opt.textContent = addr.label ? `${addr.label} — ${addr.address}, ${addr.city}` : `${addr.address}, ${addr.city}`;
+          if (addr.is_default) opt.selected = true;
+          select.appendChild(opt);
+        });
+        // Auto-fill from default address
+        const def = savedAddresses.find(a => a.is_default) || savedAddresses[0];
+        if (def) fillAddress(def);
+      }).catch(() => {});
+
+      function fillAddress(addr) {
+        overlay.querySelector('#d-name').value = addr.name || store.user?.full_name || '';
+        overlay.querySelector('#d-phone').value = (addr.phone || '').replace(/^509/, '');
+        overlay.querySelector('#d-address').value = addr.address || '';
+        overlay.querySelector('#d-city').value = addr.city || '';
+      }
+
+      overlay.querySelector('#d-saved').addEventListener('change', (e) => {
+        const addr = savedAddresses.find(a => a.id === e.target.value);
+        if (addr) fillAddress(addr);
+      });
 
       overlay.querySelectorAll('.delivery-method-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -194,6 +232,19 @@ export default function CartPage(page) {
             items: store.cart.map(item => ({ productId: item.id, quantity: item.quantity })),
             ...deliveryData,
           });
+
+          // Save address if checkbox checked
+          if (method === 'delivery' && overlay.querySelector('#d-save-address').checked) {
+            api.createAddress({
+              label: '',
+              name: deliveryData.deliveryName,
+              phone: deliveryData.deliveryPhone,
+              address: deliveryData.deliveryAddress,
+              city: deliveryData.deliveryCity,
+              isDefault: false,
+            }).catch(() => {});
+          }
+
           const returnUrl = window.location.origin + '/payment/return?order=' + order.id;
           const { paymentUrl } = await api.createPayment(order.id, returnUrl);
 
