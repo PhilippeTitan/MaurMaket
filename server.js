@@ -480,9 +480,22 @@ app.post('/api/payments/webhook', async (req, res) => {
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', database: 'connected' });
+    res.json({ status: 'ok', database: 'connected', hasMccKey: !!process.env.MCC_KEY });
   } catch {
     res.status(503).json({ status: 'error', database: 'disconnected' });
+  }
+});
+
+app.get('/api/debug', async (_req, res) => {
+  try {
+    const mccRes = await fetch(
+      process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-balance',
+      { headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}` } }
+    );
+    const data = await mccRes.json();
+    res.json({ mccStatus: mccRes.status, mccOk: mccRes.ok, data, hasKey: !!process.env.MCC_KEY, keyPrefix: (process.env.MCC_KEY || '').slice(0, 10) });
+  } catch (err) {
+    res.status(500).json({ error: err.message, hasKey: !!process.env.MCC_KEY });
   }
 });
 
