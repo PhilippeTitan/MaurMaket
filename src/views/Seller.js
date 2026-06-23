@@ -124,11 +124,81 @@ export default function SellerPage(page) {
     });
   }
 
+  async function loadBalance() {
+    const container = page.querySelector('.seller-content');
+    container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    try {
+      const { balance } = await api.getSellerBalance();
+      const { payouts } = await api.getSellerPayouts();
+
+      container.innerHTML = `
+        <div style="padding:16px;">
+          <div class="balance-card" style="background:var(--surface);border-radius:16px;padding:20px;margin-bottom:16px;">
+            <div style="font-size:0.8rem;color:var(--text2);margin-bottom:4px;">Available Balance</div>
+            <div style="font-size:2rem;font-weight:700;color:var(--coral);">Rs ${parseFloat(balance.balance).toFixed(2)}</div>
+            <div style="display:flex;gap:16px;margin:16px 0;">
+              <div style="flex:1;">
+                <div style="font-size:0.7rem;color:var(--text2);">Total Earned</div>
+                <div style="font-size:1rem;font-weight:600;color:var(--text);">Rs ${parseFloat(balance.total_earned).toFixed(2)}</div>
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:0.7rem;color:var(--text2);">Total Paid Out</div>
+                <div style="font-size:1rem;font-weight:600;color:var(--text);">Rs ${parseFloat(balance.total_paid_out).toFixed(2)}</div>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="request-payout-btn" style="width:100%;border-radius:14px;padding:14px;" ${balance.balance <= 0 ? 'disabled' : ''}>
+              Request Payout
+            </button>
+          </div>
+          <h3 style="font-size:1rem;margin:0 0 12px 0;color:var(--text);">Payout History</h3>
+          ${payouts.length === 0
+            ? '<p style="color:var(--text2);font-size:0.85rem;">No payouts yet</p>'
+            : payouts.map(p => `
+              <div style="display:flex;justify-content:space-between;align-items:center;background:var(--surface);border-radius:12px;padding:12px;margin-bottom:8px;">
+                <div>
+                  <div style="font-weight:600;color:var(--text);">Rs ${parseFloat(p.amount).toFixed(2)}</div>
+                  <div style="font-size:0.7rem;color:var(--text2);">${new Date(p.created_at).toLocaleDateString()}</div>
+                </div>
+                <span style="font-size:0.75rem;padding:2px 10px;border-radius:20px;background:${p.status === 'completed' ? 'var(--green)' : p.status === 'failed' ? 'var(--coral)' : 'var(--accent2)'};color:white;">${p.status}</span>
+              </div>
+            `).join('')
+          }
+        </div>
+      `;
+
+      const btn = page.querySelector('#request-payout-btn');
+      if (btn) {
+        btn.addEventListener('click', () => {
+          const amount = prompt('Enter amount to withdraw (Rs):');
+          if (amount && parseFloat(amount) > 0) {
+            requestPayoutAction(parseFloat(amount));
+          }
+        });
+      }
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${err.message}</p></div>`;
+    }
+  }
+
+  async function requestPayoutAction(amount) {
+    const btn = page.querySelector('#request-payout-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Processing...'; }
+    try {
+      await api.requestPayout(amount);
+      showToast('Payout requested! Check your MonCash soon.', 'success');
+      loadBalance();
+    } catch (err) {
+      showToast(err.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Request Payout'; }
+    }
+  }
+
   function renderTabs() {
     const tabs = page.querySelector('.seller-tabs');
     tabs.innerHTML = `
-      <button class="seller-tab ${activeTab === 'products' ? 'active' : ''}" data-tab="products">My Products</button>
+      <button class="seller-tab ${activeTab === 'products' ? 'active' : ''}" data-tab="products">Products</button>
       <button class="seller-tab ${activeTab === 'orders' ? 'active' : ''}" data-tab="orders">Orders</button>
+      <button class="seller-tab ${activeTab === 'balance' ? 'active' : ''}" data-tab="balance">Balance</button>
       <button class="seller-tab ${activeTab === 'add' ? 'active' : ''}" data-tab="add">+ Add</button>
     `;
     tabs.querySelectorAll('.seller-tab').forEach(el => {
@@ -137,6 +207,7 @@ export default function SellerPage(page) {
         renderTabs();
         if (activeTab === 'products') loadProducts();
         else if (activeTab === 'orders') loadOrders();
+        else if (activeTab === 'balance') loadBalance();
         else renderAddForm();
       });
     });

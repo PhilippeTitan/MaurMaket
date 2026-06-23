@@ -67,3 +67,15 @@ export function getSellerOrders() {
 export function createPayment(orderId, returnUrl) {
   return request('/payments/create', { method: 'POST', body: JSON.stringify({ orderId, returnUrl }) });
 }
+
+export function getSellerBalance() {
+  return request('/seller/balance');
+}
+
+export function getSellerPayouts() {
+  return request('/seller/payouts');
+}
+
+export function requestPayout(amount) {
+  return request('/seller/payouts/request', { method: 'POST', body: JSON.stringify({ amount }) });
+}
