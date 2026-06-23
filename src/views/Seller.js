@@ -78,6 +78,7 @@ export default function SellerPage(page) {
           </div>
 
           <div class="section-label" style="margin:16px 0 8px;">Orders</div>
+          <div id="low-stock-banner" style="display:none;"></div>
           <div id="orders-section">
             ${orders.length === 0 ? '<div style="text-align:center;padding:16px;color:var(--text2);font-size:0.85rem;background:var(--surface);border-radius:14px;border:1px dashed var(--border);">No orders yet</div>' : `
               ${orders.map(o => {
@@ -103,6 +104,16 @@ export default function SellerPage(page) {
                 `;
               }).join('')}
             `}
+          </div>
+
+          <div class="section-label" style="margin:16px 0 8px;">Analytics</div>
+          <div id="analytics-section" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;">
+            <div style="text-align:center;padding:8px;"><div class="spinner" style="width:18px;height:18px;border-width:2px;margin:0 auto;"></div></div>
+          </div>
+
+          <div class="section-label" style="margin:16px 0 8px;">Promotions</div>
+          <div id="promos-section" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;">
+            <div style="text-align:center;padding:8px;"><div class="spinner" style="width:18px;height:18px;border-width:2px;margin:0 auto;"></div></div>
           </div>
 
           <div class="section-label" style="margin:16px 0 8px;">Balance</div>
@@ -134,6 +145,9 @@ export default function SellerPage(page) {
       </div>
     `;
 
+    loadAnalytics();
+    loadPromos();
+    loadLowStock();
     bindEvents();
   }
 
@@ -183,6 +197,87 @@ export default function SellerPage(page) {
           .catch(e => showToast(e.message, 'error'));
       }
     });
+  }
+
+  async function loadAnalytics() {
+    const section = page.querySelector('#analytics-section');
+    if (!section) return;
+    try {
+      const { overview, topProducts } = await api.getSellerAnalytics();
+      section.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;">
+          <div style="text-align:center;"><div style="font-size:15px;font-weight:700;color:var(--text);">${overview.total_orders}</div><div style="font-size:9px;color:var(--text2);">Orders</div></div>
+          <div style="text-align:center;"><div style="font-size:15px;font-weight:700;color:var(--green);">Rs ${parseFloat(overview.total_revenue).toFixed(0)}</div><div style="font-size:9px;color:var(--text2);">Revenue</div></div>
+          <div style="text-align:center;"><div style="font-size:15px;font-weight:700;color:var(--coral);">${parseFloat(overview.avg_rating).toFixed(1)} ★</div><div style="font-size:9px;color:var(--text2);">${overview.review_count} reviews</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:8px;">
+          <div style="text-align:center;background:var(--surface2);border-radius:8px;padding:6px;"><div style="font-size:13px;font-weight:700;color:var(--blue);">${overview.follower_count}</div><div style="font-size:9px;color:var(--text2);">Followers</div></div>
+          <div style="text-align:center;background:var(--surface2);border-radius:8px;padding:6px;"><div style="font-size:13px;font-weight:700;color:var(--text);">${overview.product_count}</div><div style="font-size:9px;color:var(--text2);">Products</div></div>
+        </div>
+        ${topProducts.length > 0 ? `
+          <div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:6px;">Top Products</div>
+          ${topProducts.slice(0, 5).map(p => `
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:10px;border-bottom:1px solid var(--border);">
+              <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</span>
+              <span style="color:var(--coral);font-weight:600;">${p.units_sold} sold · Rs ${parseFloat(p.revenue).toFixed(0)}</span>
+            </div>
+          `).join('')}
+        ` : ''}
+      `;
+    } catch { section.innerHTML = '<div style="text-align:center;color:var(--text2);font-size:10px;">Could not load analytics</div>'; }
+  }
+
+  async function loadPromos() {
+    const section = page.querySelector('#promos-section');
+    if (!section) return;
+    try {
+      const { promos } = await api.getMyPromos();
+      section.innerHTML = `
+        <div style="display:flex;gap:6px;margin-bottom:10px;">
+          <button class="btn btn-sm" id="add-promo-btn" style="background:var(--blue);color:#fff;border:none;border-radius:10px;padding:6px 14px;font-size:0.7rem;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;gap:4px;"><i class="ti ti-plus" style="font-size:12px;"></i> Create Promo</button>
+        </div>
+        ${promos.length === 0 ? '<div style="text-align:center;color:var(--text2);font-size:10px;padding:8px;">No promo codes yet</div>' : `
+          ${promos.map(p => `
+            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:10px;border-bottom:1px solid var(--border);">
+              <div>
+                <span style="color:var(--coral);font-weight:700;">${p.code}</span>
+                <span style="color:var(--text2);"> — ${p.discount_type === 'percentage' ? p.discount_value + '%' : 'Rs ' + parseFloat(p.discount_value).toFixed(0)} off</span>
+              </div>
+              <span style="color:var(--text2);">${p.uses_count}${p.max_uses ? '/' + p.max_uses : ''} uses</span>
+            </div>
+          `).join('')}
+        `}
+      `;
+      section.querySelector('#add-promo-btn')?.addEventListener('click', () => {
+        const code = prompt('Promo code (e.g. SUMMER20):');
+        if (!code) return;
+        const type = prompt('Discount type: percentage or fixed?', 'percentage');
+        if (!type || !['percentage', 'fixed'].includes(type)) { showToast('Must be percentage or fixed', 'error'); return; }
+        const value = parseFloat(prompt('Discount value:'));
+        if (!value || value <= 0) { showToast('Invalid value', 'error'); return; }
+        const minAmount = parseFloat(prompt('Minimum order amount (Rs):', '0')) || 0;
+        api.createPromo({ code, discountType: type, discountValue: value, minOrderAmount: minAmount })
+          .then(() => { showToast('Promo code created!', 'success'); loadPromos(); })
+          .catch(e => showToast(e.message, 'error'));
+      });
+    } catch { section.innerHTML = '<div style="text-align:center;color:var(--text2);font-size:10px;">Could not load promos</div>'; }
+  }
+
+  async function loadLowStock() {
+    const banner = page.querySelector('#low-stock-banner');
+    if (!banner) return;
+    try {
+      const { products } = await api.getLowStockProducts();
+      if (products.length > 0) {
+        banner.style.display = 'block';
+        banner.innerHTML = `
+          <div style="background:rgba(255,77,106,0.1);border:1px solid var(--coral);border-radius:10px;padding:8px 12px;margin-bottom:8px;">
+            <div style="font-size:10px;font-weight:600;color:var(--coral);margin-bottom:4px;"><i class="ti ti-alert-triangle"></i> Low Stock Alerts</div>
+            ${products.map(p => `<div style="font-size:9px;color:var(--text2);padding:1px 0;">"${p.name}" — only ${p.stock} left</div>`).join('')}
+          </div>
+        `;
+      } else { banner.style.display = 'none'; }
+    } catch { banner.style.display = 'none'; }
   }
 
   function showAddForm() {

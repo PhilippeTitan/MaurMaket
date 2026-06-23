@@ -93,6 +93,7 @@ export default async function SettingsPage(page) {
 
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <h3 style="font-size:1rem;margin:0;color:var(--text);">Saved Addresses</h3>
+            <button class="btn btn-sm" id="add-address-btn" style="background:var(--blue);color:#fff;border:none;border-radius:10px;padding:6px 12px;font-size:0.7rem;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;gap:4px;"><i class="ti ti-plus" style="font-size:12px;"></i> Add</button>
           </div>
           <div id="saved-addresses-list"></div>
         </div>
@@ -102,6 +103,65 @@ export default async function SettingsPage(page) {
     renderAddresses();
 
     page.querySelector('#settings-back').addEventListener('click', () => navigate('/profile'));
+
+    page.querySelector('#add-address-btn')?.addEventListener('click', () => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:flex-end;padding:0;';
+      overlay.innerHTML = `
+        <div style="background:var(--surface);border-radius:20px 20px 0 0;padding:20px;width:100%;max-height:85vh;overflow-y:auto;">
+          <h3 style="margin-bottom:14px;">Add Address</h3>
+          <div class="form-group">
+            <label>Label (e.g. Home, Work)</label>
+            <input type="text" id="addr-label" placeholder="Home" style="padding:10px 14px;font-size:0.85rem;" />
+          </div>
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="addr-name" value="${store.user?.full_name || ''}" placeholder="Recipient name" style="padding:10px 14px;font-size:0.85rem;" />
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <div style="display:flex;gap:0;align-items:stretch;">
+              <div style="background:var(--bg);border:1px solid var(--border);border-right:none;border-radius:14px 0 0 14px;padding:14px 10px;color:var(--text2);font-size:1rem;font-weight:600;white-space:nowrap;display:flex;align-items:center;">+509</div>
+              <input type="tel" id="addr-phone" placeholder="XX XX XXXX" style="border-radius:0 14px 14px 0;" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Address</label>
+            <input type="text" id="addr-address" placeholder="Street, neighborhood, landmark" style="padding:10px 14px;font-size:0.85rem;" />
+          </div>
+          <div class="form-group">
+            <label>City / Town</label>
+            <input type="text" id="addr-city" placeholder="e.g. Port-au-Prince" style="padding:10px 14px;font-size:0.85rem;" />
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text2);cursor:pointer;margin:10px 0;">
+            <input type="checkbox" id="addr-default" style="accent-color:var(--coral);" /> Set as default address
+          </label>
+          <button class="btn btn-primary" id="addr-save" style="width:100%;border-radius:14px;padding:14px;">Save Address</button>
+          <button class="btn btn-ghost" id="addr-cancel" style="width:100%;margin-top:6px;">Cancel</button>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      overlay.querySelector('#addr-cancel').addEventListener('click', () => document.body.removeChild(overlay));
+      overlay.querySelector('#addr-save').addEventListener('click', async () => {
+        const label = overlay.querySelector('#addr-label').value;
+        const name = overlay.querySelector('#addr-name').value;
+        const rawPhone = overlay.querySelector('#addr-phone').value.replace(/\s/g, '');
+        const phone = rawPhone ? '509' + rawPhone : '';
+        const address = overlay.querySelector('#addr-address').value;
+        const city = overlay.querySelector('#addr-city').value;
+        const isDefault = overlay.querySelector('#addr-default').checked;
+        if (!address || !city) { showToast('Address and city required', 'error'); return; }
+        try {
+          await api.createAddress({ label, name, phone, address, city, isDefault });
+          showToast('Address saved!', 'success');
+          document.body.removeChild(overlay);
+          const { addresses: newAddresses } = await api.getAddresses();
+          addresses.length = 0;
+          addresses.push(...newAddresses);
+          renderAddresses();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+    });
 
     page.querySelector('#settings-form').addEventListener('submit', async (e) => {
       e.preventDefault();

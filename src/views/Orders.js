@@ -171,6 +171,11 @@ export default function OrdersPage(page) {
           ${renderMeetupSection(order, isBuyer)}
         </div>
 
+        ${order.status !== 'cancelled' && order.status !== 'pending' ? `
+          <button class="btn btn-ghost" id="dispute-btn" style="width:100%;border-radius:14px;padding:12px;margin-top:8px;color:var(--coral);">
+            <i class="ti ti-flag"></i> Report a Problem
+          </button>
+        ` : ''}
         ${otherPhone ? `
           <a href="tel:${otherPhone}" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:14px;color:var(--text);text-decoration:none;margin-top:8px;font-size:0.9rem;">
             <i class="ti ti-phone"></i> Call ${otherName}
@@ -276,6 +281,54 @@ export default function OrdersPage(page) {
         } catch (err) {
           showToast(err.message, 'error');
         }
+      });
+
+      body.querySelector('#dispute-btn')?.addEventListener('click', () => {
+        const reasons = ['item_not_received', 'item_damaged', 'wrong_item', 'seller_no_show', 'other'];
+        const reasonLabels = ['Item not received', 'Item damaged', 'Wrong item', 'Seller didn\'t show up', 'Other'];
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1002;display:flex;align-items:flex-end;padding:0;';
+        overlay.innerHTML = `
+          <div style="background:var(--surface);border-radius:20px 20px 0 0;padding:20px;width:100%;max-height:80vh;overflow-y:auto;">
+            <h3 style="margin-bottom:8px;">Report a Problem</h3>
+            <p style="font-size:0.8rem;color:var(--text2);margin-bottom:14px;">What went wrong with this order?</p>
+            <div id="dispute-reasons">
+              ${reasons.map((r, i) => `
+                <label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;font-size:0.85rem;color:var(--text);">
+                  <input type="radio" name="dispute-reason" value="${r}" style="accent-color:var(--coral);" />
+                  ${reasonLabels[i]}
+                </label>
+              `).join('')}
+            </div>
+            <div class="form-group" style="margin-top:10px;">
+              <textarea id="dispute-desc" placeholder="Describe what happened (optional)" rows="3" style="font-size:0.85rem;padding:10px;"></textarea>
+            </div>
+            <button class="btn btn-primary" id="dispute-submit" style="width:100%;border-radius:14px;padding:14px;" disabled>Submit Report</button>
+            <button class="btn btn-ghost" id="dispute-cancel" style="width:100%;margin-top:6px;">Cancel</button>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+        overlay.querySelector('#dispute-cancel').addEventListener('click', () => document.body.removeChild(overlay));
+        overlay.querySelectorAll('input[name="dispute-reason"]').forEach(el => {
+          el.addEventListener('change', () => {
+            overlay.querySelector('#dispute-submit').disabled = false;
+          });
+        });
+        overlay.querySelector('#dispute-submit').addEventListener('click', async () => {
+          const reason = overlay.querySelector('input[name="dispute-reason"]:checked')?.value;
+          if (!reason) return;
+          const description = overlay.querySelector('#dispute-desc').value;
+          const btn = overlay.querySelector('#dispute-submit');
+          btn.disabled = true; btn.textContent = 'Submitting...';
+          try {
+            await api.createDispute({ orderId: order.id, reason, description });
+            showToast('Report submitted', 'success');
+            document.body.removeChild(overlay);
+          } catch (err) {
+            showToast(err.message, 'error');
+            btn.disabled = false; btn.textContent = 'Submit Report';
+          }
+        });
       });
 
       body.querySelector('#review-btn')?.addEventListener('click', () => {
