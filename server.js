@@ -4,6 +4,7 @@ import pg from 'pg';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import path from 'path';
 
 dotenv.config();
 
@@ -11,6 +12,7 @@ const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const app = express();
 const PORT = process.env.PORT || 3001;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function runMigrations() {
   const c = await pool.connect();
@@ -47,6 +49,8 @@ app.use(cors());
 app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
+
+app.use(express.static(path.join(__dirname, 'dist')));
 
 // Auth middleware
 function authRequired(req, res, next) {
@@ -704,6 +708,10 @@ app.get('/api/debug', async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message, hasKey: !!process.env.MCC_KEY });
   }
+});
+
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 const isMain = typeof import.meta !== 'undefined' && import.meta.url && process.argv[1] === fileURLToPath(import.meta.url);
