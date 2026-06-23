@@ -429,11 +429,11 @@ app.post('/api/payments/webhook', async (req, res) => {
     if (!signature || !timestamp) {
       return res.status(401).json({ error: 'Missing signature headers' });
     }
-    const ts = parseInt(timestamp);
+    const ts = parseInt(timestamp) * 1000;
     const age = (Date.now() - ts) / 1000;
-    if (age > 86400) {
+    if (age > 300) {
       console.warn(`Webhook timestamp expired: ts=${ts}, age=${age}s, Date.now()=${Date.now()}`);
-      return res.status(401).json({ error: 'Webhook timestamp expired', ts, age, now: Date.now() });
+      return res.status(401).json({ error: 'Webhook timestamp expired' });
     }
     const hmac = crypto.createHmac('sha256', webhookSecret).update(`${timestamp}.${rawBody}`).digest('hex');
     if (hmac !== signature) {
