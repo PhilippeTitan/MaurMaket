@@ -410,7 +410,8 @@ app.put('/api/auth/become-seller', authRequired, async (req, res) => {
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    res.json({ user: result.rows[0] });
+    const token = jwt.sign({ id: result.rows[0].id, email: result.rows[0].email, role: 'seller' }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ user: result.rows[0], token });
   } catch (err) {
     console.error('Become seller error:', err);
     res.status(500).json({ error: 'Server error' });

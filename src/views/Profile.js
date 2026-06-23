@@ -154,8 +154,8 @@ export default function ProfilePage(page) {
 
       page.querySelector('#become-seller-btn')?.addEventListener('click', async () => {
         try {
-          const { user } = await api.becomeSeller();
-          store.setUser(user, store.token);
+          const { user, token } = await api.becomeSeller();
+          store.setUser(user, token);
           showToast('You are now a seller!', 'success');
           navigate('/seller');
         } catch (err) {

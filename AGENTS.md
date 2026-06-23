@@ -1,5 +1,8 @@
 # MaurMaket — Project Context for AI Agents
 
+## Git Protocol
+- **Always push after major changes**: After committing any significant feature, bug fix, or refactor, run `git push` immediately. Do not batch pushes — push each meaningful change. The user relies on remote being up to date.
+
 ## Overview
 Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-style product feed, cart with meetup/delivery options, MonCash payment integration, seller dashboard with balance/payout system, orders tab with meetup location sharing via Leaflet maps.
 
@@ -431,77 +434,40 @@ Seller pushes through `paid→processing→shipped→delivered`. Buyer/seller ma
 
 > For AI agents picking up this project: scan this section to see what's done and what's next.
 
-### ✅ Completed (committed `f0d9d5c`)
+### ✅ V1 Complete (commits `f0d9d5c` + `ce55b5e` + `6470bc5`)
 
 | Layer | Feature | Notes |
 |-------|---------|-------|
-| Layer 0 | sellerRequired fix | Real role check, not no-op |
-| Layer 0 | Signup role hardcoded | No longer accepts `role` from body |
-| Layer 0 | bcrypt password hashing | Salt rounds = 10 |
-| Layer 0 | JWT token signing | jsonwebtoken with JWT_SECRET |
-| Sprint 1C | Order Timeline | `order_events` table, logged on status/meetup/payment changes |
-| Sprint 4C | Saved Addresses | `saved_addresses` table (schema only — no frontend yet) |
+| Layer 0 | Security fixes | sellerRequired fix, signup role hardcoded, bcrypt, JWT signing |
+| Sprint 1C | Order Timeline | `order_events` table, logged on all status/meetup/payment events |
+| Sprint 4C | Saved Addresses | `saved_addresses` table, Cart.js checkout integration, Settings.js create/list |
 | Sprint 4D | Re-order | `POST /api/orders/:id/reorder` endpoint |
-| Sprint 4A | Become a Seller | `PUT /api/auth/become-seller` endpoint + button in Profile |
-| Sprint 2E | Social Sharing | Web Share API + WhatsApp deep links on product detail |
+| Sprint 4A | Become a Seller | Endpoint + button in Profile (fixed: now issues new JWT with seller role) |
+| Sprint 2E | Social Sharing | Web Share API + WhatsApp deep links on ProductDetail + Profile share |
 | Sprint 2A | Reviews & Ratings | Full CRUD, seller response, product/seller queries |
 | Sprint 2B | Seller Storefronts | `Storefront.js` view, `/api/sellers/:id` endpoint, clickable seller names |
-| Sprint 2D | Verified Badges | Computed (4.5+ avg, 10+ reviews, 20+ sales), displayed on storefront + product detail |
-| Sprint 3A | Wishlist / Favorites | Toggle API, heart icon on ProductDetail, Profile wishlist section |
+| Sprint 2D | Verified Badges | Computed (4.5+ avg, 10+ reviews, 20+ sales) |
+| Sprint 3A | Wishlist / Favorites | Toggle API, heart icon, Profile wishlist section |
 | Sprint 3B | Follow Sellers | Toggle API, follower count, follow button on Storefront |
-| Sprint 3C | Enhanced Search | Sort dropdown, price min/max, category filter (already existed) |
-| Sprint 3D | Personalized Feed | `optionalAuth` middleware, `personalized=true` query param support |
+| Sprint 3C | Enhanced Search | Sort dropdown, price min/max, category filter |
+| Sprint 3D | Personalized Feed | `optionalAuth` middleware, `personalized=true` param |
+| Sprint 3E | Notifications | Full backend + `Notifications.js` view + bell icon + 30s polling |
+| Sprint 3A | In-app Messaging | `Messages.js` view + 5s polling + shell badge |
+| Sprint 4B | Promo Codes | Backend + Cart.js input + Seller.js create/list section |
+| Sprint 3F | Order Updates | Seller notes in timeline + notification |
+| Sprint 5A | Seller Analytics | Endpoint + stats grid + top products table in Seller.js |
+| Sprint 5B | Inventory Alerts | Low stock check + banner in Seller.js |
+| Sprint 5C | Dispute Resolution | Backend + "Report a Problem" button + reason picker in Orders.js |
+| Sprint 5D | Admin Panel | Backend middleware + endpoints (no frontend view yet) |
 
-### ✅ Completed (committed `f0d9d5c`)
+### 🚀 Phase 2: Ecosystem Expansion (`framework_v2.md`)
 
-| Layer | Feature | Notes |
-|-------|---------|-------|
-| Layer 0 | sellerRequired fix | Real role check, not no-op |
-| Layer 0 | Signup role hardcoded | No longer accepts `role` from body |
-| Layer 0 | bcrypt password hashing | Salt rounds = 10 |
-| Layer 0 | JWT token signing | jsonwebtoken with JWT_SECRET |
-| Sprint 1C | Order Timeline | `order_events` table, logged on status/meetup/payment changes |
-| Sprint 4C | Saved Addresses | `saved_addresses` table (schema only — no frontend yet) |
-| Sprint 4D | Re-order | `POST /api/orders/:id/reorder` endpoint |
-| Sprint 4A | Become a Seller | `PUT /api/auth/become-seller` endpoint + button in Profile |
-| Sprint 2E | Social Sharing | Web Share API + WhatsApp deep links on product detail |
-| Sprint 2A | Reviews & Ratings | Full CRUD, seller response, product/seller queries |
-| Sprint 2B | Seller Storefronts | `Storefront.js` view, `/api/sellers/:id` endpoint, clickable seller names |
-| Sprint 2D | Verified Badges | Computed (4.5+ avg, 10+ reviews, 20+ sales), displayed on storefront + product detail |
-| Sprint 3A | Wishlist / Favorites | Toggle API, heart icon on ProductDetail, Profile wishlist section |
-| Sprint 3B | Follow Sellers | Toggle API, follower count, follow button on Storefront |
-| Sprint 3C | Enhanced Search | Sort dropdown, price min/max, category filter (already existed) |
-| Sprint 3D | Personalized Feed | `optionalAuth` middleware, `personalized=true` query param support |
-| Sprint 3E | Notifications | `notifications` table, API endpoints, bell icon in shell, polling every 30s, `Notifications.js` view |
-| Sprint 3A | In-app Messaging | `conversations` + `messages` tables, API endpoints, `Messages.js` view with chat list + individual chat + 5s polling |
-| Sprint 3F | Order Updates (Seller Notes) | `POST /api/orders/:id/note` endpoint, note button in Seller dashboard, displays in timeline |
-| Sprint 4B | Promo Codes & Discounts | `promo_codes` + `promo_uses` tables, validate/create/list API, promo input in Cart.js checkout |
-| Sprint 5A | Seller Analytics | `GET /api/seller/analytics` endpoint with overview + top products |
-| Sprint 5B | Inventory Alerts | Low stock check (<=3) after order creation, notifies seller via `low_stock` notification type |
-| Sprint 5C | Dispute Resolution | `disputes` table, create/list API, report button on orders |
-| Sprint 5D | Admin Panel | `adminRequired` middleware, user list, dispute management endpoints |
+The next phase focuses on **Scale, Logistics, and Virality**. See `framework_v2.md` for full details.
 
-### ⚠️ Partially Implemented (needs frontend wiring)
-
-| Feature | Backend | Frontend |
-|---------|---------|----------|
-| Saved Addresses | `saved_addresses` table exists, wired in Cart.js checkout dropdown, "Save this address" checkbox | Settings management page (list/create/delete not built) |
-| Social Sharing | N/A (pure frontend) | Share buttons on ProductDetail only — not on Storefront or Home |
-| Seller Analytics | `GET /api/seller/analytics` endpoint exists | No analytics tab/charts in Seller.js yet |
-| Promo Management | Create/list promo codes API exists | No "Promotions" tab in Seller.js yet |
-| Inventory Alerts Backend | Low stock check fires on order, `GET /api/seller/products/low-stock` endpoint | No low stock badge in Seller.js products tab |
-| Dispute Resolution Frontend | `GET/POST /api/disputes` endpoints | No "Report a Problem" button in Orders.js yet |
-| Admin Panel | User list + dispute management endpoints + `adminRequired` middleware | No admin view yet |
-
-### DB Tables Still Needed
-- None — all planned tables are created
-
-### New Views Still Needed
-- None — all planned views (Storefront.js, Messages.js, Notifications.js) exist
-
-### For Future Consideration
-- Admin Panel frontend (separate admin route)
-- Seller Analytics frontend (charts/tables in Seller.js)
-- Promo Management frontend (create/list in Seller.js)
-- Dispute button in Orders.js
-- Saved Addresses management in Settings.js
+| Layer | Theme | Key Features |
+|-------|-------|-------------|
+| Layer 6 | Logistics & Escrow | MonCash escrow hold, delivery partner API, auto-refunds |
+| Layer 7 | Enterprise Seller Suite | Product variants (SKUs), bulk CSV import, staff accounts |
+| Layer 8 | Social Commerce | Video snippets, curated collections, group buy / make offer |
+| Layer 9 | Gamification & Loyalty | MaurMaket Coins, VIP tiers, daily check-in streaks |
+| Layer 10 | AI & Automation | Smart image enhancement, auto-categorization, listing translation |
