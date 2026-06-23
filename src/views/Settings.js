@@ -2,6 +2,7 @@ import store from '../store.js';
 import { showToast } from '../toast.js';
 import { navigate } from '../main.js';
 import * as api from '../api.js';
+import { modalConfirm } from '../modal.js';
 
 export default async function SettingsPage(page) {
   if (!store.isLoggedIn) { navigate('/login'); return; }
@@ -33,7 +34,7 @@ export default async function SettingsPage(page) {
       container.querySelectorAll('.ti-trash').forEach(el => {
         el.addEventListener('click', async () => {
           const addr = addresses[parseInt(el.dataset.idx)];
-          if (!confirm(`Delete this address?`)) return;
+          if (!(await modalConfirm('Delete Address', 'Delete this saved address?'))) return;
           try {
             await api.deleteAddress(addr.id);
             addresses.splice(parseInt(el.dataset.idx), 1);
@@ -96,6 +97,12 @@ export default async function SettingsPage(page) {
             <button class="btn btn-sm" id="add-address-btn" style="background:var(--blue);color:#fff;border:none;border-radius:10px;padding:6px 12px;font-size:0.7rem;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;gap:4px;"><i class="ti ti-plus" style="font-size:12px;"></i> Add</button>
           </div>
           <div id="saved-addresses-list"></div>
+
+          <hr style="border:none;border-top:1px solid var(--border);margin:24px 0;" />
+
+          <button class="btn btn-ghost" id="signout-btn" style="width:100%;border-radius:14px;padding:14px;color:var(--coral);font-size:0.9rem;font-weight:600;">
+            <i class="ti ti-logout" style="font-size:16px;"></i> Sign Out
+          </button>
         </div>
       </div>
     `;
@@ -103,6 +110,14 @@ export default async function SettingsPage(page) {
     renderAddresses();
 
     page.querySelector('#settings-back').addEventListener('click', () => navigate('/profile'));
+
+    page.querySelector('#signout-btn').addEventListener('click', async () => {
+      const ok = await modalConfirm('Sign Out', 'Are you sure you want to sign out?');
+      if (ok) {
+        store.logout();
+        navigate('/');
+      }
+    });
 
     page.querySelector('#add-address-btn')?.addEventListener('click', () => {
       const overlay = document.createElement('div');

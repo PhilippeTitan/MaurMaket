@@ -30,7 +30,7 @@ export default async function ProductDetailPage(page, { id }) {
             <div class="seller-card">
               <div>
                 <div class="seller-card-name" id="pd-seller-link" style="cursor:pointer;">${product.seller_name} <span id="pd-verified-badge" style="display:none;"></span></div>
-                ${product.seller_phone ? `<div class="seller-card-phone">${product.seller_phone}</div>` : ''}
+                ${product.seller_phone && store.isLoggedIn ? `<div class="seller-card-phone">${product.seller_phone}</div>` : ''}
               </div>
               <div>
                 <div class="stock-val">${product.stock}</div>
@@ -56,6 +56,7 @@ export default async function ProductDetailPage(page, { id }) {
               <button class="btn btn-ghost" id="pd-share" style="font-size:0.8rem;">
                 <i class="ti ti-share"></i> Share
               </button>
+              ${store.isLoggedIn ? `<button class="btn btn-ghost" id="pd-message-seller" style="font-size:0.8rem;"><i class="ti ti-message"></i> Message</button>` : ''}
             </div>
           </div>
           <div id="product-reviews" style="padding:12px 16px 80px;">
@@ -149,6 +150,16 @@ export default async function ProductDetailPage(page, { id }) {
 
     page.querySelector('#pd-seller-link')?.addEventListener('click', () => {
       navigate('/store', { id: product.seller_id });
+    });
+
+    page.querySelector('#pd-message-seller')?.addEventListener('click', async () => {
+      if (!store.isLoggedIn) { showToast('Sign in to message', 'info'); navigate('/login'); return; }
+      try {
+        const { conversationId } = await api.createConversation({ productId: product.id });
+        navigate('/messages', { conversationId });
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
     });
 
     const wishlistBtn = page.querySelector('#pd-wishlist');

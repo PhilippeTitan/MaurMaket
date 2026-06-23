@@ -2,6 +2,7 @@ import store from '../store.js';
 import { showToast } from '../toast.js';
 import { navigate } from '../main.js';
 import * as api from '../api.js';
+import { modalConfirm } from '../modal.js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -260,7 +261,7 @@ export default function OrdersPage(page) {
       }
       if (order.meetup_confirmed || order.status === 'completed') {
         body.querySelector('#complete-order-btn')?.addEventListener('click', async () => {
-          if (!confirm('Mark this order as completed?')) return;
+          if (!(await modalConfirm('Complete Order', 'Mark this order as completed?'))) return;
           try {
             await api.completeOrder(order.id);
             showToast('Order completed!', 'success');

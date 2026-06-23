@@ -84,7 +84,9 @@ export default function CartPage(page) {
       const id = el.dataset.id;
       const item = store.cart.find(c => c.id === id);
       if (!item) return;
-      if (e.target.closest('.qty-plus')) store.updateQuantity(id, item.quantity + 1);
+      if (e.target.closest('.qty-plus')) {
+        store.updateQuantity(id, item.quantity + 1);
+      }
       else if (e.target.closest('.qty-minus')) store.updateQuantity(id, item.quantity - 1);
       else if (e.target.closest('.qty-remove')) store.removeFromCart(id);
     });
@@ -99,6 +101,9 @@ export default function CartPage(page) {
     page.querySelector('#promo-apply-btn')?.addEventListener('click', async () => {
       const code = page.querySelector('#promo-input')?.value.trim();
       if (!code) return;
+      const promoBtn = page.querySelector('#promo-apply-btn');
+      promoBtn.textContent = '...';
+      promoBtn.disabled = true;
       try {
         const total = store.cart.reduce((s, i) => s + parseFloat(i.price) * i.quantity, 0);
         const data = await api.validatePromo(code, total);
@@ -110,7 +115,8 @@ export default function CartPage(page) {
         store._promoDiscount = 0;
         store._promoCode = '';
         showToast(err.message, 'error');
-        render();
+        promoBtn.textContent = 'Apply';
+        promoBtn.disabled = false;
       }
     });
 

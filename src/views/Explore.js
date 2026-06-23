@@ -1,8 +1,6 @@
 import * as api from '../api.js';
 import { navigate } from '../main.js';
 
-const categoryList = ['All', 'Electronics', 'Fashion', 'Home', 'Sports', 'Books'];
-
 const gradientBgs = [
   'linear-gradient(135deg,#1C2235,#2a1a3e)',
   'linear-gradient(135deg,#1a2535,#0f1c2e)',
@@ -31,9 +29,7 @@ export default async function ExplorePage(page) {
           <input type="text" id="explore-search" placeholder="Search MaurMaket..." />
         </div>
         <div class="cats" id="category-pills">
-          ${categoryList.map((cat, i) => `
-            <button class="cat-pill ${i === 0 ? 'active' : ''}" data-cat="${cat}">${cat}</button>
-          `).join('')}
+          <button class="cat-pill active" data-cat="">All</button>
         </div>
       </div>
       <div id="filter-panel" style="display:none;padding:0 16px 12px;background:var(--bg);">
@@ -78,6 +74,17 @@ export default async function ExplorePage(page) {
     } catch (err) {
       container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text2);"><p>${err.message}</p></div>`;
     }
+  }
+
+  async function loadCategories() {
+    try {
+      const { categories } = await api.getCategories();
+      const pills = page.querySelector('#category-pills');
+      if (pills && categories.length > 0) {
+        pills.innerHTML = `<button class="cat-pill active" data-cat="">All</button>` +
+          categories.map(c => `<button class="cat-pill" data-cat="${c.name}">${c.name}</button>`).join('');
+      }
+    } catch {}
   }
 
   function renderMasonry() {
@@ -151,5 +158,6 @@ export default async function ExplorePage(page) {
     loadProducts();
   });
 
+  loadCategories();
   loadProducts();
 }

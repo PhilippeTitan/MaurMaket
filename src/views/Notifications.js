@@ -44,10 +44,19 @@ export default async function NotificationsPage(page) {
     `;
     page.querySelector('#notif-back').addEventListener('click', () => window.history.back());
     page.querySelectorAll('.notif-item').forEach(el => {
-      el.addEventListener('click', () => {
+      el.addEventListener('click', async () => {
         const orderId = el.dataset.order;
-        if (orderId) navigate('/orders');
-        else window.history.back();
+        if (orderId) {
+          try {
+            const { order } = await api.getOrder(orderId);
+            const role = order.my_role;
+            navigate('/orders');
+          } catch {
+            navigate('/orders');
+          }
+        } else {
+          window.history.back();
+        }
       });
     });
   } catch (err) {

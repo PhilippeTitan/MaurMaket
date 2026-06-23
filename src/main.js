@@ -166,10 +166,16 @@ export function navigate(path, params = {}) {
       page.querySelector('#goto-cart')?.addEventListener('click', () => navigate('/cart'));
     }
 
-    // Retry a few times since the webhook may not have fired yet
-    checkOrder().then(() => {
-      setTimeout(checkOrder, 3000);
-    });
+    // Retry with exponential backoff since the webhook may not have fired yet
+    async function pollPayment(attempt = 0) {
+      await checkOrder();
+      const maxAttempts = 8;
+      if (attempt < maxAttempts) {
+        const delay = Math.min(1000 * Math.pow(1.5, attempt), 15000);
+        setTimeout(() => pollPayment(attempt + 1), delay);
+      }
+    }
+    pollPayment();
     return;
   }
 

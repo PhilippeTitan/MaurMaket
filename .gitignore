@@ -36,3 +36,7 @@ token2.txt
 
 # Uploaded images (local dev)
 uploads/
+
+# System / temp files
+nul
+_srv.log

@@ -2,6 +2,7 @@ import store from '../store.js';
 import { showToast } from '../toast.js';
 import { navigate } from '../main.js';
 import * as api from '../api.js';
+import { modalConfirm } from '../modal.js';
 
 export default function ProfilePage(page) {
   if (!store.isLoggedIn) { navigate('/login'); return; }
@@ -185,7 +186,7 @@ export default function ProfilePage(page) {
         const cancelBtn = e.target.closest('.cancel-order-btn');
         if (cancelBtn) {
           const orderId = cancelBtn.dataset.id;
-          if (!confirm('Cancel this order?')) return;
+          if (!(await modalConfirm('Cancel Order', 'Are you sure you want to cancel this order?'))) return;
           cancelBtn.disabled = true; cancelBtn.textContent = '...';
           try {
             await api.cancelOrder(orderId);

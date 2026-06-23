@@ -2,6 +2,7 @@ import store from '../store.js';
 import { showToast } from '../toast.js';
 import { navigate } from '../main.js';
 import * as api from '../api.js';
+import { modalConfirm, modalPrompt } from '../modal.js';
 
 export default function SellerPage(page) {
   if (!store.isLoggedIn) { navigate('/login'); return; }
@@ -151,11 +152,11 @@ export default function SellerPage(page) {
     bindEvents();
   }
 
-  function bindEvents() {
+  async function bindEvents() {
     page.querySelector('#add-product-btn').addEventListener('click', showAddForm);
     page.querySelector('#refresh-btn').addEventListener('click', loadAll);
 
-    page.querySelector('#products-section')?.addEventListener('click', (e) => {
+    page.querySelector('#products-section')?.addEventListener('click', async (e) => {
       const cell = e.target.closest('.seller-grid-cell');
       if (cell && !e.target.closest('.seller-delete-btn')) {
         const product = state.products.find(p => p.id === cell.dataset.id);
@@ -164,13 +165,13 @@ export default function SellerPage(page) {
       const delBtn = e.target.closest('.seller-delete-btn');
       if (delBtn) {
         const id = delBtn.dataset.id;
-        if (confirm('Delete this item?')) {
+        if (await modalConfirm('Delete Item', 'Are you sure you want to delete this product?')) {
           api.deleteProduct(id).then(() => { showToast('Deleted', 'info'); loadAll(); }).catch(e => showToast(e.message, 'error'));
         }
       }
     });
 
-    page.querySelector('#orders-section')?.addEventListener('click', (e) => {
+    page.querySelector('#orders-section')?.addEventListener('click', async (e) => {
       const btn = e.target.closest('.status-btn');
       if (btn) {
         btn.disabled = true; btn.textContent = '...';
@@ -180,7 +181,7 @@ export default function SellerPage(page) {
       }
       const noteBtn = e.target.closest('.note-btn');
       if (noteBtn) {
-        const note = prompt('Add a note for the buyer:');
+        const note = await modalPrompt('Add Note', 'Add a note for the buyer:');
         if (note && note.trim()) {
           api.addOrderNote(noteBtn.dataset.id, note.trim())
             .then(() => { showToast('Note added', 'success'); })
@@ -189,8 +190,8 @@ export default function SellerPage(page) {
       }
     });
 
-    page.querySelector('#payout-btn')?.addEventListener('click', () => {
-      const amount = prompt('Withdraw amount (Rs):');
+    page.querySelector('#payout-btn')?.addEventListener('click', async () => {
+      const amount = await modalPrompt('Withdraw', 'Enter withdrawal amount (Rs):', '', 'number');
       if (amount && parseFloat(amount) > 0) {
         api.requestPayout(parseFloat(amount))
           .then(() => { showToast('Payout requested!', 'success'); loadAll(); })
@@ -249,16 +250,7 @@ export default function SellerPage(page) {
         `}
       `;
       section.querySelector('#add-promo-btn')?.addEventListener('click', () => {
-        const code = prompt('Promo code (e.g. SUMMER20):');
-        if (!code) return;
-        const type = prompt('Discount type: percentage or fixed?', 'percentage');
-        if (!type || !['percentage', 'fixed'].includes(type)) { showToast('Must be percentage or fixed', 'error'); return; }
-        const value = parseFloat(prompt('Discount value:'));
-        if (!value || value <= 0) { showToast('Invalid value', 'error'); return; }
-        const minAmount = parseFloat(prompt('Minimum order amount (Rs):', '0')) || 0;
-        api.createPromo({ code, discountType: type, discountValue: value, minOrderAmount: minAmount })
-          .then(() => { showToast('Promo code created!', 'success'); loadPromos(); })
-          .catch(e => showToast(e.message, 'error'));
+        showPromoForm(section);
       });
     } catch { section.innerHTML = '<div style="text-align:center;color:var(--text2);font-size:10px;">Could not load promos</div>'; }
   }
@@ -278,6 +270,58 @@ export default function SellerPage(page) {
         `;
       } else { banner.style.display = 'none'; }
     } catch { banner.style.display = 'none'; }
+  }
+
+  function showPromoForm() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = `
+      <div style="background:var(--surface);border-radius:20px;padding:24px;max-width:340px;width:100%;">
+        <h3 style="margin-bottom:14px;">Create Promo Code</h3>
+        <div class="form-group">
+          <label>Promo Code</label>
+          <input type="text" id="promo-code" placeholder="e.g. SUMMER20" style="text-transform:uppercase;" />
+        </div>
+        <div class="form-group">
+          <label>Discount Type</label>
+          <select id="promo-type">
+            <option value="percentage">Percentage (%)</option>
+            <option value="fixed">Fixed Amount (Rs)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Discount Value</label>
+          <input type="number" id="promo-value" placeholder="e.g. 20" min="1" />
+        </div>
+        <div class="form-group">
+          <label>Minimum Order Amount (Rs, optional)</label>
+          <input type="number" id="promo-min" placeholder="0" min="0" />
+        </div>
+        <button class="btn btn-primary" id="promo-create" style="width:100%;border-radius:14px;padding:14px;">Create Promo</button>
+        <button class="btn btn-ghost" id="promo-cancel" style="width:100%;margin-top:6px;">Cancel</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#promo-cancel').addEventListener('click', () => document.body.removeChild(overlay));
+    overlay.querySelector('#promo-create').addEventListener('click', async () => {
+      const code = overlay.querySelector('#promo-code').value.trim();
+      const type = overlay.querySelector('#promo-type').value;
+      const value = parseFloat(overlay.querySelector('#promo-value').value);
+      const minAmount = parseFloat(overlay.querySelector('#promo-min').value) || 0;
+      if (!code) { showToast('Enter a promo code', 'error'); return; }
+      if (!value || value <= 0) { showToast('Enter a valid discount value', 'error'); return; }
+      const btn = overlay.querySelector('#promo-create');
+      btn.disabled = true; btn.textContent = 'Creating...';
+      try {
+        await api.createPromo({ code, discountType: type, discountValue: value, minOrderAmount: minAmount });
+        showToast('Promo code created!', 'success');
+        document.body.removeChild(overlay);
+        loadPromos();
+      } catch (e) {
+        showToast(e.message, 'error');
+        btn.disabled = false; btn.textContent = 'Create Promo';
+      }
+    });
   }
 
   function showAddForm() {
@@ -313,8 +357,8 @@ export default function SellerPage(page) {
           <label>Price: <strong id="price-display" style="color:var(--coral);">Rs ${isEdit ? parseFloat(product.price).toFixed(0) : '500'}</strong></label>
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:11px;color:var(--text2);min-width:30px;">Rs 0</span>
-            <input type="range" id="f-price" min="0" max="100000" step="50" value="${isEdit ? Math.min(parseFloat(product.price), 100000) : '500'}" style="flex:1;height:6px;-webkit-appearance:none;appearance:none;background:linear-gradient(to right,var(--coral) ${Math.min((isEdit ? parseFloat(product.price) : 500) / 100000 * 100, 100)}%,var(--border) ${Math.min((isEdit ? parseFloat(product.price) : 500) / 100000 * 100, 100)}%);border-radius:3px;outline:none;cursor:pointer;" />
-            <span style="font-size:11px;color:var(--text2);min-width:40px;">Rs 100k</span>
+            <input type="range" id="f-price" min="0" max="1000000" step="50" value="${isEdit ? Math.min(parseFloat(product.price), 1000000) : '500'}" style="flex:1;height:6px;-webkit-appearance:none;appearance:none;background:linear-gradient(to right,var(--coral) ${Math.min((isEdit ? parseFloat(product.price) : 500) / 1000000 * 100, 100)}%,var(--border) ${Math.min((isEdit ? parseFloat(product.price) : 500) / 1000000 * 100, 100)}%);border-radius:3px;outline:none;cursor:pointer;" />
+            <span style="font-size:11px;color:var(--text2);min-width:40px;">Rs 1M</span>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);margin-top:2px;">
             <span>Common: Rs 50-500 (accessories), Rs 500-5000 (electronics), Rs 5k-50k (furniture)</span>
@@ -378,7 +422,7 @@ export default function SellerPage(page) {
     priceSlider.addEventListener('input', () => {
       const val = parseInt(priceSlider.value);
       priceDisplay.textContent = 'Rs ' + val;
-      const pct = Math.min(val / 100000 * 100, 100);
+      const pct = Math.min(val / 1000000 * 100, 100);
       priceSlider.style.background = `linear-gradient(to right,var(--coral) ${pct}%,var(--border) ${pct}%)`;
     });
 
@@ -442,6 +486,7 @@ export default function SellerPage(page) {
 
       if (!name) { showToast('Product name required', 'error'); return; }
       if (price <= 0) { showToast('Price must be greater than 0', 'error'); return; }
+      if (!isEdit && images.length === 0) { showToast('Add at least one product image', 'error'); return; }
 
       const btn = overlay.querySelector('#form-submit');
       btn.disabled = true; btn.textContent = isEdit ? 'Saving...' : 'Adding...';
