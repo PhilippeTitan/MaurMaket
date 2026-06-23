@@ -430,7 +430,7 @@ app.post('/api/payments/webhook', async (req, res) => {
       return res.status(401).json({ error: 'Missing signature headers' });
     }
     const age = (Date.now() - parseInt(timestamp)) / 1000;
-    if (age > 300) {
+    if (age > 86400) {
       return res.status(401).json({ error: 'Webhook timestamp expired' });
     }
     const hmac = crypto.createHmac('sha256', webhookSecret).update(`${timestamp}.${rawBody}`).digest('hex');
