@@ -46,17 +46,21 @@ export default async function ProductDetailPage(page, { id }) {
             ${product.category ? `<div class="pd-cat">${product.category}</div>` : ''}
             ${product.description ? `<div class="pd-desc">${product.description}</div>` : ''}
             <div class="pd-actions">
-              <button class="btn btn-primary" id="pd-add-cart" ${product.stock <= 0 ? 'disabled' : ''}>
-                ${product.stock > 0 ? 'Add to Cart' : 'Out of Stock'}
-              </button>
-              ${product.stock > 0 && store.isLoggedIn ? `
-                <button class="btn btn-outline" id="pd-buy">Buy Now</button>
-              ` : ''}
-              ${store.isLoggedIn ? `<button class="btn btn-ghost" id="pd-wishlist" style="font-size:0.8rem;"><i class="ti ti-heart"></i></button>` : ''}
-              <button class="btn btn-ghost" id="pd-share" style="font-size:0.8rem;">
-                <i class="ti ti-share"></i> Share
-              </button>
-              ${store.isLoggedIn ? `<button class="btn btn-ghost" id="pd-message-seller" style="font-size:0.8rem;"><i class="ti ti-message"></i> Message</button>` : ''}
+              ${store.user?.id === product.seller_id ? `
+                <div style="width:100%;text-align:center;font-size:0.8rem;color:var(--text2);padding:8px 0;">This is your product</div>
+              ` : `
+                <button class="btn btn-primary" id="pd-add-cart" ${product.stock <= 0 ? 'disabled' : ''}>
+                  ${product.stock > 0 ? 'Add to Cart' : 'Out of Stock'}
+                </button>
+                ${product.stock > 0 && store.isLoggedIn ? `
+                  <button class="btn btn-outline" id="pd-buy">Buy Now</button>
+                ` : ''}
+                ${store.isLoggedIn ? `<button class="btn btn-ghost" id="pd-wishlist" style="font-size:0.8rem;"><i class="ti ti-heart"></i></button>` : ''}
+                <button class="btn btn-ghost" id="pd-share" style="font-size:0.8rem;">
+                  <i class="ti ti-share"></i> Share
+                </button>
+                ${store.isLoggedIn ? `<button class="btn btn-ghost" id="pd-message-seller" style="font-size:0.8rem;"><i class="ti ti-message"></i> Message</button>` : ''}
+              `}
             </div>
           </div>
           <div id="product-reviews" style="padding:12px 16px 80px;">
