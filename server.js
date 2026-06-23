@@ -437,8 +437,8 @@ app.post('/api/payments/webhook', async (req, res) => {
       console.warn(`Webhook timestamp expired: ts=${ts}, age=${age}s, Date.now()=${Date.now()}`);
       return res.status(401).json({ error: 'Webhook timestamp expired' });
     }
-    const hmac = crypto.createHmac('sha256', webhookSecret).update(`${timestamp}.${rawBody}`).digest('hex');
-    if (hmac !== signature) {
+    const expected = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+    if (expected !== signature) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
   }
