@@ -13,7 +13,9 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
+}));
 
 // Auth middleware
 function authRequired(req, res, next) {
@@ -418,7 +420,7 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
 });
 
 app.post('/api/payments/webhook', async (req, res) => {
-  const rawBody = JSON.stringify(req.body);
+  const rawBody = req.rawBody;
   const signature = req.headers['x-mcc-signature'];
   const timestamp = req.headers['x-mcc-timestamp'];
   const webhookSecret = process.env.MCC_WEBHOOK_SECRET;
