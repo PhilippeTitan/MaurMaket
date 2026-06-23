@@ -380,7 +380,17 @@ app.get('/api/orders/:id', authRequired, async (req, res) => {
        WHERE oi.order_id = $1`,
       [req.params.id]
     );
-    res.json({ order: { ...order, items: items.rows } });
+    const myRole = order.buyer_id === req.user.id ? 'buyer' : 'seller';
+    const sellerResult = await pool.query(
+      `SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1 LIMIT 1`,
+      [req.params.id]
+    );
+    const otherUserId = myRole === 'buyer' ? (sellerResult.rows[0]?.seller_id) : order.buyer_id;
+    const otherParty = await pool.query(
+      `SELECT id, full_name, phone FROM users WHERE id = $1`,
+      [otherUserId]
+    );
+    res.json({ order: { ...order, items: items.rows, my_role: myRole, other_party: otherParty.rows[0] || null } });
   } catch (err) {
     console.error('Order fetch error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -473,12 +483,16 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
   try {
     await client.query('BEGIN');
     const order = await client.query(
-      'SELECT * FROM orders WHERE id = $1 AND buyer_id = $2 FOR UPDATE',
-      [req.params.id, req.user.id]
+      'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id]
     );
     if (order.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Order not found' });
+    }
+    if (order.rows[0].buyer_id !== req.user.id) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Only the buyer can cancel this order' });
     }
     if (order.rows[0].status !== 'pending') {
       await client.query('ROLLBACK');
@@ -505,10 +519,9 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
 
 async function canAccessOrder(userId, orderId) {
   const result = await pool.query(
-    `SELECT o.* FROM orders o
+    `SELECT DISTINCT o.* FROM orders o
      LEFT JOIN order_items oi ON o.id = oi.order_id
-     WHERE o.id = $1 AND (o.buyer_id = $2 OR oi.seller_id = $2)
-     LIMIT 1`,
+     WHERE o.id = $1 AND (o.buyer_id = $2 OR oi.seller_id = $2)`,
     [orderId, userId]
   );
   return result.rows[0] || null;
@@ -661,7 +674,7 @@ app.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async (re
     );
     if (check.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     const current = check.rows[0].status;
-    const transitions = { paid: 'processing', processing: 'shipped', shipped: 'delivered' };
+    const transitions = { pending: 'processing', paid: 'processing', processing: 'shipped', shipped: 'delivered' };
     if (transitions[current] !== status) {
       return res.status(400).json({ error: `Cannot transition from ${current} to ${status}` });
     }

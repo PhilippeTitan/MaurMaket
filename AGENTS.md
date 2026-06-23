@@ -118,6 +118,14 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | quantity | INTEGER | |
 | price | DECIMAL(10,2) | |
 
+### Known Fixes (applied during final stress test)
+1. **Delivery fields not stored** — stale server instance; restart fixed it
+2. **Cancel returns 404 for non-buyer** — changed to return 403 "Only the buyer can cancel"
+3. **Order detail missing `other_party`/`my_role`** — added JOIN query for seller_id, party info, and role
+4. **`canAccessOrder` lacked DISTINCT** — added DISTINCT to prevent duplicate rows from LEFT JOIN
+5. **Status transitions blocked `pending→processing`** — added `pending: 'processing'` to transition map
+6. **`api()`/`raw()` `...opts` override bug in test + app** — `...opts` spread overwrote `headers` losing Content-Type. Fixed by spreading `method`, `headers`, `body` individually.
+
 ### `seller_balances`
 | Column | Type | Notes |
 |---|---|---|
