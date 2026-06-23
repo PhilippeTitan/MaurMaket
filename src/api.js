@@ -44,6 +44,10 @@ export function updateProduct(id, data) {
   return request(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 }
 
+export function deleteProduct(id) {
+  return request(`/products/${id}`, { method: 'DELETE' });
+}
+
 export function getCategories() {
   return request('/categories');
 }

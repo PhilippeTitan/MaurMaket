@@ -10,7 +10,7 @@ export default function CartPage(page) {
     const cart = store.cart;
     if (cart.length === 0) {
       page.innerHTML = `
-        <div style="height:100dvh;display:flex;flex-direction:column;background:var(--bg);">
+        <div style="height:100%;display:flex;flex-direction:column;background:var(--bg);">
           <div class="topbar">
             <span class="logo">Cart</span>
             <div class="topbar-right"></div>
@@ -28,7 +28,7 @@ export default function CartPage(page) {
     const total = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
 
     page.innerHTML = `
-      <div style="height:100dvh;display:flex;flex-direction:column;background:var(--bg);">
+      <div style="height:100%;display:flex;flex-direction:column;background:var(--bg);">
         <div class="topbar">
           <span class="logo">Cart</span>
           <div class="topbar-right"><i class="ti ti-trash" id="clear-cart" style="cursor:pointer;"></i></div>
@@ -87,7 +87,28 @@ export default function CartPage(page) {
         const returnUrl = window.location.origin + '/payment/return';
         const { paymentUrl } = await api.createPayment(order.id, returnUrl);
         store.clearCart();
-        window.location.href = paymentUrl;
+
+        // Show MonCash payment modal
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;';
+        overlay.innerHTML = `
+          <div style="background:var(--surface);border-radius:20px;padding:24px;max-width:320px;width:100%;text-align:center;">
+            <div style="font-size:2.5rem;margin-bottom:8px;">💳</div>
+            <h3 style="margin-bottom:4px;">Pay with MonCash</h3>
+            <p style="color:var(--text2);font-size:0.85rem;margin-bottom:16px;">You'll be redirected to MonCash to complete your payment</p>
+            <div style="text-align:left;background:var(--bg);border-radius:12px;padding:12px;margin-bottom:16px;font-size:0.8rem;color:var(--text2);">
+              <div style="display:flex;gap:8px;margin-bottom:8px;"><span style="color:var(--coral);">1.</span> Confirm the payment on your phone</div>
+              <div style="display:flex;gap:8px;margin-bottom:8px;"><span style="color:var(--coral);">2.</span> Wait for the confirmation screen</div>
+              <div style="display:flex;gap:8px;"><span style="color:var(--coral);">3.</span> You'll be brought back automatically</div>
+            </div>
+            <button id="moncash-proceed" class="btn btn-primary" style="width:100%;border-radius:14px;padding:14px;">Continue to MonCash</button>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('#moncash-proceed').addEventListener('click', () => {
+          window.location.href = paymentUrl;
+        });
       } catch (err) {
         showToast(err.message, 'error');
         btn.disabled = false; btn.textContent = 'Checkout →';

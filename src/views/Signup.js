@@ -26,13 +26,7 @@ export default function SignupPage(page) {
             <label>Password</label>
             <input type="password" id="password" placeholder="At least 6 characters" required minlength="6" />
           </div>
-          <div class="form-group">
-            <label>I want to...</label>
-            <div class="role-selector">
-              <button type="button" class="role-btn active" data-role="buyer">Buy</button>
-              <button type="button" class="role-btn" data-role="seller">Sell</button>
-            </div>
-          </div>
+
           <button type="submit" class="btn btn-primary" style="margin-top:4px;width:100%;border-radius:14px;padding:14px;font-size:15px;">Create Account</button>
         </form>
         <div class="auth-toggle">
@@ -41,16 +35,6 @@ export default function SignupPage(page) {
       </div>
     </div>
   `;
-
-  let selectedRole = 'buyer';
-
-  page.querySelectorAll('.role-btn').forEach(el => {
-    el.addEventListener('click', () => {
-      page.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
-      el.classList.add('active');
-      selectedRole = el.dataset.role;
-    });
-  });
 
   page.querySelector('#signup-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -62,7 +46,7 @@ export default function SignupPage(page) {
     btn.disabled = true; btn.textContent = 'Creating account...';
 
     try {
-      const { user, token } = await api.signup(fullName, email, password, phone, selectedRole);
+      const { user, token } = await api.signup(fullName, email, password, phone, 'buyer');
       store.setUser(user, token);
       showToast(`Welcome to MaurMaket, ${user.full_name}!`, 'success');
       navigate('/');

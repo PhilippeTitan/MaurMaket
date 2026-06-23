@@ -26,12 +26,100 @@ export default function SellerPage(page) {
             <h4>${p.name}</h4>
             <div class="price">Rs ${parseFloat(p.price).toFixed(2)}</div>
             <div class="meta">Stock: ${p.stock} · ${p.is_available ? 'Active' : 'Hidden'}</div>
+            <div style="display:flex;gap:6px;margin-top:6px;">
+              <button class="btn btn-sm btn-outline edit-product-btn" data-id="${p.id}" style="padding:4px 12px;font-size:0.7rem;">Edit</button>
+              <button class="btn btn-sm btn-ghost delete-product-btn" data-id="${p.id}" style="padding:4px 12px;font-size:0.7rem;color:var(--coral);">Delete</button>
+            </div>
           </div>
         </div>
       `).join('');
+
+      container.querySelectorAll('.edit-product-btn').forEach(el => {
+        el.addEventListener('click', () => {
+          const id = el.dataset.id;
+          const product = products.find(p => p.id === id);
+          if (product) renderEditForm(product);
+        });
+      });
+
+      container.querySelectorAll('.delete-product-btn').forEach(el => {
+        el.addEventListener('click', async () => {
+          const id = el.dataset.id;
+          if (!confirm('Delete this product?')) return;
+          try {
+            await api.deleteProduct(id);
+            showToast('Product deleted', 'info');
+            loadProducts();
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        });
+      });
     } catch (err) {
       container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${err.message}</p></div>`;
     }
+  }
+
+  function renderEditForm(product) {
+    activeTab = 'edit';
+    renderTabs();
+    const container = page.querySelector('.seller-content');
+    container.innerHTML = `
+      <form id="product-form" class="add-form">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <i class="ti ti-arrow-left" id="edit-back" style="font-size:20px;color:var(--text2);cursor:pointer;"></i>
+          <h3 style="font-size:1rem;">Edit Product</h3>
+        </div>
+        <div class="form-group">
+          <label>Product Name *</label>
+          <input type="text" id="p-name" value="${product.name}" required />
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="p-desc" rows="3">${product.description || ''}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Price (Rs) *</label>
+          <input type="number" id="p-price" step="0.01" min="0" value="${product.price}" required />
+        </div>
+        <div class="form-group">
+          <label>Stock</label>
+          <input type="number" id="p-stock" min="0" value="${product.stock}" />
+        </div>
+        <div class="form-group">
+          <label>Available</label>
+          <select id="p-available">
+            <option value="true" ${product.is_available ? 'selected' : ''}>Active</option>
+            <option value="false" ${!product.is_available ? 'selected' : ''}>Hidden</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;border-radius:14px;padding:14px;">Save Changes</button>
+        <button type="button" class="btn btn-ghost" id="edit-cancel" style="width:100%;margin-top:6px;">Cancel</button>
+      </form>
+    `;
+
+    page.querySelector('#edit-back').addEventListener('click', () => { activeTab = 'products'; renderTabs(); loadProducts(); });
+    page.querySelector('#edit-cancel').addEventListener('click', () => { activeTab = 'products'; renderTabs(); loadProducts(); });
+
+    page.querySelector('#product-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = page.querySelector('#p-name').value;
+      const description = page.querySelector('#p-desc').value;
+      const price = page.querySelector('#p-price').value;
+      const stock = parseInt(page.querySelector('#p-stock').value) || 0;
+      const isAvailable = page.querySelector('#p-available').value === 'true';
+      const btn = page.querySelector('button[type="submit"]');
+      btn.disabled = true; btn.textContent = 'Saving...';
+      try {
+        await api.updateProduct(product.id, { name, description, price, stock, isAvailable });
+        showToast('Product updated!', 'success');
+        activeTab = 'products';
+        renderTabs(); loadProducts();
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Save Changes';
+      }
+    });
   }
 
   async function loadOrders() {
@@ -195,11 +283,12 @@ export default function SellerPage(page) {
 
   function renderTabs() {
     const tabs = page.querySelector('.seller-tabs');
+    const isEdit = activeTab === 'edit';
     tabs.innerHTML = `
       <button class="seller-tab ${activeTab === 'products' ? 'active' : ''}" data-tab="products">Products</button>
       <button class="seller-tab ${activeTab === 'orders' ? 'active' : ''}" data-tab="orders">Orders</button>
       <button class="seller-tab ${activeTab === 'balance' ? 'active' : ''}" data-tab="balance">Balance</button>
-      <button class="seller-tab ${activeTab === 'add' ? 'active' : ''}" data-tab="add">+ Add</button>
+      <button class="seller-tab ${activeTab === 'add' || isEdit ? 'active' : ''}" data-tab="add">+ Add</button>
     `;
     tabs.querySelectorAll('.seller-tab').forEach(el => {
       el.addEventListener('click', () => {
@@ -214,7 +303,7 @@ export default function SellerPage(page) {
   }
 
   page.innerHTML = `
-    <div style="height:100dvh;display:flex;flex-direction:column;background:var(--bg);">
+    <div style="height:100%;display:flex;flex-direction:column;background:var(--bg);">
       <div class="topbar">
         <span class="logo">Seller</span>
         <div class="topbar-right"></div>

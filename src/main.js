@@ -8,6 +8,7 @@ import ProductDetailPage from './views/ProductDetail.js';
 import CartPage from './views/Cart.js';
 import SellerPage from './views/Seller.js';
 import ProfilePage from './views/Profile.js';
+import SettingsPage from './views/Settings.js';
 
 const tabRoutes = {
   home:    { path: '/', label: 'Home', icon: 'ti-home', view: HomePage },
@@ -17,7 +18,7 @@ const tabRoutes = {
   profile: { path: '/profile', label: 'Profile', icon: 'ti-user', view: ProfilePage },
 };
 
-const fullscreenRoutes = ['/login', '/signup', '/product', '/payment'];
+const fullscreenRoutes = ['/login', '/signup', '/product', '/payment', '/profile/settings'];
 
 function renderShell() {
   const app = document.getElementById('app');
@@ -81,31 +82,53 @@ export function navigate(path, params = {}) {
   if (path === '/login') { LoginPage(page); return; }
   if (path === '/signup') { SignupPage(page); return; }
   if (path.startsWith('/product')) { ProductDetailPage(page, params); return; }
+  if (path === '/profile/settings') { SettingsPage(page); return; }
 
   if (path === '/payment/return') {
-    const sp = new URLSearchParams(window.location.search);
-    const status = sp.get('status');
-    if (!status || status === 'success' || status === 'completed') {
-      page.innerHTML = `
-        <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
-          <div style="font-size:3rem;margin-bottom:8px;">✅</div>
-          <h3 style="margin-bottom:4px;">Payment Successful!</h3>
-          <p style="color:var(--text2);font-size:0.85rem;margin-bottom:16px;">Your order has been placed</p>
-          <button class="btn btn-primary" id="goto-profile">View Orders</button>
-        </div>
-      `;
-      page.querySelector('#goto-profile')?.addEventListener('click', () => navigate('/profile'));
-    } else {
-      page.innerHTML = `
-        <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
-          <div style="font-size:3rem;margin-bottom:8px;">❌</div>
-          <h3 style="margin-bottom:4px;">Payment Failed</h3>
-          <p style="color:var(--text2);font-size:0.85rem;margin-bottom:16px;">Please try again</p>
-          <button class="btn btn-primary" id="goto-cart">Back to Cart</button>
-        </div>
-      `;
-      page.querySelector('#goto-cart')?.addEventListener('click', () => navigate('/cart'));
-    }
+    page.innerHTML = `
+      <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
+        <div class="spinner" style="margin-bottom:16px;"></div>
+        <h3 style="margin-bottom:4px;">Checking payment...</h3>
+        <p style="color:var(--text2);font-size:0.85rem;">Please wait while we confirm your payment</p>
+      </div>
+    `;
+
+    import('./api.js').then(({ getOrders }) => {
+      getOrders().then(({ orders }) => {
+        const latest = orders[0];
+        if (latest && (latest.status === 'paid' || latest.status === 'processing')) {
+          page.innerHTML = `
+            <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
+              <div style="font-size:3rem;margin-bottom:8px;">✅</div>
+              <h3 style="margin-bottom:4px;">Payment Successful!</h3>
+              <p style="color:var(--text2);font-size:0.85rem;margin-bottom:16px;">Your order has been placed</p>
+              <button class="btn btn-primary" id="goto-profile">View Orders</button>
+            </div>
+          `;
+          page.querySelector('#goto-profile')?.addEventListener('click', () => navigate('/profile'));
+        } else {
+          page.innerHTML = `
+            <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
+              <div style="font-size:3rem;margin-bottom:8px;">⏳</div>
+              <h3 style="margin-bottom:4px;">Payment Pending</h3>
+              <p style="color:var(--text2);font-size:0.85rem;margin-bottom:16px;">We're waiting for MonCash confirmation. Check your orders for status updates.</p>
+              <button class="btn btn-primary" id="goto-profile">View Orders</button>
+            </div>
+          `;
+          page.querySelector('#goto-profile')?.addEventListener('click', () => navigate('/profile'));
+        }
+      }).catch(() => {
+        page.innerHTML = `
+          <div style="height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:20px;text-align:center;">
+            <div style="font-size:3rem;margin-bottom:8px;">✅</div>
+            <h3 style="margin-bottom:4px;">Payment Submitted!</h3>
+            <p style="color:var(--text2);font-size:0.85rem;margin-bottom:16px;">Your payment is being processed. Check your orders for updates.</p>
+            <button class="btn btn-primary" id="goto-profile">View Orders</button>
+          </div>
+        `;
+        page.querySelector('#goto-profile')?.addEventListener('click', () => navigate('/profile'));
+      });
+    });
     return;
   }
 

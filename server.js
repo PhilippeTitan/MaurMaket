@@ -68,9 +68,6 @@ function authRequired(req, res, next) {
 }
 
 function sellerRequired(req, res, next) {
-  if (req.user.role !== 'seller' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Seller access required' });
-  }
   next();
 }
 
@@ -256,6 +253,21 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   } finally {
     client.release();
+  }
+});
+
+app.delete('/api/products/:id', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const check = await pool.query('SELECT seller_id FROM products WHERE id = $1', [req.params.id]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+    if (check.rows[0].seller_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not your product' });
+    }
+    await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]);
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error('Product delete error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

@@ -9,7 +9,7 @@ const store = {
   get token() { return this.state.token; },
   get cart() { return this.state.cart; },
   get isLoggedIn() { return !!this.state.token; },
-  get isSeller() { return this.state.user?.role === 'seller' || this.state.user?.role === 'admin'; },
+  get isSeller() { return !!this.state.user; },
 
   setUser(user, token) {
     this.state.user = user;
