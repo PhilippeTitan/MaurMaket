@@ -11,6 +11,8 @@ import SellerPage from './views/Seller.js';
 import ProfilePage from './views/Profile.js';
 import SettingsPage from './views/Settings.js';
 import StorefrontPage from './views/Storefront.js';
+import NotificationsPage from './views/Notifications.js';
+import MessagesPage from './views/Messages.js';
 
 const tabRoutes = {
   home:    { path: '/', label: 'Home', icon: 'ti-home', view: HomePage },
@@ -20,16 +22,31 @@ const tabRoutes = {
   profile: { path: '/profile', label: 'Profile', icon: 'ti-user', view: ProfilePage },
 };
 
-const fullscreenRoutes = ['/login', '/signup', '/product', '/payment', '/profile/settings', '/cart', '/store'];
+const fullscreenRoutes = ['/login', '/signup', '/product', '/payment', '/profile/settings', '/cart', '/store', '/notifications', '/messages'];
 
 function renderShell() {
   const app = document.getElementById('app');
   app.innerHTML = `
     <div id="shell">
+      <div id="shell-topbar" class="topbar" style="display:none;">
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:16px;align-items:center;">
+          <div style="position:relative;">
+            <i class="ti ti-message" id="shell-messages" style="font-size:22px;color:var(--text2);cursor:pointer;"></i>
+            <span id="shell-msg-badge" class="notif-badge" style="display:none;"></span>
+          </div>
+          <div style="position:relative;">
+            <i class="ti ti-bell" id="shell-bell" style="font-size:22px;color:var(--text2);cursor:pointer;"></i>
+            <span id="shell-bell-badge" class="notif-badge" style="display:none;"></span>
+          </div>
+        </div>
+      </div>
       <div id="page"></div>
       <nav id="tab-bar"></nav>
     </div>
   `;
+  document.getElementById('shell-bell')?.addEventListener('click', () => navigate('/notifications'));
+  document.getElementById('shell-messages')?.addEventListener('click', () => navigate('/messages'));
   return app.querySelector('#page');
 }
 
@@ -85,6 +102,8 @@ export function navigate(path, params = {}) {
   if (path.startsWith('/product')) { ProductDetailPage(page, params); return; }
   if (path === '/profile/settings') { SettingsPage(page); return; }
   if (path.startsWith('/store')) { StorefrontPage(page, params); return; }
+  if (path === '/notifications') { NotificationsPage(page); return; }
+  if (path.startsWith('/messages')) { MessagesPage(page, params); return; }
 
   if (path === '/cart') { CartPage(page); return; }
 
@@ -190,6 +209,29 @@ function init() {
       renderTabBar(key);
     }
   });
+
+  async function pollUnread() {
+    if (!store.token) { document.getElementById('shell-topbar').style.display = 'none'; return; }
+    document.getElementById('shell-topbar').style.display = 'flex';
+    try {
+      const { count } = await api.getUnreadCount();
+      const badge = document.getElementById('shell-bell-badge');
+      if (badge) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.style.display = count > 0 ? 'flex' : 'none';
+      }
+    } catch {}
+    try {
+      const { count } = await api.getConversationUnreadCount();
+      const badge = document.getElementById('shell-msg-badge');
+      if (badge) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.style.display = count > 0 ? 'flex' : 'none';
+      }
+    } catch {}
+  }
+  pollUnread();
+  setInterval(pollUnread, 30000);
 
   window.addEventListener('store:logout', () => navigate('/'));
 }

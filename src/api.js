@@ -88,6 +88,9 @@ export function requestPayout(amount) {
   return request('/seller/payouts/request', { method: 'POST', body: JSON.stringify({ amount }) });
 }
 
+export function addOrderNote(orderId, note) {
+  return request(`/orders/${orderId}/note`, { method: 'POST', body: JSON.stringify({ note }) });
+}
 export function updateOrderStatus(orderId, status) {
   return request(`/seller/orders/${orderId}/status`, { method: 'PUT', body: JSON.stringify({ status }) });
 }
@@ -128,6 +131,45 @@ export function getFollowerCount(sellerId) {
   return request(`/followers/count/${sellerId}`);
 }
 
+export function getNotifications() {
+  return request('/notifications');
+}
+export function getUnreadCount() {
+  return request('/notifications/unread-count');
+}
+export function markNotificationRead(id) {
+  return request(`/notifications/${id}/read`, { method: 'PUT' });
+}
+export function getConversations() {
+  return request('/conversations');
+}
+export function createConversation(data) {
+  return request('/conversations', { method: 'POST', body: JSON.stringify(data) });
+}
+export function getMessages(conversationId) {
+  return request(`/conversations/${conversationId}/messages`);
+}
+export function sendMessage(conversationId, content) {
+  return request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content }) });
+}
+export function validatePromo(code, orderTotal) {
+  return request('/promos/validate', { method: 'POST', body: JSON.stringify({ code, orderTotal }) });
+}
+export function createPromo(data) {
+  return request('/promos', { method: 'POST', body: JSON.stringify(data) });
+}
+export function getMyPromos() {
+  return request('/promos/mine');
+}
+export function getConversationUnreadCount() {
+  return request('/conversations/unread-count');
+}
+export function markAllNotificationsRead() {
+  return request('/notifications/read-all', { method: 'PUT' });
+}
+export function reorder(orderId) {
+  return request(`/orders/${orderId}/reorder`, { method: 'POST' });
+}
 export function changePassword(currentPassword, newPassword) {
   return request('/auth/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) });
 }
@@ -160,10 +202,27 @@ export function getSellerProfile(sellerId) {
   return request(`/sellers/${sellerId}`);
 }
 
-export function reorder(orderId) {
-  return request(`/orders/${orderId}/reorder`, { method: 'POST' });
+export function getSellerAnalytics() {
+  return request('/seller/analytics');
 }
-
+export function getLowStockProducts() {
+  return request('/seller/products/low-stock');
+}
+export function createDispute(data) {
+  return request('/disputes', { method: 'POST', body: JSON.stringify(data) });
+}
+export function getDisputes() {
+  return request('/disputes');
+}
+export function getAdminUsers() {
+  return request('/admin/users');
+}
+export function getAdminDisputes() {
+  return request('/admin/disputes');
+}
+export function updateAdminDispute(id, data) {
+  return request(`/admin/disputes/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
 export function getAddresses() {
   return request('/addresses');
 }

@@ -120,6 +120,78 @@ async function runMigrations() {
         UNIQUE(follower_id, seller_id)
       );
     `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT,
+        data JSONB,
+        is_read BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id),
+        product_id UUID REFERENCES products(id),
+        buyer_id UUID REFERENCES users(id) NOT NULL,
+        seller_id UUID REFERENCES users(id) NOT NULL,
+        last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        conversation_id UUID REFERENCES conversations(id) NOT NULL,
+        sender_id UUID REFERENCES users(id) NOT NULL,
+        content TEXT NOT NULL,
+        is_read BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS promo_codes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        code VARCHAR(50) NOT NULL UNIQUE,
+        seller_id UUID REFERENCES users(id),
+        discount_type VARCHAR(20) NOT NULL CHECK (discount_type IN ('percentage', 'fixed')),
+        discount_value DECIMAL(10,2) NOT NULL CHECK (discount_value > 0),
+        min_order_amount DECIMAL(10,2) DEFAULT 0,
+        max_uses INTEGER,
+        uses_count INTEGER DEFAULT 0,
+        valid_until TIMESTAMP,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS promo_uses (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        promo_id UUID REFERENCES promo_codes(id) NOT NULL,
+        user_id UUID REFERENCES users(id) NOT NULL,
+        order_id UUID REFERENCES orders(id) NOT NULL,
+        discount_amount DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(promo_id, user_id)
+      );
+    `);
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS disputes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) NOT NULL,
+        raised_by UUID REFERENCES users(id) NOT NULL,
+        reason VARCHAR(50) NOT NULL,
+        description TEXT,
+        status VARCHAR(20) DEFAULT 'open',
+        resolution TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -152,6 +224,19 @@ async function logOrderEvent(orderId, eventType, actorId, oldValue, newValue, no
     );
   } catch (err) {
     console.error('Failed to log order event:', err);
+  }
+}
+
+// Notification helper
+async function createNotification(userId, type, title, body, data, db) {
+  const exec = db || pool;
+  try {
+    await exec.query(
+      `INSERT INTO notifications (user_id, type, title, body, data) VALUES ($1, $2, $3, $4, $5)`,
+      [userId, type, title, body || null, data ? JSON.stringify(data) : null]
+    );
+  } catch (err) {
+    console.error('Failed to create notification:', err);
   }
 }
 
@@ -426,6 +511,9 @@ app.post('/api/reviews', authRequired, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [orderId, req.user.id, sellerId, rating, comment || null]
     );
+    const reviewer = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+    const reviewerName = reviewer.rows[0]?.full_name || 'Someone';
+    createNotification(sellerId, 'review_received', 'New Review', `${reviewerName} left a ${rating}-star review`, { orderId });
     res.status(201).json({ review: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'You already reviewed this order' });
@@ -542,6 +630,9 @@ app.post('/api/follow/:sellerId', authRequired, async (req, res) => {
       return res.json({ following: false });
     }
     await pool.query('INSERT INTO follows (follower_id, seller_id) VALUES ($1, $2)', [req.user.id, req.params.sellerId]);
+    const follower = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+    const followerName = follower.rows[0]?.full_name || 'Someone';
+    createNotification(req.params.sellerId, 'new_follower', 'New Follower', `${followerName} started following you`, {});
     res.json({ following: true });
   } catch (err) {
     console.error('Follow toggle error:', err);
@@ -571,6 +662,60 @@ app.get('/api/followers/count/:sellerId', async (req, res) => {
     res.json({ count: parseInt(result.rows[0].count) });
   } catch (err) {
     console.error('Followers count error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Notifications ─────
+
+app.get('/api/notifications', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`,
+      [req.user.id]
+    );
+    res.json({ notifications: result.rows });
+  } catch (err) {
+    console.error('Notifications fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/notifications/unread-count', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND is_read = false`,
+      [req.user.id]
+    );
+    res.json({ count: parseInt(result.rows[0].count) });
+  } catch (err) {
+    console.error('Notifications unread count error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/notifications/:id/read', authRequired, async (req, res) => {
+  try {
+    await pool.query(
+      `UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    res.json({ updated: true });
+  } catch (err) {
+    console.error('Notification read error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/notifications/read-all', authRequired, async (req, res) => {
+  try {
+    await pool.query(
+      `UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false`,
+      [req.user.id]
+    );
+    res.json({ updated: true });
+  } catch (err) {
+    console.error('Notification read-all error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -852,7 +997,7 @@ app.get('/api/orders', authRequired, async (req, res) => {
 });
 
 app.post('/api/orders', authRequired, async (req, res) => {
-  const { items, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote } = req.body;
+  const { items, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, promoCode } = req.body;
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'Cart is empty' });
   }
@@ -879,6 +1024,27 @@ app.post('/api/orders', authRequired, async (req, res) => {
       orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id });
     }
 
+    let discountAmount = 0;
+    let promoId = null;
+    if (promoCode) {
+      const promoResult = await client.query(
+        `SELECT * FROM promo_codes WHERE code = $1 AND is_active = true AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)`,
+        [promoCode.toUpperCase()]
+      );
+      if (promoResult.rows.length > 0) {
+        const promo = promoResult.rows[0];
+        if (!promo.max_uses || promo.uses_count < promo.max_uses) {
+          const used = await client.query('SELECT id FROM promo_uses WHERE promo_id = $1 AND user_id = $2', [promo.id, req.user.id]);
+          if (used.rows.length === 0 && total >= parseFloat(promo.min_order_amount)) {
+            discountAmount = promo.discount_type === 'percentage'
+              ? Math.min(total * parseFloat(promo.discount_value) / 100, parseFloat(promo.discount_value) * 10)
+              : Math.min(parseFloat(promo.discount_value), total);
+            promoId = promo.id;
+          }
+        }
+      }
+    }
+
     const method = deliveryMethod === 'delivery' ? 'delivery' : 'meetup';
     const orderResult = await client.query(
       `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note)
@@ -895,8 +1061,26 @@ app.post('/api/orders', authRequired, async (req, res) => {
       await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.productId]);
     }
 
+    if (promoId && discountAmount > 0) {
+      await client.query(
+        `INSERT INTO promo_uses (promo_id, user_id, order_id, discount_amount) VALUES ($1, $2, $3, $4)`,
+        [promoId, req.user.id, order.id, discountAmount]
+      );
+      await client.query('UPDATE promo_codes SET uses_count = uses_count + 1 WHERE id = $1', [promoId]);
+    }
+
     await client.query('COMMIT');
-    logOrderEvent(order.id, 'order_placed', req.user.id, null, 'pending', 'Order placed');
+    logOrderEvent(order.id, 'order_placed', req.user.id, null, 'pending', `Order placed${discountAmount > 0 ? ` (promo: -Rs ${discountAmount.toFixed(0)})` : ''}`);
+    const buyerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+    const buyerName = buyerInfo.rows[0]?.full_name || 'Someone';
+    const sellerIds = [...new Set(orderItems.map(i => i.sellerId))];
+    for (const sid of sellerIds) {
+      createNotification(sid, 'order_status', 'New Order', `New order from ${buyerName} — Rs ${total.toFixed(0)}`, { orderId: order.id });
+      const lowStock = await pool.query('SELECT id, name, stock FROM products WHERE seller_id = $1 AND stock <= 3 AND is_available = true', [sid]);
+      for (const p of lowStock.rows) {
+        createNotification(sid, 'low_stock', 'Low Stock Alert', `"${p.name}" has only ${p.stock} left`, { productId: p.id });
+      }
+    }
     res.status(201).json({ order });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -989,6 +1173,13 @@ app.put('/api/orders/:id/meetup', authRequired, async (req, res) => {
       [lat, lng, address || null, note || null, req.user.id, req.params.id]
     );
     logOrderEvent(req.params.id, 'meetup_proposed', req.user.id, null, null, `Meetup proposed at ${address || `${lat}, ${lng}`}`);
+    const oData = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [req.params.id]);
+    if (oData.rows.length > 0) {
+      const otherPartyId = oData.rows[0].buyer_id === req.user.id ? null : oData.rows[0].buyer_id;
+      if (otherPartyId) {
+        createNotification(otherPartyId, 'meetup_proposed', 'Meetup Proposed', 'A meetup location has been proposed for your order', { orderId: req.params.id });
+      }
+    }
     res.json({ updated: true });
   } catch (err) {
     console.error('Meetup error:', err);
@@ -1008,6 +1199,9 @@ app.put('/api/orders/:id/meetup/confirm', authRequired, async (req, res) => {
       [req.params.id]
     );
     logOrderEvent(req.params.id, 'meetup_confirmed', req.user.id, null, null, 'Meetup location confirmed');
+    if (order.meetup_proposed_by) {
+      createNotification(order.meetup_proposed_by, 'meetup_confirmed', 'Meetup Confirmed', 'Your proposed meetup location has been confirmed', { orderId: req.params.id });
+    }
     res.json({ updated: true });
   } catch (err) {
     console.error('Meetup confirm error:', err);
@@ -1026,6 +1220,13 @@ app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
       [req.params.id]
     );
     logOrderEvent(req.params.id, 'status_change', req.user.id, order.status, 'completed', 'Order completed');
+    const sellerOfOrder = await pool.query(
+      'SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1',
+      [req.params.id]
+    );
+    if (sellerOfOrder.rows.length > 0) {
+      createNotification(sellerOfOrder.rows[0].seller_id, 'order_status', 'Order Completed', 'An order has been marked as completed', { orderId: req.params.id });
+    }
     res.json({ updated: true, status: 'completed' });
   } catch (err) {
     console.error('Order complete error:', err);
@@ -1136,9 +1337,359 @@ app.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async (re
       [status, req.params.id]
     );
     logOrderEvent(req.params.id, 'status_change', req.user.id, current, status, `Seller updated status`);
+    const orderInfo = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [req.params.id]);
+    if (orderInfo.rows.length > 0) {
+      createNotification(orderInfo.rows[0].buyer_id, 'order_status', 'Order Updated', `Your order is now: ${status}`, { orderId: req.params.id });
+    }
     res.json({ updated: true, status });
   } catch (err) {
     console.error('Order status update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Promo Codes ─────
+
+app.post('/api/promos/validate', authRequired, async (req, res) => {
+  const { code, orderTotal } = req.body;
+  if (!code) return res.status(400).json({ error: 'Code required' });
+  try {
+    const result = await pool.query(
+      `SELECT * FROM promo_codes WHERE code = $1 AND is_active = true AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)`,
+      [code.toUpperCase()]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Invalid or expired promo code' });
+    const promo = result.rows[0];
+    if (promo.max_uses && promo.uses_count >= promo.max_uses) {
+      return res.status(400).json({ error: 'Promo code has reached max uses' });
+    }
+    if (orderTotal && parseFloat(orderTotal) < parseFloat(promo.min_order_amount)) {
+      return res.status(400).json({ error: `Minimum order amount is Rs ${parseFloat(promo.min_order_amount).toFixed(0)}` });
+    }
+    const used = await pool.query('SELECT id FROM promo_uses WHERE promo_id = $1 AND user_id = $2', [promo.id, req.user.id]);
+    if (used.rows.length > 0) return res.status(400).json({ error: 'You have already used this promo code' });
+    let discount = promo.discount_type === 'percentage'
+      ? Math.min(parseFloat(orderTotal || 0) * parseFloat(promo.discount_value) / 100, parseFloat(promo.discount_value) * 10)
+      : parseFloat(promo.discount_value);
+    if (orderTotal && discount > parseFloat(orderTotal)) discount = parseFloat(orderTotal);
+    res.json({ valid: true, discount: parseFloat(discount.toFixed(2)), promoId: promo.id, code: promo.code });
+  } catch (err) {
+    console.error('Promo validate error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/promos', authRequired, sellerRequired, async (req, res) => {
+  const { code, discountType, discountValue, minOrderAmount, maxUses, validUntil } = req.body;
+  if (!code || !discountType || !discountValue) return res.status(400).json({ error: 'code, discountType, discountValue required' });
+  if (!['percentage', 'fixed'].includes(discountType)) return res.status(400).json({ error: 'discountType must be percentage or fixed' });
+  if (discountValue <= 0) return res.status(400).json({ error: 'discountValue must be positive' });
+  try {
+    const result = await pool.query(
+      `INSERT INTO promo_codes (code, seller_id, discount_type, discount_value, min_order_amount, max_uses, valid_until)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [code.toUpperCase(), req.user.id, discountType, discountValue, minOrderAmount || 0, maxUses || null, validUntil || null]
+    );
+    res.status(201).json({ promo: result.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Promo code already exists' });
+    console.error('Promo create error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/promos/mine', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM promo_codes WHERE seller_id = $1 ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ promos: result.rows });
+  } catch (err) {
+    console.error('Promos fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Seller Analytics ─────
+
+app.get('/api/seller/analytics', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const overview = await pool.query(
+      `SELECT
+        (SELECT COUNT(*) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.seller_id = $1 AND o.status != 'cancelled') AS total_orders,
+        (SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.seller_id = $1 AND o.status != 'cancelled') AS total_revenue,
+        (SELECT COALESCE(AVG(r.rating)::numeric(3,2), 0) FROM reviews r WHERE r.seller_id = $1) AS avg_rating,
+        (SELECT COUNT(*) FROM reviews WHERE seller_id = $1) AS review_count,
+        (SELECT COUNT(*) FROM follows WHERE seller_id = $1) AS follower_count,
+        (SELECT COUNT(*) FROM products WHERE seller_id = $1) AS product_count`,
+      [req.user.id]
+    );
+    const topProducts = await pool.query(
+      `SELECT p.id, p.name, p.price, p.stock,
+              COALESCE(SUM(oi.quantity), 0) AS units_sold,
+              COALESCE(SUM(oi.price * oi.quantity), 0) AS revenue,
+              (SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS image_url
+       FROM products p
+       LEFT JOIN order_items oi ON oi.product_id = p.id
+       LEFT JOIN orders o ON oi.order_id = o.id AND o.status != 'cancelled'
+       WHERE p.seller_id = $1
+       GROUP BY p.id
+       ORDER BY revenue DESC
+       LIMIT 10`,
+      [req.user.id]
+    );
+    res.json({ overview: overview.rows[0], topProducts: topProducts.rows });
+  } catch (err) {
+    console.error('Analytics error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Disputes ─────
+
+app.post('/api/disputes', authRequired, async (req, res) => {
+  const { orderId, reason, description } = req.body;
+  if (!orderId || !reason) return res.status(400).json({ error: 'orderId and reason required' });
+  try {
+    const order = await canAccessOrder(req.user.id, orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status !== 'completed' && order.status !== 'paid' && order.status !== 'processing') {
+      return res.status(400).json({ error: 'Can only dispute active or completed orders' });
+    }
+    const result = await pool.query(
+      `INSERT INTO disputes (order_id, raised_by, reason, description) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [orderId, req.user.id, reason, description || null]
+    );
+    res.status(201).json({ dispute: result.rows[0] });
+  } catch (err) {
+    console.error('Dispute create error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/disputes', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT d.*, o.status AS order_status FROM disputes d
+       JOIN orders o ON d.order_id = o.id
+       WHERE d.raised_by = $1 OR o.buyer_id = $1 OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = d.order_id AND oi.seller_id = $1)
+       ORDER BY d.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ disputes: result.rows });
+  } catch (err) {
+    console.error('Disputes fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Inventory Alerts ─────
+
+app.get('/api/seller/products/low-stock', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM products WHERE seller_id = $1 AND stock <= 5 AND is_available = true ORDER BY stock ASC`,
+      [req.user.id]
+    );
+    res.json({ products: result.rows });
+  } catch (err) {
+    console.error('Low stock error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Admin ─────
+
+function adminRequired(req, res, next) {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
+}
+
+app.get('/api/admin/users', authRequired, adminRequired, async (_req, res) => {
+  try {
+    const result = await pool.query('SELECT id, full_name, email, phone, role, created_at FROM users ORDER BY created_at DESC');
+    res.json({ users: result.rows });
+  } catch (err) {
+    console.error('Admin users error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/admin/disputes', authRequired, adminRequired, async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT d.*, u.full_name AS raised_by_name, o.buyer_id
+       FROM disputes d
+       JOIN users u ON d.raised_by = u.id
+       JOIN orders o ON d.order_id = o.id
+       ORDER BY d.created_at DESC`
+    );
+    res.json({ disputes: result.rows });
+  } catch (err) {
+    console.error('Admin disputes error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/admin/disputes/:id', authRequired, adminRequired, async (req, res) => {
+  const { status, resolution } = req.body;
+  if (!status || !['open', 'under_review', 'resolved', 'closed'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  try {
+    await pool.query(
+      `UPDATE disputes SET status = $1, resolution = COALESCE($2, resolution), updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+      [status, resolution || null, req.params.id]
+    );
+    res.json({ updated: true });
+  } catch (err) {
+    console.error('Admin dispute update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Order Notes (Seller Updates) ─────
+
+app.post('/api/orders/:id/note', authRequired, sellerRequired, async (req, res) => {
+  const { note } = req.body;
+  if (!note || !note.trim()) return res.status(400).json({ error: 'Note text required' });
+  try {
+    const check = await pool.query(
+      `SELECT o.id, o.buyer_id FROM orders o
+       JOIN order_items oi ON o.id = oi.order_id
+       WHERE o.id = $1 AND oi.seller_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    logOrderEvent(req.params.id, 'note_added', req.user.id, null, null, note.trim());
+    createNotification(check.rows[0].buyer_id, 'order_status', 'Seller Note', note.trim(), { orderId: req.params.id });
+    res.json({ updated: true });
+  } catch (err) {
+    console.error('Order note error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Messaging ─────
+
+app.get('/api/conversations', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT c.*, 
+              CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
+              u.full_name AS other_party_name, u.avatar_url AS other_party_avatar,
+              (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message,
+              (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_id != $1 AND is_read = false) AS unread_count
+       FROM conversations c
+       JOIN users u ON u.id = CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END
+       WHERE c.buyer_id = $1 OR c.seller_id = $1
+       ORDER BY c.last_message_at DESC`,
+      [req.user.id]
+    );
+    res.json({ conversations: result.rows });
+  } catch (err) {
+    console.error('Conversations fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/conversations', authRequired, async (req, res) => {
+  const { productId, orderId } = req.body;
+  if (!productId && !orderId) return res.status(400).json({ error: 'productId or orderId required' });
+  try {
+    let sellerId;
+    if (orderId) {
+      const o = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [orderId]);
+      if (o.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+      const items = await pool.query('SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1', [orderId]);
+      sellerId = items.rows[0]?.seller_id;
+      if (req.user.id === sellerId) sellerId = o.rows[0].buyer_id;
+    } else {
+      const p = await pool.query('SELECT seller_id FROM products WHERE id = $1', [productId]);
+      if (p.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+      sellerId = p.rows[0].seller_id;
+    }
+    if (req.user.id === sellerId) return res.status(400).json({ error: 'Cannot message yourself' });
+    const existing = await pool.query(
+      `SELECT id FROM conversations WHERE buyer_id = $1 AND seller_id = $2 AND ($3::uuid IS NULL OR order_id = $3)`,
+      [req.user.id, sellerId, orderId || null]
+    );
+    if (existing.rows.length > 0) return res.json({ conversationId: existing.rows[0].id });
+    const buyerId = req.user.id;
+    const result = await pool.query(
+      `INSERT INTO conversations (order_id, product_id, buyer_id, seller_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [orderId || null, productId || null, buyerId, sellerId]
+    );
+    res.status(201).json({ conversationId: result.rows[0].id });
+  } catch (err) {
+    console.error('Conversation create error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
+  try {
+    const conv = await pool.query(
+      'SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [req.params.id, req.user.id]
+    );
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    await pool.query(
+      'UPDATE messages SET is_read = true WHERE conversation_id = $1 AND sender_id != $2',
+      [req.params.id, req.user.id]
+    );
+    const result = await pool.query(
+      `SELECT m.*, u.full_name AS sender_name
+       FROM messages m JOIN users u ON m.sender_id = u.id
+       WHERE m.conversation_id = $1
+       ORDER BY m.created_at ASC`,
+      [req.params.id]
+    );
+    res.json({ messages: result.rows });
+  } catch (err) {
+    console.error('Messages fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
+  const { content } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: 'Message content required' });
+  try {
+    const conv = await pool.query(
+      'SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [req.params.id, req.user.id]
+    );
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    const result = await pool.query(
+      `INSERT INTO messages (conversation_id, sender_id, content) VALUES ($1, $2, $3) RETURNING *`,
+      [req.params.id, req.user.id, content.trim()]
+    );
+    await pool.query(
+      'UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1',
+      [req.params.id]
+    );
+    const otherPartyId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
+    createNotification(otherPartyId, 'new_message', 'New Message', content.trim().substring(0, 100), { conversationId: req.params.id });
+    res.status(201).json({ message: result.rows[0] });
+  } catch (err) {
+    console.error('Message send error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/conversations/unread-count', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COALESCE(SUM(
+        (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_id != $1 AND is_read = false)
+      ), 0) AS count FROM conversations c WHERE c.buyer_id = $1 OR c.seller_id = $1`,
+      [req.user.id]
+    );
+    res.json({ count: parseInt(result.rows[0].count) });
+  } catch (err) {
+    console.error('Unread count error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1247,6 +1798,10 @@ app.post('/api/payments/webhook', async (req, res) => {
           }
         }
         await client.query('COMMIT');
+        const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
+        for (const sid of sellerIds) {
+          createNotification(sid, 'order_status', 'Payment Received', `Payment confirmed for order`, { orderId: reference });
+        }
         console.log(`Order ${reference} paid, sellers credited`);
       } catch (e) {
         await client.query('ROLLBACK');

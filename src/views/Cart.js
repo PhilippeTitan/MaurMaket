@@ -58,8 +58,21 @@ export default function CartPage(page) {
             </div>
           `).join('')}
         </div>
+        ${(() => {
+          const discount = store._promoDiscount || 0;
+          const finalTotal = total - discount;
+          return `
+            <div style="padding:4px 18px;">
+              <div style="display:flex;gap:6px;align-items:center;">
+                <input id="promo-input" type="text" placeholder="Promo code" value="${store._promoCode || ''}" style="flex:1;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:0.78rem;outline:none;font-family:'Inter',sans-serif;">
+                <button id="promo-apply-btn" style="background:transparent;color:var(--blue);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:0.78rem;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">Apply</button>
+              </div>
+              ${discount > 0 ? `<div style="font-size:0.75rem;color:var(--green);margin-top:4px;">Discount: -Rs ${discount.toFixed(0)}</div>` : ''}
+            </div>
+          `;
+        })()}
         <div class="cart-footer">
-          <div class="cart-total">Total: <span>Rs ${total.toFixed(0)}</span></div>
+          <div class="cart-total">Total: <span>Rs ${(total - (store._promoDiscount || 0)).toFixed(0)}</span></div>
           <button class="btn btn-primary" id="checkout-btn" style="border-radius:14px;padding:11px 22px;">Checkout →</button>
         </div>
       </div>
@@ -80,6 +93,24 @@ export default function CartPage(page) {
       if (store.cart.length > 0) {
         store.clearCart();
         showToast('Cart cleared', 'info');
+      }
+    });
+
+    page.querySelector('#promo-apply-btn')?.addEventListener('click', async () => {
+      const code = page.querySelector('#promo-input')?.value.trim();
+      if (!code) return;
+      try {
+        const total = store.cart.reduce((s, i) => s + parseFloat(i.price) * i.quantity, 0);
+        const data = await api.validatePromo(code, total);
+        store._promoDiscount = data.discount;
+        store._promoCode = code;
+        showToast(`Promo applied! -Rs ${data.discount.toFixed(0)}`, 'success');
+        render();
+      } catch (err) {
+        store._promoDiscount = 0;
+        store._promoCode = '';
+        showToast(err.message, 'error');
+        render();
       }
     });
 
@@ -231,6 +262,7 @@ export default function CartPage(page) {
           const { order } = await api.createOrder({
             items: store.cart.map(item => ({ productId: item.id, quantity: item.quantity })),
             ...deliveryData,
+            promoCode: store._promoCode || undefined,
           });
 
           // Save address if checkbox checked

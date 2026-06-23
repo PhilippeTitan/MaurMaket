@@ -60,6 +60,11 @@ img { max-width: 100%; display: block; }
 .logo span { color: var(--coral); }
 .topbar-right { margin-left: auto; display: flex; gap: 16px; align-items: center; }
 .topbar-right i { font-size: 22px; color: var(--text2); cursor: pointer; }
+.notif-badge {
+  position: absolute; top: -4px; right: -4px; background: var(--coral); color: #fff;
+  font-size: 0.55rem; font-weight: 700; padding: 1px 5px; border-radius: 8px;
+  min-width: 15px; text-align: center; height: 15px; align-items: center; justify-content: center;
+}
 
 /* ───── Cart offset for tab bar ───── */
 .cart-footer { padding-bottom: calc(12px + env(safe-area-inset-bottom, 8px)); }

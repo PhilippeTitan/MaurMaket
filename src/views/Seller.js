@@ -94,7 +94,10 @@ export default function SellerPage(page) {
                         <div style="font-size:13px;font-weight:600;color:var(--coral);">Rs ${parseFloat(o.total_amount).toFixed(0)}</div>
                         <div style="font-size:10px;color:var(--text2);">${o.buyer_name || 'Buyer'} ${o.buyer_phone ? '· ' + o.buyer_phone : ''}</div>
                       </div>
-                      ${next ? `<button class="status-btn" data-id="${o.id}" data-next="${next}" style="background:var(--coral);color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:'Inter',sans-serif;flex-shrink:0;">${next}</button>` : ''}
+                      <div style="display:flex;gap:4px;flex-shrink:0;">
+                        ${next ? `<button class="status-btn" data-id="${o.id}" data-next="${next}" style="background:var(--coral);color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:'Inter',sans-serif;">${next}</button>` : ''}
+                        <button class="note-btn" data-id="${o.id}" style="background:transparent;color:var(--blue);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:10px;cursor:pointer;font-family:'Inter',sans-serif;"><i class="ti ti-edit"></i></button>
+                      </div>
                     </div>
                   </div>
                 `;
@@ -160,6 +163,15 @@ export default function SellerPage(page) {
         api.updateOrderStatus(btn.dataset.id, btn.dataset.next)
           .then(() => { showToast('Order ' + btn.dataset.next, 'success'); loadAll(); })
           .catch(e => { showToast(e.message, 'error'); btn.disabled = false; btn.textContent = btn.dataset.next; });
+      }
+      const noteBtn = e.target.closest('.note-btn');
+      if (noteBtn) {
+        const note = prompt('Add a note for the buyer:');
+        if (note && note.trim()) {
+          api.addOrderNote(noteBtn.dataset.id, note.trim())
+            .then(() => { showToast('Note added', 'success'); })
+            .catch(e => showToast(e.message, 'error'));
+        }
       }
     });
 
