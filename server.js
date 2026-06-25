@@ -192,6 +192,16 @@ async function runMigrations() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // Seller onboarding & verification columns
+    await c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS store_name TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS store_logo_url TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS seller_tier VARCHAR(20) DEFAULT 'none';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS id_document_url TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verified BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS id_submitted_at TIMESTAMP;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verified_at TIMESTAMP;
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -342,7 +352,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -405,15 +415,72 @@ app.put('/api/auth/become-seller', authRequired, async (req, res) => {
     if (req.user.role === 'seller') {
       return res.status(400).json({ error: 'You are already a seller' });
     }
+    const { storeName, storeLogoUrl, idDocumentUrl, tier } = req.body;
+    const sellerTier = tier === 'verified' ? 'verified' : 'casual';
+    const idSubmittedAt = (sellerTier === 'verified' && idDocumentUrl) ? 'CURRENT_TIMESTAMP' : null;
     const result = await pool.query(
-      `UPDATE users SET role = 'seller', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id, full_name, email, phone, role, avatar_url, bio`,
-      [req.user.id]
+      `UPDATE users SET
+        role = 'seller',
+        seller_tier = $2,
+        store_name = COALESCE($3, store_name),
+        store_logo_url = COALESCE($4, store_logo_url),
+        id_document_url = COALESCE($5, id_document_url),
+        id_submitted_at = ${idSubmittedAt || 'id_submitted_at'},
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, created_at`,
+      [req.user.id, sellerTier, storeName || null, storeLogoUrl || null, idDocumentUrl || null]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
     const token = jwt.sign({ id: result.rows[0].id, email: result.rows[0].email, role: 'seller' }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ user: result.rows[0], token });
   } catch (err) {
     console.error('Become seller error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Seller Profile & Verification ─────
+
+app.put('/api/auth/seller-profile', authRequired, sellerRequired, async (req, res) => {
+  const { storeName, storeLogoUrl, idDocumentUrl } = req.body;
+  try {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    if (storeName !== undefined) { fields.push(`store_name = $${idx++}`); values.push(storeName || null); }
+    if (storeLogoUrl !== undefined) { fields.push(`store_logo_url = $${idx++}`); values.push(storeLogoUrl || null); }
+    if (idDocumentUrl !== undefined) {
+      fields.push(`id_document_url = $${idx++}`);
+      values.push(idDocumentUrl || null);
+      if (idDocumentUrl) {
+        fields.push(`id_submitted_at = CURRENT_TIMESTAMP`);
+      }
+    }
+    if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
+    values.push(req.user.id);
+    const result = await pool.query(
+      `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${idx}
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, created_at`,
+      values
+    );
+    res.json({ user: result.rows[0] });
+  } catch (err) {
+    console.error('Seller profile update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/seller/verification-status', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT seller_tier, id_document_url, id_submitted_at, id_verified, id_verified_at FROM users WHERE id = $1`,
+      [req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Verification status error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -726,7 +793,7 @@ app.put('/api/notifications/read-all', authRequired, async (req, res) => {
 app.get('/api/sellers/:id', async (req, res) => {
   try {
     const userResult = await pool.query(
-      `SELECT id, full_name, email, phone, avatar_url, bio, created_at FROM users WHERE id = $1 AND role = 'seller'`,
+      `SELECT id, full_name, email, phone, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified FROM users WHERE id = $1 AND role = 'seller'`,
       [req.params.id]
     );
     if (userResult.rows.length === 0) return res.status(404).json({ error: 'Seller not found' });
@@ -800,10 +867,10 @@ app.get('/api/products', async (req, res) => {
     const total = parseInt(countResult.rows[0].count);
 
     const result = await pool.query(
-      `SELECT p.id, p.name, p.description, p.price, p.stock, p.created_at,
-              u.full_name AS seller_name, u.id AS seller_id,
+      `SELECT p.id, p.name, p.description, p.price, p.stock, p.created_at, p.category_id,
+              u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar,
               c.name AS category,
-              (SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS image_url
+              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
@@ -823,8 +890,10 @@ app.get('/api/products', async (req, res) => {
 app.get('/api/products/:id', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar, u.phone AS seller_phone, c.name AS category,
-              (SELECT json_agg(json_build_object('url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
+      `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar, u.phone AS seller_phone,
+              u.store_name, u.store_logo_url, u.seller_tier, u.id_verified,
+              c.name AS category,
+              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
