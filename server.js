@@ -434,8 +434,11 @@ app.put('/api/auth/become-seller', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'You are already a seller' });
     }
     const { storeName, storeLogoUrl, idDocumentUrl, tier } = req.body;
-    const sellerTier = tier === 'verified' ? 'verified' : 'casual';
-    const idSubmittedAt = (sellerTier === 'verified' && idDocumentUrl) ? 'CURRENT_TIMESTAMP' : null;
+    let sellerTier;
+    if (tier === 'verified') sellerTier = 'verified';
+    else if (tier === 'business') sellerTier = 'business';
+    else sellerTier = 'casual';
+    const idSubmittedAt = ((sellerTier === 'verified' || sellerTier === 'business') && idDocumentUrl) ? 'CURRENT_TIMESTAMP' : null;
     const result = await pool.query(
       `UPDATE users SET
         role = 'seller',
@@ -460,8 +463,61 @@ app.put('/api/auth/become-seller', authRequired, async (req, res) => {
 
 // ───── Seller Profile & Verification ─────
 
+app.put('/api/auth/upgrade-tier', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const { tier, storeName, storeLogoUrl, idDocumentUrl } = req.body;
+    if (!['verified', 'business'].includes(tier)) {
+      return res.status(400).json({ error: 'Invalid tier. Must be verified or business.' });
+    }
+
+    const current = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+    const currentTier = current.rows[0]?.seller_tier || 'none';
+
+    const tierOrder = { none: 0, casual: 1, verified: 2, business: 3 };
+    if ((tierOrder[currentTier] || 0) >= (tierOrder[tier] || 0)) {
+      return res.status(400).json({ error: `You are already at ${currentTier} tier or higher.` });
+    }
+
+    const updates = ['seller_tier = $2', 'updated_at = CURRENT_TIMESTAMP'];
+    const values = [req.user.id, tier];
+    let idx = 3;
+
+    if (tier === 'business') {
+      if (storeName !== undefined) { updates.push(`store_name = $${idx++}`); values.push(storeName || null); }
+      if (storeLogoUrl !== undefined) { updates.push(`store_logo_url = $${idx++}`); values.push(storeLogoUrl || null); }
+    }
+
+    if (idDocumentUrl) {
+      updates.push(`id_document_url = $${idx++}`);
+      values.push(idDocumentUrl);
+      updates.push('id_submitted_at = CURRENT_TIMESTAMP');
+    }
+
+    const result = await pool.query(
+      `UPDATE users SET ${updates.join(', ')}
+       WHERE id = $1
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, created_at`,
+      values
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const token = jwt.sign({ id: result.rows[0].id, email: result.rows[0].email, role: 'seller' }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ user: result.rows[0], token });
+  } catch (err) {
+    console.error('Upgrade tier error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.put('/api/auth/seller-profile', authRequired, sellerRequired, async (req, res) => {
   const { storeName, storeLogoUrl, idDocumentUrl } = req.body;
+
+  const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+  const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
+  if ((storeName !== undefined || storeLogoUrl !== undefined) && sellerTier !== 'business') {
+    return res.status(403).json({ error: 'Store branding is a Business seller feature. Upgrade your plan to set a store name and logo.' });
+  }
+
   try {
     const fields = [];
     const values = [];
@@ -931,6 +987,19 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
   if (!name || !price) {
     return res.status(400).json({ error: 'Name and price required' });
   }
+
+  const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+  const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
+  if (sellerTier === 'casual') {
+    const countResult = await pool.query(
+      'SELECT COUNT(*) FROM products WHERE seller_id = $1 AND is_available = true',
+      [req.user.id]
+    );
+    if (parseInt(countResult.rows[0].count) >= 10) {
+      return res.status(403).json({ error: 'Casual sellers can list up to 10 products. Upgrade to Verified for unlimited listings.' });
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1468,6 +1537,12 @@ app.post('/api/promos/validate', authRequired, async (req, res) => {
 });
 
 app.post('/api/promos', authRequired, sellerRequired, async (req, res) => {
+  const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+  const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
+  if (sellerTier !== 'business') {
+    return res.status(403).json({ error: 'Promo codes are a Business seller feature. Upgrade your plan to create promo codes.' });
+  }
+
   const { code, discountType, discountValue, minOrderAmount, maxUses, validUntil } = req.body;
   if (!code || !discountType || !discountValue) return res.status(400).json({ error: 'code, discountType, discountValue required' });
   if (!['percentage', 'fixed'].includes(discountType)) return res.status(400).json({ error: 'discountType must be percentage or fixed' });
@@ -1503,6 +1578,12 @@ app.get('/api/promos/mine', authRequired, sellerRequired, async (req, res) => {
 
 app.get('/api/seller/analytics', authRequired, sellerRequired, async (req, res) => {
   try {
+    const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+    const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
+    if (sellerTier === 'casual') {
+      return res.status(403).json({ error: 'Analytics are not available for Casual sellers. Upgrade to Verified for basic stats.' });
+    }
+
     const overview = await pool.query(
       `SELECT
         (SELECT COUNT(*) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.seller_id = $1 AND o.status != 'cancelled') AS total_orders,
@@ -1513,21 +1594,24 @@ app.get('/api/seller/analytics', authRequired, sellerRequired, async (req, res) 
         (SELECT COUNT(*) FROM products WHERE seller_id = $1) AS product_count`,
       [req.user.id]
     );
-    const topProducts = await pool.query(
-      `SELECT p.id, p.name, p.price, p.stock,
-              COALESCE(SUM(oi.quantity), 0) AS units_sold,
-              COALESCE(SUM(oi.price * oi.quantity), 0) AS revenue,
-              (SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS image_url
-       FROM products p
-       LEFT JOIN order_items oi ON oi.product_id = p.id
-       LEFT JOIN orders o ON oi.order_id = o.id AND o.status != 'cancelled'
-       WHERE p.seller_id = $1
-       GROUP BY p.id
-       ORDER BY revenue DESC
-       LIMIT 10`,
-      [req.user.id]
-    );
-    res.json({ overview: overview.rows[0], topProducts: topProducts.rows });
+    let topProducts = { rows: [] };
+    if (sellerTier === 'business') {
+      topProducts = await pool.query(
+        `SELECT p.id, p.name, p.price, p.stock,
+                COALESCE(SUM(oi.quantity), 0) AS units_sold,
+                COALESCE(SUM(oi.price * oi.quantity), 0) AS revenue,
+                (SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS image_url
+         FROM products p
+         LEFT JOIN order_items oi ON oi.product_id = p.id
+         LEFT JOIN orders o ON oi.order_id = o.id AND o.status != 'cancelled'
+         WHERE p.seller_id = $1
+         GROUP BY p.id
+         ORDER BY revenue DESC
+         LIMIT 10`,
+        [req.user.id]
+      );
+    }
+    res.json({ overview: overview.rows[0], topProducts: topProducts.rows, sellerTier });
   } catch (err) {
     console.error('Analytics error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -2004,6 +2088,12 @@ async function refundPayout(client, sellerId, amount, payoutId, errorMessage) {
 }
 
 app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req, res) => {
+  const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+  const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
+  if (sellerTier === 'casual') {
+    return res.status(403).json({ error: 'Payouts are available for Verified sellers and above. Upgrade your account to request payouts.' });
+  }
+
   const { amount } = req.body;
   if (!amount || amount <= 0) {
     return res.status(400).json({ error: 'Valid amount required' });
