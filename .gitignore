@@ -1,6 +1,5 @@
 # Node.js dependencies
 node_modules/
-dist/
 .env
 .env.local
 .env.*.local
@@ -14,17 +13,12 @@ dist/
 *.sln
 *.sw?
 
-# Vite cache
-.vite/
-
-# Netlify local configuration
-.netlify/
-
 # System files
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 .DS_Store
+*.pem
 
 # Keys & Secrets
 MonCashConnect KEYS.txt
@@ -40,3 +34,29 @@ uploads/
 # System / temp files
 nul
 _srv.log
+*.log
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native build
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# TypeScript
+*.tsbuildinfo
+
+# Generated native folders
+/ios
+/android

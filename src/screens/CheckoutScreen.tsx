@@ -1,0 +1,337 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator, Linking,
+  KeyboardAvoidingView, Platform,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
+import { COLORS, SPACING } from '../theme';
+import { store } from '../store';
+import { createOrder, createPayment, getAddresses } from '../api';
+import type { RootStackParamList } from '../navigation';
+import type { Address } from '../types';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
+
+type DeliveryMethod = 'delivery' | 'meetup';
+
+export default function CheckoutScreen({ route, navigation }: Props) {
+  const cart = store.cart;
+  const [method, setMethod] = useState<DeliveryMethod>('delivery');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [promoCode, setPromoCode] = useState(route.params?.promoCode || '');
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+
+  const fetchAddresses = useCallback(async () => {
+    try {
+      const res = await getAddresses() as { addresses?: Address[] };
+      setSavedAddresses(res.addresses || []);
+    } catch { /* silent */ }
+  }, []);
+
+  useFocusEffect(useCallback(() => { fetchAddresses(); }, [fetchAddresses]));
+
+  const selectAddress = (addr: Address) => {
+    setSelectedAddressId(addr.id);
+    setName(addr.name);
+    setPhone(addr.phone);
+    setAddress(addr.address);
+    setCity(addr.city);
+  };
+
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const itemLabel = itemCount === 1 ? 'item' : 'items';
+  const sellerGroups = cart.reduce<Array<{ sellerId: string; sellerName: string; itemCount: number; total: number }>>((groups, item) => {
+    const sellerName = item.store_name || item.seller_name || `Seller ${item.seller_id.slice(0, 6)}`;
+    const existing = groups.find(group => group.sellerId === item.seller_id);
+    if (existing) {
+      existing.itemCount += item.quantity;
+      existing.total += item.price * item.quantity;
+    } else {
+      groups.push({ sellerId: item.seller_id, sellerName, itemCount: item.quantity, total: item.price * item.quantity });
+    }
+    return groups;
+  }, []);
+  const sellerCount = sellerGroups.length;
+
+  const handleCheckout = async () => {
+    if (cart.length === 0) {
+      Alert.alert('Cart empty', 'Add an item before checking out.');
+      navigation.goBack();
+      return;
+    }
+
+    if (method === 'delivery' && (!name || !phone || !address)) {
+      Alert.alert('Missing info', 'Please fill in all required fields.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const orderData: Record<string, unknown> = {
+        items: cart.map(item => ({ productId: item.id, quantity: item.quantity })),
+        deliveryMethod: method,
+      };
+      if (promoCode.trim()) orderData.promoCode = promoCode.trim();
+      if (method === 'delivery') {
+        orderData.deliveryName = name;
+        orderData.deliveryPhone = phone;
+        orderData.deliveryAddress = address;
+        orderData.deliveryCity = city;
+        orderData.deliveryNote = note;
+      }
+
+      const orderRes = await createOrder(orderData) as { order: { id: string } };
+
+      try {
+        const payRes = await createPayment(orderRes.order.id, 'maurmaket://payment-return') as { paymentUrl: string };
+        if (payRes.paymentUrl) {
+          await Linking.openURL(payRes.paymentUrl);
+        }
+        await store.clearCart();
+        navigation.navigate('Orders');
+      } catch (paymentErr: unknown) {
+        await store.clearCart();
+        navigation.navigate('Orders');
+        const msg = paymentErr instanceof Error ? paymentErr.message : 'Payment could not start.';
+        Alert.alert('Order created', `${msg} Retry payment from your orders.`);
+      }
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Checkout failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
+        </TouchableOpacity>
+        <View>
+          <Text style={styles.title}>Checkout</Text>
+          <Text style={styles.subtitle}>{itemCount} {itemLabel} - Rs {subtotal.toLocaleString()}</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sectionLabel}>Seller split</Text>
+      <View style={[styles.sellerSummary, sellerCount > 1 && styles.sellerSummaryMixed]}>
+        <View style={styles.sellerSummaryTitleRow}>
+          <MaterialCommunityIcons
+            name={sellerCount > 1 ? 'store-alert-outline' : 'storefront-outline'}
+            size={18}
+            color={sellerCount > 1 ? COLORS.yellow : COLORS.blue}
+          />
+          <Text style={styles.sellerSummaryTitle}>
+            {sellerCount} {sellerCount === 1 ? 'seller' : 'sellers'} in this checkout
+          </Text>
+        </View>
+        <Text style={styles.sellerSummaryHint}>
+          {sellerCount > 1
+            ? 'You can pay together, but delivery, meetup, and messages may split by seller after the order.'
+            : 'Delivery or meetup coordination stays with this seller.'}
+        </Text>
+        {sellerGroups.map(group => (
+          <View key={group.sellerId} style={styles.sellerGroupRow}>
+            <Text style={styles.sellerGroupName} numberOfLines={1}>{group.sellerName}</Text>
+            <Text style={styles.sellerGroupMeta}>
+              {group.itemCount} {group.itemCount === 1 ? 'item' : 'items'} - Rs {group.total.toLocaleString()}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      <Text style={styles.sectionLabel}>Delivery method</Text>
+      <View style={styles.methodRow}>
+        <TouchableOpacity
+          style={[styles.methodCard, method === 'delivery' && styles.methodActive]}
+          onPress={() => setMethod('delivery')}
+        >
+          <MaterialCommunityIcons name="truck-delivery" size={20} color={method === 'delivery' ? COLORS.coral : COLORS.text2} />
+          <Text style={[styles.methodText, method === 'delivery' && styles.methodTextActive]}>Delivery</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.methodCard, method === 'meetup' && styles.methodActive]}
+          onPress={() => setMethod('meetup')}
+        >
+          <MaterialCommunityIcons name="map-marker" size={20} color={method === 'meetup' ? COLORS.coral : COLORS.text2} />
+          <Text style={[styles.methodText, method === 'meetup' && styles.methodTextActive]}>Meetup</Text>
+        </TouchableOpacity>
+      </View>
+
+      {method === 'delivery' ? (
+        <View style={styles.fields}>
+          {savedAddresses.length > 0 && (
+            <>
+              <Text style={styles.sectionLabel}>Saved Addresses</Text>
+              <View style={styles.addressList}>
+                {savedAddresses.map(addr => (
+                  <TouchableOpacity
+                    key={addr.id}
+                    style={[styles.addressCard, selectedAddressId === addr.id && styles.addressCardActive]}
+                    onPress={() => selectAddress(addr)}
+                  >
+                    <View style={styles.addressHeader}>
+                      <View style={styles.addressLabel}>
+                        <MaterialCommunityIcons name="home-outline" size={14} color={COLORS.blue} />
+                        <Text style={styles.addressLabelText}>{addr.label}</Text>
+                      </View>
+                      {addr.is_default && (
+                        <View style={styles.defaultBadge}>
+                          <Text style={styles.defaultBadgeText}>Default</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.addressName}>{addr.name}</Text>
+                    <Text style={styles.addressText}>{addr.address}, {addr.city}</Text>
+                    <Text style={styles.addressText}>{addr.phone}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={styles.addAddressLink}
+                onPress={() => navigation.navigate('Addresses')}
+              >
+                <MaterialCommunityIcons name="plus-circle-outline" size={16} color={COLORS.coral} />
+                <Text style={styles.addAddressText}>Manage addresses</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          <Text style={styles.sectionLabel}>Delivery info</Text>
+          <TextInput style={styles.input} placeholder="Full name" placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
+          <TextInput style={styles.input} placeholder="Phone" placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+          <TextInput style={styles.input} placeholder="Address" placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress} />
+          <TextInput style={styles.input} placeholder="City" placeholderTextColor={COLORS.text2} value={city} onChangeText={setCity} />
+          <TextInput style={styles.input} placeholder="Note (optional)" placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline />
+        </View>
+      ) : (
+        <View style={styles.fields}>
+          <View style={styles.meetupInfo}>
+            <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.blue} />
+            <Text style={styles.meetupInfoText}>
+              A meetup location will be chosen after the order. You can discuss the location with the seller in messages.
+            </Text>
+          </View>
+        </View>
+      )}
+
+      <Text style={styles.sectionLabel}>Promo Code</Text>
+      <View style={{ paddingHorizontal: SPACING.md }}>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter promo code"
+          placeholderTextColor={COLORS.text2}
+          value={promoCode}
+          onChangeText={setPromoCode}
+          autoCapitalize="characters"
+        />
+      </View>
+
+      <Text style={styles.sectionLabel}>Payment</Text>
+      <View style={styles.moncashBadge}>
+        <MaterialCommunityIcons name="cellphone" size={18} color={COLORS.blue} />
+        <Text style={styles.moncashText}>Pay via MonCash - auto-redirected after confirm</Text>
+      </View>
+
+      <View style={styles.totalRow}>
+        <Text style={styles.totalLabel}>Total</Text>
+        <Text style={styles.totalValue}>Rs {subtotal.toLocaleString()}</Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.ctaBtn, loading && styles.ctaBtnDisabled]}
+        onPress={handleCheckout}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color={COLORS.white} />
+        ) : (
+          <Text style={styles.ctaText}>Confirm & Pay via MonCash</Text>
+        )}
+      </TouchableOpacity>
+    </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  content: { paddingBottom: 40 },
+  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
+  subtitle: { fontSize: 11, color: COLORS.text2 },
+  sectionLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0, paddingHorizontal: SPACING.md, marginTop: SPACING.md, marginBottom: 8 },
+  sellerSummary: {
+    marginHorizontal: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+  sellerSummaryMixed: {
+    borderColor: COLORS.yellow + '66',
+    backgroundColor: COLORS.yellow + '0D',
+  },
+  sellerSummaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sellerSummaryTitle: { fontSize: 13, color: COLORS.text, fontWeight: '800' },
+  sellerSummaryHint: { fontSize: 12, color: COLORS.text2, lineHeight: 17 },
+  sellerGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  sellerGroupName: { flex: 1, fontSize: 12, color: COLORS.text, fontWeight: '700' },
+  sellerGroupMeta: { fontSize: 11, color: COLORS.text2 },
+  methodRow: { flexDirection: 'row', gap: 10, paddingHorizontal: SPACING.md },
+  methodCard: { flex: 1, alignItems: 'center', gap: 6, padding: 12, borderRadius: 10, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  methodActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
+  methodText: { fontSize: 11, color: COLORS.text2 },
+  methodTextActive: { color: COLORS.coral, fontWeight: '700' },
+  fields: { paddingHorizontal: SPACING.md },
+  addressList: { gap: 8, marginBottom: 12 },
+  addressCard: {
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 10, padding: 12,
+  },
+  addressCardActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
+  addressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  addressLabel: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  addressLabelText: { fontSize: 11, fontWeight: '700', color: COLORS.blue, textTransform: 'uppercase' },
+  defaultBadge: { backgroundColor: COLORS.green + '20', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  defaultBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.green },
+  addressName: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  addressText: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+  addAddressLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
+  addAddressText: { fontSize: 12, color: COLORS.coral, fontWeight: '600' },
+  input: {
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,
+  },
+  meetupInfo: { flexDirection: 'row', gap: 8, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12 },
+  meetupInfoText: { flex: 1, fontSize: 12, color: COLORS.text2, lineHeight: 18 },
+  moncashBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: SPACING.md, backgroundColor: 'rgba(0,194,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,194,255,0.3)', borderRadius: 8, padding: 10 },
+  moncashText: { fontSize: 12, color: COLORS.blue },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', padding: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border, marginTop: SPACING.md },
+  totalLabel: { fontSize: 14, color: COLORS.text2 },
+  totalValue: { fontSize: 18, color: COLORS.coral, fontWeight: '700' },
+  ctaBtn: { marginHorizontal: SPACING.md, backgroundColor: COLORS.coral, borderRadius: 12, padding: 14, alignItems: 'center' },
+  ctaBtnDisabled: { opacity: 0.6 },
+  ctaText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
+});

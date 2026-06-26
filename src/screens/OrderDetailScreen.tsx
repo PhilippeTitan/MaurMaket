@@ -1,0 +1,497 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Linking,
+  Modal, TextInput, KeyboardAvoidingView, Platform,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS, SPACING } from '../theme';
+import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus } from '../api';
+import { store } from '../store';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation';
+import type { Order, OrderEvent } from '../types';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'OrderDetail'>;
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: COLORS.yellow,
+  paid: COLORS.blue,
+  processing: COLORS.blue,
+  shipped: COLORS.blue,
+  delivered: COLORS.green,
+  completed: COLORS.green,
+  cancelled: COLORS.coral,
+};
+
+const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error ? err.message : fallback;
+
+export default function OrderDetailScreen({ route, navigation }: Props) {
+  const { orderId } = route.params;
+  const [order, setOrder] = useState<Order | null>(null);
+  const [events, setEvents] = useState<OrderEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [disputeModalVisible, setDisputeModalVisible] = useState(false);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [disputeDescription, setDisputeDescription] = useState('');
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+
+  const fetchData = async () => {
+    try {
+      const [orderRes, timelineRes] = await Promise.all([
+        getOrder(orderId) as Promise<{ order: Order }>,
+        getOrderTimeline(orderId) as Promise<{ events: OrderEvent[] }>,
+      ]);
+      setOrder(orderRes.order);
+      setEvents(timelineRes.events || []);
+    } catch (err: unknown) {
+      Alert.alert('Error', errorMessage(err, 'Order not found'));
+      navigation.goBack();
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchData(); }, [orderId]);
+
+  const handleCancel = () => {
+    Alert.alert('Cancel Order', 'Are you sure?', [
+      { text: 'No', style: 'cancel' },
+      { text: 'Yes', style: 'destructive', onPress: async () => {
+        try { await cancelOrder(orderId); fetchData(); }
+        catch (err: unknown) { Alert.alert('Error', errorMessage(err)); }
+      }},
+    ]);
+  };
+
+  const handleComplete = async () => {
+    setActionLoading(true);
+    try { await completeOrder(orderId); fetchData(); }
+    catch (err: unknown) { Alert.alert('Error', errorMessage(err)); }
+    setActionLoading(false);
+  };
+
+  const handleRetryPayment = async () => {
+    setActionLoading(true);
+    try {
+      const res = await retryPayment(orderId) as { paymentUrl: string };
+      if (res.paymentUrl) await Linking.openURL(res.paymentUrl);
+    } catch (err: unknown) {
+      Alert.alert('Error', errorMessage(err, 'Could not open payment'));
+    }
+    setActionLoading(false);
+  };
+
+  const handleReorder = async () => {
+    setActionLoading(true);
+    try {
+      await reorder(orderId);
+      Alert.alert('Added', 'Items added to your cart.', [
+        { text: 'View Cart', onPress: () => navigation.navigate('Cart') },
+        { text: 'Continue Shopping', style: 'cancel' },
+      ]);
+    } catch (err: unknown) {
+      Alert.alert('Error', errorMessage(err, 'Could not reorder'));
+    }
+    setActionLoading(false);
+  };
+
+  const handleSubmitReview = async () => {
+    if (reviewRating === 0) {
+      Alert.alert('Rating required', 'Please select a star rating.');
+      return;
+    }
+    setReviewSubmitting(true);
+    try {
+      await createReview(orderId, reviewRating, reviewComment.trim());
+      setReviewModalVisible(false);
+      setReviewRating(0);
+      setReviewComment('');
+      Alert.alert('Thanks!', 'Your review has been submitted.');
+      fetchData();
+    } catch (err: unknown) {
+      Alert.alert('Error', errorMessage(err, 'Could not submit review'));
+    }
+    setReviewSubmitting(false);
+  };
+
+  const handleSubmitDispute = async () => {
+    if (!disputeReason) {
+      Alert.alert('Reason required', 'Please select a reason for the dispute.');
+      return;
+    }
+    setDisputeSubmitting(true);
+    try {
+      await createDispute({
+        orderId,
+        reason: disputeReason,
+        description: disputeDescription.trim(),
+      });
+      setDisputeModalVisible(false);
+      setDisputeReason('');
+      setDisputeDescription('');
+      Alert.alert('Report submitted', 'We will review your case and get back to you.');
+      fetchData();
+    } catch (err: unknown) {
+      Alert.alert('Error', errorMessage(err, 'Could not submit report'));
+    }
+    setDisputeSubmitting(false);
+  };
+
+  const handleAdvanceStatus = async (nextStatus: string) => {
+    setActionLoading(true);
+    try {
+      await updateOrderStatus(orderId, nextStatus);
+      fetchData();
+    } catch (err: unknown) {
+      Alert.alert('Error', errorMessage(err, 'Could not update status'));
+    }
+    setActionLoading(false);
+  };
+
+  if (loading || !order) {
+    return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>;
+  }
+
+  const statusColor = STATUS_COLORS[order.status] || COLORS.text2;
+
+  const isSeller = store.isSeller;
+  const isSellerOfOrder = isSeller && order.items?.some((item: any) => item.seller_id === store.user?.id);
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+      <View style={styles.topbar}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Order #{order.id.slice(0, 8)}</Text>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.row}>
+          <Text style={styles.label}>Status</Text>
+          <Text style={[styles.value, { color: statusColor, fontWeight: '700', textTransform: 'capitalize' }]}>{order.status}</Text>
+        </View>
+        <View style={styles.row}>
+          <Text style={styles.label}>Total</Text>
+          <Text style={[styles.value, { color: COLORS.coral, fontWeight: '700' }]}>
+            Rs {Number(order.total_amount).toLocaleString()}
+          </Text>
+        </View>
+        <View style={styles.row}>
+          <Text style={styles.label}>Delivery</Text>
+          <Text style={styles.value}>{order.delivery_method}</Text>
+        </View>
+        <View style={styles.row}>
+          <Text style={styles.label}>Date</Text>
+          <Text style={styles.value}>{new Date(order.created_at).toLocaleDateString()}</Text>
+        </View>
+      </View>
+
+      {order.meetup_address && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Meetup Details</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
+            <Text style={styles.meetupText}>{order.meetup_address}</Text>
+          </View>
+          {order.meetup_note && <Text style={styles.meetupNote}>Note: {order.meetup_note}</Text>}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <MaterialCommunityIcons
+              name={order.meetup_confirmed ? 'check-circle' : 'clock-outline'}
+              size={14}
+              color={order.meetup_confirmed ? COLORS.green : COLORS.yellow}
+            />
+            <Text style={[styles.meetupConfirm, { color: order.meetup_confirmed ? COLORS.green : COLORS.yellow }]}>
+              {order.meetup_confirmed ? 'Confirmed' : 'Pending confirmation'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {events.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Timeline</Text>
+          {events.map(event => (
+            <View key={event.id} style={styles.eventItem}>
+              <View style={styles.eventDot} />
+              <View style={styles.eventInfo}>
+                <Text style={styles.eventType}>{event.event_type.replace(/_/g, ' ')}</Text>
+                {event.note && <Text style={styles.eventNote}>{event.note}</Text>}
+                <Text style={styles.eventTime}>{new Date(event.created_at).toLocaleString()}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <View style={styles.actions}>
+        {/* ── Seller actions ── */}
+        {isSellerOfOrder && order.status === 'paid' && (
+          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('processing')} disabled={actionLoading}>
+            {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
+              <Text style={styles.advanceBtnText}>Mark as Processing</Text>
+            )}
+          </TouchableOpacity>
+        )}
+        {isSellerOfOrder && order.status === 'processing' && (
+          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('shipped')} disabled={actionLoading}>
+            {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
+              <Text style={styles.advanceBtnText}>Mark as Shipped</Text>
+            )}
+          </TouchableOpacity>
+        )}
+        {isSellerOfOrder && order.status === 'shipped' && (
+          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('delivered')} disabled={actionLoading}>
+            {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
+              <Text style={styles.advanceBtnText}>Mark as Delivered</Text>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {/* ── Buyer actions ── */}
+        {store.user?.id === order.buyer_id && order.status === 'pending' && (
+          <>
+            <TouchableOpacity style={styles.retryBtn} onPress={handleRetryPayment} disabled={actionLoading}>
+              {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
+                <Text style={styles.retryBtnText}>Retry Payment</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} disabled={actionLoading}>
+              <Text style={styles.cancelBtnText}>Cancel Order</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        {store.user?.id === order.buyer_id && order.status === 'delivered' && (
+          <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={actionLoading}>
+            {actionLoading ? <ActivityIndicator size="small" color="#0B0F1A" /> : (
+              <Text style={styles.completeBtnText}>Mark Complete</Text>
+            )}
+          </TouchableOpacity>
+        )}
+        {order.status === 'completed' && store.user?.id === order.buyer_id && (
+          <TouchableOpacity style={styles.reviewBtn} onPress={() => setReviewModalVisible(true)}>
+            <MaterialCommunityIcons name="star-outline" size={16} color={COLORS.yellow} />
+            <Text style={styles.reviewBtnText}>Leave a Review</Text>
+          </TouchableOpacity>
+        )}
+        {(order.status === 'completed' || order.status === 'delivered') && (
+          <TouchableOpacity style={styles.reorderBtn} onPress={handleReorder} disabled={actionLoading}>
+            <MaterialCommunityIcons name="replay" size={16} color={COLORS.coral} />
+            <Text style={styles.reorderBtnText}>Reorder</Text>
+          </TouchableOpacity>
+        )}
+        {['delivered', 'shipped', 'completed'].includes(order.status) && store.user?.id === order.buyer_id && (
+          <TouchableOpacity style={styles.disputeBtn} onPress={() => setDisputeModalVisible(true)}>
+            <MaterialCommunityIcons name="flag-outline" size={16} color={COLORS.text2} />
+            <Text style={styles.disputeBtnText}>Report a Problem</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── Review Modal ── */}
+      <Modal visible={reviewModalVisible} transparent animationType="slide">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Rate this order</Text>
+              <TouchableOpacity onPress={() => setReviewModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.starsPicker}>
+              {[1, 2, 3, 4, 5].map(star => (
+                <TouchableOpacity key={star} onPress={() => setReviewRating(star)}>
+                  <MaterialCommunityIcons
+                    name={star <= reviewRating ? 'star' : 'star-outline'}
+                    size={36}
+                    color={star <= reviewRating ? COLORS.yellow : COLORS.surface2}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              style={styles.reviewInput}
+              placeholder="Tell others about your experience (optional)"
+              placeholderTextColor={COLORS.text2}
+              value={reviewComment}
+              onChangeText={setReviewComment}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+
+            <TouchableOpacity
+              style={[styles.submitReviewBtn, reviewSubmitting && { opacity: 0.5 }]}
+              onPress={handleSubmitReview}
+              disabled={reviewSubmitting}
+            >
+              {reviewSubmitting ? (
+                <ActivityIndicator size="small" color="#0B0F1A" />
+              ) : (
+                <Text style={styles.submitReviewBtnText}>Submit Review</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Dispute Modal ── */}
+      <Modal visible={disputeModalVisible} transparent animationType="slide">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Report a Problem</Text>
+              <TouchableOpacity onPress={() => setDisputeModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.disputeLabel}>Reason</Text>
+            {[
+              { key: 'item_not_received', label: 'Item not received' },
+              { key: 'item_not_as_described', label: 'Item not as described' },
+              { key: 'damaged', label: 'Item arrived damaged' },
+              { key: 'wrong_item', label: 'Wrong item received' },
+              { key: 'other', label: 'Other' },
+            ].map(reason => (
+              <TouchableOpacity
+                key={reason.key}
+                style={[styles.disputeReasonBtn, disputeReason === reason.key && styles.disputeReasonActive]}
+                onPress={() => setDisputeReason(reason.key)}
+              >
+                <MaterialCommunityIcons
+                  name={disputeReason === reason.key ? 'radiobox-marked' : 'radiobox-blank'}
+                  size={18}
+                  color={disputeReason === reason.key ? COLORS.coral : COLORS.text2}
+                />
+                <Text style={[styles.disputeReasonText, disputeReason === reason.key && styles.disputeReasonTextActive]}>
+                  {reason.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            <TextInput
+              style={[styles.reviewInput, { marginTop: 12 }]}
+              placeholder="Describe the issue (optional)"
+              placeholderTextColor={COLORS.text2}
+              value={disputeDescription}
+              onChangeText={setDisputeDescription}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+
+            <TouchableOpacity
+              style={[styles.submitReviewBtn, { backgroundColor: COLORS.coral }, disputeSubmitting && { opacity: 0.5 }]}
+              onPress={handleSubmitDispute}
+              disabled={disputeSubmitting}
+            >
+              {disputeSubmitting ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <Text style={[styles.submitReviewBtnText, { color: COLORS.white }]}>Submit Report</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
+  scroll: { paddingBottom: 60 },
+  topbar: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.md,
+  },
+  title: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.text },
+  card: {
+    marginHorizontal: SPACING.lg, marginBottom: 12, backgroundColor: COLORS.surface,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, padding: 14,
+  },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
+  label: { fontSize: 13, color: COLORS.text2 },
+  value: { fontSize: 13, color: COLORS.text },
+  sectionTitle: { fontFamily: 'Syne', fontSize: 14, fontWeight: '700', color: COLORS.text, marginBottom: 8 },
+  meetupText: { fontSize: 13, color: COLORS.text, marginBottom: 4 },
+  meetupNote: { fontSize: 12, color: COLORS.text2, marginBottom: 4 },
+  meetupConfirm: { fontSize: 12, fontWeight: '600' },
+  eventItem: { flexDirection: 'row', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  eventDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.coral, marginTop: 5 },
+  eventInfo: { flex: 1 },
+  eventType: { fontSize: 13, fontWeight: '600', color: COLORS.text, textTransform: 'capitalize' },
+  eventNote: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+  eventTime: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
+  actions: { marginHorizontal: SPACING.lg, gap: 8 },
+  cancelBtn: { padding: 14, borderRadius: 20, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
+  cancelBtnText: { color: COLORS.coral, fontWeight: '600', fontSize: 15 },
+  completeBtn: { padding: 14, borderRadius: 20, backgroundColor: COLORS.green, alignItems: 'center' },
+  completeBtnText: { color: '#0B0F1A', fontWeight: '600', fontSize: 15 },
+  retryBtn: { padding: 14, borderRadius: 20, backgroundColor: COLORS.blue, alignItems: 'center' },
+  retryBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
+  reorderBtn: { flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: 20, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
+  reorderBtnText: { color: COLORS.coral, fontWeight: '600', fontSize: 15 },
+  reviewBtn: {
+    flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: 20,
+    borderWidth: 1.5, borderColor: COLORS.yellow, alignItems: 'center',
+  },
+  reviewBtnText: { color: COLORS.yellow, fontWeight: '600', fontSize: 15 },
+  advanceBtn: { padding: 14, borderRadius: 20, backgroundColor: COLORS.blue, alignItems: 'center' },
+  advanceBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
+
+  /* Review modal */
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: SPACING.lg, paddingBottom: SPACING.xxl + 20,
+  },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: SPACING.lg,
+  },
+  modalTitle: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.text },
+  starsPicker: {
+    flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: SPACING.lg,
+  },
+  reviewInput: {
+    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 12, padding: 12, fontSize: 14, color: COLORS.text,
+    minHeight: 100, marginBottom: SPACING.lg,
+  },
+  submitReviewBtn: {
+    padding: 14, borderRadius: 20, backgroundColor: COLORS.yellow, alignItems: 'center',
+  },
+  submitReviewBtnText: { color: '#0B0F1A', fontWeight: '700', fontSize: 15 },
+  disputeBtn: {
+    flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 12, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',
+  },
+  disputeBtnText: { color: COLORS.text2, fontWeight: '600', fontSize: 13 },
+  disputeLabel: { fontSize: 12, fontWeight: '700', color: COLORS.text2, marginBottom: 8 },
+  disputeReasonBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10,
+    paddingHorizontal: 4, borderRadius: 8,
+  },
+  disputeReasonActive: { backgroundColor: COLORS.surface2 },
+  disputeReasonText: { fontSize: 14, color: COLORS.text2 },
+  disputeReasonTextActive: { color: COLORS.text, fontWeight: '600' },
+});

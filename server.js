@@ -210,6 +210,21 @@ async function runMigrations() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // Platform revenue tracking
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS platform_revenue (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id),
+        seller_id UUID REFERENCES users(id),
+        seller_tier VARCHAR(20),
+        gross_amount DECIMAL(10,2) NOT NULL,
+        commission_rate DECIMAL(5,4) NOT NULL,
+        commission_amount DECIMAL(10,2) NOT NULL,
+        platform_fee DECIMAL(10,2) NOT NULL,
+        net_to_seller DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
     // Seller onboarding & verification columns
     await c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS store_name TEXT;
@@ -234,7 +249,6 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
 
-app.use(express.static(path.join(__dirname, 'dist')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const storage = multer.diskStorage({
@@ -266,6 +280,16 @@ async function createNotification(userId, type, title, body, data, db) {
     );
   } catch (err) {
     console.error('Failed to create notification:', err);
+  }
+}
+
+// Commission rate by seller tier
+function getCommissionRate(tier) {
+  switch (tier) {
+    case 'business': return 0.05;
+    case 'verified': return 0.08;
+    case 'casual': return 0.10;
+    default: return 0.10;
   }
 }
 
@@ -1666,7 +1690,7 @@ app.get('/api/disputes', authRequired, async (req, res) => {
 app.get('/api/seller/products/low-stock', authRequired, sellerRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM products WHERE seller_id = $1 AND stock <= 5 AND is_available = true ORDER BY stock ASC`,
+      `SELECT * FROM products WHERE seller_id = $1 AND stock <= 3 AND is_available = true ORDER BY stock ASC`,
       [req.user.id]
     );
     res.json({ products: result.rows });
@@ -1963,6 +1987,13 @@ app.post('/api/payments/webhook', async (req, res) => {
         );
         for (const item of items.rows) {
           if (item.seller_id) {
+            const grossAmount = parseFloat(item.total);
+            const tierRes = await client.query('SELECT seller_tier FROM users WHERE id = $1', [item.seller_id]);
+            const sellerTier = tierRes.rows[0]?.seller_tier || 'none';
+            const rate = getCommissionRate(sellerTier);
+            const commission = Math.round(grossAmount * rate * 100) / 100;
+            const net = Math.round((grossAmount - commission) * 100) / 100;
+
             await client.query(
               `INSERT INTO seller_balances (seller_id, balance, total_earned)
                VALUES ($1, $2, $2)
@@ -1970,14 +2001,27 @@ app.post('/api/payments/webhook', async (req, res) => {
                DO UPDATE SET balance = seller_balances.balance + $2,
                              total_earned = seller_balances.total_earned + $2,
                              updated_at = CURRENT_TIMESTAMP`,
-              [item.seller_id, parseFloat(item.total)]
+              [item.seller_id, net]
             );
+
+            await client.query(
+              `INSERT INTO platform_revenue (order_id, seller_id, seller_tier, gross_amount, commission_rate, commission_amount, platform_fee, net_to_seller)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [reference, item.seller_id, sellerTier, grossAmount, rate, commission, commission, net]
+            );
+
+            console.log(`  Seller ${item.seller_id} (${sellerTier}): gross Rs ${grossAmount}, commission ${rate * 100}% = Rs ${commission}, net Rs ${net}`);
           }
         }
         await client.query('COMMIT');
         const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
         for (const sid of sellerIds) {
-          createNotification(sid, 'order_status', 'Payment Received', `Payment confirmed for order`, { orderId: reference });
+          const revRow = (await client.query(
+            'SELECT net_to_seller, commission_amount FROM platform_revenue WHERE order_id = $1 AND seller_id = $2',
+            [reference, sid]
+          )).rows[0];
+          const net = revRow ? parseFloat(revRow.net_to_seller) : 0;
+          createNotification(sid, 'order_status', 'Payment Received', `Rs ${net.toFixed(0)} credited to your balance for order`, { orderId: reference });
         }
         console.log(`Order ${reference} paid, sellers credited`);
       } catch (e) {
@@ -2212,7 +2256,13 @@ app.post('/api/upload', authRequired, upload.single('image'), (req, res) => {
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', database: 'connected', hasMccKey: !!process.env.MCC_KEY });
+    const revRes = await pool.query('SELECT COALESCE(SUM(commission_amount), 0) AS total_commission FROM platform_revenue');
+    res.json({
+      status: 'ok',
+      database: 'connected',
+      hasMccKey: !!process.env.MCC_KEY,
+      totalCommission: parseFloat(revRes.rows[0].total_commission),
+    });
   } catch {
     res.status(503).json({ status: 'error', database: 'disconnected' });
   }
@@ -2232,7 +2282,7 @@ app.get('/api/debug', async (_req, res) => {
 });
 
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  res.status(404).json({ error: 'Not found' });
 });
 
 const isMain = typeof import.meta !== 'undefined' && import.meta.url && process.argv[1] === fileURLToPath(import.meta.url);

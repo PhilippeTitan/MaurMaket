@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "MaurMaket",
+    "slug": "MaurMaketMobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "maurmaket",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.maurmaket.app"
+    },
+    "android": {
+      "package": "com.maurmaket.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0F1A",
+        "foregroundImage": "./assets/icon.png"
+      },
+      "versionCode": 1
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b3a3cf8a-409e-4977-9398-34cc75f8f496"
+      }
+    },
+    "owner": "maurinex"
+  }
+}

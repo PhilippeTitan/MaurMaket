@@ -1,0 +1,963 @@
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
+  RefreshControl, ActivityIndicator, Share, LayoutChangeEvent, Image, Alert, Modal,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
+import {
+  getProducts, toggleWishlist, checkWishlist, createConversation, toggleFollow,
+  getImageUrl, getConversationUnreadCount, getProductReviews,
+} from '../api';
+import { store } from '../store';
+import type { Product, Review } from '../types';
+import type { RootStackParamList } from '../navigation';
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+export default function FeedScreen() {
+  const nav = useNavigation<Nav>();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [screenHeight, setScreenHeight] = useState(0);
+  const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
+  const [followedSellerIds, setFollowedSellerIds] = useState<Set<string>>(new Set());
+  const [addedProductIds, setAddedProductIds] = useState<Set<string>>(new Set());
+  const [cartCount, setCartCount] = useState(store.cartCount);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [sharedProductIds, setSharedProductIds] = useState<Set<string>>(new Set());
+  const [commentProduct, setCommentProduct] = useState<Product | null>(null);
+  const [comments, setComments] = useState<Review[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const flatListRef = useRef<FlatList>(null);
+  const checkedWishlistIds = useRef<Set<string>>(new Set());
+
+  const fetchProducts = useCallback(async (p = 1, replace = false) => {
+    try {
+      const res = await getProducts({ page: String(p), limit: '20', personalized: 'true' }) as {
+        products: Product[]; total: number; pages: number;
+      };
+      if (replace) {
+        checkedWishlistIds.current.clear();
+        setWishlistedIds(new Set());
+        setProducts(res.products);
+      } else {
+        setProducts(prev => [...prev, ...res.products]);
+      }
+      setHasMore(p < res.pages);
+    } catch { /* silent */ }
+  }, []);
+
+  useFocusEffect(useCallback(() => { fetchProducts(1, true); }, []));
+
+  useEffect(() => {
+    const unsub = store.onChange(() => setCartCount(store.cartCount));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadUnread = async () => {
+      try {
+        const res = await getConversationUnreadCount() as { count: string | number };
+        if (mounted) setUnreadCount(Number(res.count || 0));
+      } catch {
+        if (mounted) setUnreadCount(0);
+      }
+    };
+    loadUnread();
+    const interval = setInterval(loadUnread, 15000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!store.isLoggedIn || products.length === 0) return;
+    const unchecked = products.filter(p => !checkedWishlistIds.current.has(p.id));
+    unchecked.forEach(async (p) => {
+      checkedWishlistIds.current.add(p.id);
+      try {
+        const res = await checkWishlist(p.id) as { wishlisted: boolean };
+        setWishlistedIds(prev => {
+          const next = new Set(prev);
+          if (res.wishlisted) next.add(p.id);
+          else next.delete(p.id);
+          return next;
+        });
+    } catch { Alert.alert('Error', 'Could not load products.'); }
+    });
+  }, [products]);
+
+  const onContainerLayout = useCallback((e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 0) setScreenHeight(h);
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setPage(1);
+    await fetchProducts(1, true);
+    setRefreshing(false);
+  }, []);
+
+  const onEndReached = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const next = page + 1;
+    setPage(next);
+    await fetchProducts(next);
+    setLoadingMore(false);
+  }, [page, hasMore, loadingMore]);
+
+  const handleLike = async (product: Product) => {
+    const wasWishlisted = wishlistedIds.has(product.id);
+    // optimistic update
+    setWishlistedIds(prev => {
+      const next = new Set(prev);
+      if (wasWishlisted) next.delete(product.id);
+      else next.add(product.id);
+      return next;
+    });
+    try { await toggleWishlist(product.id); }
+    catch {
+      // rollback on error
+      setWishlistedIds(prev => {
+        const next = new Set(prev);
+        if (wasWishlisted) next.add(product.id);
+        else next.delete(product.id);
+        return next;
+      });
+    }
+  };
+
+  const handleShare = async (product: Product) => {
+    try {
+      await Share.share({
+        message: `${product.name} - Rs ${product.price}\nhttps://maurmaket.com/product/${product.id}`,
+      });
+      setSharedProductIds(prev => new Set(prev).add(product.id));
+      setTimeout(() => {
+        setSharedProductIds(prev => {
+          const next = new Set(prev);
+          next.delete(product.id);
+          return next;
+        });
+      }, 1600);
+    } catch { /* silent */ }
+  };
+
+  const handleOpenComments = async (product: Product) => {
+    setCommentProduct(product);
+    setComments([]);
+    setCommentsLoading(true);
+    try {
+      const res = await getProductReviews(product.id) as { reviews: Review[] };
+      setComments(res.reviews || []);
+    } catch {
+      setComments([]);
+    }
+    setCommentsLoading(false);
+  };
+
+  const handleChat = async (product: Product) => {
+    if (!product.seller) return;
+    try {
+      const res = await createConversation({
+        sellerId: product.seller_id,
+        productId: product.id,
+      }) as { conversationId: string };
+      nav.navigate('Chat', {
+        conversationId: res.conversationId,
+        otherUserName: getDisplayName(product.seller),
+      });
+    } catch {
+      Alert.alert('Message unavailable', 'Could not open this seller chat right now.');
+    }
+  };
+
+  const handleMakeOffer = async (product: Product) => {
+    if (!product.seller) return;
+    try {
+      const res = await createConversation({
+        sellerId: product.seller_id,
+        productId: product.id,
+      }) as { conversationId: string };
+      nav.navigate('Chat', {
+        conversationId: res.conversationId,
+        otherUserName: getDisplayName(product.seller),
+        draftOffer: {
+          productId: product.id,
+          productName: product.name,
+          listPrice: product.price,
+        },
+      });
+    } catch {
+      Alert.alert('Offer unavailable', 'Could not start this negotiation right now.');
+    }
+  };
+
+  const handleFollow = async (sellerId: string) => {
+    const wasFollowing = followedSellerIds.has(sellerId);
+    setFollowedSellerIds(prev => {
+      const next = new Set(prev);
+      if (wasFollowing) next.delete(sellerId);
+      else next.add(sellerId);
+      return next;
+    });
+    try {
+      const res = await toggleFollow(sellerId) as { following?: boolean };
+      if (typeof res.following === 'boolean') {
+        setFollowedSellerIds(prev => {
+          const next = new Set(prev);
+          if (res.following) next.add(sellerId);
+          else next.delete(sellerId);
+          return next;
+        });
+      }
+    } catch {
+      setFollowedSellerIds(prev => {
+        const next = new Set(prev);
+        if (wasFollowing) next.add(sellerId);
+        else next.delete(sellerId);
+        return next;
+      });
+    }
+  };
+
+  const handleBuy = async (product: Product) => {
+    const result = await store.addToCart({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      quantity: 1,
+      images: product.images,
+      seller_id: product.seller_id,
+      seller_name: product.seller?.full_name || null,
+      store_name: product.seller?.store_name || null,
+      stock: product.stock,
+    });
+    if (!result.added) {
+      Alert.alert('Stock limit', result.reason === 'out-of-stock' ? 'This item is sold out.' : `Only ${result.stock} available.`);
+      return;
+    }
+    nav.navigate('Cart');
+  };
+
+  const handleAddCart = async (product: Product) => {
+    const result = await store.addToCart({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      quantity: 1,
+      images: product.images,
+      seller_id: product.seller_id,
+      seller_name: product.seller?.full_name || null,
+      store_name: product.seller?.store_name || null,
+      stock: product.stock,
+    });
+    if (!result.added) {
+      Alert.alert('Stock limit', result.reason === 'out-of-stock' ? 'This item is sold out.' : `Only ${result.stock} available.`);
+      return;
+    }
+    setAddedProductIds(prev => new Set(prev).add(product.id));
+    setTimeout(() => {
+      setAddedProductIds(prev => {
+        const next = new Set(prev);
+        next.delete(product.id);
+        return next;
+      });
+    }, 1800);
+  };
+
+  const renderFeedItem = ({ item }: { item: Product }) => {
+    const primaryImg = item.images?.find(i => i.is_primary) || item.images?.[0];
+    const imgUrl = getImageUrl(primaryImg?.image_url);
+    const sellerInitial = getDisplayName(item.seller)?.[0] || '?';
+    const isSoldOut = item.stock <= 0;
+    const isFollowing = followedSellerIds.has(item.seller_id);
+    const isOwnProduct = store.user?.id === item.seller_id;
+    const wasJustAdded = addedProductIds.has(item.id);
+    const wasJustShared = sharedProductIds.has(item.id);
+    const stockLabel = isSoldOut ? 'Sold out' : item.stock === 1 ? '1 left' : `${item.stock} in stock`;
+
+    return (
+      <View style={[styles.slide, { height: screenHeight }]}>
+        {/* Full-screen image / background */}
+        <View style={styles.mediaContainer}>
+          {imgUrl ? (
+            <Image source={{ uri: imgUrl }} style={styles.mediaImage} resizeMode="cover" />
+          ) : (
+            <MaterialCommunityIcons name="image-off-outline" size={48} color={COLORS.text2} />
+          )}
+        </View>
+
+        {/* Right-side action rail — absolute, thumb-reachable */}
+        <View style={[styles.actionRail, { bottom: screenHeight * 0.36 }]}>
+          {!isOwnProduct && (
+            <>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item)}>
+                <MaterialCommunityIcons
+                  name={wishlistedIds.has(item.id) ? 'heart' : 'heart-outline'}
+                  size={28}
+                  color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenComments(item)}>
+                <MaterialCommunityIcons name="comment-outline" size={26} color={COLORS.white} />
+                {(item.review_count || 0) > 0 && (
+                  <Text style={styles.actionCount}>{item.review_count}</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+          <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(item)}>
+            <MaterialCommunityIcons
+              name={wasJustShared ? 'check' : 'share-variant'}
+              size={26}
+              color={wasJustShared ? COLORS.green : COLORS.white}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Bottom gradient — real fade from transparent to dark */}
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
+          style={styles.bottomGradient}
+        />
+
+        {/* Bottom overlay — caption + actions, sits ON TOP of image */}
+        <View style={styles.bottomOverlay}>
+          {/* Seller chip + follow */}
+          <View style={styles.sellerRow}>
+            <TouchableOpacity
+              style={styles.sellerChip}
+              onPress={() => item.seller && nav.navigate('Storefront', { sellerId: item.seller_id })}
+            >
+              <View style={styles.sellerAvatar}>
+                {getSellerAvatar(item.seller) ? (
+                  <Image source={{ uri: getImageUrl(getSellerAvatar(item.seller)) || '' }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+                ) : (
+                  <Text style={styles.sellerAvatarText}>{sellerInitial}</Text>
+                )}
+              </View>
+              <Text style={styles.sellerName} numberOfLines={1}>{getDisplayName(item.seller)}</Text>
+            </TouchableOpacity>
+            {!isOwnProduct && (
+              <TouchableOpacity
+                style={[styles.followBtn, isFollowing && styles.followBtnActive]}
+                onPress={() => item.seller_id && handleFollow(item.seller_id)}
+              >
+                <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
+                  {isFollowing ? 'Following' : 'Follow'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Price */}
+          <View style={styles.priceTag}>
+            <Text style={styles.priceText}>Rs {item.price.toLocaleString()}</Text>
+          </View>
+
+          {/* Product name + info */}
+          <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+          <Text style={styles.productInfo}>{item.category?.name || 'Port-au-Prince'} - {stockLabel}</Text>
+
+          {/* Buy / Cart buttons */}
+          <View style={styles.buyRow}>
+            {isOwnProduct ? (
+              <TouchableOpacity style={styles.ownListingBtn} onPress={() => nav.navigate('ProductDetail', { productId: item.id })}>
+                <MaterialCommunityIcons name="storefront-outline" size={16} color={COLORS.white} />
+                <Text style={styles.ownListingText}>View Your Listing</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.offerBtn, isSoldOut && styles.actionDisabled]}
+                  onPress={() => handleMakeOffer(item)}
+                  disabled={isSoldOut}
+                >
+                  <MaterialCommunityIcons name="tag-outline" size={15} color={COLORS.white} />
+                  <Text style={styles.offerBtnText}>Offer</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.cartBtn, (isSoldOut || wasJustAdded) && styles.actionDisabled]}
+                  onPress={() => handleAddCart(item)}
+                  disabled={isSoldOut}
+                >
+                  <MaterialCommunityIcons name={wasJustAdded ? 'check' : 'cart-plus'} size={16} color={COLORS.white} />
+                  <Text style={styles.cartBtnText}>{wasJustAdded ? 'Added' : '+ Cart'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.buyBtn, isSoldOut && styles.actionDisabled]}
+                  onPress={() => handleBuy(item)}
+                  disabled={isSoldOut}
+                >
+                  <Text style={styles.buyBtnText}>{isSoldOut ? 'Sold Out' : 'Buy Now'}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  if (screenHeight === 0) {
+    return (
+      <View style={styles.container} onLayout={onContainerLayout}>
+        <ActivityIndicator color={COLORS.coral} style={{ flex: 1 }} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container} onLayout={onContainerLayout}>
+      <View style={styles.feedTopbar}>
+        <View>
+          <Text style={styles.brand}>MaurMaket</Text>
+          <Text style={styles.brandSub}>Visual Market</Text>
+        </View>
+        <View style={styles.utilityRow}>
+          <TouchableOpacity
+            style={styles.utilityBtn}
+            activeOpacity={0.82}
+            onPress={() => nav.navigate('Inbox', { returnTab: 'FeedTab' })}
+          >
+            <MaterialCommunityIcons name="message-text-outline" size={21} color={COLORS.white} />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.utilityBtn}
+            activeOpacity={0.82}
+            onPress={() => nav.navigate('Cart')}
+          >
+            <MaterialCommunityIcons name="cart-outline" size={22} color={COLORS.white} />
+            {cartCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+      <FlatList
+        ref={flatListRef}
+        data={products}
+        renderItem={renderFeedItem}
+        keyExtractor={(item) => item.id}
+        pagingEnabled
+        showsVerticalScrollIndicator={false}
+        snapToInterval={screenHeight}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={styles.loadingFooter}>
+              <ActivityIndicator color={COLORS.coral} />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          !refreshing ? (
+            <View style={[styles.empty, { height: screenHeight }]}>
+              <View style={styles.emptyIcon}>
+                <MaterialCommunityIcons name="fire" size={36} color={COLORS.text2} />
+              </View>
+              <Text style={styles.emptyText}>No products yet</Text>
+              <Text style={styles.emptyHint}>Check back soon for new listings</Text>
+            </View>
+          ) : null
+        }
+      />
+      <Modal
+        visible={Boolean(commentProduct)}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCommentProduct(null)}
+      >
+        <View style={styles.commentScrim}>
+          <TouchableOpacity
+            style={styles.commentDismissArea}
+            activeOpacity={1}
+            onPress={() => setCommentProduct(null)}
+          />
+          <View style={styles.commentSheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.commentHeader}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.commentTitle}>Comments</Text>
+                <Text style={styles.commentSubtitle} numberOfLines={1}>
+                  {commentProduct?.name}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.sheetIconBtn} onPress={() => setCommentProduct(null)}>
+                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+              </TouchableOpacity>
+            </View>
+
+            {commentsLoading ? (
+              <View style={styles.commentLoading}>
+                <ActivityIndicator color={COLORS.coral} />
+              </View>
+            ) : comments.length > 0 ? (
+              <FlatList
+                data={comments}
+                keyExtractor={item => item.id}
+                style={styles.commentList}
+                contentContainerStyle={{ paddingBottom: 12 }}
+                renderItem={({ item }) => (
+                  <View style={styles.commentItem}>
+                    <View style={styles.commentAvatar}>
+                      <Text style={styles.commentAvatarText}>
+                        {(item.reviewer?.full_name || 'B')[0]}
+                      </Text>
+                    </View>
+                    <View style={styles.commentBody}>
+                      <View style={styles.commentNameRow}>
+                        <Text style={styles.commentName}>{item.reviewer?.full_name || 'Buyer'}</Text>
+                        <View style={styles.commentStars}>
+                          <MaterialCommunityIcons name="star" size={11} color={COLORS.yellow} />
+                          <Text style={styles.commentRating}>{item.rating}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.commentText}>{item.comment || 'No written comment.'}</Text>
+                    </View>
+                  </View>
+                )}
+              />
+            ) : (
+              <View style={styles.commentEmpty}>
+                <MaterialCommunityIcons name="comment-text-outline" size={34} color={COLORS.text2} />
+                <Text style={styles.commentEmptyTitle}>No comments yet</Text>
+                <Text style={styles.commentEmptyText}>
+                  Reviews from completed orders will appear here. Message the seller if you have a question now.
+                </Text>
+              </View>
+            )}
+
+            {commentProduct && store.isLoggedIn && store.user?.id !== commentProduct.seller_id && (
+              <TouchableOpacity
+                style={styles.messageSellerBtn}
+                onPress={() => {
+                  const product = commentProduct;
+                  setCommentProduct(null);
+                  handleChat(product);
+                }}
+              >
+                <MaterialCommunityIcons name="message-outline" size={17} color={COLORS.white} />
+                <Text style={styles.messageSellerText}>Message seller</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  feedTopbar: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    top: SPACING.xl + 28,
+    zIndex: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  brand: {
+    color: COLORS.white,
+    fontFamily: 'Syne',
+    fontSize: 18,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  brandSub: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginTop: -1,
+  },
+  utilityRow: {
+    flexDirection: 'row',
+    gap: 9,
+  },
+  utilityBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,13,23,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  badge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.coral,
+    borderWidth: 1,
+    borderColor: '#05070D',
+  },
+  badgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  slide: {
+    width: '100%',
+    backgroundColor: '#000',
+    position: 'relative',
+  },
+  mediaContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: COLORS.surface2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+  },
+
+  /* Right-side action rail — TikTok style */
+  actionRail: {
+    position: 'absolute',
+    right: 12,
+    alignItems: 'center',
+    gap: 18,
+    zIndex: 10,
+  },
+  actionBtn: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  actionCount: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+
+  /* Bottom gradient overlay — real fade */
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    zIndex: 5,
+  },
+
+  /* Bottom content — sits ON TOP of image */
+  bottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: SPACING.md,
+    paddingBottom: 80,
+    zIndex: 10,
+  },
+  sellerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  sellerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
+    maxWidth: '68%',
+  },
+  sellerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sellerAvatarText: {
+    fontSize: 13,
+    color: COLORS.white,
+    fontWeight: '700',
+  },
+  sellerName: {
+    fontSize: 14,
+    color: COLORS.white,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  followBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  followBtnActive: {
+    backgroundColor: COLORS.white,
+    borderColor: COLORS.white,
+  },
+  followBtnText: {
+    fontSize: 12,
+    color: COLORS.white,
+    fontWeight: '700',
+  },
+  followBtnTextActive: {
+    color: '#0B0F1A',
+  },
+  priceTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,77,106,0.2)',
+    borderWidth: 1,
+    borderColor: COLORS.coral,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 6,
+  },
+  priceText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.coral,
+  },
+  productName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.white,
+    marginBottom: 2,
+    lineHeight: 20,
+  },
+  productInfo: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 12,
+  },
+  buyRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  cartBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  offerBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.blue,
+  },
+  offerBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.white,
+  },
+  cartBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  buyBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.coral,
+    alignItems: 'center',
+  },
+  actionDisabled: { opacity: 0.45 },
+  ownListingBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.32)',
+  },
+  ownListingText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  buyBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+
+  loadingFooter: {
+    paddingVertical: SPACING.lg,
+    alignItems: 'center',
+  },
+  empty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+  },
+  emptyIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  emptyText: {
+    fontSize: 16,
+    color: COLORS.white,
+    fontWeight: '600',
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  commentScrim: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  commentDismissArea: {
+    flex: 1,
+  },
+  commentSheet: {
+    maxHeight: '72%',
+    minHeight: 390,
+    paddingHorizontal: SPACING.md,
+    paddingTop: 10,
+    paddingBottom: SPACING.xxl + 16,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    marginBottom: 12,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  commentTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  commentSubtitle: { color: COLORS.text2, fontSize: 12, marginTop: 2 },
+  sheetIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  commentLoading: { minHeight: 180, alignItems: 'center', justifyContent: 'center' },
+  commentList: { marginTop: 12 },
+  commentItem: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 10,
+  },
+  commentAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLORS.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentAvatarText: { color: COLORS.white, fontSize: 13, fontWeight: '800' },
+  commentBody: { flex: 1, minWidth: 0 },
+  commentNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  commentName: { color: COLORS.text, fontSize: 13, fontWeight: '700', flexShrink: 1 },
+  commentStars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: COLORS.surface,
+  },
+  commentRating: { color: COLORS.text2, fontSize: 10, fontWeight: '700' },
+  commentText: { color: COLORS.text2, fontSize: 13, lineHeight: 18, marginTop: 3 },
+  commentEmpty: {
+    minHeight: 210,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: SPACING.lg,
+  },
+  commentEmptyTitle: { color: COLORS.text, fontSize: 15, fontWeight: '800' },
+  commentEmptyText: { color: COLORS.text2, fontSize: 12, lineHeight: 18, textAlign: 'center' },
+  messageSellerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.blue,
+  },
+  messageSellerText: { color: COLORS.white, fontSize: 13, fontWeight: '800' },
+});

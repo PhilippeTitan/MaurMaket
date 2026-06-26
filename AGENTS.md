@@ -1,50 +1,67 @@
 # MaurMaket — Project Context for AI Agents
 
 ## Git Protocol
-- **Always push after major changes**: After committing any significant feature, bug fix, or refactor, run `git push` immediately. Do not batch pushes — push each meaningful change. The user relies on remote being up to date.
+- **Always push after major changes**: After committing any significant feature, bug fix, or refactor, run `git push` immediately. Do not batch pushes — push each meaningful change.
+
+## Safety Rules
+- **NEVER kill node.exe processes**: OpenCode runs on Node.js. Killing random `node.exe` processes can kill OpenCode itself. Never use `taskkill`, `kill`, or any command that terminates node processes unless explicitly told to kill a specific process you started.
 
 ## Overview
-Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-style product feed, cart with meetup/delivery options, MonCash payment integration, seller dashboard with balance/payout system, orders tab with meetup location sharing via Leaflet maps.
+Haitian marketplace (e-commerce) app connecting buyers and sellers. React Native/Expo mobile app (TikTok-style vertical swipe feed) + Express.js backend. MonCash payments, seller dashboard, commission system.
 
 ## Tech Stack
-- **Frontend:** Vanilla JS SPA (no framework), Vite 6 build
+- **Mobile:** React Native 0.85.3 + Expo SDK 56 + TypeScript 6
 - **Backend:** Express.js 4 (ESM, `"type": "module"`)
 - **Database:** PostgreSQL (Neon serverless via `pg` Pool)
-- **Payments:** MonCashConnect API (Haitian mobile money)
-- **Maps:** Leaflet.js + OpenStreetMap tiles + Nominatim geocoding
-- **Uploads:** Multer (local disk in `./uploads/`)
-- **Deployment:** Fly.io (Docker multi-stage), GitHub Actions CI/CD
-- **Styling:** Custom CSS with CSS custom properties (dark theme)
-- **Icons:** Tabler Icons (`ti-*` via CDN)
-- **Fonts:** Syne (headings/logo), Inter (body) — Google Fonts
+- **Payments:** MonCashConnect API (Haitian mobile money) with tiered commission
+- **Navigation:** React Navigation 7 (bottom tabs + native stack)
+- **State:** Custom reactive store (`src/store.ts`)
+- **Storage:** `expo-secure-store` (native) / `localStorage` (web)
+- **Styling:** StyleSheet, dark theme (#0D1117 bg, #FF4D6A coral)
+- **Deployment:** Fly.io (Docker), GitHub Actions CI/CD
 
 ## Project Structure
 ```
-├── server.js              # Express backend (~1500 lines)
-├── index.html             # SPA entry point
-├── vite.config.js         # Vite: port 5173, proxy /api to :3001
-├── package.json           # deps: cors, dotenv, express, leaflet, multer, pg, bcrypt, jsonwebtoken
-├── Dockerfile             # Multi-stage: build + production
+├── server.js              # Express backend (~2300 lines)
+├── package.json           # Unified deps: Express + Expo + React Native
+├── App.tsx                # React Native root component (auth gate + navigation)
+├── index.ts               # Expo entry point
+├── app.json               # Expo config (scheme: maurmaket://)
+├── eas.json               # EAS Build config (APK preview, AAB production)
+├── tsconfig.json          # extends expo/tsconfig.base, strict mode
+├── Dockerfile             # Backend-only production image
 ├── fly.toml               # Fly.io config (iad region, port 3001)
-├── implementation_plan.md # Full growth framework with all 21 features mapped
 ├── src/
-│   ├── api.js             # Frontend API client (fetch wrapper)
-│   ├── main.js            # SPA router + shell rendering
-│   ├── store.js           # Reactive state store (user, token, cart)
-│   ├── style.css          # All CSS (~503 lines)
-│   ├── toast.js           # Toast notification system
-│   └── views/
-│       ├── Home.js        # Instagram feed (scroll-snap, infinite scroll)
-│       ├── Explore.js     # Masonry grid + search + filters
-│       ├── Login.js       # Sign in form
-│       ├── Signup.js      # Create account (role hardcoded to 'buyer')
-│       ├── ProductDetail.js # Full-screen product view + reviews + wishlist
-│       ├── Cart.js        # Cart + checkout (delivery overlay + MonCash modal + promo)
-│       ├── Orders.js      # Buying/Selling tabs + meetup map flow + timeline
-│       ├── Profile.js     # Profile info + recent orders + wishlist section
-│       ├── Settings.js    # Edit profile + change password + saved addresses
-│       ├── Seller.js      # Dashboard: Products, Orders, Balance, +Add
-│       └── Storefront.js  # Public seller profile + products + stats
+│   ├── api.ts             # API client (auto env detection, 40+ endpoints)
+│   ├── store.ts           # Reactive state (user, token, cart)
+│   ├── theme.ts           # COLORS, SPACING, FONTS, helpers
+│   ├── types.ts           # All TypeScript interfaces
+│   ├── navigation.ts      # Navigation type definitions
+│   ├── i18n.ts            # EN/HT/FR translations
+│   └── screens/
+│       ├── FeedScreen.tsx      # TikTok vertical swipe feed
+│       ├── ExploreScreen.tsx   # 2-col grid + search + filters
+│       ├── MeScreen.tsx        # Profile + seller dashboard
+│       ├── ProductDetailScreen.tsx # Image carousel + reviews
+│       ├── CartScreen.tsx      # Cart + promo codes
+│       ├── CheckoutScreen.tsx  # Delivery/Meetup + MonCash
+│       ├── OrdersScreen.tsx    # Buying/selling order management
+│       ├── OrderDetailScreen.tsx # Timeline + review + dispute
+│       ├── SettingsScreen.tsx  # Instagram-style settings
+│       ├── SettingsEditScreen.tsx # Generic field editor
+│       ├── ChatScreen.tsx      # 1:1 messaging
+│       ├── InboxScreen.tsx     # Notifications + conversations
+│       ├── StorefrontScreen.tsx # Public seller profile
+│       ├── SellerOnboardingScreen.tsx # 3-tier wizard
+│       ├── AddListingScreen.tsx # Post new product
+│       ├── EditListingScreen.tsx # Edit/delete product
+│       ├── WishlistScreen.tsx  # Wishlist items
+│       ├── AddressesScreen.tsx # Saved addresses
+│       ├── PaymentsScreen.tsx  # Seller balance + payouts
+│       ├── PaymentReturnScreen.tsx # MonCash return polling
+│       ├── LoginScreen.tsx     # Sign in
+│       └── SignupScreen.tsx    # Create account
+├── assets/                # App icons + splash
 └── uploads/               # Uploaded images (served at /uploads/)
 ```
 
@@ -61,6 +78,13 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | role | TEXT | default 'buyer' |
 | avatar_url | TEXT | nullable |
 | bio | TEXT | nullable |
+| seller_tier | VARCHAR(20) | none/casual/verified/business |
+| store_name | TEXT | nullable |
+| store_logo_url | TEXT | nullable |
+| use_store_identity | BOOLEAN | default false |
+| id_document_url | TEXT | nullable |
+| id_verified | BOOLEAN | default false |
+| id_submitted_at / id_verified_at | TIMESTAMP | nullable |
 | created_at / updated_at | TIMESTAMP | |
 
 ### `products`
@@ -91,7 +115,7 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | name | TEXT | |
 | display_order | INTEGER | |
 
-### `orders` (key table)
+### `orders`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK, gen_random_uuid() |
@@ -100,15 +124,9 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | status | TEXT | pending/paid/processing/shipped/delivered/cancelled/completed |
 | moncash_reference | TEXT | nullable |
 | delivery_method | VARCHAR(20) | default 'meetup', or 'delivery' |
-| delivery_name | TEXT | nullable |
-| delivery_phone | TEXT | nullable |
-| delivery_address | TEXT | nullable |
-| delivery_city | TEXT | nullable |
-| delivery_note | TEXT | nullable |
-| meetup_lat | DECIMAL(10,7) | nullable |
-| meetup_lng | DECIMAL(10,7) | nullable |
-| meetup_address | TEXT | nullable |
-| meetup_note | TEXT | nullable |
+| delivery_name/phone/address/city/note | TEXT | nullable |
+| meetup_lat/lng | DECIMAL(10,7) | nullable |
+| meetup_address/note | TEXT | nullable |
 | meetup_confirmed | BOOLEAN | default false |
 | meetup_proposed_by | UUID | FK → users.id, nullable |
 | created_at / updated_at | TIMESTAMP | |
@@ -123,19 +141,17 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | quantity | INTEGER | |
 | price | DECIMAL(10,2) | |
 
-### `order_events` (Sprint 1C)
+### `order_events`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
 | order_id | UUID | FK → orders.id |
 | event_type | VARCHAR(50) | status_change, meetup_proposed, meetup_confirmed, note_added, payment_received |
 | actor_id | UUID | FK → users.id |
-| old_value | TEXT | nullable |
-| new_value | TEXT | nullable |
-| note | TEXT | nullable |
+| old_value/new_value/note | TEXT | nullable |
 | created_at | TIMESTAMP | |
 
-### `reviews` (Sprint 2A)
+### `reviews`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
@@ -147,61 +163,25 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | seller_response | TEXT | nullable |
 | seller_responded_at | TIMESTAMP | nullable |
 | is_edited | BOOLEAN | default false |
-| created_at / updated_at | TIMESTAMP | |
 | UNIQUE(order_id, reviewer_id) | | One review per order per user |
 
-### `wishlists` (Sprint 3A)
+### `wishlists`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
 | user_id | UUID | FK → users.id ON DELETE CASCADE |
 | product_id | UUID | FK → products.id ON DELETE CASCADE |
-| created_at | TIMESTAMP | |
 | UNIQUE(user_id, product_id) | | |
 
-### `follows` (Sprint 3B)
+### `follows`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
 | follower_id | UUID | FK → users.id ON DELETE CASCADE |
 | seller_id | UUID | FK → users.id ON DELETE CASCADE |
-| created_at | TIMESTAMP | |
 | UNIQUE(follower_id, seller_id) | | |
 
-### `reviews` (Sprint 2A)
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID | PK |
-| order_id | UUID | FK → orders.id |
-| reviewer_id | UUID | FK → users.id |
-| seller_id | UUID | FK → users.id |
-| rating | INTEGER | 1-5 |
-| comment | TEXT | nullable |
-| seller_response | TEXT | nullable |
-| seller_responded_at | TIMESTAMP | nullable |
-| is_edited | BOOLEAN | default false |
-| created_at / updated_at | TIMESTAMP | |
-| UNIQUE(order_id, reviewer_id) | | One review per order per user |
-
-### `wishlists` (Sprint 3A)
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID | PK |
-| user_id | UUID | FK → users.id ON DELETE CASCADE |
-| product_id | UUID | FK → products.id ON DELETE CASCADE |
-| created_at | TIMESTAMP | |
-| UNIQUE(user_id, product_id) | | |
-
-### `follows` (Sprint 3B)
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID | PK |
-| follower_id | UUID | FK → users.id ON DELETE CASCADE |
-| seller_id | UUID | FK → users.id ON DELETE CASCADE |
-| created_at | TIMESTAMP | |
-| UNIQUE(follower_id, seller_id) | | |
-
-### `notifications` (Sprint 3E)
+### `notifications`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
@@ -213,7 +193,7 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | is_read | BOOLEAN | default false |
 | created_at | TIMESTAMP | |
 
-### `conversations` (Sprint 3A)
+### `conversations`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
@@ -222,9 +202,8 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | buyer_id | UUID | FK → users.id |
 | seller_id | UUID | FK → users.id |
 | last_message_at | TIMESTAMP | |
-| created_at | TIMESTAMP | |
 
-### `messages` (Sprint 3A)
+### `messages`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
@@ -234,7 +213,7 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | is_read | BOOLEAN | default false |
 | created_at | TIMESTAMP | |
 
-### `promo_codes` (Sprint 4B)
+### `promo_codes`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
@@ -247,9 +226,8 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | uses_count | INTEGER | default 0 |
 | valid_until | TIMESTAMP | nullable |
 | is_active | BOOLEAN | default true |
-| created_at | TIMESTAMP | |
 
-### `promo_uses` (Sprint 4B)
+### `promo_uses`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
@@ -257,10 +235,9 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | user_id | UUID | FK → users.id |
 | order_id | UUID | FK → orders.id |
 | discount_amount | DECIMAL(10,2) | |
-| created_at | TIMESTAMP | |
 | UNIQUE(promo_id, user_id) | | |
 
-### `disputes` (Sprint 5C)
+### `disputes`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
@@ -270,9 +247,8 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | description | TEXT | nullable |
 | status | VARCHAR(20) | default 'open' |
 | resolution | TEXT | nullable |
-| created_at / updated_at | TIMESTAMP | |
 
-### `saved_addresses` (Sprint 4C)
+### `saved_addresses`
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | PK |
@@ -283,16 +259,14 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | address | TEXT | |
 | city | TEXT | |
 | is_default | BOOLEAN | |
-| created_at | TIMESTAMP | |
 
 ### `seller_balances`
 | Column | Type | Notes |
 |---|---|---|
 | seller_id | UUID | PK, FK → users.id ON DELETE CASCADE |
-| balance | DECIMAL(10,2) | default 0 |
-| total_earned | DECIMAL(10,2) | default 0 |
+| balance | DECIMAL(10,2) | default 0 (net after commission) |
+| total_earned | DECIMAL(10,2) | default 0 (net after commission) |
 | total_paid_out | DECIMAL(10,2) | default 0 |
-| updated_at | TIMESTAMP | |
 
 ### `payouts`
 | Column | Type | Notes |
@@ -304,20 +278,45 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 | receiver_phone | VARCHAR(20) | |
 | moncash_reference | VARCHAR(150) | nullable |
 | error_message | TEXT | nullable |
-| created_at / updated_at | TIMESTAMP | |
+
+### `platform_revenue`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| order_id | UUID | FK → orders.id |
+| seller_id | UUID | FK → users.id |
+| seller_tier | VARCHAR(20) | casual/verified/business |
+| gross_amount | DECIMAL(10,2) | |
+| commission_rate | DECIMAL(5,4) | 0.10/0.08/0.05 |
+| commission_amount | DECIMAL(10,2) | |
+| platform_fee | DECIMAL(10,2) | same as commission |
+| net_to_seller | DECIMAL(10,2) | |
+| created_at | TIMESTAMP | |
+
+## Commission Model
+| Seller Tier | Commission Rate | Example (Rs 1000 order) |
+|---|---|---|
+| Casual | 10% | Platform keeps Rs 100, seller gets Rs 900 |
+| Verified | 8% | Platform keeps Rs 80, seller gets Rs 920 |
+| Business | 5% | Platform keeps Rs 50, seller gets Rs 950 |
+
+Commission is deducted at payment time in the webhook handler. `seller_balances` stores NET amounts (after commission).
 
 ## API Endpoints (all under /api)
 
 ### Auth
-- **POST /api/auth/signup** — `{fullName, email, password, phone}` (no role — hardcoded 'buyer') → `{user, token}`
+- **POST /api/auth/signup** — `{fullName, email, password, phone}` → `{user, token}`
 - **POST /api/auth/login** — `{email, password}` → `{user, token}`
 - **GET /api/auth/me** — Bearer → `{user}`
 - **PUT /api/auth/profile** — Bearer, body `{fullName, email, phone, bio, avatarUrl}` → `{user}`
 - **PUT /api/auth/password** — Bearer, body `{currentPassword, newPassword}` → `{updated: true}`
 - **PUT /api/auth/become-seller** — Bearer → `{user}` (role upgraded to 'seller')
+- **PUT /api/auth/upgrade-tier** — Bearer, body `{tier, storeName?, storeLogoUrl?, idDocumentUrl?}` → `{user}`
+- **PUT /api/auth/seller-profile** — Bearer, body `{storeName?, storeLogoUrl?, useStoreIdentity?}` → `{user}`
+- **GET /api/seller/verification-status** — Bearer → verification status
 
 ### Products
-- **GET /api/products** — Query: `category, search (ILIKE), seller, minPrice, maxPrice, sort (price_asc/price_desc/oldest/rating), page (1), limit (20/max 50), personalized` → `{products[], total, page, pages}`
+- **GET /api/products** — Query: `category, search, seller, minPrice, maxPrice, sort, page, limit, personalized` → `{products[], total, page, pages}`
 - **GET /api/products/:id** → `{product{..., images[], seller{...}, category}}`
 - **POST /api/products** — Bearer+Seller. `{name, description, price, stock, categoryId, images[]}` → `{product}`
 - **PUT /api/products/:id** — Bearer+Seller (ownership check)
@@ -326,148 +325,125 @@ Haitian marketplace (e-commerce) SPA connecting buyers and sellers. Instagram-st
 ### Orders
 - **GET /api/orders** — Bearer → `{buyerOrders[], sellerOrders[]}`
 - **GET /api/orders/:id** — Bearer (buyer or seller only) → `{order{..., items[]}}`
-- **POST /api/orders** — Bearer. `{items: [{productId, quantity}], deliveryMethod?, deliveryName?, deliveryPhone?, deliveryAddress?, deliveryCity?, deliveryNote?}` → `{order}`
-- **PUT /api/orders/:id/cancel** — Bearer (buyer only). Restocks products.
-- **PUT /api/orders/:id/meetup** — Bearer. `{lat, lng, address, note}`.
-- **PUT /api/orders/:id/meetup/confirm** — Bearer.
-- **PUT /api/orders/:id/complete** — Bearer.
+- **POST /api/orders** — Bearer. `{items, deliveryMethod?, ...}` → `{order}`
+- **PUT /api/orders/:id/cancel** — Bearer (buyer only)
+- **PUT /api/orders/:id/meetup** — Bearer. `{lat, lng, address, note}`
+- **PUT /api/orders/:id/meetup/confirm** — Bearer
+- **PUT /api/orders/:id/complete** — Bearer
 - **GET /api/orders/:id/timeline** — Bearer → `{events[]}`
 - **POST /api/orders/:id/reorder** — Bearer → adds items to cart
 
-### Reviews (Sprint 2A)
+### Reviews
 - **POST /api/reviews** — Bearer (buyer). `{orderId, rating, comment}`
 - **PUT /api/reviews/:id** — Bearer (buyer). Edits own review.
 - **POST /api/reviews/:id/respond** — Bearer (seller). Responds to review.
 - **GET /api/reviews/seller/:sellerId** — Public. Paginated with avg rating.
 - **GET /api/reviews/product/:productId** — Public. Reviews for a product's orders.
 
-### Wishlist (Sprint 3A)
-- **POST /api/wishlist/:productId** — Bearer. Toggle add/remove. Returns `{wishlisted: bool}`.
+### Wishlist
+- **POST /api/wishlist/:productId** — Bearer. Toggle add/remove.
 - **GET /api/wishlist** — Bearer. User's wishlist with product details.
 - **GET /api/wishlist/check/:productId** — Bearer. Check if wishlisted.
 
-### Follows (Sprint 3B)
+### Follows
 - **POST /api/follow/:sellerId** — Bearer. Toggle follow/unfollow.
 - **GET /api/following** — Bearer. List followed sellers.
 - **GET /api/followers/count/:sellerId** — Public. Follower count.
 
 ### Seller Storefront
-- **GET /api/sellers/:id** — Public. Seller profile with stats (product_count, sales_count, avg_rating, review_count).
+- **GET /api/sellers/:id** — Public. Seller profile with stats.
 
 ### Seller Dashboard
 - **GET /api/seller/products** — Bearer+Seller
 - **GET /api/seller/orders** — Bearer+Seller
-- **PUT /api/seller/orders/:id/status** — Bearer+Seller. `paid→processing→shipped→delivered`
+- **PUT /api/seller/orders/:id/status** — Bearer+Seller
 - **GET /api/seller/balance** → `{balance, total_earned, total_paid_out}`
 - **GET /api/seller/payouts** — History
 - **POST /api/seller/payouts/request** — Bearer+Seller. `{amount}`. Min Rs 50.
+- **GET /api/seller/analytics** — Revenue, orders, rating, top products
+- **GET /api/seller/products/low-stock** — Products with stock ≤ 3
 
 ### Payments
 - **POST /api/payments/create** — Bearer. `{orderId, returnUrl}` → `{paymentUrl}`
 - **POST /api/payments/retry/:orderId** — Bearer → `{paymentUrl}`
-- **POST /api/payments/webhook** — No auth. HMAC-SHA256 verified.
+- **POST /api/payments/webhook** — No auth. HMAC-SHA256 verified. Handles: payment.completed (with commission), payment.failed, payout.completed, payout.failed
+
+### Messaging
+- **GET /api/conversations** — Bearer
+- **POST /api/conversations** — Bearer. `{userId, productId?}`
+- **GET /api/conversations/:id/messages** — Bearer
+- **POST /api/conversations/:id/messages** — Bearer. `{content}`
+- **GET /api/conversations/unread-count** — Bearer
+
+### Notifications
+- **GET /api/notifications** — Bearer
+- **GET /api/notifications/unread-count** — Bearer
+- **PUT /api/notifications/:id/read** — Bearer
+- **PUT /api/notifications/read-all** — Bearer
 
 ### Other
 - **POST /api/upload** — Bearer + multipart `image` (max 5MB) → `{url}`
-- **GET /api/health** → `{status, database, hasMccKey}`
-- **GET /api/debug** — Tests MonCashConnect connectivity
-- **GET * (catch-all)** — Serves dist/index.html for SPA
+- **POST /api/promos** — Bearer+Seller. Create promo code.
+- **GET /api/promos/mine** — Bearer+Seller. List own promos.
+- **POST /api/promos/validate** — Bearer. Validate promo code.
+- **POST /api/addresses** — Bearer. Create address.
+- **GET /api/addresses** — Bearer. List addresses.
+- **PUT /api/addresses/:id** — Bearer. Update address.
+- **DELETE /api/addresses/:id** — Bearer. Delete address.
+- **POST /api/disputes** — Bearer. Create dispute.
+- **GET /api/health** → `{status, database, hasMccKey, totalCommission}`
 
 ## Auth System
 - Token is **real JWT** signed with `JWT_SECRET` via `jsonwebtoken`. Payload: `{id, email, role}`.
-- Stored in `localStorage` key `mm_token`
+- Stored in `expo-secure-store` (native) / `localStorage` (web) under key `mm_token`
 - Passwords hashed with **bcrypt** (salt rounds = 10)
-- Phone numbers stored **without** `+` prefix internally, displayed with `+509` on frontend.
+- Phone numbers stored **without** `+` prefix internally, displayed with `+509` on frontend
 - `sellerRequired` middleware checks `req.user.role !== 'seller'` → 403
 
 ## Order Status Flow
 `pending → paid → processing → shipped → delivered → completed`
 
-Seller pushes through `paid→processing→shipped→delivered`. Buyer/seller marks `completed` after meetup.
+## Commission Flow
+1. Buyer pays via MonCash
+2. Webhook fires `payment.completed`
+3. For each seller in the order:
+   - Look up seller's `seller_tier`
+   - Calculate commission: Casual 10%, Verified 8%, Business 5%
+   - Credit `seller_balances` with NET amount (gross - commission)
+   - Log to `platform_revenue` table
+4. Notification sent to seller with net amount credited
 
-## Meetup Flow
-1. Either party proposes a location via Leaflet map picker (lat/lng/address/note)
-2. Other party confirms (cannot confirm own proposal)
-3. Either party marks as completed
-- Status must be `paid` or `pending` to propose meetup
-- Re-confirm is idempotent
-
-## Delivery Flow
-- Optional: collected during checkout via delivery form overlay
-- `delivery_method` = `'meetup'` or `'delivery'`
+## MonCash Integration
+- **Payment creation:** `POST /api/payments/create` → calls MonCashConnect → returns `paymentUrl`
+- **Webhook:** `POST /api/payments/webhook` → HMAC-SHA256 verified → processes payment.completed/failed
+- **Env vars:** `MCC_KEY`, `MCC_WEBHOOK_SECRET`, `MONCASH_PAY_CREATE_URL`, `MONCASH_PAYOUT_CREATE_URL`
+- **Payout:** `POST /api/seller/payouts/request` → deducts from balance → calls MonCashConnect payout API → rolls back on failure
 
 ## Frontend Architecture
 
-### SPA Routing (main.js)
-- Shell: `#shell` wraps `#page` + `#tab-bar`
-- Tab routes (bottom nav): home(/), explore(/explore), sell(/seller), orders(/orders), profile(/profile)
-- Fullscreen routes (no tab bar): /login, /signup, /product, /payment, /profile/settings, /cart, /store
-- `navigate(path, params)` renders view into `#page`
+### Navigation (App.tsx)
+- **Tab Navigator:** Feed, Explore, Sell (FAB), Inbox, Me
+- **Stack Navigator:** All screens as modals/pushes
+- **Auth Gate:** isLoggedIn → Main stack, else → Auth stack
 
-### State Store (store.js)
+### State Store (store.ts)
 - State: user, token (mm_token), cart (mm_cart)
 - Getters: user, token, cart, isLoggedIn, isSeller, cartCount
 - Actions: setUser, logout, addToCart, removeFromCart, updateQuantity, clearCart
 - Reactivity: onChange/notify pattern
 
-### API Client (api.js)
-- `request()` helper: prepends /api, attaches Bearer token, JSON parse, throws on !ok
-- Exports: all CRUD functions for every endpoint above
+### API Client (api.ts)
+- `request()` helper: auto env detection (localhost/tunnel/production), Bearer token, JSON parse
+- `getImageUrl()`: resolves relative URLs via UPLOAD_BASE
+- `normalizeProduct()`: flattens seller data for consistent rendering
 
 ## Key Observations
-1. Auth is real JWT (jsonwebtoken), NOT base64url. `JWT_SECRET` env var is used.
-2. Passwords use bcrypt, NOT SHA-256.
-3. Phone numbers: stored without `+`, displayed with `+509`
-4. No component library — vanilla JS DOM manipulation
-5. No TypeScript — plain JavaScript
-6. No real-time — only polling (payment return polls + 3s retry)
-7. Images served from Express `./uploads/` dir (scaling concern)
-8. `components/` directory is empty
-9. No form validation library — minimal checks
-10. Currency is Haitian Gourde (Rs)
-11. DO NOT commit .env with real credentials
-12. Full implementation plan in `implementation_plan.md`
-
----
-
-## Implementation Progress Tracker
-
-> For AI agents picking up this project: scan this section to see what's done and what's next.
-
-### ✅ V1 Complete (commits `f0d9d5c` + `ce55b5e` + `6470bc5`)
-
-| Layer | Feature | Notes |
-|-------|---------|-------|
-| Layer 0 | Security fixes | sellerRequired fix, signup role hardcoded, bcrypt, JWT signing |
-| Sprint 1C | Order Timeline | `order_events` table, logged on all status/meetup/payment events |
-| Sprint 4C | Saved Addresses | `saved_addresses` table, Cart.js checkout integration, Settings.js create/list |
-| Sprint 4D | Re-order | `POST /api/orders/:id/reorder` endpoint |
-| Sprint 4A | Become a Seller | Endpoint + button in Profile (fixed: now issues new JWT with seller role) |
-| Sprint 2E | Social Sharing | Web Share API + WhatsApp deep links on ProductDetail + Profile share |
-| Sprint 2A | Reviews & Ratings | Full CRUD, seller response, product/seller queries |
-| Sprint 2B | Seller Storefronts | `Storefront.js` view, `/api/sellers/:id` endpoint, clickable seller names |
-| Sprint 2D | Verified Badges | Computed (4.5+ avg, 10+ reviews, 20+ sales) |
-| Sprint 3A | Wishlist / Favorites | Toggle API, heart icon, Profile wishlist section |
-| Sprint 3B | Follow Sellers | Toggle API, follower count, follow button on Storefront |
-| Sprint 3C | Enhanced Search | Sort dropdown, price min/max, category filter |
-| Sprint 3D | Personalized Feed | `optionalAuth` middleware, `personalized=true` param |
-| Sprint 3E | Notifications | Full backend + `Notifications.js` view + bell icon + 30s polling |
-| Sprint 3A | In-app Messaging | `Messages.js` view + 5s polling + shell badge |
-| Sprint 4B | Promo Codes | Backend + Cart.js input + Seller.js create/list section |
-| Sprint 3F | Order Updates | Seller notes in timeline + notification |
-| Sprint 5A | Seller Analytics | Endpoint + stats grid + top products table in Seller.js |
-| Sprint 5B | Inventory Alerts | Low stock check + banner in Seller.js |
-| Sprint 5C | Dispute Resolution | Backend + "Report a Problem" button + reason picker in Orders.js |
-| Sprint 5D | Admin Panel | Backend middleware + endpoints (no frontend view yet) |
-
-### 🚀 Phase 2: Ecosystem Expansion (`framework_v2.md`)
-
-The next phase focuses on **Scale, Logistics, and Virality**. See `framework_v2.md` for full details.
-
-| Layer | Theme | Key Features |
-|-------|-------|-------------|
-| Layer 6 | Logistics & Escrow | MonCash escrow hold, delivery partner API, auto-refunds |
-| Layer 7 | Enterprise Seller Suite | Product variants (SKUs), bulk CSV import, staff accounts |
-| Layer 8 | Social Commerce | Video snippets, curated collections, group buy / make offer |
-| Layer 9 | Gamification & Loyalty | MaurMaket Coins, VIP tiers, daily check-in streaks |
-| Layer 10 | AI & Automation | Smart image enhancement, auto-categorization, listing translation |
+1. Unified project: backend (server.js) + mobile app (Expo/React Native) in one repo
+2. Auth is real JWT, NOT base64url. `JWT_SECRET` env var is used.
+3. Passwords use bcrypt, NOT SHA-256.
+4. Phone numbers: stored without `+`, displayed with `+509`
+5. No component library — vanilla StyleSheet
+6. No TypeScript on backend — plain JavaScript ESM
+7. Currency is Haitian Gourde (Rs)
+8. DO NOT commit .env with real credentials
+9. `MaurMaketMobile/` directory is empty/locked — safe to ignore or delete later

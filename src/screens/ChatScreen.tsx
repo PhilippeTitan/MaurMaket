@@ -1,0 +1,209 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
+  KeyboardAvoidingView, Platform, Alert,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS, SPACING } from '../theme';
+import { getMessages, sendMessage as apiSendMessage } from '../api';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation';
+import type { Message } from '../types';
+import { store } from '../store';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
+
+export default function ChatScreen({ route, navigation }: Props) {
+  const { conversationId, otherUserName, draftOffer } = route.params;
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [text, setText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [offerDraftVisible, setOfferDraftVisible] = useState(Boolean(draftOffer));
+
+  const fetchMessages = async () => {
+    try {
+      const res = await getMessages(conversationId) as { messages: Message[] };
+      setMessages(res.messages || []);
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 5000);
+    return () => clearInterval(interval);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!draftOffer) return;
+    const suggested = Math.max(1, Math.round(draftOffer.listPrice * 0.9));
+    setText(`Offer: Rs ${suggested} for ${draftOffer.productName}`);
+    setOfferDraftVisible(true);
+  }, [draftOffer]);
+
+  const handleSend = async () => {
+    if (!text.trim() || sending) return;
+    setSending(true);
+    const msg = text.trim();
+    setText('');
+    try {
+      await apiSendMessage(conversationId, msg);
+      await fetchMessages();
+    } catch {
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+      setText(msg);
+    }
+    setSending(false);
+  };
+
+  const renderMessage = ({ item }: { item: Message }) => {
+    const isMe = item.sender_id === store.user?.id;
+    return (
+      <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+        <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.content}</Text>
+        <Text style={styles.bubbleTime}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+      </View>
+    );
+  };
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
+        </TouchableOpacity>
+        <View style={styles.headerAvatar}>
+          <Text style={styles.headerAvatarText}>{(otherUserName || '?')[0]}</Text>
+        </View>
+        <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator size="large" color={COLORS.coral} style={{ flex: 1 }} />
+      ) : (
+        <FlatList
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.messageList}
+          inverted
+        />
+      )}
+
+      {draftOffer && offerDraftVisible && (
+        <View style={styles.offerDock}>
+          <View style={styles.offerIcon}>
+            <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.white} />
+          </View>
+          <View style={styles.offerBody}>
+            <Text style={styles.offerEyebrow}>Negotiation draft</Text>
+            <Text style={styles.offerTitle} numberOfLines={1}>{draftOffer.productName}</Text>
+            <View style={styles.offerChips}>
+              {[0.85, 0.9, 0.95].map(multiplier => {
+                const price = Math.max(1, Math.round(draftOffer.listPrice * multiplier));
+                return (
+                  <TouchableOpacity
+                    key={multiplier}
+                    style={styles.offerChip}
+                    onPress={() => setText(`Offer: Rs ${price} for ${draftOffer.productName}`)}
+                  >
+                    <Text style={styles.offerChipText}>Rs {price.toLocaleString()}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+          <TouchableOpacity onPress={() => setOfferDraftVisible(false)} style={styles.offerClose}>
+            <MaterialCommunityIcons name="close" size={16} color={COLORS.text2} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={styles.inputRow}>
+        <TextInput
+          style={styles.input}
+          value={text}
+          onChangeText={setText}
+          placeholder="Type a message..."
+          placeholderTextColor={COLORS.text2}
+          multiline
+        />
+        <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={sending || !text.trim()}>
+          <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
+        </TouchableOpacity>
+      </View>
+    </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.md,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.bg,
+  },
+  headerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
+  headerAvatarText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
+  headerName: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
+  messageList: { padding: SPACING.md, paddingBottom: 8 },
+  bubble: {
+    maxWidth: '75%', padding: 10, borderRadius: 16, marginBottom: 6,
+  },
+  bubbleMe: { alignSelf: 'flex-end', backgroundColor: COLORS.coral, borderBottomRightRadius: 4 },
+  bubbleThem: { alignSelf: 'flex-start', backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderBottomLeftRadius: 4 },
+  bubbleText: { fontSize: 14, color: COLORS.text },
+  bubbleTextMe: { color: COLORS.white },
+  bubbleTime: { fontSize: 10, color: COLORS.text2, marginTop: 2, alignSelf: 'flex-end' },
+  offerDock: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginHorizontal: SPACING.md,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  offerIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.blue,
+  },
+  offerBody: { flex: 1, minWidth: 0 },
+  offerEyebrow: { fontSize: 10, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase' },
+  offerTitle: { marginTop: 2, fontSize: 13, color: COLORS.text, fontWeight: '700' },
+  offerChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  offerChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: COLORS.surface2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  offerChipText: { fontSize: 11, color: COLORS.text, fontWeight: '700' },
+  offerClose: { padding: 2 },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md,
+    paddingBottom: SPACING.xxl + 16, borderTopWidth: 1, borderTopColor: COLORS.border,
+    backgroundColor: COLORS.bg, gap: 8,
+  },
+  input: {
+    flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, color: COLORS.text,
+    fontSize: 14, maxHeight: 100,
+  },
+  sendBtn: {
+    width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.coral,
+    justifyContent: 'center', alignItems: 'center',
+  },
+});

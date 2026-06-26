@@ -1,0 +1,180 @@
+import React, { useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform,
+  KeyboardAvoidingView, ScrollView,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS, SPACING } from '../theme';
+import { store } from '../store';
+import { updateProfile, changePassword, updateSellerProfile } from '../api';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'SettingsEdit'>;
+
+const FIELD_PLACEHOLDERS: Record<string, string> = {
+  name: 'Full name',
+  email: 'Email',
+  phone: 'Phone',
+  bio: 'Bio',
+  password: 'New password',
+  storeName: 'Store name',
+};
+
+const FIELD_ICONS: Record<string, string> = {
+  name: 'account-outline',
+  email: 'email-outline',
+  phone: 'phone-outline',
+  bio: 'text-short',
+  password: 'lock-outline',
+  storeName: 'storefront-outline',
+};
+
+export default function SettingsEditScreen({ route, navigation }: Props) {
+  const { field, title } = route.params;
+  const user = store.user;
+  const [loading, setLoading] = useState(false);
+
+  const getValue = (): string => {
+    switch (field) {
+      case 'name': return user?.full_name || '';
+      case 'email': return user?.email || '';
+      case 'phone': return user?.phone || '';
+      case 'bio': return user?.bio || '';
+      case 'storeName': return user?.store_name || '';
+      default: return '';
+    }
+  };
+
+  const [value, setValue] = useState(getValue());
+  const [currentPassword, setCurrentPassword] = useState('');
+
+  const handleSave = async () => {
+    if (!value.trim() && field !== 'bio') {
+      Alert.alert('Required', 'This field cannot be empty.');
+      return;
+    }
+    if (field === 'password' && (!currentPassword || !value)) {
+      Alert.alert('Required', 'Please fill in both password fields.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      switch (field) {
+        case 'name':
+        case 'email':
+        case 'phone':
+        case 'bio': {
+          const payload: Record<string, string> = {};
+          payload[field === 'name' ? 'fullName' : field] = field === 'bio' ? value.trim() : value.trim();
+          const res = await updateProfile(payload) as { user: typeof user };
+          if (res.user) await store.setUser(res.user, store.token);
+          break;
+        }
+        case 'password':
+          await changePassword(currentPassword, value);
+          break;
+        case 'storeName': {
+          const res = await updateSellerProfile({ storeName: value.trim() }) as { user: typeof user };
+          if (res.user) await store.setUser(res.user, store.token);
+          break;
+        }
+      }
+      Alert.alert('Saved', `${title} updated.`, [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (err: unknown) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <View style={styles.container}>
+      <View style={styles.topbar}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
+        </TouchableOpacity>
+        <Text style={styles.title}>{title}</Text>
+        <TouchableOpacity onPress={handleSave} disabled={loading}>
+          {loading ? (
+            <ActivityIndicator size="small" color={COLORS.coral} />
+          ) : (
+            <Text style={styles.saveTopBtn}>Save</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.fieldCard}>
+        <View style={styles.fieldRow}>
+          <MaterialCommunityIcons
+            name={FIELD_ICONS[field] as any}
+            size={18}
+            color={COLORS.text2}
+          />
+          <TextInput
+            style={styles.fieldInput}
+            value={value}
+            onChangeText={setValue}
+            placeholder={FIELD_PLACEHOLDERS[field]}
+            placeholderTextColor={COLORS.text2}
+            secureTextEntry={field === 'password'}
+            keyboardType={field === 'email' ? 'email-address' : field === 'phone' ? 'phone-pad' : 'default'}
+            autoCapitalize={field === 'email' ? 'none' : 'sentences'}
+            multiline={field === 'bio'}
+            numberOfLines={field === 'bio' ? 4 : 1}
+            textAlignVertical={field === 'bio' ? 'top' : 'center'}
+            autoFocus
+          />
+        </View>
+
+        {field === 'password' && (
+          <View style={[styles.fieldRow, { borderTopWidth: 1, borderTopColor: COLORS.border }]}>
+            <MaterialCommunityIcons name="lock-outline" size={18} color={COLORS.text2} />
+            <TextInput
+              style={styles.fieldInput}
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              placeholder="Current password"
+              placeholderTextColor={COLORS.text2}
+              secureTextEntry
+            />
+          </View>
+        )}
+      </View>
+
+      {field === 'bio' && (
+        <Text style={styles.charCount}>{value.length}/150</Text>
+      )}
+    </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  topbar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.md,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  title: { fontSize: 16, fontWeight: '700', color: COLORS.text, flex: 1, textAlign: 'center' },
+  saveTopBtn: { fontSize: 14, fontWeight: '700', color: COLORS.coral },
+  fieldCard: {
+    marginHorizontal: SPACING.lg, marginTop: SPACING.lg,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 12, overflow: 'hidden',
+  },
+  fieldRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 14,
+  },
+  fieldInput: {
+    flex: 1, fontSize: 15, color: COLORS.text, paddingVertical: 0,
+  },
+  charCount: {
+    textAlign: 'right', fontSize: 11, color: COLORS.text2,
+    marginHorizontal: SPACING.lg, marginTop: 6,
+  },
+});
