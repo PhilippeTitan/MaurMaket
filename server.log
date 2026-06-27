@@ -361,3 +361,42 @@ Unread count error: AggregateError [ETIMEDOUT]:
     }
   ]
 }
+Unread count error: AggregateError [ETIMEDOUT]: 
+    at C:\MAURINEX\Maurinex Projects\New folder\MaurMaket\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///C:/MAURINEX/Maurinex%20Projects/New%20folder/MaurMaket/server.js:1898:20 {
+  code: 'ETIMEDOUT',
+  [errors]: [
+    Error: connect ETIMEDOUT 98.91.36.187:5432
+        at createConnectionError (node:net:1678:14)
+        at Timeout.internalConnectMultipleTimeout (node:net:1737:38)
+        at listOnTimeout (node:internal/timers:590:11)
+        at process.processTimers (node:internal/timers:523:7) {
+      errno: -4039,
+      code: 'ETIMEDOUT',
+      syscall: 'connect',
+      address: '98.91.36.187',
+      port: 5432
+    },
+    Error: connect ETIMEDOUT 54.86.249.90:5432
+        at createConnectionError (node:net:1678:14)
+        at Timeout.internalConnectMultipleTimeout (node:net:1737:38)
+        at listOnTimeout (node:internal/timers:590:11)
+        at process.processTimers (node:internal/timers:523:7) {
+      errno: -4039,
+      code: 'ETIMEDOUT',
+      syscall: 'connect',
+      address: '54.86.249.90',
+      port: 5432
+    },
+    Error: connect ETIMEDOUT 44.211.114.173:5432
+        at createConnectionError (node:net:1678:14)
+        at afterConnectMultiple (node:net:1708:16) {
+      errno: -4039,
+      code: 'ETIMEDOUT',
+      syscall: 'connect',
+      address: '44.211.114.173',
+      port: 5432
+    }
+  ]
+}
