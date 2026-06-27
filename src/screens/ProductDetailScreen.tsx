@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Dimensions, FlatList, Share,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
 import { createConversation, getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl } from '../api';
 import { store } from '../store';
@@ -23,6 +24,7 @@ const GRID_MIN_H = GRID_CARD_W * 0.7;
 const GRID_MAX_H = SCREEN_H * 0.3;
 
 export default function ProductDetailScreen({ route, navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { productId } = route.params;
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -291,11 +293,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               ))}
             </View>
           )}
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={[styles.backBtn, { top: insets.top + 12 }]} onPress={() => navigation.goBack()}>
             <MaterialCommunityIcons name="arrow-left" size={18} color={COLORS.white} />
           </TouchableOpacity>
           {!isOwnProduct && (
-            <TouchableOpacity style={styles.wishlistBtn} onPress={handleWishlist}>
+            <TouchableOpacity style={[styles.wishlistBtn, { top: insets.top + 12 }]} onPress={handleWishlist}>
               <MaterialCommunityIcons
                 name={wishlisted ? 'heart' : 'heart-outline'}
                 size={18}
@@ -303,7 +305,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               />
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
+          <TouchableOpacity style={[styles.shareBtn, { top: insets.top + 12 }]} onPress={handleShare}>
             <MaterialCommunityIcons name="share-variant" size={16} color={COLORS.white} />
           </TouchableOpacity>
           <View style={styles.stockOverlay}>

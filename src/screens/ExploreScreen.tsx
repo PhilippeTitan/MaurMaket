@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Modal, Pressable, FlatList, Dimensions, Alert, RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, getDisplayName } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
 import { useFocusEffect } from '@react-navigation/native';
@@ -46,6 +47,7 @@ const MAX_H = SCREEN_H * 0.42;
 const FOOTER_H = 40;
 
 export default function ExploreScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCat, setSelectedCat] = useState<string>('');
@@ -171,13 +173,13 @@ export default function ExploreScreen({ navigation }: Props) {
     <View style={styles.container}>
       {/* Fixed top: logo + search + chips */}
       <View style={styles.fixedHeader}>
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
           <Text style={styles.logo}>Maur<Text style={styles.logoAccent}>Maket</Text></Text>
         </View>
 
         <View style={styles.searchRow}>
           <View style={styles.searchWrap}>
-            <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
+            <MaterialCommunityIcons name="magnify" size={22} color={COLORS.text2} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search..."
@@ -188,14 +190,14 @@ export default function ExploreScreen({ navigation }: Props) {
             />
             {search.length > 0 && (
               <TouchableOpacity onPress={() => setSearch('')}>
-                <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text2} />
+                <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             )}
           </View>
           <TouchableOpacity style={styles.catBtn} onPress={() => setCatModal(true)}>
             <MaterialCommunityIcons
               name={selectedCat ? 'tag-text' : 'tag-outline'}
-              size={20}
+              size={22}
               color={selectedCat ? COLORS.coral : COLORS.text}
             />
           </TouchableOpacity>
@@ -387,16 +389,16 @@ const styles = StyleSheet.create({
 
   searchRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 8, gap: 6, paddingBottom: 4,
+    paddingHorizontal: 12, gap: 8, paddingBottom: 6,
   },
   searchWrap: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: COLORS.surface, borderRadius: 10,
-    paddingHorizontal: 10, height: 36,
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.surface, borderRadius: 24,
+    paddingHorizontal: 14, height: 44,
   },
-  searchInput: { flex: 1, color: COLORS.text, fontSize: 13, paddingVertical: 0 },
+  searchInput: { flex: 1, color: COLORS.text, fontSize: 15, paddingVertical: 0 },
   catBtn: {
-    width: 36, height: 36, borderRadius: 10,
+    width: 44, height: 44, borderRadius: 22,
     backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
   },
 

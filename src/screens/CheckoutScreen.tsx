@@ -92,14 +92,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       const orderRes = await createOrder(orderData) as { order: { id: string } };
 
       try {
-        const payRes = await createPayment(orderRes.order.id, 'maurmaket://payment-return') as { paymentUrl: string };
+        const payRes = await createPayment(orderRes.order.id, `maurmaket://payment-return?orderId=${orderRes.order.id}`) as { paymentUrl: string };
         if (payRes.paymentUrl) {
+          await store.clearCart();
           await Linking.openURL(payRes.paymentUrl);
         }
-        await store.clearCart();
         navigation.navigate('Orders');
       } catch (paymentErr: unknown) {
-        await store.clearCart();
         navigation.navigate('Orders');
         const msg = paymentErr instanceof Error ? paymentErr.message : 'Payment could not start.';
         Alert.alert('Order created', `${msg} Retry payment from your orders.`);

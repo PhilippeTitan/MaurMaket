@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
@@ -19,6 +20,7 @@ import type { RootStackParamList } from '../navigation';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function FeedScreen() {
+  const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const [products, setProducts] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
@@ -421,7 +423,7 @@ export default function FeedScreen() {
 
   return (
     <View style={styles.container} onLayout={onContainerLayout}>
-      <View style={styles.feedTopbar}>
+      <View style={[styles.feedTopbar, { top: insets.top + 14 }]}>
         <View>
           <Text style={styles.brand}>MaurMaket</Text>
           <Text style={styles.brandSub}>Visual Market</Text>

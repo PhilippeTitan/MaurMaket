@@ -1169,23 +1169,24 @@ app.get('/api/orders/:id/timeline', authRequired, async (req, res) => {
 app.get('/api/orders', authRequired, async (req, res) => {
   try {
     const buyerOrders = await pool.query(
-      `SELECT o.*, u.full_name AS seller_name, u.phone AS seller_phone,
+      `SELECT DISTINCT ON (o.id) o.*, 
+              (SELECT u.full_name FROM order_items oi2 JOIN users u ON oi2.seller_id = u.id WHERE oi2.order_id = o.id LIMIT 1) AS seller_name,
+              (SELECT u.phone FROM order_items oi2 JOIN users u ON oi2.seller_id = u.id WHERE oi2.order_id = o.id LIMIT 1) AS seller_phone,
               'buyer' AS my_role
        FROM orders o
        JOIN order_items oi ON o.id = oi.order_id
-       JOIN users u ON oi.seller_id = u.id
        WHERE o.buyer_id = $1
-       ORDER BY o.created_at DESC`,
+       ORDER BY o.id, o.created_at DESC`,
       [req.user.id]
     );
     const sellerOrders = await pool.query(
-      `SELECT o.*, u.full_name AS buyer_name, u.phone AS buyer_phone,
+      `SELECT DISTINCT ON (o.id) o.*, u.full_name AS buyer_name, u.phone AS buyer_phone,
               'seller' AS my_role
        FROM orders o
        JOIN order_items oi ON o.id = oi.order_id
        JOIN users u ON o.buyer_id = u.id
        WHERE oi.seller_id = $1
-       ORDER BY o.created_at DESC`,
+       ORDER BY o.id, o.created_at DESC`,
       [req.user.id]
     );
     res.json({ buyerOrders: buyerOrders.rows, sellerOrders: sellerOrders.rows });

@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -26,6 +27,7 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function InboxScreen() {
+  const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'Inbox'>>();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -101,7 +103,7 @@ export default function InboxScreen() {
 
   const ListHeader = () => (
     <>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
         {(route.params?.returnTab || nav.canGoBack()) && (
           <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
             <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />

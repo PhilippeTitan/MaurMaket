@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { store } from './src/store';
 import { COLORS, SPACING } from './src/theme';
 import { i18n } from './src/i18n';
@@ -68,6 +69,7 @@ function AuthNavigator() {
 }
 
 function MainTabs() {
+  const insets = require('react-native-safe-area-context').useSafeAreaInsets();
   return (
     <View style={styles.mainShell}>
       <Tab.Navigator
@@ -79,10 +81,10 @@ function MainTabs() {
             borderRadius: 28,
             borderWidth: 1,
             borderColor: COLORS.border,
-            paddingBottom: 0,
+            paddingBottom: insets.bottom > 0 ? insets.bottom - 4 : 0,
             paddingTop: 0,
-            height: 56,
-            marginBottom: 16,
+            height: 56 + (insets.bottom > 0 ? insets.bottom : 0),
+            marginBottom: insets.bottom > 0 ? 8 : 16,
             marginHorizontal: 16,
             elevation: 8,
             shadowColor: '#000',
@@ -190,7 +192,7 @@ export default function App() {
     const handleDeepLink = (event: { url: string }) => {
       const url = event.url;
       if (url.includes('payment-return')) {
-        const match = url.match(/order_id=([^&]+)/);
+        const match = url.match(/orderId=([^&]+)/);
         const orderId = match?.[1];
         if (navigationRef.isReady()) {
           navigationRef.navigate('PaymentReturn', { orderId });
@@ -200,7 +202,7 @@ export default function App() {
 
     Linking.getInitialURL().then((url) => {
       if (url && url.includes('payment-return')) {
-        const match = url.match(/order_id=([^&]+)/);
+        const match = url.match(/orderId=([^&]+)/);
         const orderId = match?.[1];
         if (navigationRef.isReady()) {
           navigationRef.navigate('PaymentReturn', { orderId });
@@ -253,7 +255,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return appContent;
+  return <SafeAreaProvider>{appContent}</SafeAreaProvider>;
 }
 
 const styles = StyleSheet.create({

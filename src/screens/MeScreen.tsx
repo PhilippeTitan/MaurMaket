@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, getDisplayName } from '../theme';
@@ -30,6 +31,7 @@ type SellerAnalyticsResponse = {
 };
 
 export default function MeScreen() {
+  const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const user = store.user;
   const isSeller = store.isSeller;
@@ -206,7 +208,7 @@ export default function MeScreen() {
       }
     >
       {/* Hero */}
-      <View style={styles.hero}>
+      <View style={[styles.hero, { paddingTop: insets.top }]}>
         <View style={styles.heroTop}>
           <View style={styles.heroInfo}>
             <View style={styles.avatar}>

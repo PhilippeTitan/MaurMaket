@@ -43,7 +43,11 @@ async function request<T = Record<string, unknown>>(
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(data.error || data.message || 'Request failed');
+  if (!res.ok) {
+    const msg = data.error || data.message || 'Request failed';
+    const detail = data.details ? ` (${data.details})` : '';
+    throw new Error(`${msg}${detail}`);
+  }
   return data as T;
 }
 
