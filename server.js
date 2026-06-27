@@ -225,6 +225,19 @@ async function runMigrations() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // Platform payout tracking
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS platform_payouts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id),
+        amount DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+        status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','completed','failed')),
+        moncash_reference VARCHAR(150),
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
     // Seller onboarding & verification columns
     await c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS store_name TEXT;
@@ -2029,6 +2042,53 @@ app.post('/api/payments/webhook', async (req, res) => {
         throw e;
       } finally {
         client.release();
+      }
+
+      // Auto-payout platform commission to PLATFORM_PHONE
+      try {
+        const totalCommission = (await pool.query(
+          'SELECT COALESCE(SUM(commission_amount), 0) AS total FROM platform_revenue WHERE order_id = $1',
+          [reference]
+        )).rows[0].total;
+
+        const commissionAmount = parseFloat(totalCommission);
+        if (commissionAmount > 0 && process.env.PLATFORM_PHONE) {
+          const payoutRes = await fetch(
+            process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.MCC_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                amount: commissionAmount,
+                receiver: process.env.PLATFORM_PHONE,
+                referenceId: `platform_${reference}`,
+              }),
+            }
+          );
+
+          if (payoutRes.ok) {
+            const payoutData = await payoutRes.json();
+            await pool.query(
+              `INSERT INTO platform_payouts (order_id, amount, status, moncash_reference)
+               VALUES ($1, $2, 'completed', $3)`,
+              [reference, commissionAmount, payoutData.reference || payoutData.transactionId || null]
+            );
+            console.log(`Platform commission Rs ${commissionAmount} sent to ${process.env.PLATFORM_PHONE}`);
+          } else {
+            const errText = await payoutRes.text();
+            await pool.query(
+              `INSERT INTO platform_payouts (order_id, amount, status, error_message)
+               VALUES ($1, $2, 'failed', $3)`,
+              [reference, commissionAmount, errText]
+            );
+            console.error(`Platform payout failed for order ${reference}: ${errText}`);
+          }
+        }
+      } catch (payoutErr) {
+        console.error(`Platform payout error for order ${reference}:`, payoutErr.message);
       }
     } else if (event === 'payment.failed') {
       const client = await pool.connect();
