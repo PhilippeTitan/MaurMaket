@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import { getWishlist, toggleWishlist } from '../api';
 import type { Product } from '../types';
 import type { RootStackParamList } from '../navigation';
@@ -13,6 +14,7 @@ import type { RootStackParamList } from '../navigation';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function WishlistScreen() {
+  const { t } = useTranslation();
   const nav = useNavigation<Nav>();
   const [items, setItems] = useState<Product[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -22,7 +24,7 @@ export default function WishlistScreen() {
     try {
       const res = await getWishlist() as { items: Product[] };
       setItems(res.items || []);
-    } catch { Alert.alert('Error', 'Could not load wishlist.'); }
+    } catch { Alert.alert(t('common.error'), t('wishlist.loadFailed')); }
     setLoading(false);
   }, []);
 
@@ -38,7 +40,7 @@ export default function WishlistScreen() {
     try {
       await toggleWishlist(productId);
       setItems(prev => prev.filter(i => i.id !== productId));
-    } catch { Alert.alert('Error', 'Failed to remove from wishlist.'); }
+    } catch { Alert.alert(t('common.error'), t('wishlist.removeFailed')); }
   };
 
   return (
@@ -47,7 +49,7 @@ export default function WishlistScreen() {
         <TouchableOpacity onPress={() => nav.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <Text style={styles.title}>Wishlist</Text>
+        <Text style={styles.title}>{t('wishlist.title')}</Text>
       </View>
       <FlatList
         data={items}
@@ -73,7 +75,7 @@ export default function WishlistScreen() {
           ) : !refreshing ? (
             <View style={styles.empty}>
               <MaterialCommunityIcons name="heart-outline" size={40} color={COLORS.text2} />
-              <Text style={styles.emptyText}>Your wishlist is empty</Text>
+              <Text style={styles.emptyText}>{t('wishlist.empty')}</Text>
             </View>
           ) : null
         }

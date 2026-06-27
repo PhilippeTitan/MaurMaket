@@ -6,6 +6,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../theme';
 import { getMessages, sendMessage as apiSendMessage } from '../api';
+import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Message } from '../types';
@@ -14,6 +15,7 @@ import { store } from '../store';
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
 export default function ChatScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const { conversationId, otherUserName, draftOffer } = route.params;
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
@@ -51,7 +53,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       await apiSendMessage(conversationId, msg);
       await fetchMessages();
     } catch {
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      Alert.alert(t('common.error'), t('chat.sendFailed'));
       setText(msg);
     }
     setSending(false);
@@ -98,7 +100,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.white} />
           </View>
           <View style={styles.offerBody}>
-            <Text style={styles.offerEyebrow}>Negotiation draft</Text>
+            <Text style={styles.offerEyebrow}>{t('chat.negotiationDraft')}</Text>
             <Text style={styles.offerTitle} numberOfLines={1}>{draftOffer.productName}</Text>
             <View style={styles.offerChips}>
               {[0.85, 0.9, 0.95].map(multiplier => {
@@ -126,7 +128,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           style={styles.input}
           value={text}
           onChangeText={setText}
-          placeholder="Type a message..."
+          placeholder={t('chat.placeholder')}
           placeholderTextColor={COLORS.text2}
           multiline
         />

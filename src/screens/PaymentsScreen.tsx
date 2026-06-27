@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import { getSellerBalance, getSellerPayouts, requestPayout } from '../api';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
@@ -22,6 +23,7 @@ interface Payout {
 }
 
 export default function PaymentsScreen() {
+  const { t } = useTranslation();
   const nav = useNavigation<Nav>();
   const isSeller = store.isSeller;
   const [balance, setBalance] = useState(0);
@@ -44,7 +46,7 @@ export default function PaymentsScreen() {
       setTotalEarned(balRes.total_earned || 0);
       setTotalPaidOut(balRes.total_paid_out || 0);
       setPayouts(payRes.payouts || []);
-    } catch { Alert.alert('Error', 'Could not load balance.'); }
+    } catch { Alert.alert(t('common.error'), t('payments.loadFailed')); }
     setLoading(false);
   }, [isSeller]);
 
@@ -59,21 +61,21 @@ export default function PaymentsScreen() {
   const handleRequestPayout = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt < 50) {
-      Alert.alert('Minimum', 'Minimum withdrawal is Rs 50.');
+      Alert.alert(t('payments.minimum'), t('payments.minWithdrawal'));
       return;
     }
     if (amt > balance) {
-      Alert.alert('Info', 'Insufficient balance.');
+      Alert.alert(t('common.error'), t('payments.insufficient'));
       return;
     }
     setRequesting(true);
     try {
       await requestPayout(amt);
-      Alert.alert('Success!', 'Withdrawal request submitted!');
+      Alert.alert(t('payments.success'), t('payments.requestSubmitted'));
       setAmount('');
       await fetchData();
     } catch (e: any) {
-      Alert.alert('Erreur', e.message);
+      Alert.alert(t('common.error'), e.message);
     } finally {
       setRequesting(false);
     }
@@ -86,11 +88,11 @@ export default function PaymentsScreen() {
           <TouchableOpacity onPress={() => nav.goBack()}>
             <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
           </TouchableOpacity>
-          <Text style={styles.title}>Payments & Payouts</Text>
+          <Text style={styles.title}>{t('payments.title')}</Text>
         </View>
         <View style={styles.empty}>
           <MaterialCommunityIcons name="cash" size={40} color={COLORS.text2} />
-          <Text style={styles.emptyText}>You are not a seller yet</Text>
+          <Text style={styles.emptyText}>{t('payments.notSeller')}</Text>
         </View>
       </View>
     );
@@ -103,17 +105,17 @@ export default function PaymentsScreen() {
           <TouchableOpacity onPress={() => nav.goBack()}>
             <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
           </TouchableOpacity>
-          <Text style={styles.title}>Payments & Payouts</Text>
+          <Text style={styles.title}>{t('payments.title')}</Text>
         </View>
         <View style={styles.empty}>
           <MaterialCommunityIcons name="lock-outline" size={40} color={COLORS.text2} />
-          <Text style={styles.emptyText}>Payouts require Verified status</Text>
-          <Text style={styles.emptyHint}>Upgrade to a Verified seller account to request MonCash payouts.</Text>
+          <Text style={styles.emptyText}>{t('payments.payoutsRequireVerified')}</Text>
+          <Text style={styles.emptyHint}>{t('payments.upgradeHint')}</Text>
           <TouchableOpacity
             style={styles.upgradeBtn}
             onPress={() => { nav.goBack(); nav.navigate('SellerOnboarding'); }}
           >
-            <Text style={styles.upgradeBtnText}>Upgrade to Verified</Text>
+            <Text style={styles.upgradeBtnText}>{t('addListing.upgradeToVerified')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -126,7 +128,7 @@ export default function PaymentsScreen() {
         <TouchableOpacity onPress={() => nav.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <Text style={styles.title}>Payments & Payouts</Text>
+        <Text style={styles.title}>{t('payments.title')}</Text>
       </View>
       <FlatList
         data={payouts}
@@ -134,23 +136,23 @@ export default function PaymentsScreen() {
         ListHeaderComponent={
           <>
             <View style={styles.balanceCard}>
-              <Text style={styles.balanceLabel}>Available Balance</Text>
+              <Text style={styles.balanceLabel}>{t('payments.availableBalance')}</Text>
               <Text style={styles.balanceValue}>Rs {balance.toLocaleString()}</Text>
               <View style={styles.balanceStats}>
                 <View style={styles.balanceStat}>
                   <Text style={styles.balanceStatNum}>Rs {totalEarned.toLocaleString()}</Text>
-                  <Text style={styles.balanceStatLabel}>Total Earned</Text>
+                  <Text style={styles.balanceStatLabel}>{t('payments.totalEarned')}</Text>
                 </View>
                 <View style={styles.balanceStat}>
                   <Text style={styles.balanceStatNum}>Rs {totalPaidOut.toLocaleString()}</Text>
-                  <Text style={styles.balanceStatLabel}>Total Paid Out</Text>
+                  <Text style={styles.balanceStatLabel}>{t('payments.totalPaidOut')}</Text>
                 </View>
               </View>
             </View>
             <View style={styles.requestSection}>
               <TextInput
                 style={styles.input}
-                placeholder="Amount (min Rs 50)"
+                placeholder={t('payments.amount')}
                 placeholderTextColor={COLORS.text2}
                 value={amount}
                 onChangeText={setAmount}
@@ -161,10 +163,10 @@ export default function PaymentsScreen() {
                 onPress={handleRequestPayout}
                 disabled={requesting}
               >
-                <Text style={styles.requestBtnText}>{requesting ? 'Loading...' : 'Request Payout'}</Text>
+                <Text style={styles.requestBtnText}>{requesting ? t('payments.loading') : t('payments.requestPayout')}</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.sectionTitle}>Payout History</Text>
+            <Text style={styles.sectionTitle}>{t('payments.payoutHistory')}</Text>
           </>
         }
         renderItem={({ item }) => (
@@ -184,7 +186,7 @@ export default function PaymentsScreen() {
         ListEmptyComponent={
           !refreshing ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>No payouts yet</Text>
+              <Text style={styles.emptyText}>{t('payments.noPayouts')}</Text>
             </View>
           ) : null
         }

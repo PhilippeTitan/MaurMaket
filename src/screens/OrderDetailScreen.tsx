@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../theme';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus } from '../api';
 import { store } from '../store';
+import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Order, OrderEvent } from '../types';
@@ -26,6 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
 const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error ? err.message : fallback;
 
 export default function OrderDetailScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const { orderId } = route.params;
   const [order, setOrder] = useState<Order | null>(null);
   const [events, setEvents] = useState<OrderEvent[]>([]);
@@ -49,7 +51,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       setOrder(orderRes.order);
       setEvents(timelineRes.events || []);
     } catch (err: unknown) {
-      Alert.alert('Error', errorMessage(err, 'Order not found'));
+      Alert.alert(t('common.error'), errorMessage(err, 'Order not found'));
       navigation.goBack();
     }
     setLoading(false);
@@ -58,11 +60,11 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   useEffect(() => { fetchData(); }, [orderId]);
 
   const handleCancel = () => {
-    Alert.alert('Cancel Order', 'Are you sure?', [
-      { text: 'No', style: 'cancel' },
+    Alert.alert(t('orderDetail.cancelOrder'), t('orderDetail.cancelConfirm'), [
+      { text: t('orderDetail.cancel'), style: 'cancel' },
       { text: 'Yes', style: 'destructive', onPress: async () => {
         try { await cancelOrder(orderId); fetchData(); }
-        catch (err: unknown) { Alert.alert('Error', errorMessage(err)); }
+        catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
       }},
     ]);
   };
@@ -70,7 +72,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   const handleComplete = async () => {
     setActionLoading(true);
     try { await completeOrder(orderId); fetchData(); }
-    catch (err: unknown) { Alert.alert('Error', errorMessage(err)); }
+    catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
     setActionLoading(false);
   };
 
@@ -80,7 +82,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       const res = await retryPayment(orderId) as { paymentUrl: string };
       if (res.paymentUrl) await Linking.openURL(res.paymentUrl);
     } catch (err: unknown) {
-      Alert.alert('Error', errorMessage(err, 'Could not open payment'));
+      Alert.alert(t('common.error'), errorMessage(err, 'Could not open payment'));
     }
     setActionLoading(false);
   };
@@ -94,14 +96,14 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         { text: 'Continue Shopping', style: 'cancel' },
       ]);
     } catch (err: unknown) {
-      Alert.alert('Error', errorMessage(err, 'Could not reorder'));
+      Alert.alert(t('common.error'), errorMessage(err, 'Could not reorder'));
     }
     setActionLoading(false);
   };
 
   const handleSubmitReview = async () => {
     if (reviewRating === 0) {
-      Alert.alert('Rating required', 'Please select a star rating.');
+      Alert.alert(t('orderDetail.rating'), 'Please select a star rating.');
       return;
     }
     setReviewSubmitting(true);
@@ -110,17 +112,17 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       setReviewModalVisible(false);
       setReviewRating(0);
       setReviewComment('');
-      Alert.alert('Thanks!', 'Your review has been submitted.');
+      Alert.alert('Thanks!', t('orderDetail.reviewSubmitted'));
       fetchData();
     } catch (err: unknown) {
-      Alert.alert('Error', errorMessage(err, 'Could not submit review'));
+      Alert.alert(t('common.error'), errorMessage(err, 'Could not submit review'));
     }
     setReviewSubmitting(false);
   };
 
   const handleSubmitDispute = async () => {
     if (!disputeReason) {
-      Alert.alert('Reason required', 'Please select a reason for the dispute.');
+      Alert.alert(t('orderDetail.disputeReason'), 'Please select a reason for the dispute.');
       return;
     }
     setDisputeSubmitting(true);
@@ -136,7 +138,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       Alert.alert('Report submitted', 'We will review your case and get back to you.');
       fetchData();
     } catch (err: unknown) {
-      Alert.alert('Error', errorMessage(err, 'Could not submit report'));
+      Alert.alert(t('common.error'), errorMessage(err, 'Could not submit report'));
     }
     setDisputeSubmitting(false);
   };
@@ -147,7 +149,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       await updateOrderStatus(orderId, nextStatus);
       fetchData();
     } catch (err: unknown) {
-      Alert.alert('Error', errorMessage(err, 'Could not update status'));
+      Alert.alert(t('common.error'), errorMessage(err, 'Could not update status'));
     }
     setActionLoading(false);
   };
@@ -167,38 +169,38 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <Text style={styles.title}>Order #{order.id.slice(0, 8)}</Text>
+        <Text style={styles.title}>{t('orderDetail.title')} #{order.id.slice(0, 8)}</Text>
       </View>
 
       <View style={styles.card}>
         <View style={styles.row}>
-          <Text style={styles.label}>Status</Text>
+          <Text style={styles.label}>{t('orderDetail.status')}</Text>
           <Text style={[styles.value, { color: statusColor, fontWeight: '700', textTransform: 'capitalize' }]}>{order.status}</Text>
         </View>
         <View style={styles.row}>
-          <Text style={styles.label}>Total</Text>
+          <Text style={styles.label}>{t('orderDetail.total')}</Text>
           <Text style={[styles.value, { color: COLORS.coral, fontWeight: '700' }]}>
             Rs {Number(order.total_amount).toLocaleString()}
           </Text>
         </View>
         <View style={styles.row}>
-          <Text style={styles.label}>Delivery</Text>
-          <Text style={styles.value}>{order.delivery_method}</Text>
+          <Text style={styles.label}>{t('orderDetail.deliveryMethod')}</Text>
+          <Text style={styles.value}>{order.delivery_method === 'delivery' ? t('orderDetail.delivery') : t('orderDetail.meetup')}</Text>
         </View>
         <View style={styles.row}>
-          <Text style={styles.label}>Date</Text>
+          <Text style={styles.label}>{t('orderDetail.date')}</Text>
           <Text style={styles.value}>{new Date(order.created_at).toLocaleDateString()}</Text>
         </View>
       </View>
 
       {order.meetup_address && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Meetup Details</Text>
+          <Text style={styles.sectionTitle}>{t('orderDetail.meetup')} {t('orderDetail.deliveryMethod')}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
             <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
             <Text style={styles.meetupText}>{order.meetup_address}</Text>
           </View>
-          {order.meetup_note && <Text style={styles.meetupNote}>Note: {order.meetup_note}</Text>}
+          {order.meetup_note && <Text style={styles.meetupNote}>{t('orderDetail.note')}: {order.meetup_note}</Text>}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <MaterialCommunityIcons
               name={order.meetup_confirmed ? 'check-circle' : 'clock-outline'}
@@ -206,7 +208,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               color={order.meetup_confirmed ? COLORS.green : COLORS.yellow}
             />
             <Text style={[styles.meetupConfirm, { color: order.meetup_confirmed ? COLORS.green : COLORS.yellow }]}>
-              {order.meetup_confirmed ? 'Confirmed' : 'Pending confirmation'}
+              {order.meetup_confirmed ? t('orderDetail.confirmMeetup') : t('orderDetail.pending')}
             </Text>
           </View>
         </View>
@@ -214,7 +216,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
       {events.length > 0 && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Timeline</Text>
+          <Text style={styles.sectionTitle}>{t('orderDetail.timeline')}</Text>
           {events.map(event => (
             <View key={event.id} style={styles.eventItem}>
               <View style={styles.eventDot} />
@@ -233,21 +235,21 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         {isSellerOfOrder && order.status === 'paid' && (
           <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('processing')} disabled={actionLoading}>
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-              <Text style={styles.advanceBtnText}>Mark as Processing</Text>
+              <Text style={styles.advanceBtnText}>{t('orderDetail.processing')}</Text>
             )}
           </TouchableOpacity>
         )}
         {isSellerOfOrder && order.status === 'processing' && (
           <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('shipped')} disabled={actionLoading}>
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-              <Text style={styles.advanceBtnText}>Mark as Shipped</Text>
+              <Text style={styles.advanceBtnText}>{t('orderDetail.shipped')}</Text>
             )}
           </TouchableOpacity>
         )}
         {isSellerOfOrder && order.status === 'shipped' && (
           <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('delivered')} disabled={actionLoading}>
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-              <Text style={styles.advanceBtnText}>Mark as Delivered</Text>
+              <Text style={styles.advanceBtnText}>{t('orderDetail.markDelivered')}</Text>
             )}
           </TouchableOpacity>
         )}
@@ -257,37 +259,37 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           <>
             <TouchableOpacity style={styles.retryBtn} onPress={handleRetryPayment} disabled={actionLoading}>
               {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-                <Text style={styles.retryBtnText}>Retry Payment</Text>
+                <Text style={styles.retryBtnText}>{t('orderDetail.retryPayment')}</Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} disabled={actionLoading}>
-              <Text style={styles.cancelBtnText}>Cancel Order</Text>
+              <Text style={styles.cancelBtnText}>{t('orderDetail.cancelOrder')}</Text>
             </TouchableOpacity>
           </>
         )}
         {store.user?.id === order.buyer_id && order.status === 'delivered' && (
           <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={actionLoading}>
             {actionLoading ? <ActivityIndicator size="small" color="#0B0F1A" /> : (
-              <Text style={styles.completeBtnText}>Mark Complete</Text>
+              <Text style={styles.completeBtnText}>{t('orderDetail.completed')}</Text>
             )}
           </TouchableOpacity>
         )}
         {order.status === 'completed' && store.user?.id === order.buyer_id && (
           <TouchableOpacity style={styles.reviewBtn} onPress={() => setReviewModalVisible(true)}>
             <MaterialCommunityIcons name="star-outline" size={16} color={COLORS.yellow} />
-            <Text style={styles.reviewBtnText}>Leave a Review</Text>
+            <Text style={styles.reviewBtnText}>{t('orderDetail.reviewOrder')}</Text>
           </TouchableOpacity>
         )}
         {(order.status === 'completed' || order.status === 'delivered') && (
           <TouchableOpacity style={styles.reorderBtn} onPress={handleReorder} disabled={actionLoading}>
             <MaterialCommunityIcons name="replay" size={16} color={COLORS.coral} />
-            <Text style={styles.reorderBtnText}>Reorder</Text>
+            <Text style={styles.reorderBtnText}>{t('orderDetail.reorder')}</Text>
           </TouchableOpacity>
         )}
         {['delivered', 'shipped', 'completed'].includes(order.status) && store.user?.id === order.buyer_id && (
           <TouchableOpacity style={styles.disputeBtn} onPress={() => setDisputeModalVisible(true)}>
             <MaterialCommunityIcons name="flag-outline" size={16} color={COLORS.text2} />
-            <Text style={styles.disputeBtnText}>Report a Problem</Text>
+            <Text style={styles.disputeBtnText}>{t('orderDetail.openDispute')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -300,7 +302,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Rate this order</Text>
+              <Text style={styles.modalTitle}>{t('orderDetail.reviewOrder')}</Text>
               <TouchableOpacity onPress={() => setReviewModalVisible(false)}>
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
@@ -337,7 +339,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               {reviewSubmitting ? (
                 <ActivityIndicator size="small" color="#0B0F1A" />
               ) : (
-                <Text style={styles.submitReviewBtnText}>Submit Review</Text>
+                <Text style={styles.submitReviewBtnText}>{t('orderDetail.submit')}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -352,13 +354,13 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Report a Problem</Text>
+              <Text style={styles.modalTitle}>{t('orderDetail.openDispute')}</Text>
               <TouchableOpacity onPress={() => setDisputeModalVisible(false)}>
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.disputeLabel}>Reason</Text>
+            <Text style={styles.disputeLabel}>{t('orderDetail.disputeReason')}</Text>
             {[
               { key: 'item_not_received', label: 'Item not received' },
               { key: 'item_not_as_described', label: 'Item not as described' },
@@ -401,7 +403,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               {disputeSubmitting ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
-                <Text style={[styles.submitReviewBtnText, { color: COLORS.white }]}>Submit Report</Text>
+                <Text style={[styles.submitReviewBtnText, { color: COLORS.white }]}>{t('orderDetail.submitDispute')}</Text>
               )}
             </TouchableOpacity>
           </View>

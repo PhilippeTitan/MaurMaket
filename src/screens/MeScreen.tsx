@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, getDisplayName } from '../theme';
+import { useTranslation } from '../i18n';
 import { store } from '../store';
 import {
   getOrders, getSellerOrders, getSellerAnalytics, getWishlist,
@@ -31,6 +32,7 @@ type SellerAnalyticsResponse = {
 };
 
 export default function MeScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const user = store.user;
@@ -62,7 +64,7 @@ export default function MeScreen() {
   const initials = getDisplayName(user).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
   const memberSince = user?.created_at
-    ? `Member since ${new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+    ? `${t('me.since')} ${new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
     : '';
 
   const avatarUrl = getImageUrl(user?.avatar_url);
@@ -257,20 +259,20 @@ export default function MeScreen() {
               <Text style={[styles.statNum, user?.seller_tier === 'casual' && { color: productCount >= 10 ? COLORS.coral : COLORS.text }]}>
                 {user?.seller_tier === 'casual' ? `${productCount}/10` : productCount}
               </Text>
-              <Text style={styles.statLabel}>Listed</Text>
+              <Text style={styles.statLabel}>{t('me.listings')}</Text>
             </TouchableOpacity>
           ) : null}
           <View style={styles.stat}>
             <Text style={styles.statNum}>{followerCount}</Text>
-            <Text style={styles.statLabel}>Followers</Text>
+            <Text style={styles.statLabel}>{t('me.followers')}</Text>
           </View>
           <View style={styles.stat}>
             <Text style={styles.statNum}>{followingCount}</Text>
-            <Text style={styles.statLabel}>Following</Text>
+            <Text style={styles.statLabel}>{t('me.following')}</Text>
           </View>
           <View style={styles.stat}>
             <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
-            <Text style={styles.statLabel}>{isSeller ? 'Sales' : 'Orders'}</Text>
+            <Text style={styles.statLabel}>{isSeller ? 'Sales' : t('me.totalOrders')}</Text>
           </View>
           {isSeller && rating > 0 ? (
             <View style={styles.stat}>
@@ -278,7 +280,7 @@ export default function MeScreen() {
                 <MaterialCommunityIcons name="star" size={12} color={COLORS.yellow} />
                 <Text style={styles.statNum}>{rating.toFixed(1)}</Text>
               </View>
-              <Text style={styles.statLabel}>{reviewCount} reviews</Text>
+              <Text style={styles.statLabel}>{reviewCount} {t('me.reviews')}</Text>
             </View>
           ) : null}
         </View>
@@ -292,7 +294,7 @@ export default function MeScreen() {
         >
           <MaterialCommunityIcons name="store-plus-outline" size={20} color={COLORS.green} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.sellTitle}>Start selling on MaurMaket</Text>
+            <Text style={styles.sellTitle}>{t('me.startSelling')}</Text>
             <Text style={styles.sellHint}>List your first product in seconds</Text>
           </View>
           <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.green} />
@@ -306,14 +308,14 @@ export default function MeScreen() {
             onPress={() => nav.navigate('Settings')}
           >
             <MaterialCommunityIcons name="pencil-outline" size={16} color={COLORS.text} />
-            <Text style={[styles.actionBtnText, { color: COLORS.text }]}>Edit</Text>
+            <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.editProfile')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={() => nav.navigate('AddListing')}
           >
             <MaterialCommunityIcons name="plus" size={16} color={COLORS.text} />
-            <Text style={[styles.actionBtnText, { color: COLORS.text }]}>List item</Text>
+            <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.listings')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -323,30 +325,30 @@ export default function MeScreen() {
         <View style={styles.analyticsCard}>
           <View style={styles.analyticsHeader}>
             <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.blue} />
-            <Text style={styles.analyticsTitle}>Analytics</Text>
+            <Text style={styles.analyticsTitle}>{t('me.analytics')}</Text>
           </View>
           <View style={styles.analyticsGrid}>
             <View style={styles.analyticsStat}>
               <Text style={styles.analyticsStatValue}>
                 Rs {Number(analyticsData.overview?.total_revenue || 0).toLocaleString()}
               </Text>
-              <Text style={styles.analyticsStatLabel}>Revenue</Text>
+              <Text style={styles.analyticsStatLabel}>{t('me.totalRevenue')}</Text>
             </View>
             <View style={styles.analyticsStat}>
               <Text style={styles.analyticsStatValue}>{Number(analyticsData.overview?.total_orders || 0)}</Text>
-              <Text style={styles.analyticsStatLabel}>Orders</Text>
+              <Text style={styles.analyticsStatLabel}>{t('me.totalOrders')}</Text>
             </View>
             <View style={styles.analyticsStat}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                 <MaterialCommunityIcons name="star" size={12} color={COLORS.yellow} />
                 <Text style={styles.analyticsStatValue}>{Number(analyticsData.overview?.avg_rating || 0).toFixed(1)}</Text>
               </View>
-              <Text style={styles.analyticsStatLabel}>Rating</Text>
+              <Text style={styles.analyticsStatLabel}>{t('me.avgRating')}</Text>
             </View>
           </View>
           {analyticsData.topProducts && analyticsData.topProducts.length > 0 && (
             <View style={styles.topProductsSection}>
-              <Text style={styles.topProductsTitle}>Top Products</Text>
+              <Text style={styles.topProductsTitle}>{t('me.topProducts')}</Text>
               {analyticsData.topProducts.slice(0, 3).map(tp => (
                 <TouchableOpacity
                   key={tp.id}
@@ -391,10 +393,10 @@ export default function MeScreen() {
       {/* Order Status Bar */}
       {hasOrders && (
         <View style={styles.orderBar}>
-          {renderOrderStatusCard('To Pay', toPay, 'credit-card-outline')}
-          {renderOrderStatusCard('To Ship', toShip, 'truck-delivery-outline')}
-          {renderOrderStatusCard('To Receive', toReceive, 'package-variant-closed')}
-          {renderOrderStatusCard('To Review', toReview, 'star-outline')}
+          {renderOrderStatusCard(t('me.myOrders'), toPay, 'credit-card-outline')}
+          {renderOrderStatusCard(t('me.totalOrders'), toShip, 'truck-delivery-outline')}
+          {renderOrderStatusCard(t('me.wishlist'), toReceive, 'package-variant-closed')}
+          {renderOrderStatusCard(t('me.reviews'), toReview, 'star-outline')}
         </View>
       )}
 
@@ -410,7 +412,7 @@ export default function MeScreen() {
             color={activeTab === 'listings' ? COLORS.coral : COLORS.text2}
           />
           <Text style={[styles.tabText, activeTab === 'listings' && styles.tabTextActive]}>
-            {isSeller ? 'Listings' : 'Recent Orders'}
+            {isSeller ? t('me.myListings') : t('me.totalOrders')}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -422,7 +424,7 @@ export default function MeScreen() {
             size={18}
             color={activeTab === 'reviews' ? COLORS.coral : COLORS.text2}
           />
-          <Text style={[styles.tabText, activeTab === 'reviews' && styles.tabTextActive]}>Reviews</Text>
+          <Text style={[styles.tabText, activeTab === 'reviews' && styles.tabTextActive]}>{t('me.reviews')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
@@ -433,7 +435,7 @@ export default function MeScreen() {
             size={18}
             color={activeTab === 'saved' ? COLORS.coral : COLORS.text2}
           />
-          <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>Saved</Text>
+          <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>{t('me.wishlist')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -448,7 +450,7 @@ export default function MeScreen() {
             ) : (
               <View style={styles.empty}>
                 <MaterialCommunityIcons name="storefront-outline" size={32} color={COLORS.text2} />
-                <Text style={styles.emptyText}>No listings yet</Text>
+                <Text style={styles.emptyText}>{t('me.noListings')}</Text>
                 <Text style={styles.emptyHint}>Add your first product so buyers have something to open from your shop.</Text>
                 <TouchableOpacity style={styles.emptyAction} onPress={() => nav.navigate('AddListing')}>
                   <MaterialCommunityIcons name="plus" size={16} color={COLORS.white} />

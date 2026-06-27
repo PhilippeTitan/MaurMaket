@@ -61,14 +61,14 @@ export default function SettingsScreen({ navigation }: Props) {
 
   const handleLogout = () => {
     if (Platform.OS === 'web') {
-      if (window.confirm('Are you sure you want to log out?')) {
+      if (window.confirm(t('settings.logoutConfirm'))) {
         store.logout();
       }
       return;
     }
-    Alert.alert('Logout', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: () => store.logout() },
+    Alert.alert(t('settings.logout'), t('settings.logoutConfirm'), [
+      { text: t('settings.cancel'), style: 'cancel' },
+      { text: t('settings.logout'), style: 'destructive', onPress: () => store.logout() },
     ]);
   };
 
@@ -86,7 +86,7 @@ export default function SettingsScreen({ navigation }: Props) {
         const res = await updateSellerProfile({ avatarUrl: uploadRes.url }) as { user: typeof user };
         if (res.user) await store.setUser(res.user, store.token);
       } catch (err: unknown) {
-        Alert.alert('Error', err instanceof Error ? err.message : 'Upload failed');
+        Alert.alert(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
       }
       setAvatarUploading(false);
     }
@@ -98,7 +98,7 @@ export default function SettingsScreen({ navigation }: Props) {
       const res = await updateSellerProfile({ useStoreIdentity: value }) as { user: typeof user };
       if (res.user) await store.setUser(res.user, store.token);
     } catch (err: unknown) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Failed');
+      Alert.alert(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
     }
     setLoading(false);
   };
@@ -117,7 +117,7 @@ export default function SettingsScreen({ navigation }: Props) {
         const res = await updateSellerProfile({ storeLogoUrl: uploadRes.url }) as { user: typeof user };
         if (res.user) await store.setUser(res.user, store.token);
       } catch (err: unknown) {
-        Alert.alert('Error', err instanceof Error ? err.message : 'Upload failed');
+        Alert.alert(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
       }
       setStoreLogoUploading(false);
     }
@@ -134,9 +134,9 @@ export default function SettingsScreen({ navigation }: Props) {
         const uploadRes = await uploadImage(result.assets[0].uri);
         const res = await updateSellerProfile({ idDocumentUrl: uploadRes.url }) as { user: typeof user };
         if (res.user) await store.setUser(res.user, store.token);
-        Alert.alert('Success', 'ID submitted for verification.');
+        Alert.alert(t('settings.success'), t('settings.idSubmitted'));
       } catch (err: unknown) {
-        Alert.alert('Error', err instanceof Error ? err.message : 'Upload failed');
+        Alert.alert(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
       }
       setIdUploading(false);
     }
@@ -147,10 +147,10 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   const verificationLabel = user?.id_verified
-    ? 'Verified'
+    ? t('settings.identityVerified')
     : user?.id_submitted_at
-      ? 'Pending'
-      : 'Not verified';
+      ? t('settings.verificationPending')
+      : t('settings.notVerified');
   const verificationColor = user?.id_verified
     ? COLORS.green
     : user?.id_submitted_at
@@ -163,7 +163,7 @@ export default function SettingsScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <Text style={styles.title}>Settings</Text>
+        <Text style={styles.title}>{t('settings.title')}</Text>
       </View>
 
       {/* ── Avatar ── */}
@@ -185,24 +185,24 @@ export default function SettingsScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       {/* ── Account ── */}
-      <SectionHeader title="Account" />
+      <SectionHeader title={t('settings.account')} />
       <View style={styles.card}>
-        <SettingRow icon="account-outline" label="Name" value={getDisplayName(user)} onPress={() => goEdit('name', 'Name')} />
-        <SettingRow icon="email-outline" label="Email" value={user?.email} onPress={() => goEdit('email', 'Email')} />
-        <SettingRow icon="phone-outline" label="Phone" value={user?.phone ? `+509 ${user.phone}` : ''} onPress={() => goEdit('phone', 'Phone')} />
-        <SettingRow icon="text-short" label="Bio" value={user?.bio || 'Add bio'} onPress={() => goEdit('bio', 'Bio')} />
-        <SettingRow icon="lock-outline" label="Password" value="••••••••" onPress={() => goEdit('password', 'Change Password')} />
+        <SettingRow icon="account-outline" label={t('settings.fullName')} value={getDisplayName(user)} onPress={() => goEdit('name', t('settings.fullName'))} />
+        <SettingRow icon="email-outline" label={t('settings.email')} value={user?.email} onPress={() => goEdit('email', t('settings.email'))} />
+        <SettingRow icon="phone-outline" label={t('settings.phone')} value={user?.phone ? `+509 ${user.phone}` : ''} onPress={() => goEdit('phone', t('settings.phone'))} />
+        <SettingRow icon="text-short" label={t('settings.bio')} value={user?.bio || t('settings.bio')} onPress={() => goEdit('bio', t('settings.bio'))} />
+        <SettingRow icon="lock-outline" label={t('settings.changePassword')} value="••••••••" onPress={() => goEdit('password', t('settings.changePassword'))} />
       </View>
 
       {/* ── Seller section ── */}
       {!isSeller && (
         <>
-          <SectionHeader title="Seller" />
+          <SectionHeader title={t('settings.seller')} />
           <View style={styles.card}>
             <SettingRow
               icon="store-plus-outline"
               iconColor={COLORS.green}
-              label="Become a Seller"
+              label={t('me.becomeSeller')}
               onPress={() => { navigation.navigate('SellerOnboarding'); }}
             />
           </View>
@@ -211,13 +211,13 @@ export default function SettingsScreen({ navigation }: Props) {
 
       {isSeller && (
         <>
-          <SectionHeader title="Seller" />
+          <SectionHeader title={t('settings.seller')} />
           <View style={styles.card}>
             <SettingRow
               icon="storefront-outline"
               iconColor={COLORS.blue}
-              label={user?.seller_tier === 'business' && user?.use_store_identity ? 'View Storefront' : 'View Profile'}
-              value="Preview as buyer"
+              label={user?.seller_tier === 'business' && user?.use_store_identity ? t('storefront.store') : t('settings.profile')}
+              value={t('settings.profile')}
               onPress={() => navigation.navigate('Storefront', { sellerId: user!.id })}
             />
             {user?.seller_tier === 'business' && (
@@ -225,7 +225,7 @@ export default function SettingsScreen({ navigation }: Props) {
                 <View style={styles.divider} />
                 <View style={styles.toggleRow}>
                   <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.text2} />
-                  <Text style={styles.rowLabel}>Store identity</Text>
+                  <Text style={styles.rowLabel}>{t('settings.useStoreIdentity')}</Text>
                   <View style={styles.rowRight}>
                     <TouchableOpacity
                       style={[styles.toggle, user?.use_store_identity && styles.toggleActive]}
@@ -236,11 +236,11 @@ export default function SettingsScreen({ navigation }: Props) {
                     </TouchableOpacity>
                   </View>
                 </View>
-                <SettingRow icon="pencil-outline" label="Store name" value={user?.store_name || 'Set name'} onPress={() => goEdit('storeName', 'Store Name')} />
+                <SettingRow icon="pencil-outline" label={t('settings.storeName')} value={user?.store_name || t('settings.storeName')} onPress={() => goEdit('storeName', t('settings.storeName'))} />
                 <SettingRow
                   icon="image-outline"
-                  label="Store logo"
-                  value={user?.store_logo_url ? 'Change' : 'Add logo'}
+                  label={t('settings.changeLogo')}
+                  value={user?.store_logo_url ? t('settings.changeLogo') : t('settings.addLogo')}
                   onPress={handlePickStoreLogo}
                   chevron={false}
                   rightContent={storeLogoUploading ? (
@@ -262,13 +262,13 @@ export default function SettingsScreen({ navigation }: Props) {
                     size={18}
                     color={verificationColor}
                   />
-                  <Text style={styles.statusLabel}>Verification</Text>
+                  <Text style={styles.statusLabel}>{t('settings.uploadId')}</Text>
                   <Text style={[styles.statusValue, { color: verificationColor }]}>{verificationLabel}</Text>
                 </View>
                 {!user?.id_verified && !user?.id_submitted_at && (
                   <TouchableOpacity style={styles.idUploadRow} onPress={handlePickId} disabled={idUploading}>
                     <MaterialCommunityIcons name="card-account-details-outline" size={18} color={COLORS.blue} />
-                    <Text style={styles.idUploadText}>{idUploading ? 'Uploading...' : 'Upload Government ID'}</Text>
+                    <Text style={styles.idUploadText}>{idUploading ? t('settings.uploading') : t('settings.uploadId')}</Text>
                   </TouchableOpacity>
                 )}
               </>
@@ -280,13 +280,13 @@ export default function SettingsScreen({ navigation }: Props) {
       {/* ── Upgrade ── */}
       {isSeller && user?.seller_tier === 'casual' && (
         <>
-          <SectionHeader title="Upgrade" />
+          <SectionHeader title={t('settings.upgradeSeller')} />
           <View style={styles.card}>
             <SettingRow
               icon="shield-check-outline"
               iconColor={COLORS.green}
-              label="Upgrade to Verified"
-              value="Unlimited listings, payouts, analytics"
+              label={t('settings.upgradeSeller')}
+              value={t('settings.verifiedSeller')}
               onPress={() => { navigation.navigate('SellerOnboarding'); }}
             />
           </View>
@@ -295,13 +295,13 @@ export default function SettingsScreen({ navigation }: Props) {
 
       {isSeller && user?.seller_tier === 'verified' && (
         <>
-          <SectionHeader title="Upgrade" />
+          <SectionHeader title={t('settings.upgradeSeller')} />
           <View style={styles.card}>
             <SettingRow
               icon="storefront-outline"
               iconColor={COLORS.coral}
-              label="Go Business"
-              value="Store name, promo codes, analytics"
+              label={t('settings.upgradeSeller')}
+              value={t('settings.businessSeller')}
               onPress={() => { navigation.navigate('SellerOnboarding'); }}
             />
           </View>
@@ -309,7 +309,7 @@ export default function SettingsScreen({ navigation }: Props) {
       )}
 
       {/* ── Preferences ── */}
-      <SectionHeader title="Preferences" />
+      <SectionHeader title={t('settings.language')} />
       <View style={[styles.card, { overflow: 'visible' }]}>
         {(['en', 'ht', 'fr'] as Language[]).map((lang, idx, arr) => (
           <React.Fragment key={lang}>
@@ -318,7 +318,7 @@ export default function SettingsScreen({ navigation }: Props) {
               onPress={async () => { await i18n.setLanguage(lang); }}
             >
               <Text style={[styles.langText, language === lang && styles.langTextActive]}>
-                {lang === 'en' ? 'English' : lang === 'ht' ? 'Kreyòl' : 'Français'}
+                {lang === 'en' ? t('settings.english') : lang === 'ht' ? t('settings.haitian') : t('settings.french')}
               </Text>
               {language === lang && (
                 <MaterialCommunityIcons name="check" size={16} color={COLORS.coral} />
@@ -332,7 +332,7 @@ export default function SettingsScreen({ navigation }: Props) {
       {/* ── Logout ── */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <MaterialCommunityIcons name="logout" size={16} color={COLORS.coral} />
-        <Text style={styles.logoutText}>Log out</Text>
+        <Text style={styles.logoutText}>{t('settings.logout')}</Text>
       </TouchableOpacity>
 
       <View style={{ height: 60 }} />

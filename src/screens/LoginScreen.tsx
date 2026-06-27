@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import { login as apiLogin } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -12,13 +13,14 @@ import type { User } from '../types';
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert(t('common.error'), 'Please fill in all fields');
       return;
     }
     setLoading(true);
@@ -27,7 +29,7 @@ export default function LoginScreen({ navigation }: Props) {
       await store.setUser(res.user, res.token);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed';
-      Alert.alert('Error', message);
+      Alert.alert(t('common.error'), message);
     } finally {
       setLoading(false);
     }
@@ -65,7 +67,7 @@ export default function LoginScreen({ navigation }: Props) {
           onPress={handleLogin}
           disabled={loading}
         >
-          <Text style={styles.btnText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
+          <Text style={styles.btnText}>{loading ? t('common.loading') : 'Sign In'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('Signup')}>

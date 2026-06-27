@@ -11,6 +11,7 @@ import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Review } from '../types';
+import { useTranslation } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -24,6 +25,7 @@ const GRID_MIN_H = GRID_CARD_W * 0.7;
 const GRID_MAX_H = SCREEN_H * 0.3;
 
 export default function ProductDetailScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { productId } = route.params;
   const [product, setProduct] = useState<Product | null>(null);
@@ -105,7 +107,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         } catch { /* silent */ }
         setLoadingRelated(false);
       } catch {
-        Alert.alert('Error', 'Product not found');
+        Alert.alert(t('common.error'), 'Product not found');
         navigation.goBack();
       }
       setLoading(false);
@@ -311,7 +313,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           <View style={styles.stockOverlay}>
             <View style={[styles.stockDot, { backgroundColor: product.stock > 0 ? COLORS.green : COLORS.coral }]} />
             <Text style={styles.stockOverlayText}>
-              {product.stock > 0 ? `${product.stock} in stock` : 'Out of stock'}
+              {product.stock > 0 ? `${product.stock} ${t('productDetail.inStock').toLowerCase()}` : t('productDetail.outOfStock')}
             </Text>
           </View>
           <View style={styles.priceOverlay}>
@@ -364,7 +366,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           <View style={styles.sectionBorder}>
             <View style={styles.sectionHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={styles.sectionTitle}>Reviews</Text>
+                <Text style={styles.sectionTitle}>{t('productDetail.reviews')}</Text>
                 <View style={styles.ratingBadge}>
                   <MaterialCommunityIcons name="star" size={10} color={COLORS.yellow} />
                   <Text style={styles.ratingBadgeText}>{avgRating.toFixed(1)}</Text>
@@ -413,7 +415,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             ))}
             {productReviews.length > 5 && (
               <Text style={styles.seeAllReviews}>
-                See all {productReviews.length} reviews
+                {t('productDetail.reviews')} ({productReviews.length})
               </Text>
             )}
           </View>
@@ -467,7 +469,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             onPress={() => navigation.navigate('EditListing', { productId: product.id })}
           >
             <MaterialCommunityIcons name="pencil-outline" size={16} color={COLORS.white} />
-            <Text style={styles.editListingBtnText}>Edit Listing</Text>
+              <Text style={styles.editListingBtnText}>{t('editListing.title')}</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.ctaRow}>
@@ -486,7 +488,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             >
               <MaterialCommunityIcons name="cart-plus" size={17} color={COLORS.white} />
               <Text style={styles.addBtnText}>
-                {product.stock <= 0 ? 'Out of Stock' : 'Add to Cart'}
+                {product.stock <= 0 ? t('productDetail.outOfStock') : t('productDetail.addToCart')}
               </Text>
             </TouchableOpacity>
           </View>

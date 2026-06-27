@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import { store } from '../store';
 import { createOrder, createPayment, getAddresses } from '../api';
 import type { RootStackParamList } from '../navigation';
@@ -17,6 +18,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 type DeliveryMethod = 'delivery' | 'meetup';
 
 export default function CheckoutScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const cart = store.cart;
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
   const [name, setName] = useState('');
@@ -48,7 +50,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const itemLabel = itemCount === 1 ? 'item' : 'items';
+  const itemLabel = itemCount === 1 ? t('checkout.item') : t('checkout.items');
   const sellerGroups = cart.reduce<Array<{ sellerId: string; sellerName: string; itemCount: number; total: number }>>((groups, item) => {
     const sellerName = item.store_name || item.seller_name || `Seller ${item.seller_id.slice(0, 6)}`;
     const existing = groups.find(group => group.sellerId === item.seller_id);
@@ -64,13 +66,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   const handleCheckout = async () => {
     if (cart.length === 0) {
-      Alert.alert('Cart empty', 'Add an item before checking out.');
+      Alert.alert(t('checkout.cartEmpty'), t('checkout.addBeforeCheckout'));
       navigation.goBack();
       return;
     }
 
     if (method === 'delivery' && (!name || !phone || !address)) {
-      Alert.alert('Missing info', 'Please fill in all required fields.');
+      Alert.alert(t('checkout.missingInfo'), t('checkout.fillRequired'));
       return;
     }
 
@@ -101,10 +103,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       } catch (paymentErr: unknown) {
         navigation.navigate('Orders');
         const msg = paymentErr instanceof Error ? paymentErr.message : 'Payment could not start.';
-        Alert.alert('Order created', `${msg} Retry payment from your orders.`);
+        Alert.alert(t('checkout.orderCreated'), `${msg}${t('checkout.retryPayment')}`);
       }
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Checkout failed.');
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('checkout.checkoutFailed'));
     } finally {
       setLoading(false);
     }
@@ -118,12 +120,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
         <View>
-          <Text style={styles.title}>Checkout</Text>
+          <Text style={styles.title}>{t('checkout.title')}</Text>
           <Text style={styles.subtitle}>{itemCount} {itemLabel} - Rs {subtotal.toLocaleString()}</Text>
         </View>
       </View>
 
-      <Text style={styles.sectionLabel}>Seller split</Text>
+      <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
       <View style={[styles.sellerSummary, sellerCount > 1 && styles.sellerSummaryMixed]}>
         <View style={styles.sellerSummaryTitleRow}>
           <MaterialCommunityIcons
@@ -132,19 +134,19 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             color={sellerCount > 1 ? COLORS.yellow : COLORS.blue}
           />
           <Text style={styles.sellerSummaryTitle}>
-            {sellerCount} {sellerCount === 1 ? 'seller' : 'sellers'} in this checkout
+            {t('checkout.sellersInCheckout', { count: sellerCount, plural: sellerCount === 1 ? t('checkout.seller') : t('checkout.sellers') })}
           </Text>
         </View>
         <Text style={styles.sellerSummaryHint}>
           {sellerCount > 1
-            ? 'You can pay together, but delivery, meetup, and messages may split by seller after the order.'
-            : 'Delivery or meetup coordination stays with this seller.'}
+            ? t('checkout.multiSellerHint')
+            : t('checkout.singleSellerHint')}
         </Text>
         {sellerGroups.map(group => (
           <View key={group.sellerId} style={styles.sellerGroupRow}>
             <Text style={styles.sellerGroupName} numberOfLines={1}>{group.sellerName}</Text>
             <Text style={styles.sellerGroupMeta}>
-              {group.itemCount} {group.itemCount === 1 ? 'item' : 'items'} - Rs {group.total.toLocaleString()}
+              {group.itemCount} {group.itemCount === 1 ? t('checkout.item') : t('checkout.items')} - Rs {group.total.toLocaleString()}
             </Text>
           </View>
         ))}
@@ -157,14 +159,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           onPress={() => setMethod('delivery')}
         >
           <MaterialCommunityIcons name="truck-delivery" size={20} color={method === 'delivery' ? COLORS.coral : COLORS.text2} />
-          <Text style={[styles.methodText, method === 'delivery' && styles.methodTextActive]}>Delivery</Text>
+          <Text style={[styles.methodText, method === 'delivery' && styles.methodTextActive]}>{t('checkout.delivery')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.methodCard, method === 'meetup' && styles.methodActive]}
           onPress={() => setMethod('meetup')}
         >
           <MaterialCommunityIcons name="map-marker" size={20} color={method === 'meetup' ? COLORS.coral : COLORS.text2} />
-          <Text style={[styles.methodText, method === 'meetup' && styles.methodTextActive]}>Meetup</Text>
+          <Text style={[styles.methodText, method === 'meetup' && styles.methodTextActive]}>{t('checkout.meetup')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -172,7 +174,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         <View style={styles.fields}>
           {savedAddresses.length > 0 && (
             <>
-              <Text style={styles.sectionLabel}>Saved Addresses</Text>
+              <Text style={styles.sectionLabel}>{t('checkout.savedAddresses')}</Text>
               <View style={styles.addressList}>
                 {savedAddresses.map(addr => (
                   <TouchableOpacity
@@ -187,7 +189,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                       </View>
                       {addr.is_default && (
                         <View style={styles.defaultBadge}>
-                          <Text style={styles.defaultBadgeText}>Default</Text>
+                          <Text style={styles.defaultBadgeText}>{t('checkout.default')}</Text>
                         </View>
                       )}
                     </View>
@@ -202,34 +204,34 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 onPress={() => navigation.navigate('Addresses')}
               >
                 <MaterialCommunityIcons name="plus-circle-outline" size={16} color={COLORS.coral} />
-                <Text style={styles.addAddressText}>Manage addresses</Text>
+                <Text style={styles.addAddressText}>{t('checkout.manageAddresses')}</Text>
               </TouchableOpacity>
             </>
           )}
 
-          <Text style={styles.sectionLabel}>Delivery info</Text>
-          <TextInput style={styles.input} placeholder="Full name" placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
-          <TextInput style={styles.input} placeholder="Phone" placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-          <TextInput style={styles.input} placeholder="Address" placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress} />
-          <TextInput style={styles.input} placeholder="City" placeholderTextColor={COLORS.text2} value={city} onChangeText={setCity} />
-          <TextInput style={styles.input} placeholder="Note (optional)" placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline />
+          <Text style={styles.sectionLabel}>{t('checkout.deliveryInfo')}</Text>
+          <TextInput style={styles.input} placeholder={t('checkout.fullName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
+          <TextInput style={styles.input} placeholder={t('checkout.phone')} placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+          <TextInput style={styles.input} placeholder={t('checkout.address')} placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress} />
+          <TextInput style={styles.input} placeholder={t('checkout.city')} placeholderTextColor={COLORS.text2} value={city} onChangeText={setCity} />
+          <TextInput style={styles.input} placeholder={t('checkout.note')} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline />
         </View>
       ) : (
         <View style={styles.fields}>
           <View style={styles.meetupInfo}>
             <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.blue} />
             <Text style={styles.meetupInfoText}>
-              A meetup location will be chosen after the order. You can discuss the location with the seller in messages.
+              {t('checkout.meetupInfo')}
             </Text>
           </View>
         </View>
       )}
 
-      <Text style={styles.sectionLabel}>Promo Code</Text>
+      <Text style={styles.sectionLabel}>{t('checkout.promoCode')}</Text>
       <View style={{ paddingHorizontal: SPACING.md }}>
         <TextInput
           style={styles.input}
-          placeholder="Enter promo code"
+          placeholder={t('checkout.enterPromo')}
           placeholderTextColor={COLORS.text2}
           value={promoCode}
           onChangeText={setPromoCode}
@@ -237,14 +239,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         />
       </View>
 
-      <Text style={styles.sectionLabel}>Payment</Text>
+      <Text style={styles.sectionLabel}>{t('checkout.payment')}</Text>
       <View style={styles.moncashBadge}>
         <MaterialCommunityIcons name="cellphone" size={18} color={COLORS.blue} />
-        <Text style={styles.moncashText}>Pay via MonCash - auto-redirected after confirm</Text>
+        <Text style={styles.moncashText}>{t('checkout.moncashNote')}</Text>
       </View>
 
       <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total</Text>
+        <Text style={styles.totalLabel}>{t('common.total')}</Text>
         <Text style={styles.totalValue}>Rs {subtotal.toLocaleString()}</Text>
       </View>
 
@@ -256,7 +258,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         {loading ? (
           <ActivityIndicator color={COLORS.white} />
         ) : (
-          <Text style={styles.ctaText}>Confirm & Pay via MonCash</Text>
+          <Text style={styles.ctaText}>{t('checkout.confirmPay')}</Text>
         )}
       </TouchableOpacity>
     </ScrollView>

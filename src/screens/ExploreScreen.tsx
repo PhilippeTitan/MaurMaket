@@ -11,15 +11,16 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
+import { useTranslation } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
 type SortOption = { label: string; value: string };
 
 const SORT_OPTIONS: SortOption[] = [
-  { label: 'Newest', value: 'newest' },
-  { label: 'Price: Low to High', value: 'price_asc' },
-  { label: 'Price: High to Low', value: 'price_desc' },
+  { label: 'explore.sortNewest', value: 'newest' },
+  { label: 'explore.sortPriceLow', value: 'price_asc' },
+  { label: 'explore.sortPriceHigh', value: 'price_desc' },
   { label: 'Oldest', value: 'oldest' },
 ];
 
@@ -47,6 +48,7 @@ const MAX_H = SCREEN_H * 0.42;
 const FOOTER_H = 40;
 
 export default function ExploreScreen({ navigation }: Props) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -98,7 +100,7 @@ export default function ExploreScreen({ navigation }: Props) {
           }
         }, () => {});
       });
-    } catch { Alert.alert('Error', 'Could not load products.'); }
+    } catch { Alert.alert(t('common.error'), 'Could not load products.'); }
     setLoading(false);
   }, [selectedCat, search, sortBy, minPrice, maxPrice]);
 
@@ -207,7 +209,7 @@ export default function ExploreScreen({ navigation }: Props) {
         <View style={styles.filterBar}>
           <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
             <MaterialCommunityIcons name="sort" size={14} color={COLORS.text2} />
-            <Text style={styles.filterBtnText}>{SORT_OPTIONS.find(o => o.value === sortBy)?.label || 'Sort'}</Text>
+            <Text style={styles.filterBtnText}>{t(SORT_OPTIONS.find(o => o.value === sortBy)?.label || 'explore.sortNewest')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.filterBtn, showPriceFilter && styles.filterBtnActive]}
@@ -257,7 +259,7 @@ export default function ExploreScreen({ navigation }: Props) {
         <FlatList
           ref={categoryListRef}
           horizontal
-          data={[{ id: '', name: 'All' }, ...categories]}
+          data={[{ id: '', name: t('explore.all') }, ...categories]}
           keyExtractor={c => String(c.id || 'all')}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipsRow}
@@ -293,7 +295,7 @@ export default function ExploreScreen({ navigation }: Props) {
           <View style={styles.emptyIcon}>
             <MaterialCommunityIcons name="magnify-close" size={28} color={COLORS.text2} />
           </View>
-          <Text style={styles.emptyText}>No products found</Text>
+          <Text style={styles.emptyText}>{t('explore.noProducts')}</Text>
         </View>
       ) : (
         <FlatList
@@ -325,7 +327,7 @@ export default function ExploreScreen({ navigation }: Props) {
               onPress={() => { selectCategory(''); setCatModal(false); }}
             >
               <MaterialCommunityIcons name="apps" size={18} color={!selectedCat ? COLORS.coral : COLORS.text2} />
-              <Text style={[styles.modalItemText, !selectedCat && styles.modalItemTextActive]}>All</Text>
+              <Text style={[styles.modalItemText, !selectedCat && styles.modalItemTextActive]}>{t('explore.all')}</Text>
             </TouchableOpacity>
             {categories.map(cat => (
               <TouchableOpacity
@@ -364,7 +366,7 @@ export default function ExploreScreen({ navigation }: Props) {
                   color={sortBy === option.value ? COLORS.coral : COLORS.text2}
                 />
                 <Text style={[styles.modalItemText, sortBy === option.value && styles.modalItemTextActive]}>
-                  {option.label}
+                  {t(option.label)}
                 </Text>
               </TouchableOpacity>
             ))}

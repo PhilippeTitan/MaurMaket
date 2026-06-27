@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../theme';
 import { store } from '../store';
 import { validatePromo, getImageUrl } from '../api';
+import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { CartItem } from '../types';
@@ -17,6 +18,7 @@ type SectionItem =
   | { type: 'item'; item: CartItem; key: string };
 
 export default function CartScreen({ navigation }: Props) {
+  const { t } = useTranslation();
   const [cart, setCart] = useState<CartItem[]>(store.cart);
   const [promoCode, setPromoCode] = useState('');
   const [discount, setDiscount] = useState(0);
@@ -75,7 +77,7 @@ export default function CartScreen({ navigation }: Props) {
         await store.updateQuantity(id, newQty);
         const stock = Math.max(0, Number(item.stock) || 0);
         if (stock > 0 && newQty > stock) {
-          Alert.alert('Stock limit', `Only ${stock} available.`);
+          Alert.alert(t('cart.stockLimit'), t('cart.onlyAvailable', { count: String(stock) }));
         }
       }
     }
@@ -93,7 +95,7 @@ export default function CartScreen({ navigation }: Props) {
       setDiscount(res.discount_amount);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Invalid promo';
-      Alert.alert('Error', msg);
+      Alert.alert(t('common.error'), msg);
       setDiscount(0);
     }
     setPromoLoading(false);
@@ -111,7 +113,7 @@ export default function CartScreen({ navigation }: Props) {
           <MaterialCommunityIcons name="storefront-outline" size={14} color={COLORS.coral} />
           <Text style={styles.sellerSectionName} numberOfLines={1}>{item.sellerName}</Text>
           <Text style={styles.sellerSectionMeta}>
-            {item.itemCount} {item.itemCount === 1 ? 'item' : 'items'} · Rs {item.total.toLocaleString()}
+            {item.itemCount} {item.itemCount === 1 ? t('common.item') : t('common.items')} · Rs {item.total.toLocaleString()}
           </Text>
         </View>
       );
@@ -145,7 +147,7 @@ export default function CartScreen({ navigation }: Props) {
               <MaterialCommunityIcons name="plus" size={14} color={atStockLimit ? COLORS.text2 : COLORS.text} />
             </TouchableOpacity>
           </View>
-          {atStockLimit && <Text style={styles.stockLimit}>Only {stock} available</Text>}
+          {atStockLimit && <Text style={styles.stockLimit}>{t('cart.onlyAvailable', { count: String(stock) })}</Text>}
         </View>
         <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemove(cartItem.id)}>
           <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
@@ -160,7 +162,7 @@ export default function CartScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <Text style={styles.title}>Cart ({itemCount})</Text>
+        <Text style={styles.title}>{t('cart.title')} ({itemCount})</Text>
       </View>
 
       {cart.length === 0 ? (
@@ -168,8 +170,8 @@ export default function CartScreen({ navigation }: Props) {
           <View style={styles.emptyIcon}>
             <MaterialCommunityIcons name="cart-outline" size={36} color={COLORS.text2} />
           </View>
-          <Text style={styles.emptyText}>Your cart is empty</Text>
-          <Text style={styles.emptyHint}>Browse products and add items to your cart</Text>
+          <Text style={styles.emptyText}>{t('cart.empty')}</Text>
+          <Text style={styles.emptyHint}>{t('cart.browseHint')}</Text>
         </View>
       ) : (
         <View style={styles.cartBody}>
@@ -183,7 +185,7 @@ export default function CartScreen({ navigation }: Props) {
             <View style={styles.promoRow}>
               <TextInput
                 style={styles.promoInput}
-                placeholder="Promo code"
+                placeholder={t('cart.promoCode')}
                 placeholderTextColor={COLORS.text2}
                 value={promoCode}
                 onChangeText={setPromoCode}
@@ -194,24 +196,24 @@ export default function CartScreen({ navigation }: Props) {
                 onPress={handleApplyPromo}
                 disabled={promoLoading}
               >
-                <Text style={styles.promoBtnText}>{promoLoading ? '...' : 'Apply'}</Text>
+                <Text style={styles.promoBtnText}>{promoLoading ? '...' : t('cart.apply')}</Text>
               </TouchableOpacity>
             </View>
             {discount > 0 && (
-              <Text style={styles.discountText}>-Rs {discount.toLocaleString()} off</Text>
+              <Text style={styles.discountText}>-Rs {discount.toLocaleString()} {t('cart.off')}</Text>
             )}
             {promoCode.trim() && discount === 0 && (
-              <Text style={styles.discountHint}>Promo will be checked at checkout</Text>
+              <Text style={styles.discountHint}>{t('cart.promoHint')}</Text>
             )}
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalLabel}>{t('cart.total')}</Text>
               <Text style={styles.totalValue}>Rs {finalTotal.toLocaleString()}</Text>
             </View>
             <TouchableOpacity
               style={styles.checkoutBtn}
               onPress={() => navigation.navigate('Checkout', promoCode.trim() ? { promoCode: promoCode.trim() } : undefined)}
             >
-              <Text style={styles.checkoutBtnText}>Proceed to Checkout</Text>
+              <Text style={styles.checkoutBtnText}>{t('cart.proceedCheckout')}</Text>
               <MaterialCommunityIcons name="arrow-right" size={18} color={COLORS.white} />
             </TouchableOpacity>
           </View>

@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, isVerifiedSeller, getDisplayName, getSellerAvatar } from '../theme';
 import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation } from '../api';
 import { store } from '../store';
+import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
@@ -14,6 +15,7 @@ import type { Product, Review, SellerProfile } from '../types';
 type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
 
 export default function StorefrontScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const { sellerId } = route.params;
   const [seller, setSeller] = useState<SellerProfile | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -27,18 +29,20 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 
   const fetchSellerData = useCallback(async () => {
     try {
-      const [sellerRes, prodRes, revRes, followRes] = await Promise.all([
+      const [sellerRes, prodRes, revRes, followingRes] = await Promise.all([
         getSellerProfile(sellerId) as Promise<{ seller: SellerProfile }>,
         import('../api').then(m => m.getProducts({ seller: sellerId, limit: '50' })) as Promise<{ products: Product[] }>,
         getSellerReviews(sellerId) as Promise<{ reviews: Review[] }>,
-        getFollowerCount(sellerId) as Promise<{ count: number; following: boolean }>,
+        store.isLoggedIn ? import('../api').then(m => m.getFollowing()) as Promise<{ following?: Array<{ seller_id?: string; id?: string }> }> : Promise.resolve({ following: [] }),
       ]);
       setSeller(sellerRes.seller);
       setProducts(prodRes.products || []);
       setReviews(revRes.reviews || []);
-      setFollowerCount(followRes.count || 0);
-      setFollowing(followRes.following || false);
-      } catch { Alert.alert('Error', 'Could not load seller profile.'); }
+      const followIds = (followingRes.following || []).map(f => f.seller_id || f.id).filter(Boolean);
+      setFollowing(followIds.includes(sellerId));
+      const countRes = await getFollowerCount(sellerId) as { count: number };
+      setFollowerCount(countRes.count || 0);
+      } catch {       Alert.alert(t('common.error'), 'Could not load seller profile.'); }
     setLoading(false);
   }, [sellerId]);
 
@@ -58,7 +62,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
     } catch {
       setFollowing(wasFollowing);
       setFollowerCount(previousCount);
-      Alert.alert('Follow unavailable', 'Could not update this seller right now.');
+      Alert.alert(t('storefront.followUnavailable'), t('storefront.followUnavailable'));
     }
     setFollowLoading(false);
   };
@@ -68,7 +72,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
     if (messageLoading) return;
     const productContext = products[0];
     if (!productContext) {
-      Alert.alert('No product yet', 'This seller needs a listing before you can start a product chat.');
+      Alert.alert(t('storefront.noProducts'), t('storefront.noProductYet'));
       return;
     }
     setMessageLoading(true);
@@ -80,7 +84,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed';
-      Alert.alert('Error', msg);
+      Alert.alert(t('common.error'), msg);
     }
     setMessageLoading(false);
   };
@@ -95,7 +99,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <Text style={styles.title}>{getDisplayName(seller) || 'Store'}</Text>
+        <Text style={styles.title}>{getDisplayName(seller) || t('storefront.store')}</Text>
       </View>
 
       <FlatList
@@ -125,15 +129,15 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               <View style={styles.statsRow}>
                 <View style={styles.stat}>
                   <Text style={styles.statNum}>{seller?.product_count || 0}</Text>
-                  <Text style={styles.statLabel}>Products</Text>
+                  <Text style={styles.statLabel}>{t('storefront.products')}</Text>
                 </View>
                 <View style={styles.stat}>
                   <Text style={styles.statNum}>{followerCount}</Text>
-                  <Text style={styles.statLabel}>Followers</Text>
+                  <Text style={styles.statLabel}>{t('storefront.followers')}</Text>
                 </View>
                 <View style={styles.stat}>
                   <Text style={styles.statNum}>{seller?.avg_rating?.toFixed(1) || '—'}</Text>
-                  <Text style={styles.statLabel}>Rating</Text>
+                  <Text style={styles.statLabel}>{t('storefront.rating')}</Text>
                 </View>
               </View>
 
@@ -145,7 +149,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                     disabled={followLoading}
                   >
                     <Text style={[styles.followBtnText, following && styles.followBtnTextActive]}>
-                      {followLoading ? '...' : following ? 'Following' : 'Follow'}
+                      {followLoading ? '...' : following ? t('storefront.following') : t('storefront.follow')}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -154,12 +158,12 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                     disabled={messageLoading}
                   >
                     <MaterialCommunityIcons name="message-outline" size={16} color={COLORS.blue} />
-                    <Text style={styles.msgBtnText}>{messageLoading ? 'Opening...' : 'Message'}</Text>
+                    <Text style={styles.msgBtnText}>{messageLoading ? t('storefront.opening') : t('storefront.message')}</Text>
                   </TouchableOpacity>
                 </View>
               )}
             </View>
-            <Text style={styles.sectionTitle}>Products</Text>
+            <Text style={styles.sectionTitle}>{t('storefront.products')}</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -185,7 +189,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
             <View style={styles.emptyIcon}>
               <MaterialCommunityIcons name="storefront-outline" size={28} color={COLORS.text2} />
             </View>
-            <Text style={styles.emptyText}>No products yet</Text>
+            <Text style={styles.emptyText}>{t('storefront.noProducts')}</Text>
           </View>
         }
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchSellerData(); setRefreshing(false); }} tintColor={COLORS.coral} />}

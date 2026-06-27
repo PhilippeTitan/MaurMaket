@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../theme';
 import { getOrders, cancelOrder, completeOrder, getSellerOrders, updateOrderStatus } from '../api';
 import { store } from '../store';
+import { useTranslation } from '../i18n';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -26,6 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
 const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error ? err.message : fallback;
 
 export default function OrdersScreen({ navigation }: Props) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<'buying' | 'selling'>('buying');
   const [buyOrders, setBuyOrders] = useState<Order[]>([]);
   const [sellOrders, setSellOrders] = useState<Order[]>([]);
@@ -42,7 +44,7 @@ export default function OrdersScreen({ navigation }: Props) {
       setBuyOrders(buyRes.buyerOrders || []);
       setSellOrders(sellRes.orders || []);
     } catch (err: unknown) {
-      Alert.alert('Error', errorMessage(err, 'Could not load orders.'));
+      Alert.alert(t('common.error'), errorMessage(err, 'Could not load orders.'));
     }
     setLoading(false);
   }, []);
@@ -65,20 +67,20 @@ export default function OrdersScreen({ navigation }: Props) {
   const getStatusColor = (s: string) => STATUS_COLORS[s] || COLORS.text2;
 
   const handleCancel = async (orderId: string) => {
-    Alert.alert('Cancel Order', 'Are you sure?', [
-      { text: 'No', style: 'cancel' },
+    Alert.alert(t('orderDetail.cancelOrder'), t('orderDetail.cancelConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
       { text: 'Yes', style: 'destructive', onPress: async () => {
-        try { await cancelOrder(orderId); fetchOrders(); } catch (err: unknown) { Alert.alert('Error', errorMessage(err)); }
+        try { await cancelOrder(orderId); fetchOrders(); } catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
       }},
     ]);
   };
 
   const handleComplete = async (orderId: string) => {
-    try { await completeOrder(orderId); fetchOrders(); } catch (err: unknown) { Alert.alert('Error', errorMessage(err)); }
+    try { await completeOrder(orderId); fetchOrders(); } catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
   };
 
   const handleStatusUpdate = async (orderId: string, status: string) => {
-    try { await updateOrderStatus(orderId, status); fetchOrders(); } catch (err: unknown) { Alert.alert('Error', errorMessage(err)); }
+    try { await updateOrderStatus(orderId, status); fetchOrders(); } catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
   };
 
   const renderItem = ({ item }: { item: Order }) => (
@@ -95,31 +97,31 @@ export default function OrdersScreen({ navigation }: Props) {
       <View style={styles.actions}>
         {tab === 'buying' && item.status === 'pending' && (
           <TouchableOpacity style={styles.actionBtn} onPress={() => handleCancel(item.id)}>
-            <Text style={styles.actionBtnText}>Cancel</Text>
+            <Text style={styles.actionBtnText}>{t('orderDetail.cancel')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'buying' && item.status === 'delivered' && (
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleComplete(item.id)}>
-            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>Complete</Text>
+            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.completed')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'selling' && item.status === 'paid' && (
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'processing')}>
-            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>Process</Text>
+            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.processing')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'selling' && item.status === 'processing' && (
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'shipped')}>
-            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>Ship</Text>
+            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.shipped')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'selling' && item.status === 'shipped' && (
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleStatusUpdate(item.id, 'delivered')}>
-            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>Deliver</Text>
+            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.delivered')}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity style={styles.detailBtn} onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })}>
-          <Text style={styles.detailBtnText}>Details</Text>
+          <Text style={styles.detailBtnText}>{t('orderDetail.title')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -128,7 +130,10 @@ export default function OrdersScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.topbar}>
-        <Text style={styles.title}>Orders</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 12 }}>
+          <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.text2} />
+        </TouchableOpacity>
+        <Text style={styles.title}>{t('orders.title')}</Text>
       </View>
 
       {store.isSeller && (
@@ -137,13 +142,13 @@ export default function OrdersScreen({ navigation }: Props) {
             style={[styles.tab, tab === 'buying' && styles.tabActive]}
             onPress={() => setTab('buying')}
           >
-            <Text style={[styles.tabText, tab === 'buying' && styles.tabTextActive]}>Buying</Text>
+            <Text style={[styles.tabText, tab === 'buying' && styles.tabTextActive]}>{t('orders.buying')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, tab === 'selling' && styles.tabActive]}
             onPress={() => setTab('selling')}
           >
-            <Text style={[styles.tabText, tab === 'selling' && styles.tabTextActive]}>Selling</Text>
+            <Text style={[styles.tabText, tab === 'selling' && styles.tabTextActive]}>{t('orders.selling')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -162,9 +167,9 @@ export default function OrdersScreen({ navigation }: Props) {
               <View style={styles.emptyIcon}>
                 <MaterialCommunityIcons name="package-variant" size={32} color={COLORS.text2} />
               </View>
-              <Text style={styles.emptyText}>No orders yet</Text>
+              <Text style={styles.emptyText}>{t('orders.noOrders')}</Text>
               <Text style={styles.emptyHint}>
-                {tab === 'buying' ? 'Orders you place will appear here' : 'Orders from buyers will appear here'}
+                {tab === 'buying' ? t('orders.whenBuyersOrder') : t('orders.whenBuyersOrder')}
               </Text>
             </View>
           }

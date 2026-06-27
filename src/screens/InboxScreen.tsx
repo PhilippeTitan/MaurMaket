@@ -8,6 +8,7 @@ import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/nativ
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import { getConversations, getNotifications, markNotificationRead } from '../api';
 import type { Conversation, Notification } from '../types';
 import type { RootStackParamList } from '../navigation';
@@ -27,6 +28,7 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function InboxScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'Inbox'>>();
@@ -41,7 +43,7 @@ export default function InboxScreen() {
       const notifs = await getNotifications() as unknown as { notifications: Notification[] };
       setConversations(convos.conversations || []);
       setNotifications((notifs.notifications || []).slice(0, 3));
-    } catch { Alert.alert('Error', 'Could not load messages.'); }
+    } catch { Alert.alert(t('common.error'), 'Could not load messages.'); }
     setLoading(false);
   }, []);
 
@@ -109,7 +111,7 @@ export default function InboxScreen() {
             <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
           </TouchableOpacity>
         )}
-        <Text style={styles.title}>Inbox</Text>
+        <Text style={styles.title}>{t('inbox.title')}</Text>
       </View>
       {notifications.length > 0 && (
         <TouchableOpacity style={styles.notifBanner} onPress={() => handleNotificationPress(notifications[0])}>
@@ -140,7 +142,7 @@ export default function InboxScreen() {
           ) : !refreshing ? (
             <View style={styles.empty}>
               <MaterialCommunityIcons name="message-outline" size={40} color={COLORS.text2} />
-              <Text style={styles.emptyText}>No messages yet</Text>
+              <Text style={styles.emptyText}>{t('inbox.noMessages')}</Text>
             </View>
           ) : null
         }

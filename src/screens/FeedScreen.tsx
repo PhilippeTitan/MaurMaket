@@ -11,15 +11,17 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
 import {
   getProducts, toggleWishlist, checkWishlist, createConversation, toggleFollow,
-  getImageUrl, getConversationUnreadCount, getProductReviews,
+  getImageUrl, getConversationUnreadCount, getProductReviews, getFollowing,
 } from '../api';
 import { store } from '../store';
 import type { Product, Review } from '../types';
 import type { RootStackParamList } from '../navigation';
+import { useTranslation } from '../i18n';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function FeedScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const [products, setProducts] = useState<Product[]>([]);
@@ -94,9 +96,23 @@ export default function FeedScreen() {
           else next.delete(p.id);
           return next;
         });
-    } catch { Alert.alert('Error', 'Could not load products.'); }
+    } catch { Alert.alert(t('common.error'), 'Could not load products.'); }
     });
   }, [products]);
+
+  useEffect(() => {
+    if (!store.isLoggedIn) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await getFollowing() as { following?: Array<{ seller_id?: string; id?: string }> };
+        if (!mounted) return;
+        const ids = (res.following || []).map((f) => f.seller_id || f.id).filter(Boolean) as string[];
+        setFollowedSellerIds(new Set(ids));
+      } catch { /* silent */ }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const onContainerLayout = useCallback((e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
@@ -288,7 +304,7 @@ export default function FeedScreen() {
     const isOwnProduct = store.user?.id === item.seller_id;
     const wasJustAdded = addedProductIds.has(item.id);
     const wasJustShared = sharedProductIds.has(item.id);
-    const stockLabel = isSoldOut ? 'Sold out' : item.stock === 1 ? '1 left' : `${item.stock} in stock`;
+    const stockLabel = isSoldOut ? t('feed.soldOut') : item.stock === 1 ? '1 left' : `${item.stock} ${t('feed.available').toLowerCase()}`;
 
     return (
       <View style={[styles.slide, { height: screenHeight }]}>
@@ -302,18 +318,19 @@ export default function FeedScreen() {
         </View>
 
         {/* Right-side action rail — absolute, thumb-reachable */}
-        <View style={[styles.actionRail, { bottom: screenHeight * 0.36 }]}>
+        <View style={[styles.actionRail, { bottom: screenHeight * 0.42 }]}>
           {!isOwnProduct && (
             <>
               <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item)}>
                 <MaterialCommunityIcons
                   name={wishlistedIds.has(item.id) ? 'heart' : 'heart-outline'}
-                  size={28}
+                  size={34}
                   color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
                 />
+                <Text style={styles.actionCount}>{wishlistedIds.has(item.id) ? 'Like' : ''}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenComments(item)}>
-                <MaterialCommunityIcons name="comment-outline" size={26} color={COLORS.white} />
+                <MaterialCommunityIcons name="comment-outline" size={30} color={COLORS.white} />
                 {(item.review_count || 0) > 0 && (
                   <Text style={styles.actionCount}>{item.review_count}</Text>
                 )}
@@ -323,7 +340,7 @@ export default function FeedScreen() {
           <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(item)}>
             <MaterialCommunityIcons
               name={wasJustShared ? 'check' : 'share-variant'}
-              size={26}
+              size={30}
               color={wasJustShared ? COLORS.green : COLORS.white}
             />
           </TouchableOpacity>
@@ -358,7 +375,7 @@ export default function FeedScreen() {
                 onPress={() => item.seller_id && handleFollow(item.seller_id)}
               >
                 <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
-                  {isFollowing ? 'Following' : 'Follow'}
+                  {isFollowing ? t('storefront.following') : t('feed.follow')}
                 </Text>
               </TouchableOpacity>
             )}
@@ -396,14 +413,14 @@ export default function FeedScreen() {
                   disabled={isSoldOut}
                 >
                   <MaterialCommunityIcons name={wasJustAdded ? 'check' : 'cart-plus'} size={16} color={COLORS.white} />
-                  <Text style={styles.cartBtnText}>{wasJustAdded ? 'Added' : '+ Cart'}</Text>
+                  <Text style={styles.cartBtnText}>{wasJustAdded ? 'Added' : t('feed.cart')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.buyBtn, isSoldOut && styles.actionDisabled]}
                   onPress={() => handleBuy(item)}
                   disabled={isSoldOut}
                 >
-                  <Text style={styles.buyBtnText}>{isSoldOut ? 'Sold Out' : 'Buy Now'}</Text>
+                  <Text style={styles.buyBtnText}>{isSoldOut ? t('productDetail.soldOut') : t('feed.buyNow')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -483,8 +500,8 @@ export default function FeedScreen() {
               <View style={styles.emptyIcon}>
                 <MaterialCommunityIcons name="fire" size={36} color={COLORS.text2} />
               </View>
-              <Text style={styles.emptyText}>No products yet</Text>
-              <Text style={styles.emptyHint}>Check back soon for new listings</Text>
+              <Text style={styles.emptyText}>{t('feed.noProducts')}</Text>
+              <Text style={styles.emptyHint}>{t('feed.checkBack')}</Text>
             </View>
           ) : null
         }
@@ -505,7 +522,7 @@ export default function FeedScreen() {
             <View style={styles.sheetHandle} />
             <View style={styles.commentHeader}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.commentTitle}>Comments</Text>
+                <Text style={styles.commentTitle}>{t('productDetail.reviews')}</Text>
                 <Text style={styles.commentSubtitle} numberOfLines={1}>
                   {commentProduct?.name}
                 </Text>
@@ -548,7 +565,7 @@ export default function FeedScreen() {
             ) : (
               <View style={styles.commentEmpty}>
                 <MaterialCommunityIcons name="comment-text-outline" size={34} color={COLORS.text2} />
-                <Text style={styles.commentEmptyTitle}>No comments yet</Text>
+                <Text style={styles.commentEmptyTitle}>{t('productDetail.noReviews')}</Text>
                 <Text style={styles.commentEmptyText}>
                   Reviews from completed orders will appear here. Message the seller if you have a question now.
                 </Text>
@@ -565,7 +582,7 @@ export default function FeedScreen() {
                 }}
               >
                 <MaterialCommunityIcons name="message-outline" size={17} color={COLORS.white} />
-                <Text style={styles.messageSellerText}>Message seller</Text>
+                <Text style={styles.messageSellerText}>{t('productDetail.messageSeller')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -669,11 +686,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 12,
     alignItems: 'center',
-    gap: 18,
+    gap: 15,
     zIndex: 10,
   },
   actionBtn: {
     alignItems: 'center',
+    width: 60,
+    height: 60,
+    justifyContent: 'center',
     gap: 3,
   },
   actionCount: {
@@ -691,7 +711,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '50%',
+    height: '55%',
     zIndex: 5,
   },
 
@@ -701,8 +721,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    padding: SPACING.md,
-    paddingBottom: 80,
+    paddingLeft: 14,
+    paddingRight: 80,
+    paddingTop: SPACING.md,
+    paddingBottom: 140,
     zIndex: 10,
   },
   sellerRow: {
@@ -772,11 +794,11 @@ const styles = StyleSheet.create({
     color: COLORS.coral,
   },
   productName: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     color: COLORS.white,
     marginBottom: 2,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   productInfo: {
     fontSize: 13,

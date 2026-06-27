@@ -7,6 +7,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import { getOrder } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Order } from '../types';
@@ -14,6 +15,7 @@ import type { Order } from '../types';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function PaymentReturnScreen() {
+  const { t } = useTranslation();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'PaymentReturn'>>();
   const orderId = route.params?.orderId;
@@ -66,9 +68,9 @@ export default function PaymentReturnScreen() {
         <View style={styles.iconCircle}>
           <MaterialCommunityIcons name="check-circle" size={64} color={COLORS.green} />
         </View>
-        <Text style={styles.title}>Payment Confirmed!</Text>
-        <Text style={styles.subtitle}>Your order has been paid successfully.</Text>
-        <Text style={styles.hint}>Redirecting to your order...</Text>
+        <Text style={styles.title}>{t('paymentReturn.confirmed')}</Text>
+        <Text style={styles.subtitle}>{t('paymentReturn.confirmedSubtitle')}</Text>
+        <Text style={styles.hint}>{t('paymentReturn.redirecting')}</Text>
       </View>
     );
   }
@@ -79,11 +81,11 @@ export default function PaymentReturnScreen() {
         <View style={[styles.iconCircle, { borderColor: COLORS.yellow }]}>
           <MaterialCommunityIcons name="clock-outline" size={56} color={COLORS.yellow} />
         </View>
-        <Text style={styles.title}>Payment May Still Be Processing</Text>
+        <Text style={styles.title}>{t('paymentReturn.processing')}</Text>
         <Text style={styles.subtitle}>
           {orderId
-            ? 'MonCash may take a few minutes to confirm your payment. Check your orders for updates.'
-            : 'Your payment has been submitted. Check your orders for updates.'}
+            ? t('paymentReturn.processingHint')
+            : t('paymentReturn.noOrderId')}
         </Text>
         <View style={styles.actions}>
           {orderId && (
@@ -91,14 +93,14 @@ export default function PaymentReturnScreen() {
               style={styles.primaryBtn}
               onPress={() => nav.replace('OrderDetail', { orderId })}
             >
-              <Text style={styles.primaryBtnText}>View Order</Text>
+              <Text style={styles.primaryBtnText}>{t('paymentReturn.viewOrder')}</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
             style={styles.secondaryBtn}
             onPress={() => nav.popToTop()}
           >
-            <Text style={styles.secondaryBtnText}>Back to Home</Text>
+            <Text style={styles.secondaryBtnText}>{t('paymentReturn.backToHome')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -110,17 +112,17 @@ export default function PaymentReturnScreen() {
       <View style={styles.iconCircle}>
         <ActivityIndicator size="large" color={COLORS.coral} />
       </View>
-      <Text style={styles.title}>Confirming Payment...</Text>
+      <Text style={styles.title}>{t('paymentReturn.confirming')}</Text>
       <Text style={styles.subtitle}>
         {elapsed < 5
-          ? 'Connecting to MonCash...'
+          ? t('paymentReturn.connecting')
           : elapsed < 15
-            ? 'This usually takes a few seconds'
-            : 'This may take a few minutes. Please don\'t close the app.'}
+            ? t('paymentReturn.fewSeconds')
+            : t('paymentReturn.fewMinutes')}
       </Text>
       {orderId && (
         <View style={styles.orderBadge}>
-          <Text style={styles.orderBadgeText}>Order #{orderId.slice(0, 8)}</Text>
+          <Text style={styles.orderBadgeText}>{t('paymentReturn.orderLabel', { id: orderId.slice(0, 8) })}</Text>
         </View>
       )}
     </View>

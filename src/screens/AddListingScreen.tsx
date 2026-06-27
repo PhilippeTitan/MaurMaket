@@ -8,6 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import { createProduct, getCategories, uploadImage, getSellerProducts } from '../api';
 import { store } from '../store';
 import type { Category } from '../types';
@@ -16,6 +17,7 @@ import type { RootStackParamList } from '../navigation';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function AddListingScreen() {
+  const { t } = useTranslation();
   const nav = useNavigation<Nav>();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -52,7 +54,7 @@ export default function AddListingScreen() {
   const pickImage = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission', 'Please allow access to your photos.');
+      Alert.alert(t('addListing.permission'), t('addListing.allowPhotos'));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -66,7 +68,7 @@ export default function AddListingScreen() {
 
   const handleSubmit = async () => {
     if (!name || !price) {
-      Alert.alert('Missing info', 'Please fill in the product name and price.');
+      Alert.alert(t('addListing.missingInfo'), t('addListing.fillFields'));
       return;
     }
 
@@ -90,11 +92,11 @@ export default function AddListingScreen() {
       if (imageUrl) productData.images = [imageUrl];
 
       await createProduct(productData);
-      Alert.alert('Success!', 'Product created!', [
-        { text: 'OK', onPress: () => nav.goBack() },
+      Alert.alert(t('addListing.success'), t('addListing.created'), [
+        { text: t('common.ok'), onPress: () => nav.goBack() },
       ]);
     } catch (e: any) {
-      Alert.alert('Erreur', e.message);
+      Alert.alert(t('common.error'), e.message);
     } finally {
       setLoading(false);
       setUploading(false);
@@ -108,7 +110,7 @@ export default function AddListingScreen() {
         <TouchableOpacity onPress={() => nav.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <Text style={styles.title}>Add a product</Text>
+        <Text style={styles.title}>{t('addListing.title')}</Text>
       </View>
 
       {atListingLimit ? (
@@ -116,19 +118,19 @@ export default function AddListingScreen() {
           <View style={styles.limitIcon}>
             <MaterialCommunityIcons name="package-variant" size={40} color={COLORS.text2} />
           </View>
-          <Text style={styles.limitTitle}>Listing Limit Reached</Text>
+          <Text style={styles.limitTitle}>{t('addListing.listingLimit')}</Text>
           <Text style={styles.limitHint}>
-            Casual sellers can list up to 10 products. You currently have {listingCount} listings.
+            {t('addListing.casualLimit', { count: listingCount })}
           </Text>
           <Text style={styles.limitHint}>
-            Upgrade to Verified for unlimited listings, payouts, and analytics.
+            {t('addListing.upgradeHint')}
           </Text>
           <TouchableOpacity
             style={styles.upgradeBtn}
             onPress={() => { nav.goBack(); nav.navigate('SellerOnboarding'); }}
           >
             <MaterialCommunityIcons name="shield-check-outline" size={18} color={COLORS.white} />
-            <Text style={styles.upgradeBtnText}>Upgrade to Verified</Text>
+            <Text style={styles.upgradeBtnText}>{t('addListing.upgradeToVerified')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -137,7 +139,7 @@ export default function AddListingScreen() {
             <View style={styles.limitBanner}>
               <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.yellow} />
               <Text style={styles.limitBannerText}>
-                {listingCount} / 10 listings used
+                {t('addListing.listingsUsed', { count: listingCount })}
               </Text>
             </View>
           )}
@@ -148,17 +150,17 @@ export default function AddListingScreen() {
             ) : (
               <>
                 <MaterialCommunityIcons name="camera-plus" size={32} color={COLORS.text2} />
-                <Text style={styles.imageHint}>Tap to add a photo</Text>
+                <Text style={styles.imageHint}>{t('addListing.tapPhoto')}</Text>
               </>
             )}
           </TouchableOpacity>
 
-          <TextInput style={styles.input} placeholder="Product name" placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
-          <TextInput style={[styles.input, styles.textArea]} placeholder="Description" placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
-          <TextInput style={styles.input} placeholder="Price (Rs)" placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" />
-          <TextInput style={styles.input} placeholder="Quantity" placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" />
+          <TextInput style={styles.input} placeholder={t('addListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
+          <TextInput style={[styles.input, styles.textArea]} placeholder={t('addListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
+          <TextInput style={styles.input} placeholder={t('addListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" />
+          <TextInput style={styles.input} placeholder={t('addListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" />
 
-          <Text style={styles.sectionLabel}>Category</Text>
+          <Text style={styles.sectionLabel}>{t('addListing.category')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
             {categories.map(cat => (
               <TouchableOpacity
@@ -181,7 +183,7 @@ export default function AddListingScreen() {
             {loading || uploading ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
-              <Text style={styles.submitText}>Publish Product</Text>
+              <Text style={styles.submitText}>{t('addListing.publish')}</Text>
             )}
           </TouchableOpacity>
         </>

@@ -9,6 +9,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING } from '../theme';
 import { becomeSeller, uploadImage } from '../api';
+import { useTranslation } from '../i18n';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
 
@@ -17,6 +18,7 @@ type Step = 'welcome' | 'choose' | 'store' | 'verify' | 'done';
 type ChosenTier = 'casual' | 'verified' | 'business' | null;
 
 export default function SellerOnboardingScreen() {
+  const { t } = useTranslation();
   const nav = useNavigation<Nav>();
   const [step, setStep] = useState<Step>('welcome');
   const [chosenTier, setChosenTier] = useState<ChosenTier>(null);
@@ -69,10 +71,10 @@ export default function SellerOnboardingScreen() {
       if (res.user && res.token) {
         await store.setUser(res.user, res.token);
       }
-      setStep('done');
+      nav.goBack();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
-      Alert.alert('Error', msg);
+      Alert.alert(t('common.error'), msg);
     }
     setLoading(false);
   };
@@ -97,10 +99,10 @@ export default function SellerOnboardingScreen() {
       if (res.user && res.token) {
         await store.setUser(res.user, res.token);
       }
-      setStep('done');
+      nav.goBack();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
-      Alert.alert('Error', msg);
+      Alert.alert(t('common.error'), msg);
     }
     setLoading(false);
   };
@@ -113,15 +115,15 @@ export default function SellerOnboardingScreen() {
             <View style={styles.iconCircle}>
               <MaterialCommunityIcons name="store-plus" size={48} color={COLORS.coral} />
             </View>
-            <Text style={styles.title}>Start Selling on{'\n'}MaurMaket</Text>
+            <Text style={styles.title}>{t('sellerOnboarding.startTitle')}</Text>
             <Text style={styles.subtitle}>
-              List your products, reach buyers across Haiti, and get paid via MonCash.
+              {t('sellerOnboarding.startSubtitle')}
             </Text>
             <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('choose')}>
-              <Text style={styles.primaryBtnText}>Get Started</Text>
+              <Text style={styles.primaryBtnText}>{t('sellerOnboarding.getStart')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.linkBtn} onPress={() => nav.goBack()}>
-              <Text style={styles.linkBtnText}>Maybe Later</Text>
+              <Text style={styles.linkBtnText}>{t('sellerOnboarding.maybeLater')}</Text>
             </TouchableOpacity>
           </View>
         );
@@ -132,45 +134,45 @@ export default function SellerOnboardingScreen() {
         const currentIdx = tierOrder.indexOf(currentTier || '');
 
         const tiers = [
-          { key: 'casual' as const, icon: 'account-outline', iconBg: COLORS.blue, color: COLORS.blue, title: 'Casual Seller', desc: 'List up to 10 items. Sell as your personal name.', features: ['10 listings', 'Personal name'] },
-          { key: 'verified' as const, icon: 'shield-check-outline', iconBg: COLORS.green, color: COLORS.green, title: 'Verified Seller', desc: 'Unlimited listings. ID verification. Payouts enabled.', features: ['Unlimited listings', 'Payouts', 'Basic analytics'] },
-          { key: 'business' as const, icon: 'storefront-outline', iconBg: COLORS.coral, color: COLORS.coral, title: 'Business Seller', desc: 'Full storefront. Promo codes. Analytics. One-time fee.', features: ['Store name + logo', 'Promo codes', 'Full analytics'] },
+          { key: 'casual' as const, icon: 'account-outline', iconBg: COLORS.blue, color: COLORS.blue, title: t('sellerOnboarding.casualTitle'), desc: t('sellerOnboarding.casualDesc'), features: [t('sellerOnboarding.casualFeature1'), t('sellerOnboarding.casualFeature2')] },
+          { key: 'verified' as const, icon: 'shield-check-outline', iconBg: COLORS.green, color: COLORS.green, title: t('sellerOnboarding.verifiedTitle'), desc: t('sellerOnboarding.verifiedDesc'), features: [t('sellerOnboarding.verifiedFeature1'), t('sellerOnboarding.verifiedFeature2'), t('sellerOnboarding.verifiedFeature3')] },
+          { key: 'business' as const, icon: 'storefront-outline', iconBg: COLORS.coral, color: COLORS.coral, title: t('sellerOnboarding.businessTitle'), desc: t('sellerOnboarding.businessDesc'), features: [t('sellerOnboarding.businessFeature1'), t('sellerOnboarding.businessFeature2'), t('sellerOnboarding.businessFeature3')] },
         ];
 
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>Choose Your{'\n'}Seller Plan</Text>
+            <Text style={styles.title}>{t('sellerOnboarding.chooseTitle')}</Text>
             <Text style={styles.subtitle}>
-              {currentTier ? 'Upgrade to unlock more features.' : 'Pick the plan that fits how you want to sell.'}
+              {currentTier ? t('sellerOnboarding.upgradeHint') : t('sellerOnboarding.chooseSubtitle')}
             </Text>
 
-            {tiers.map((t) => {
-              const isCurrent = t.key === currentTier;
-              const isDowngrade = tierOrder.indexOf(t.key) <= currentIdx;
+            {tiers.map((tier) => {
+              const isCurrent = tier.key === currentTier;
+              const isDowngrade = tierOrder.indexOf(tier.key) <= currentIdx;
               const disabled = loading || isDowngrade;
               return (
                 <TouchableOpacity
-                  key={t.key}
+                  key={tier.key}
                   style={[styles.tierCard, disabled && styles.tierCardDisabled]}
-                  onPress={() => !disabled && handleChooseTier(t.key)}
+                  onPress={() => !disabled && handleChooseTier(tier.key)}
                   activeOpacity={disabled ? 1 : 0.8}
                   disabled={disabled}
                 >
-                  <View style={[styles.tierIcon, { backgroundColor: (disabled ? COLORS.text2 : t.iconBg) + '20' }]}>
-                    <MaterialCommunityIcons name={t.icon as any} size={26} color={disabled ? COLORS.text2 : t.color} />
+                  <View style={[styles.tierIcon, { backgroundColor: (disabled ? COLORS.text2 : tier.iconBg) + '20' }]}>
+                    <MaterialCommunityIcons name={tier.icon as any} size={26} color={disabled ? COLORS.text2 : tier.color} />
                   </View>
                   <View style={styles.tierInfo}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[styles.tierTitle, disabled && { color: COLORS.text2 }]}>{t.title}</Text>
+                      <Text style={[styles.tierTitle, disabled && { color: COLORS.text2 }]}>{tier.title}</Text>
                       {isCurrent && (
                         <View style={styles.currentBadge}>
-                          <Text style={styles.currentBadgeText}>Current</Text>
+                          <Text style={styles.currentBadgeText}>{t('sellerOnboarding.current')}</Text>
                         </View>
                       )}
                     </View>
-                    <Text style={[styles.tierDesc, disabled && { opacity: 0.5 }]}>{t.desc}</Text>
+                    <Text style={[styles.tierDesc, disabled && { opacity: 0.5 }]}>{tier.desc}</Text>
                     <View style={styles.tierFeatures}>
-                      {t.features.map((f) => (
+                      {tier.features.map((f) => (
                         <Text key={f} style={[styles.tierFeature, disabled && { opacity: 0.4 }]}>✓ {f}</Text>
                       ))}
                     </View>
@@ -181,7 +183,7 @@ export default function SellerOnboardingScreen() {
             })}
 
             <TouchableOpacity style={styles.linkBtn} onPress={() => setStep('welcome')}>
-              <Text style={styles.linkBtnText}>Back</Text>
+              <Text style={styles.linkBtnText}>{t('sellerOnboarding.back')}</Text>
             </TouchableOpacity>
           </View>
         );
@@ -190,14 +192,14 @@ export default function SellerOnboardingScreen() {
       case 'store':
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.title}>Set Up Your Store</Text>
-            <Text style={styles.subtitle}>Give your store a name and optional logo.</Text>
+            <Text style={styles.title}>{t('sellerOnboarding.setUpStore')}</Text>
+            <Text style={styles.subtitle}>{t('sellerOnboarding.storeSubtitle')}</Text>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Store Name</Text>
+              <Text style={styles.label}>{t('sellerOnboarding.storeNameLabel')}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g. Tatou Store"
+                placeholder={t('sellerOnboarding.storeNamePlaceholder')}
                 placeholderTextColor={COLORS.text2}
                 value={storeName}
                 onChangeText={setStoreName}
@@ -206,7 +208,7 @@ export default function SellerOnboardingScreen() {
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Store Logo (Optional)</Text>
+              <Text style={styles.label}>{t('sellerOnboarding.storeLogoOptional')}</Text>
               <TouchableOpacity style={styles.logoPicker} onPress={handlePickLogo} disabled={pickLoading}>
                 {pickLoading ? (
                   <ActivityIndicator size="small" color={COLORS.coral} />
@@ -215,7 +217,7 @@ export default function SellerOnboardingScreen() {
                 ) : (
                   <View style={styles.logoPlaceholder}>
                     <MaterialCommunityIcons name="camera-plus-outline" size={24} color={COLORS.text2} />
-                    <Text style={styles.logoPlaceholderText}>Add Logo</Text>
+                    <Text style={styles.logoPlaceholderText}>{t('sellerOnboarding.addLogo')}</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -226,10 +228,10 @@ export default function SellerOnboardingScreen() {
               onPress={() => setStep('verify')}
               disabled={!storeName.trim() || loading}
             >
-              <Text style={styles.primaryBtnText}>Continue</Text>
+              <Text style={styles.primaryBtnText}>{t('sellerOnboarding.continue')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.linkBtn} onPress={() => setStep('choose')}>
-              <Text style={styles.linkBtnText}>Back</Text>
+              <Text style={styles.linkBtnText}>{t('sellerOnboarding.back')}</Text>
             </TouchableOpacity>
           </View>
         );
@@ -240,9 +242,9 @@ export default function SellerOnboardingScreen() {
             <View style={styles.iconCircle}>
               <MaterialCommunityIcons name="shield-check-outline" size={40} color={COLORS.green} />
             </View>
-            <Text style={styles.title}>Verify Your Identity</Text>
+            <Text style={styles.title}>{t('sellerOnboarding.verifyIdentity')}</Text>
             <Text style={styles.subtitle}>
-              Upload a government ID (national ID, passport, or driver's license). This builds trust with buyers and enables payouts.
+              {t('sellerOnboarding.verifySubtitle')}
             </Text>
 
             <TouchableOpacity style={styles.idPicker} onPress={handlePickId} disabled={pickLoading}>
@@ -251,29 +253,32 @@ export default function SellerOnboardingScreen() {
               ) : idDocUrl ? (
                 <View style={styles.idUploaded}>
                   <MaterialCommunityIcons name="check-circle" size={24} color={COLORS.green} />
-                  <Text style={styles.idUploadedText}>ID Uploaded</Text>
+                  <Text style={styles.idUploadedText}>{t('sellerOnboarding.idUploaded')}</Text>
                 </View>
               ) : (
                 <View style={styles.idPlaceholder}>
                   <MaterialCommunityIcons name="card-account-details-outline" size={32} color={COLORS.text2} />
-                  <Text style={styles.idPlaceholderText}>Tap to Upload ID</Text>
-                  <Text style={styles.idPlaceholderHint}>JPG or PNG, max 5MB</Text>
+                  <Text style={styles.idPlaceholderText}>{t('sellerOnboarding.tapToUpload')}</Text>
+                  <Text style={styles.idPlaceholderHint}>{t('sellerOnboarding.idFormat')}</Text>
                 </View>
               )}
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.primaryBtn, { flexDirection: 'row', justifyContent: 'center', gap: 8 }]}
-              onPress={() => {
-                nav.goBack();
+              onPress={async () => {
+                await handleComplete();
                 nav.navigate('AddListing');
               }}
             >
               <MaterialCommunityIcons name="plus" size={18} color={COLORS.white} />
-              <Text style={styles.primaryBtnText}>Add Your First Listing</Text>
+              <Text style={styles.primaryBtnText}>{t('sellerOnboarding.addFirstListing')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.linkBtn} onPress={() => nav.goBack()}>
-              <Text style={styles.linkBtnText}>I'll do it later</Text>
+            <TouchableOpacity style={styles.linkBtn} onPress={async () => {
+              await handleComplete();
+              nav.goBack();
+            }}>
+              <Text style={styles.linkBtnText}>{t('sellerOnboarding.doItLater')}</Text>
             </TouchableOpacity>
           </View>
         );
@@ -285,6 +290,9 @@ export default function SellerOnboardingScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <TouchableOpacity onPress={() => nav.goBack()} style={{ alignSelf: 'flex-start', marginBottom: 16 }}>
+        <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.text2} />
+      </TouchableOpacity>
       {step !== 'welcome' && step !== 'done' && (
         <View style={styles.stepIndicatorFlow}>
           {Array.from({ length: totalSteps }, (_, i) => (

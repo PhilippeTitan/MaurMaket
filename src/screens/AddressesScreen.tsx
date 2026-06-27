@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import { getAddresses, createAddress, updateAddress, deleteAddress } from '../api';
 import type { Address } from '../types';
 import type { RootStackParamList } from '../navigation';
@@ -16,6 +17,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 const EMPTY_FORM = { label: '', name: '', phone: '', address: '', city: '' };
 
 export default function AddressesScreen() {
+  const { t } = useTranslation();
   const nav = useNavigation<Nav>();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -29,7 +31,7 @@ export default function AddressesScreen() {
     try {
       const res = await getAddresses() as { addresses: Address[] };
       setAddresses(res.addresses || []);
-    } catch { Alert.alert('Error', 'Could not load addresses.'); }
+    } catch { Alert.alert(t('common.error'), t('addresses.loadFailed')); }
     setLoading(false);
   }, []);
 
@@ -55,7 +57,7 @@ export default function AddressesScreen() {
 
   const handleSave = async () => {
     if (!form.label.trim() || !form.name.trim() || !form.address.trim()) {
-      Alert.alert('Required', 'Label, name, and address are required.');
+      Alert.alert(t('addresses.required'), t('addresses.requiredFields'));
       return;
     }
     setSaving(true);
@@ -69,19 +71,19 @@ export default function AddressesScreen() {
       }
       setModalVisible(false);
     } catch (err: unknown) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Failed');
+      Alert.alert(t('common.error'), err instanceof Error ? err.message : t('common.error'));
     }
     setSaving(false);
   };
 
   const handleDelete = async (id: string) => {
-    Alert.alert('Delete', 'Delete this address?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
+    Alert.alert(t('addresses.deleteTitle'), t('addresses.deleteConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: async () => {
         try {
           await deleteAddress(id);
           setAddresses(prev => prev.filter(a => a.id !== id));
-    } catch { Alert.alert('Error', 'Failed to delete address.'); }
+    } catch { Alert.alert(t('common.error'), t('addresses.deleteFailed')); }
       }},
     ]);
   };
@@ -92,7 +94,7 @@ export default function AddressesScreen() {
         <TouchableOpacity onPress={() => nav.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <Text style={styles.title}>My Addresses</Text>
+        <Text style={styles.title}>{t('addresses.title')}</Text>
         <TouchableOpacity onPress={openAdd}>
           <MaterialCommunityIcons name="plus" size={22} color={COLORS.coral} />
         </TouchableOpacity>
@@ -125,9 +127,9 @@ export default function AddressesScreen() {
           !refreshing ? (
             <View style={styles.empty}>
               <MaterialCommunityIcons name="map-marker-outline" size={40} color={COLORS.text2} />
-              <Text style={styles.emptyText}>No addresses yet</Text>
+              <Text style={styles.emptyText}>{t('addresses.empty')}</Text>
               <TouchableOpacity onPress={openAdd}>
-                <Text style={styles.addLink}>Add your first address</Text>
+                <Text style={styles.addLink}>{t('addresses.addFirst')}</Text>
               </TouchableOpacity>
             </View>
           ) : null
@@ -138,18 +140,18 @@ export default function AddressesScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingId ? 'Edit Address' : 'Add Address'}</Text>
+              <Text style={styles.modalTitle}>{editingId ? t('addresses.editAddress') : t('addresses.addAddress')}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
-            <TextInput style={styles.input} placeholder="Label (Home, Work...)" placeholderTextColor={COLORS.text2} value={form.label} onChangeText={v => setForm(p => ({ ...p, label: v }))} />
-            <TextInput style={styles.input} placeholder="Full name" placeholderTextColor={COLORS.text2} value={form.name} onChangeText={v => setForm(p => ({ ...p, name: v }))} />
-            <TextInput style={styles.input} placeholder="Phone" placeholderTextColor={COLORS.text2} value={form.phone} onChangeText={v => setForm(p => ({ ...p, phone: v }))} keyboardType="phone-pad" />
-            <TextInput style={styles.input} placeholder="Address" placeholderTextColor={COLORS.text2} value={form.address} onChangeText={v => setForm(p => ({ ...p, address: v }))} />
-            <TextInput style={styles.input} placeholder="City" placeholderTextColor={COLORS.text2} value={form.city} onChangeText={v => setForm(p => ({ ...p, city: v }))} />
+            <TextInput style={styles.input} placeholder={t('addresses.label')} placeholderTextColor={COLORS.text2} value={form.label} onChangeText={v => setForm(p => ({ ...p, label: v }))} />
+            <TextInput style={styles.input} placeholder={t('addresses.fullName')} placeholderTextColor={COLORS.text2} value={form.name} onChangeText={v => setForm(p => ({ ...p, name: v }))} />
+            <TextInput style={styles.input} placeholder={t('addresses.phone')} placeholderTextColor={COLORS.text2} value={form.phone} onChangeText={v => setForm(p => ({ ...p, phone: v }))} keyboardType="phone-pad" />
+            <TextInput style={styles.input} placeholder={t('addresses.address')} placeholderTextColor={COLORS.text2} value={form.address} onChangeText={v => setForm(p => ({ ...p, address: v }))} />
+            <TextInput style={styles.input} placeholder={t('addresses.city')} placeholderTextColor={COLORS.text2} value={form.city} onChangeText={v => setForm(p => ({ ...p, city: v }))} />
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-              <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save Address'}</Text>
+              <Text style={styles.saveBtnText}>{saving ? t('addresses.saving') : t('addresses.saveAddress')}</Text>
             </TouchableOpacity>
           </View>
         </View>

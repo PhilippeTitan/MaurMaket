@@ -6,6 +6,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import { getProduct, updateProduct, deleteProduct, getCategories, uploadImage, getImageUrl } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -14,6 +15,7 @@ import type { Category, ProductImage } from '../types';
 type Props = NativeStackScreenProps<RootStackParamList, 'EditListing'>;
 
 export default function EditListingScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const { productId } = route.params;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -45,7 +47,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
         setExistingImages(p.images || []);
         setCategories(catRes.categories || []);
       } catch {
-        Alert.alert('Error', 'Could not load product');
+        Alert.alert(t('common.error'), t('editListing.loadError'));
         navigation.goBack();
       }
       setLoading(false);
@@ -55,7 +57,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
   const pickImage = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission', 'Please allow access to your photos.');
+      Alert.alert(t('editListing.permission'), t('editListing.allowPhotos'));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -69,7 +71,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
   const handleSave = async () => {
     if (!name || !price) {
-      Alert.alert('Missing info', 'Please fill in the product name and price.');
+      Alert.alert(t('editListing.missingInfo'), t('editListing.fillFields'));
       return;
     }
     setSaving(true);
@@ -89,28 +91,28 @@ export default function EditListingScreen({ route, navigation }: Props) {
       if (categoryId) data.categoryId = categoryId;
       if (imageUrl) data.images = [imageUrl];
       await updateProduct(productId, data);
-      Alert.alert('Saved', 'Product updated.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
+      Alert.alert(t('editListing.saved'), t('editListing.productUpdated'), [
+        { text: t('common.ok'), onPress: () => navigation.goBack() },
       ]);
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+            Alert.alert(t('common.error'), e.message);
     }
     setSaving(false);
   };
 
   const handleDelete = () => {
-    Alert.alert('Delete Product', 'This cannot be undone. Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('editListing.deleteTitle'), t('editListing.deleteConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete', style: 'destructive', onPress: async () => {
+        text: t('common.delete'), style: 'destructive', onPress: async () => {
           setDeleting(true);
           try {
             await deleteProduct(productId);
-            Alert.alert('Deleted', 'Product removed.', [
-              { text: 'OK', onPress: () => navigation.goBack() },
+            Alert.alert(t('editListing.deleted'), t('editListing.productRemoved'), [
+              { text: t('common.ok'), onPress: () => navigation.goBack() },
             ]);
           } catch (e: any) {
-            Alert.alert('Error', e.message);
+      Alert.alert(t('common.error'), e.message);
           }
           setDeleting(false);
         },
@@ -129,7 +131,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <Text style={styles.title}>Edit Listing</Text>
+        <Text style={styles.title}>{t('editListing.title')}</Text>
         <TouchableOpacity onPress={handleDelete} disabled={deleting}>
           <MaterialCommunityIcons name="delete-outline" size={20} color={COLORS.coral} />
         </TouchableOpacity>
@@ -147,15 +149,15 @@ export default function EditListingScreen({ route, navigation }: Props) {
         ) : (
           <>
             <MaterialCommunityIcons name="camera-plus" size={32} color={COLORS.text2} />
-            <Text style={styles.imageHint}>Tap to change photo</Text>
+            <Text style={styles.imageHint}>{t('editListing.changePhoto')}</Text>
           </>
         )}
       </TouchableOpacity>
 
-      <TextInput style={styles.input} placeholder="Product name" placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
-      <TextInput style={[styles.input, styles.textArea]} placeholder="Description" placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
-      <TextInput style={styles.input} placeholder="Price (Rs)" placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" />
-      <TextInput style={styles.input} placeholder="Quantity" placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" />
+      <TextInput style={styles.input} placeholder={t('editListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
+      <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
+      <TextInput style={styles.input} placeholder={t('editListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" />
+      <TextInput style={styles.input} placeholder={t('editListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" />
 
       <TouchableOpacity
         style={styles.toggleRow}
@@ -166,10 +168,10 @@ export default function EditListingScreen({ route, navigation }: Props) {
           size={20}
           color={isAvailable ? COLORS.green : COLORS.text2}
         />
-        <Text style={styles.toggleText}>Available for sale</Text>
+        <Text style={styles.toggleText}>{t('editListing.available')}</Text>
       </TouchableOpacity>
 
-      <Text style={styles.sectionLabel}>Category</Text>
+      <Text style={styles.sectionLabel}>{t('editListing.category')}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
         {categories.map(cat => (
           <TouchableOpacity
@@ -190,7 +192,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
         disabled={saving}
       >
         {saving ? <ActivityIndicator color={COLORS.white} /> : (
-          <Text style={styles.saveBtnText}>Save Changes</Text>
+          <Text style={styles.saveBtnText}>{t('editListing.saveChanges')}</Text>
         )}
       </TouchableOpacity>
 
@@ -200,7 +202,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
         disabled={deleting}
       >
         {deleting ? <ActivityIndicator color={COLORS.coral} /> : (
-          <Text style={styles.deleteBtnText}>Delete Product</Text>
+          <Text style={styles.deleteBtnText}>{t('editListing.deleteProduct')}</Text>
         )}
       </TouchableOpacity>
     </ScrollView>

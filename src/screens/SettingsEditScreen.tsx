@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../theme';
 import { store } from '../store';
 import { updateProfile, changePassword, updateSellerProfile } from '../api';
+import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -31,6 +32,7 @@ const FIELD_ICONS: Record<string, string> = {
 };
 
 export default function SettingsEditScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const { field, title } = route.params;
   const user = store.user;
   const [loading, setLoading] = useState(false);
@@ -51,11 +53,11 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
 
   const handleSave = async () => {
     if (!value.trim() && field !== 'bio') {
-      Alert.alert('Required', 'This field cannot be empty.');
+      Alert.alert(t('settingsEdit.required'), t('settingsEdit.cannotBeEmpty'));
       return;
     }
     if (field === 'password' && (!currentPassword || !value)) {
-      Alert.alert('Required', 'Please fill in both password fields.');
+      Alert.alert(t('settingsEdit.required'), t('settingsEdit.bothFieldsRequired'));
       return;
     }
 
@@ -81,11 +83,11 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
           break;
         }
       }
-      Alert.alert('Saved', `${title} updated.`, [
+      Alert.alert(t('common.saved'), t('settingsEdit.updated', { field: title }), [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (err: unknown) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Failed');
+      Alert.alert(t('common.error'), err instanceof Error ? err.message : 'Failed');
     }
     setLoading(false);
   };
@@ -102,7 +104,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
           {loading ? (
             <ActivityIndicator size="small" color={COLORS.coral} />
           ) : (
-            <Text style={styles.saveTopBtn}>Save</Text>
+            <Text style={styles.saveTopBtn}>{t('settingsEdit.save')}</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -137,7 +139,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
               style={styles.fieldInput}
               value={currentPassword}
               onChangeText={setCurrentPassword}
-              placeholder="Current password"
+              placeholder={t('settingsEdit.currentPasswordPlaceholder')}
               placeholderTextColor={COLORS.text2}
               secureTextEntry
             />
