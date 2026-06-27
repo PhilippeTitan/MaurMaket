@@ -11,7 +11,6 @@
     "ios": "expo start --ios",
     "server": "node server.js",
     "dev": "node server.js",
-    "build": "expo export",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
