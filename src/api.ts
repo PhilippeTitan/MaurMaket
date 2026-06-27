@@ -17,11 +17,11 @@ const getWebUploadBase = () => {
 
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
-  : 'https://maurmaket.onrender.com/api';
+  : 'https://maurmaket-658c.onbelmo.uk/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
-  : 'https://maurmaket.onrender.com';
+  : 'https://maurmaket-658c.onbelmo.uk';
 
 async function request<T = Record<string, unknown>>(
   path: string,
