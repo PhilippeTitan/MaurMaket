@@ -2345,7 +2345,9 @@ app.get('*', (_req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-const isMain = typeof import.meta !== 'undefined' && import.meta.url && process.argv[1] === fileURLToPath(import.meta.url);
+const __execPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+const __thisFile = fileURLToPath(import.meta.url);
+const isMain = __execPath === __thisFile || __execPath === path.resolve(__thisFile);
 if (isMain) {
   runMigrations().then(() => {
     app.listen(PORT, () => {
