@@ -1,5 +1,7 @@
 # MaurMaket — Session Context (Compaction Save)
 ## Date: June 27, 2026
+## Session ID: ses_105795b44ffe01P0vMPwpibCJP
+## Resume command: `opencode -s ses_105795b44ffe01P0vMPwpibCJP`
 
 ---
 
