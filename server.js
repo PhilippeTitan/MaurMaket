@@ -268,7 +268,15 @@ const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, path.join(__dirname, 'uploads')),
   filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`),
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({
+  storage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Only JPEG, PNG, GIF, and WebP images are allowed'));
+  },
+});
 
 // Event logging helper
 async function logOrderEvent(orderId, eventType, actorId, oldValue, newValue, note, db) {
@@ -1455,7 +1463,7 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
         body: JSON.stringify({
           amount: parseFloat(order.total_amount),
           referenceId: orderId,
-          returnUrl: `${req.protocol}://${req.get('host')}/payment/return?order=${orderId}`,
+          returnUrl: `https://${req.get('host')}/payment/return?order=${orderId}`,
         }),
       }
     );
@@ -1935,7 +1943,7 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
         body: JSON.stringify({
           amount: parseFloat(order.total_amount),
           referenceId: orderId,
-          returnUrl: returnUrl || `${req.protocol}://${req.get('host')}/payment/return`,
+          returnUrl: returnUrl || `https://${req.get('host')}/payment/return`,
         }),
       }
     );
@@ -2306,10 +2314,17 @@ import fs from 'fs';
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-app.post('/api/upload', authRequired, upload.single('image'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  const url = `/uploads/${req.file.filename}`;
-  res.json({ url });
+app.post('/api/upload', authRequired, (req, res, next) => {
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'Image too large. Maximum size is 8MB.' });
+      if (err.code === 'LIMIT_UNEXPECTED_FILE') return res.status(400).json({ error: 'Unexpected field name. Use "image" as the field name.' });
+      return res.status(400).json({ error: err.message || 'Upload failed' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const url = `/uploads/${req.file.filename}`;
+    res.json({ url });
+  });
 });
 
 // ───── Health check ─────
