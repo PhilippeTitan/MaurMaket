@@ -190,12 +190,8 @@ export default function ExploreScreen({ navigation }: Props) {
       <View style={styles.fixedHeader}>
         <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
           <Text style={styles.logo}>Maur<Text style={styles.logoAccent}>Maket</Text></Text>
-          <TouchableOpacity style={styles.catBtn} onPress={() => setCatModal(true)}>
-            <MaterialCommunityIcons
-              name="filter-variant"
-              size={18}
-              color={selectedCat ? COLORS.coral : COLORS.text}
-            />
+          <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
+            <MaterialCommunityIcons name="tune-variant" size={18} color={COLORS.text} />
           </TouchableOpacity>
         </View>
 
@@ -219,9 +215,6 @@ export default function ExploreScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.filterBar}>
-          <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
-            <MaterialCommunityIcons name="tune-variant" size={18} color={COLORS.text} />
-          </TouchableOpacity>
           {(sortBy !== 'newest' || minPrice || maxPrice) && (
             <TouchableOpacity
               style={styles.clearFilterBtn}
