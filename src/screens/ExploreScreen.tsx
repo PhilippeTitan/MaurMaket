@@ -59,6 +59,7 @@ export default function ExploreScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [catModal, setCatModal] = useState(false);
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const mountedRef = useRef(true);
   const categoryListRef = useRef<FlatList<CategoryFilter>>(null);
   const [sortBy, setSortBy] = useState('newest');
@@ -83,6 +84,7 @@ export default function ExploreScreen({ navigation }: Props) {
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setImageSizes({});
+    setFailedImages(new Set());
     try {
       const params: Record<string, string> = { limit: '50' };
       if (selectedCat) params.category = selectedCat;
@@ -142,6 +144,7 @@ export default function ExploreScreen({ navigation }: Props) {
   const renderCard = (item: Product) => {
     const imgUrl = getItemImageUrl(item);
     const cardH = getCardHeight(item);
+    const imgFailed = failedImages.has(item.id);
     return (
       <TouchableOpacity
         key={item.id}
@@ -150,8 +153,13 @@ export default function ExploreScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
       >
         <View style={[styles.cardImgWrap, { height: cardH }]}>
-          {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" />
+          {imgUrl && !imgFailed ? (
+            <Image
+              source={{ uri: imgUrl }}
+              style={styles.cardImg}
+              resizeMode="cover"
+              onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+            />
           ) : (
             <View style={styles.cardPlaceholder}>
               <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />

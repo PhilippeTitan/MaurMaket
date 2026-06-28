@@ -201,11 +201,6 @@ export default function MeScreen() {
               <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
             </View>
           </View>
-          {isOwnProduct && (
-            <View style={styles.editBadge}>
-              <MaterialCommunityIcons name="pencil" size={10} color={COLORS.white} />
-            </View>
-          )}
         </View>
       </TouchableOpacity>
     );
