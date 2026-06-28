@@ -14,7 +14,7 @@ const storage = {
   async setItem(key: string, value: string): Promise<void> {
     if (Platform.OS === 'web') { localStorage.setItem(key, value); return; }
     const SecureStore = require('expo-secure-store');
-    return SecureStore.setItemAsync(key);
+    return SecureStore.setItemAsync(key, value);
   },
 };
 
@@ -24,6 +24,8 @@ const translations: Record<Language, Record<string, string>> = {
     'feed.cart': '+ Cart',
     'feed.buyNow': 'Buy Now',
     'feed.soldOut': 'Sold out',
+    'feed.oneLeft': '1 left',
+    'feed.liked': 'Liked',
     'feed.available': 'Available',
     'feed.noProducts': 'No products yet',
     'feed.checkBack': 'Check back soon for new listings',
@@ -40,6 +42,7 @@ const translations: Record<Language, Record<string, string>> = {
     'explore.sortNewest': 'Newest',
     'explore.sortPriceLow': 'Price: Low to High',
     'explore.sortPriceHigh': 'Price: High to Low',
+    'explore.sortOldest': 'Oldest',
     'explore.sortPopular': 'Most Popular',
     'explore.sellers': 'sellers',
     'explore.noProducts': 'No products found',
@@ -172,6 +175,7 @@ const translations: Record<Language, Record<string, string>> = {
     'productDetail.yourRating': 'Your rating',
     'productDetail.submitReview': 'Submit Review',
     'productDetail.reviewSubmitted': 'Review submitted!',
+    'productDetail.makeOffer': 'Make Offer',
     'productDetail.outOfStock': 'Out of stock',
 
     'me.myOrders': 'My Orders',
@@ -191,6 +195,10 @@ const translations: Record<Language, Record<string, string>> = {
     'me.avgRating': 'Avg Rating',
     'me.topProducts': 'Top Products',
     'me.reviews': 'Reviews',
+    'me.toPay': 'To Pay',
+    'me.toShip': 'To Ship',
+    'me.toReceive': 'To Receive',
+    'me.toReview': 'To Review',
     'me.followers': 'Followers',
     'me.following': 'Following',
     'me.myListings': 'My Listings',
@@ -385,6 +393,8 @@ const translations: Record<Language, Record<string, string>> = {
     'storefront.opening': 'Opening...',
     'storefront.noProducts': 'No products yet',
     'storefront.noProductYet': 'This seller needs a listing before you can start a product chat.',
+    'storefront.reviews': 'Reviews',
+    'storefront.noReviews': 'No reviews yet',
     'storefront.followUnavailable': 'Could not update this seller right now.',
     'storefront.store': 'Store',
 
@@ -458,6 +468,8 @@ const translations: Record<Language, Record<string, string>> = {
     'feed.cart': '+ Panyen',
     'feed.buyNow': 'Achte kounye a',
     'feed.soldOut': 'Vann',
+    'feed.oneLeft': '1 rete',
+    'feed.liked': 'Renmen',
     'feed.available': 'Disponib',
     'feed.noProducts': 'Pa gen pwodwi ankò',
     'feed.checkBack': 'Tounen biento pou nouvo lis',
@@ -474,6 +486,7 @@ const translations: Record<Language, Record<string, string>> = {
     'explore.sortNewest': 'Pi resan',
     'explore.sortPriceLow': 'Pri: Pi ba a pi wo',
     'explore.sortPriceHigh': 'Pri: Pi wo a pi ba',
+    'explore.sortOldest': 'Pi ansyen',
     'explore.sortPopular': 'Pi popilè',
     'explore.sellers': 'vandè',
     'explore.noProducts': 'Pa gen pwodwi',
@@ -606,6 +619,7 @@ const translations: Record<Language, Record<string, string>> = {
     'productDetail.yourRating': 'Nòt ou',
     'productDetail.submitReview': 'Voye Revi',
     'productDetail.reviewSubmitted': 'Revi voye!',
+    'productDetail.makeOffer': 'Fè Yon Òf',
     'productDetail.outOfStock': 'Pa gen nan stock',
 
     'me.myOrders': 'Kòmand Mwen',
@@ -625,6 +639,10 @@ const translations: Record<Language, Record<string, string>> = {
     'me.avgRating': 'Mwayèn Nòt',
     'me.topProducts': 'Pi Bon Pwodwi',
     'me.reviews': 'Revi',
+    'me.toPay': 'Peye',
+    'me.toShip': 'An Transpò',
+    'me.toReceive': 'Resevwa',
+    'me.toReview': 'Evalye',
     'me.followers': 'Abone',
     'me.following': 'Ap suiv',
     'me.myListings': 'Lis Mwen',
@@ -819,6 +837,8 @@ const translations: Record<Language, Record<string, string>> = {
     'storefront.opening': 'Ap ouvè...',
     'storefront.noProducts': 'Pa gen pwodwi ankò',
     'storefront.noProductYet': 'Vandè sa a bezwen yon lis anvan ou ka kòmanse chat pwodwi.',
+    'storefront.reviews': 'Revi',
+    'storefront.noReviews': 'Pa gen revi ankò',
     'storefront.followUnavailable': 'Pa kapab mete ajou vandè sa a kounye a.',
     'storefront.store': 'Boutik',
 
@@ -892,6 +912,8 @@ const translations: Record<Language, Record<string, string>> = {
     'feed.cart': '+ Panier',
     'feed.buyNow': 'Acheter',
     'feed.soldOut': 'Épuisé',
+    'feed.oneLeft': '1 restant',
+    'feed.liked': 'Aimé',
     'feed.available': 'Disponible',
     'feed.noProducts': 'Aucun produit',
     'feed.checkBack': 'Revenez bientôt pour de nouvelles annonces',
@@ -908,6 +930,7 @@ const translations: Record<Language, Record<string, string>> = {
     'explore.sortNewest': 'Plus récent',
     'explore.sortPriceLow': 'Prix: Croissant',
     'explore.sortPriceHigh': 'Prix: Décroissant',
+    'explore.sortOldest': 'Plus ancien',
     'explore.sortPopular': 'Plus populaire',
     'explore.sellers': 'vendeurs',
     'explore.noProducts': 'Aucun produit trouvé',
@@ -1040,6 +1063,7 @@ const translations: Record<Language, Record<string, string>> = {
     'productDetail.yourRating': 'Votre note',
     'productDetail.submitReview': 'Soumettre l\'avis',
     'productDetail.reviewSubmitted': 'Avis soumis!',
+    'productDetail.makeOffer': 'Faire une offre',
     'productDetail.outOfStock': 'Rupture de stock',
 
     'me.myOrders': 'Mes commandes',
@@ -1059,6 +1083,10 @@ const translations: Record<Language, Record<string, string>> = {
     'me.avgRating': 'Note moyenne',
     'me.topProducts': 'Produits phares',
     'me.reviews': 'Avis',
+    'me.toPay': 'À payer',
+    'me.toShip': 'À expédier',
+    'me.toReceive': 'À recevoir',
+    'me.toReview': 'À évaluer',
     'me.followers': 'Abonnés',
     'me.following': 'Abonnements',
     'me.myListings': 'Mes annonces',
@@ -1253,6 +1281,8 @@ const translations: Record<Language, Record<string, string>> = {
     'storefront.opening': 'Ouverture...',
     'storefront.noProducts': 'Aucun produit',
     'storefront.noProductYet': 'Ce vendeur a besoin d\'une annonce avant de pouvoir démarrer un chat produit.',
+    'storefront.reviews': 'Avis',
+    'storefront.noReviews': 'Aucun avis',
     'storefront.followUnavailable': 'Impossible de mettre à jour ce vendeur.',
     'storefront.store': 'Boutique',
 
@@ -1364,7 +1394,7 @@ export function useTranslation() {
     return i18n.onChange(() => setTick(t => t + 1));
   }, []);
 
-  const t = useCallback((key: string, params?: Record<string, string | number>) => i18n.t(key, params), [currentLang]);
+  const t = useCallback((key: string, params?: Record<string, string | number>) => i18n.t(key, params), []);
 
   return { t, language: i18n.language };
 }

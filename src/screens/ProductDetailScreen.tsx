@@ -462,7 +462,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
       </ScrollView>
 
       {/* ── Sticky bottom CTA ── */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>
         {isOwnProduct ? (
           <TouchableOpacity
             style={styles.editListingBtn}
@@ -479,7 +479,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               disabled={product.stock <= 0}
             >
               <MaterialCommunityIcons name="tag-outline" size={17} color={COLORS.white} />
-              <Text style={styles.offerBtnText}>Make Offer</Text>
+              <Text style={styles.offerBtnText}>{t('productDetail.makeOffer')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.addBtn, product.stock <= 0 && styles.addBtnDisabled]}
@@ -666,7 +666,6 @@ const styles = StyleSheet.create({
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: 12, paddingTop: 8,
-    paddingBottom: SPACING.xxl + 12,
     backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border,
   },
   addBtn: {

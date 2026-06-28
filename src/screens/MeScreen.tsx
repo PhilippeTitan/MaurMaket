@@ -393,10 +393,10 @@ export default function MeScreen() {
       {/* Order Status Bar */}
       {hasOrders && (
         <View style={styles.orderBar}>
-          {renderOrderStatusCard(t('me.myOrders'), toPay, 'credit-card-outline')}
-          {renderOrderStatusCard(t('me.totalOrders'), toShip, 'truck-delivery-outline')}
-          {renderOrderStatusCard(t('me.wishlist'), toReceive, 'package-variant-closed')}
-          {renderOrderStatusCard(t('me.reviews'), toReview, 'star-outline')}
+          {renderOrderStatusCard(t('me.toPay'), toPay, 'credit-card-outline')}
+          {renderOrderStatusCard(t('me.toShip'), toShip, 'truck-delivery-outline')}
+          {renderOrderStatusCard(t('me.toReceive'), toReceive, 'package-variant-closed')}
+          {renderOrderStatusCard(t('me.toReview'), toReview, 'star-outline')}
         </View>
       )}
 

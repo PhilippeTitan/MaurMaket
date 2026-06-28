@@ -58,7 +58,7 @@ export default function SellerOnboardingScreen() {
     setPickLoading(false);
   };
 
-  const handleComplete = async () => {
+  const handleComplete = async (navigateBack = true) => {
     if (!chosenTier) return;
     setLoading(true);
     try {
@@ -71,7 +71,7 @@ export default function SellerOnboardingScreen() {
       if (res.user && res.token) {
         await store.setUser(res.user, res.token);
       }
-      nav.goBack();
+      if (navigateBack) nav.goBack();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
       Alert.alert(t('common.error'), msg);
@@ -267,7 +267,7 @@ export default function SellerOnboardingScreen() {
             <TouchableOpacity
               style={[styles.primaryBtn, { flexDirection: 'row', justifyContent: 'center', gap: 8 }]}
               onPress={async () => {
-                await handleComplete();
+                await handleComplete(false);
                 nav.navigate('AddListing');
               }}
             >

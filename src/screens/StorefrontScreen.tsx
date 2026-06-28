@@ -70,14 +70,10 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const handleMessage = async () => {
     if (!store.user) return;
     if (messageLoading) return;
-    const productContext = products[0];
-    if (!productContext) {
-      Alert.alert(t('storefront.noProducts'), t('storefront.noProductYet'));
-      return;
-    }
     setMessageLoading(true);
     try {
-      const res = await createConversation({ sellerId, productId: productContext.id }) as { conversationId: string };
+      const productContext = products[0];
+      const res = await createConversation({ sellerId, productId: productContext?.id }) as { conversationId: string };
       navigation.navigate('Chat', {
         conversationId: res.conversationId,
         otherUserName: getDisplayName(seller) || 'Seller',
@@ -191,6 +187,38 @@ export default function StorefrontScreen({ route, navigation }: Props) {
             </View>
             <Text style={styles.emptyText}>{t('storefront.noProducts')}</Text>
           </View>
+        }
+        ListFooterComponent={
+          reviews.length > 0 ? (
+            <View style={{ marginTop: 12 }}>
+              <Text style={styles.sectionTitle}>{t('storefront.reviews')}</Text>
+              {reviews.map(rev => (
+                <View key={rev.id} style={[styles.card, { width: '100%', padding: 12, marginBottom: 8 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <View style={[styles.avatar, { width: 28, height: 28, borderRadius: 14 }]}>
+                      <Text style={[styles.avatarText, { fontSize: 12 }]}>
+                        {(rev.reviewer?.full_name || 'A').charAt(0)}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.text, flex: 1 }} numberOfLines={1}>
+                      {rev.reviewer?.full_name || 'Anonymous'}
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 2 }}>
+                      {[1, 2, 3, 4, 5].map(s => (
+                        <MaterialCommunityIcons
+                          key={s}
+                          name={s <= rev.rating ? 'star' : 'star-outline'}
+                          size={14}
+                          color={s <= rev.rating ? COLORS.yellow : COLORS.text2}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                  {rev.comment && <Text style={{ fontSize: 13, color: COLORS.text2 }}>{rev.comment}</Text>}
+                </View>
+              ))}
+            </View>
+          ) : null
         }
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchSellerData(); setRefreshing(false); }} tintColor={COLORS.coral} />}
       />

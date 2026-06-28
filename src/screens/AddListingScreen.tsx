@@ -107,8 +107,8 @@ export default function AddListingScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
+        <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
+          <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.title}>{t('addListing.title')}</Text>
       </View>
@@ -127,7 +127,7 @@ export default function AddListingScreen() {
           </Text>
           <TouchableOpacity
             style={styles.upgradeBtn}
-            onPress={() => { nav.goBack(); nav.navigate('SellerOnboarding'); }}
+            onPress={() => { nav.navigate('SellerOnboarding'); }}
           >
             <MaterialCommunityIcons name="shield-check-outline" size={18} color={COLORS.white} />
             <Text style={styles.upgradeBtnText}>{t('addListing.upgradeToVerified')}</Text>
@@ -197,15 +197,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 40 },
   topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  backBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
   imagePicker: {
     margin: SPACING.md, height: 160, borderRadius: 12, backgroundColor: COLORS.surface,
     borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed',
     alignItems: 'center', justifyContent: 'center', gap: 8,
+    overflow: 'hidden',
   },
   imagePlaceholder: { fontSize: 14, color: COLORS.text },
   imageHint: { fontSize: 12, color: COLORS.text2 },
-  imagePreview: { width: '100%', height: '100%', borderRadius: 12 },
+  imagePreview: { width: '100%', height: '100%' },
   input: {
     marginHorizontal: SPACING.md, backgroundColor: COLORS.surface, borderWidth: 1,
     borderColor: COLORS.border, borderRadius: 10, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,

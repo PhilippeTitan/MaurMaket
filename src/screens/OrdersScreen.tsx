@@ -169,7 +169,7 @@ export default function OrdersScreen({ navigation }: Props) {
               </View>
               <Text style={styles.emptyText}>{t('orders.noOrders')}</Text>
               <Text style={styles.emptyHint}>
-                {tab === 'buying' ? t('orders.whenBuyersOrder') : t('orders.whenBuyersOrder')}
+                {tab === 'buying' ? t('orders.whenBuyersOrder') : t('orders.noSellingOrders')}
               </Text>
             </View>
           }

@@ -193,6 +193,22 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         </View>
       </View>
 
+      {/* ── Order Items ── */}
+      {order.items && order.items.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{t('orderDetail.items')}</Text>
+          {order.items.map((item: any, idx: number) => (
+            <View key={item.id || idx} style={[styles.eventItem, { borderBottomColor: COLORS.border }]}>
+              <Text style={styles.eventType}>{item.product_name || `Product #${item.product_id?.slice(0, 8)}`}</Text>
+              <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 4 }}>
+                <Text style={styles.label}>x{item.quantity}</Text>
+                <Text style={[styles.value, { color: COLORS.coral }]}>Rs {Number(item.price).toLocaleString()}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
       {order.meetup_address && (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>{t('orderDetail.meetup')} {t('orderDetail.deliveryMethod')}</Text>

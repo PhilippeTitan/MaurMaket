@@ -15,15 +15,88 @@ const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const app = express();
 const PORT = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'maurmaket_dev_secret_change_in_production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is required');
+  process.exit(1);
+}
 const BCRYPT_ROUNDS = 10;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function runMigrations() {
   const c = await pool.connect();
   try {
+    // Base tables if they don't exist yet
     await c.query(`
-      CREATE TABLE IF NOT EXISTS seller_balances (
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        full_name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        phone TEXT,
+        role TEXT DEFAULT 'buyer',
+        avatar_url TEXT,
+        bio TEXT,
+        store_name TEXT,
+        store_logo_url TEXT,
+        seller_tier VARCHAR(20) DEFAULT 'none',
+        id_document_url TEXT,
+        id_verified BOOLEAN DEFAULT false,
+        id_submitted_at TIMESTAMP,
+        id_verified_at TIMESTAMP,
+        use_store_identity BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS categories (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name TEXT NOT NULL,
+        display_order INTEGER DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS products (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        seller_id UUID REFERENCES users(id) NOT NULL,
+        category_id UUID REFERENCES categories(id),
+        name TEXT NOT NULL,
+        description TEXT,
+        price DECIMAL(10,2) NOT NULL,
+        stock INTEGER DEFAULT 0,
+        is_available BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS product_images (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        product_id UUID REFERENCES products(id) NOT NULL,
+        image_url TEXT NOT NULL,
+        is_primary BOOLEAN DEFAULT false,
+        display_order INTEGER DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        buyer_id UUID REFERENCES users(id) NOT NULL,
+        total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        status TEXT DEFAULT 'pending',
+        moncash_reference TEXT,
+        delivery_method VARCHAR(20) DEFAULT 'meetup',
+        delivery_name TEXT, delivery_phone TEXT, delivery_address TEXT, delivery_city TEXT, delivery_note TEXT,
+        meetup_lat DECIMAL(10,7), meetup_lng DECIMAL(10,7), meetup_address TEXT, meetup_note TEXT,
+        meetup_confirmed BOOLEAN DEFAULT false, meetup_proposed_by UUID REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) NOT NULL,
+        product_id UUID REFERENCES products(id) NOT NULL,
+        seller_id UUID REFERENCES users(id) NOT NULL,
+        quantity INTEGER NOT NULL,
+        price DECIMAL(10,2) NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS processed_events (
+        id TEXT PRIMARY KEY,
+        processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
         seller_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         balance DECIMAL(10,2) NOT NULL DEFAULT 0,
         total_earned DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -272,9 +345,13 @@ const upload = multer({
   storage,
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (allowed.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Only JPEG, PNG, GIF, and WebP images are allowed'));
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!allowedMimes.includes(file.mimetype) || !allowedExts.includes(ext)) {
+      return cb(new Error('Only JPEG, PNG, GIF, and WebP images are allowed'));
+    }
+    cb(null, true);
   },
 });
 
@@ -1423,6 +1500,7 @@ app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (order.status === 'completed') return res.status(400).json({ error: 'Order already completed' });
     if (order.status === 'cancelled') return res.status(400).json({ error: 'Order was cancelled' });
+    if (order.status !== 'delivered') return res.status(400).json({ error: 'Order must be delivered before completing' });
     await pool.query(
       `UPDATE orders SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [req.params.id]
@@ -1973,28 +2051,42 @@ app.post('/api/payments/webhook', async (req, res) => {
   const timestamp = req.headers['x-mcc-timestamp'];
   const webhookSecret = process.env.MCC_WEBHOOK_SECRET;
 
-  if (webhookSecret) {
-    if (!signature || !timestamp) {
-      return res.status(401).json({ error: 'Missing signature headers' });
-    }
-    const ts = parseInt(timestamp) * 1000;
-    const age = (Date.now() - ts) / 1000;
-    if (age > 300) {
-      return res.status(401).json({ error: 'Webhook timestamp expired' });
-    }
-    const expected = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-    if (expected !== signature) {
-      return res.status(401).json({ error: 'Invalid signature' });
-    }
+  if (!webhookSecret) {
+    return res.status(500).json({ error: 'Webhook not configured' });
+  }
+  if (!signature || !timestamp) {
+    return res.status(401).json({ error: 'Missing signature headers' });
+  }
+  const ts = parseInt(timestamp) * 1000;
+  const age = (Date.now() - ts) / 1000;
+  if (age > 300) {
+    return res.status(401).json({ error: 'Webhook timestamp expired' });
+  }
+  const expected = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+  if (expected !== signature) {
+    return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  const { event, reference } = req.body;
+  const { event, reference, id: eventId } = req.body;
   console.log('MonCash webhook:', JSON.stringify(req.body));
 
   if (!reference) return res.status(400).json({ error: 'reference required' });
 
+  // Idempotency — skip if this event was already processed
+  if (eventId) {
+    const already = await pool.query('SELECT 1 FROM processed_events WHERE id = $1', [eventId]);
+    if (already.rows.length > 0) {
+      return res.json({ received: true, idempotent: true });
+    }
+  }
+
   try {
     if (event === 'payment.completed') {
+      // Register event as processed (prevent double-credit on replay)
+      if (eventId) {
+        await pool.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+      }
+
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
@@ -2344,7 +2436,7 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-app.get('/api/debug', async (_req, res) => {
+app.get('/api/debug', authRequired, adminRequired, async (_req, res) => {
   try {
     const mccRes = await fetch(
       process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-balance',

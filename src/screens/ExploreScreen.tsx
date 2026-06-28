@@ -21,7 +21,7 @@ const SORT_OPTIONS: SortOption[] = [
   { label: 'explore.sortNewest', value: 'newest' },
   { label: 'explore.sortPriceLow', value: 'price_asc' },
   { label: 'explore.sortPriceHigh', value: 'price_desc' },
-  { label: 'Oldest', value: 'oldest' },
+  { label: 'explore.sortOldest', value: 'oldest' },
 ];
 
 const CAT_ICONS: Record<string, string> = {
@@ -312,7 +312,7 @@ export default function ExploreScreen({ navigation }: Props) {
               </View>
             </View>
           )}
-          contentContainerStyle={styles.gridContainer}
+          contentContainerStyle={[styles.gridContainer, { paddingBottom: insets.bottom + 80 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchProducts(); setRefreshing(false); }} tintColor={COLORS.coral} />}
         />
       )}
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   filterBtnActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
-  filterBtnText: { fontSize: 11, color: COLORS.text2, fontWeight: '500' },
+  filterBtnText: { fontSize: 11, color: COLORS.text2, fontWeight: '500', flexShrink: 1 },
   filterBtnTextActive: { color: COLORS.coral },
   clearFilterBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 2,
@@ -437,13 +437,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    maxWidth: '48%',
   },
   chipActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
-  chipText: { color: COLORS.text2, fontSize: 12, fontWeight: '500' },
+  chipText: { color: COLORS.text2, fontSize: 12, fontWeight: '500', flexShrink: 1 },
   chipTextActive: { color: COLORS.white, fontWeight: '700' },
 
   /* Pinterest grid */
-  gridContainer: { paddingBottom: 80 },
+  gridContainer: {},
   grid: {
     flexDirection: 'row',
     paddingHorizontal: SIDE_PAD,

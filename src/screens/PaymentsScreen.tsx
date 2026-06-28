@@ -113,7 +113,7 @@ export default function PaymentsScreen() {
           <Text style={styles.emptyHint}>{t('payments.upgradeHint')}</Text>
           <TouchableOpacity
             style={styles.upgradeBtn}
-            onPress={() => { nav.goBack(); nav.navigate('SellerOnboarding'); }}
+            onPress={() => { nav.navigate('SellerOnboarding'); }}
           >
             <Text style={styles.upgradeBtnText}>{t('addListing.upgradeToVerified')}</Text>
           </TouchableOpacity>

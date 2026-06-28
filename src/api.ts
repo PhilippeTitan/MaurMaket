@@ -303,11 +303,18 @@ export const uploadImage = async (uri: string): Promise<{ url: string }> => {
   const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
   const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
 
-  formData.append('image', {
-    uri,
-    name: filename,
-    type: mimeType,
-  } as unknown as Blob);
+  if (Platform.OS === 'web') {
+    const blobRes = await fetch(uri);
+    const blob = await blobRes.blob();
+    const file = new File([blob], filename, { type: mimeType });
+    formData.append('image', file);
+  } else {
+    formData.append('image', {
+      uri,
+      name: filename,
+      type: mimeType,
+    } as unknown as Blob);
+  }
 
   const res = await fetch(`${API_BASE}/upload`, {
     method: 'POST',

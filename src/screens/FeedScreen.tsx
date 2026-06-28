@@ -304,21 +304,27 @@ export default function FeedScreen() {
     const isOwnProduct = store.user?.id === item.seller_id;
     const wasJustAdded = addedProductIds.has(item.id);
     const wasJustShared = sharedProductIds.has(item.id);
-    const stockLabel = isSoldOut ? t('feed.soldOut') : item.stock === 1 ? '1 left' : `${item.stock} ${t('feed.available').toLowerCase()}`;
+    const stockLabel = isSoldOut ? t('feed.soldOut') : item.stock === 1 ? t('feed.oneLeft') : `${item.stock} ${t('feed.available').toLowerCase()}`;
 
     return (
       <View style={[styles.slide, { height: screenHeight }]}>
         {/* Full-screen image / background */}
         <View style={styles.mediaContainer}>
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.mediaImage} resizeMode="cover" />
+            <>
+              <Image source={{ uri: imgUrl }} style={styles.mediaBlur} blurRadius={22} />
+              <View style={styles.mediaOverlay} />
+              <View style={styles.mediaFrame}>
+                <Image source={{ uri: imgUrl }} style={styles.mediaImage} resizeMode="cover" />
+              </View>
+            </>
           ) : (
             <MaterialCommunityIcons name="image-off-outline" size={48} color={COLORS.text2} />
           )}
         </View>
 
         {/* Right-side action rail — absolute, thumb-reachable */}
-        <View style={[styles.actionRail, { bottom: screenHeight * 0.42 }]}>
+        <View style={[styles.actionRail, { bottom: screenHeight * 0.15 }]}>
           {!isOwnProduct && (
             <>
               <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item)}>
@@ -327,7 +333,7 @@ export default function FeedScreen() {
                   size={34}
                   color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
                 />
-                <Text style={styles.actionCount}>{wishlistedIds.has(item.id) ? 'Like' : ''}</Text>
+                <Text style={styles.actionCount}>{wishlistedIds.has(item.id) ? t('feed.liked') : ''}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenComments(item)}>
                 <MaterialCommunityIcons name="comment-outline" size={30} color={COLORS.white} />
@@ -353,7 +359,7 @@ export default function FeedScreen() {
         />
 
         {/* Bottom overlay — caption + actions, sits ON TOP of image */}
-        <View style={styles.bottomOverlay}>
+        <View style={[styles.bottomOverlay, { paddingBottom: Math.max(90, insets.bottom + 80) }]}>
           {/* Seller chip + follow */}
           <View style={styles.sellerRow}>
             <TouchableOpacity
@@ -671,12 +677,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  mediaImage: {
+  mediaBlur: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
+    width: '100%', height: '100%',
+  },
+  mediaOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  mediaFrame: {
+    width: '80%',
+    height: '75%',
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  mediaImage: {
     width: '100%',
     height: '100%',
   },
@@ -724,7 +742,6 @@ const styles = StyleSheet.create({
     paddingLeft: 14,
     paddingRight: 80,
     paddingTop: SPACING.md,
-    paddingBottom: 140,
     zIndex: 10,
   },
   sellerRow: {
@@ -774,6 +791,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.white,
     fontWeight: '700',
+    flexShrink: 1,
   },
   followBtnTextActive: {
     color: '#0B0F1A',
