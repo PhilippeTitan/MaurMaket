@@ -213,8 +213,12 @@ export default function MeScreen() {
         style={styles.orderCard}
         onPress={() => nav.navigate('Orders')}
       >
+        {count > 0 && (
+          <View style={[styles.orderBadge, { backgroundColor: cardColor }]}>
+            <Text style={styles.orderBadgeText}>{count}</Text>
+          </View>
+        )}
         <MaterialCommunityIcons name={iconName as any} size={22} color={cardColor} />
-        <Text style={[styles.orderNum, { color: cardColor }]}>{count}</Text>
         <Text style={styles.orderLabel}>{label}</Text>
       </TouchableOpacity>
     );
@@ -269,18 +273,6 @@ export default function MeScreen() {
 
         {/* Stats row */}
         <View style={styles.statsRow}>
-          {isSeller ? (
-            <TouchableOpacity
-              style={styles.stat}
-              onPress={() => user?.seller_tier === 'casual' ? nav.navigate('Settings') : undefined}
-              activeOpacity={user?.seller_tier === 'casual' ? 0.7 : 1}
-            >
-              <Text style={[styles.statNum, user?.seller_tier === 'casual' && { color: productCount >= 10 ? COLORS.coral : COLORS.text }]}>
-                {user?.seller_tier === 'casual' ? `${productCount}/10` : productCount}
-              </Text>
-              <Text style={styles.statLabel}>{t('me.listings')}</Text>
-            </TouchableOpacity>
-          ) : null}
           <View style={styles.stat}>
             <Text style={styles.statNum}>{followerCount}</Text>
             <Text style={styles.statLabel}>{t('me.followers')}</Text>
@@ -293,15 +285,6 @@ export default function MeScreen() {
             <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
             <Text style={styles.statLabel}>{isSeller ? 'Sales' : t('me.totalOrders')}</Text>
           </View>
-          {isSeller && rating > 0 ? (
-            <View style={styles.stat}>
-              <View style={styles.ratingRow}>
-                <MaterialCommunityIcons name="star" size={12} color={COLORS.yellow} />
-                <Text style={styles.statNum}>{rating.toFixed(1)}</Text>
-              </View>
-              <Text style={styles.statLabel}>{reviewCount} {t('me.reviews')}</Text>
-            </View>
-          ) : null}
         </View>
       </View>
 
@@ -569,8 +552,14 @@ const styles = StyleSheet.create({
   orderCard: {
     flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10,
     backgroundColor: COLORS.surface, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
+    position: 'relative',
   },
-  orderNum: { fontSize: 16, fontWeight: '800', lineHeight: 20 },
+  orderBadge: {
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center',
+  },
+  orderBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
   orderLabel: { fontSize: 10, color: COLORS.text2, fontWeight: '500', textAlign: 'center' },
 
   /* Tabs */
