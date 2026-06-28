@@ -170,7 +170,7 @@ export default function MeScreen() {
     const imgUrl = getImageUrl(img?.image_url);
     const isOwnProduct = isSeller && user?.id === item.seller_id;
     const size = imageSizes[item.id];
-    const cardH = size && size.w > 0 ? Math.max(100, Math.min(380, CARD_W * (size.h / size.w))) : CARD_W;
+    const cardH = size && size.w > 0 ? Math.round(CARD_W * size.h / size.w) : CARD_W;
     return (
       <TouchableOpacity
         key={item.id}

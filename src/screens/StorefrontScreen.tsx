@@ -177,7 +177,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           const img = item.images?.find(i => i.is_primary) || item.images?.[0];
           const imgUrl = getImageUrl(img?.image_url);
           const size = imageSizes[item.id];
-          const cardH = size && size.w > 0 ? Math.max(100, Math.min(380, CARD_W * (size.h / size.w))) : CARD_W;
+          const cardH = size && size.w > 0 ? Math.round(CARD_W * size.h / size.w) : CARD_W;
           return (
             <TouchableOpacity
               style={[styles.card, { height: cardH + 50 }]}
