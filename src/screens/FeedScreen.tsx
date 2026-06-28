@@ -718,7 +718,7 @@ const styles = StyleSheet.create({
     right: 12,
     alignItems: 'center',
     gap: 8,
-    zIndex: 10,
+    zIndex: 15,
   },
   actionBtn: {
     alignItems: 'center',
