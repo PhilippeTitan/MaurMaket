@@ -330,13 +330,13 @@ export default function FeedScreen() {
               <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item)}>
                 <MaterialCommunityIcons
                   name={wishlistedIds.has(item.id) ? 'heart' : 'heart-outline'}
-                  size={34}
+                  size={28}
                   color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
                 />
                 <Text style={styles.actionCount}>{wishlistedIds.has(item.id) ? t('feed.liked') : ''}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenComments(item)}>
-                <MaterialCommunityIcons name="comment-outline" size={30} color={COLORS.white} />
+                <MaterialCommunityIcons name="comment-outline" size={28} color={COLORS.white} />
                 {(item.review_count || 0) > 0 && (
                   <Text style={styles.actionCount}>{item.review_count}</Text>
                 )}
@@ -346,7 +346,7 @@ export default function FeedScreen() {
           <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(item)}>
             <MaterialCommunityIcons
               name={wasJustShared ? 'check' : 'share-variant'}
-              size={30}
+              size={28}
               color={wasJustShared ? COLORS.green : COLORS.white}
             />
           </TouchableOpacity>
@@ -704,19 +704,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 12,
     alignItems: 'center',
-    gap: 15,
+    gap: 8,
     zIndex: 10,
   },
   actionBtn: {
     alignItems: 'center',
-    width: 60,
-    height: 60,
+    width: 48,
+    height: 48,
     justifyContent: 'center',
-    gap: 3,
+    gap: 2,
   },
   actionCount: {
     color: COLORS.white,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     textShadowColor: 'rgba(0,0,0,0.75)',
     textShadowOffset: { width: 0, height: 1 },
