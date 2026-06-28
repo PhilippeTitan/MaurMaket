@@ -127,9 +127,9 @@ export default function MeScreen() {
       try { followerRes = await getFollowerCount(user?.id || '') as { count: number }; } catch { /* ignore */ }
       setFollowerCount(followerRes?.count || 0);
 
-      let followingRes: { sellers?: unknown[] } | null = null;
-      try { followingRes = await getFollowing() as { sellers?: unknown[] }; } catch { /* ignore */ }
-      setFollowingCount(followingRes?.sellers?.length || 0);
+      let followingRes: { following?: unknown[] } | null = null;
+      try { followingRes = await getFollowing() as { following?: unknown[] }; } catch { /* ignore */ }
+      setFollowingCount(followingRes?.following?.length || 0);
 
       let wishlistRes: { items: Product[] } | null = null;
       try { wishlistRes = await getWishlist() as { items: Product[] }; } catch { /* ignore */ }
