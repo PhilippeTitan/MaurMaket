@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../theme';
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -58,7 +59,7 @@ export default function NotificationsScreen({ navigation }: Props) {
     <View style={styles.container}>
       <View style={styles.topbar}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backBtn}>←</Text>
+          <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.title}>Notifications</Text>
         {notifications.some(n => !n.is_read) && (

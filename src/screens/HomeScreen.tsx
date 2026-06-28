@@ -3,6 +3,7 @@ import {
   View, Text, FlatList, Image, TouchableOpacity, StyleSheet, Dimensions, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { COLORS, SPACING } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getProducts } from '../api';
 import { getImageUrl } from '../api';
 import { store } from '../store';
@@ -15,6 +16,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - SPACING.lg * 3) / 2;
 
 export default function HomeScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -101,7 +103,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.topbar}>
+      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
         <Text style={styles.logo}>Maur<Text style={styles.logoAccent}>Maket</Text></Text>
         <TouchableOpacity onPress={() => navigation.navigate('Cart')}>
           <Text style={styles.cartIcon}>🛒{cartCount > 0 ? `(${cartCount})` : ''}</Text>
@@ -132,7 +134,7 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
   topbar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.md,
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
     backgroundColor: COLORS.bg, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   logo: { fontFamily: 'Syne', fontSize: 22, fontWeight: '800', color: COLORS.text },

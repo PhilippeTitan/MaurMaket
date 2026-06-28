@@ -63,6 +63,8 @@ export default function MeScreen() {
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const { width: SCREEN_W } = useWindowDimensions();
   const CARD_W = (SCREEN_W - SPACING.md * 2 - 6) / 2;
+  const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
+  const MIN_IMG_H = CARD_W * 0.6;
 
   const initials = getDisplayName(user).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
@@ -170,7 +172,7 @@ export default function MeScreen() {
     const imgUrl = getImageUrl(img?.image_url);
     const isOwnProduct = isSeller && user?.id === item.seller_id;
     const size = imageSizes[item.id];
-    const cardH = size && size.w > 0 ? Math.round(CARD_W * size.h / size.w) : CARD_W;
+    const cardH = size && size.w > 0 ? Math.max(MIN_IMG_H, Math.round(CARD_W * size.h / size.w)) : DEFAULT_IMG_H;
     return (
       <TouchableOpacity
         key={item.id}
@@ -183,7 +185,7 @@ export default function MeScreen() {
       >
         <View style={[styles.gridImage, { height: cardH }]}>
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.gridImg} resizeMode="contain" />
+            <Image source={{ uri: imgUrl }} style={styles.gridImg} resizeMode="cover" />
           ) : (
             <MaterialCommunityIcons name="image-off-outline" size={20} color={COLORS.text2} />
           )}

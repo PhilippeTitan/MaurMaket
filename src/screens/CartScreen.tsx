@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { store } from '../store';
 import { validatePromo, getImageUrl } from '../api';
 import { useTranslation } from '../i18n';
@@ -18,6 +19,7 @@ type SectionItem =
   | { type: 'item'; item: CartItem; key: string };
 
 export default function CartScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const [cart, setCart] = useState<CartItem[]>(store.cart);
   const [promoCode, setPromoCode] = useState('');
@@ -158,7 +160,7 @@ export default function CartScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.topbar}>
+      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
@@ -228,7 +230,7 @@ const styles = StyleSheet.create({
   cartBody: { flex: 1 },
   topbar: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.md,
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   title: { fontSize: 16, fontWeight: '700', color: COLORS.text },

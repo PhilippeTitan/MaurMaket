@@ -43,8 +43,9 @@ const COL_GAP = 6;
 const SIDE_PAD = 8;
 const CARD_W = (SCREEN_W - SIDE_PAD * 2 - COL_GAP) / NUM_COLS;
 const CARD_RADIUS = 10;
-const MIN_H = CARD_W * 0.7;
-const MAX_H = SCREEN_H * 0.42;
+const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
+const MIN_H = CARD_W * 0.6;
+const MAX_H = SCREEN_H * 0.52;
 const FOOTER_H = 40;
 
 export default function ExploreScreen({ navigation }: Props) {
@@ -126,7 +127,7 @@ export default function ExploreScreen({ navigation }: Props) {
       const ratio = size.h / size.w;
       return Math.max(MIN_H, Math.min(MAX_H, CARD_W * ratio));
     }
-    return CARD_W;
+    return DEFAULT_IMG_H;
   };
 
   const [leftCol, rightCol] = products.reduce<[Product[], Product[]]>(
@@ -149,14 +150,14 @@ export default function ExploreScreen({ navigation }: Props) {
       >
         <View style={[styles.cardImgWrap, { height: cardH }]}>
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="contain" />
+            <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" />
           ) : (
             <View style={styles.cardPlaceholder}>
               <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />
             </View>
           )}
-          <View style={styles.priceOverlay}>
-            <Text style={styles.priceText}>Rs {item.price.toLocaleString()}</Text>
+          <View style={styles.priceBadge}>
+            <Text style={styles.priceBadgeText}>Rs {item.price.toLocaleString()}</Text>
           </View>
         </View>
         <View style={styles.cardFooter}>
@@ -173,7 +174,6 @@ export default function ExploreScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* Fixed top: logo + search + chips */}
       <View style={styles.fixedHeader}>
         <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
           <Text style={styles.logo}>Maur<Text style={styles.logoAccent}>Maket</Text></Text>
@@ -205,7 +205,6 @@ export default function ExploreScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* Sort + Price filter bar */}
         <View style={styles.filterBar}>
           <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
             <MaterialCommunityIcons name="sort" size={14} color={COLORS.text2} />
@@ -287,7 +286,6 @@ export default function ExploreScreen({ navigation }: Props) {
         />
       </View>
 
-      {/* Pinterest masonry grid — variable height cards */}
       {loading ? (
         <ActivityIndicator size="small" color={COLORS.coral} style={{ marginTop: 40 }} />
       ) : products.length === 0 ? (
@@ -317,7 +315,6 @@ export default function ExploreScreen({ navigation }: Props) {
         />
       )}
 
-      {/* Category modal */}
       <Modal visible={catModal} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setCatModal(false)}>
           <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
@@ -349,7 +346,6 @@ export default function ExploreScreen({ navigation }: Props) {
         </Pressable>
       </Modal>
 
-      {/* Sort modal */}
       <Modal visible={sortModal} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>
           <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
@@ -443,7 +439,6 @@ const styles = StyleSheet.create({
   chipText: { color: COLORS.text2, fontSize: 12, fontWeight: '500', flexShrink: 1 },
   chipTextActive: { color: COLORS.white, fontWeight: '700' },
 
-  /* Pinterest grid */
   gridContainer: {},
   grid: {
     flexDirection: 'row',
@@ -456,7 +451,6 @@ const styles = StyleSheet.create({
     gap: COL_GAP,
   },
 
-  /* Card */
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: CARD_RADIUS,
@@ -474,13 +468,19 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  priceOverlay: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    paddingHorizontal: 6, paddingVertical: 4,
+  priceBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: COLORS.coral,
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
-  priceText: {
-    color: COLORS.white, fontSize: 11, fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.85)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
+  priceBadgeText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '700',
   },
   cardFooter: {
     backgroundColor: COLORS.surface,
@@ -489,7 +489,6 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 12, fontWeight: '600', color: COLORS.text, lineHeight: 16 },
   cardSeller: { fontSize: 10, color: COLORS.text2 },
 
-  /* Empty */
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
   emptyIcon: {
     width: 64, height: 64, borderRadius: 32,
@@ -497,7 +496,6 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: COLORS.text2, fontSize: 14, fontWeight: '500' },
 
-  /* Category modal */
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center', alignItems: 'center',

@@ -437,6 +437,63 @@ Commission is deducted at payment time in the webhook handler. `seller_balances`
 - `getImageUrl()`: resolves relative URLs via UPLOAD_BASE
 - `normalizeProduct()`: flattens seller data for consistent rendering
 
+## Strategic Context
+- **Real competition:** WhatsApp + Facebook Marketplace, NOT Vinted/Depop
+- **Primary churn risk:** Any friction (no multi-image, no order summary, no chat images) pushes users back to WhatsApp group commerce
+- **Key differentiators:** Negotiation dock (formalizes Haiti's haggling culture), MonCash integration, Haitian Creole support, feed-first browsing
+- **Trust gap:** Haiti's informal economy is ~48% of GDP — trust between strangers is built through visible reviews, verification signals, and professional-feeling UX
+- **Negotiation dock:** The sharpest weapon — formalizes something the market already does culturally. Image sharing in chat would seal the loop.
+
+## Design Principles
+- **Masonry grids:** Use `resizeMode="cover"` NOT `contain`. Container height must match image's native aspect ratio (via `Image.getSize`). Fallback to `DEFAULT_IMG_H = CARD_W * 1.25` (portrait placeholder) to prevent layout jump when async sizes resolve.
+- **Price overlays:** Use pill badges (coral on white bg) NOT text-shadow — shadow breaks on light product photos.
+- **Image zoom:** `contain` leaves letterbox bars and looks broken. `cover` + correct container ratio = perfect fill.
+- **Safe areas:** Always use `useSafeAreaInsets().top + SPACING.md` for top padding. Never hardcode `SPACING.xl + 40`.
+- **Consistent back buttons:** Use `<MaterialCommunityIcons name="arrow-left" />` NOT plain `←` text.
+
+## Known Gaps / Roadmap
+### Critical (Phase 1)
+1. **Multi-image listings** — API/types support `images[]` but AddListing + EditListing only upload one. #1 trust signal in C2C.
+2. **Order summary at checkout** — no item list visible before "Pay with MonCash". High abandonment risk for first-time buyers.
+3. **Masonry fix across all grids** — ExploreScreen (Claude file ready), MeScreen, StorefrontScreen need `cover` + `DEFAULT_IMG_H`.
+
+### High Priority (Phase 2)
+4. **Image sharing in chat** — prevents off-app WhatsApp exfiltration. Needs backend upload endpoint for chat attachments.
+5. **Wishlist thumbnails** — text-only list. Add 40x40 thumbnails and stock indicator.
+6. **Delivery estimate on orders** — buyers need "when should I expect this?" answered.
+7. **Duplicate conversation bug** — StorefrontScreen always creates new conversation instead of checking existing.
+
+### Low Priority (Phase 3)
+8. Hardcoded `paddingTop: SPACING.xl + 40` in HomeScreen, CartScreen, ChatScreen
+9. `←` text back buttons in NotificationsScreen, MessagesScreen
+10. ProfileScreen — imported in App.tsx but never registered in Stack.Navigator. Dead code.
+11. Seller analytics gated too aggressively — show teaser metrics to casual sellers with upgrade nudge
+
+## Session Compact — 2026-06-27 (Stress Test Audit + Fixes)
+
+### Backend Fixes Applied
+- Webhook idempotency via `processed_events` table (replay-safe)
+- JWT_SECRET required at startup (exit if missing)
+- Base table migrations (users, products, categories, orders, order_items, product_images)
+- Order complete requires `delivered` status (blocks payment bypass)
+- Upload: MIME + file extension whitelist
+- Webhook secret mandatory (fail closed)
+- `/api/debug` now authRequired + adminRequired
+
+### Commits
+- `b66b60f` — critical backend security (7 fixes)
+- `3abfe96` — TikTok action rail sizing + visual polish
+- `2a45833` — resizeMode contain on all images (later corrected — use cover instead)
+- `ed31f87` — masonry height clamps removed
+- `0a3e93f` — Pinterest-style dynamic card heights
+- `5c46e1b` — contain on feed + product detail
+
+### In-flight / Next Steps
+- `resizeMode="contain"` was a WRONG TURN — use `resizeMode="cover"` + dynamic heights per Claude
+- ExploreScreen full replacement from Claude at `C:\Users\drato\Downloads\ExploreScreen.tsx`
+- MeScreen + StorefrontScreen need same `cover` + `DEFAULT_IMG_H` pattern
+- ProfileScreen is imported in App.tsx but never added as `<Stack.Screen>` — dead code
+
 ## Key Observations
 1. Unified project: backend (server.js) + mobile app (Expo/React Native) in one repo
 2. Auth is real JWT, NOT base64url. `JWT_SECRET` env var is used.
@@ -447,3 +504,7 @@ Commission is deducted at payment time in the webhook handler. `seller_balances`
 7. Currency is Haitian Gourde (Rs)
 8. DO NOT commit .env with real credentials
 9. `MaurMaketMobile/` directory is empty/locked — safe to ignore or delete later
+10. ProfileScreen is imported but NEVER registered in Stack.Navigator — dead code
+11. `resizeMode="contain"` causes letterbox gaps — use `cover` + dynamic heights
+12. The app's real competition is WhatsApp + Facebook Marketplace, not Vinted/Depop
+13. Multi-image listings are the #1 missing trust signal in C2C commerce

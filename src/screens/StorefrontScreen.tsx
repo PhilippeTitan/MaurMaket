@@ -29,6 +29,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const { width: SCREEN_W } = useWindowDimensions();
   const CARD_W = (SCREEN_W - SPACING.sm * 2 - 10) / 2;
+  const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
+  const MIN_IMG_H = CARD_W * 0.6;
 
   const fetchSellerData = useCallback(async () => {
     try {
@@ -177,14 +179,14 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           const img = item.images?.find(i => i.is_primary) || item.images?.[0];
           const imgUrl = getImageUrl(img?.image_url);
           const size = imageSizes[item.id];
-          const cardH = size && size.w > 0 ? Math.round(CARD_W * size.h / size.w) : CARD_W;
+          const cardH = size && size.w > 0 ? Math.max(MIN_IMG_H, Math.round(CARD_W * size.h / size.w)) : DEFAULT_IMG_H;
           return (
             <TouchableOpacity
               style={[styles.card, { height: cardH + 50 }]}
               onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
             >
               <View style={[styles.cardImage, { height: cardH }]}>
-                {imgUrl ? <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="contain" /> : <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />}
+                {imgUrl ? <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" /> : <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />}
                 <View style={styles.priceBadge}>
                   <Text style={styles.priceText}>Rs {item.price.toLocaleString()}</Text>
                 </View>
