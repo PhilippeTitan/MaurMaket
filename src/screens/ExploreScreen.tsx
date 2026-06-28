@@ -156,17 +156,21 @@ export default function ExploreScreen({ navigation }: Props) {
               <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />
             </View>
           )}
-          <View style={styles.priceBadge}>
-            <Text style={styles.priceBadgeText}>Rs {item.price.toLocaleString()}</Text>
+          <View style={styles.cardOverlay}>
+            <View style={styles.cardOverlayTop}>
+              <View style={styles.priceBadge}>
+                <Text style={styles.priceBadgeText}>Rs {item.price.toLocaleString()}</Text>
+              </View>
+            </View>
+            <View style={styles.cardOverlayBottom}>
+              <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
+              {item.seller && (
+                <Text style={styles.cardSeller} numberOfLines={1}>
+                  {getDisplayName(item.seller)}
+                </Text>
+              )}
+            </View>
           </View>
-        </View>
-        <View style={styles.cardFooter}>
-          <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
-          {item.seller && (
-            <Text style={styles.cardSeller} numberOfLines={1}>
-              {getDisplayName(item.seller)}
-            </Text>
-          )}
         </View>
       </TouchableOpacity>
     );
@@ -467,10 +471,21 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
+  cardOverlay: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'space-between',
+    padding: 8,
+  },
+  cardOverlayTop: {
+    alignItems: 'flex-end',
+  },
+  cardOverlayBottom: {
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 8,
+    padding: 8,
+    gap: 2,
+  },
   priceBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
     backgroundColor: COLORS.coral,
     borderRadius: 20,
     paddingHorizontal: 8,
@@ -481,12 +496,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  cardFooter: {
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: 8, paddingVertical: 7, gap: 2,
-  },
-  cardName: { fontSize: 12, fontWeight: '600', color: COLORS.text, lineHeight: 16 },
-  cardSeller: { fontSize: 10, color: COLORS.text2 },
+  cardName: { fontSize: 12, fontWeight: '600', color: '#fff', lineHeight: 16 },
+  cardSeller: { fontSize: 10, color: 'rgba(255,255,255,0.7)' },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
   emptyIcon: {
