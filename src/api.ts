@@ -298,28 +298,36 @@ export const uploadImage = async (uri: string): Promise<{ url: string }> => {
     const SecureStore = require('expo-secure-store');
     token = await SecureStore.getItemAsync('mm_token');
   }
-  const formData = new FormData();
-  const filename = uri.split('/').pop() || 'photo.jpg';
-  const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
-  const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
 
   if (Platform.OS === 'web') {
+    const formData = new FormData();
+    const filename = uri.split('/').pop() || 'photo.jpg';
+    const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
+    const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
     const blobRes = await fetch(uri);
     const blob = await blobRes.blob();
     const file = new File([blob], filename, { type: mimeType });
     formData.append('image', file);
-  } else {
-    formData.append('image', {
-      uri,
-      name: filename,
-      type: mimeType,
-    } as unknown as Blob);
+    const res = await fetch(`${API_BASE}/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    return res.json();
   }
 
-  const res = await fetch(`${API_BASE}/upload`, {
-    method: 'POST',
+  const FileSystem = require('expo-file-system');
+  const filename = uri.split('/').pop() || 'photo.jpg';
+  const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
+  const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+
+  const result = await FileSystem.uploadAsync(`${API_BASE}/upload`, uri, {
+    fieldName: 'image',
+    httpMethod: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
+    uploadType: FileSystem.UploadType.MULTIPART,
+    mimeType,
   });
-  return res.json();
+
+  return JSON.parse(result.body);
 };
