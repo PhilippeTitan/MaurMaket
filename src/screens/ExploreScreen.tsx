@@ -190,9 +190,6 @@ export default function ExploreScreen({ navigation }: Props) {
       <View style={styles.fixedHeader}>
         <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
           <Text style={styles.logo}>Maur<Text style={styles.logoAccent}>Maket</Text></Text>
-          <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
-            <MaterialCommunityIcons name="tune-variant" size={18} color={COLORS.text} />
-          </TouchableOpacity>
         </View>
 
         <View style={styles.searchRow}>
@@ -212,6 +209,9 @@ export default function ExploreScreen({ navigation }: Props) {
               </TouchableOpacity>
             )}
           </View>
+          <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
+            <MaterialCommunityIcons name="tune-variant" size={18} color={COLORS.text} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.filterBar}>
@@ -395,7 +395,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
   },
 
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4 },
+  topBar: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4 },
   logo: { fontSize: 16, fontWeight: '800', color: COLORS.text },
   logoAccent: { color: COLORS.coral },
 
