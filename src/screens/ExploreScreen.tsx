@@ -511,7 +511,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   modalContent: {
-    width: 240, backgroundColor: COLORS.surface, borderRadius: 12, padding: 10, gap: 2,
+    width: 240, backgroundColor: COLORS.surface, borderRadius: 12, padding: 10, gap: 2, overflow: 'hidden',
   },
   modalTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: 6, marginLeft: 4 },
   modalItem: {
@@ -523,12 +523,12 @@ const styles = StyleSheet.create({
   modalItemTextActive: { color: COLORS.coral, fontWeight: '700' },
   modalDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 10 },
   priceRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, width: '100%',
   },
   priceInputModal: {
     flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: COLORS.text,
-    height: 38,
+    height: 38, minWidth: 0,
   },
   priceDashModal: { fontSize: 14, color: COLORS.text2 },
   modalApplyBtn: {
