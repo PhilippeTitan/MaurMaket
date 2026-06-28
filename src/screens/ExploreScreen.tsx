@@ -212,53 +212,18 @@ export default function ExploreScreen({ navigation }: Props) {
 
         <View style={styles.filterBar}>
           <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
-            <MaterialCommunityIcons name="sort" size={14} color={COLORS.text2} />
-            <Text style={styles.filterBtnText}>{t(SORT_OPTIONS.find(o => o.value === sortBy)?.label || 'explore.sortNewest')}</Text>
+            <MaterialCommunityIcons name="tune-variant" size={18} color={COLORS.text} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterBtn, showPriceFilter && styles.filterBtnActive]}
-            onPress={() => setShowPriceFilter(!showPriceFilter)}
-          >
-            <MaterialCommunityIcons name="currency-usd" size={14} color={showPriceFilter ? COLORS.coral : COLORS.text2} />
-            <Text style={[styles.filterBtnText, showPriceFilter && styles.filterBtnTextActive]}>Price</Text>
-          </TouchableOpacity>
-          {(minPrice || maxPrice) && (
+          {(sortBy !== 'newest' || minPrice || maxPrice) && (
             <TouchableOpacity
               style={styles.clearFilterBtn}
-              onPress={() => { setMinPrice(''); setMaxPrice(''); }}
+              onPress={() => { setSortBy('newest'); setMinPrice(''); setMaxPrice(''); }}
             >
               <MaterialCommunityIcons name="close" size={12} color={COLORS.coral} />
               <Text style={styles.clearFilterText}>Clear</Text>
             </TouchableOpacity>
           )}
         </View>
-
-        {showPriceFilter && (
-          <View style={styles.priceFilterRow}>
-            <TextInput
-              style={styles.priceInput}
-              placeholder="Min"
-              placeholderTextColor={COLORS.text2}
-              value={minPrice}
-              onChangeText={setMinPrice}
-              keyboardType="numeric"
-              onSubmitEditing={fetchProducts}
-            />
-            <Text style={styles.priceDash}>-</Text>
-            <TextInput
-              style={styles.priceInput}
-              placeholder="Max"
-              placeholderTextColor={COLORS.text2}
-              value={maxPrice}
-              onChangeText={setMaxPrice}
-              keyboardType="numeric"
-              onSubmitEditing={fetchProducts}
-            />
-            <TouchableOpacity style={styles.applyPriceBtn} onPress={fetchProducts}>
-              <Text style={styles.applyPriceText}>Apply</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         <View style={styles.chipsWrapper}>
           <FlatList
@@ -375,7 +340,7 @@ export default function ExploreScreen({ navigation }: Props) {
               <TouchableOpacity
                 key={option.value}
                 style={[styles.modalItem, sortBy === option.value && styles.modalItemActive]}
-                onPress={() => { setSortBy(option.value); setSortModal(false); }}
+                onPress={() => setSortBy(option.value)}
               >
                 <MaterialCommunityIcons
                   name={sortBy === option.value ? 'radiobox-marked' : 'radiobox-blank'}
@@ -387,6 +352,33 @@ export default function ExploreScreen({ navigation }: Props) {
                 </Text>
               </TouchableOpacity>
             ))}
+            <View style={styles.modalDivider} />
+            <Text style={styles.modalTitle}>Price range</Text>
+            <View style={styles.priceRow}>
+              <TextInput
+                style={styles.priceInputModal}
+                placeholder="Min"
+                placeholderTextColor={COLORS.text2}
+                value={minPrice}
+                onChangeText={setMinPrice}
+                keyboardType="numeric"
+              />
+              <Text style={styles.priceDashModal}>-</Text>
+              <TextInput
+                style={styles.priceInputModal}
+                placeholder="Max"
+                placeholderTextColor={COLORS.text2}
+                value={maxPrice}
+                onChangeText={setMaxPrice}
+                keyboardType="numeric"
+              />
+            </View>
+            <TouchableOpacity
+              style={styles.modalApplyBtn}
+              onPress={() => { setSortModal(false); fetchProducts(); }}
+            >
+              <Text style={styles.modalApplyText}>Apply</Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -427,32 +419,18 @@ const styles = StyleSheet.create({
   chipFadeRight: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 28, zIndex: 2 },
   filterBar: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 8, paddingBottom: 6,
+    paddingHorizontal: 12, paddingBottom: 6,
   },
   filterBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
   },
-  filterBtnActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
-  filterBtnText: { fontSize: 11, color: COLORS.text2, fontWeight: '500', flexShrink: 1 },
-  filterBtnTextActive: { color: COLORS.coral },
   clearFilterBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 2,
     paddingHorizontal: 8, paddingVertical: 4,
   },
   clearFilterText: { fontSize: 11, color: COLORS.coral, fontWeight: '600' },
-  priceFilterRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 8, paddingBottom: 8,
-  },
-  priceInput: {
-    flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 12, color: COLORS.text,
-  },
-  priceDash: { fontSize: 14, color: COLORS.text2 },
-  applyPriceBtn: { backgroundColor: COLORS.coral, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  applyPriceText: { fontSize: 11, color: COLORS.white, fontWeight: '700' },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
@@ -541,4 +519,18 @@ const styles = StyleSheet.create({
   modalItemActive: { backgroundColor: COLORS.surface2 },
   modalItemText: { fontSize: 12, color: COLORS.text2, fontWeight: '500' },
   modalItemTextActive: { color: COLORS.coral, fontWeight: '700' },
+  modalDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 10 },
+  priceRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4,
+  },
+  priceInputModal: {
+    flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 13, color: COLORS.text,
+  },
+  priceDashModal: { fontSize: 14, color: COLORS.text2 },
+  modalApplyBtn: {
+    backgroundColor: COLORS.coral, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8,
+    alignItems: 'center', marginTop: 12,
+  },
+  modalApplyText: { fontSize: 13, color: COLORS.white, fontWeight: '700' },
 });

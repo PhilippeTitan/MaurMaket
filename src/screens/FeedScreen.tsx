@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Share, LayoutChangeEvent, Image, Alert, Modal,
+  RefreshControl, ActivityIndicator, LayoutChangeEvent, Image, Alert, Modal, Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -35,16 +35,23 @@ export default function FeedScreen() {
   const [addedProductIds, setAddedProductIds] = useState<Set<string>>(new Set());
   const [cartCount, setCartCount] = useState(store.cartCount);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [sharedProductIds, setSharedProductIds] = useState<Set<string>>(new Set());
   const [commentProduct, setCommentProduct] = useState<Product | null>(null);
   const [comments, setComments] = useState<Review[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
+  const [moreProduct, setMoreProduct] = useState<Product | null>(null);
+  const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('forYou');
   const flatListRef = useRef<FlatList>(null);
   const checkedWishlistIds = useRef<Set<string>>(new Set());
 
   const fetchProducts = useCallback(async (p = 1, replace = false) => {
     try {
-      const res = await getProducts({ page: String(p), limit: '20', personalized: 'true' }) as {
+      const params: Record<string, string> = { page: String(p), limit: '20' };
+      if (feedTab === 'forYou') {
+        params.personalized = 'true';
+      } else {
+        params.sort = 'newest';
+      }
+      const res = await getProducts(params) as {
         products: Product[]; total: number; pages: number;
       };
       if (replace) {
@@ -56,9 +63,9 @@ export default function FeedScreen() {
       }
       setHasMore(p < res.pages);
     } catch { /* silent */ }
-  }, []);
+  }, [feedTab]);
 
-  useFocusEffect(useCallback(() => { fetchProducts(1, true); }, []));
+  useFocusEffect(useCallback(() => { fetchProducts(1, true); }, [feedTab]));
 
   useEffect(() => {
     const unsub = store.onChange(() => setCartCount(store.cartCount));
@@ -135,9 +142,8 @@ export default function FeedScreen() {
     setLoadingMore(false);
   }, [page, hasMore, loadingMore]);
 
-  const handleLike = async (product: Product) => {
+  const handleBookmark = async (product: Product) => {
     const wasWishlisted = wishlistedIds.has(product.id);
-    // optimistic update
     setWishlistedIds(prev => {
       const next = new Set(prev);
       if (wasWishlisted) next.delete(product.id);
@@ -146,7 +152,6 @@ export default function FeedScreen() {
     });
     try { await toggleWishlist(product.id); }
     catch {
-      // rollback on error
       setWishlistedIds(prev => {
         const next = new Set(prev);
         if (wasWishlisted) next.add(product.id);
@@ -154,22 +159,6 @@ export default function FeedScreen() {
         return next;
       });
     }
-  };
-
-  const handleShare = async (product: Product) => {
-    try {
-      await Share.share({
-        message: `${product.name} - Rs ${product.price}\nhttps://maurmaket.com/product/${product.id}`,
-      });
-      setSharedProductIds(prev => new Set(prev).add(product.id));
-      setTimeout(() => {
-        setSharedProductIds(prev => {
-          const next = new Set(prev);
-          next.delete(product.id);
-          return next;
-        });
-      }, 1600);
-    } catch { /* silent */ }
   };
 
   const handleOpenComments = async (product: Product) => {
@@ -303,7 +292,6 @@ export default function FeedScreen() {
     const isFollowing = followedSellerIds.has(item.seller_id);
     const isOwnProduct = store.user?.id === item.seller_id;
     const wasJustAdded = addedProductIds.has(item.id);
-    const wasJustShared = sharedProductIds.has(item.id);
     const stockLabel = isSoldOut ? t('feed.soldOut') : item.stock === 1 ? t('feed.oneLeft') : `${item.stock} ${t('feed.available').toLowerCase()}`;
 
     return (
@@ -312,11 +300,8 @@ export default function FeedScreen() {
         <View style={styles.mediaContainer}>
           {imgUrl ? (
             <>
-              <Image source={{ uri: imgUrl }} style={styles.mediaBlur} blurRadius={22} />
-              <View style={styles.mediaOverlay} />
-              <View style={styles.mediaFrame}>
-                <Image source={{ uri: imgUrl }} style={styles.mediaImage} resizeMode="contain" />
-              </View>
+              <Image source={{ uri: imgUrl }} style={styles.mediaFill} resizeMode="cover" />
+              <Image source={{ uri: imgUrl }} style={styles.mediaContain} resizeMode="contain" />
             </>
           ) : (
             <MaterialCommunityIcons name="image-off-outline" size={48} color={COLORS.text2} />
@@ -326,29 +311,22 @@ export default function FeedScreen() {
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.32 }]}>
           {!isOwnProduct && (
-            <>
-              <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item)}>
-                <MaterialCommunityIcons
-                  name={wishlistedIds.has(item.id) ? 'heart' : 'heart-outline'}
-                  size={28}
-                  color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
-                />
-                <Text style={styles.actionCount}>{wishlistedIds.has(item.id) ? t('feed.liked') : ''}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenComments(item)}>
-                <MaterialCommunityIcons name="comment-outline" size={28} color={COLORS.white} />
-                {(item.review_count || 0) > 0 && (
-                  <Text style={styles.actionCount}>{item.review_count}</Text>
-                )}
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenComments(item)}>
+              <MaterialCommunityIcons name="comment-outline" size={28} color={COLORS.white} />
+              {(item.review_count || 0) > 0 && (
+                <Text style={styles.actionCount}>{item.review_count}</Text>
+              )}
+            </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(item)}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => handleBookmark(item)}>
             <MaterialCommunityIcons
-              name={wasJustShared ? 'check' : 'share-variant'}
+              name={wishlistedIds.has(item.id) ? 'bookmark' : 'bookmark-outline'}
               size={28}
-              color={wasJustShared ? COLORS.green : COLORS.white}
+              color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
             />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => setMoreProduct(item)}>
+            <MaterialCommunityIcons name="dots-horizontal" size={28} color={COLORS.white} />
           </TouchableOpacity>
         </View>
 
@@ -449,7 +427,20 @@ export default function FeedScreen() {
       <View style={[styles.feedTopbar, { top: insets.top + 14 }]}>
         <View>
           <Text style={styles.brand}>MaurMaket</Text>
-          <Text style={styles.brandSub}>Visual Market</Text>
+        </View>
+        <View style={styles.feedTabs}>
+          <TouchableOpacity
+            style={[styles.feedTab, feedTab === 'forYou' && styles.feedTabActive]}
+            onPress={() => { setFeedTab('forYou'); setPage(1); setProducts([]); }}
+          >
+            <Text style={[styles.feedTabText, feedTab === 'forYou' && styles.feedTabTextActive]}>For You</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.feedTab, feedTab === 'new' && styles.feedTabActive]}
+            onPress={() => { setFeedTab('new'); setPage(1); setProducts([]); }}
+          >
+            <Text style={[styles.feedTabText, feedTab === 'new' && styles.feedTabTextActive]}>New</Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.utilityRow}>
           <TouchableOpacity
@@ -594,6 +585,38 @@ export default function FeedScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* More Menu */}
+      <Modal
+        visible={Boolean(moreProduct)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMoreProduct(null)}
+      >
+        <Pressable style={styles.moreOverlay} onPress={() => setMoreProduct(null)}>
+          <Pressable style={styles.moreSheet} onPress={e => e.stopPropagation()}>
+            <View style={styles.sheetHandle} />
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+              <MaterialCommunityIcons name="thumb-up-outline" size={18} color={COLORS.text} />
+              <Text style={styles.moreItemText}>Relevant</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+              <MaterialCommunityIcons name="thumb-down-outline" size={18} color={COLORS.text} />
+              <Text style={styles.moreItemText}>Not relevant</Text>
+            </TouchableOpacity>
+            <View style={styles.moreDivider} />
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+              <MaterialCommunityIcons name="bookmark-outline" size={18} color={COLORS.text} />
+              <Text style={styles.moreItemText}>Save</Text>
+            </TouchableOpacity>
+            <View style={styles.moreDivider} />
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+              <MaterialCommunityIcons name="flag-outline" size={18} color={COLORS.coral} />
+              <Text style={[styles.moreItemText, { color: COLORS.coral }]}>Report</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -669,34 +692,19 @@ const styles = StyleSheet.create({
   },
   mediaContainer: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: COLORS.surface2,
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  mediaBlur: {
+  mediaFill: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     width: '100%', height: '100%',
+    opacity: 0.5,
   },
-  mediaOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  mediaFrame: {
-    width: '80%',
-    height: '75%',
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-  },
-  mediaImage: {
-    width: '100%',
-    height: '100%',
+  mediaContain: {
+    width: '100%', height: '100%',
   },
 
   /* Right-side action rail — TikTok style */
@@ -1002,4 +1010,60 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.blue,
   },
   messageSellerText: { color: COLORS.white, fontSize: 13, fontWeight: '800' },
+
+  /* Feed Tabs */
+  feedTabs: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  feedTab: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  feedTabActive: {
+    backgroundColor: COLORS.white,
+  },
+  feedTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.7)',
+  },
+  feedTabTextActive: {
+    color: '#000',
+  },
+
+  /* More Menu */
+  moreOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  moreSheet: {
+    width: 220,
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  moreItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  moreItemText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  moreDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginHorizontal: 12,
+  },
 });
