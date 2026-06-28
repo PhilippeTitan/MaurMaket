@@ -300,7 +300,7 @@ export default function FeedScreen() {
         <View style={styles.mediaContainer}>
           {imgUrl ? (
             <>
-              <Image source={{ uri: imgUrl }} style={styles.mediaFill} resizeMode="cover" />
+              <Image source={{ uri: imgUrl }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} />
               <Image source={{ uri: imgUrl }} style={styles.mediaContain} resizeMode="contain" />
             </>
           ) : (
@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     width: '100%', height: '100%',
-    opacity: 0.5,
+    opacity: 0.4,
   },
   mediaContain: {
     width: '100%', height: '100%',
