@@ -315,7 +315,7 @@ export default function FeedScreen() {
               <Image source={{ uri: imgUrl }} style={styles.mediaBlur} blurRadius={22} />
               <View style={styles.mediaOverlay} />
               <View style={styles.mediaFrame}>
-                <Image source={{ uri: imgUrl }} style={styles.mediaImage} resizeMode="cover" />
+                <Image source={{ uri: imgUrl }} style={styles.mediaImage} resizeMode="contain" />
               </View>
             </>
           ) : (

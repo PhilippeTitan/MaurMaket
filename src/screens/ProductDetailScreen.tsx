@@ -275,7 +275,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               return (
                 <View style={{ width: SCREEN_W, height: SCREEN_H * 0.42 }}>
                   {url ? (
-                    <Image source={{ uri: url }} style={styles.heroImg} resizeMode="cover" />
+                    <Image source={{ uri: url }} style={styles.heroImg} resizeMode="contain" />
                   ) : (
                     <View style={styles.heroPlaceholder}>
                       <MaterialCommunityIcons name="image-off-outline" size={40} color={COLORS.text2} />
