@@ -211,8 +211,8 @@ export default function ExploreScreen({ navigation }: Props) {
           </View>
           <TouchableOpacity style={styles.catBtn} onPress={() => setCatModal(true)}>
             <MaterialCommunityIcons
-              name={selectedCat ? 'tag-text' : 'tag-outline'}
-              size={22}
+              name="filter-variant"
+              size={18}
               color={selectedCat ? COLORS.coral : COLORS.text}
             />
           </TouchableOpacity>
@@ -417,8 +417,9 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, color: COLORS.text, fontSize: 15, paddingVertical: 0 },
   catBtn: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
+    width: 38, height: 38, borderRadius: 6,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
   },
 
   chipsWrapper: { position: 'relative' },
