@@ -62,7 +62,8 @@ const unwrapWishlistItems = (data: unknown): Product[] => {
       }
       return item as Product;
     })
-    .filter(Boolean) as Product[];
+    .filter((item): item is Product => Boolean(item))
+    .map(p => normalizeProduct(p as Product & Record<string, unknown>));
 };
 
 const unwrapConversations = (data: unknown): Conversation[] => {
