@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Modal, Pressable, FlatList, Dimensions, Alert, RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, getDisplayName } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
@@ -259,35 +260,51 @@ export default function ExploreScreen({ navigation }: Props) {
           </View>
         )}
 
-        <FlatList
-          ref={categoryListRef}
-          horizontal
-          data={[{ id: '', name: t('explore.all') }, ...categories]}
-          keyExtractor={c => String(c.id || 'all')}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsRow}
-          renderItem={({ item: cat }) => {
-            const categoryName = cat.name;
-            const isActive = cat.id === '' ? !selectedCat : selectedCat === categoryName;
-            return (
-              <TouchableOpacity
-                style={[styles.chip, isActive && styles.chipActive]}
-                onPress={() => selectCategory(cat.id === '' ? '' : categoryName === selectedCat ? '' : categoryName)}
-              >
-                {cat.id !== '' && (
-                  <MaterialCommunityIcons
-                    name={(CAT_ICONS[cat.name.toLowerCase()] as any) || 'tag-outline'}
-                    size={14}
-                    color={isActive ? COLORS.white : COLORS.text2}
-                  />
-                )}
-                <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                  {cat.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          }}
-        />
+        <View style={styles.chipsWrapper}>
+          <FlatList
+            ref={categoryListRef}
+            horizontal
+            data={[{ id: '', name: t('explore.all') }, ...categories]}
+            keyExtractor={c => String(c.id || 'all')}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsRow}
+            renderItem={({ item: cat }) => {
+              const categoryName = cat.name;
+              const isActive = cat.id === '' ? !selectedCat : selectedCat === categoryName;
+              return (
+                <TouchableOpacity
+                  style={[styles.chip, isActive && styles.chipActive]}
+                  onPress={() => selectCategory(cat.id === '' ? '' : categoryName === selectedCat ? '' : categoryName)}
+                >
+                  {cat.id !== '' && (
+                    <MaterialCommunityIcons
+                      name={(CAT_ICONS[cat.name.toLowerCase()] as any) || 'tag-outline'}
+                      size={14}
+                      color={isActive ? COLORS.white : COLORS.text2}
+                    />
+                  )}
+                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                    {cat.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
+          <LinearGradient
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            colors={[COLORS.bg, 'transparent']}
+            style={styles.chipFadeLeft}
+            pointerEvents="none"
+          />
+          <LinearGradient
+            start={{ x: 1, y: 0 }}
+            end={{ x: 0, y: 0 }}
+            colors={[COLORS.bg, 'transparent']}
+            style={styles.chipFadeRight}
+            pointerEvents="none"
+          />
+        </View>
       </View>
 
       {loading ? (
@@ -404,7 +421,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
   },
 
+  chipsWrapper: { position: 'relative' },
   chipsRow: { paddingHorizontal: 12, gap: 8, paddingVertical: 8 },
+  chipFadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 28, zIndex: 2 },
+  chipFadeRight: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 28, zIndex: 2 },
   filterBar: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 8, paddingBottom: 6,
