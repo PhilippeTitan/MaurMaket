@@ -7,6 +7,7 @@ import { COLORS, SPACING, isVerifiedSeller, getDisplayName, getSellerAvatar } fr
 import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
@@ -16,6 +17,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
 
 export default function StorefrontScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { sellerId } = route.params;
   const [seller, setSeller] = useState<SellerProfile | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -104,7 +106,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.topbar}>
+      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
@@ -246,7 +248,7 @@ const styles = StyleSheet.create({
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
   topbar: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.sm,
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   backBtn: { color: COLORS.text, fontSize: 24 },

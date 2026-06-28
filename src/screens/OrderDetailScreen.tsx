@@ -8,6 +8,7 @@ import { COLORS, SPACING } from '../theme';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Order, OrderEvent } from '../types';
@@ -28,6 +29,7 @@ const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error
 
 export default function OrderDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { orderId } = route.params;
   const [order, setOrder] = useState<Order | null>(null);
   const [events, setEvents] = useState<OrderEvent[]>([]);
@@ -165,7 +167,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
-      <View style={styles.topbar}>
+      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
@@ -206,6 +208,19 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               </View>
             </View>
           ))}
+        </View>
+      )}
+
+      {order.delivery_method === 'delivery' && order.delivery_name && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{t('orderDetail.deliveryAddress')}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
+            <Text style={styles.meetupText}>{order.delivery_name}</Text>
+          </View>
+          <Text style={styles.meetupText}>{order.delivery_address}{order.delivery_city ? `, ${order.delivery_city}` : ''}</Text>
+          {order.delivery_phone && <Text style={styles.meetupNote}>{t('orderDetail.phone')}: {order.delivery_phone}</Text>}
+          {order.delivery_note && <Text style={styles.meetupNote}>{t('orderDetail.note')}: {order.delivery_note}</Text>}
         </View>
       )}
 
@@ -285,7 +300,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         )}
         {store.user?.id === order.buyer_id && order.status === 'delivered' && (
           <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={actionLoading}>
-            {actionLoading ? <ActivityIndicator size="small" color="#0B0F1A" /> : (
+            {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
               <Text style={styles.completeBtnText}>{t('orderDetail.completed')}</Text>
             )}
           </TouchableOpacity>
@@ -353,7 +368,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               disabled={reviewSubmitting}
             >
               {reviewSubmitting ? (
-                <ActivityIndicator size="small" color="#0B0F1A" />
+                <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
                 <Text style={styles.submitReviewBtnText}>{t('orderDetail.submit')}</Text>
               )}
@@ -435,7 +450,7 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: 60 },
   topbar: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.md,
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
   },
   title: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.text },
   card: {
@@ -459,7 +474,7 @@ const styles = StyleSheet.create({
   cancelBtn: { padding: 14, borderRadius: 20, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
   cancelBtnText: { color: COLORS.coral, fontWeight: '600', fontSize: 15 },
   completeBtn: { padding: 14, borderRadius: 20, backgroundColor: COLORS.green, alignItems: 'center' },
-  completeBtnText: { color: '#0B0F1A', fontWeight: '600', fontSize: 15 },
+  completeBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
   retryBtn: { padding: 14, borderRadius: 20, backgroundColor: COLORS.blue, alignItems: 'center' },
   retryBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
   reorderBtn: { flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: 20, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
@@ -498,7 +513,7 @@ const styles = StyleSheet.create({
   submitReviewBtn: {
     padding: 14, borderRadius: 20, backgroundColor: COLORS.yellow, alignItems: 'center',
   },
-  submitReviewBtnText: { color: '#0B0F1A', fontWeight: '700', fontSize: 15 },
+  submitReviewBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   disputeBtn: {
     flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 12, borderRadius: 12,
     borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',

@@ -44,39 +44,44 @@ export default function SignupScreen({ navigation }: Props) {
     >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>MaurMaket</Text>
-        <Text style={styles.subtitle}>Create your account</Text>
+        <Text style={styles.subtitle}>{t('auth.createAccount')}</Text>
 
         <TextInput
           style={styles.input}
-          placeholder="Full Name"
+          placeholder={t('auth.fullNamePlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={fullName}
           onChangeText={setFullName}
+          returnKeyType="next"
         />
         <TextInput
           style={styles.input}
-          placeholder="Email"
+          placeholder={t('auth.emailPlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
+          returnKeyType="next"
         />
         <TextInput
           style={styles.input}
-          placeholder="Phone (e.g. 37000000)"
+          placeholder={t('auth.phonePlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
+          returnKeyType="next"
         />
         <TextInput
           style={styles.input}
-          placeholder="Password"
+          placeholder={t('auth.passwordPlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
+          returnKeyType="done"
+          onSubmitEditing={handleSignup}
         />
 
         <TouchableOpacity
@@ -84,11 +89,11 @@ export default function SignupScreen({ navigation }: Props) {
           onPress={handleSignup}
           disabled={loading}
         >
-          <Text style={styles.btnText}>{loading ? t('common.loading') : 'Create Account'}</Text>
+          <Text style={styles.btnText}>{loading ? t('common.loading') : t('auth.createAccount')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.link}>Already have an account? <Text style={styles.linkBold}>Sign In</Text></Text>
+          <Text style={styles.link}>{t('auth.hasAccount')} <Text style={styles.linkBold}>{t('auth.signIn')}</Text></Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>

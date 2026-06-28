@@ -128,7 +128,7 @@ export default function CartScreen({ navigation }: Props) {
       <View style={styles.item}>
         <View style={styles.thumb}>
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.thumbImg} resizeMode="contain" />
+            <Image source={{ uri: imgUrl }} style={styles.thumbImg} resizeMode="cover" />
           ) : (
             <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />
           )}

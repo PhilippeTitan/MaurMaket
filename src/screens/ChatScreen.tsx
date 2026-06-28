@@ -94,7 +94,11 @@ export default function ChatScreen({ route, navigation }: Props) {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.messageList}
           ref={listRef}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={() => {
+            if (listRef.current) {
+              listRef.current.scrollToEnd({ animated: false });
+            }
+          }}
         />
       )}
 

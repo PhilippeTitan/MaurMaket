@@ -188,7 +188,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         onPress={() => navigation.push('ProductDetail', { productId: item.id })}
       >
         {imgUrl ? (
-          <Image source={{ uri: imgUrl }} style={styles.sellerCardImg} resizeMode="contain" />
+          <Image source={{ uri: imgUrl }} style={styles.sellerCardImg} resizeMode="cover" />
         ) : (
           <View style={styles.sellerCardPlaceholder}>
             <MaterialCommunityIcons name="image-off-outline" size={16} color={COLORS.text2} />
@@ -224,7 +224,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           onPress={() => navigation.push('ProductDetail', { productId: item.id })}
         >
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.gridCardImg} resizeMode="contain" />
+            <Image source={{ uri: imgUrl }} style={styles.gridCardImg} resizeMode="cover" />
           ) : (
             <View style={styles.gridCardPlaceholder}>
               <MaterialCommunityIcons name="image-off-outline" size={18} color={COLORS.text2} />
@@ -275,7 +275,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               return (
                 <View style={{ width: SCREEN_W, height: SCREEN_H * 0.42 }}>
                   {url ? (
-                    <Image source={{ uri: url }} style={styles.heroImg} resizeMode="contain" />
+                    <Image source={{ uri: url }} style={styles.heroImg} resizeMode="cover" />
                   ) : (
                     <View style={styles.heroPlaceholder}>
                       <MaterialCommunityIcons name="image-off-outline" size={40} color={COLORS.text2} />
@@ -414,9 +414,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               </View>
             ))}
             {productReviews.length > 5 && (
-              <Text style={styles.seeAllReviews}>
-                {t('productDetail.reviews')} ({productReviews.length})
-              </Text>
+              <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 10 }}>
+                <Text style={styles.seeAllReviews}>
+                  {t('productDetail.reviews')} ({productReviews.length})
+                </Text>
+              </TouchableOpacity>
             )}
           </View>
         )}

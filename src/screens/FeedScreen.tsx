@@ -616,7 +616,7 @@ export default function FeedScreen() {
               <Text style={styles.moreItemText}>Not relevant</Text>
             </TouchableOpacity>
             <View style={styles.moreDivider} />
-            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+            <TouchableOpacity style={styles.moreItem} onPress={() => { if (moreProduct) { handleBookmark(moreProduct); } setMoreProduct(null); }}>
               <MaterialCommunityIcons name="bookmark-outline" size={18} color={COLORS.text} />
               <Text style={styles.moreItemText}>Save</Text>
             </TouchableOpacity>

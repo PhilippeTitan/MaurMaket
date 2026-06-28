@@ -464,10 +464,9 @@ Commission is deducted at payment time in the webhook handler. `seller_balances`
 7. **Duplicate conversation bug** — StorefrontScreen always creates new conversation instead of checking existing.
 
 ### Low Priority (Phase 3)
-8. Hardcoded `paddingTop: SPACING.xl + 40` in HomeScreen, CartScreen, ChatScreen
-9. `←` text back buttons in NotificationsScreen, MessagesScreen
-10. ProfileScreen — imported in App.tsx but never registered in Stack.Navigator. Dead code.
-11. Seller analytics gated too aggressively — show teaser metrics to casual sellers with upgrade nudge
+8. Hardcoded `paddingTop: SPACING.xl + 40` in CartScreen, ChatScreen
+9. `←` text back buttons in NotificationsScreen
+10. Seller analytics gated too aggressively — show teaser metrics to casual sellers with upgrade nudge
 
 ## Session Compact — 2026-06-28 (UI Polish + Upload Fix)
 
@@ -505,10 +504,14 @@ Commission is deducted at payment time in the webhook handler. `seller_balances`
 - `cd0458e` — removed inverted FlatList, ASC + scrollToEnd
 - `54fcf60` — EditListing safe area, Explore image onError, remove editBadge
 
+### Session 4 — 2026-06-28 (Dead File Cleanup)
+1. **Deleted 16 unused files** — `nul`, `expo.log`, `server.log`, `server_check.log`, `server_test.log`, `SESSION_CONTEXT.md`, `MonCashConnect KEYS.txt`, `render.yaml`, `nixpacks.toml`, `public/` dir, `ProfileScreen.tsx`, `HomeScreen.tsx`, `MessagesScreen.tsx`, 3× `android-icon-*.png` assets.
+2. **Untracked server.log** — `git rm --cached server.log` (was committed by mistake).
+3. **Updated AGENTS.md** — Removed stale references to deleted files (ProfileScreen dead-code note, MaurMaketMobile note, HomeScreen/MessagesScreen in known gaps).
+
 ### In-flight / Next Steps
 - **StorefrontScreen** needs same `cover` + `DEFAULT_IMG_H` pattern as MeScreen/ExploreScreen
 - **ExploreScreen** full replacement from Claude at `C:\Users\drato\Downloads\ExploreScreen.tsx` (not yet applied)
-- **ProfileScreen** is imported in App.tsx but never registered as `<Stack.Screen>` — dead code
 - **proxy.js:1 Uncaught Error: Attempting to use a disconnected port object** — Expo dev server only, not production. Fix: `npx expo start --clear`
 - **Multi-image listings** — API/types support `images[]` but AddListing + EditListing only upload one image. #1 missing trust signal in C2C.
 - **Image sharing in chat** — prevents off-app WhatsApp exfiltration
@@ -524,8 +527,6 @@ Commission is deducted at payment time in the webhook handler. `seller_balances`
 6. No TypeScript on backend — plain JavaScript ESM
 7. Currency is Haitian Gourde (Rs)
 8. DO NOT commit .env with real credentials
-9. `MaurMaketMobile/` directory is empty/locked — safe to ignore or delete later
-10. ProfileScreen is imported but NEVER registered in Stack.Navigator — dead code
-11. `resizeMode="contain"` causes letterbox gaps — use `cover` + dynamic heights
-12. The app's real competition is WhatsApp + Facebook Marketplace, not Vinted/Depop
-13. Multi-image listings are the #1 missing trust signal in C2C commerce
+9. `resizeMode="contain"` causes letterbox gaps — use `cover` + dynamic heights
+10. The app's real competition is WhatsApp + Facebook Marketplace, not Vinted/Depop
+11. Multi-image listings are the #1 missing trust signal in C2C commerce

@@ -6,7 +6,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, getDisplayName } from '../theme';
 import { store } from '../store';
-import { uploadImage, getImageUrl, updateSellerProfile } from '../api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '../api';
 import { i18n, useTranslation, type Language } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -50,6 +51,7 @@ const SettingRow = ({
 
 export default function SettingsScreen({ navigation }: Props) {
   const { t, language } = useTranslation();
+  const insets = useSafeAreaInsets();
   const user = store.user;
   const isSeller = store.isSeller;
   const [loading, setLoading] = useState(false);
@@ -83,7 +85,7 @@ export default function SettingsScreen({ navigation }: Props) {
       setAvatarUploading(true);
       try {
         const uploadRes = await uploadImage(result.assets[0].uri);
-        const res = await updateSellerProfile({ avatarUrl: uploadRes.url }) as { user: typeof user };
+        const res = await updateProfile({ avatarUrl: uploadRes.url }) as { user: typeof user };
         if (res.user) await store.setUser(res.user, store.token);
       } catch (err: unknown) {
         Alert.alert(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
@@ -159,7 +161,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
-      <View style={styles.topbar}>
+      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
@@ -345,7 +347,7 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: 20 },
   topbar: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.md,
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
   },
   title: { fontSize: 18, fontWeight: '700', color: COLORS.text },
 

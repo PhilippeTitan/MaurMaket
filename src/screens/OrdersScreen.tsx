@@ -8,6 +8,7 @@ import { getOrders, cancelOrder, completeOrder, getSellerOrders, updateOrderStat
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Order } from '../types';
@@ -28,6 +29,7 @@ const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error
 
 export default function OrdersScreen({ navigation }: Props) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'buying' | 'selling'>('buying');
   const [buyOrders, setBuyOrders] = useState<Order[]>([]);
   const [sellOrders, setSellOrders] = useState<Order[]>([]);
@@ -129,7 +131,7 @@ export default function OrdersScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.topbar}>
+      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 12 }}>
           <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.text2} />
         </TouchableOpacity>
@@ -182,7 +184,7 @@ export default function OrdersScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   topbar: {
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.sm,
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
   },
   title: { fontFamily: 'Syne', fontSize: 22, fontWeight: '800', color: COLORS.text },
   tabRow: {

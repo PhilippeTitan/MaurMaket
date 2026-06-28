@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
 import { getWishlist, toggleWishlist, getImageUrl } from '../api';
 import type { Product } from '../types';
@@ -16,6 +17,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 export default function WishlistScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState<Product[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -37,15 +39,19 @@ export default function WishlistScreen() {
   }, []);
 
   const handleRemove = async (productId: string) => {
+    const previousItems = items;
+    setItems(prev => prev.filter(i => i.id !== productId));
     try {
       await toggleWishlist(productId);
-      setItems(prev => prev.filter(i => i.id !== productId));
-    } catch { Alert.alert(t('common.error'), t('wishlist.removeFailed')); }
+    } catch {
+      setItems(previousItems);
+      Alert.alert(t('common.error'), t('wishlist.removeFailed'));
+    }
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity onPress={() => nav.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>

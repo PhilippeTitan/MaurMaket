@@ -42,24 +42,27 @@ export default function LoginScreen({ navigation }: Props) {
     >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>MaurMaket</Text>
-        <Text style={styles.subtitle}>Sign in to your account</Text>
+        <Text style={styles.subtitle}>{t('auth.signInToAccount')}</Text>
 
         <TextInput
           style={styles.input}
-          placeholder="Email"
+          placeholder={t('auth.emailPlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
+          returnKeyType="next"
         />
         <TextInput
           style={styles.input}
-          placeholder="Password"
+          placeholder={t('auth.passwordPlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
+          returnKeyType="done"
+          onSubmitEditing={handleLogin}
         />
 
         <TouchableOpacity
@@ -67,11 +70,11 @@ export default function LoginScreen({ navigation }: Props) {
           onPress={handleLogin}
           disabled={loading}
         >
-          <Text style={styles.btnText}>{loading ? t('common.loading') : 'Sign In'}</Text>
+          <Text style={styles.btnText}>{loading ? t('common.loading') : t('auth.signIn')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
-          <Text style={styles.link}>Don't have an account? <Text style={styles.linkBold}>Sign Up</Text></Text>
+          <Text style={styles.link}>{t('auth.noAccount')} <Text style={styles.linkBold}>{t('auth.signUp')}</Text></Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>

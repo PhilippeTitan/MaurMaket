@@ -96,8 +96,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       try {
         const payRes = await createPayment(orderRes.order.id, `maurmaket://payment-return?orderId=${orderRes.order.id}`) as { paymentUrl: string };
         if (payRes.paymentUrl) {
-          await store.clearCart();
           await Linking.openURL(payRes.paymentUrl);
+          await store.clearCart();
         }
         navigation.navigate('Orders');
       } catch (paymentErr: unknown) {

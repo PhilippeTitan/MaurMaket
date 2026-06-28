@@ -6,6 +6,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../theme';
 import { store } from '../store';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { updateProfile, changePassword, updateSellerProfile } from '../api';
 import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -33,6 +34,7 @@ const FIELD_ICONS: Record<string, string> = {
 
 export default function SettingsEditScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { field, title } = route.params;
   const user = store.user;
   const [loading, setLoading] = useState(false);
@@ -95,7 +97,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <View style={styles.container}>
-      <View style={styles.topbar}>
+      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
@@ -159,7 +161,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   topbar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl + 40, paddingBottom: SPACING.md,
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   title: { fontSize: 16, fontWeight: '700', color: COLORS.text, flex: 1, textAlign: 'center' },

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import React, { useEffect, useState, Component } from 'react';
+import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -42,6 +42,26 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} />
+          <Text style={{ color: COLORS.text, fontSize: 16, fontWeight: '700', marginTop: 12, textAlign: 'center' }}>Something went wrong</Text>
+          <Text style={{ color: COLORS.text2, fontSize: 13, marginTop: 6, textAlign: 'center' }}>Please restart the app.</Text>
+          <TouchableOpacity onPress={() => {}} style={{ marginTop: 20, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 10, backgroundColor: COLORS.coral }}>
+            <Text style={{ color: COLORS.white, fontWeight: '700' }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 if (typeof document !== 'undefined') {
   const style = document.createElement('style');
@@ -255,7 +275,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <SafeAreaProvider>{appContent}</SafeAreaProvider>;
+  return <SafeAreaProvider><ErrorBoundary>{appContent}</ErrorBoundary></SafeAreaProvider>;
 }
 
 const styles = StyleSheet.create({

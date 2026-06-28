@@ -9,6 +9,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING } from '../theme';
 import { becomeSeller, uploadImage } from '../api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
@@ -20,6 +21,7 @@ type ChosenTier = 'casual' | 'verified' | 'business' | null;
 export default function SellerOnboardingScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('welcome');
   const [chosenTier, setChosenTier] = useState<ChosenTier>(null);
   const [storeName, setStoreName] = useState('');
@@ -58,8 +60,8 @@ export default function SellerOnboardingScreen() {
     setPickLoading(false);
   };
 
-  const handleComplete = async (navigateBack = true) => {
-    if (!chosenTier) return;
+  const handleComplete = async (navigateBack = true): Promise<boolean> => {
+    if (!chosenTier) return false;
     setLoading(true);
     try {
       const data: { storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; tier: string } = { tier: chosenTier };
@@ -72,11 +74,14 @@ export default function SellerOnboardingScreen() {
         await store.setUser(res.user, res.token);
       }
       if (navigateBack) nav.goBack();
+      return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
       Alert.alert(t('common.error'), msg);
+      return false;
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleChooseTier = (tier: ChosenTier) => {
@@ -267,16 +272,16 @@ export default function SellerOnboardingScreen() {
             <TouchableOpacity
               style={[styles.primaryBtn, { flexDirection: 'row', justifyContent: 'center', gap: 8 }]}
               onPress={async () => {
-                await handleComplete(false);
-                nav.navigate('AddListing');
+                const success = await handleComplete(false);
+                if (success !== false) nav.navigate('AddListing');
               }}
             >
               <MaterialCommunityIcons name="plus" size={18} color={COLORS.white} />
               <Text style={styles.primaryBtnText}>{t('sellerOnboarding.addFirstListing')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.linkBtn} onPress={async () => {
-              await handleComplete();
-              nav.goBack();
+              const success = await handleComplete();
+              if (success !== false) nav.goBack();
             }}>
               <Text style={styles.linkBtnText}>{t('sellerOnboarding.doItLater')}</Text>
             </TouchableOpacity>
@@ -289,7 +294,7 @@ export default function SellerOnboardingScreen() {
   const currentStepIdx = step === 'welcome' ? 0 : step === 'choose' ? 1 : step === 'store' ? 2 : step === 'verify' ? 3 : 4;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xl }]}>
       <TouchableOpacity onPress={() => nav.goBack()} style={{ alignSelf: 'flex-start', marginBottom: 16 }}>
         <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.text2} />
       </TouchableOpacity>
