@@ -176,28 +176,36 @@ export default function MeScreen() {
     return (
       <TouchableOpacity
         key={item.id}
-        style={styles.gridItem}
-        activeOpacity={0.8}
+        style={styles.card}
+        activeOpacity={0.82}
         onPress={() => isOwnProduct
           ? nav.navigate('EditListing', { productId: item.id })
           : nav.navigate('ProductDetail', { productId: item.id })
         }
       >
-        <View style={[styles.gridImage, { height: cardH }]}>
+        <View style={[styles.cardImgWrap, { height: cardH }]}>
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.gridImg} resizeMode="cover" />
+            <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" />
           ) : (
-            <MaterialCommunityIcons name="image-off-outline" size={20} color={COLORS.text2} />
+            <View style={styles.cardPlaceholder}>
+              <MaterialCommunityIcons name="image-off-outline" size={20} color={COLORS.text2} />
+            </View>
           )}
+          <View style={styles.cardOverlay}>
+            <View style={styles.cardOverlayTop}>
+              <View style={styles.priceBadge}>
+                <Text style={styles.priceBadgeText}>Rs {item.price.toLocaleString()}</Text>
+              </View>
+            </View>
+            <View style={styles.cardOverlayBottom}>
+              <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
+            </View>
+          </View>
           {isOwnProduct && (
             <View style={styles.editBadge}>
               <MaterialCommunityIcons name="pencil" size={10} color={COLORS.white} />
             </View>
           )}
-        </View>
-        <View style={styles.gridInfo}>
-          <Text style={styles.gridPrice}>Rs {item.price.toLocaleString()}</Text>
-          <Text style={styles.gridName} numberOfLines={1}>{item.name}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -579,18 +587,37 @@ const styles = StyleSheet.create({
 
   /* Tab Content */
   tabContent: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  gridItem: { width: '48%' as any, backgroundColor: COLORS.surface, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
-  gridImage: { minHeight: 140, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
-  gridImg: { width: '100%', height: '100%' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: SPACING.md },
+  card: {
+    width: '48%' as any, borderRadius: 10, overflow: 'hidden',
+    backgroundColor: COLORS.surface2,
+  },
+  cardImgWrap: {
+    width: '100%', backgroundColor: COLORS.surface2, position: 'relative',
+  },
+  cardImg: { width: '100%', height: '100%' },
+  cardPlaceholder: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.surface2,
+  },
+  cardOverlay: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'space-between', padding: 8,
+  },
+  cardOverlayTop: { alignItems: 'flex-end' },
+  cardOverlayBottom: {
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 8, padding: 8, gap: 2,
+  },
+  priceBadge: {
+    backgroundColor: COLORS.coral, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  priceBadgeText: { color: COLORS.white, fontSize: 11, fontWeight: '700' },
+  cardName: { fontSize: 12, fontWeight: '600', color: '#fff', lineHeight: 16 },
   editBadge: {
     position: 'absolute', bottom: 4, right: 4,
     width: 20, height: 20, borderRadius: 10,
     backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center',
   },
-  gridInfo: { padding: 6 },
-  gridPrice: { fontSize: 13, color: COLORS.coral, fontWeight: '700' },
-  gridName: { fontSize: 11, color: COLORS.text2, marginTop: 1 },
 
   /* Empty */
   empty: { alignItems: 'center', paddingVertical: 40, gap: 6 },
