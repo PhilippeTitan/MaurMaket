@@ -203,19 +203,22 @@ export default function MeScreen() {
     );
   };
 
-  const renderOrderStatusCard = (label: string, count: number, iconName: string) => (
-    <TouchableOpacity
-      key={label}
-      style={styles.orderCard}
-      onPress={() => nav.navigate('Orders')}
-    >
-      <View style={[styles.orderBadge, count > 0 && styles.orderBadgeActive]}>
-        <Text style={[styles.orderBadgeText, count > 0 && styles.orderBadgeTextActive]}>{count}</Text>
-      </View>
-      <MaterialCommunityIcons name={iconName as any} size={20} color={count > 0 ? COLORS.coral : COLORS.text2} />
-      <Text style={[styles.orderLabel, count > 0 && styles.orderLabelActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
+  const ORDER_STATUS_COLORS = [COLORS.coral, COLORS.blue, COLORS.green, COLORS.yellow];
+
+  const renderOrderStatusCard = (label: string, count: number, iconName: string, colorIndex: number) => {
+    const cardColor = ORDER_STATUS_COLORS[colorIndex];
+    return (
+      <TouchableOpacity
+        key={label}
+        style={styles.orderCard}
+        onPress={() => nav.navigate('Orders')}
+      >
+        <MaterialCommunityIcons name={iconName as any} size={22} color={cardColor} />
+        <Text style={[styles.orderNum, { color: cardColor }]}>{count}</Text>
+        <Text style={styles.orderLabel}>{label}</Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <ScrollView
@@ -409,10 +412,10 @@ export default function MeScreen() {
       {/* Order Status Bar */}
       {hasOrders && (
         <View style={styles.orderBar}>
-          {renderOrderStatusCard(t('me.toPay'), toPay, 'credit-card-outline')}
-          {renderOrderStatusCard(t('me.toShip'), toShip, 'truck-delivery-outline')}
-          {renderOrderStatusCard(t('me.toReceive'), toReceive, 'package-variant-closed')}
-          {renderOrderStatusCard(t('me.toReview'), toReview, 'star-outline')}
+          {renderOrderStatusCard(t('me.toPay'), toPay, 'credit-card-outline', 0)}
+          {renderOrderStatusCard(t('me.toShip'), toShip, 'truck-delivery-outline', 1)}
+          {renderOrderStatusCard(t('me.toReceive'), toReceive, 'package-variant-closed', 2)}
+          {renderOrderStatusCard(t('me.toReview'), toReview, 'star-outline', 3)}
         </View>
       )}
 
@@ -423,13 +426,10 @@ export default function MeScreen() {
           onPress={() => setActiveTab('listings')}
         >
           <MaterialCommunityIcons
-            name={isSeller ? 'storefront-outline' : 'shopping-outline'}
-            size={18}
-            color={activeTab === 'listings' ? COLORS.coral : COLORS.text2}
+            name={isSeller ? 'view-grid-outline' : 'shopping-outline'}
+            size={22}
+            color={activeTab === 'listings' ? COLORS.text : COLORS.text2}
           />
-          <Text style={[styles.tabText, activeTab === 'listings' && styles.tabTextActive]}>
-            {isSeller ? t('me.myListings') : t('me.totalOrders')}
-          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'reviews' && styles.tabActive]}
@@ -437,10 +437,9 @@ export default function MeScreen() {
         >
           <MaterialCommunityIcons
             name="star-outline"
-            size={18}
-            color={activeTab === 'reviews' ? COLORS.coral : COLORS.text2}
+            size={22}
+            color={activeTab === 'reviews' ? COLORS.text : COLORS.text2}
           />
-          <Text style={[styles.tabText, activeTab === 'reviews' && styles.tabTextActive]}>{t('me.reviews')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
@@ -448,10 +447,9 @@ export default function MeScreen() {
         >
           <MaterialCommunityIcons
             name="heart-outline"
-            size={18}
-            color={activeTab === 'saved' ? COLORS.coral : COLORS.text2}
+            size={22}
+            color={activeTab === 'saved' ? COLORS.text : COLORS.text2}
           />
-          <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>{t('me.wishlist')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -571,33 +569,20 @@ const styles = StyleSheet.create({
   orderCard: {
     flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10,
     backgroundColor: COLORS.surface, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
-    position: 'relative',
   },
-  orderBadge: {
-    position: 'absolute', top: -4, right: -4,
-    width: 18, height: 18, borderRadius: 9,
-    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  orderBadgeActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
-  orderBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.text2 },
-  orderBadgeTextActive: { color: COLORS.white },
-  orderLabel: { fontSize: 9, color: COLORS.text2, fontWeight: '500', textAlign: 'center' },
-  orderLabelActive: { color: COLORS.text },
+  orderNum: { fontSize: 16, fontWeight: '800', lineHeight: 20 },
+  orderLabel: { fontSize: 10, color: COLORS.text2, fontWeight: '500', textAlign: 'center' },
 
   /* Tabs */
   tabBar: {
     flexDirection: 'row', marginTop: SPACING.md,
-    marginHorizontal: SPACING.md, backgroundColor: COLORS.surface,
-    borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   tab: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 4, paddingVertical: 10,
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 10, borderBottomWidth: 1.5, borderBottomColor: 'transparent',
   },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: COLORS.coral },
-  tabText: { fontSize: 12, color: COLORS.text2, fontWeight: '500' },
-  tabTextActive: { color: COLORS.coral, fontWeight: '700' },
+  tabActive: { borderBottomColor: COLORS.text },
 
   /* Tab Content */
   tabContent: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
