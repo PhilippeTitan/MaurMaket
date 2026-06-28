@@ -1164,6 +1164,11 @@ app.delete('/api/products/:id', authRequired, sellerRequired, async (req, res) =
     if (check.rows[0].seller_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not your product' });
     }
+    const orderCheck = await pool.query('SELECT 1 FROM order_items WHERE product_id = $1 LIMIT 1', [req.params.id]);
+    if (orderCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'Cannot delete product with existing orders' });
+    }
+    await pool.query('DELETE FROM product_images WHERE product_id = $1', [req.params.id]);
     await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]);
     res.json({ deleted: true });
   } catch (err) {
