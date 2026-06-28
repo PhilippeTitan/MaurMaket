@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -60,6 +60,9 @@ export default function MeScreen() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [analyticsData, setAnalyticsData] = useState<SellerAnalyticsResponse | null>(null);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
+  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
+  const { width: SCREEN_W } = useWindowDimensions();
+  const CARD_W = (SCREEN_W - SPACING.md * 2 - 6) / 2;
 
   const initials = getDisplayName(user).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
@@ -95,8 +98,17 @@ export default function MeScreen() {
       if (isSeller) {
         let sellerProds: { products: Product[] } | null = null;
         try { sellerProds = await getSellerProducts() as { products: Product[] }; } catch { /* ignore */ }
-        setProducts(sellerProds?.products || []);
-        setProductCount(sellerProds?.products?.length || 0);
+        const fetched = sellerProds?.products || [];
+        setProducts(fetched);
+        setProductCount(fetched.length || 0);
+        fetched.forEach((p: Product) => {
+          const img = p.images?.find(i => i.is_primary) || p.images?.[0];
+          if (img?.image_url) {
+            Image.getSize(getImageUrl(img.image_url) || '', (w, h) => {
+              setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
+            }, () => {});
+          }
+        });
 
         if (user?.seller_tier !== 'casual') {
           try {
@@ -157,6 +169,8 @@ export default function MeScreen() {
     const img = item.images?.find(i => i.is_primary) || item.images?.[0];
     const imgUrl = getImageUrl(img?.image_url);
     const isOwnProduct = isSeller && user?.id === item.seller_id;
+    const size = imageSizes[item.id];
+    const cardH = size && size.w > 0 ? Math.max(100, Math.min(380, CARD_W * (size.h / size.w))) : CARD_W;
     return (
       <TouchableOpacity
         key={item.id}
@@ -167,7 +181,7 @@ export default function MeScreen() {
           : nav.navigate('ProductDetail', { productId: item.id })
         }
       >
-        <View style={styles.gridImage}>
+        <View style={[styles.gridImage, { height: cardH }]}>
           {imgUrl ? (
             <Image source={{ uri: imgUrl }} style={styles.gridImg} resizeMode="contain" />
           ) : (
@@ -587,7 +601,7 @@ const styles = StyleSheet.create({
   tabContent: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   gridItem: { width: '48%' as any, backgroundColor: COLORS.surface, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
-  gridImage: { aspectRatio: 1, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  gridImage: { minHeight: 140, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
   gridImg: { width: '100%', height: '100%' },
   editBadge: {
     position: 'absolute', bottom: 4, right: 4,

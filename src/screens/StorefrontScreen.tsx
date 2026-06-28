@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl,
+  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl, useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, isVerifiedSeller, getDisplayName, getSellerAvatar } from '../theme';
@@ -26,6 +26,9 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [messageLoading, setMessageLoading] = useState(false);
+  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
+  const { width: SCREEN_W } = useWindowDimensions();
+  const CARD_W = (SCREEN_W - SPACING.sm * 2 - 10) / 2;
 
   const fetchSellerData = useCallback(async () => {
     try {
@@ -37,6 +40,14 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       ]);
       setSeller(sellerRes.seller);
       setProducts(prodRes.products || []);
+      (prodRes.products || []).forEach((p: Product) => {
+        const img = p.images?.find(i => i.is_primary) || p.images?.[0];
+        if (img?.image_url) {
+          Image.getSize(getImageUrl(img.image_url) || '', (w, h) => {
+            setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
+          }, () => {});
+        }
+      });
       setReviews(revRes.reviews || []);
       const followIds = (followingRes.following || []).map(f => f.seller_id || f.id).filter(Boolean);
       setFollowing(followIds.includes(sellerId));
@@ -165,12 +176,14 @@ export default function StorefrontScreen({ route, navigation }: Props) {
         renderItem={({ item }) => {
           const img = item.images?.find(i => i.is_primary) || item.images?.[0];
           const imgUrl = getImageUrl(img?.image_url);
+          const size = imageSizes[item.id];
+          const cardH = size && size.w > 0 ? Math.max(100, Math.min(380, CARD_W * (size.h / size.w))) : CARD_W;
           return (
             <TouchableOpacity
-              style={styles.card}
+              style={[styles.card, { height: cardH + 50 }]}
               onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
             >
-              <View style={styles.cardImage}>
+              <View style={[styles.cardImage, { height: cardH }]}>
                 {imgUrl ? <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="contain" /> : <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />}
                 <View style={styles.priceBadge}>
                   <Text style={styles.priceText}>Rs {item.price.toLocaleString()}</Text>
@@ -274,7 +287,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border,
   },
   cardImage: {
-    height: 140, backgroundColor: COLORS.surface2, justifyContent: 'center', alignItems: 'center', position: 'relative',
+    backgroundColor: COLORS.surface2, justifyContent: 'center', alignItems: 'center', position: 'relative',
   },
   cardImg: { width: '100%', height: '100%' },
   priceBadge: {
