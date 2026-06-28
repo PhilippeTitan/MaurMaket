@@ -372,7 +372,7 @@ export default function FeedScreen() {
 
           {/* Product name + info */}
           <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-          <Text style={styles.productInfo}>{item.category?.name || 'Port-au-Prince'} - {stockLabel}</Text>
+          <Text style={styles.productInfo}>{typeof item.category === 'string' ? item.category : item.category?.name || 'Port-au-Prince'} - {stockLabel}</Text>
 
           {/* Buy / Cart buttons */}
           <View style={styles.buyRow}>

@@ -1902,11 +1902,13 @@ app.get('/api/conversations', authRequired, async (req, res) => {
 });
 
 app.post('/api/conversations', authRequired, async (req, res) => {
-  const { productId, orderId } = req.body;
-  if (!productId && !orderId) return res.status(400).json({ error: 'productId or orderId required' });
+  const { productId, orderId, sellerId: directSellerId } = req.body;
+  if (!productId && !orderId && !directSellerId) return res.status(400).json({ error: 'productId, orderId, or sellerId required' });
   try {
     let sellerId;
-    if (orderId) {
+    if (directSellerId) {
+      sellerId = directSellerId;
+    } else if (orderId) {
       const o = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [orderId]);
       if (o.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
       const items = await pool.query('SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1', [orderId]);
@@ -2263,9 +2265,10 @@ app.get('/api/seller/balance', authRequired, sellerRequired, async (req, res) =>
       [req.user.id]
     );
     if (result.rows.length === 0) {
-      return res.json({ balance: { balance: 0, total_earned: 0, total_paid_out: 0 } });
+      return res.json({ balance: 0, total_earned: 0, total_paid_out: 0 });
     }
-    res.json({ balance: result.rows[0] });
+    const row = result.rows[0];
+    res.json({ balance: parseFloat(row.balance) || 0, total_earned: parseFloat(row.total_earned) || 0, total_paid_out: parseFloat(row.total_paid_out) || 0 });
   } catch (err) {
     console.error('Balance fetch error:', err);
     res.status(500).json({ error: 'Server error' });

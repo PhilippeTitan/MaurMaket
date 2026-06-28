@@ -93,8 +93,8 @@ export default function CartScreen({ navigation }: Props) {
     if (!promoCode.trim()) return;
     setPromoLoading(true);
     try {
-      const res = await validatePromo(promoCode.trim(), total) as { discount_amount: number };
-      setDiscount(res.discount_amount);
+      const res = await validatePromo(promoCode.trim(), total) as { discount: number };
+      setDiscount(res.discount);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Invalid promo';
       Alert.alert(t('common.error'), msg);

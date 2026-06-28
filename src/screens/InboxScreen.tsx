@@ -44,11 +44,11 @@ export default function InboxScreen() {
       const [convos, notifs, followingRes] = await Promise.all([
         getConversations() as Promise<{ conversations: Conversation[] }>,
         getNotifications() as Promise<{ notifications: Notification[] }>,
-        getFollowing() as Promise<{ sellers: User[] }>,
+        getFollowing() as Promise<{ following: User[] }>,
       ]);
       setConversations(convos.conversations || []);
       setNotifications((notifs.notifications || []).slice(0, 3));
-      setFollowedSellers(followingRes.sellers || []);
+      setFollowedSellers(followingRes.following || []);
     } catch { Alert.alert(t('common.error'), 'Could not load messages.'); }
     setLoading(false);
   }, []);
@@ -92,16 +92,16 @@ export default function InboxScreen() {
     .filter(c => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-    const name = (c.other_user?.full_name || '').toLowerCase();
-    const msg = (c.last_message?.content || '').toLowerCase();
+    const name = ((c as any).other_party_name || '').toLowerCase();
+    const msg = ((c as any).last_message || '').toLowerCase();
     return name.includes(q) || msg.includes(q);
   });
 
   const renderConversation = ({ item }: { item: Conversation }) => {
-    const otherName = item.other_user?.full_name || 'Seller';
+    const otherName = (item as any).other_party_name || 'Seller';
     const initial = otherName[0] || '?';
     const hasUnread = (item.unread_count || 0) > 0;
-    const avatarUrl = getImageUrl(item.other_user?.avatar_url);
+    const avatarUrl = getImageUrl((item as any).other_party_avatar);
 
     return (
       <TouchableOpacity
@@ -118,7 +118,7 @@ export default function InboxScreen() {
         <View style={styles.convoBody}>
           <Text style={[styles.convoName, hasUnread && styles.convoNameBold]}>{otherName}</Text>
           <Text style={[styles.convoMsg, hasUnread && styles.convoMsgUnread]} numberOfLines={1}>
-            {item.last_message?.content || 'No messages yet'}
+            {item.last_message?.content || (item as any).last_message || 'No messages yet'}
           </Text>
         </View>
         <View style={styles.convoRight}>
@@ -139,9 +139,9 @@ export default function InboxScreen() {
           nav.navigate('Chat', { conversationId: existing.id, otherUserName: seller.full_name });
           return;
         }
-        const res = await createConversation({ userId: seller.id }) as { conversation: Conversation };
-        if (res.conversation) {
-          nav.navigate('Chat', { conversationId: res.conversation.id, otherUserName: seller.full_name });
+        const res = await createConversation({ sellerId: seller.id }) as { conversationId: string };
+        if (res.conversationId) {
+          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: seller.full_name });
         }
       } catch {
         Alert.alert('Error', 'Could not start conversation.');
