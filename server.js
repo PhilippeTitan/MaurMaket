@@ -1112,6 +1112,9 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
   if (!name || !price) {
     return res.status(400).json({ error: 'Name and price required' });
   }
+  if (!images || !Array.isArray(images) || images.length === 0) {
+    return res.status(400).json({ error: 'At least one image is required' });
+  }
 
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
   const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
