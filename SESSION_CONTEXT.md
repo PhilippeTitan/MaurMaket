@@ -1,13 +1,12 @@
 # MaurMaket — Session Context (Compaction Save)
 ## Date: June 27, 2026
-## Session ID: ses_105795b44ffe01P0vMPwpibCJP
 ## Resume command: `opencode -s ses_105795b44ffe01P0vMPwpibCJP`
 
 ---
 
 ## Goal
 
-Build and polish the **MaurMaketMobile** React Native/Expo mobile app — a Haitian marketplace (e-commerce) app. This session focused on: **deploying backend to Belmo then abandoning it for Render**, **testing MonCash commission logic**, **taking screenshots from real APK build**, **fixing 7+ bugs found in screenshots**, **rebuilding the feed to match TikTok/Instagram layout**, and **full i18n across all 22 screens**.
+Build and polish the **MaurMaketMobile** React Native/Expo mobile app — a Haitian marketplace (e-commerce) app connecting buyers and sellers in Haiti. TikTok-style vertical swipe feed, MonCash payments, seller dashboard, commission system, full i18n (EN/HT/FR).
 
 ## Instructions
 
@@ -16,165 +15,130 @@ Build and polish the **MaurMaketMobile** React Native/Expo mobile app — a Hait
 - **Push to GitHub after major changes** with detailed commit messages
 - **Always update AGENTS.md blueprint** as we go
 - **Frontend only** for now — no backend changes unless fixing image serving or adding new features
-- **Git repos**: Backend + Mobile now unified at `https://github.com/PhilippeTitan/MaurMaket.git`
+- **Git repos**: Backend + Mobile unified at `https://github.com/PhilippeTitan/MaurMaket.git`
 - **Backend**: Express.js (ESM, `"type": "module"`) at `server.js` (~2375 lines)
-- **Backend server must be restarted** to pick up new migration columns
 - **Decoupled Storage Architecture**: DB stores URL pointers only, images live on CDN (Unsplash)
 - **Identity model**: Business sellers can toggle between personal name + personal avatar OR store name + store logo
-- **MonCash IS the wallet** — no separate balance/payouts screen needed. Sellers pay via MonCash directly.
-- **Settings should follow Instagram's flat row pattern**
+- **MonCash IS the wallet** — no separate balance/payouts screen needed
 - **Commission model**: Tiered 10/8/5% — casual/verified/business
-- **Platform commission auto-payouts** to owner's MonCash on every payment completed
 - **Backend deployed on Render** at `https://maurmaket.onrender.com` (Belmo was abandoned)
-- **MonCashConnect webhook URL** is set to `https://maurmaket.onrender.com/api/payments/webhook`
+- **resizeMode="cover"** for masonry grids, **"contain"** for feed/product detail hero images
+- **The app's real competition is WhatsApp + Facebook Marketplace, NOT Vinted/Depop**
+- **Multi-image listings are the #1 missing trust signal in C2C commerce**
+
+## Key Design Decisions
+
+- **Masonry grids** use `resizeMode="cover"` + dynamic heights via `Image.getSize()` + `DEFAULT_IMG_H = CARD_W * 1.25` fallback
+- **Feed/ProductDetail** use `resizeMode="contain"` to show full images without cropping
+- **Price overlays** use pill badges (coral on white bg) NOT text-shadow — breaks on light product photos
+- **Safe areas** use `useSafeAreaInsets()` — never hardcode `paddingTop: SPACING.xl + 40`
+- **Back buttons** always use `<MaterialCommunityIcons name="arrow-left" />` — never `←` text
+
+## Git History (Latest First)
+
+```
+611d95c feat: wishlist thumbnails — 48x48 product image + stock indicator per row
+dcdc612 feat: multi-image listings + order summary at checkout
+3d976cd fix: masonry cover + strategic context + safe area + icons
+ed31f87 fix: remove height clamps — card height purely follows image aspect ratio
+0a3e93f fix: Pinterest-style masonry — dynamic card heights hug image aspect ratio
+3abfe96 fix: action rail buttons now match TikTok/Reels/Shorts dimensions
+2a45833 fix: all images now use resizeMode contain instead of cover
+5c46e1b fix: images no longer zoomed/cropped — use contain in feed + product detail
+b66b60f fix: critical backend security + stress test audit fixes
+8e34d04 docs: save session ID for resume
+fa841f2 docs: save session context as compaction backup
+f556114 feat: full i18n across all 22 screens (EN/HT/FR)
+89830b6 fix: upload multer 8MB + fileFilter + error handler + HTTPS retry URL
+```
+
+## What Was Accomplished (Complete)
+
+### Phase 1 — Masonry Fix (3 screens) ✅
+- ExploreScreen: `cover` + `DEFAULT_IMG_H` + `MIN_H`/`MAX_H` + price pill badge
+- MeScreen: `cover` + `DEFAULT_IMG_H` + dynamic heights via `Image.getSize()`
+- StorefrontScreen: same pattern as MeScreen
+
+### Phase 2 — Safe Area (3 screens) ✅
+- HomeScreen, CartScreen, ChatScreen: replaced `paddingTop: SPACING.xl + 40` with `useSafeAreaInsets().top + SPACING.md`
+
+### Phase 3 — Back Button Icons (2 screens) ✅
+- NotificationsScreen, MessagesScreen: replaced `←` text with `MaterialCommunityIcons "arrow-left"`
+
+### Phase 4 — Wishlist Thumbnails ✅
+- 48×48 thumbnail per product + stock indicator ("Available" / "Sold out")
+- Committed as `611d95c`
+
+### Multi-Image Listings ✅
+- AddListingScreen: up to 8 images, multi-select gallery picker, Promise.all upload, horizontal thumbnail row with X remove + add button
+- EditListingScreen: same multi-image support
+- Committed as `dcdc612`
+
+### Order Summary at Checkout ✅
+- CheckoutScreen: each cart item with 44×44 thumbnail, product name, seller name, quantity, coral price before "Pay with MonCash"
+- Committed as `dcdc612`
+
+### Feed Polish ✅
+- Coral follow button, larger avatar (36dp), action rail raised for thumb reach
+
+### i18n — All 22 Screens ✅
+- Expanded i18n.ts from ~90 to ~400 keys across EN/HT/FR
+- All 22 live screens use `useTranslation()` + `t()` calls
+- Added `addListing.photos` and `checkout.orderSummary` keys
+
+### Other Fixes (Earlier Sessions)
+- Screenshot bug fixes: duplicate orders, returnUrl, cart cleared on failure, safe area, search bar, API errors, deep link regex
+- SellerOnboardingScreen: black screen fix + back button added
+- Image upload: multer 8MB + fileFilter + error handler
+- Follow button state: getFollowing() on mount
+- Retry payment: hardcoded https://
+- Orders: back button added
 
 ## Discoveries
 
 ### Deployment
-- **Belmo/HostingGuru was unreliable** — returned 502/503, Nixpacks ignored custom build commands, service never started
-- **Root cause on Belmo**: `isMain` check in server.js compared `process.argv[1]` (relative path) with `fileURLToPath(import.meta.url)` (absolute path) — they didn't match so the server never called `app.listen()`
-- **Fixed isMain** to use `path.resolve()` on both sides for consistent comparison
-- **nixpacks.toml** was created but Belmo's Nixpacks may not respect custom install phases
-- **strip-mobile-deps.mjs** strips mobile deps from package.json for deployment — Dockerfile updated to use it
-- **Belmo abandoned** — went back to Render which was already working fine
-- **Render free tier**: spins down after 15min idle, ~30s cold start on first request
-- **Frontend api.ts** now points to `https://maurmaket.onrender.com`
+- Belmo/HostingGuru was unreliable — abandoned, back on Render
+- Render free tier spins down after 15min idle, ~30s cold start
 
-### MonCash Commission Testing
-- Created test accounts, products, and orders via API
-- **Simulated webhook** with HMAC-SHA256 signature — commission splitting works perfectly
-- Casual seller (10%): Rs 1000 order → Rs 900 to seller, Rs 100 platform commission
-- Platform payout attempted to `50946056792` via MonCashConnect payout API
-- **`platform_revenue` table** tracks every commission
-- **`platform_payouts` table** tracks every automatic payout to platform owner
-- Webhook secret from .env: `whsec_de03593cda058faf5e5b3289ea4ee996c3a87da473c3643d`
+### MonCash Commission
+- Webhook simulation works: 10% casual tier, Rs 900/100 split
+- `platform_revenue` + `platform_payouts` tables track everything
+- Platform owner phone: `50946056792`
+- Webhook secret: `whsec_de03593cda058faf5e5b3289ea4ee996c3a87da473c3643d`
 
-### EAS Build
-- User successfully built APK via `eas build --platform android --profile preview`
-- App loads, connects to Render, signup works, images load
-- **eas-cli** installed globally: `npm install -g eas-cli`
+### Stress Test Findings (from Claude)
+- **Multi-image listings**: #1 trust signal in C2C, now done
+- **Order summary at checkout**: reduces abandonment, now done
+- **Image sharing in chat**: prevents off-app WhatsApp exfiltration — NOT YET DONE
+- **Negotiation dock**: formalizes Haiti's haggling culture — the sharpest weapon
+- **ProfileScreen**: legacy dead code in nav tree, should be removed or redirected
 
-### Screenshot Analysis (6 screenshots)
-- **Duplicate orders**: Same order appeared twice — backend buyer query JOINed `order_items` without `GROUP BY`
-- **MonCashConnect 400 error**: ReturnUrl `maurmaket://payment-return` missing orderId param
-- **Cart cleared on payment failure**: clearCart() ran in catch block too
-- **Safe area issues**: `react-native-safe-area-context` installed but NEVER used — hardcoded paddings everywhere
-- **Search bar too small**: 36px height vs Pinterest's 44-48px standard
+### AI Model Comparison (Nvidia NIM)
+- **Kimi K2.6** best on free tier: intelligence 53.9, reasoning 60.3, coding 47.1
+- MiMo V2.5 (current model): intelligence 49.0, reasoning 53.0, coding 42.1
+- DeepSeek V4 models hang in OpenCode (chat_template_kwargs bug) — avoid
+- Nemotron 3 Ultra: 3x faster but slightly less smart
 
-### i18n System (COMPLETED THIS SESSION)
-- **Fully functional** infrastructure: persistence via `mm_lang` SecureStore, `useTranslation()` hook, `i18n.init()` called at startup
-- **i18n.ts expanded from ~90 keys to ~400 keys** across 3 languages (EN/HT/FR)
-- Added `{param}` interpolation support to `i18n.t()`
-- **All 22 live screens now use `t()` translations** — zero hardcoded English strings remain
-- Translation keys organized by namespace: `feed.*`, `explore.*`, `checkout.*`, `cart.*`, `orders.*`, `orderDetail.*`, `productDetail.*`, `me.*`, `settings.*`, `sellerOnboarding.*`, `editListing.*`, `storefront.*`, `chat.*`, `inbox.*`, `wishlist.*`, `addresses.*`, `payments.*`, `paymentReturn.*`, `settingsEdit.*`, `addListing.*`, `common.*`
+## Remaining Work
 
-### Feed Layout (TikTok Research)
-- TikTok action rail: 12px from right, 15px gap, 35px icons, 60px touch area
-- TikTok bottom info: ~200-300px from bottom, aligns with share/bookmark buttons
-- Current feed uses full-screen cards (100% height) — user wants to keep this
-- Action rail was at `screenHeight * 0.36` — raised to `screenHeight * 0.42`
+### High Priority
+1. **Image sharing in chat** — prevents WhatsApp exfiltration. Needs backend upload endpoint for chat attachments.
+2. **ProfileScreen cleanup** — remove dead code from nav tree
+3. **Build new APK**: `eas build --platform android --profile preview`
 
-### Seller Onboarding Bug
-- After casual tier selection: `setStep('done')` called but no `case 'done'` in `renderStep()` — renders black screen
-- Verified/Business tiers: `handleComplete()` function exists but is NEVER wired to any button (dead code)
-- **FIXED**: Both now call `nav.goBack()` + handleComplete() is wired to verify step buttons
+### Low Priority
+4. Hardcoded `paddingTop: SPACING.xl + 40` in HomeScreen, CartScreen, ChatScreen — partially fixed but verify
+5. Seller analytics gated too aggressively — show teaser metrics to casual sellers
 
-### Image Upload
-- **Multer upgraded**: 5MB → 8MB limit, fileFilter for JPEG/PNG/GIF/WebP only
-- **Error handler added**: Proper multer error messages (LIMIT_FILE_SIZE, etc.)
-- **Tested locally and on Render**: All scenarios pass (valid image, non-image rejection, no file, PNG)
-- **Committed to git** but was on separate commit from i18n (`89830b6`)
-
-### Back Button Audit
-- All 22 screens checked for back buttons
-- **SellerOnboardingScreen** was MISSING back button — **FIXED** (added arrow-left + nav.goBack())
-- **PaymentReturnScreen** has no back button during polling — SKIPPED (transient screen, has exit buttons on timeout)
-
-### Nvidia NIM / Model Comparison
-- User has Nvidia API key for free models
-- **Kimi K2.6** is the best model on Nvidia's free tier — beats MiMo V2.5 on intelligence (53.9 vs 49.0), reasoning (60.3 vs 53.0), coding (47.1 vs 42.1)
-- **DeepSeek V4** models have a known OpenCode bug (hang without `chat_template_kwargs`) — avoid
-- **Nemotron 3 Ultra** is 3x faster but slightly less smart than MiMo V2.5
-- OpenCode config written to `C:\Users\drato\.config\opencode\opencode.json` with Kimi K2.6, Nemotron 3 Ultra, Nemotron 3 Super
-- `NVIDIA_API_KEY` set via `setx` — user needs to restart terminal for it to take effect
-- User may need to use `/connect` in OpenCode to add NVIDIA credentials if env var doesn't work
-
-### SQLite Error
-- User hit `SQLITE_MISUSE` error in OpenCode TUI — internal OpenCode bug, not related to our work
-- Fix: delete session DB and relaunch
-
-## Accomplished
-
-### This Session (Complete):
-
-**1. Deployment**
-- Attempted Belmo deployment with nixpacks.toml and strip-mobile-deps.mjs
-- Fixed isMain path comparison for container deployments
-- **Abandoned Belmo** — reverted to Render which was already working
-- Updated `src/api.ts` to point back to Render URLs
-
-**2. MonCash Commission Testing**
-- Full end-to-end test: signup → product → order → payment → webhook simulation
-- Verified commission splitting: 10% casual tier, Rs 900 net to seller, Rs 100 platform
-
-**3. Screenshot Bug Fixes (7 fixes)**
-- Fix 1: Duplicate orders — `DISTINCT ON (o.id)` in buyer query
-- Fix 2: Broken returnUrl — added `?orderId=` param
-- Fix 3: Cart cleared on failure — moved `clearCart()` to success branch only
-- Fix 4: Safe area — `SafeAreaProvider` + `useSafeAreaInsets()` across screens
-- Fix 5: Search bar — Pinterest-style (44px height, 24px radius)
-- Fix 6: API error details — included `details` field
-- Fix 7: Deep link regex — matched `orderId` param
-
-**4. Feed TikTok Layout Overhaul**
-- Action rail raised to `screenHeight * 0.42`
-- Gradient height: 55%, bottom overlay padding for tab bar clearance
-
-**5. Seller Onboarding Black Screen Fix**
-- `handleCompleteWithTier`: replaced `setStep('done')` with `nav.goBack()`
-- Wired dead `handleComplete()` to verify step buttons
-
-**6. Image Upload Error Fix**
-- Increased multer file size limit from 5MB to 8MB
-- Added fileFilter for allowed MIME types
-- Added multer error handler with user-friendly messages
-
-**7. Follow Button State Fix**
-- FeedScreen: Added `getFollowing()` call on mount
-- StorefrontScreen: Replaced `getFollowerCount` with `getFollowing()` for follow state
-
-**8. Retry Payment HTTPS Fix**
-- Hardcoded `https://` in retry endpoint's returnUrl
-
-**9. Orders Back Button**
-- Added TouchableOpacity with arrow-left icon
-
-**10. Full i18n — ALL 22 screens use `t()` translations (LARGE)**
-- Expanded i18n.ts from ~90 to ~400 keys (EN/HT/FR)
-- All 22 live screens updated with `useTranslation()` + `t()` calls
-- Added back button to SellerOnboardingScreen
-- Committed as `f556114` and pushed
-
-**11. Server.js commit**
-- Multer 8MB + fileFilter + error handler + HTTPS retry URL
-- Committed as `89830b6` and pushed
-
-**12. Nvidia NIM setup**
-- Created OpenCode config with Kimi K2.6, Nemotron 3 Ultra, Nemotron 3 Super
-- Set NVIDIA_API_KEY env var via setx
-
-### What's Next:
-
-1. **User testing with real MonCash money** — webhook URL is configured on Render
-2. **Build new APK** with i18n changes: `eas build --platform android --profile preview`
-3. **Fix OpenCode SQLITE_MISUSE** — delete session DB, relaunch, use `/connect` for NVIDIA if needed
-4. **Test Nvidia models in OpenCode** — Kimi K2.6 should be the primary model
+### Testing
+6. **User testing with real MonCash money** — webhook URL configured on Render
+7. **Test Nvidia models in OpenCode** — Kimi K2.6 via `/connect`
 
 ## Critical Files
 
 ```
 C:\MAURINEX\Maurinex Projects\New folder\MaurMaket\
-├── AGENTS.md                        # Full blueprint
+├── AGENTS.md                        # Full blueprint (updated in 3d976cd)
 ├── SESSION_CONTEXT.md               # THIS FILE — save point
 ├── package.json                     # Merged backend + mobile deps
 ├── server.js                        # Backend (~2375 lines) — deployed on Render
@@ -182,13 +146,36 @@ C:\MAURINEX\Maurinex Projects\New folder\MaurMaket\
 ├── Dockerfile                       # Uses strip-mobile-deps.mjs
 ├── src/
 │   ├── api.ts                       # Production URL: https://maurmaket.onrender.com
-│   ├── i18n.ts                      # ~400 translation keys, EN/HT/FR, params support
-│   ├── store.ts                     # Reactive state
+│   ├── i18n.ts                      # ~400 translation keys, EN/HT/FR
+│   ├── store.ts                     # Reactive state (user, token, cart)
 │   ├── theme.ts                     # COLORS, SPACING, FONTS
 │   ├── types.ts                     # TypeScript interfaces
+│   ├── navigation.ts                # Navigation types
 │   └── screens/
-│       ├── (all 22 screens)          # All use useTranslation() + t()
-├── OpenCode config: C:\Users\drato\.config\opencode\opencode.json
+│       ├── FeedScreen.tsx           # TikTok feed, contain, coral follow btn
+│       ├── ExploreScreen.tsx        # Pinterest masonry, cover + DEFAULT_IMG_H
+│       ├── ProductDetailScreen.tsx  # Hero image contain, seller reviews
+│       ├── MeScreen.tsx             # Profile + seller dashboard, cover masonry
+│       ├── CartScreen.tsx           # Cart + promo, safe area fixed
+│       ├── CheckoutScreen.tsx       # Delivery/Meetup + MonCash + order summary
+│       ├── OrdersScreen.tsx         # Buying/selling order management
+│       ├── OrderDetailScreen.tsx    # Timeline + review + dispute
+│       ├── ChatScreen.tsx           # 1:1 messaging, safe area fixed
+│       ├── InboxScreen.tsx          # Notifications + conversations
+│       ├── SettingsScreen.tsx       # Instagram-style settings
+│       ├── SettingsEditScreen.tsx   # Generic field editor
+│       ├── AddListingScreen.tsx     # Post new product — multi-image (up to 8)
+│       ├── EditListingScreen.tsx    # Edit/delete product — multi-image
+│       ├── SellerOnboardingScreen.tsx # 3-tier wizard with back button
+│       ├── StorefrontScreen.tsx     # Public seller profile, cover masonry
+│       ├── WishlistScreen.tsx       # Wishlist with 48x48 thumbnails + stock
+│       ├── AddressesScreen.tsx      # Saved addresses
+│       ├── PaymentsScreen.tsx       # Seller balance + payouts
+│       ├── PaymentReturnScreen.tsx  # MonCash return polling
+│       ├── LoginScreen.tsx          # Sign in
+│       └── SignupScreen.tsx         # Create account
+├── uploads/                         # Uploaded images (served at /uploads/)
+└── OpenCode config: C:\Users\drato\.config\opencode\opencode.json
 ```
 
 ### Local server restart:
@@ -202,6 +189,7 @@ node server.js
 eas build --platform android --profile preview
 ```
 
-### Git commits in this session:
-- `f556114` — feat: full i18n across all 22 screens (EN/HT/FR)
-- `89830b6` — fix: upload multer 8MB + fileFilter + error handler + HTTPS retry URL
+### Resume session:
+```
+opencode -s ses_105795b44ffe01P0vMPwpibCJP
+```
