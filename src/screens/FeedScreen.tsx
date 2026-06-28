@@ -324,7 +324,7 @@ export default function FeedScreen() {
         </View>
 
         {/* Right-side action rail — absolute, thumb-reachable */}
-        <View style={[styles.actionRail, { bottom: screenHeight * 0.15 }]}>
+        <View style={[styles.actionRail, { bottom: screenHeight * 0.32 }]}>
           {!isOwnProduct && (
             <>
               <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item)}>
@@ -758,22 +758,22 @@ const styles = StyleSheet.create({
     maxWidth: '68%',
   },
   sellerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: COLORS.coral,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sellerAvatarText: {
-    fontSize: 13,
+    fontSize: 14,
     color: COLORS.white,
     fontWeight: '700',
   },
   sellerName: {
     fontSize: 14,
     color: COLORS.white,
-    fontWeight: '600',
+    fontWeight: '700',
     flexShrink: 1,
   },
   followBtn: {
@@ -781,20 +781,20 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
+    borderColor: COLORS.coral,
   },
   followBtnActive: {
-    backgroundColor: COLORS.white,
-    borderColor: COLORS.white,
+    backgroundColor: COLORS.coral,
+    borderColor: COLORS.coral,
   },
   followBtnText: {
     fontSize: 12,
-    color: COLORS.white,
+    color: COLORS.coral,
     fontWeight: '700',
     flexShrink: 1,
   },
   followBtnTextActive: {
-    color: '#0B0F1A',
+    color: COLORS.white,
   },
   priceTag: {
     alignSelf: 'flex-start',

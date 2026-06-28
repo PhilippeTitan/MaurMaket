@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform,
+  Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -16,6 +16,9 @@ import type { RootStackParamList } from '../navigation';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+const MAX_IMAGES = 8;
+const THUMB_SIZE = 80;
+
 export default function AddListingScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
@@ -25,7 +28,7 @@ export default function AddListingScreen() {
   const [stock, setStock] = useState('1');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageUris, setImageUris] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [listingCount, setListingCount] = useState<number | null>(null);
@@ -51,19 +54,31 @@ export default function AddListingScreen() {
     })();
   }, []);
 
-  const pickImage = async () => {
+  const pickImages = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert(t('addListing.permission'), t('addListing.allowPhotos'));
       return;
     }
+    const remaining = MAX_IMAGES - imageUris.length;
+    if (remaining <= 0) {
+      Alert.alert('', `Maximum ${MAX_IMAGES} images allowed`);
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.8,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
     });
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
+    if (!result.canceled) {
+      const uris = result.assets.map(a => a.uri).filter(Boolean) as string[];
+      setImageUris(prev => [...prev, ...uris].slice(0, MAX_IMAGES));
     }
+  };
+
+  const removeImage = (index: number) => {
+    setImageUris(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async () => {
@@ -74,11 +89,11 @@ export default function AddListingScreen() {
 
     setLoading(true);
     try {
-      let imageUrl: string | null = null;
-      if (imageUri) {
+      const uploadedUrls: string[] = [];
+      if (imageUris.length > 0) {
         setUploading(true);
-        const uploadRes = await uploadImage(imageUri);
-        imageUrl = uploadRes.url;
+        const results = await Promise.all(imageUris.map(uri => uploadImage(uri)));
+        results.forEach(r => { if (r.url) uploadedUrls.push(r.url); });
         setUploading(false);
       }
 
@@ -89,7 +104,7 @@ export default function AddListingScreen() {
         stock: parseInt(stock, 10) || 1,
       };
       if (categoryId) productData.categoryId = categoryId;
-      if (imageUrl) productData.images = [imageUrl];
+      if (uploadedUrls.length > 0) productData.images = uploadedUrls;
 
       await createProduct(productData);
       Alert.alert(t('addListing.success'), t('addListing.created'), [
@@ -144,16 +159,22 @@ export default function AddListingScreen() {
             </View>
           )}
 
-          <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
-            {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="contain" />
-            ) : (
-              <>
-                <MaterialCommunityIcons name="camera-plus" size={32} color={COLORS.text2} />
-                <Text style={styles.imageHint}>{t('addListing.tapPhoto')}</Text>
-              </>
+          <Text style={styles.imageLabel}>{t('addListing.photos')} ({imageUris.length}/{MAX_IMAGES})</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageRow}>
+            {imageUris.map((uri, idx) => (
+              <View key={idx} style={styles.thumbWrap}>
+                <Image source={{ uri }} style={styles.thumbImg} />
+                <TouchableOpacity style={styles.thumbRemove} onPress={() => removeImage(idx)}>
+                  <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {imageUris.length < MAX_IMAGES && (
+              <TouchableOpacity style={styles.addBtn} onPress={pickImages}>
+                <MaterialCommunityIcons name="camera-plus" size={28} color={COLORS.text2} />
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </ScrollView>
 
           <TextInput style={styles.input} placeholder={t('addListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
           <TextInput style={[styles.input, styles.textArea]} placeholder={t('addListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
@@ -199,15 +220,16 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   backBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
-  imagePicker: {
-    margin: SPACING.md, height: 160, borderRadius: 12, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed',
-    alignItems: 'center', justifyContent: 'center', gap: 8,
-    overflow: 'hidden',
+  imageLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 12, marginBottom: 6 },
+  imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8 },
+  thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, overflow: 'hidden', marginRight: 8, backgroundColor: COLORS.surface2 },
+  thumbImg: { width: '100%', height: '100%' },
+  thumbRemove: { position: 'absolute', top: -6, right: -6, backgroundColor: COLORS.bg, borderRadius: 10 },
+  addBtn: {
+    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, borderWidth: 1,
+    borderColor: COLORS.border, borderStyle: 'dashed', alignItems: 'center',
+    justifyContent: 'center', backgroundColor: COLORS.surface,
   },
-  imagePlaceholder: { fontSize: 14, color: COLORS.text },
-  imageHint: { fontSize: 12, color: COLORS.text2 },
-  imagePreview: { width: '100%', height: '100%' },
   input: {
     marginHorizontal: SPACING.md, backgroundColor: COLORS.surface, borderWidth: 1,
     borderColor: COLORS.border, borderRadius: 10, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,

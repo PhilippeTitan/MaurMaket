@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform,
+  Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -14,6 +14,9 @@ import type { Category, ProductImage } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditListing'>;
 
+const MAX_IMAGES = 8;
+const THUMB_SIZE = 80;
+
 export default function EditListingScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const { productId } = route.params;
@@ -24,7 +27,8 @@ export default function EditListingScreen({ route, navigation }: Props) {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [existingImages, setExistingImages] = useState<ProductImage[]>([]);
-  const [newImageUri, setNewImageUri] = useState<string | null>(null);
+  const [newImageUris, setNewImageUris] = useState<string[]>([]);
+  const [removedExistingImageIds, setRemovedExistingImageIds] = useState<string[]>([]);
   const [isAvailable, setIsAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -54,19 +58,37 @@ export default function EditListingScreen({ route, navigation }: Props) {
     })();
   }, [productId]);
 
-  const pickImage = async () => {
+  const totalImages = existingImages.filter(i => !removedExistingImageIds.includes(i.id)).length + newImageUris.length;
+
+  const pickImages = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert(t('editListing.permission'), t('editListing.allowPhotos'));
       return;
     }
+    const remaining = MAX_IMAGES - totalImages;
+    if (remaining <= 0) {
+      Alert.alert('', `Maximum ${MAX_IMAGES} images allowed`);
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.8,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
     });
-    if (!result.canceled && result.assets[0]) {
-      setNewImageUri(result.assets[0].uri);
+    if (!result.canceled) {
+      const uris = result.assets.map(a => a.uri).filter(Boolean) as string[];
+      setNewImageUris(prev => [...prev, ...uris].slice(0, MAX_IMAGES));
     }
+  };
+
+  const removeNewImage = (index: number) => {
+    setNewImageUris(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const removeExistingImage = (id: string) => {
+    setRemovedExistingImageIds(prev => [...prev, id]);
   };
 
   const handleSave = async () => {
@@ -76,11 +98,15 @@ export default function EditListingScreen({ route, navigation }: Props) {
     }
     setSaving(true);
     try {
-      let imageUrl: string | null = null;
-      if (newImageUri) {
-        const uploadRes = await uploadImage(newImageUri);
-        imageUrl = uploadRes.url;
+      const uploadedUrls: string[] = [];
+      if (newImageUris.length > 0) {
+        const results = await Promise.all(newImageUris.map(uri => uploadImage(uri)));
+        results.forEach(r => { if (r.url) uploadedUrls.push(r.url); });
       }
+      const keptExisting = existingImages
+        .filter(i => !removedExistingImageIds.includes(i.id))
+        .map(i => i.image_url);
+      const allImageUrls = [...keptExisting, ...uploadedUrls];
       const data: Record<string, unknown> = {
         name,
         description,
@@ -89,7 +115,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
         isAvailable,
       };
       if (categoryId) data.categoryId = categoryId;
-      if (imageUrl) data.images = [imageUrl];
+      if (allImageUrls.length > 0) data.images = allImageUrls;
       await updateProduct(productId, data);
       Alert.alert(t('editListing.saved'), t('editListing.productUpdated'), [
         { text: t('common.ok'), onPress: () => navigation.goBack() },
@@ -137,22 +163,32 @@ export default function EditListingScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
-        {newImageUri ? (
-          <Image source={{ uri: newImageUri }} style={styles.imagePreview} resizeMode="contain" />
-        ) : existingImages.length > 0 ? (
-          <Image
-            source={{ uri: getImageUrl(existingImages.find(i => i.is_primary)?.image_url || existingImages[0].image_url) || '' }}
-            style={styles.imagePreview}
-            resizeMode="contain"
-          />
-        ) : (
-          <>
-            <MaterialCommunityIcons name="camera-plus" size={32} color={COLORS.text2} />
-            <Text style={styles.imageHint}>{t('editListing.changePhoto')}</Text>
-          </>
+      <Text style={styles.imageLabel}>{t('addListing.photos')} ({totalImages}/{MAX_IMAGES})</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageRow}>
+        {existingImages
+          .filter(i => !removedExistingImageIds.includes(i.id))
+          .map(img => (
+            <View key={img.id} style={styles.thumbWrap}>
+              <Image source={{ uri: getImageUrl(img.image_url) || '' }} style={styles.thumbImg} />
+              <TouchableOpacity style={styles.thumbRemove} onPress={() => removeExistingImage(img.id)}>
+                <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        {newImageUris.map((uri, idx) => (
+          <View key={`new-${idx}`} style={styles.thumbWrap}>
+            <Image source={{ uri }} style={styles.thumbImg} />
+            <TouchableOpacity style={styles.thumbRemove} onPress={() => removeNewImage(idx)}>
+              <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
+            </TouchableOpacity>
+          </View>
+        ))}
+        {totalImages < MAX_IMAGES && (
+          <TouchableOpacity style={styles.addBtn} onPress={pickImages}>
+            <MaterialCommunityIcons name="camera-plus" size={28} color={COLORS.text2} />
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
+      </ScrollView>
 
       <TextInput style={styles.input} placeholder={t('editListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
       <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
@@ -219,13 +255,16 @@ const styles = StyleSheet.create({
     padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   title: { fontSize: 16, color: COLORS.text, fontWeight: '700', flex: 1, textAlign: 'center' },
-  imagePicker: {
-    margin: SPACING.md, height: 160, borderRadius: 12, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed',
-    alignItems: 'center', justifyContent: 'center', gap: 8, overflow: 'hidden',
+  imageLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 12, marginBottom: 6 },
+  imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8 },
+  thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, overflow: 'hidden', marginRight: 8, backgroundColor: COLORS.surface2 },
+  thumbImg: { width: '100%', height: '100%' },
+  thumbRemove: { position: 'absolute', top: -6, right: -6, backgroundColor: COLORS.bg, borderRadius: 10 },
+  addBtn: {
+    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, borderWidth: 1,
+    borderColor: COLORS.border, borderStyle: 'dashed', alignItems: 'center',
+    justifyContent: 'center', backgroundColor: COLORS.surface,
   },
-  imageHint: { fontSize: 12, color: COLORS.text2 },
-  imagePreview: { width: '100%', height: '100%', borderRadius: 12 },
   input: {
     marginHorizontal: SPACING.md, backgroundColor: COLORS.surface, borderWidth: 1,
     borderColor: COLORS.border, borderRadius: 10, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,

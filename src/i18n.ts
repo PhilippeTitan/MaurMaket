@@ -83,6 +83,7 @@ const translations: Record<Language, Record<string, string>> = {
     'checkout.items': 'items',
     'checkout.seller': 'seller',
     'checkout.sellers': 'sellers',
+    'checkout.orderSummary': 'Order Summary',
 
     'addListing.title': 'Add a product',
     'addListing.tapPhoto': 'Tap to add a photo',
@@ -102,6 +103,7 @@ const translations: Record<Language, Record<string, string>> = {
     'addListing.casualLimit': 'Casual sellers can list up to 10 products. You currently have {count} listings.',
     'addListing.upgradeHint': 'Upgrade to Verified for unlimited listings, payouts, and analytics.',
     'addListing.upgradeToVerified': 'Upgrade to Verified',
+    'addListing.photos': 'Photos',
     'addListing.listingsUsed': '{count} / 10 listings used',
 
     'settings.title': 'Settings',
@@ -527,6 +529,7 @@ const translations: Record<Language, Record<string, string>> = {
     'checkout.items': 'atik',
     'checkout.seller': 'vandè',
     'checkout.sellers': 'vandè',
+    'checkout.orderSummary': 'Rezime Kòmand',
 
     'addListing.title': 'Ajoute yon pwodwi',
     'addListing.tapPhoto': 'Tape pou ajoute yon foto',
@@ -546,6 +549,7 @@ const translations: Record<Language, Record<string, string>> = {
     'addListing.casualLimit': 'Vandè casual ka lis jiska 10 pwodwi. Ou genyen kounye a {count} lis.',
     'addListing.upgradeHint': 'Mete ajou pou Verified pou lis san limit, retrè, ak analiz.',
     'addListing.upgradeToVerified': 'Mete ajou pou Verified',
+    'addListing.photos': 'Photos',
     'addListing.listingsUsed': '{count} / 10 lis itilize',
 
     'settings.title': 'Paramèt',
@@ -971,6 +975,7 @@ const translations: Record<Language, Record<string, string>> = {
     'checkout.items': 'articles',
     'checkout.seller': 'vendeur',
     'checkout.sellers': 'vendeurs',
+    'checkout.orderSummary': 'Récapitulatif',
 
     'addListing.title': 'Ajouter un produit',
     'addListing.tapPhoto': 'Appuyez pour ajouter une photo',
@@ -990,6 +995,7 @@ const translations: Record<Language, Record<string, string>> = {
     'addListing.casualLimit': 'Les vendeurs occasionnels peuvent publier jusqu\'à 10 produits. Vous avez actuellement {count} annonces.',
     'addListing.upgradeHint': 'Passez à Vérifié pour des annonces illimitées, des retraits et des analyses.',
     'addListing.upgradeToVerified': 'Passer à Vérifié',
+    'addListing.photos': 'Photos',
     'addListing.listingsUsed': '{count} / 10 annonces utilisées',
 
     'settings.title': 'Paramètres',

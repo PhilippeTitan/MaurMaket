@@ -96,7 +96,7 @@ async function runMigrations() {
         id TEXT PRIMARY KEY,
         processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
+      CREATE TABLE IF NOT EXISTS seller_balances (
         seller_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         balance DECIMAL(10,2) NOT NULL DEFAULT 0,
         total_earned DECIMAL(10,2) NOT NULL DEFAULT 0,

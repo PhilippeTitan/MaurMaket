@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator, Linking,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,7 +9,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING } from '../theme';
 import { useTranslation } from '../i18n';
 import { store } from '../store';
-import { createOrder, createPayment, getAddresses } from '../api';
+import { createOrder, createPayment, getAddresses, getImageUrl } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Address } from '../types';
 
@@ -150,6 +150,32 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             </Text>
           </View>
         ))}
+      </View>
+
+      <Text style={styles.sectionLabel}>{t('checkout.orderSummary')}</Text>
+      <View style={styles.orderSummaryContainer}>
+        {cart.map((item, idx) => {
+          const img = item.images?.find(i => i.is_primary) || item.images?.[0];
+          const imgUrl = getImageUrl(img?.image_url);
+          const sellerName = item.store_name || item.seller_name || `Seller ${item.seller_id.slice(0, 6)}`;
+          return (
+            <View key={item.id} style={[styles.orderItemRow, idx === cart.length - 1 && { borderBottomWidth: 0 }]}>
+              <View style={styles.orderItemThumb}>
+                {imgUrl ? (
+                  <Image source={{ uri: imgUrl }} style={styles.orderItemImg} resizeMode="cover" />
+                ) : (
+                  <MaterialCommunityIcons name="image-off-outline" size={16} color={COLORS.text2} />
+                )}
+              </View>
+              <View style={styles.orderItemInfo}>
+                <Text style={styles.orderItemName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.orderItemSeller} numberOfLines={1}>{sellerName}</Text>
+              </View>
+              <Text style={styles.orderItemQty}>x{item.quantity}</Text>
+              <Text style={styles.orderItemPrice}>Rs {(item.price * item.quantity).toLocaleString()}</Text>
+            </View>
+          );
+        })}
       </View>
 
       <Text style={styles.sectionLabel}>Delivery method</Text>
@@ -300,6 +326,30 @@ const styles = StyleSheet.create({
   },
   sellerGroupName: { flex: 1, fontSize: 12, color: COLORS.text, fontWeight: '700' },
   sellerGroupMeta: { fontSize: 11, color: COLORS.text2 },
+  orderSummaryContainer: {
+    marginHorizontal: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  orderItemRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 10, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  orderItemThumb: {
+    width: 44, height: 44, borderRadius: 6,
+    backgroundColor: COLORS.surface2, overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  orderItemImg: { width: '100%', height: '100%' },
+  orderItemInfo: { flex: 1, minWidth: 0, gap: 2 },
+  orderItemName: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  orderItemSeller: { fontSize: 10, color: COLORS.text2 },
+  orderItemQty: { fontSize: 12, color: COLORS.text2, fontWeight: '600' },
+  orderItemPrice: { fontSize: 13, color: COLORS.coral, fontWeight: '700' },
   methodRow: { flexDirection: 'row', gap: 10, paddingHorizontal: SPACING.md },
   methodCard: { flex: 1, alignItems: 'center', gap: 6, padding: 12, borderRadius: 10, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
   methodActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
