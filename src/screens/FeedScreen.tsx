@@ -590,11 +590,16 @@ export default function FeedScreen() {
       <Modal
         visible={Boolean(moreProduct)}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setMoreProduct(null)}
       >
-        <Pressable style={styles.moreOverlay} onPress={() => setMoreProduct(null)}>
-          <Pressable style={styles.moreSheet} onPress={e => e.stopPropagation()}>
+        <View style={styles.commentScrim}>
+          <TouchableOpacity
+            style={styles.commentDismissArea}
+            activeOpacity={1}
+            onPress={() => setMoreProduct(null)}
+          />
+          <View style={styles.moreSheet}>
             <View style={styles.sheetHandle} />
             <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
               <MaterialCommunityIcons name="thumb-up-outline" size={18} color={COLORS.text} />
@@ -614,8 +619,8 @@ export default function FeedScreen() {
               <MaterialCommunityIcons name="flag-outline" size={18} color={COLORS.coral} />
               <Text style={[styles.moreItemText, { color: COLORS.coral }]}>Report</Text>
             </TouchableOpacity>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1035,35 +1040,30 @@ const styles = StyleSheet.create({
   },
 
   /* More Menu */
-  moreOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
   moreSheet: {
-    width: 220,
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    paddingVertical: 8,
+    paddingHorizontal: SPACING.md,
+    paddingTop: 10,
+    paddingBottom: SPACING.xxl + 16,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   moreItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
   },
   moreItemText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
     color: COLORS.text,
   },
   moreDivider: {
     height: 1,
     backgroundColor: COLORS.border,
-    marginHorizontal: 12,
   },
 });
