@@ -146,7 +146,7 @@ export default function AddListingScreen() {
 
           <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
             {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="cover" />
+              <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="contain" />
             ) : (
               <>
                 <MaterialCommunityIcons name="camera-plus" size={32} color={COLORS.text2} />

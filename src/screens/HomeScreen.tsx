@@ -73,7 +73,7 @@ export default function HomeScreen({ navigation }: Props) {
       >
         <View style={styles.cardImage}>
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" />
+            <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="contain" />
           ) : (
             <Text style={styles.placeholder}>📷</Text>
           )}

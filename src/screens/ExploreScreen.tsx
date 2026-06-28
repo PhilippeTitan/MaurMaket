@@ -149,7 +149,7 @@ export default function ExploreScreen({ navigation }: Props) {
       >
         <View style={[styles.cardImgWrap, { height: cardH }]}>
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" />
+            <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="contain" />
           ) : (
             <View style={styles.cardPlaceholder}>
               <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />

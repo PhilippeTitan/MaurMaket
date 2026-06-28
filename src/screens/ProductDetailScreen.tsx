@@ -188,7 +188,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         onPress={() => navigation.push('ProductDetail', { productId: item.id })}
       >
         {imgUrl ? (
-          <Image source={{ uri: imgUrl }} style={styles.sellerCardImg} resizeMode="cover" />
+          <Image source={{ uri: imgUrl }} style={styles.sellerCardImg} resizeMode="contain" />
         ) : (
           <View style={styles.sellerCardPlaceholder}>
             <MaterialCommunityIcons name="image-off-outline" size={16} color={COLORS.text2} />
@@ -224,7 +224,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           onPress={() => navigation.push('ProductDetail', { productId: item.id })}
         >
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.gridCardImg} resizeMode="cover" />
+            <Image source={{ uri: imgUrl }} style={styles.gridCardImg} resizeMode="contain" />
           ) : (
             <View style={styles.gridCardPlaceholder}>
               <MaterialCommunityIcons name="image-off-outline" size={18} color={COLORS.text2} />

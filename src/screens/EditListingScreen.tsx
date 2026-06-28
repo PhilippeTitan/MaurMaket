@@ -139,12 +139,12 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
       <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
         {newImageUri ? (
-          <Image source={{ uri: newImageUri }} style={styles.imagePreview} resizeMode="cover" />
+          <Image source={{ uri: newImageUri }} style={styles.imagePreview} resizeMode="contain" />
         ) : existingImages.length > 0 ? (
           <Image
             source={{ uri: getImageUrl(existingImages.find(i => i.is_primary)?.image_url || existingImages[0].image_url) || '' }}
             style={styles.imagePreview}
-            resizeMode="cover"
+            resizeMode="contain"
           />
         ) : (
           <>

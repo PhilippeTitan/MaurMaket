@@ -169,7 +169,7 @@ export default function MeScreen() {
       >
         <View style={styles.gridImage}>
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.gridImg} resizeMode="cover" />
+            <Image source={{ uri: imgUrl }} style={styles.gridImg} resizeMode="contain" />
           ) : (
             <MaterialCommunityIcons name="image-off-outline" size={20} color={COLORS.text2} />
           )}

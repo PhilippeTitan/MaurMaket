@@ -171,7 +171,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
             >
               <View style={styles.cardImage}>
-                {imgUrl ? <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" /> : <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />}
+                {imgUrl ? <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="contain" /> : <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />}
                 <View style={styles.priceBadge}>
                   <Text style={styles.priceText}>Rs {item.price.toLocaleString()}</Text>
                 </View>
