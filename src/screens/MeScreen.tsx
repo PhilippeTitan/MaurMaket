@@ -242,7 +242,20 @@ export default function MeScreen() {
     >
       {/* Hero */}
       <View style={[styles.hero, { paddingTop: insets.top }]}>
-        {/* Avatar + Stats row + Settings */}
+        {/* Top bar: centered name + settings */}
+        <View style={styles.topBar}>
+          <View style={styles.topBarNameWrap}>
+            <Text style={styles.topBarName} numberOfLines={1}>{getDisplayName(user)}</Text>
+            {isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business') && (
+              <MaterialCommunityIcons name="shield-check" size={16} color={COLORS.blue} />
+            )}
+          </View>
+          <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={COLORS.text} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Avatar + Stats row */}
         <View style={styles.avatarRow}>
           <View style={styles.avatar}>
             {avatarUrl ? (
@@ -265,32 +278,24 @@ export default function MeScreen() {
               <Text style={styles.statLabel}>{t('me.following')}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')}>
-            <MaterialCommunityIcons name="cog-outline" size={22} color={COLORS.text2} />
-          </TouchableOpacity>
         </View>
 
-        {/* Name + Bio + Edit Pen */}
+        {/* Bio + tier badges */}
         <View style={styles.nameBioBlock}>
-          <View style={styles.nameRow}>
-            <Text style={styles.name}>{getDisplayName(user)}</Text>
-            <TouchableOpacity onPress={() => nav.navigate('Settings')} style={styles.editPenBtn}>
-              <MaterialCommunityIcons name="pencil-outline" size={14} color={COLORS.text2} />
-            </TouchableOpacity>
-            {isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business') && (
-              <MaterialCommunityIcons name="shield-check" size={16} color={COLORS.blue} />
-            )}
-            {isSeller && user?.seller_tier === 'verified' && (
-              <TouchableOpacity onPress={() => nav.navigate('Settings')} style={styles.tierBadge}>
-                <Text style={styles.tierBadgeText}>Go Business</Text>
-              </TouchableOpacity>
-            )}
-            {isSeller && user?.seller_tier === 'business' && (
-              <TouchableOpacity style={[styles.tierBadge, { backgroundColor: COLORS.coral + '20' }]}>
-                <Text style={[styles.tierBadgeText, { color: COLORS.coral }]}>Business</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          {(isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business')) && (
+            <View style={styles.nameRow}>
+              {isSeller && user?.seller_tier === 'verified' && (
+                <TouchableOpacity onPress={() => nav.navigate('Settings')} style={styles.tierBadge}>
+                  <Text style={styles.tierBadgeText}>Go Business</Text>
+                </TouchableOpacity>
+              )}
+              {isSeller && user?.seller_tier === 'business' && (
+                <TouchableOpacity style={[styles.tierBadge, { backgroundColor: COLORS.coral + '20' }]}>
+                  <Text style={[styles.tierBadgeText, { color: COLORS.coral }]}>Business</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
           {user?.bio ? (
             <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
           ) : null}
@@ -537,17 +542,21 @@ const styles = StyleSheet.create({
 
   /* Hero */
   hero: { backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: SPACING.md },
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, position: 'relative',
+  },
+  topBarNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '75%' },
+  topBarName: { fontSize: 15, color: COLORS.text, fontWeight: '700' },
   avatarRow: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 0,
   },
   avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 80, height: 80, borderRadius: 40 },
   avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
-  settingsBtn: { padding: 6 },
+  settingsBtn: { position: 'absolute', right: SPACING.md, top: SPACING.sm - 4, padding: 6 },
   nameBioBlock: { paddingHorizontal: SPACING.md, marginTop: 10 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  editPenBtn: { padding: 2 },
-  name: { fontSize: 14, color: COLORS.text, fontWeight: '700' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   bio: { fontSize: 13, color: COLORS.text2, lineHeight: 18, marginTop: 2 },
   memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.7, marginTop: 2 },
 
