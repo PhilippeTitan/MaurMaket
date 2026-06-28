@@ -310,6 +310,9 @@ export default function FeedScreen() {
 
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.32 }]}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => {}}>
+            <MaterialCommunityIcons name="heart-outline" size={28} color={COLORS.white} />
+          </TouchableOpacity>
           {!isOwnProduct && (
             <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenComments(item)}>
               <MaterialCommunityIcons name="comment-outline" size={28} color={COLORS.white} />
@@ -614,11 +617,6 @@ export default function FeedScreen() {
             <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
               <MaterialCommunityIcons name="thumb-down-outline" size={18} color={COLORS.text} />
               <Text style={styles.moreItemText}>Not relevant</Text>
-            </TouchableOpacity>
-            <View style={styles.moreDivider} />
-            <TouchableOpacity style={styles.moreItem} onPress={() => { if (moreProduct) { handleBookmark(moreProduct); } setMoreProduct(null); }}>
-              <MaterialCommunityIcons name="bookmark-outline" size={18} color={COLORS.text} />
-              <Text style={styles.moreItemText}>Save</Text>
             </TouchableOpacity>
             <View style={styles.moreDivider} />
             <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
