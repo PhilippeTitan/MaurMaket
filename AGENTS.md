@@ -477,10 +477,33 @@ Commission is deducted at payment time in the webhook handler. `seller_balances`
 3. **AddListingScreen** — Added `useSafeAreaInsets`, topBar gets `paddingTop: insets.top + SPACING.sm` (back button no longer behind bezel)
 4. **ChatScreen** — Input row `paddingBottom` changed from hardcoded `SPACING.xxl + 16` to `Math.max(insets.bottom, SPACING.md)`
 
+### Session 2 — 2026-06-28 (Upload Hardening + Delete Fix + Chat Order)
+1. **Upload pipeline hardened** — `api.ts` uploadImage: data URI support, abort timeout (30s), blob validation, res.ok check, meaningful error messages. Server: relaxed multer fileFilter (mime-only, no extension gate). Both screens: sequential uploads with per-image error feedback.
+2. **Product delete fix** — FK constraint blocked deletion (product_images had no CASCADE). Now deletes images first, blocks if product has orders.
+3. **Chat message order** — FlatList had `inverted` but server returned ASC → wrong visual order. Switched to ASC server + removed `inverted`, uses scrollToEnd instead.
+4. **MeScreen top bar** — Instagram-style: centered name, gear right, tier badges in bio block.
+5. **Alert callbacks on web** — Replaced `Alert.alert(onPress)` with direct navigation (callbacks don't fire on React Native Web).
+6. **Thumbnail X button** — `overflow: 'hidden'` was clipping the remove button. Changed to `overflow: 'visible'`.
+
+### Session 3 — 2026-06-28 (Feed Snap + EditListing Safe Area + Explore Image Fallback)
+1. **FeedScreen snap** — Changed `decelerationRate="fast"` to `decelerationRate={0}` + `disableIntervalMomentum={true}` + `getItemLayout` for TikTok-style one-item-per-swipe.
+2. **EditListingScreen safe area** — Added `useSafeAreaInsets`, topBar gets `paddingTop: insets.top + SPACING.sm`. Removed broken delete icon from top bar (duplicate — bottom button exists).
+3. **ExploreScreen image fallback** — Added `failedImages` state + `onError` on Image component. Images that fail to load (e.g. local uploads not on Render) show placeholder.
+4. **DB cleanup** — Removed 4 test products with no images.
+
 ### Commits
 - `1a6b5c1` — MeScreen grid cards (Pinterest-style overlay)
 - `73aa188` — upload fix with `expo-file-system` uploadAsync
 - `b994651` — safe area insets + `expo-file-system/legacy` deprecation migration
+- `90a2065` — MeScreen Instagram-style top bar
+- `5464646` — fix delete product images FK constraint
+- `7b62ada` — hardened upload pipeline edge cases
+- `234a4fe` — FileSystemUploadType.MULTIPART enum fix
+- `5b27247` — alert callbacks unreliable on web, thumbnail X overflow fix
+- `946db0d` — delete uses window.confirm on web, inbox sort
+- `12be840` — chat messages ORDER BY DESC (reverted to ASC next commit)
+- `cd0458e` — removed inverted FlatList, ASC + scrollToEnd
+- `54fcf60` — EditListing safe area, Explore image onError, remove editBadge
 
 ### In-flight / Next Steps
 - **StorefrontScreen** needs same `cover` + `DEFAULT_IMG_H` pattern as MeScreen/ExploreScreen

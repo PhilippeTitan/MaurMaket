@@ -478,7 +478,13 @@ export default function FeedScreen() {
         showsVerticalScrollIndicator={false}
         snapToInterval={screenHeight}
         snapToAlignment="start"
-        decelerationRate="fast"
+        decelerationRate={0}
+        disableIntervalMomentum={true}
+        getItemLayout={(_data, index) => ({
+          length: screenHeight,
+          offset: screenHeight * index,
+          index,
+        })}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.5}
         refreshControl={

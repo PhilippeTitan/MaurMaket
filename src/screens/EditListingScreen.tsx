@@ -173,9 +173,6 @@ export default function EditListingScreen({ route, navigation }: Props) {
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
         <Text style={styles.title}>{t('editListing.title')}</Text>
-        <TouchableOpacity onPress={handleDelete} disabled={deleting}>
-          <MaterialCommunityIcons name="delete-outline" size={20} color={COLORS.coral} />
-        </TouchableOpacity>
       </View>
 
       <Text style={styles.imageLabel}>{t('addListing.photos')} ({totalImages}/{MAX_IMAGES})</Text>
