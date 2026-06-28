@@ -305,7 +305,12 @@ export default function ExploreScreen({ navigation }: Props) {
       <Modal visible={catModal} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setCatModal(false)}>
           <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Categories</Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Categories</Text>
+              <TouchableOpacity onPress={() => setCatModal(false)}>
+                <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
               style={[styles.modalItem, !selectedCat && styles.modalItemActive]}
               onPress={() => { selectCategory(''); setCatModal(false); }}
@@ -336,7 +341,12 @@ export default function ExploreScreen({ navigation }: Props) {
       <Modal visible={sortModal} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>
           <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Sort by</Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Sort by</Text>
+              <TouchableOpacity onPress={() => setSortModal(false)}>
+                <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
+              </TouchableOpacity>
+            </View>
             {SORT_OPTIONS.map(option => (
               <TouchableOpacity
                 key={option.value}
@@ -354,7 +364,7 @@ export default function ExploreScreen({ navigation }: Props) {
               </TouchableOpacity>
             ))}
             <View style={styles.modalDivider} />
-            <Text style={styles.modalTitle}>Price range</Text>
+            <Text style={[styles.modalTitle, { marginBottom: 6 }]}>Price range</Text>
             <View style={styles.priceRow}>
               <TextInput
                 style={styles.priceInputModal}
@@ -513,7 +523,8 @@ const styles = StyleSheet.create({
   modalContent: {
     width: 240, backgroundColor: COLORS.surface, borderRadius: 12, padding: 10, gap: 2, overflow: 'hidden',
   },
-  modalTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: 6, marginLeft: 4 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, marginLeft: 4 },
+  modalTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
   modalItem: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 8, paddingHorizontal: 8, borderRadius: 6,
