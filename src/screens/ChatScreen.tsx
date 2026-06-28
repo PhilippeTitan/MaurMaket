@@ -125,7 +125,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      <View style={styles.inputRow}>
+      <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
         <TextInput
           style={styles.input}
           value={text}

@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING } from '../theme';
 import { useTranslation } from '../i18n';
 import { createProduct, getCategories, uploadImage, getSellerProducts } from '../api';
@@ -22,6 +23,7 @@ const THUMB_SIZE = 80;
 export default function AddListingScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -121,7 +123,7 @@ export default function AddListingScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.white} />
         </TouchableOpacity>
