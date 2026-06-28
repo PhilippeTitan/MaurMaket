@@ -396,7 +396,7 @@ export const uploadImage = async (uri: string): Promise<{ url: string }> => {
       fieldName: 'image',
       httpMethod: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
-      uploadType: FileSystem.UploadType.MULTIPART,
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
       mimeType,
     });
 
