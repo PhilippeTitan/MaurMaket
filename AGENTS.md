@@ -469,30 +469,28 @@ Commission is deducted at payment time in the webhook handler. `seller_balances`
 10. ProfileScreen — imported in App.tsx but never registered in Stack.Navigator. Dead code.
 11. Seller analytics gated too aggressively — show teaser metrics to casual sellers with upgrade nudge
 
-## Session Compact — 2026-06-27 (Stress Test Audit + Fixes)
+## Session Compact — 2026-06-28 (UI Polish + Upload Fix)
 
-### Backend Fixes Applied
-- Webhook idempotency via `processed_events` table (replay-safe)
-- JWT_SECRET required at startup (exit if missing)
-- Base table migrations (users, products, categories, orders, order_items, product_images)
-- Order complete requires `delivered` status (blocks payment bypass)
-- Upload: MIME + file extension whitelist
-- Webhook secret mandatory (fail closed)
-- `/api/debug` now authRequired + adminRequired
+### Changes Applied
+1. **MeScreen grid cards** — Pinterest-style overlay (price badge top-left, name bottom dark gradient, `resizeMode="cover"`, dynamic `DEFAULT_IMG_H = CARD_W * 1.25`)
+2. **Image upload fix** — Native uses `expo-file-system/legacy` `uploadAsync()` with `MULTIPART` type (bypasses broken RN FormData). Web unchanged (FormData + File blob).
+3. **AddListingScreen** — Added `useSafeAreaInsets`, topBar gets `paddingTop: insets.top + SPACING.sm` (back button no longer behind bezel)
+4. **ChatScreen** — Input row `paddingBottom` changed from hardcoded `SPACING.xxl + 16` to `Math.max(insets.bottom, SPACING.md)`
 
 ### Commits
-- `b66b60f` — critical backend security (7 fixes)
-- `3abfe96` — TikTok action rail sizing + visual polish
-- `2a45833` — resizeMode contain on all images (later corrected — use cover instead)
-- `ed31f87` — masonry height clamps removed
-- `0a3e93f` — Pinterest-style dynamic card heights
-- `5c46e1b` — contain on feed + product detail
+- `1a6b5c1` — MeScreen grid cards (Pinterest-style overlay)
+- `73aa188` — upload fix with `expo-file-system` uploadAsync
+- `b994651` — safe area insets + `expo-file-system/legacy` deprecation migration
 
 ### In-flight / Next Steps
-- `resizeMode="contain"` was a WRONG TURN — use `resizeMode="cover"` + dynamic heights per Claude
-- ExploreScreen full replacement from Claude at `C:\Users\drato\Downloads\ExploreScreen.tsx`
-- MeScreen + StorefrontScreen need same `cover` + `DEFAULT_IMG_H` pattern
-- ProfileScreen is imported in App.tsx but never added as `<Stack.Screen>` — dead code
+- **StorefrontScreen** needs same `cover` + `DEFAULT_IMG_H` pattern as MeScreen/ExploreScreen
+- **ExploreScreen** full replacement from Claude at `C:\Users\drato\Downloads\ExploreScreen.tsx` (not yet applied)
+- **ProfileScreen** is imported in App.tsx but never registered as `<Stack.Screen>` — dead code
+- **proxy.js:1 Uncaught Error: Attempting to use a disconnected port object** — Expo dev server only, not production. Fix: `npx expo start --clear`
+- **Multi-image listings** — API/types support `images[]` but AddListing + EditListing only upload one image. #1 missing trust signal in C2C.
+- **Image sharing in chat** — prevents off-app WhatsApp exfiltration
+- **Duplicate conversation bug** — StorefrontScreen always creates new conversation instead of checking existing
+- **WishlistScreen** — text-only list, needs 40x40 thumbnails + stock indicator
 
 ## Key Observations
 1. Unified project: backend (server.js) + mobile app (Expo/React Native) in one repo
