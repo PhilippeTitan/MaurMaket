@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   backBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
   imageLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 12, marginBottom: 6 },
-  imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8 },
+  imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8, paddingTop: 6 },
   thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, overflow: 'visible', marginRight: 8, backgroundColor: COLORS.surface2, position: 'relative' },
   thumbImg: { width: '100%', height: '100%', borderRadius: 8 },
   thumbRemove: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.bg, borderRadius: 10, zIndex: 1 },

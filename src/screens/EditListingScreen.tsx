@@ -138,22 +138,25 @@ export default function EditListingScreen({ route, navigation }: Props) {
   };
 
   const handleDelete = () => {
-    Alert.alert(t('editListing.deleteTitle'), t('editListing.deleteConfirm'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.delete'), style: 'destructive', onPress: async () => {
-          setDeleting(true);
-          try {
-            await deleteProduct(productId);
-            Alert.alert(t('editListing.deleted'), t('editListing.productRemoved'));
-            navigation.goBack();
-          } catch (e: any) {
-      Alert.alert(t('common.error'), e.message);
-          }
-          setDeleting(false);
-        },
-      },
-    ]);
+    const doDelete = async () => {
+      setDeleting(true);
+      try {
+        await deleteProduct(productId);
+        Alert.alert(t('editListing.deleted'), t('editListing.productRemoved'));
+        navigation.goBack();
+      } catch (e: any) {
+        Alert.alert(t('common.error'), e.message);
+      }
+      setDeleting(false);
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm(t('editListing.deleteConfirm'))) doDelete();
+    } else {
+      Alert.alert(t('editListing.deleteTitle'), t('editListing.deleteConfirm'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('common.delete'), style: 'destructive', onPress: doDelete },
+      ]);
+    }
   };
 
   if (loading) {
@@ -266,7 +269,7 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 16, color: COLORS.text, fontWeight: '700', flex: 1, textAlign: 'center' },
   imageLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 12, marginBottom: 6 },
-  imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8 },
+  imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8, paddingTop: 6 },
   thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, overflow: 'visible', marginRight: 8, backgroundColor: COLORS.surface2, position: 'relative' },
   thumbImg: { width: '100%', height: '100%', borderRadius: 8 },
   thumbRemove: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.bg, borderRadius: 10, zIndex: 1 },

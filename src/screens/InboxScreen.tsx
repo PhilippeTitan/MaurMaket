@@ -82,7 +82,14 @@ export default function InboxScreen() {
     nav.navigate('Main', { screen: 'FeedTab' });
   };
 
-  const filteredConversations = conversations.filter(c => {
+  const filteredConversations = conversations
+    .slice()
+    .sort((a, b) => {
+      const ta = new Date(b.last_message_at || b.created_at || 0).getTime();
+      const tb = new Date(a.last_message_at || a.created_at || 0).getTime();
+      return ta - tb;
+    })
+    .filter(c => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const name = (c.other_user?.full_name || '').toLowerCase();
