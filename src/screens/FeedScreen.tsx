@@ -620,6 +620,11 @@ export default function FeedScreen() {
             </TouchableOpacity>
             <View style={styles.moreDivider} />
             <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+              <MaterialCommunityIcons name="share-variant-outline" size={18} color={COLORS.text} />
+              <Text style={styles.moreItemText}>Share</Text>
+            </TouchableOpacity>
+            <View style={styles.moreDivider} />
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
               <MaterialCommunityIcons name="flag-outline" size={18} color={COLORS.coral} />
               <Text style={[styles.moreItemText, { color: COLORS.coral }]}>Report</Text>
             </TouchableOpacity>
