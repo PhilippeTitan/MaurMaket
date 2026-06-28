@@ -290,6 +290,32 @@ export const getImageUrl = (imageUrl: string | undefined | null): string | null 
   if (imageUrl.startsWith('http')) return imageUrl;
   return `${UPLOAD_BASE}${imageUrl}`;
 };
+const UPLOAD_TIMEOUT_MS = 30000;
+
+function mimeFromExt(ext: string): string {
+  switch (ext) {
+    case 'png': return 'image/png';
+    case 'gif': return 'image/gif';
+    case 'webp': return 'image/webp';
+    case 'svg': return 'image/svg+xml';
+    case 'bmp': return 'image/bmp';
+    default: return 'image/jpeg';
+  }
+}
+
+function extFromUri(uri: string): string {
+  const raw = uri.split('/').pop() || '';
+  const match = raw.match(/\.(\w+)$/);
+  return match ? match[1].toLowerCase() : '';
+}
+
+function filenameFromUri(uri: string): string {
+  const ext = extFromUri(uri);
+  const base = uri.split('/').pop()?.split('?')[0]?.split('#')[0] || 'photo';
+  if (ext && /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(base)) return base;
+  return `${base}.jpg`;
+}
+
 export const uploadImage = async (uri: string): Promise<{ url: string }> => {
   let token: string | null = null;
   if (Platform.OS === 'web') {
@@ -301,33 +327,92 @@ export const uploadImage = async (uri: string): Promise<{ url: string }> => {
 
   if (Platform.OS === 'web') {
     const formData = new FormData();
-    const filename = uri.split('/').pop() || 'photo.jpg';
-    const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
-    const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
-    const blobRes = await fetch(uri);
-    const blob = await blobRes.blob();
+    const filename = filenameFromUri(uri);
+    const ext = extFromUri(uri) || 'jpg';
+    const mimeType = mimeFromExt(ext);
+
+    let blob: Blob;
+    if (uri.startsWith('data:')) {
+      const parts = uri.split(',');
+      const meta = parts[0] || '';
+      const data = parts[1] || '';
+      const realMime = meta.match(/data:([^;]+)/)?.[1] || mimeType;
+      const byteStr = atob(data);
+      const arr = new Uint8Array(byteStr.length);
+      for (let i = 0; i < byteStr.length; i++) arr[i] = byteStr.charCodeAt(i);
+      blob = new Blob([arr], { type: realMime });
+    } else {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+      try {
+        const blobRes = await fetch(uri, { signal: controller.signal });
+        clearTimeout(timer);
+        if (!blobRes.ok) throw new Error(`Failed to read image (${blobRes.status})`);
+        blob = await blobRes.blob();
+      } catch (e: any) {
+        clearTimeout(timer);
+        if (e.name === 'AbortError') throw new Error('Image read timed out. Try a smaller image.');
+        throw new Error(`Could not read image: ${e.message || 'unknown error'}`);
+      }
+    }
+
+    if (!blob || blob.size === 0) throw new Error('Image is empty (0 bytes)');
+    if (blob.size > 8 * 1024 * 1024) throw new Error('Image is too large. Maximum size is 8MB.');
+
     const file = new File([blob], filename, { type: mimeType });
     formData.append('image', file);
-    const res = await fetch(`${API_BASE}/upload`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
-    });
-    return res.json();
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+      if (!data.url) throw new Error('Upload succeeded but server returned no URL');
+      return data;
+    } catch (e: any) {
+      clearTimeout(timer);
+      if (e.name === 'AbortError') throw new Error('Upload timed out. Check your connection and try again.');
+      if (e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
+        throw new Error('Cannot reach server. Check your connection.');
+      }
+      throw e;
+    }
   }
 
   const FileSystem = require('expo-file-system/legacy');
-  const filename = uri.split('/').pop() || 'photo.jpg';
-  const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
-  const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+  const filename = filenameFromUri(uri);
+  const ext = extFromUri(uri) || 'jpg';
+  const mimeType = mimeFromExt(ext);
 
-  const result = await FileSystem.uploadAsync(`${API_BASE}/upload`, uri, {
-    fieldName: 'image',
-    httpMethod: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    uploadType: FileSystem.UploadType.MULTIPART,
-    mimeType,
-  });
+  try {
+    const result = await FileSystem.uploadAsync(`${API_BASE}/upload`, uri, {
+      fieldName: 'image',
+      httpMethod: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      uploadType: FileSystem.UploadType.MULTIPART,
+      mimeType,
+    });
 
-  return JSON.parse(result.body);
+    if (result.status >= 400) {
+      let msg = `Upload failed (${result.status})`;
+      try { const body = JSON.parse(result.body); msg = body.error || msg; } catch {}
+      throw new Error(msg);
+    }
+
+    const body = JSON.parse(result.body);
+    if (!body.url) throw new Error('Upload succeeded but server returned no URL');
+    return body;
+  } catch (e: any) {
+    if (e.message?.includes('network') || e.message?.includes('Network')) {
+      throw new Error('Cannot reach server. Check your connection.');
+    }
+    throw e;
+  }
 };

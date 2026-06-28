@@ -345,11 +345,9 @@ const upload = multer({
   storage,
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (!allowedMimes.includes(file.mimetype) || !allowedExts.includes(ext)) {
-      return cb(new Error('Only JPEG, PNG, GIF, and WebP images are allowed'));
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml'];
+    if (file.mimetype && !allowedMimes.includes(file.mimetype)) {
+      return cb(new Error(`Unsupported image type "${file.mimetype}". Use JPEG, PNG, GIF, or WebP.`));
     }
     cb(null, true);
   },

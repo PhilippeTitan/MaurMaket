@@ -94,8 +94,17 @@ export default function AddListingScreen() {
       const uploadedUrls: string[] = [];
       if (imageUris.length > 0) {
         setUploading(true);
-        const results = await Promise.all(imageUris.map(uri => uploadImage(uri)));
-        results.forEach(r => { if (r.url) uploadedUrls.push(r.url); });
+        for (let i = 0; i < imageUris.length; i++) {
+          try {
+            const r = await uploadImage(imageUris[i]);
+            if (r.url) uploadedUrls.push(r.url);
+          } catch (e: any) {
+            Alert.alert(t('common.error'), `Image ${i + 1} failed: ${e.message}`);
+            setLoading(false);
+            setUploading(false);
+            return;
+          }
+        }
         setUploading(false);
       }
 

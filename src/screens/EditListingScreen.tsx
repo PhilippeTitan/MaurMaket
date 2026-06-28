@@ -32,6 +32,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
   const [isAvailable, setIsAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -100,8 +101,19 @@ export default function EditListingScreen({ route, navigation }: Props) {
     try {
       const uploadedUrls: string[] = [];
       if (newImageUris.length > 0) {
-        const results = await Promise.all(newImageUris.map(uri => uploadImage(uri)));
-        results.forEach(r => { if (r.url) uploadedUrls.push(r.url); });
+        setUploading(true);
+        for (let i = 0; i < newImageUris.length; i++) {
+          try {
+            const r = await uploadImage(newImageUris[i]);
+            if (r.url) uploadedUrls.push(r.url);
+          } catch (e: any) {
+            Alert.alert(t('common.error'), `Image ${i + 1} failed: ${e.message}`);
+            setSaving(false);
+            setUploading(false);
+            return;
+          }
+        }
+        setUploading(false);
       }
       const keptExisting = existingImages
         .filter(i => !removedExistingImageIds.includes(i.id))
