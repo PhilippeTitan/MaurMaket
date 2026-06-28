@@ -118,9 +118,8 @@ export default function AddListingScreen() {
       if (uploadedUrls.length > 0) productData.images = uploadedUrls;
 
       await createProduct(productData);
-      Alert.alert(t('addListing.success'), t('addListing.created'), [
-        { text: t('common.ok'), onPress: () => nav.goBack() },
-      ]);
+      Alert.alert(t('addListing.success'), t('addListing.created'));
+      nav.goBack();
     } catch (e: any) {
       Alert.alert(t('common.error'), e.message);
     } finally {
@@ -233,9 +232,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
   imageLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 12, marginBottom: 6 },
   imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8 },
-  thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, overflow: 'hidden', marginRight: 8, backgroundColor: COLORS.surface2 },
-  thumbImg: { width: '100%', height: '100%' },
-  thumbRemove: { position: 'absolute', top: -6, right: -6, backgroundColor: COLORS.bg, borderRadius: 10 },
+  thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, overflow: 'visible', marginRight: 8, backgroundColor: COLORS.surface2, position: 'relative' },
+  thumbImg: { width: '100%', height: '100%', borderRadius: 8 },
+  thumbRemove: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.bg, borderRadius: 10, zIndex: 1 },
   addBtn: {
     width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, borderWidth: 1,
     borderColor: COLORS.border, borderStyle: 'dashed', alignItems: 'center',
