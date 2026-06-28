@@ -1947,7 +1947,7 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
       `SELECT m.*, u.full_name AS sender_name
        FROM messages m JOIN users u ON m.sender_id = u.id
        WHERE m.conversation_id = $1
-       ORDER BY m.created_at ASC`,
+       ORDER BY m.created_at DESC`,
       [req.params.id]
     );
     res.json({ messages: result.rows });
