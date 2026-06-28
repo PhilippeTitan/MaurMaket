@@ -273,7 +273,7 @@ export default function ExploreScreen({ navigation }: Props) {
                 {cat.id !== '' && (
                   <MaterialCommunityIcons
                     name={(CAT_ICONS[cat.name.toLowerCase()] as any) || 'tag-outline'}
-                    size={12}
+                    size={14}
                     color={isActive ? COLORS.white : COLORS.text2}
                   />
                 )}
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
   },
 
-  chipsRow: { paddingHorizontal: 8, gap: 6, paddingVertical: 6 },
+  chipsRow: { paddingHorizontal: 12, gap: 8, paddingVertical: 8 },
   filterBar: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 8, paddingBottom: 6,
@@ -430,13 +430,12 @@ const styles = StyleSheet.create({
   applyPriceBtn: { backgroundColor: COLORS.coral, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   applyPriceText: { fontSize: 11, color: COLORS.white, fontWeight: '700' },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    maxWidth: '48%',
   },
   chipActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
-  chipText: { color: COLORS.text2, fontSize: 12, fontWeight: '500', flexShrink: 1 },
+  chipText: { color: COLORS.text2, fontSize: 13, fontWeight: '500' },
   chipTextActive: { color: COLORS.white, fontWeight: '700' },
 
   gridContainer: {},
