@@ -234,7 +234,7 @@ export default function MeScreen() {
     >
       {/* Hero */}
       <View style={[styles.hero, { paddingTop: insets.top }]}>
-        {/* Avatar + Stats row */}
+        {/* Avatar + Stats row + Settings */}
         <View style={styles.avatarRow}>
           <View style={styles.avatar}>
             {avatarUrl ? (
@@ -257,12 +257,18 @@ export default function MeScreen() {
               <Text style={styles.statLabel}>{t('me.following')}</Text>
             </View>
           </View>
+          <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')}>
+            <MaterialCommunityIcons name="cog-outline" size={22} color={COLORS.text2} />
+          </TouchableOpacity>
         </View>
 
-        {/* Name + Bio */}
+        {/* Name + Bio + Edit Pen */}
         <View style={styles.nameBioBlock}>
           <View style={styles.nameRow}>
             <Text style={styles.name}>{getDisplayName(user)}</Text>
+            <TouchableOpacity onPress={() => nav.navigate('Settings')} style={styles.editPenBtn}>
+              <MaterialCommunityIcons name="pencil-outline" size={14} color={COLORS.text2} />
+            </TouchableOpacity>
             {isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business') && (
               <MaterialCommunityIcons name="shield-check" size={16} color={COLORS.blue} />
             )}
@@ -281,19 +287,6 @@ export default function MeScreen() {
             <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
           ) : null}
           {memberSince ? <Text style={styles.memberSince}>{memberSince}</Text> : null}
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.profileBtn} onPress={() => nav.navigate('Settings')}>
-            <Text style={styles.profileBtnText}>{t('me.editProfile')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.profileBtn}>
-            <Text style={styles.profileBtnText}>Share profile</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.profileBtnIcon} onPress={() => nav.navigate('Settings')}>
-            <MaterialCommunityIcons name="cog-outline" size={18} color={COLORS.text} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -542,8 +535,10 @@ const styles = StyleSheet.create({
   avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 80, height: 80, borderRadius: 40 },
   avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
+  settingsBtn: { padding: 6 },
   nameBioBlock: { paddingHorizontal: SPACING.md, marginTop: 10 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  editPenBtn: { padding: 2 },
   name: { fontSize: 14, color: COLORS.text, fontWeight: '700' },
   bio: { fontSize: 13, color: COLORS.text2, lineHeight: 18, marginTop: 2 },
   memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.7, marginTop: 2 },
@@ -553,23 +548,6 @@ const styles = StyleSheet.create({
   stat: { alignItems: 'center', paddingVertical: 6 },
   statNum: { fontSize: 17, color: COLORS.text, fontWeight: '800', lineHeight: 20 },
   statLabel: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
-
-  /* Profile Buttons */
-  actionButtons: {
-    flexDirection: 'row', gap: 6,
-    paddingHorizontal: SPACING.md, marginTop: 12,
-  },
-  profileBtn: {
-    flex: 1, backgroundColor: COLORS.surface2, borderRadius: 8,
-    borderWidth: 1, borderColor: COLORS.border,
-    paddingVertical: 7, alignItems: 'center',
-  },
-  profileBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.text },
-  profileBtnIcon: {
-    width: 36, backgroundColor: COLORS.surface2, borderRadius: 8,
-    borderWidth: 1, borderColor: COLORS.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
 
   /* Order Status Bar */
   orderBar: {
