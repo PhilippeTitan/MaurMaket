@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Alert,
@@ -24,6 +24,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [offerDraftVisible, setOfferDraftVisible] = useState(Boolean(draftOffer));
+  const listRef = useRef<FlatList>(null);
 
   const fetchMessages = async () => {
     try {
@@ -92,7 +93,8 @@ export default function ChatScreen({ route, navigation }: Props) {
           renderItem={renderMessage}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.messageList}
-          inverted
+          ref={listRef}
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
         />
       )}
 
