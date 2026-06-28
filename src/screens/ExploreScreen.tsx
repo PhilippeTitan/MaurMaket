@@ -527,7 +527,8 @@ const styles = StyleSheet.create({
   },
   priceInputModal: {
     flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 13, color: COLORS.text,
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: COLORS.text,
+    height: 38,
   },
   priceDashModal: { fontSize: 14, color: COLORS.text2 },
   modalApplyBtn: {
