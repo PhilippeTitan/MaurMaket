@@ -234,57 +234,66 @@ export default function MeScreen() {
     >
       {/* Hero */}
       <View style={[styles.hero, { paddingTop: insets.top }]}>
-        <View style={styles.heroTop}>
-          <View style={styles.heroInfo}>
-            <View style={styles.avatar}>
-              {avatarUrl ? (
-                <Image source={{ uri: avatarUrl }} style={styles.avatarImg} />
-              ) : (
-                <Text style={styles.avatarText}>{initials}</Text>
-              )}
+        {/* Avatar + Stats row */}
+        <View style={styles.avatarRow}>
+          <View style={styles.avatar}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImg} />
+            ) : (
+              <Text style={styles.avatarText}>{initials}</Text>
+            )}
+          </View>
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
+              <Text style={styles.statLabel}>{isSeller ? 'Sales' : t('me.totalOrders')}</Text>
             </View>
-            <View style={styles.nameBlock}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={styles.name}>{getDisplayName(user)}</Text>
-                {isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business') && (
-                  <MaterialCommunityIcons name="shield-check" size={16} color={COLORS.blue} />
-                )}
-                {isSeller && user?.seller_tier === 'verified' && (
-                  <TouchableOpacity onPress={() => nav.navigate('Settings')} style={styles.tierBadge}>
-                    <Text style={styles.tierBadgeText}>Go Business</Text>
-                  </TouchableOpacity>
-                )}
-                {isSeller && user?.seller_tier === 'business' && (
-                  <TouchableOpacity style={[styles.tierBadge, { backgroundColor: COLORS.coral + '20' }]}>
-                    <Text style={[styles.tierBadgeText, { color: COLORS.coral }]}>Business</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              {user?.bio ? (
-                <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
-              ) : null}
-              <Text style={styles.memberSince}>{memberSince}</Text>
+            <View style={styles.stat}>
+              <Text style={styles.statNum}>{followerCount}</Text>
+              <Text style={styles.statLabel}>{t('me.followers')}</Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statNum}>{followingCount}</Text>
+              <Text style={styles.statLabel}>{t('me.following')}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')}>
-            <MaterialCommunityIcons name="cog-outline" size={22} color={COLORS.text2} />
-          </TouchableOpacity>
         </View>
 
-        {/* Stats row */}
-        <View style={styles.statsRow}>
-          <View style={styles.stat}>
-            <Text style={styles.statNum}>{followerCount}</Text>
-            <Text style={styles.statLabel}>{t('me.followers')}</Text>
+        {/* Name + Bio */}
+        <View style={styles.nameBioBlock}>
+          <View style={styles.nameRow}>
+            <Text style={styles.name}>{getDisplayName(user)}</Text>
+            {isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business') && (
+              <MaterialCommunityIcons name="shield-check" size={16} color={COLORS.blue} />
+            )}
+            {isSeller && user?.seller_tier === 'verified' && (
+              <TouchableOpacity onPress={() => nav.navigate('Settings')} style={styles.tierBadge}>
+                <Text style={styles.tierBadgeText}>Go Business</Text>
+              </TouchableOpacity>
+            )}
+            {isSeller && user?.seller_tier === 'business' && (
+              <TouchableOpacity style={[styles.tierBadge, { backgroundColor: COLORS.coral + '20' }]}>
+                <Text style={[styles.tierBadgeText, { color: COLORS.coral }]}>Business</Text>
+              </TouchableOpacity>
+            )}
           </View>
-          <View style={styles.stat}>
-            <Text style={styles.statNum}>{followingCount}</Text>
-            <Text style={styles.statLabel}>{t('me.following')}</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
-            <Text style={styles.statLabel}>{isSeller ? 'Sales' : t('me.totalOrders')}</Text>
-          </View>
+          {user?.bio ? (
+            <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
+          ) : null}
+          {memberSince ? <Text style={styles.memberSince}>{memberSince}</Text> : null}
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity style={styles.profileBtn} onPress={() => nav.navigate('Settings')}>
+            <Text style={styles.profileBtnText}>{t('me.editProfile')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.profileBtn}>
+            <Text style={styles.profileBtnText}>Share profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.profileBtnIcon} onPress={() => nav.navigate('Settings')}>
+            <MaterialCommunityIcons name="cog-outline" size={18} color={COLORS.text} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -527,23 +536,40 @@ const styles = StyleSheet.create({
 
   /* Hero */
   hero: { backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: SPACING.md },
-  heroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', padding: SPACING.md },
-  heroInfo: { flexDirection: 'row', gap: 12, flex: 1 },
-  avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  avatarImg: { width: 72, height: 72, borderRadius: 36 },
-  avatarText: { fontSize: 26, color: COLORS.white, fontWeight: '700' },
-  nameBlock: { flex: 1, justifyContent: 'center', gap: 2 },
-  name: { fontSize: 18, color: COLORS.text, fontWeight: '700' },
-  bio: { fontSize: 13, color: COLORS.text2, lineHeight: 18 },
+  avatarRow: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 0,
+  },
+  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: 80, height: 80, borderRadius: 40 },
+  avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
+  nameBioBlock: { paddingHorizontal: SPACING.md, marginTop: 10 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  name: { fontSize: 14, color: COLORS.text, fontWeight: '700' },
+  bio: { fontSize: 13, color: COLORS.text2, lineHeight: 18, marginTop: 2 },
   memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.7, marginTop: 2 },
-  settingsBtn: { padding: 6 },
 
   /* Stats */
-  statsRow: { flexDirection: 'row', paddingHorizontal: SPACING.md },
-  stat: { flex: 1, alignItems: 'center', paddingVertical: 6 },
-  statNum: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
-  statLabel: { fontSize: 10, color: COLORS.text2, marginTop: 2 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
+  stat: { alignItems: 'center', paddingVertical: 6 },
+  statNum: { fontSize: 17, color: COLORS.text, fontWeight: '800', lineHeight: 20 },
+  statLabel: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
+
+  /* Profile Buttons */
+  actionButtons: {
+    flexDirection: 'row', gap: 6,
+    paddingHorizontal: SPACING.md, marginTop: 12,
+  },
+  profileBtn: {
+    flex: 1, backgroundColor: COLORS.surface2, borderRadius: 8,
+    borderWidth: 1, borderColor: COLORS.border,
+    paddingVertical: 7, alignItems: 'center',
+  },
+  profileBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.text },
+  profileBtnIcon: {
+    width: 36, backgroundColor: COLORS.surface2, borderRadius: 8,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
 
   /* Order Status Bar */
   orderBar: {
