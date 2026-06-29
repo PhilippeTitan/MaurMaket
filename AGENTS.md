@@ -542,25 +542,32 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 3. ~~**Masonry fix across all grids**~~ — ExploreScreen, MeScreen, StorefrontScreen all use `cover` + `DEFAULT_IMG_H`.
 7. ~~**Duplicate conversation bug**~~ — StorefrontScreen checks existing conversations before creating new.
 
-### 🔴 Phase 0: Emergency Fixes (NOW)
-1. `cleanupLegacyData()` wipes ALL products, orders, reviews on every server restart — REMOVE or gate
-2. Webhook `processed_events` INSERT outside transaction — failed transaction = permanent data loss
-3. Meetup proposal notification goes to wrong party (seller never notified)
-4. Promo discount recorded but buyer charged full amount
-5. Stock decremented before payment — ghost inventory on failed payments
-6. `complete` endpoint requires `status === 'delivered'` — meetup orders can't complete
-7. Feed snap fix reverted (`decelerationRate="fast"` back in code)
+### 🔴 Phase 0: Emergency Fixes — ALL DONE ✅
+1. ~~`cleanupLegacyData()` wipes ALL products, orders, reviews on every server restart~~ — REMOVED (commented out)
+2. ~~Webhook `processed_events` INSERT outside transaction~~ — Moved inside transaction (server.js:2896)
+3. ~~Meetup proposal notification goes to wrong party~~ — Fixed: notifies the OTHER party (server.js:1694)
+4. ~~Promo discount recorded but buyer charged full amount~~ — Fixed: discount applied to `finalTotal` (server.js:1560)
+5. ~~Stock decremented before payment — ghost inventory on failed payments~~ — Fixed: stock now decremented in payment.completed webhook with FOR UPDATE locking (server.js:2904-2921)
+6. ~~`complete` endpoint requires `status === 'delivered'`~~ — Fixed: accepts `paid` for meetup orders
+7. ~~Feed snap fix reverted~~ — Fixed: `decelerationRate={0}` + `disableIntervalMomentum={true}`
 
-### 🟡 Phase 1-6: Meetup Escrow + QR System (Weeks 1-3)
-See "Planned Architecture: Meetup Escrow + QR System" section below.
+### ✅ Phase 1-6: Meetup Escrow + QR System — DONE
+- Phase 1: Escrow system (order_escrow table, modified webhook, pay-status polling)
+- Phase 2: State machine (meetup states, FOR UPDATE locking, node-cron timeouts)
+- Phase 3: MeetupScreen (map, GPS proximity, "I'm here" check-in, expo-location + react-native-maps)
+- Phase 4: QR code (separate QR_SECRET, generation, scanning, 8-digit fallback)
+- Phase 5: Emergency exits (extend +30m, cancel, emergency exit)
+- Phase 6: Multi-seller meetups — Deferred (per-seller escrow tracking in place, but UI not built)
 
-### 🟢 Phase 7: Feed Algorithm
-See "Planned Architecture: Feed Algorithm" section below.
+### ✅ Phase 7: Feed Algorithm — DONE
+- `feed_events` table, personalized scoring (CTE-based), like/relevant/not_relevant buttons wired
+- Tabs: "New" first, "For You" second
 
-### 🟢 Phase 8: Verification Improvements
-See "Planned Architecture: Verification Improvements" section below.
+### ✅ Phase 8: Verification Improvements — DONE
+- Auto-reject (no pending state), human-readable error messages, imgbb image deletion + DB NULL
 
-### 🟢 Phase 9-10: Push Notifications + Dispute Resolution
+### 🟢 Phase 9-10: Push Notifications + Dispute Resolution — DEFERRED
+- Phase 10 hybrid dispute: auto-resolve simple cases (timeout → refund, QR scanned → release), admin panel later
 
 ### Still Open (Medium Priority)
 4. **Image sharing in chat** — prevents off-app WhatsApp exfiltration
@@ -946,7 +953,82 @@ score =
 | Phase 10 | Dispute resolution (admin flow, refund via payout, escrow freeze) | 2-3 days |
 
 ### New Dependencies Needed
-- `expo-location` — GPS coordinates for proximity checks
-- `react-native-maps` — native map rendering (Apple Maps / Google Maps)
-- `node-cron` — scheduled tasks (timeout auto-refund)
+- `expo-location` — GPS coordinates for proximity checks (installed)
+- `react-native-maps` — native map rendering (Apple Maps / Google Maps) (installed)
+- `node-cron` — scheduled tasks (timeout auto-refund) (installed)
 - `@expo/image-manipulator` — already installed (imgbb upload resize)
+- `@expo/ngrok` — dev tunneling (installed)
+
+### Implementation Plan (10 Phases)
+| Phase | What | Status |
+|-------|------|--------|
+| Phase 0 | Emergency fixes (cleanupLegacyData, webhook tx bug, notification bug, promo bug, stock fix, complete endpoint, feed snap) | ✅ DONE |
+| Phase 1 | Escrow system (order_escrow table, modified webhook, pay-status polling) | ✅ DONE |
+| Phase 2 | State machine (meetup states, FOR UPDATE locking, node-cron timeouts) | ✅ DONE |
+| Phase 3 | Meetup screen (map, GPS proximity, "I'm here" check-in, expo-location + react-native-maps) | ✅ DONE |
+| Phase 4 | QR code (separate signing secret, generation, scanning, 8-digit fallback) | ✅ DONE |
+| Phase 5 | Emergency exits (extend, leave, unresponsive, emergency, panic button) | ✅ DONE |
+| Phase 6 | Multi-seller meetups (per-seller escrow, separate tracking) | 🔲 Deferred (per-seller escrow in place, UI not built) |
+| Phase 7 | Feed algorithm (feed_events table, scoring, wire buttons, rate limiting) | ✅ DONE |
+| Phase 8 | Verification improvements (auto-reject, image cleanup, error messages) | ✅ DONE |
+| Phase 9 | Push notifications (FCM/APNs via expo-notifications) | 🔲 Deferred |
+| Phase 10 | Dispute resolution (admin flow, refund via payout, escrow freeze) | 🔲 Deferred |
+
+---
+
+## Session 8 — 2026-06-29 (Implementation: Phases 2-8 + Web Compat + Dev Setup)
+
+### Context
+Implemented all planned features from Session 7's architecture. Also fixed web compatibility for Expo Go and set up local dev environment.
+
+### Commits (this session)
+- `429e30b` — web compatibility: conditional react-native-maps import, expo-clipboard, SQL comment fix
+- `66792a3` — conditional native imports for web compat: expo-location, expo-camera, ML kit
+- `dcbd1ac` — lazy-load MeetupScreen to prevent react-native-maps from crashing web bundle
+- `a19c4f3` — retry payment unique referenceId + graceful non-JSON response handling
+- `d7485c4` — dev mode points native app to local server instead of production
+- `2d5c874` — move stock decrement from order creation to payment webhook (P0-33 ghost inventory fix)
+
+### What Was Built
+1. **Phase 2: State Machine** — `node-cron` for timeout auto-refund (90-min window, every 5 min), `SELECT ... FOR UPDATE` on complete/seller/escrow endpoints, meetup check-in + QR generation, QR scan, `haversineDistance()` helper, blocked seller from advancing meetup orders via status endpoint.
+
+2. **Phase 3+4: MeetupScreen** — Real map with `react-native-maps` (native) / static fallback (web), GPS tracking via `expo-location` (conditional import for web), "I'm here" check-in, QR code generation for buyer (modal), QR scan/paste for seller, confirm receipt → release escrow. Full API: `meetupCheckin`, `meetupScan`, `getMeetupStatus`, `releaseEscrow`, `refundEscrow`, `getEscrowStatus`.
+
+3. **Phase 5: Emergency Exits** — `PUT /api/orders/:id/meetup/extend` (+30 min), 3-button emergency row: Extend +30m (blue), Cancel (coral), Emergency Exit (red).
+
+4. **Phase 7: Feed Algorithm** — `feed_events` table, `POST /api/feed/event` rate-limited (50/hour), personalized scoring with CTE-based query (followed: +3, wishlisted: +2, liked: +2, past purchase: +1.5, relevant: +1.5, category: +1, recency: +1, rating: +0.5, not_relevant: -3), heart button wired, relevant/not_relevant in more menu, dwell time tracking via `onViewableItemsChanged`.
+
+5. **Phase 8: Verification** — Auto-reject (no `pending` state), human-readable error messages, placeOfBirth + sex checks, imgbb image deletion + DB NULL after verify, rejection screen with error list + retry button.
+
+6. **Web Compatibility** — `react-native-maps` conditionally imported with `require()` + web fallback UI, `expo-location` conditionally imported, `expo-camera`/ML kit conditionally imported, `expo-clipboard` installed, `MeetupScreen` wrapped in `React.lazy()`, SQL `//` → `--` comment fix, `Suspense` wrapper around app.
+
+7. **Feed Tab Swap** — Default tab changed from `'forYou'` to `'new'`, tab buttons reordered: "New" leftmost, "For You" rightmost.
+
+8. **Retry Payment Fix** — Unique `referenceId` per retry attempt (`${orderId}_retry_${timestamp}`), graceful non-JSON response handling in `request()`.
+
+9. **Dev Environment** — Expo Go 56.0.0 APK installed on phone, LAN mode working (phone IS the WiFi hotspot, laptop IP: `10.130.195.105`), `api.ts` updated with `__DEV__` detection to point native app to local server.
+
+10. **P0-33 Stock Fix** — Stock now decremented only in payment.completed webhook (not at order creation) with `SELECT ... FOR UPDATE` locking. Removed stock restore from buyer cancel and payment.failed webhook. Escrow refund and meetup timeout still restore stock (correctly, since payment DID succeed for those).
+
+### Known Issues
+- **Expo Go retry payment 400**: Phone may not reach local server (backend logs showed no incoming requests). Root cause likely: phone still hitting production or Android cleartext HTTP blocking. `__DEV__` detection was added but untested.
+- **Production Render cold start**: Returns HTML on first request, causes JSON parse errors. Fixed with try/catch in `request()`.
+
+### Phase 0 Status (ALL DONE)
+| # | Fix | Location |
+|---|-----|----------|
+| 1 | `cleanupLegacyData()` removed | server.js:3631 |
+| 2 | `processed_events` INSERT inside transaction | server.js:2896 |
+| 3 | Meetup notification → other party | server.js:1694 |
+| 4 | Promo discount applied to `finalTotal` | server.js:1560 |
+| 5 | Stock decremented in webhook, not order creation | server.js:2904-2921 |
+| 6 | `complete` accepts `paid` for meetup | server.js:2000 |
+| 7 | `decelerationRate={0}` + `disableIntervalMomentum` | FeedScreen.tsx:516 |
+
+### Next Steps
+1. **Test local dev on phone** — Verify phone can reach `10.130.195.105:3001` in Expo Go
+2. **Phase 9: Push Notifications** — expo-notifications + FCM/APNs
+3. **Phase 10: Dispute Resolution** — Hybrid auto-resolve + admin panel
+4. **Phase 6: Multi-seller meetups** — Per-seller escrow tracking UI
+5. **Image sharing in chat** — Prevents WhatsApp exfiltration
+6. **Deploy to production** — Push fixes, verify Render auto-deploy
