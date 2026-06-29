@@ -8,7 +8,7 @@ import MapView, { Marker, Circle } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { COLORS, SPACING } from '../theme';
 import { store } from '../store';
-import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow } from '../api';
+import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow, extendMeetup } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -224,6 +224,16 @@ export default function MeetupScreen({ route, navigation }: Props) {
     ]);
   };
 
+  const handleExtend = async () => {
+    try {
+      await extendMeetup(orderId);
+      setTimeLeft(prev => prev + 30 * 60 * 1000);
+      Alert.alert('Extended', 'Timer extended by 30 minutes.');
+    } catch (err: any) {
+      Alert.alert(t('common.error'), err.message || 'Could not extend');
+    }
+  };
+
   const formatTime = (ms: number) => {
     const m = Math.floor(ms / 60000);
     const s = Math.floor((ms % 60000) / 1000);
@@ -392,19 +402,23 @@ export default function MeetupScreen({ route, navigation }: Props) {
         {/* Cancel / Emergency */}
         {order.status === 'paid' && (
           <View style={styles.emergencyRow}>
+            <TouchableOpacity style={[styles.emergencyBtn, { borderColor: COLORS.blue }]} onPress={handleExtend}>
+              <MaterialCommunityIcons name="clock-plus" size={16} color={COLORS.blue} />
+              <Text style={[styles.emergencyBtnText, { color: COLORS.blue }]}>Extend +30m</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.emergencyBtn} onPress={handleRefund} disabled={refunding}>
               {refunding ? (
                 <ActivityIndicator size="small" color={COLORS.coral} />
               ) : (
                 <>
                   <MaterialCommunityIcons name="cancel" size={16} color={COLORS.coral} />
-                  <Text style={styles.emergencyBtnText}>Cancel meetup</Text>
+                  <Text style={styles.emergencyBtnText}>Cancel</Text>
                 </>
               )}
             </TouchableOpacity>
             <TouchableOpacity style={[styles.emergencyBtn, { borderColor: '#FF2D2D' }]} onPress={handleEmergencyExit}>
               <MaterialCommunityIcons name="shield-alert" size={16} color="#FF2D2D" />
-              <Text style={[styles.emergencyBtnText, { color: '#FF2D2D' }]}>Emergency exit</Text>
+              <Text style={[styles.emergencyBtnText, { color: '#FF2D2D' }]}>Emergency</Text>
             </TouchableOpacity>
           </View>
         )}

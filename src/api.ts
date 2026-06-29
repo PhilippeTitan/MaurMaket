@@ -200,6 +200,9 @@ export const meetupScan = (orderId: string, qrToken: string) =>
 export const getMeetupStatus = (orderId: string) =>
   request(`/orders/${orderId}/meetup/status`);
 
+export const extendMeetup = (orderId: string) =>
+  request(`/orders/${orderId}/meetup/extend`, { method: 'PUT' });
+
 export const releaseEscrow = (orderId: string) =>
   request(`/orders/${orderId}/escrow/release`, { method: 'POST' });
 

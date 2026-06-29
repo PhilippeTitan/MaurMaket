@@ -1841,6 +1841,28 @@ app.post('/api/orders/:id/meetup/scan', authRequired, async (req, res) => {
   }
 });
 
+// Extend meetup timer by 30 minutes
+app.put('/api/orders/:id/meetup/extend', authRequired, async (req, res) => {
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status !== 'paid') return res.status(400).json({ error: 'Order must be active' });
+
+    // Push the check-in time forward by 30 minutes so the 90-min cron window resets
+    await pool.query(
+      `UPDATE meetup_checkins SET checked_in_at = checked_in_at + INTERVAL '30 minutes'
+       WHERE order_id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+
+    await logOrderEvent(req.params.id, 'meetup_extended', req.user.id, null, null, 'Timer extended by 30 minutes');
+    res.json({ extended: true });
+  } catch (err) {
+    console.error('Meetup extend error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Get check-in status for an order
 app.get('/api/orders/:id/meetup/status', authRequired, async (req, res) => {
   try {
