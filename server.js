@@ -354,6 +354,36 @@ async function runMigrations() {
       UPDATE users SET id_verification_result = 'verified' WHERE id_verified = true AND id_verification_result IS NULL;
       UPDATE users SET id_verification_result = 'pending' WHERE id_submitted_at IS NOT NULL AND id_verified = false AND id_verification_result IS NULL;
     `);
+    // Escrow table — holds funds until meetup confirmation (Phase 1)
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS order_escrow (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) ON DELETE CASCADE NOT NULL,
+        seller_id UUID REFERENCES users(id) NOT NULL,
+        gross_amount DECIMAL(10,2) NOT NULL,
+        commission_amount DECIMAL(10,2) NOT NULL,
+        net_amount DECIMAL(10,2) NOT NULL,
+        status VARCHAR(20) DEFAULT 'held' CHECK (status IN ('held', 'released', 'refunded')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        released_at TIMESTAMP,
+        UNIQUE(order_id, seller_id)
+      );
+    `);
+    // Meetup check-in tracking (Phase 1)
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS meetup_checkins (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) ON DELETE CASCADE NOT NULL,
+        user_id UUID REFERENCES users(id) NOT NULL,
+        role VARCHAR(10) NOT NULL CHECK (role IN ('buyer', 'seller')),
+        lat DECIMAL(10,7),
+        lng DECIMAL(10,7),
+        checked_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        qr_token VARCHAR(255),
+        qr_scanned BOOLEAN DEFAULT false,
+        UNIQUE(order_id, user_id)
+      );
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -1621,6 +1651,269 @@ app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
   }
 });
 
+// ───── Escrow routes ─────
+
+// Release escrow — called when meetup exchange is confirmed (QR scanned + buyer confirms)
+// Credits seller_balances and pays out platform commission
+app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const order = await client.query(
+      'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id]
+    );
+    if (order.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    const o = order.rows[0];
+
+    // Only buyer can release escrow (they confirm "I received the item")
+    if (o.buyer_id !== req.user.id) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Only the buyer can release escrow' });
+    }
+    if (o.status !== 'paid' && o.status !== 'completed') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `Order must be paid or completed to release escrow (current: ${o.status})` });
+    }
+
+    // Get all held escrow entries for this order
+    const escrows = await client.query(
+      "SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE",
+      [req.params.id]
+    );
+    if (escrows.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'No held escrow found for this order' });
+    }
+
+    for (const escrow of escrows.rows) {
+      const net = parseFloat(escrow.net_amount);
+
+      // Credit seller_balances with net amount
+      await client.query(
+        `INSERT INTO seller_balances (seller_id, balance, total_earned)
+         VALUES ($1, $2, $2)
+         ON CONFLICT (seller_id)
+         DO UPDATE SET balance = seller_balances.balance + $2,
+                       total_earned = seller_balances.total_earned + $2,
+                       updated_at = CURRENT_TIMESTAMP`,
+        [escrow.seller_id, net]
+      );
+
+      // Mark escrow as released
+      await client.query(
+        "UPDATE order_escrow SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [escrow.id]
+      );
+
+      console.log(`Escrow released: seller ${escrow.seller_id} credited Rs ${net}`);
+    }
+
+    // Mark order as completed if not already
+    if (o.status !== 'completed') {
+      await client.query(
+        "UPDATE orders SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [req.params.id]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // Pay out platform commission (outside transaction — best effort)
+    try {
+      const totalCommission = (await pool.query(
+        'SELECT COALESCE(SUM(commission_amount), 0) AS total FROM order_escrow WHERE order_id = $1',
+        [req.params.id]
+      )).rows[0].total;
+      const commissionAmount = parseFloat(totalCommission);
+
+      if (commissionAmount > 0 && process.env.PLATFORM_PHONE) {
+        const payoutRes = await fetch(
+          process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.MCC_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              amount: commissionAmount,
+              receiver: process.env.PLATFORM_PHONE,
+              referenceId: `platform_${req.params.id}`,
+            }),
+          }
+        );
+
+        if (payoutRes.ok) {
+          const payoutData = await payoutRes.json();
+          await pool.query(
+            `INSERT INTO platform_payouts (order_id, amount, status, moncash_reference)
+             VALUES ($1, $2, 'completed', $3)`,
+            [req.params.id, commissionAmount, payoutData.reference || payoutData.transactionId || null]
+          );
+          console.log(`Platform commission Rs ${commissionAmount} sent to ${process.env.PLATFORM_PHONE}`);
+        } else {
+          const errText = await payoutRes.text();
+          await pool.query(
+            `INSERT INTO platform_payouts (order_id, amount, status, error_message)
+             VALUES ($1, $2, 'failed', $3)`,
+            [req.params.id, commissionAmount, errText]
+          );
+          console.error(`Platform payout failed: ${errText}`);
+        }
+      }
+    } catch (payoutErr) {
+      console.error('Platform payout error:', payoutErr.message);
+    }
+
+    // Notify sellers
+    for (const escrow of escrows.rows) {
+      createNotification(escrow.seller_id, 'order_status', 'Payment Released',
+        `Rs ${parseFloat(escrow.net_amount).toFixed(0)} has been credited to your balance`, { orderId: req.params.id });
+    }
+
+    res.json({ released: true, escrowCount: escrows.rows.length });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Escrow release error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Refund escrow — called on dispute resolution (buyer wins) or timeout
+// Sends payout back to buyer via MonCash
+app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const order = await client.query(
+      'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id]
+    );
+    if (order.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    const o = order.rows[0];
+
+    // Only buyer or admin can request refund
+    if (o.buyer_id !== req.user.id && req.user.role !== 'admin') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Only the buyer or admin can refund escrow' });
+    }
+
+    // Get buyer's phone for payout
+    const buyerRes = await client.query('SELECT phone FROM users WHERE id = $1', [o.buyer_id]);
+    const buyerPhone = buyerRes.rows[0]?.phone;
+    if (!buyerPhone) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Buyer phone number not found' });
+    }
+
+    // Get all held escrow entries
+    const escrows = await client.query(
+      "SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE",
+      [req.params.id]
+    );
+    if (escrows.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'No held escrow found for this order (may already be released or refunded)' });
+    }
+
+    const totalRefund = escrows.rows.reduce((sum, e) => sum + parseFloat(e.gross_amount), 0);
+
+    // Mark escrow as refunded
+    for (const escrow of escrows.rows) {
+      await client.query(
+        "UPDATE order_escrow SET status = 'refunded', released_at = CURRENT_TIMESTAMP WHERE id = $1",
+        [escrow.id]
+      );
+    }
+
+    // Update order status
+    await client.query(
+      "UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+      [req.params.id]
+    );
+    await logOrderEvent(req.params.id, 'status_change', req.user.id, o.status, 'cancelled', 'Escrow refunded', client);
+
+    // Restore stock
+    const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
+    for (const item of items.rows) {
+      await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
+    }
+
+    await client.query('COMMIT');
+
+    // Send payout to buyer via MonCash (outside transaction — best effort)
+    try {
+      if (totalRefund > 0 && buyerPhone) {
+        const payoutRes = await fetch(
+          process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.MCC_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              amount: Math.round(totalRefund),
+              receiver: buyerPhone,
+              referenceId: `refund_${req.params.id}`,
+            }),
+          }
+        );
+
+        if (payoutRes.ok) {
+          console.log(`Refund Rs ${totalRefund} sent to buyer ${buyerPhone}`);
+        } else {
+          const errText = await payoutRes.text();
+          console.error(`Refund payout failed: ${errText}`);
+        }
+      }
+    } catch (payoutErr) {
+      console.error('Refund payout error:', payoutErr.message);
+    }
+
+    createNotification(o.buyer_id, 'order_status', 'Order Refunded',
+      `Rs ${totalRefund.toFixed(0)} refunded for order`, { orderId: req.params.id });
+
+    res.json({ refunded: true, amount: totalRefund });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Escrow refund error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Get escrow status for an order
+app.get('/api/orders/:id/escrow', authRequired, async (req, res) => {
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const escrows = await pool.query(
+      `SELECT e.*, u.full_name AS seller_name
+       FROM order_escrow e
+       JOIN users u ON e.seller_id = u.id
+       WHERE e.order_id = $1`,
+      [req.params.id]
+    );
+
+    res.json({ escrows: escrows.rows });
+  } catch (err) {
+    console.error('Escrow status error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
   const { orderId } = req.params;
   try {
@@ -2210,36 +2503,31 @@ app.post('/api/payments/webhook', async (req, res) => {
             const commission = Math.round(grossAmount * rate * 100) / 100;
             const net = Math.round((grossAmount - commission) * 100) / 100;
 
+            // ESCROW: Hold funds — insert into order_escrow instead of crediting seller_balances
             await client.query(
-              `INSERT INTO seller_balances (seller_id, balance, total_earned)
-               VALUES ($1, $2, $2)
-               ON CONFLICT (seller_id)
-               DO UPDATE SET balance = seller_balances.balance + $2,
-                             total_earned = seller_balances.total_earned + $2,
-                             updated_at = CURRENT_TIMESTAMP`,
-              [item.seller_id, net]
+              `INSERT INTO order_escrow (order_id, seller_id, gross_amount, commission_amount, net_amount, status)
+               VALUES ($1, $2, $3, $4, $5, 'held')
+               ON CONFLICT (order_id, seller_id) DO UPDATE SET
+                 gross_amount = $3, commission_amount = $4, net_amount = $5, status = 'held'`,
+              [reference, item.seller_id, grossAmount, commission, net]
             );
 
+            // Log to platform_revenue for accounting (funds held, not yet distributed)
             await client.query(
               `INSERT INTO platform_revenue (order_id, seller_id, seller_tier, gross_amount, commission_rate, commission_amount, platform_fee, net_to_seller)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
               [reference, item.seller_id, sellerTier, grossAmount, rate, commission, commission, net]
             );
 
-            console.log(`  Seller ${item.seller_id} (${sellerTier}): gross Rs ${grossAmount}, commission ${rate * 100}% = Rs ${commission}, net Rs ${net}`);
+            console.log(`  Escrow: seller ${item.seller_id} (${sellerTier}): gross Rs ${grossAmount}, commission ${rate * 100}% = Rs ${commission}, net Rs ${net} — HELD`);
           }
         }
         await client.query('COMMIT');
         const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
         for (const sid of sellerIds) {
-          const revRow = (await client.query(
-            'SELECT net_to_seller, commission_amount FROM platform_revenue WHERE order_id = $1 AND seller_id = $2',
-            [reference, sid]
-          )).rows[0];
-          const net = revRow ? parseFloat(revRow.net_to_seller) : 0;
-          createNotification(sid, 'order_status', 'Payment Received', `Rs ${net.toFixed(0)} credited to your balance for order`, { orderId: reference });
+          createNotification(sid, 'order_status', 'Payment Received', `Payment for order is held in escrow until exchange is confirmed`, { orderId: reference });
         }
-        console.log(`Order ${reference} paid, sellers credited`);
+        console.log(`Order ${reference} paid, funds held in escrow`);
       } catch (e) {
         await client.query('ROLLBACK');
         throw e;
@@ -2248,51 +2536,10 @@ app.post('/api/payments/webhook', async (req, res) => {
       }
 
       // Auto-payout platform commission to PLATFORM_PHONE
-      try {
-        const totalCommission = (await pool.query(
-          'SELECT COALESCE(SUM(commission_amount), 0) AS total FROM platform_revenue WHERE order_id = $1',
-          [reference]
-        )).rows[0].total;
-
-        const commissionAmount = parseFloat(totalCommission);
-        if (commissionAmount > 0 && process.env.PLATFORM_PHONE) {
-          const payoutRes = await fetch(
-            process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${process.env.MCC_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                amount: commissionAmount,
-                receiver: process.env.PLATFORM_PHONE,
-                referenceId: `platform_${reference}`,
-              }),
-            }
-          );
-
-          if (payoutRes.ok) {
-            const payoutData = await payoutRes.json();
-            await pool.query(
-              `INSERT INTO platform_payouts (order_id, amount, status, moncash_reference)
-               VALUES ($1, $2, 'completed', $3)`,
-              [reference, commissionAmount, payoutData.reference || payoutData.transactionId || null]
-            );
-            console.log(`Platform commission Rs ${commissionAmount} sent to ${process.env.PLATFORM_PHONE}`);
-          } else {
-            const errText = await payoutRes.text();
-            await pool.query(
-              `INSERT INTO platform_payouts (order_id, amount, status, error_message)
-               VALUES ($1, $2, 'failed', $3)`,
-              [reference, commissionAmount, errText]
-            );
-            console.error(`Platform payout failed for order ${reference}: ${errText}`);
-          }
-        }
-      } catch (payoutErr) {
-        console.error(`Platform payout error for order ${reference}:`, payoutErr.message);
-      }
+      // ESCROW: Commission payout DELAYED — will fire when escrow is released (meetup confirmed)
+      // Previously this auto-payout fired immediately on payment, which meant platform
+      // collected commission before the buyer even received their item.
+      console.log(`Order ${reference}: commission payout deferred to escrow release`);
     } else if (event === 'payment.failed') {
       const client = await pool.connect();
       try {

@@ -295,6 +295,34 @@ Haitian marketplace (e-commerce) app connecting buyers and sellers. React Native
 | net_to_seller | DECIMAL(10,2) | |
 | created_at | TIMESTAMP | |
 
+### `order_escrow`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| order_id | UUID | FK → orders.id ON DELETE CASCADE |
+| seller_id | UUID | FK → users.id |
+| gross_amount | DECIMAL(10,2) | |
+| commission_amount | DECIMAL(10,2) | |
+| net_amount | DECIMAL(10,2) | |
+| status | VARCHAR(20) | held/released/refunded |
+| created_at | TIMESTAMP | |
+| released_at | TIMESTAMP | nullable |
+| UNIQUE(order_id, seller_id) | | One escrow per seller per order |
+
+### `meetup_checkins`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| order_id | UUID | FK → orders.id ON DELETE CASCADE |
+| user_id | UUID | FK → users.id |
+| role | VARCHAR(10) | 'buyer' or 'seller' |
+| lat | DECIMAL(10,7) | |
+| lng | DECIMAL(10,7) | |
+| checked_in_at | TIMESTAMP | |
+| qr_token | VARCHAR(255) | signed JWT |
+| qr_scanned | BOOLEAN | default false |
+| UNIQUE(order_id, user_id) | | One check-in per user per order |
+
 ## Commission Model
 | Seller Tier | Commission Rate | Example (Rs 1000 order) |
 |---|---|---|
@@ -372,6 +400,11 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 - **PUT /api/orders/:id/complete** — Bearer
 - **GET /api/orders/:id/timeline** — Bearer → `{events[]}`
 - **POST /api/orders/:id/reorder** — Bearer → adds items to cart
+
+### Escrow
+- **POST /api/orders/:id/escrow/release** — Bearer (buyer only). Releases held funds to seller after confirmed exchange. Credits seller_balances + pays platform commission.
+- **POST /api/orders/:id/escrow/refund** — Bearer (buyer or admin). Refunds held funds to buyer via MonCash payout. Restores stock.
+- **GET /api/orders/:id/escrow** — Bearer. Returns escrow status for each seller in the order.
 
 ### Reviews
 - **POST /api/reviews** — Bearer (buyer). `{orderId, rating, comment}`
