@@ -1178,33 +1178,65 @@ app.get('/api/products', async (req, res) => {
   let joinExtra = '';
 
   if (usePersonalized && userId) {
-    // Personalized scoring: joins against feed_events, follows, wishlists, purchases, reviews
+    // Personalized scoring using CTE for efficiency
     selectExtra = `, COALESCE(score.total_score, 0) AS feed_score`;
     joinExtra = `LEFT JOIN (
+      WITH user_follows AS (
+        SELECT seller_id FROM follows WHERE follower_id = $${paramIndex}
+      ),
+      user_wishlists AS (
+        SELECT product_id FROM wishlists WHERE user_id = $${paramIndex}
+      ),
+      user_likes AS (
+        SELECT product_id FROM feed_events WHERE user_id = $${paramIndex} AND event_type = 'like'
+      ),
+      user_relevant AS (
+        SELECT product_id FROM feed_events WHERE user_id = $${paramIndex} AND event_type = 'relevant'
+      ),
+      user_not_relevant AS (
+        SELECT product_id FROM feed_events WHERE user_id = $${paramIndex} AND event_type = 'not_relevant'
+      ),
+      user_purchases AS (
+        SELECT DISTINCT oi.seller_id, p3.category_id
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.id
+        JOIN products p3 ON oi.product_id = p3.id
+        WHERE o.buyer_id = $${paramIndex}
+      ),
+      seller_ratings AS (
+        SELECT seller_id, AVG(rating) AS avg_rating
+        FROM reviews GROUP BY seller_id
+      )
       SELECT
         p2.id AS product_id,
         (
-          -- Followed seller: +3
-          COALESCE((SELECT 3.0 FROM follows f WHERE f.follower_id = $${paramIndex} AND f.seller_id = p2.seller_id LIMIT 1), 0)
-          -- Wishlisted: +2
-          + COALESCE((SELECT 2.0 FROM wishlists w WHERE w.user_id = $${paramIndex} AND w.product_id = p2.id LIMIT 1), 0)
-          -- Liked: +2
-          + COALESCE((SELECT 2.0 FROM feed_events fe WHERE fe.user_id = $${paramIndex} AND fe.product_id = p2.id AND fe.event_type = 'like' LIMIT 1), 0)
-          -- Past purchase from seller: +1.5
-          + COALESCE((SELECT 1.5 FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE o.buyer_id = $${paramIndex} AND oi.seller_id = p2.seller_id LIMIT 1), 0)
-          -- Marked relevant: +1.5
-          + COALESCE((SELECT 1.5 FROM feed_events fe WHERE fe.user_id = $${paramIndex} AND fe.product_id = p2.id AND fe.event_type = 'relevant' LIMIT 1), 0)
-          -- Same category as past purchases: +1
-          + COALESCE((SELECT 1.0 FROM order_items oi JOIN orders o ON oi.order_id = o.id JOIN products p3 ON oi.product_id = p3.id WHERE o.buyer_id = $${paramIndex} AND p3.category_id = p2.category_id LIMIT 1), 0)
-          -- Posted in last 24h: +1
+          COALESCE((SELECT 3.0 FROM user_follows WHERE seller_id = p2.seller_id LIMIT 1), 0)
+          + COALESCE((SELECT 2.0 FROM user_wishlists WHERE product_id = p2.id LIMIT 1), 0)
+          + COALESCE((SELECT 2.0 FROM user_likes WHERE product_id = p2.id LIMIT 1), 0)
+          + COALESCE((SELECT 1.5 FROM user_purchases WHERE seller_id = p2.seller_id LIMIT 1), 0)
+          + COALESCE((SELECT 1.5 FROM user_relevant WHERE product_id = p2.id LIMIT 1), 0)
+          + COALESCE((SELECT 1.0 FROM user_purchases WHERE category_id = p2.category_id LIMIT 1), 0)
           + CASE WHEN p2.created_at > NOW() - INTERVAL '24 hours' THEN 1.0 ELSE 0 END
-          -- Seller avg rating > 4: +0.5
-          + COALESCE((SELECT CASE WHEN AVG(r.rating) > 4 THEN 0.5 ELSE 0 END FROM reviews r WHERE r.seller_id = p2.seller_id), 0)
-          -- Not relevant: -3
-          - COALESCE((SELECT 3.0 FROM feed_events fe WHERE fe.user_id = $${paramIndex} AND fe.product_id = p2.id AND fe.event_type = 'not_relevant' LIMIT 1), 0)
+          + COALESCE((SELECT CASE WHEN avg_rating > 4 THEN 0.5 ELSE 0 END FROM seller_ratings WHERE seller_id = p2.seller_id), 0)
+          - COALESCE((SELECT 3.0 FROM user_not_relevant WHERE product_id = p2.id LIMIT 1), 0)
         ) AS total_score
       FROM products p2
       WHERE p2.is_available = TRUE
+        AND (
+          SELECT 1 FROM user_follows WHERE seller_id = p2.seller_id
+          UNION ALL
+          SELECT 1 FROM user_wishlists WHERE product_id = p2.id
+          UNION ALL
+          SELECT 1 FROM user_likes WHERE product_id = p2.id
+          UNION ALL
+          SELECT 1 FROM user_relevant WHERE product_id = p2.id
+          UNION ALL
+          SELECT 1 FROM user_not_relevant WHERE product_id = p2.id
+          UNION ALL
+          SELECT 1 FROM user_purchases WHERE seller_id = p2.seller_id OR category_id = p2.category_id
+          LIMIT 1
+        )
+      ORDER BY total_score DESC, p2.created_at DESC
     ) score ON score.product_id = p.id`;
     params.push(userId);
     orderBy = 'COALESCE(score.total_score, 0) DESC, p.created_at DESC';
@@ -3151,9 +3183,16 @@ app.get('/api/upload/config', authRequired, (_req, res) => {
 // ───── ID Verification ─────
 
 app.post('/api/verification/submit', authRequired, sellerRequired, async (req, res) => {
-  const { idFrontUrl, idBackUrl, selfieUrl, ocrResult, faceMatchScore } = req.body;
+  const { idFrontUrl, idBackUrl, selfieUrl, deleteUrls, ocrResult, faceMatchScore } = req.body;
   if (!idFrontUrl || !idBackUrl || !selfieUrl) {
     return res.status(400).json({ error: 'CIN front, back, and selfie are required' });
+  }
+
+  async function deleteImgbbImage(deleteUrl) {
+    if (!deleteUrl || !process.env.IMGBB_KEY) return;
+    try {
+      await fetch(deleteUrl, { method: 'DELETE', signal: AbortSignal.timeout(5000) });
+    } catch { /* best effort — imgbb 24h expiry is fallback */ }
   }
   try {
     const existing = await pool.query(
@@ -3207,7 +3246,12 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
       );
       createNotification(req.user.id, 'verification_approved', 'Identity Verified', 'Your identity has been verified! You are now a Verified Seller.', {});
 
-      // Auto-cleanup: NULL out image URLs (imgbb has 24h expiration)
+      // Auto-cleanup: Delete images from imgbb + NULL out DB URLs
+      await Promise.all([
+        deleteImgbbImage(deleteUrls?.idFront),
+        deleteImgbbImage(deleteUrls?.idBack),
+        deleteImgbbImage(deleteUrls?.selfie),
+      ]);
       await pool.query(
         `UPDATE verification_attempts SET id_front_url = NULL, id_back_url = NULL, selfie_url = NULL WHERE id = $1`,
         [result.rows[0].id]

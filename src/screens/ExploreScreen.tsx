@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, getDisplayName } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
+import { store } from '../store';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -87,6 +88,7 @@ export default function ExploreScreen({ navigation }: Props) {
     setFailedImages(new Set());
     try {
       const params: Record<string, string> = { limit: '50' };
+      if (store.isLoggedIn) params.personalized = 'true';
       if (selectedCat) params.category = selectedCat;
       if (search.trim()) params.search = search.trim();
       if (sortBy) params.sort = sortBy;

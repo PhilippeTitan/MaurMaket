@@ -363,7 +363,7 @@ async function resizeAndConvert(uri: string): Promise<{ base64: string; mimeType
   return { base64: result.base64, mimeType: 'image/webp' };
 }
 
-export const uploadImage = async (uri: string): Promise<{ url: string }> => {
+export const uploadImage = async (uri: string): Promise<{ url: string; deleteUrl?: string }> => {
   let token: string | null = null;
   if (Platform.OS === 'web') {
     token = localStorage.getItem('mm_token');
@@ -391,7 +391,7 @@ export const uploadImage = async (uri: string): Promise<{ url: string }> => {
     clearTimeout(timer);
     const data = await res.json();
     if (!data.success) throw new Error(data.error?.message || 'Upload failed');
-    return { url: data.data.url };
+    return { url: data.data.url, deleteUrl: data.data.delete_url };
   } catch (e: any) {
     clearTimeout(timer);
     if (e.name === 'AbortError') throw new Error('Upload timed out. Check your connection.');
@@ -407,6 +407,7 @@ export const submitVerification = (data: {
   idFrontUrl: string;
   idBackUrl: string;
   selfieUrl: string;
+  deleteUrls?: { idFront?: string; idBack?: string; selfie?: string };
   ocrResult?: Record<string, string>;
   faceMatchScore?: number;
 }) => request('/verification/submit', { method: 'POST', body: JSON.stringify(data) });

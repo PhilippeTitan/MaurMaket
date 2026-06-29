@@ -40,7 +40,7 @@ export default function FeedScreen() {
   const [comments, setComments] = useState<Review[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [moreProduct, setMoreProduct] = useState<Product | null>(null);
-  const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('forYou');
+  const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('new');
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const flatListRef = useRef<FlatList>(null);
   const checkedWishlistIds = useRef<Set<string>>(new Set());
@@ -465,16 +465,16 @@ export default function FeedScreen() {
         </View>
         <View style={styles.feedTabs}>
           <TouchableOpacity
-            style={[styles.feedTab, feedTab === 'forYou' && styles.feedTabActive]}
-            onPress={() => { setFeedTab('forYou'); setPage(1); setProducts([]); }}
-          >
-            <Text style={[styles.feedTabText, feedTab === 'forYou' && styles.feedTabTextActive]}>For You</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[styles.feedTab, feedTab === 'new' && styles.feedTabActive]}
             onPress={() => { setFeedTab('new'); setPage(1); setProducts([]); }}
           >
             <Text style={[styles.feedTabText, feedTab === 'new' && styles.feedTabTextActive]}>New</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.feedTab, feedTab === 'forYou' && styles.feedTabActive]}
+            onPress={() => { setFeedTab('forYou'); setPage(1); setProducts([]); }}
+          >
+            <Text style={[styles.feedTabText, feedTab === 'forYou' && styles.feedTabTextActive]}>For You</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.utilityRow}>

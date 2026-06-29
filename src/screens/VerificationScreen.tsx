@@ -37,6 +37,9 @@ export default function VerificationScreen() {
   const [idFrontUrl, setIdFrontUrl] = useState('');
   const [idBackUrl, setIdBackUrl] = useState('');
   const [selfieUrl, setSelfieUrl] = useState('');
+  const [idFrontDeleteUrl, setIdFrontDeleteUrl] = useState('');
+  const [idBackDeleteUrl, setIdBackDeleteUrl] = useState('');
+  const [selfieDeleteUrl, setSelfieDeleteUrl] = useState('');
   const [frontOcr, setFrontOcr] = useState<OcrFields>({});
   const [backOcr, setBackOcr] = useState<OcrFields>({});
   const [faceScore, setFaceScore] = useState<number | null>(null);
@@ -120,11 +123,13 @@ export default function VerificationScreen() {
         const fields = await processImage(uri, false);
         setBackOcr(fields);
         setIdBackUrl(url);
+        if (uploadRes.deleteUrl) setIdBackDeleteUrl(uploadRes.deleteUrl);
         setStep('selfie');
       } else {
         const fields = await processImage(uri, true);
         setFrontOcr(fields);
         setIdFrontUrl(url);
+        if (uploadRes.deleteUrl) setIdFrontDeleteUrl(uploadRes.deleteUrl);
         setStep('cinBack');
       }
     } catch (e: any) {
@@ -149,6 +154,7 @@ export default function VerificationScreen() {
         if (photo?.uri) {
           const uploadRes = await uploadImage(photo.uri);
           setSelfieUrl(uploadRes.url);
+          if (uploadRes.deleteUrl) setSelfieDeleteUrl(uploadRes.deleteUrl);
 
           try {
             const faces = await FaceDetection.detect(photo.uri);
@@ -189,6 +195,11 @@ export default function VerificationScreen() {
         idFrontUrl,
         idBackUrl,
         selfieUrl,
+        deleteUrls: {
+          idFront: idFrontDeleteUrl || undefined,
+          idBack: idBackDeleteUrl || undefined,
+          selfie: selfieDeleteUrl || undefined,
+        },
         ocrResult,
         faceMatchScore: faceScore || 0,
       }) as { attempt: { status: string; rejection_reason?: string } };
