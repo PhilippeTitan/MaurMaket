@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
-  KeyboardAvoidingView, Platform, Alert,
+  KeyboardAvoidingView, Platform, Alert, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage } from '../api';
+import { getMessages, sendMessage as apiSendMessage, getImageUrl } from '../api';
 import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -18,7 +18,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
-  const { conversationId, otherUserName, draftOffer } = route.params;
+  const { conversationId, otherUserName, otherUserId, otherUserAvatar, draftOffer } = route.params;
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -79,10 +79,20 @@ export default function ChatScreen({ route, navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
-        <View style={styles.headerAvatar}>
-          <Text style={styles.headerAvatarText}>{(otherUserName || '?')[0]}</Text>
-        </View>
-        <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
+        <TouchableOpacity
+          style={styles.headerProfile}
+          onPress={() => otherUserId && navigation.navigate('Storefront', { sellerId: otherUserId })}
+          activeOpacity={0.7}
+        >
+          {getImageUrl(otherUserAvatar) ? (
+            <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.headerAvatarImg} />
+          ) : (
+            <View style={styles.headerAvatar}>
+              <Text style={styles.headerAvatarText}>{(otherUserName || '?')[0]}</Text>
+            </View>
+          )}
+          <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -156,7 +166,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.md,
     borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.bg,
   },
+  headerProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
+  headerAvatarImg: { width: 32, height: 32, borderRadius: 16 },
   headerAvatarText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
   headerName: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
   messageList: { padding: SPACING.md, paddingBottom: 8 },

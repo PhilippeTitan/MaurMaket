@@ -8,6 +8,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING } from '../theme';
 import { useTranslation } from '../i18n';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { store } from '../store';
 import { createOrder, createPayment, getAddresses, getImageUrl } from '../api';
 import type { RootStackParamList } from '../navigation';
@@ -19,6 +20,7 @@ type DeliveryMethod = 'delivery' | 'meetup';
 
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const cart = store.cart;
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
   const [name, setName] = useState('');
@@ -115,7 +117,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
         </TouchableOpacity>
@@ -295,7 +297,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 40 },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, paddingBottom: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
   subtitle: { fontSize: 11, color: COLORS.text2 },
   sectionLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0, paddingHorizontal: SPACING.md, marginTop: SPACING.md, marginBottom: 8 },

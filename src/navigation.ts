@@ -28,6 +28,8 @@ export type RootStackParamList = {
   Chat: {
     conversationId: string;
     otherUserName: string;
+    otherUserId?: string;
+    otherUserAvatar?: string | null;
     draftOffer?: {
       productId: string;
       productName: string;

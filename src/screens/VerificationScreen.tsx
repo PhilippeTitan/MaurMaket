@@ -12,7 +12,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
-import { uploadImage, submitVerification } from '../api';
+import { uploadImage, submitVerification, getImageUrl } from '../api';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
 
@@ -113,7 +113,7 @@ export default function VerificationScreen() {
     setLoading(true);
     try {
       const uploadRes = await uploadImage(uri);
-      const url = uploadRes.url;
+      const url = getImageUrl(uploadRes.url) || uploadRes.url;
 
       if (facing === 'back') {
         const fields = await processImage(uri, false);
@@ -147,7 +147,7 @@ export default function VerificationScreen() {
         const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
         if (photo?.uri) {
           const uploadRes = await uploadImage(photo.uri);
-          setSelfieUrl(uploadRes.url);
+          setSelfieUrl(getImageUrl(uploadRes.url) || uploadRes.url);
 
           try {
             const faces = await FaceDetection.detect(photo.uri);
@@ -171,6 +171,10 @@ export default function VerificationScreen() {
   };
 
   const handleSubmit = async () => {
+    if (!idFrontUrl || !idBackUrl || !selfieUrl) {
+      Alert.alert(t('common.error'), 'Please capture CIN front, CIN back, and selfie before submitting.');
+      return;
+    }
     setLoading(true);
     try {
       const ocrResult = {
@@ -380,7 +384,7 @@ export default function VerificationScreen() {
       {step !== 'info' && renderStepIndicator()}
 
       {step === 'info' && renderInfo()}
-      {step === 'cinFront' && renderCamera('back', () => captureImage('back'), 'Capture the front of your CIN')}
+      {step === 'cinFront' && renderCamera('back', () => captureImage('front'), 'Capture the front of your CIN')}
       {step === 'cinBack' && renderCamera('back', () => captureImage('back'), 'Capture the back of your CIN')}
       {step === 'selfie' && renderCamera('front', captureSelfie, 'Take a selfie')}
       {step === 'review' && renderReview()}

@@ -154,6 +154,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
       navigation.navigate('Chat', {
         conversationId: res.conversationId,
         otherUserName: getDisplayName(product.seller),
+        otherUserId: product.seller_id,
+        otherUserAvatar: product.seller.avatar_url,
         draftOffer: {
           productId: product.id,
           productName: product.name,

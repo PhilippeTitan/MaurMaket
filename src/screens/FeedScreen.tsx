@@ -184,6 +184,8 @@ export default function FeedScreen() {
       nav.navigate('Chat', {
         conversationId: res.conversationId,
         otherUserName: getDisplayName(product.seller),
+        otherUserId: product.seller_id,
+        otherUserAvatar: product.seller.avatar_url,
       });
     } catch {
       Alert.alert('Message unavailable', 'Could not open this seller chat right now.');
@@ -200,6 +202,8 @@ export default function FeedScreen() {
       nav.navigate('Chat', {
         conversationId: res.conversationId,
         otherUserName: getDisplayName(product.seller),
+        otherUserId: product.seller_id,
+        otherUserAvatar: product.seller.avatar_url,
         draftOffer: {
           productId: product.id,
           productName: product.name,
@@ -309,7 +313,7 @@ export default function FeedScreen() {
         </View>
 
         {/* Right-side action rail — absolute, thumb-reachable */}
-        <View style={[styles.actionRail, { bottom: screenHeight * 0.32 }]}>
+        <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
           <TouchableOpacity style={styles.actionBtn} onPress={() => {}}>
             <MaterialCommunityIcons name="heart-outline" size={28} color={COLORS.white} />
           </TouchableOpacity>
@@ -481,8 +485,7 @@ export default function FeedScreen() {
         showsVerticalScrollIndicator={false}
         snapToInterval={screenHeight}
         snapToAlignment="start"
-        decelerationRate={0}
-        disableIntervalMomentum={true}
+        decelerationRate="fast"
         getItemLayout={(_data, index) => ({
           length: screenHeight,
           offset: screenHeight * index,

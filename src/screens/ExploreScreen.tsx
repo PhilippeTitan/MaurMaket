@@ -133,13 +133,16 @@ export default function ExploreScreen({ navigation }: Props) {
     return DEFAULT_IMG_H;
   };
 
-  const [leftCol, rightCol] = products.reduce<[Product[], Product[]]>(
-    (acc, item, idx) => {
-      acc[idx % 2 === 0 ? 0 : 1].push(item);
-      return acc;
-    },
-    [[], []]
-  );
+  const [leftCol, rightCol] = (() => {
+    const cols: [Product[], Product[]] = [[], []];
+    const heights = [0, 0];
+    for (const item of products) {
+      const target = heights[0] <= heights[1] ? 0 : 1;
+      cols[target].push(item);
+      heights[target] += getCardHeight(item) + COL_GAP;
+    }
+    return cols;
+  })();
 
   const renderCard = (item: Product) => {
     const imgUrl = getItemImageUrl(item);
@@ -425,7 +428,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  chipsWrapper: { position: 'relative' },
+  chipsWrapper: { position: 'relative', backgroundColor: COLORS.bg },
   chipsRow: { paddingHorizontal: 12, gap: 8, paddingVertical: 8 },
   chipFadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 28, zIndex: 2 },
   chipFadeRight: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 28, zIndex: 2 },

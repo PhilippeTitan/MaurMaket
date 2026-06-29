@@ -119,7 +119,7 @@ export default function InboxScreen() {
     return (
       <TouchableOpacity
         style={styles.convo}
-        onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName })}
+        onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId: (item as any).other_party_id, otherUserAvatar: (item as any).other_party_avatar })}
       >
         <View style={[styles.convoAvatar, { backgroundColor: COLORS.coral }]}>
           {avatarUrl ? (
@@ -163,12 +163,12 @@ export default function InboxScreen() {
       try {
         const existing = conversations.find(c => c.seller_id === seller.id || c.buyer_id === seller.id);
         if (existing) {
-          nav.navigate('Chat', { conversationId: existing.id, otherUserName: seller.full_name });
+          nav.navigate('Chat', { conversationId: existing.id, otherUserName: seller.full_name, otherUserId: seller.id, otherUserAvatar: seller.avatar_url });
           return;
         }
         const res = await createConversation({ sellerId: seller.id }) as { conversationId: string };
         if (res.conversationId) {
-          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: seller.full_name });
+          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: seller.full_name, otherUserId: seller.id, otherUserAvatar: seller.avatar_url });
         }
       } catch {
         Alert.alert('Error', 'Could not start conversation.');

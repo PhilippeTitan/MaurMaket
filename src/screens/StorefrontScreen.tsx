@@ -93,6 +93,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
         navigation.navigate('Chat', {
           conversationId: existing.id,
           otherUserName: getDisplayName(seller) || 'Seller',
+          otherUserId: sellerId,
+          otherUserAvatar: getSellerAvatar(seller),
         });
       } else {
         const productContext = products[0];
@@ -100,6 +102,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
         navigation.navigate('Chat', {
           conversationId: res.conversationId,
           otherUserName: getDisplayName(seller) || 'Seller',
+          otherUserId: sellerId,
+          otherUserAvatar: getSellerAvatar(seller),
         });
       }
     } catch (err: unknown) {
