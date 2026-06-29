@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Component } from 'react';
+import React, { useEffect, useState, Component, Suspense } from 'react';
 import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -38,7 +38,8 @@ import SellerOnboardingScreen from './src/screens/SellerOnboardingScreen';
 import EditListingScreen from './src/screens/EditListingScreen';
 import SettingsEditScreen from './src/screens/SettingsEditScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
-import MeetupScreen from './src/screens/MeetupScreen';
+
+const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -279,7 +280,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <SafeAreaProvider><ErrorBoundary>{appContent}</ErrorBoundary></SafeAreaProvider>;
+  return <SafeAreaProvider><ErrorBoundary><Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}>{appContent}</Suspense></ErrorBoundary></SafeAreaProvider>;
 }
 
 const styles = StyleSheet.create({
