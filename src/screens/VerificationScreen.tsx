@@ -12,7 +12,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
-import { uploadImage, submitVerification, getImageUrl } from '../api';
+import { uploadImage, submitVerification } from '../api';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
 
@@ -113,7 +113,7 @@ export default function VerificationScreen() {
     setLoading(true);
     try {
       const uploadRes = await uploadImage(uri);
-      const url = getImageUrl(uploadRes.url) || uploadRes.url;
+      const url = uploadRes.url;
 
       if (facing === 'back') {
         const fields = await processImage(uri, false);
@@ -147,7 +147,7 @@ export default function VerificationScreen() {
         const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
         if (photo?.uri) {
           const uploadRes = await uploadImage(photo.uri);
-          setSelfieUrl(getImageUrl(uploadRes.url) || uploadRes.url);
+          setSelfieUrl(uploadRes.url);
 
           try {
             const faces = await FaceDetection.detect(photo.uri);

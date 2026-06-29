@@ -292,30 +292,49 @@ export const getImageUrl = (imageUrl: string | undefined | null): string | null 
   if (imageUrl.startsWith('http')) return imageUrl;
   return `${UPLOAD_BASE}${imageUrl}`;
 };
-const UPLOAD_TIMEOUT_MS = 30000;
 
-function mimeFromExt(ext: string): string {
-  switch (ext) {
-    case 'png': return 'image/png';
-    case 'gif': return 'image/gif';
-    case 'webp': return 'image/webp';
-    case 'svg': return 'image/svg+xml';
-    case 'bmp': return 'image/bmp';
-    default: return 'image/jpeg';
+let cachedImgbbKey: string | null = null;
+
+async function getImgbbKey(): Promise<string> {
+  if (cachedImgbbKey) return cachedImgbbKey;
+  const data: any = await request('/upload/config');
+  if (!data.imgbbKey) throw new Error('Upload service not configured');
+  cachedImgbbKey = data.imgbbKey as string;
+  return cachedImgbbKey;
+}
+
+async function resizeAndConvert(uri: string): Promise<{ base64: string; mimeType: string }> {
+  if (Platform.OS === 'web') {
+    return new Promise((resolve, reject) => {
+      const img = new (window as any).Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const MAX = 1200;
+        let w = img.width, h = img.height;
+        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+        if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('Canvas not supported')); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/webp', 0.82);
+        const base64 = dataUrl.split(',')[1];
+        resolve({ base64, mimeType: 'image/webp' });
+      };
+      img.onerror = () => reject(new Error('Failed to load image for resize'));
+      img.src = uri;
+    });
   }
-}
 
-function extFromUri(uri: string): string {
-  const raw = uri.split('/').pop() || '';
-  const match = raw.match(/\.(\w+)$/);
-  return match ? match[1].toLowerCase() : '';
-}
-
-function filenameFromUri(uri: string): string {
-  const ext = extFromUri(uri);
-  const base = uri.split('/').pop()?.split('?')[0]?.split('#')[0] || 'photo';
-  if (ext && /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(base)) return base;
-  return `${base}.jpg`;
+  const Manipulator = require('expo-image-manipulator');
+  const result = await Manipulator.manipulateAsync(
+    uri,
+    [{ resize: { width: 1200 } }],
+    { compress: 0.82, format: Manipulator.SaveFormat.WEBP, base64: true }
+  );
+  return { base64: result.base64, mimeType: 'image/webp' };
 }
 
 export const uploadImage = async (uri: string): Promise<{ url: string }> => {
@@ -326,94 +345,32 @@ export const uploadImage = async (uri: string): Promise<{ url: string }> => {
     const SecureStore = require('expo-secure-store');
     token = await SecureStore.getItemAsync('mm_token');
   }
+  if (!token) throw new Error('Not authenticated');
 
-  if (Platform.OS === 'web') {
-    const formData = new FormData();
-    const filename = filenameFromUri(uri);
-    const ext = extFromUri(uri) || 'jpg';
-    const mimeType = mimeFromExt(ext);
+  const imgbbKey = await getImgbbKey();
+  const { base64 } = await resizeAndConvert(uri);
 
-    let blob: Blob;
-    if (uri.startsWith('data:')) {
-      const parts = uri.split(',');
-      const meta = parts[0] || '';
-      const data = parts[1] || '';
-      const realMime = meta.match(/data:([^;]+)/)?.[1] || mimeType;
-      const byteStr = atob(data);
-      const arr = new Uint8Array(byteStr.length);
-      for (let i = 0; i < byteStr.length; i++) arr[i] = byteStr.charCodeAt(i);
-      blob = new Blob([arr], { type: realMime });
-    } else {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
-      try {
-        const blobRes = await fetch(uri, { signal: controller.signal });
-        clearTimeout(timer);
-        if (!blobRes.ok) throw new Error(`Failed to read image (${blobRes.status})`);
-        blob = await blobRes.blob();
-      } catch (e: any) {
-        clearTimeout(timer);
-        if (e.name === 'AbortError') throw new Error('Image read timed out. Try a smaller image.');
-        throw new Error(`Could not read image: ${e.message || 'unknown error'}`);
-      }
-    }
+  const formData = new FormData();
+  formData.append('key', imgbbKey);
+  formData.append('image', base64);
 
-    if (!blob || blob.size === 0) throw new Error('Image is empty (0 bytes)');
-    if (blob.size > 8 * 1024 * 1024) throw new Error('Image is too large. Maximum size is 8MB.');
-
-    const file = new File([blob], filename, { type: mimeType });
-    formData.append('image', file);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
-    try {
-      const res = await fetch(`${API_BASE}/upload`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
-      if (!data.url) throw new Error('Upload succeeded but server returned no URL');
-      return data;
-    } catch (e: any) {
-      clearTimeout(timer);
-      if (e.name === 'AbortError') throw new Error('Upload timed out. Check your connection and try again.');
-      if (e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
-        throw new Error('Cannot reach server. Check your connection.');
-      }
-      throw e;
-    }
-  }
-
-  const FileSystem = require('expo-file-system/legacy');
-  const filename = filenameFromUri(uri);
-  const ext = extFromUri(uri) || 'jpg';
-  const mimeType = mimeFromExt(ext);
-
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
   try {
-    const result = await FileSystem.uploadAsync(`${API_BASE}/upload`, uri, {
-      fieldName: 'image',
-      httpMethod: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-      mimeType,
+    const res = await fetch('https://api.imgbb.com/1/upload', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
     });
-
-    if (result.status >= 400) {
-      let msg = `Upload failed (${result.status})`;
-      try { const body = JSON.parse(result.body); msg = body.error || msg; } catch {}
-      throw new Error(msg);
-    }
-
-    const body = JSON.parse(result.body);
-    if (!body.url) throw new Error('Upload succeeded but server returned no URL');
-    return body;
+    clearTimeout(timer);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error?.message || 'Upload failed');
+    return { url: data.data.url };
   } catch (e: any) {
-    if (e.message?.includes('network') || e.message?.includes('Network')) {
-      throw new Error('Cannot reach server. Check your connection.');
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Upload timed out. Check your connection.');
+    if (e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
+      throw new Error('Cannot reach upload service. Check your connection.');
     }
     throw e;
   }

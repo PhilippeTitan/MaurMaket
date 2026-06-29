@@ -7,7 +7,6 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import multer from 'multer';
 
 dotenv.config();
 
@@ -372,28 +371,26 @@ async function cleanupOldNotifications() {
   }
 }
 
+async function cleanupLegacyData() {
+  try {
+    const r1 = await pool.query('DELETE FROM product_images');
+    const r2 = await pool.query('DELETE FROM products');
+    const r3 = await pool.query('DELETE FROM verification_attempts');
+    const r4 = await pool.query("UPDATE users SET avatar_url = NULL WHERE avatar_url LIKE '/uploads/%'");
+    const r5 = await pool.query("UPDATE users SET store_logo_url = NULL WHERE store_logo_url LIKE '/uploads/%'");
+    const r6 = await pool.query("UPDATE users SET id_document_url = NULL WHERE id_document_url LIKE '/uploads/%'");
+    const total = r1.rowCount + r2.rowCount + r3.rowCount;
+    const usersFixed = r4.rowCount + r5.rowCount + r6.rowCount;
+    if (total > 0 || usersFixed > 0) console.log(`Legacy data cleanup: ${r2.rowCount} products, ${r1.rowCount} images, ${r3.rowCount} verifications, ${usersFixed} user URLs cleared`);
+  } catch (err) {
+    console.error('Legacy data cleanup error:', err);
+  }
+}
+
 app.use(cors());
 app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
-
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, path.join(__dirname, 'uploads')),
-  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`),
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 8 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml'];
-    if (file.mimetype && !allowedMimes.includes(file.mimetype)) {
-      return cb(new Error(`Unsupported image type "${file.mimetype}". Use JPEG, PNG, GIF, or WebP.`));
-    }
-    cb(null, true);
-  },
-});
 
 // Event logging helper
 async function logOrderEvent(orderId, eventType, actorId, oldValue, newValue, note, db) {
@@ -1237,21 +1234,38 @@ app.delete('/api/products/:id', authRequired, sellerRequired, async (req, res) =
 });
 
 app.put('/api/products/:id', authRequired, sellerRequired, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const check = await pool.query('SELECT seller_id FROM products WHERE id = $1', [req.params.id]);
+    const check = await client.query('SELECT seller_id FROM products WHERE id = $1', [req.params.id]);
     if (check.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
     if (check.rows[0].seller_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not your product' });
     }
-    const { name, description, price, stock, isAvailable, categoryId } = req.body;
-    const result = await pool.query(
+    const { name, description, price, stock, isAvailable, categoryId, images } = req.body;
+    await client.query('BEGIN');
+    const result = await client.query(
       `UPDATE products SET name = COALESCE($1, name), description = COALESCE($2, description), price = COALESCE($3, price), stock = COALESCE($4, stock), is_available = COALESCE($5, is_available), category_id = COALESCE($6, category_id), updated_at = CURRENT_TIMESTAMP WHERE id = $7 RETURNING *`,
       [name, description, price, stock, isAvailable, categoryId, req.params.id]
     );
+    if (images && Array.isArray(images)) {
+      await client.query('DELETE FROM product_images WHERE product_id = $1', [req.params.id]);
+      if (images.length > 0) {
+        const imageValues = images.map((url, i) => `($1, $${i + 2}, ${i === 0}, ${i})`).join(', ');
+        const imageParams = images.map(url => url);
+        await client.query(
+          `INSERT INTO product_images (product_id, image_url, is_primary, display_order) VALUES ${imageValues}`,
+          [req.params.id, ...imageParams]
+        );
+      }
+    }
+    await client.query('COMMIT');
     res.json({ product: result.rows[0] });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Product update error:', err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -2473,23 +2487,12 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
   }
 });
 
-// ───── Upload ─────
+// ───── Upload config (imgbb key for client-side direct upload) ─────
 
-import fs from 'fs';
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-app.post('/api/upload', authRequired, (req, res, next) => {
-  upload.single('image')(req, res, (err) => {
-    if (err) {
-      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'Image too large. Maximum size is 8MB.' });
-      if (err.code === 'LIMIT_UNEXPECTED_FILE') return res.status(400).json({ error: 'Unexpected field name. Use "image" as the field name.' });
-      return res.status(400).json({ error: err.message || 'Upload failed' });
-    }
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const url = `/uploads/${req.file.filename}`;
-    res.json({ url });
-  });
+app.get('/api/upload/config', authRequired, (_req, res) => {
+  const key = process.env.IMGBB_KEY;
+  if (!key) return res.status(500).json({ error: 'Upload service not configured' });
+  res.json({ imgbbKey: key });
 });
 
 // ───── Health check ─────
@@ -2792,6 +2795,7 @@ const isMain = __execPath === __thisFile || __execPath === path.resolve(__thisFi
 if (isMain) {
   runMigrations().then(async () => {
     await cleanupOldNotifications();
+    await cleanupLegacyData();
     app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
     });

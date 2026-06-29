@@ -27,6 +27,7 @@
     "expo": "~56.0.12",
     "expo-camera": "~56.0.8",
     "expo-file-system": "~56.0.8",
+    "expo-image-manipulator": "~56.0.19",
     "expo-image-picker": "^56.0.18",
     "expo-linear-gradient": "~56.0.4",
     "expo-notifications": "^56.0.18",
