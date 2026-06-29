@@ -189,75 +189,38 @@ export default function InboxScreen() {
     );
   };
 
-  const renderMessagesTab = () => (
-    <FlatList
-      data={filteredConversations}
-      renderItem={renderConversation}
-      keyExtractor={item => item.id}
-      ListHeaderComponent={
-        <>
-          <View style={styles.searchBarWrap}>
-            <View style={styles.searchBar}>
-              <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
-              <TextInput
-                style={styles.searchBarInput}
-                placeholder="Search messages..."
-                placeholderTextColor={COLORS.text2}
-                value={search}
-                onChangeText={setSearch}
-              />
-              {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch('')}>
-                  <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text2} />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-          {followedSellers.length > 0 && (
-            <View style={styles.bubblesSection}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
-                {followedSellers.map(seller => (
-                  <SellerBubble key={seller.id} seller={seller} />
-                ))}
-              </ScrollView>
-            </View>
-          )}
-        </>
-      }
-      contentContainerStyle={{ paddingBottom: 100 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
-      ListEmptyComponent={
-        loading ? (
-          <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
-        ) : !refreshing ? (
-          <View style={styles.empty}>
-            <MaterialCommunityIcons name="message-outline" size={40} color={COLORS.text2} />
-            <Text style={styles.emptyText}>{t('inbox.noMessages')}</Text>
-          </View>
-        ) : null
-      }
-    />
-  );
+  const isMessages = activeTab === 'messages';
 
-  const renderNotificationsTab = () => (
-    <FlatList
-      data={notifications}
-      renderItem={renderNotification}
-      keyExtractor={item => item.id}
-      contentContainerStyle={{ paddingBottom: 100 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
-      ListEmptyComponent={
-        loading ? (
-          <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
-        ) : (
-          <View style={styles.empty}>
-            <MaterialCommunityIcons name="bell-outline" size={40} color={COLORS.text2} />
-            <Text style={styles.emptyText}>No notifications yet</Text>
-          </View>
-        )
-      }
-    />
-  );
+  const headerForMessages = isMessages ? (
+    <>
+      <View style={styles.searchBarWrap}>
+        <View style={styles.searchBar}>
+          <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
+          <TextInput
+            style={styles.searchBarInput}
+            placeholder="Search messages..."
+            placeholderTextColor={COLORS.text2}
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')}>
+              <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text2} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+      {followedSellers.length > 0 && (
+        <View style={styles.bubblesSection}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
+            {followedSellers.map(seller => (
+              <SellerBubble key={seller.id} seller={seller} />
+            ))}
+          </ScrollView>
+        </View>
+      )}
+    </>
+  ) : null;
 
   return (
     <View style={styles.container}>
@@ -270,7 +233,6 @@ export default function InboxScreen() {
         <Text style={styles.title}>{t('inbox.title')}</Text>
       </View>
 
-      {/* Tab Switcher */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'messages' && styles.tabActive]}
@@ -296,7 +258,25 @@ export default function InboxScreen() {
         )}
       </View>
 
-      {activeTab === 'messages' ? <View key="msg-tab">{renderMessagesTab()}</View> : <View key="notif-tab">{renderNotificationsTab()}</View>}
+      <FlatList
+        key={activeTab}
+        data={(isMessages ? filteredConversations : notifications) as any}
+        renderItem={(isMessages ? renderConversation : renderNotification) as any}
+        keyExtractor={(item: any) => item.id}
+        ListHeaderComponent={headerForMessages}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
+        ListEmptyComponent={
+          loading ? (
+            <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
+          ) : (
+            <View style={styles.empty}>
+              <MaterialCommunityIcons name={isMessages ? 'message-outline' : 'bell-outline'} size={40} color={COLORS.text2} />
+              <Text style={styles.emptyText}>{isMessages ? t('inbox.noMessages') : 'No notifications yet'}</Text>
+            </View>
+          )
+        }
+      />
     </View>
   );
 }
