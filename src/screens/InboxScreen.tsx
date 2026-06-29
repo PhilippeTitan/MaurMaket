@@ -296,7 +296,7 @@ export default function InboxScreen() {
         )}
       </View>
 
-      {activeTab === 'messages' ? renderMessagesTab() : renderNotificationsTab()}
+      {activeTab === 'messages' ? <View key="msg-tab">{renderMessagesTab()}</View> : <View key="notif-tab">{renderNotificationsTab()}</View>}
     </View>
   );
 }
