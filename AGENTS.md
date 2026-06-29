@@ -322,10 +322,11 @@ Buyer → Casual Seller (free, instant) → Verified Seller (free, ID verificati
 - **OCR**: `@react-native-ml-kit/text-recognition` (on-device, free)
 - **Face match**: `@react-native-ml-kit/face-detection` (on-device, free)
 - **Validation**: CIN front (name, DOB, place of birth, CIN number) + CIN back (sex) + selfie vs CIN face comparison
-- **Auto-verify**: if all OCR fields present + name matches profile + face score > 0.65
-- **Manual review**: if OCR quality low or fields don't match → pending status
-- **Privacy**: ID images deleted after verification completes
+- **Auto-verify**: if all OCR fields present + name matches profile + face score > 0.65 → instantly `verified`
+- **Auto-reject**: if any check fails → `rejected` with clear error messages (no manual review)
+- **Privacy**: imgbb uploads with 24h expiration. After auto-verify, DB URLs NULLed via existing DELETE endpoint.
 - **DB table**: `verification_attempts` stores results, `users.id_verification_result` tracks status
+- **Status values**: `null` (never submitted) | `'verified'` | `'rejected'` (no more `'pending'`)
 
 ### Business Subscription
 - **Price**: Rs 2,500/month via MonCash
@@ -502,20 +503,37 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 - **Consistent back buttons:** Use `<MaterialCommunityIcons name="arrow-left" />` NOT plain `←` text.
 
 ## Known Gaps / Roadmap
-### Critical (Phase 1)
-1. **Multi-image listings** — API/types support `images[]` but AddListing + EditListing only upload one. #1 trust signal in C2C.
-2. **Order summary at checkout** — no item list visible before "Pay with MonCash". High abandonment risk for first-time buyers.
-3. **Masonry fix across all grids** — ExploreScreen (Claude file ready), MeScreen, StorefrontScreen need `cover` + `DEFAULT_IMG_H`.
+### ✅ Completed (as of 2026-06-29)
+1. ~~**Multi-image listings**~~ — AddListing + EditListing support up to 8 images with imgbb upload.
+2. ~~**Order summary at checkout**~~ — Full item list with thumbnails, names, seller, qty, price shown before Pay button.
+3. ~~**Masonry fix across all grids**~~ — ExploreScreen, MeScreen, StorefrontScreen all use `cover` + `DEFAULT_IMG_H`.
+7. ~~**Duplicate conversation bug**~~ — StorefrontScreen checks existing conversations before creating new.
 
-### High Priority (Phase 2)
-4. **Image sharing in chat** — prevents off-app WhatsApp exfiltration. Needs backend upload endpoint for chat attachments.
-5. **Wishlist thumbnails** — text-only list. Add 40x40 thumbnails and stock indicator.
-6. **Delivery estimate on orders** — buyers need "when should I expect this?" answered.
-7. **Duplicate conversation bug** — StorefrontScreen always creates new conversation instead of checking existing.
+### 🔴 Phase 0: Emergency Fixes (NOW)
+1. `cleanupLegacyData()` wipes ALL products, orders, reviews on every server restart — REMOVE or gate
+2. Webhook `processed_events` INSERT outside transaction — failed transaction = permanent data loss
+3. Meetup proposal notification goes to wrong party (seller never notified)
+4. Promo discount recorded but buyer charged full amount
+5. Stock decremented before payment — ghost inventory on failed payments
+6. `complete` endpoint requires `status === 'delivered'` — meetup orders can't complete
+7. Feed snap fix reverted (`decelerationRate="fast"` back in code)
 
-### Low Priority (Phase 3)
+### 🟡 Phase 1-6: Meetup Escrow + QR System (Weeks 1-3)
+See "Planned Architecture: Meetup Escrow + QR System" section below.
+
+### 🟢 Phase 7: Feed Algorithm
+See "Planned Architecture: Feed Algorithm" section below.
+
+### 🟢 Phase 8: Verification Improvements
+See "Planned Architecture: Verification Improvements" section below.
+
+### 🟢 Phase 9-10: Push Notifications + Dispute Resolution
+
+### Still Open (Medium Priority)
+4. **Image sharing in chat** — prevents off-app WhatsApp exfiltration
+5. **Wishlist thumbnails** — text-only list, needs 40x40 thumbnails + stock indicator
+6. **Delivery estimate on orders** — buyers need "when should I expect this?" answered
 8. Hardcoded `paddingTop: SPACING.xl + 40` in CartScreen, ChatScreen
-9. `←` text back buttons in NotificationsScreen
 10. Seller analytics gated too aggressively — show teaser metrics to casual sellers with upgrade nudge
 
 ## Session Compact — 2026-06-28 (UI Polish + Upload Fix)
@@ -601,3 +619,301 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 - `InboxScreen.tsx` refactored with Messages + Notifications tabs (Instagram-style)
 - `NotificationsScreen.tsx` deleted — merged into InboxScreen notifications tab
 - Tab badge shows unread notification count
+
+---
+
+## Session 7 — 2026-06-29 (Architecture Overhaul: Escrow, Feed, Verification, CI/CD)
+
+### Context
+User tested the Lexi Tester account on physical device (EAS build). Identified 5 major work items. Deep analysis with multiple research agents. Logic audit of entire system found 35 P0 findings. Full architecture designed with MonCashConnect deep dive.
+
+### Completed This Session
+1. **GitHub Actions CI/CD** — `.github/workflows/build-android.yml` — builds APK on Ubuntu runners (no EAS queue). Triggered on push to main + manual dispatch.
+2. **MonCashConnect deep dive** — Documented all API capabilities, limitations, gaps.
+3. **Full system architecture designed** — Escrow + Meetup + QR + Emergency exits + Feed algorithm + Verification improvements.
+
+### MonCashConnect Deep Dive
+- **Base URL:** `https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1` (or `https://api.moncashconnect.ht/v1`)
+- **Auth:** Bearer token (`MCC_KEY` env var, `sk_proj_` prefix)
+- **Endpoints used:** `pay-create`, `external-payout-create`, `pay-balance`
+- **Endpoints available but unused:** `pay-status` (GET), `payout-create` (newer name)
+- **Webhook:** HMAC-SHA256 via `x-mcc-signature` + `x-mcc-timestamp` headers, 300s anti-replay window
+- **Pricing:** 0% MonCashConnect commission, 2.9% deposit fee (Digicel), 5% cashout fee
+
+#### What MonCashConnect Supports
+| Feature | Supported |
+|---------|-----------|
+| Create payment (pay-create) | ✅ |
+| Check payment status (pay-status) | ✅ (not used in code) |
+| Create payout (payout-create) | ✅ |
+| Balance check (pay-balance) | ✅ |
+| Refunds | ❌ No refund API |
+| Pre-authorization / Hold | ❌ Money moves immediately |
+| Cancel | ❌ |
+| Partial capture | ❌ |
+
+#### Key Insight: Escrow via Bookkeeping
+MonCashConnect has no escrow support. But the platform already holds all money in its merchant balance. `seller_balances` is a **ledger entry** — real money doesn't move until seller requests payout. Escrow = simply NOT crediting `seller_balances` until meetup confirmation. Refund = send a NEW payout from platform to buyer.
+
+#### Code Gaps Found
+- `external-payout-create` is deprecated → migrate to `payout-create` (field: `receiver` → `moncashNumber`)
+- `pay-status` never called as webhook fallback
+- Subscription webhook has raw body bug (may skip HMAC verification)
+- Subscription webhook has no idempotency check (no `processed_events` insert)
+- Commission payout fires synchronously in webhook handler — can delay response
+
+### 35 P0 Findings (Logic Audit)
+
+#### Critical Bugs (Existing Code)
+| # | Issue | Location | Fix |
+|---|-------|----------|-----|
+| P0-22 | `cleanupLegacyData()` wipes ALL products, orders, reviews on EVERY server restart | server.js:374-401 | Remove or gate behind admin flag |
+| P0-3 | `processed_events` INSERT outside DB transaction — failed tx = permanent data loss | server.js:2178-2179 | Move inside transaction |
+| P0-32 | Meetup proposal notification goes to wrong party (seller never notified) | server.js:1555 | Fix notification logic |
+| P0-6 | Promo discount recorded but buyer charged full amount | server.js:1428-1447 | Apply discount to total before order INSERT |
+| P0-33 | Stock decremented before payment — ghost inventory if webhook missed | server.js:1438 | Add stock restore on timeout |
+| P0-29 | `complete` endpoint requires `status === 'delivered'` — meetup orders stuck | server.js:1595 | Add meetup completion path |
+
+#### Design Flaws
+| # | Issue | Fix |
+|---|-------|-----|
+| P0-10 | State machine `pending→processing→shipped→delivered` incompatible with meetup | Add meetup-specific states |
+| P0-13 | Buyer can't cancel after payment (only on `pending`) | Add cancel window for meetup |
+| P0-14 | Multi-seller order has ONE status — can't track per-seller meetup | Per-seller escrow table |
+| P0-16 | Multi-seller = N separate MonCash payments = terrible UX | Keep single payment, split internally |
+
+#### Missing Features
+| # | Issue | Fix |
+|---|-------|-----|
+| P0-7 | No FOR UPDATE locking — race conditions on state transitions | Add row locking |
+| P0-8 | No timeout/scheduler in codebase | Add node-cron |
+| P0-17/18 | Feed buttons not wired, personalized endpoint doesn't exist | Build feed_events + scoring |
+| P0-21 | No QR code system exists | Build from scratch |
+| P0-24 | No GPS proximity validation on server | Build proximity endpoint |
+| P0-26 | Dispute system is write-only — no resolution flow | Build dispute resolution |
+| P0-30 | No push notification infra (FCM/APNs) | Add expo-notifications push |
+| P0-34 | No meetup cancellation/reschedule mechanism | Build emergency exits |
+
+#### Security Issues
+| # | Issue | Fix |
+|---|-------|-----|
+| P0-19 | No rate limiting on engagement actions | Add rate limits |
+| P0-23 | Shared JWT secret for auth + QR tokens | Use separate QR signing secret |
+
+#### Technical Debt
+| # | Issue | Fix |
+|---|-------|-----|
+| P0-2 | Commission auto-payout fires immediately — must also be delayed | Delay until meetup completes |
+| P0-4 | Commission payout has no retry queue | Add retry with backoff |
+| P0-5 | Subscription webhook races with main webhook | Check reference prefix |
+| P0-12 | Orders stuck in `processing` forever (no timeout) | Add auto-cancel |
+| P0-35 | Feed snap fix reverted | Re-apply fix |
+
+### Emergency Scenario Analysis
+| Scenario | Solution |
+|----------|----------|
+| Phone dies mid-QR | Pre-generated QR token works offline 60 min. Manual 8-digit fallback. |
+| Medical emergency | Emergency Exit button (red, always visible) → freeze + 48h resolution, no penalty |
+| Hostile meetup | Panic button (swipe down 3x) → auto-block + emergency services, no penalty |
+| No-show (either party) | 90-min timeout → auto-refund. Reliability strike for no-show party. |
+| Both phones die / power outage | Server-side 90-min timeout → full refund |
+| QR timer pressure | Timer INVISIBLE during exchange. Only shows at 10-min warning. Extension available. |
+| GPS spoofing | QR token includes GPS hash. Cell tower as secondary. GPS not sole gate. |
+| Can't scan QR (cracked screen, sunlight) | Manual 8-digit code entry as fallback |
+
+### Planned Architecture: Escrow + Meetup + QR System
+
+#### New DB Tables
+```sql
+CREATE TABLE order_escrow (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+  seller_id UUID REFERENCES users(id),
+  gross_amount DECIMAL(10,2),
+  commission_amount DECIMAL(10,2),
+  net_amount DECIMAL(10,2),
+  status VARCHAR(20) DEFAULT 'held', -- held | released | refunded
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  released_at TIMESTAMP,
+  UNIQUE(order_id, seller_id)
+);
+
+CREATE TABLE meetup_checkins (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID REFERENCES orders(id),
+  user_id UUID REFERENCES users(id),
+  role VARCHAR(10), -- 'buyer' or 'seller'
+  lat DECIMAL(10,7),
+  lng DECIMAL(10,7),
+  checked_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  qr_token VARCHAR(255),
+  qr_scanned BOOLEAN DEFAULT false,
+  UNIQUE(order_id, user_id)
+);
+```
+
+#### New Order States for Meetup
+```
+pending → paid → meetup_scheduled → meetup_in_progress → exchange_confirmed → completed
+                                          ↓                    ↓
+                                    meetup_expired      meetup_disputed
+                                          ↓                    ↓
+                                    full_refund          admin_review
+                                          ↓
+                                    emergency_exit → 48h_resolution
+```
+
+#### Modified Payment Webhook Flow
+```
+payment.completed:
+  1. Mark order as 'paid'
+  2. For each seller in order_items:
+     - INSERT INTO order_escrow (gross, commission, net, status='held')
+     - Do NOT credit seller_balances yet
+     - Do NOT auto-payout commission yet
+  3. Log to platform_revenue (for accounting only)
+
+exchange_confirmed (QR scanned):
+  1. UPDATE order_escrow SET status='released', released_at=now()
+  2. Credit seller_balances with net amount
+  3. Auto-payout commission to PLATFORM_PHONE
+  4. Notify seller
+
+dispute/timeout:
+  1. order_escrow stays 'held'
+  2. Admin reviews
+  3. Buyer wins → order_escrow → 'refunded' → send payout to buyer
+  4. Seller wins → order_escrow → 'released' → credit seller
+```
+
+#### Meetup Flow (Step by Step)
+1. Buyer places order → pays MonCash → money in merchant balance (NOT credited to seller)
+2. Buyer and seller arrange meetup via chat
+3. Both tap "I'm heading there" → QR code pre-generated (signed JWT, works offline)
+4. At location: both tap "I'm here" → GPS proximity check (< 150m)
+5. If proximity confirmed → QR code activates (30 min scan window)
+6. Seller scans buyer's QR → server validates → order marked "exchange confirmed"
+7. Buyer sees: "Did you receive your item?" → "Yes" → money released to seller
+8. If "No" → dispute → money held → admin resolution
+9. If nobody confirms within 90 min → auto-refund to buyer
+
+#### Emergency Exit Hierarchy
+| Button | When | Effect | Penalty |
+|--------|------|--------|---------|
+| Extend (blue) | Any time | +30 min | None |
+| Leave Meetup (yellow) | Any time | Reschedule | Strike after 3 uses |
+| Partner Unresponsive | 15 min no activity | Auto-expire | Strike for unresponsive party |
+| Emergency Exit (red) | Always visible | Freeze + 48h resolution | Never any penalty |
+| Panic (hidden, swipe 3x) | Always | Emergency + auto-block | Never, admin review |
+
+#### QR Code Design
+- Signed JWT: `{orderId, buyerId, sellerId, issuedAt, expiresAt, nonce, gpsHash}`
+- Separate signing secret from JWT_SECRET (use QR_SECRET env var)
+- Single-use, 30 min expiry
+- Manual 8-digit code fallback
+- Works offline (pre-generated when both confirm "heading there")
+
+#### Multi-Seller Meetup
+- Single MonCash payment (no split — UX preservation)
+- `order_escrow` tracks per-seller-per-order escrow status
+- Each seller's portion released independently when their meetup completes
+- Buyer meets sellers separately if multi-seller order
+
+### Planned Architecture: Feed Algorithm
+
+#### New DB Table
+```sql
+CREATE TABLE feed_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  event_type VARCHAR(20) NOT NULL, -- 'view', 'like', 'unlike', 'relevant', 'not_relevant', 'save'
+  duration_ms INTEGER, -- dwell time in ms (for 'view' events)
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, product_id, event_type)
+);
+```
+
+#### Scoring Formula
+```
+score = 
+  (+3.0) if seller is followed
+  (+2.0) if product is wishlisted by user
+  (+2.0) if user liked this product
+  (+1.5) if user purchased from this seller before
+  (+1.5) if user marked relevant
+  (+1.0) if same category as past purchases
+  (+1.0) if posted in last 24h
+  (+0.5) if seller has avg rating > 4.0
+  (-3.0) if user marked NOT relevant
+  (-0.5 × dwell_seconds) if dwell < 3s (skimmed past = negative signal)
+```
+
+#### Wire Up Existing Buttons
+- Heart button (FeedScreen.tsx:317-319) → `POST /api/feed/like` (toggle)
+- Relevant (FeedScreen.tsx:616-618) → `POST /api/feed/feedback { type: 'relevant' }`
+- Not relevant (FeedScreen.tsx:620-622) → `POST /api/feed/feedback { type: 'not_relevant' }`
+- Track dwell time via `onViewableItemsChanged` on FlatList
+
+#### Cold Start
+- New users with no history → default to chronological (newest first)
+- Gradually personalize as engagement data accumulates
+
+#### Anti-Gaming
+- Rate limit: max 50 feed_events per user per hour
+- One like per product per user (toggle)
+- Weight decreases with repeated actions from same account
+
+### Planned Architecture: Verification Improvements
+
+#### Auto-Reject (No Manual Review)
+- All 4 checks pass → `verified` instantly, badge granted
+- Any check fails → `rejected` with clear error messages:
+  - "Name doesn't match your profile — update your name in Settings"
+  - "CIN number not recognized"
+  - "Date of birth not found on card"
+  - "No face detected in selfie"
+- No `pending` state — fully automatic
+- Show rejection reasons on VerificationScreen
+
+#### Image Cleanup
+- imgbb uploads with `expiration` parameter set to 86400 (24 hours)
+- After auto-verify: call existing `DELETE /api/verification/images/:id` to NULL DB references
+- imgbb images self-delete after 24h
+
+#### Face Detection Improvement
+- Current: only checks IF a face exists (score > 0.65 = pass)
+- Planned: extract face landmarks from both CIN photo and selfie, compare geometry
+- Uses existing `@react-native-ml-kit/face-detection` contour detection
+- Score threshold: 0.65 for face similarity (not just presence)
+
+### Planned Architecture: Push Notifications
+- Add `expo-notifications` push token registration
+- Store push tokens in `users` table
+- Send push via Expo push notification service for:
+  - Meetup reminders (30 min before window opens)
+  - QR scan confirmation
+  - Payment released
+  - Dispute updates
+  - New messages
+
+### Implementation Plan (10 Phases)
+| Phase | What | Est. Time |
+|-------|------|-----------|
+| Phase 0 | Emergency fixes (cleanupLegacyData, webhook tx bug, notification bug, promo bug, stock restore, complete endpoint, feed snap) | 1-2 days |
+| Phase 1 | Escrow system (order_escrow table, modified webhook, pay-status polling) | 2-3 days |
+| Phase 2 | State machine (meetup states, FOR UPDATE locking, node-cron timeouts) | 2-3 days |
+| Phase 3 | Meetup screen (map, GPS proximity, "I'm here" check-in, expo-location + react-native-maps) | 3-4 days |
+| Phase 4 | QR code (separate signing secret, generation, scanning, 8-digit fallback) | 3-4 days |
+| Phase 5 | Emergency exits (extend, leave, unresponsive, emergency, panic button) | 2-3 days |
+| Phase 6 | Multi-seller meetups (per-seller escrow, separate tracking) | 2-3 days |
+| Phase 7 | Feed algorithm (feed_events table, scoring, wire buttons, rate limiting) | 3-4 days |
+| Phase 8 | Verification improvements (auto-reject, image cleanup, error messages, face comparison) | 1-2 days |
+| Phase 9 | Push notifications (FCM/APNs via expo-notifications) | 2-3 days |
+| Phase 10 | Dispute resolution (admin flow, refund via payout, escrow freeze) | 2-3 days |
+
+### New Dependencies Needed
+- `expo-location` — GPS coordinates for proximity checks
+- `react-native-maps` — native map rendering (Apple Maps / Google Maps)
+- `node-cron` — scheduled tasks (timeout auto-refund)
+- `@expo/image-manipulator` — already installed (imgbb upload resize)

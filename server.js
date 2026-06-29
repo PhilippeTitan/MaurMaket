@@ -1423,10 +1423,12 @@ app.post('/api/orders', authRequired, async (req, res) => {
     }
 
     const method = deliveryMethod === 'delivery' ? 'delivery' : 'meetup';
+    // Apply promo discount to the order total so buyer is charged the discounted amount
+    const finalTotal = discountAmount > 0 ? Math.round((total - discountAmount) * 100) / 100 : total;
     const orderResult = await client.query(
       `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note)
        VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [req.user.id, total, method, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null]
+      [req.user.id, finalTotal, method, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null]
     );
     const order = orderResult.rows[0];
 
@@ -1452,7 +1454,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
     const buyerName = buyerInfo.rows[0]?.full_name || 'Someone';
     const sellerIds = [...new Set(orderItems.map(i => i.sellerId))];
     for (const sid of sellerIds) {
-      createNotification(sid, 'order_status', 'New Order', `New order from ${buyerName} — Rs ${total.toFixed(0)}`, { orderId: order.id });
+      createNotification(sid, 'order_status', 'New Order', `New order from ${buyerName} — Rs ${finalTotal.toFixed(0)}`, { orderId: order.id });
       const lowStock = await pool.query('SELECT id, name, stock FROM products WHERE seller_id = $1 AND stock <= 3 AND is_available = true', [sid]);
       for (const p of lowStock.rows) {
         createNotification(sid, 'low_stock', 'Low Stock Alert', `"${p.name}" has only ${p.stock} left`, { productId: p.id });
@@ -1551,8 +1553,12 @@ app.put('/api/orders/:id/meetup', authRequired, async (req, res) => {
     );
     logOrderEvent(req.params.id, 'meetup_proposed', req.user.id, null, null, `Meetup proposed at ${address || `${lat}, ${lng}`}`);
     const oData = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [req.params.id]);
+    const sellerData = await pool.query('SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1', [req.params.id]);
     if (oData.rows.length > 0) {
-      const otherPartyId = oData.rows[0].buyer_id === req.user.id ? null : oData.rows[0].buyer_id;
+      // Notify the OTHER party — whoever didn't propose the meetup
+      const buyerId = oData.rows[0].buyer_id;
+      const sellerId = sellerData.rows[0]?.seller_id;
+      const otherPartyId = buyerId === req.user.id ? sellerId : buyerId;
       if (otherPartyId) {
         createNotification(otherPartyId, 'meetup_proposed', 'Meetup Proposed', 'A meetup location has been proposed for your order', { orderId: req.params.id });
       }
@@ -1592,7 +1598,10 @@ app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (order.status === 'completed') return res.status(400).json({ error: 'Order already completed' });
     if (order.status === 'cancelled') return res.status(400).json({ error: 'Order was cancelled' });
-    if (order.status !== 'delivered') return res.status(400).json({ error: 'Order must be delivered before completing' });
+    // Allow completion from 'delivered' (shipping flow) OR 'paid' (meetup flow where delivery is skipped)
+    if (order.status !== 'delivered' && order.status !== 'paid') {
+      return res.status(400).json({ error: 'Order must be delivered or paid (meetup) before completing' });
+    }
     await pool.query(
       `UPDATE orders SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [req.params.id]
@@ -2174,14 +2183,15 @@ app.post('/api/payments/webhook', async (req, res) => {
 
   try {
     if (event === 'payment.completed') {
-      // Register event as processed (prevent double-credit on replay)
-      if (eventId) {
-        await pool.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
-      }
 
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        // Register event as processed INSIDE the transaction (prevent double-credit on replay)
+        // Also prevents data loss if the transaction rolls back
+        if (eventId) {
+          await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+        }
         await client.query(
           `UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'`,
           [reference]
@@ -2809,7 +2819,8 @@ const isMain = __execPath === __thisFile || __execPath === path.resolve(__thisFi
 if (isMain) {
   runMigrations().then(async () => {
     await cleanupOldNotifications();
-    await cleanupLegacyData();
+    // cleanupLegacyData() REMOVED — was wiping ALL products/orders/reviews on every restart
+    // Legacy /uploads/ URL cleanup is now handled by the imgbb migration (images are hosted on imgbb)
     app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
     });
