@@ -363,6 +363,15 @@ async function runMigrations() {
   }
 }
 
+async function cleanupOldNotifications() {
+  try {
+    const result = await pool.query("DELETE FROM notifications WHERE type = 'new_message'");
+    if (result.rowCount > 0) console.log(`Cleaned up ${result.rowCount} old message notifications`);
+  } catch (err) {
+    console.error('Notification cleanup error:', err);
+  }
+}
+
 app.use(cors());
 app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
@@ -2028,8 +2037,6 @@ app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
       'UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1',
       [req.params.id]
     );
-    const otherPartyId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
-    createNotification(otherPartyId, 'new_message', 'New Message', content.trim().substring(0, 100), { conversationId: req.params.id });
     res.status(201).json({ message: result.rows[0] });
   } catch (err) {
     console.error('Message send error:', err);
@@ -2783,7 +2790,8 @@ const __execPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 const __thisFile = fileURLToPath(import.meta.url);
 const isMain = __execPath === __thisFile || __execPath === path.resolve(__thisFile);
 if (isMain) {
-  runMigrations().then(() => {
+  runMigrations().then(async () => {
+    await cleanupOldNotifications();
     app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
     });

@@ -68,8 +68,11 @@ export default function InboxScreen() {
       try { await markNotificationRead(notif.id); } catch { /* silent */ }
       setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
     }
-    if (notif.data && (notif.data as any).orderId) {
-      nav.navigate('OrderDetail', { orderId: (notif.data as any).orderId });
+    const data = notif.data as any;
+    if (data?.orderId) {
+      nav.navigate('OrderDetail', { orderId: data.orderId });
+    } else if (data?.conversationId) {
+      nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: 'Chat' });
     }
   };
 
@@ -328,11 +331,11 @@ const styles = StyleSheet.create({
   convoMsgUnread: { color: COLORS.text, fontWeight: '500' },
   convoRight: { alignItems: 'flex-end', gap: 4 },
   convoTime: { fontSize: 10, color: COLORS.text2 },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.coral },
+  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#00C853' },
   notifItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   notifItemUnread: { backgroundColor: COLORS.surface },
   notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.border, marginTop: 5 },
-  notifDotUnread: { backgroundColor: COLORS.coral },
+  notifDotUnread: { backgroundColor: '#00C853' },
   notifInfo: { flex: 1 },
   notifTitle: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   notifBody: { fontSize: 12, color: COLORS.text2, marginTop: 2 },

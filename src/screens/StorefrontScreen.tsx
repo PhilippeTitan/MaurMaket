@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, isVerifiedSeller, getDisplayName, getSellerAvatar } from '../theme';
-import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation } from '../api';
+import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation, getConversations } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -87,12 +87,21 @@ export default function StorefrontScreen({ route, navigation }: Props) {
     if (messageLoading) return;
     setMessageLoading(true);
     try {
-      const productContext = products[0];
-      const res = await createConversation({ sellerId, productId: productContext?.id }) as { conversationId: string };
-      navigation.navigate('Chat', {
-        conversationId: res.conversationId,
-        otherUserName: getDisplayName(seller) || 'Seller',
-      });
+      const convosRes = await getConversations() as { conversations: Array<{ id: string; seller_id?: string; buyer_id?: string }> };
+      const existing = (convosRes.conversations || []).find(c => c.seller_id === sellerId || c.buyer_id === sellerId);
+      if (existing) {
+        navigation.navigate('Chat', {
+          conversationId: existing.id,
+          otherUserName: getDisplayName(seller) || 'Seller',
+        });
+      } else {
+        const productContext = products[0];
+        const res = await createConversation({ sellerId, productId: productContext?.id }) as { conversationId: string };
+        navigation.navigate('Chat', {
+          conversationId: res.conversationId,
+          otherUserName: getDisplayName(seller) || 'Seller',
+        });
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed';
       Alert.alert(t('common.error'), msg);
