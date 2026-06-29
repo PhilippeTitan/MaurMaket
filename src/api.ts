@@ -212,6 +212,10 @@ export const refundEscrow = (orderId: string) =>
 export const getEscrowStatus = (orderId: string) =>
   request(`/orders/${orderId}/escrow`);
 
+// Feed
+export const trackFeedEvent = (productId: string, eventType: string, durationMs?: number) =>
+  request('/feed/event', { method: 'POST', body: JSON.stringify({ productId, eventType, durationMs }) });
+
 // Seller
 export const getSellerProducts = () => request('/seller/products').then(normalizeProductsResponse);
 export const getSellerOrders = () => request('/seller/orders');

@@ -384,6 +384,16 @@ async function runMigrations() {
         qr_scanned BOOLEAN DEFAULT false,
         UNIQUE(order_id, user_id)
       );
+      // Feed events — tracks engagement for personalized feed
+      CREATE TABLE IF NOT EXISTS feed_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        product_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
+        event_type VARCHAR(20) NOT NULL CHECK (event_type IN ('view', 'like', 'unlike', 'relevant', 'not_relevant', 'save', 'dwell')),
+        duration_ms INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, product_id, event_type)
+      );
     `);
     console.log('Migrations complete');
   } catch (err) {
@@ -1116,7 +1126,7 @@ app.get('/api/sellers/:id', async (req, res) => {
 // ───── Product routes ─────
 
 app.get('/api/products', async (req, res) => {
-  const { category, search, seller, minPrice, maxPrice, sort, page = 1, limit = 20 } = req.query;
+  const { category, search, seller, minPrice, maxPrice, sort, page = 1, limit = 20, personalized } = req.query;
   const offset = (Math.max(1, page) - 1) * Math.min(limit, 50);
   const params = [];
   const conditions = ['p.is_available = TRUE'];
@@ -1145,10 +1155,68 @@ app.get('/api/products', async (req, res) => {
   }
 
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+  // Check if personalized feed is requested and user is authenticated
+  let usePersonalized = false;
+  let userId = null;
+  if (personalized === 'true') {
+    try {
+      // Extract token from Authorization header
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.slice(7);
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        userId = decoded.id;
+        usePersonalized = true;
+      }
+    } catch { /* Not authenticated or invalid token — fall through to default order */ }
+  }
+
   let orderBy = 'p.created_at DESC';
-  if (sort === 'price_asc') orderBy = 'p.price ASC';
-  else if (sort === 'price_desc') orderBy = 'p.price DESC';
-  else if (sort === 'oldest') orderBy = 'p.created_at ASC';
+  let selectExtra = '';
+  let joinExtra = '';
+
+  if (usePersonalized && userId) {
+    // Personalized scoring: joins against feed_events, follows, wishlists, purchases, reviews
+    selectExtra = `, COALESCE(score.total_score, 0) AS feed_score`;
+    joinExtra = `LEFT JOIN (
+      SELECT
+        p2.id AS product_id,
+        (
+          -- Followed seller: +3
+          COALESCE((SELECT 3.0 FROM follows f WHERE f.follower_id = $${paramIndex} AND f.seller_id = p2.seller_id LIMIT 1), 0)
+          -- Wishlisted: +2
+          + COALESCE((SELECT 2.0 FROM wishlists w WHERE w.user_id = $${paramIndex} AND w.product_id = p2.id LIMIT 1), 0)
+          -- Liked: +2
+          + COALESCE((SELECT 2.0 FROM feed_events fe WHERE fe.user_id = $${paramIndex} AND fe.product_id = p2.id AND fe.event_type = 'like' LIMIT 1), 0)
+          -- Past purchase from seller: +1.5
+          + COALESCE((SELECT 1.5 FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE o.buyer_id = $${paramIndex} AND oi.seller_id = p2.seller_id LIMIT 1), 0)
+          -- Marked relevant: +1.5
+          + COALESCE((SELECT 1.5 FROM feed_events fe WHERE fe.user_id = $${paramIndex} AND fe.product_id = p2.id AND fe.event_type = 'relevant' LIMIT 1), 0)
+          -- Same category as past purchases: +1
+          + COALESCE((SELECT 1.0 FROM order_items oi JOIN orders o ON oi.order_id = o.id JOIN products p3 ON oi.product_id = p3.id WHERE o.buyer_id = $${paramIndex} AND p3.category_id = p2.category_id LIMIT 1), 0)
+          -- Posted in last 24h: +1
+          + CASE WHEN p2.created_at > NOW() - INTERVAL '24 hours' THEN 1.0 ELSE 0 END
+          -- Seller avg rating > 4: +0.5
+          + COALESCE((SELECT CASE WHEN AVG(r.rating) > 4 THEN 0.5 ELSE 0 END FROM reviews r WHERE r.seller_id = p2.seller_id), 0)
+          -- Not relevant: -3
+          - COALESCE((SELECT 3.0 FROM feed_events fe WHERE fe.user_id = $${paramIndex} AND fe.product_id = p2.id AND fe.event_type = 'not_relevant' LIMIT 1), 0)
+        ) AS total_score
+      FROM products p2
+      WHERE p2.is_available = TRUE
+    ) score ON score.product_id = p.id`;
+    params.push(userId);
+    orderBy = 'COALESCE(score.total_score, 0) DESC, p.created_at DESC';
+  } else if (!sort) {
+    orderBy = 'p.created_at DESC';
+  } else if (sort === 'price_asc') {
+    orderBy = 'p.price ASC';
+  } else if (sort === 'price_desc') {
+    orderBy = 'p.price DESC';
+  } else if (sort === 'oldest') {
+    orderBy = 'p.created_at ASC';
+  }
 
   try {
     const countResult = await pool.query(
@@ -1160,11 +1228,13 @@ app.get('/api/products', async (req, res) => {
     const result = await pool.query(
       `SELECT p.id, p.name, p.description, p.price, p.stock, p.created_at, p.category_id,
               u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar, u.use_store_identity,
-              c.name AS category,
+              c.name AS category
+              ${selectExtra},
               (SELECT json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
+       ${joinExtra}
        ${where}
        ORDER BY ${orderBy}
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
@@ -3337,6 +3407,40 @@ async function checkSubscriptionStatus(sellerId) {
     return 'unknown';
   }
 }
+
+// ───── Feed Algorithm ─────
+
+// Record a feed event (like, relevant, not_relevant, view, dwell)
+app.post('/api/feed/event', authRequired, async (req, res) => {
+  const { productId, eventType, durationMs } = req.body;
+  if (!productId || !eventType) return res.status(400).json({ error: 'productId and eventType required' });
+  const validTypes = ['view', 'like', 'unlike', 'relevant', 'not_relevant', 'save', 'dwell'];
+  if (!validTypes.includes(eventType)) return res.status(400).json({ error: `eventType must be one of: ${validTypes.join(', ')}` });
+
+  try {
+    // Rate limit: max 50 events per user per hour
+    const rateCheck = await pool.query(
+      `SELECT COUNT(*) FROM feed_events WHERE user_id = $1 AND created_at > NOW() - INTERVAL '1 hour'`,
+      [req.user.id]
+    );
+    if (parseInt(rateCheck.rows[0].count) >= 50) {
+      return res.status(429).json({ error: 'Too many actions. Please wait.' });
+    }
+
+    await pool.query(
+      `INSERT INTO feed_events (user_id, product_id, event_type, duration_ms)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, product_id, event_type) DO UPDATE SET
+         duration_ms = COALESCE($4, feed_events.duration_ms),
+         created_at = CURRENT_TIMESTAMP`,
+      [req.user.id, productId, eventType, durationMs || null]
+    );
+    res.json({ recorded: true });
+  } catch (err) {
+    console.error('Feed event error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 app.get('/api/health', async (_req, res) => {
   try {

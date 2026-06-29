@@ -12,6 +12,7 @@ import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
 import {
   getProducts, toggleWishlist, checkWishlist, createConversation, toggleFollow,
   getImageUrl, getConversationUnreadCount, getProductReviews, getFollowing,
+  trackFeedEvent,
 } from '../api';
 import { store } from '../store';
 import type { Product, Review } from '../types';
@@ -40,8 +41,11 @@ export default function FeedScreen() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [moreProduct, setMoreProduct] = useState<Product | null>(null);
   const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('forYou');
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const flatListRef = useRef<FlatList>(null);
   const checkedWishlistIds = useRef<Set<string>>(new Set());
+  const viewStartTime = useRef<number>(Date.now());
+  const currentProductId = useRef<string | null>(null);
 
   const fetchProducts = useCallback(async (p = 1, replace = false) => {
     try {
@@ -155,6 +159,26 @@ export default function FeedScreen() {
       setWishlistedIds(prev => {
         const next = new Set(prev);
         if (wasWishlisted) next.add(product.id);
+        else next.delete(product.id);
+        return next;
+      });
+    }
+  };
+
+  const handleLike = async (product: Product) => {
+    const wasLiked = likedIds.has(product.id);
+    setLikedIds(prev => {
+      const next = new Set(prev);
+      if (wasLiked) next.delete(product.id);
+      else next.add(product.id);
+      return next;
+    });
+    try {
+      await trackFeedEvent(product.id, wasLiked ? 'unlike' : 'like');
+    } catch {
+      setLikedIds(prev => {
+        const next = new Set(prev);
+        if (wasLiked) next.add(product.id);
         else next.delete(product.id);
         return next;
       });
@@ -314,8 +338,12 @@ export default function FeedScreen() {
 
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => {}}>
-            <MaterialCommunityIcons name="heart-outline" size={28} color={COLORS.white} />
+          <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item)}>
+            <MaterialCommunityIcons
+              name={likedIds.has(item.id) ? 'heart' : 'heart-outline'}
+              size={28}
+              color={likedIds.has(item.id) ? COLORS.coral : COLORS.white}
+            />
           </TouchableOpacity>
           {!isOwnProduct && (
             <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenComments(item)}>
@@ -492,6 +520,22 @@ export default function FeedScreen() {
           offset: screenHeight * index,
           index,
         })}
+        viewabilityConfig={{ viewAreaCoveragePercentThreshold: 80 }}
+        onViewableItemsChanged={({ viewableItems }) => {
+          // Track dwell time for previous product
+          if (currentProductId.current) {
+            const dwell = Date.now() - viewStartTime.current;
+            if (dwell > 2000) {
+              trackFeedEvent(currentProductId.current, 'dwell', dwell).catch(() => {});
+            }
+          }
+          // Start tracking new product
+          const visible = viewableItems[0];
+          if (visible?.item) {
+            currentProductId.current = visible.item.id;
+            viewStartTime.current = Date.now();
+          }
+        }}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.5}
         refreshControl={
@@ -614,11 +658,17 @@ export default function FeedScreen() {
           />
           <View style={styles.moreSheet}>
             <View style={styles.sheetHandle} />
-            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+            <TouchableOpacity style={styles.moreItem} onPress={() => {
+              if (moreProduct) trackFeedEvent(moreProduct.id, 'relevant');
+              setMoreProduct(null);
+            }}>
               <MaterialCommunityIcons name="thumb-up-outline" size={18} color={COLORS.text} />
               <Text style={styles.moreItemText}>Relevant</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+            <TouchableOpacity style={styles.moreItem} onPress={() => {
+              if (moreProduct) trackFeedEvent(moreProduct.id, 'not_relevant');
+              setMoreProduct(null);
+            }}>
               <MaterialCommunityIcons name="thumb-down-outline" size={18} color={COLORS.text} />
               <Text style={styles.moreItemText}>Not relevant</Text>
             </TouchableOpacity>
