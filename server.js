@@ -1570,7 +1570,6 @@ app.post('/api/orders', authRequired, async (req, res) => {
         `INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)`,
         [order.id, oi.productId, oi.sellerId, oi.quantity, oi.price]
       );
-      await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.productId]);
     }
 
     if (promoId && discountAmount > 0) {
@@ -1622,10 +1621,6 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
     if (order.rows[0].status !== 'pending') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Only pending orders can be cancelled' });
-    }
-    const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
-    for (const item of items.rows) {
-      await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
     }
     await client.query(
       "UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
@@ -2905,6 +2900,26 @@ app.post('/api/payments/webhook', async (req, res) => {
           [reference]
         );
         await logOrderEvent(reference, 'payment_received', null, 'pending', 'paid', 'Payment completed via MonCash', client);
+
+        // Decrement stock at payment time (not order creation) to prevent ghost inventory
+        const orderItems = await client.query(
+          'SELECT product_id, quantity FROM order_items WHERE order_id = $1',
+          [reference]
+        );
+        for (const oi of orderItems.rows) {
+          const stockCheck = await client.query(
+            'SELECT stock FROM products WHERE id = $1 FOR UPDATE',
+            [oi.product_id]
+          );
+          if (stockCheck.rows.length === 0 || stockCheck.rows[0].stock < oi.quantity) {
+            // Insufficient stock — rollback payment, this order will be stuck in pending
+            await client.query('ROLLBACK');
+            console.error(`Order ${reference}: insufficient stock for product ${oi.product_id}, payment rolled back`);
+            return res.status(200).json({ received: true, stock_issue: true });
+          }
+          await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.product_id]);
+        }
+
         const items = await client.query(
           'SELECT seller_id, SUM(price * quantity) AS total FROM order_items WHERE order_id = $1 GROUP BY seller_id',
           [reference]
@@ -2959,10 +2974,7 @@ app.post('/api/payments/webhook', async (req, res) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [reference]);
-        for (const item of items.rows) {
-          await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
-        }
+        // Stock was never decremented (decrement happens on payment.completed), so no restore needed
         await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [reference]);
         await logOrderEvent(reference, 'status_change', null, 'pending', 'cancelled', 'Payment failed', client);
         await client.query('COMMIT');
