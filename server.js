@@ -372,21 +372,32 @@ async function cleanupOldNotifications() {
 }
 
 async function cleanupLegacyData() {
+  const c = await pool.connect();
   try {
-    const r1 = await pool.query('DELETE FROM product_images');
-    await pool.query('UPDATE conversations SET product_id = NULL WHERE product_id IS NOT NULL');
-    await pool.query('DELETE FROM order_items');
-    await pool.query('DELETE FROM orders');
-    const r2 = await pool.query('DELETE FROM products');
-    const r3 = await pool.query('DELETE FROM verification_attempts');
-    const r4 = await pool.query("UPDATE users SET avatar_url = NULL WHERE avatar_url LIKE '/uploads/%'");
-    const r5 = await pool.query("UPDATE users SET store_logo_url = NULL WHERE store_logo_url LIKE '/uploads/%'");
-    const r6 = await pool.query("UPDATE users SET id_document_url = NULL WHERE id_document_url LIKE '/uploads/%'");
-    const total = r1.rowCount + r2.rowCount + r3.rowCount;
+    await c.query('BEGIN');
+    await c.query('DELETE FROM product_images');
+    await c.query('UPDATE conversations SET product_id = NULL WHERE product_id IS NOT NULL');
+    await c.query('DELETE FROM order_events');
+    await c.query('DELETE FROM reviews');
+    await c.query('DELETE FROM platform_revenue');
+    await c.query('DELETE FROM promo_uses');
+    await c.query('DELETE FROM disputes');
+    await c.query('DELETE FROM order_items');
+    await c.query('DELETE FROM orders');
+    const r2 = await c.query('DELETE FROM products');
+    const r3 = await c.query('DELETE FROM verification_attempts');
+    const r4 = await c.query("UPDATE users SET avatar_url = NULL WHERE avatar_url LIKE '/uploads/%'");
+    const r5 = await c.query("UPDATE users SET store_logo_url = NULL WHERE store_logo_url LIKE '/uploads/%'");
+    const r6 = await c.query("UPDATE users SET id_document_url = NULL WHERE id_document_url LIKE '/uploads/%'");
+    await c.query('COMMIT');
+    const total = r2.rowCount + r3.rowCount;
     const usersFixed = r4.rowCount + r5.rowCount + r6.rowCount;
-    if (total > 0 || usersFixed > 0) console.log(`Legacy data cleanup: ${r2.rowCount} products, ${r1.rowCount} images, ${r3.rowCount} verifications, ${usersFixed} user URLs cleared`);
+    if (total > 0 || usersFixed > 0) console.log(`Legacy data cleanup: ${r2.rowCount} products, ${r3.rowCount} verifications, ${usersFixed} user URLs cleared`);
   } catch (err) {
+    await c.query('ROLLBACK');
     console.error('Legacy data cleanup error:', err);
+  } finally {
+    c.release();
   }
 }
 
