@@ -384,7 +384,7 @@ async function runMigrations() {
         qr_scanned BOOLEAN DEFAULT false,
         UNIQUE(order_id, user_id)
       );
-      // Feed events — tracks engagement for personalized feed
+      -- Feed events — tracks engagement for personalized feed
       CREATE TABLE IF NOT EXISTS feed_events (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,

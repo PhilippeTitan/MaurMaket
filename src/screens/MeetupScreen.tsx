@@ -4,9 +4,18 @@ import {
   ScrollView, Modal, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import MapView, { Marker, Circle } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { COLORS, SPACING } from '../theme';
+
+let MapView: any = null;
+let Marker: any = null;
+let Circle: any = null;
+if (Platform.OS !== 'web') {
+  const maps = require('react-native-maps');
+  MapView = maps.default;
+  Marker = maps.Marker;
+  Circle = maps.Circle;
+}
 import { store } from '../store';
 import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow, extendMeetup } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,7 +34,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
   const { orderId } = route.params;
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<any>(null);
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -263,27 +272,41 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
       {region && (
         <View style={styles.mapContainer}>
-          <MapView
-            ref={mapRef}
-            style={styles.map}
-            initialRegion={region}
-            showsUserLocation
-          >
-            <Marker coordinate={{ latitude: meetupLat!, longitude: meetupLng! }} title="Meetup spot">
-              <View style={styles.meetupPin}>
-                <MaterialCommunityIcons name="map-marker" size={28} color={COLORS.coral} />
-              </View>
-            </Marker>
-            {myCheckedIn && (
-              <Circle
-                center={{ latitude: meetupLat!, longitude: meetupLng! }}
-                radius={PROXIMITY_THRESHOLD}
-                fillColor="rgba(0,229,160,0.12)"
-                strokeColor={COLORS.green}
-                strokeWidth={2}
-              />
-            )}
-          </MapView>
+          {Platform.OS !== 'web' && MapView ? (
+            <MapView
+              ref={mapRef}
+              style={styles.map}
+              initialRegion={region}
+              showsUserLocation
+            >
+              <Marker coordinate={{ latitude: meetupLat!, longitude: meetupLng! }} title="Meetup spot">
+                <View style={styles.meetupPin}>
+                  <MaterialCommunityIcons name="map-marker" size={28} color={COLORS.coral} />
+                </View>
+              </Marker>
+              {myCheckedIn && (
+                <Circle
+                  center={{ latitude: meetupLat!, longitude: meetupLng! }}
+                  radius={PROXIMITY_THRESHOLD}
+                  fillColor="rgba(0,229,160,0.12)"
+                  strokeColor={COLORS.green}
+                  strokeWidth={2}
+                />
+              )}
+            </MapView>
+          ) : (
+            <View style={[styles.map, { backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+              <MaterialCommunityIcons name="map-marker-radius" size={48} color={COLORS.coral} />
+              <Text style={{ color: COLORS.text, fontWeight: '700', marginTop: 10, textAlign: 'center' }}>
+                {order.meetup_address || 'Meetup location'}
+              </Text>
+              {distance !== null && (
+                <Text style={{ color: COLORS.text2, fontSize: 13, marginTop: 6 }}>
+                  {distance}m from meetup point
+                </Text>
+              )}
+            </View>
+          )}
 
           {myCheckedIn && distance !== null && (
             <View style={[styles.distanceBadge, distance <= PROXIMITY_THRESHOLD && styles.distanceBadgeClose]}>
