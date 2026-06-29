@@ -374,6 +374,9 @@ async function cleanupOldNotifications() {
 async function cleanupLegacyData() {
   try {
     const r1 = await pool.query('DELETE FROM product_images');
+    await pool.query('UPDATE conversations SET product_id = NULL WHERE product_id IS NOT NULL');
+    await pool.query('DELETE FROM order_items');
+    await pool.query('DELETE FROM orders');
     const r2 = await pool.query('DELETE FROM products');
     const r3 = await pool.query('DELETE FROM verification_attempts');
     const r4 = await pool.query("UPDATE users SET avatar_url = NULL WHERE avatar_url LIKE '/uploads/%'");
