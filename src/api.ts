@@ -15,13 +15,19 @@ const getWebUploadBase = () => {
   return `https://molecules-restaurant-diploma-fate.trycloudflare.com`;
 };
 
+const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
+
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
-  : 'https://maurmaket.onrender.com/api';
+  : isDev
+    ? 'http://10.130.195.105:3001/api'
+    : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
-  : 'https://maurmaket.onrender.com';
+  : isDev
+    ? 'http://10.130.195.105:3001'
+    : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(
   path: string,
