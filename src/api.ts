@@ -190,6 +190,25 @@ export const proposeMeetup = (orderId: string, lat: number, lng: number, address
 export const confirmMeetup = (orderId: string) =>
   request(`/orders/${orderId}/meetup/confirm`, { method: 'PUT' });
 
+// Meetup
+export const meetupCheckin = (orderId: string, lat: number, lng: number) =>
+  request(`/orders/${orderId}/meetup/checkin`, { method: 'POST', body: JSON.stringify({ lat, lng }) });
+
+export const meetupScan = (orderId: string, qrToken: string) =>
+  request(`/orders/${orderId}/meetup/scan`, { method: 'POST', body: JSON.stringify({ qrToken }) });
+
+export const getMeetupStatus = (orderId: string) =>
+  request(`/orders/${orderId}/meetup/status`);
+
+export const releaseEscrow = (orderId: string) =>
+  request(`/orders/${orderId}/escrow/release`, { method: 'POST' });
+
+export const refundEscrow = (orderId: string) =>
+  request(`/orders/${orderId}/escrow/refund`, { method: 'POST' });
+
+export const getEscrowStatus = (orderId: string) =>
+  request(`/orders/${orderId}/escrow`);
+
 // Seller
 export const getSellerProducts = () => request('/seller/products').then(normalizeProductsResponse);
 export const getSellerOrders = () => request('/seller/orders');

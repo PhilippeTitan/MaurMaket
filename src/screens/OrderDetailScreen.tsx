@@ -262,6 +262,17 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       )}
 
       <View style={styles.actions}>
+        {/* ── Meetup CTA (for both buyer and seller) ── */}
+        {order.delivery_method === 'meetup' && ['paid', 'completed'].includes(order.status) && (
+          <TouchableOpacity
+            style={styles.meetupBtn}
+            onPress={() => navigation.navigate('Meetup', { orderId })}
+          >
+            <MaterialCommunityIcons name="map-marker-radius" size={18} color={COLORS.white} />
+            <Text style={styles.meetupBtnText}>Go to Meetup</Text>
+          </TouchableOpacity>
+        )}
+
         {/* ── Seller actions ── */}
         {isSellerOfOrder && order.status === 'paid' && (
           <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('processing')} disabled={actionLoading}>
@@ -486,6 +497,11 @@ const styles = StyleSheet.create({
   reviewBtnText: { color: COLORS.yellow, fontWeight: '600', fontSize: 15 },
   advanceBtn: { padding: 14, borderRadius: 20, backgroundColor: COLORS.blue, alignItems: 'center' },
   advanceBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
+  meetupBtn: {
+    flexDirection: 'row', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 20,
+    backgroundColor: COLORS.green, alignItems: 'center',
+  },
+  meetupBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
 
   /* Review modal */
   modalOverlay: {

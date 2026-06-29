@@ -38,6 +38,7 @@ import SellerOnboardingScreen from './src/screens/SellerOnboardingScreen';
 import EditListingScreen from './src/screens/EditListingScreen';
 import SettingsEditScreen from './src/screens/SettingsEditScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
+import MeetupScreen from './src/screens/MeetupScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -271,6 +272,7 @@ export default function App() {
             <Stack.Screen name="EditListing" component={EditListingScreen} />
             <Stack.Screen name="SettingsEdit" component={SettingsEditScreen} />
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
+            <Stack.Screen name="Meetup" component={MeetupScreen} />
           </>
         )}
       </Stack.Navigator>
