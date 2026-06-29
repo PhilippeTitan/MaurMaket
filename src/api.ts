@@ -105,6 +105,7 @@ const normalizeProduct = (product: Product & Record<string, unknown>): Product =
       id_submitted_at: null,
       id_verified: Boolean(product.id_verified),
       id_verified_at: null,
+      id_verification_result: null,
       use_store_identity: Boolean(withImages.use_store_identity),
     },
   };
@@ -138,7 +139,7 @@ export const becomeSeller = (data?: { storeName?: string; storeLogoUrl?: string;
 export const updateSellerProfile = (data: Record<string, string | boolean>) =>
   request('/auth/seller-profile', { method: 'PUT', body: JSON.stringify(data) });
 
-export const getVerificationStatus = () => request('/seller/verification-status');
+export const getVerificationStatus = () => request('/verification/status');
 
 export const upgradeTier = (data: { tier: string; storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string }) =>
   request('/auth/upgrade-tier', { method: 'PUT', body: JSON.stringify(data) });
@@ -417,3 +418,21 @@ export const uploadImage = async (uri: string): Promise<{ url: string }> => {
     throw e;
   }
 };
+
+// Verification
+export const submitVerification = (data: {
+  idFrontUrl: string;
+  idBackUrl: string;
+  selfieUrl: string;
+  ocrResult?: Record<string, string>;
+  faceMatchScore?: number;
+}) => request('/verification/submit', { method: 'POST', body: JSON.stringify(data) });
+
+// Subscriptions
+export const createSubscription = (returnUrl?: string) =>
+  request('/subscriptions/create', { method: 'POST', body: JSON.stringify({ returnUrl }) });
+
+export const getCurrentSubscription = () => request('/subscriptions/current');
+
+export const renewSubscription = (returnUrl?: string) =>
+  request('/subscriptions/renew', { method: 'POST', body: JSON.stringify({ returnUrl }) });

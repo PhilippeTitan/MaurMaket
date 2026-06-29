@@ -322,6 +322,39 @@ async function runMigrations() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verified_at TIMESTAMP;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS use_store_identity BOOLEAN DEFAULT false;
     `);
+    // Verification & subscription tables
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS verification_attempts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        id_front_url TEXT,
+        id_back_url TEXT,
+        selfie_url TEXT,
+        ocr_result JSONB,
+        face_match_score DECIMAL(5,4),
+        rejection_reason TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        verified_at TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS seller_subscriptions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        seller_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        status VARCHAR(20) DEFAULT 'active',
+        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL,
+        last_payment_at TIMESTAMP,
+        grace_period_days INTEGER DEFAULT 7,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_result VARCHAR(20);
+    `);
+    // Backfill id_verification_result from legacy boolean
+    await c.query(`
+      UPDATE users SET id_verification_result = 'verified' WHERE id_verified = true AND id_verification_result IS NULL;
+      UPDATE users SET id_verification_result = 'pending' WHERE id_submitted_at IS NOT NULL AND id_verified = false AND id_verification_result IS NULL;
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -480,6 +513,14 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
     delete user.password_hash;
+    if (user.role === 'seller' && user.seller_tier === 'business') {
+      const subStatus = await checkSubscriptionStatus(user.id);
+      if (subStatus === 'expired') {
+        await pool.query(`UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [user.id]);
+        user.seller_tier = 'verified';
+        createNotification(user.id, 'subscription_expired', 'Business Subscription Expired', 'Your Business subscription has expired. You have been demoted to Verified Seller.', {}, pool);
+      }
+    }
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ user, token });
   } catch (err) {
@@ -491,7 +532,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -992,7 +1033,7 @@ app.put('/api/notifications/read-all', authRequired, async (req, res) => {
 app.get('/api/sellers/:id', async (req, res) => {
   try {
     const userResult = await pool.query(
-      `SELECT id, full_name, email, phone, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity FROM users WHERE id = $1 AND role = 'seller'`,
+      `SELECT id, full_name, email, phone, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, id_verification_result, use_store_identity FROM users WHERE id = $1 AND role = 'seller'`,
       [req.params.id]
     );
     if (userResult.rows.length === 0) return res.status(404).json({ error: 'Seller not found' });
@@ -1125,6 +1166,14 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
     );
     if (parseInt(countResult.rows[0].count) >= 10) {
       return res.status(403).json({ error: 'Casual sellers can list up to 10 products. Upgrade to Verified for unlimited listings.' });
+    }
+  }
+  if (sellerTier === 'business') {
+    const subStatus = await checkSubscriptionStatus(req.user.id);
+    if (subStatus === 'expired') {
+      await pool.query(`UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [req.user.id]);
+      createNotification(req.user.id, 'subscription_expired', 'Business Subscription Expired', 'Your Business subscription has expired. You have been demoted to Verified Seller.', {}, pool);
+      return res.status(403).json({ error: 'Business subscription expired. You have been demoted to Verified Seller.' });
     }
   }
 
@@ -2312,6 +2361,14 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
   if (sellerTier === 'casual') {
     return res.status(403).json({ error: 'Payouts are available for Verified sellers and above. Upgrade your account to request payouts.' });
   }
+  if (sellerTier === 'business') {
+    const subStatus = await checkSubscriptionStatus(req.user.id);
+    if (subStatus === 'expired') {
+      await pool.query(`UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [req.user.id]);
+      createNotification(req.user.id, 'subscription_expired', 'Business Subscription Expired', 'Your Business subscription has expired. You have been demoted to Verified Seller.', {}, pool);
+      return res.status(403).json({ error: 'Business subscription expired. You have been demoted to Verified Seller.' });
+    }
+  }
 
   const { amount } = req.body;
   if (!amount || amount <= 0) {
@@ -2429,6 +2486,266 @@ app.post('/api/upload', authRequired, (req, res, next) => {
 });
 
 // ───── Health check ─────
+
+// ───── ID Verification ─────
+
+app.post('/api/verification/submit', authRequired, sellerRequired, async (req, res) => {
+  const { idFrontUrl, idBackUrl, selfieUrl, ocrResult, faceMatchScore } = req.body;
+  if (!idFrontUrl || !idBackUrl || !selfieUrl) {
+    return res.status(400).json({ error: 'CIN front, back, and selfie are required' });
+  }
+  try {
+    const existing = await pool.query(
+      `SELECT id, status FROM verification_attempts WHERE user_id = $1 AND status IN ('pending', 'verified') ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    if (existing.rows.length > 0 && existing.rows[0].status === 'verified') {
+      return res.status(400).json({ error: 'Already verified' });
+    }
+
+    let autoStatus = 'pending';
+    let rejectionReason = null;
+
+    if (ocrResult && faceMatchScore) {
+      const nameMatch = ocrResult.fullName &&
+        ocrResult.fullName.toLowerCase().trim() === (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name?.toLowerCase().trim();
+      const hasCinNumber = ocrResult.cinNumber && /^\d{8,12}$/.test(ocrResult.cinNumber);
+      const hasDob = ocrResult.dateOfBirth;
+      const faceOk = parseFloat(faceMatchScore) > 0.65;
+
+      if (nameMatch && hasCinNumber && hasDob && faceOk) {
+        autoStatus = 'verified';
+      } else {
+        const issues = [];
+        if (!nameMatch) issues.push('name_mismatch');
+        if (!hasCinNumber) issues.push('invalid_cin_number');
+        if (!hasDob) issues.push('missing_dob');
+        if (!faceOk) issues.push('face_match_failed');
+        rejectionReason = issues.join(',');
+      }
+    }
+
+    const result = await pool.query(
+      `INSERT INTO verification_attempts (user_id, status, id_front_url, id_back_url, selfie_url, ocr_result, face_match_score, rejection_reason, verified_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${autoStatus === 'verified' ? 'CURRENT_TIMESTAMP' : 'NULL'})
+       RETURNING *`,
+      [req.user.id, autoStatus, idFrontUrl, idBackUrl, selfieUrl, ocrResult ? JSON.stringify(ocrResult) : null, faceMatchScore || null, rejectionReason]
+    );
+
+    if (autoStatus === 'verified') {
+      await pool.query(
+        `UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified' WHERE id = $1`,
+        [req.user.id]
+      );
+      createNotification(req.user.id, 'verification_approved', 'Identity Verified', 'Your identity has been verified! You are now a Verified Seller.', {});
+    } else {
+      await pool.query(
+        `UPDATE users SET id_submitted_at = CURRENT_TIMESTAMP, id_verification_result = 'pending' WHERE id = $1`,
+        [req.user.id]
+      );
+      createNotification(req.user.id, 'verification_submitted', 'Verification Submitted', 'Your ID verification has been submitted and is being reviewed.', {});
+    }
+
+    res.json({ attempt: result.rows[0] });
+  } catch (err) {
+    console.error('Verification submit error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/verification/status', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, status, rejection_reason, created_at, verified_at FROM verification_attempts WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    const userRes = await pool.query('SELECT id_verification_result FROM users WHERE id = $1', [req.user.id]);
+    res.json({
+      status: userRes.rows[0]?.id_verification_result || 'none',
+      attempt: result.rows[0] || null,
+    });
+  } catch (err) {
+    console.error('Verification status error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/verification/images/:id', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE verification_attempts SET id_front_url = NULL, id_back_url = NULL, selfie_url = NULL WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error('Verification image delete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Subscriptions ─────
+
+app.post('/api/subscriptions/create', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const existing = await pool.query(
+      `SELECT id, status, expires_at FROM seller_subscriptions WHERE seller_id = $1 AND status IN ('active', 'past_due') ORDER BY expires_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    if (existing.rows.length > 0) {
+      const sub = existing.rows[0];
+      const now = new Date();
+      const expiresAt = new Date(sub.expires_at);
+      if (sub.status === 'active' && expiresAt > now) {
+        return res.status(400).json({ error: 'Active subscription already exists', expiresAt: sub.expires_at });
+      }
+    }
+
+    const orderId = `sub_${req.user.id}_${Date.now()}`;
+    await pool.query(
+      `INSERT INTO orders (id, buyer_id, total_amount, status) VALUES ($1, $2, 2500, 'pending') ON CONFLICT (id) DO NOTHING`,
+      [orderId, req.user.id]
+    );
+
+    const payUrl = process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create';
+    const mccRes = await fetch(payUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.MCC_KEY || ''}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: req.body.returnUrl || '' }),
+    });
+    const payData = await mccRes.json();
+    if (!mccRes.ok || !payData.paymentUrl) {
+      return res.status(500).json({ error: 'Payment creation failed', details: payData });
+    }
+    res.json({ paymentUrl: payData.paymentUrl, orderId });
+  } catch (err) {
+    console.error('Subscription create error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/subscriptions/current', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM seller_subscriptions WHERE seller_id = $1 AND status IN ('active', 'past_due') ORDER BY expires_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    res.json({ subscription: result.rows[0] || null });
+  } catch (err) {
+    console.error('Subscription fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/subscriptions/renew', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const existing = await pool.query(
+      `SELECT id, expires_at FROM seller_subscriptions WHERE seller_id = $1 AND status IN ('active', 'past_due') ORDER BY expires_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+
+    const orderId = `sub_renew_${req.user.id}_${Date.now()}`;
+    await pool.query(
+      `INSERT INTO orders (id, buyer_id, total_amount, status) VALUES ($1, $2, 2500, 'pending') ON CONFLICT (id) DO NOTHING`,
+      [orderId, req.user.id]
+    );
+
+    const payUrl = process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create';
+    const mccRes = await fetch(payUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.MCC_KEY || ''}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: req.body.returnUrl || '' }),
+    });
+    const payData = await mccRes.json();
+    if (!mccRes.ok || !payData.paymentUrl) {
+      return res.status(500).json({ error: 'Payment creation failed', details: payData });
+    }
+    res.json({ paymentUrl: payData.paymentUrl, orderId });
+  } catch (err) {
+    console.error('Subscription renew error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/subscriptions/webhook', express.json(), async (req, res) => {
+  try {
+    const signature = req.headers['x-mcc-signature'] || '';
+    const secret = process.env.MCC_WEBHOOK_SECRET || '';
+    const hmac = crypto.createHmac('sha256', secret).update(req.rawBody || '').digest('hex');
+    if (secret && signature !== hmac) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    const { event, data } = req.body;
+    if (event === 'payment.completed' && data?.referenceId) {
+      const orderId = data.referenceId;
+      const orderRes = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [orderId]);
+      if (orderRes.rows.length === 0) return res.json({ received: true });
+      const sellerId = orderRes.rows[0].buyer_id;
+
+      const isSubscriptionOrder = orderId.startsWith('sub_');
+      if (isSubscriptionOrder) {
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+        const existing = await pool.query(
+          `SELECT id FROM seller_subscriptions WHERE seller_id = $1 AND status IN ('active', 'past_due') ORDER BY expires_at DESC LIMIT 1`,
+          [sellerId]
+        );
+
+        if (existing.rows.length > 0) {
+          await pool.query(
+            `UPDATE seller_subscriptions SET status = 'active', expires_at = $2, last_payment_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+            [existing.rows[0].id, expiresAt]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO seller_subscriptions (seller_id, status, started_at, expires_at, last_payment_at) VALUES ($1, 'active', CURRENT_TIMESTAMP, $2, CURRENT_TIMESTAMP)`,
+            [sellerId, expiresAt]
+          );
+        }
+
+        await pool.query('UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['completed', orderId]);
+        await pool.query(
+          `UPDATE users SET seller_tier = 'business', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND seller_tier != 'business'`,
+          [sellerId]
+        );
+        createNotification(sellerId, 'subscription_activated', 'Business Subscription Active', `Your Business subscription is active until ${expiresAt.toLocaleDateString()}.`, {});
+      }
+    }
+    res.json({ received: true });
+  } catch (err) {
+    console.error('Subscription webhook error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Subscription status check helper ─────
+
+async function checkSubscriptionStatus(sellerId) {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM seller_subscriptions WHERE seller_id = $1 AND status IN ('active', 'past_due') ORDER BY expires_at DESC LIMIT 1`,
+      [sellerId]
+    );
+    if (result.rows.length === 0) return 'no_subscription';
+    const sub = result.rows[0];
+    const now = new Date();
+    const expiresAt = new Date(sub.expires_at);
+    const graceEnd = new Date(expiresAt.getTime() + (sub.grace_period_days || 7) * 86400000);
+    if (now < expiresAt) return 'active';
+    if (now < graceEnd) return 'past_due';
+    return 'expired';
+  } catch {
+    return 'unknown';
+  }
+}
 
 app.get('/api/health', async (_req, res) => {
   try {

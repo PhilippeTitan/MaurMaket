@@ -57,7 +57,6 @@ export default function SettingsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [storeLogoUploading, setStoreLogoUploading] = useState(false);
-  const [idUploading, setIdUploading] = useState(false);
 
   const avatarUrl = getImageUrl(user?.avatar_url);
 
@@ -125,39 +124,9 @@ export default function SettingsScreen({ navigation }: Props) {
     }
   };
 
-  const handlePickId = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setIdUploading(true);
-      try {
-        const uploadRes = await uploadImage(result.assets[0].uri);
-        const res = await updateSellerProfile({ idDocumentUrl: uploadRes.url }) as { user: typeof user };
-        if (res.user) await store.setUser(res.user, store.token);
-        Alert.alert(t('settings.success'), t('settings.idSubmitted'));
-      } catch (err: unknown) {
-        Alert.alert(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
-      }
-      setIdUploading(false);
-    }
-  };
-
   const goEdit = (field: 'name' | 'email' | 'phone' | 'bio' | 'password' | 'storeName', title: string) => {
     navigation.navigate('SettingsEdit', { field, title });
   };
-
-  const verificationLabel = user?.id_verified
-    ? t('settings.identityVerified')
-    : user?.id_submitted_at
-      ? t('settings.verificationPending')
-      : t('settings.notVerified');
-  const verificationColor = user?.id_verified
-    ? COLORS.green
-    : user?.id_submitted_at
-      ? COLORS.yellow
-      : COLORS.text2;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
@@ -258,21 +227,13 @@ export default function SettingsScreen({ navigation }: Props) {
             {user?.seller_tier !== 'business' && (
               <>
                 <View style={styles.divider} />
-                <View style={styles.statusRow}>
-                  <MaterialCommunityIcons
-                    name={user?.id_verified ? 'shield-check' : user?.id_submitted_at ? 'clock-outline' : 'shield-plus-outline'}
-                    size={18}
-                    color={verificationColor}
-                  />
-                  <Text style={styles.statusLabel}>{t('settings.uploadId')}</Text>
-                  <Text style={[styles.statusValue, { color: verificationColor }]}>{verificationLabel}</Text>
-                </View>
-                {!user?.id_verified && !user?.id_submitted_at && (
-                  <TouchableOpacity style={styles.idUploadRow} onPress={handlePickId} disabled={idUploading}>
-                    <MaterialCommunityIcons name="card-account-details-outline" size={18} color={COLORS.blue} />
-                    <Text style={styles.idUploadText}>{idUploading ? t('settings.uploading') : t('settings.uploadId')}</Text>
-                  </TouchableOpacity>
-                )}
+                <SettingRow
+                  icon={user?.id_verification_result === 'verified' ? 'shield-check' : 'shield-plus-outline'}
+                  iconColor={user?.id_verification_result === 'verified' ? COLORS.green : COLORS.blue}
+                  label={t('settings.verifyIdentity')}
+                  value={user?.id_verification_result === 'verified' ? t('settings.verified') : user?.id_verification_result === 'pending' ? t('settings.pending') : t('settings.notVerified')}
+                  onPress={() => navigation.navigate('Verification')}
+                />
               </>
             )}
           </View>
@@ -302,9 +263,23 @@ export default function SettingsScreen({ navigation }: Props) {
             <SettingRow
               icon="storefront-outline"
               iconColor={COLORS.coral}
-              label={t('settings.upgradeSeller')}
+              label={t('settings.goBusiness')}
               value={t('settings.businessSeller')}
-              onPress={() => { navigation.navigate('SellerOnboarding'); }}
+              onPress={() => { navigation.navigate('BusinessSubscription'); }}
+            />
+          </View>
+        </>
+      )}
+
+      {isSeller && user?.seller_tier === 'business' && (
+        <>
+          <SectionHeader title={t('settings.subscription')} />
+          <View style={styles.card}>
+            <SettingRow
+              icon="calendar-clock-outline"
+              iconColor={COLORS.green}
+              label={t('settings.businessSubscription')}
+              onPress={() => { navigation.navigate('BusinessSubscription'); }}
             />
           </View>
         </>

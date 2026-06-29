@@ -9,11 +9,12 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
 import { useTranslation } from '../i18n';
-import { getConversations, getNotifications, markNotificationRead, getFollowing, getImageUrl, createConversation } from '../api';
+import { getConversations, getNotifications, markNotificationRead, markAllNotificationsRead, getFollowing, getImageUrl, createConversation } from '../api';
 import type { Conversation, Notification, User } from '../types';
 import type { RootStackParamList } from '../navigation';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+type InboxTab = 'messages' | 'notifications';
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -32,6 +33,7 @@ export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'Inbox'>>();
+  const [activeTab, setActiveTab] = useState<InboxTab>('messages');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,9 +49,9 @@ export default function InboxScreen() {
         getFollowing() as Promise<{ following: User[] }>,
       ]);
       setConversations(convos.conversations || []);
-      setNotifications((notifs.notifications || []).slice(0, 3));
+      setNotifications(notifs.notifications || []);
       setFollowedSellers(followingRes.following || []);
-    } catch { Alert.alert(t('common.error'), 'Could not load messages.'); }
+    } catch { Alert.alert(t('common.error'), 'Could not load data.'); }
     setLoading(false);
   }, []);
 
@@ -64,10 +66,16 @@ export default function InboxScreen() {
   const handleNotificationPress = async (notif: Notification) => {
     if (!notif.is_read) {
       try { await markNotificationRead(notif.id); } catch { /* silent */ }
+      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
     }
     if (notif.data && (notif.data as any).orderId) {
       nav.navigate('OrderDetail', { orderId: (notif.data as any).orderId });
     }
+  };
+
+  const handleMarkAllRead = async () => {
+    try { await markAllNotificationsRead(); } catch { /* silent */ }
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 
   const handleBack = () => {
@@ -82,6 +90,8 @@ export default function InboxScreen() {
     nav.navigate('Main', { screen: 'FeedTab' });
   };
 
+  const unreadNotifCount = notifications.filter(n => !n.is_read).length;
+
   const filteredConversations = conversations
     .slice()
     .sort((a, b) => {
@@ -90,12 +100,12 @@ export default function InboxScreen() {
       return ta - tb;
     })
     .filter(c => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    const name = ((c as any).other_party_name || '').toLowerCase();
-    const msg = ((c as any).last_message || '').toLowerCase();
-    return name.includes(q) || msg.includes(q);
-  });
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      const name = ((c as any).other_party_name || '').toLowerCase();
+      const msg = ((c as any).last_message || '').toLowerCase();
+      return name.includes(q) || msg.includes(q);
+    });
 
   const renderConversation = ({ item }: { item: Conversation }) => {
     const otherName = (item as any).other_party_name || 'Seller';
@@ -128,6 +138,20 @@ export default function InboxScreen() {
       </TouchableOpacity>
     );
   };
+
+  const renderNotification = ({ item }: { item: Notification }) => (
+    <TouchableOpacity
+      style={[styles.notifItem, !item.is_read && styles.notifItemUnread]}
+      onPress={() => handleNotificationPress(item)}
+    >
+      <View style={[styles.notifDot, !item.is_read && styles.notifDotUnread]} />
+      <View style={styles.notifInfo}>
+        <Text style={styles.notifTitle}>{item.title}</Text>
+        {item.body && <Text style={styles.notifBody} numberOfLines={2}>{item.body}</Text>}
+        <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
+      </View>
+    </TouchableOpacity>
+  );
 
   const SellerBubble = ({ seller }: { seller: User }) => {
     const initial = (seller.full_name || '?')[0];
@@ -165,8 +189,78 @@ export default function InboxScreen() {
     );
   };
 
-  const ListHeader = () => (
-    <>
+  const renderMessagesTab = () => (
+    <FlatList
+      data={filteredConversations}
+      renderItem={renderConversation}
+      keyExtractor={item => item.id}
+      ListHeaderComponent={
+        <>
+          <View style={styles.searchBarWrap}>
+            <View style={styles.searchBar}>
+              <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
+              <TextInput
+                style={styles.searchBarInput}
+                placeholder="Search messages..."
+                placeholderTextColor={COLORS.text2}
+                value={search}
+                onChangeText={setSearch}
+              />
+              {search.length > 0 && (
+                <TouchableOpacity onPress={() => setSearch('')}>
+                  <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text2} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+          {followedSellers.length > 0 && (
+            <View style={styles.bubblesSection}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
+                {followedSellers.map(seller => (
+                  <SellerBubble key={seller.id} seller={seller} />
+                ))}
+              </ScrollView>
+            </View>
+          )}
+        </>
+      }
+      contentContainerStyle={{ paddingBottom: 100 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
+      ListEmptyComponent={
+        loading ? (
+          <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
+        ) : !refreshing ? (
+          <View style={styles.empty}>
+            <MaterialCommunityIcons name="message-outline" size={40} color={COLORS.text2} />
+            <Text style={styles.emptyText}>{t('inbox.noMessages')}</Text>
+          </View>
+        ) : null
+      }
+    />
+  );
+
+  const renderNotificationsTab = () => (
+    <FlatList
+      data={notifications}
+      renderItem={renderNotification}
+      keyExtractor={item => item.id}
+      contentContainerStyle={{ paddingBottom: 100 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
+      ListEmptyComponent={
+        loading ? (
+          <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
+        ) : (
+          <View style={styles.empty}>
+            <MaterialCommunityIcons name="bell-outline" size={40} color={COLORS.text2} />
+            <Text style={styles.emptyText}>No notifications yet</Text>
+          </View>
+        )
+      }
+    />
+  );
+
+  return (
+    <View style={styles.container}>
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
         {(route.params?.returnTab || nav.canGoBack()) && (
           <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
@@ -176,70 +270,33 @@ export default function InboxScreen() {
         <Text style={styles.title}>{t('inbox.title')}</Text>
       </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchBarWrap}>
-        <View style={styles.searchBar}>
-          <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
-          <TextInput
-            style={styles.searchBarInput}
-            placeholder="Search messages..."
-            placeholderTextColor={COLORS.text2}
-            value={search}
-            onChangeText={setSearch}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
-              <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text2} />
-            </TouchableOpacity>
+      {/* Tab Switcher */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'messages' && styles.tabActive]}
+          onPress={() => setActiveTab('messages')}
+        >
+          <Text style={[styles.tabText, activeTab === 'messages' && styles.tabTextActive]}>Messages</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'notifications' && styles.tabActive]}
+          onPress={() => setActiveTab('notifications')}
+        >
+          <Text style={[styles.tabText, activeTab === 'notifications' && styles.tabTextActive]}>Notifications</Text>
+          {unreadNotifCount > 0 && (
+            <View style={styles.tabBadge}>
+              <Text style={styles.tabBadgeText}>{unreadNotifCount > 9 ? '9+' : unreadNotifCount}</Text>
+            </View>
           )}
-        </View>
+        </TouchableOpacity>
+        {activeTab === 'notifications' && unreadNotifCount > 0 && (
+          <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn}>
+            <Text style={styles.markAllText}>Mark all read</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Seller Bubbles */}
-      {followedSellers.length > 0 && (
-        <View style={styles.bubblesSection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
-            {followedSellers.map(seller => (
-              <SellerBubble key={seller.id} seller={seller} />
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      {notifications.length > 0 && (
-        <TouchableOpacity style={styles.notifBanner} onPress={() => handleNotificationPress(notifications[0])}>
-          <MaterialCommunityIcons name="package-variant" size={18} color={COLORS.yellow} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.notifText}>{notifications[0].title}</Text>
-            <Text style={styles.notifSub}>{timeAgo(notifications[0].created_at)} - tap to view</Text>
-          </View>
-        </TouchableOpacity>
-      )}
-    </>
-  );
-
-  return (
-    <View style={styles.container}>
-      <FlatList
-        data={filteredConversations}
-        renderItem={renderConversation}
-        keyExtractor={item => item.id}
-        ListHeaderComponent={<ListHeader />}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />
-        }
-        ListEmptyComponent={
-          loading ? (
-            <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
-          ) : !refreshing ? (
-            <View style={styles.empty}>
-              <MaterialCommunityIcons name="message-outline" size={40} color={COLORS.text2} />
-              <Text style={styles.emptyText}>{t('inbox.noMessages')}</Text>
-            </View>
-          ) : null
-        }
-      />
+      {activeTab === 'messages' ? renderMessagesTab() : renderNotificationsTab()}
     </View>
   );
 }
@@ -247,26 +304,24 @@ export default function InboxScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: SPACING.md,
-    paddingBottom: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: SPACING.md, paddingBottom: SPACING.sm,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   backBtn: { padding: 2 },
   title: { fontSize: 18, color: COLORS.text, fontWeight: '700' },
-  notifBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    margin: SPACING.md, marginBottom: 0,
-    backgroundColor: 'rgba(255,209,102,0.1)', borderWidth: 1, borderColor: 'rgba(255,209,102,0.3)',
-    borderRadius: 10, padding: SPACING.md,
+  tabBar: {
+    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
   },
-  notifText: { fontSize: 12, color: COLORS.text, lineHeight: 18 },
-  notifSub: { fontSize: 10, color: COLORS.text2, marginTop: 2 },
-
-  /* Search Bar */
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
+  tabActive: { borderBottomWidth: 2, borderBottomColor: COLORS.coral },
+  tabText: { fontSize: 13, color: COLORS.text2, fontWeight: '500' },
+  tabTextActive: { color: COLORS.text, fontWeight: '700' },
+  tabBadge: { backgroundColor: COLORS.coral, borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  tabBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: '700' },
+  markAllBtn: { position: 'absolute', right: SPACING.md, top: 12 },
+  markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '500' },
   searchBarWrap: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -274,21 +329,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, height: 38,
   },
   searchBarInput: { flex: 1, color: COLORS.text, fontSize: 14, paddingVertical: 0 },
-
-  /* Seller Bubbles */
   bubblesSection: { paddingTop: SPACING.sm, paddingBottom: 4 },
   bubblesRow: { paddingHorizontal: SPACING.md, gap: 14 },
   sellerBubble: { alignItems: 'center', width: 64 },
-  sellerBubbleRing: {
-    width: 60, height: 60, borderRadius: 30, borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  sellerBubbleRing: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   sellerBubbleAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   sellerBubbleImg: { width: 54, height: 54, borderRadius: 27 },
   sellerBubbleText: { fontSize: 20, color: COLORS.white, fontWeight: '700' },
   sellerBubbleName: { fontSize: 11, color: COLORS.text2, marginTop: 4, textAlign: 'center' },
-
-  /* Conversations */
   convo: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 10 },
   convoAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   convoAvatarImg: { width: 44, height: 44, borderRadius: 22 },
@@ -301,6 +349,14 @@ const styles = StyleSheet.create({
   convoRight: { alignItems: 'flex-end', gap: 4 },
   convoTime: { fontSize: 10, color: COLORS.text2 },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.coral },
+  notifItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  notifItemUnread: { backgroundColor: COLORS.surface },
+  notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.border, marginTop: 5 },
+  notifDotUnread: { backgroundColor: COLORS.coral },
+  notifInfo: { flex: 1 },
+  notifTitle: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  notifBody: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+  notifTime: { fontSize: 11, color: COLORS.text2, marginTop: 4 },
   empty: { alignItems: 'center', justifyContent: 'center', paddingTop: 100, gap: 8 },
   emptyText: { fontSize: 14, color: COLORS.text2 },
 });

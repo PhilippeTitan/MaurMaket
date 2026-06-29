@@ -28,7 +28,8 @@ import StorefrontScreen from './src/screens/StorefrontScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import OrdersScreen from './src/screens/OrdersScreen';
 import ChatScreen from './src/screens/ChatScreen';
-import NotificationsScreen from './src/screens/NotificationsScreen';
+import VerificationScreen from './src/screens/VerificationScreen';
+import BusinessSubscriptionScreen from './src/screens/BusinessSubscriptionScreen';
 import OrderDetailScreen from './src/screens/OrderDetailScreen';
 import WishlistScreen from './src/screens/WishlistScreen';
 import AddressesScreen from './src/screens/AddressesScreen';
@@ -261,7 +262,8 @@ export default function App() {
             <Stack.Screen name="Orders" component={OrdersScreen} />
             <Stack.Screen name="Inbox" component={InboxScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
-            <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            <Stack.Screen name="Verification" component={VerificationScreen} />
+            <Stack.Screen name="BusinessSubscription" component={BusinessSubscriptionScreen} />
             <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
             <Stack.Screen name="Wishlist" component={WishlistScreen} />
             <Stack.Screen name="Addresses" component={AddressesScreen} />

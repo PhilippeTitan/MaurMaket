@@ -34,7 +34,8 @@ export type RootStackParamList = {
       listPrice: number;
     };
   };
-  Notifications: undefined;
+  Verification: undefined;
+  BusinessSubscription: undefined;
   OrderDetail: { orderId: string };
   Wishlist: undefined;
   Addresses: undefined;

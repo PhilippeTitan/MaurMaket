@@ -59,6 +59,8 @@ Haitian marketplace (e-commerce) app connecting buyers and sellers. React Native
 │       ├── AddressesScreen.tsx # Saved addresses
 │       ├── PaymentsScreen.tsx  # Seller balance + payouts
 │       ├── PaymentReturnScreen.tsx # MonCash return polling
+│       ├── VerificationScreen.tsx  # ID verification (CIN front/back + selfie)
+│       ├── BusinessSubscriptionScreen.tsx # Business tier payment
 │       ├── LoginScreen.tsx     # Sign in
 │       └── SignupScreen.tsx    # Create account
 ├── assets/                # App icons + splash
@@ -302,6 +304,43 @@ Haitian marketplace (e-commerce) app connecting buyers and sellers. React Native
 
 Commission is deducted at payment time in the webhook handler. `seller_balances` stores NET amounts (after commission).
 
+## Tier System, Verification & Subscription
+
+### Tier Progression (one-way, enforced server-side)
+```
+Buyer → Casual Seller (free, instant) → Verified Seller (free, ID verification) → Business Seller (Rs 2,500/mo)
+```
+
+| Tier | Cost | Commission | Listings | Payouts | Analytics | Store Name | Promo Codes | Trust Badge |
+|------|------|-----------|----------|---------|-----------|------------|-------------|-------------|
+| Casual | Free | 10% | Max 10 | No | No | No | No | No |
+| Verified | Free | 8% | Unlimited | Yes | Overview only | No | No | Yes (shield) |
+| Business | Rs 2,500/mo | 5% | Unlimited | Yes | Full + top products | Yes | Yes | Yes (shield) |
+
+### ID Verification System
+- **Haitian CIN**: front + back capture via `expo-camera`
+- **OCR**: `@react-native-ml-kit/text-recognition` (on-device, free)
+- **Face match**: `@react-native-ml-kit/face-detection` (on-device, free)
+- **Validation**: CIN front (name, DOB, place of birth, CIN number) + CIN back (sex) + selfie vs CIN face comparison
+- **Auto-verify**: if all OCR fields present + name matches profile + face score > 0.65
+- **Manual review**: if OCR quality low or fields don't match → pending status
+- **Privacy**: ID images deleted after verification completes
+- **DB table**: `verification_attempts` stores results, `users.id_verification_result` tracks status
+
+### Business Subscription
+- **Price**: Rs 2,500/month via MonCash
+- **Grace period**: 7 days after expiry with daily reminders
+- **Auto-demotion**: if not renewed within grace → tier demoted to Verified
+- **DB table**: `seller_subscriptions` tracks active subscriptions
+- **Demotion check**: on login, product create, payout request, seller dashboard
+
+### Verification + Subscription New Tables
+```sql
+verification_attempts (id, user_id, status, id_front_url, id_back_url, selfie_url, ocr_result, face_match_score, rejection_reason, created_at, verified_at)
+seller_subscriptions (id, seller_id, status, started_at, expires_at, last_payment_at, grace_period_days, created_at, updated_at)
+users.id_verification_result: 'pending' | 'verified' | 'rejected'
+```
+
 ## API Endpoints (all under /api)
 
 ### Auth
@@ -383,6 +422,17 @@ Commission is deducted at payment time in the webhook handler. `seller_balances`
 
 ### Other
 - **POST /api/upload** — Bearer + multipart `image` (max 5MB) → `{url}`
+
+### Verification
+- **POST /api/verification/submit** — Bearer, body `{idFrontUrl, idBackUrl, selfieUrl, ocrResult, faceMatchScore}` → `{attempt}`
+- **GET /api/verification/status** — Bearer → `{status, attempt}`
+- **DELETE /api/verification/images/:id** — Bearer. Deletes stored images after verification.
+
+### Subscriptions
+- **POST /api/subscriptions/create** — Bearer → `{paymentUrl}`
+- **GET /api/subscriptions/current** — Bearer → `{subscription}`
+- **POST /api/subscriptions/renew** — Bearer → `{paymentUrl}`
+- **POST /api/subscriptions/webhook** — No auth. Handles MonCash webhook for subscription payments.
 - **POST /api/promos** — Bearer+Seller. Create promo code.
 - **GET /api/promos/mine** — Bearer+Seller. List own promos.
 - **POST /api/promos/validate** — Bearer. Validate promo code.
@@ -530,3 +580,24 @@ Commission is deducted at payment time in the webhook handler. `seller_balances`
 9. `resizeMode="contain"` causes letterbox gaps — use `cover` + dynamic heights
 10. The app's real competition is WhatsApp + Facebook Marketplace, not Vinted/Depop
 11. Multi-image listings are the #1 missing trust signal in C2C commerce
+
+## Session 6 — 2026-06-28 (ID Verification + Subscription + Inbox Redesign)
+
+### Packages Installed
+- `expo-camera` — live camera for CIN capture + selfie
+- `@react-native-ml-kit/text-recognition` — on-device OCR (Haitian CIN)
+- `@react-native-ml-kit/face-detection` — on-device face detection for selfie↔CIN comparison
+
+### DB Schema Added
+- `verification_attempts` table — stores CIN front/back, selfie, OCR results, face match score
+- `seller_subscriptions` table — tracks monthly business subscriptions with status + expiry
+- `users.id_verification_result` column — 'pending' | 'verified' | 'rejected'
+
+### New Screens (in progress)
+- `VerificationScreen.tsx` — CIN front+back capture, selfie, OCR validation, face match
+- `BusinessSubscriptionScreen.tsx` — Rs 2,500/mo MonCash payment, renewal flow
+
+### Inbox Redesign (in progress)
+- `InboxScreen.tsx` refactored with Messages + Notifications tabs (Instagram-style)
+- `NotificationsScreen.tsx` deleted — merged into InboxScreen notifications tab
+- Tab badge shows unread notification count

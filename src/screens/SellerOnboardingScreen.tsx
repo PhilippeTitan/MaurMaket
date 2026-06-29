@@ -89,7 +89,8 @@ export default function SellerOnboardingScreen() {
     if (tier === 'casual') {
       handleCompleteWithTier('casual');
     } else if (tier === 'verified') {
-      setStep('verify');
+      handleCompleteWithTier('verified');
+      nav.navigate('Verification');
     } else if (tier === 'business') {
       setStep('store');
     }
@@ -230,7 +231,10 @@ export default function SellerOnboardingScreen() {
 
             <TouchableOpacity
               style={[styles.primaryBtn, !storeName.trim() && styles.primaryBtnDisabled]}
-              onPress={() => setStep('verify')}
+              onPress={async () => {
+                const success = await handleComplete(false);
+                if (success !== false) nav.navigate('BusinessSubscription');
+              }}
               disabled={!storeName.trim() || loading}
             >
               <Text style={styles.primaryBtnText}>{t('sellerOnboarding.continue')}</Text>
@@ -241,57 +245,11 @@ export default function SellerOnboardingScreen() {
           </View>
         );
 
-      case 'verify':
-        return (
-          <View style={styles.stepContent}>
-            <View style={styles.iconCircle}>
-              <MaterialCommunityIcons name="shield-check-outline" size={40} color={COLORS.green} />
-            </View>
-            <Text style={styles.title}>{t('sellerOnboarding.verifyIdentity')}</Text>
-            <Text style={styles.subtitle}>
-              {t('sellerOnboarding.verifySubtitle')}
-            </Text>
-
-            <TouchableOpacity style={styles.idPicker} onPress={handlePickId} disabled={pickLoading}>
-              {pickLoading ? (
-                <ActivityIndicator size="small" color={COLORS.coral} />
-              ) : idDocUrl ? (
-                <View style={styles.idUploaded}>
-                  <MaterialCommunityIcons name="check-circle" size={24} color={COLORS.green} />
-                  <Text style={styles.idUploadedText}>{t('sellerOnboarding.idUploaded')}</Text>
-                </View>
-              ) : (
-                <View style={styles.idPlaceholder}>
-                  <MaterialCommunityIcons name="card-account-details-outline" size={32} color={COLORS.text2} />
-                  <Text style={styles.idPlaceholderText}>{t('sellerOnboarding.tapToUpload')}</Text>
-                  <Text style={styles.idPlaceholderHint}>{t('sellerOnboarding.idFormat')}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.primaryBtn, { flexDirection: 'row', justifyContent: 'center', gap: 8 }]}
-              onPress={async () => {
-                const success = await handleComplete(false);
-                if (success !== false) nav.navigate('AddListing');
-              }}
-            >
-              <MaterialCommunityIcons name="plus" size={18} color={COLORS.white} />
-              <Text style={styles.primaryBtnText}>{t('sellerOnboarding.addFirstListing')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.linkBtn} onPress={async () => {
-              const success = await handleComplete();
-              if (success !== false) nav.goBack();
-            }}>
-              <Text style={styles.linkBtnText}>{t('sellerOnboarding.doItLater')}</Text>
-            </TouchableOpacity>
-          </View>
-        );
     }
   };
 
-  const totalSteps = chosenTier === 'business' ? 4 : chosenTier === 'verified' ? 3 : 2;
-  const currentStepIdx = step === 'welcome' ? 0 : step === 'choose' ? 1 : step === 'store' ? 2 : step === 'verify' ? 3 : 4;
+  const totalSteps = chosenTier === 'business' ? 3 : chosenTier === 'verified' ? 2 : 2;
+  const currentStepIdx = step === 'welcome' ? 0 : step === 'choose' ? 1 : step === 'store' ? 2 : 3;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xl }]}>

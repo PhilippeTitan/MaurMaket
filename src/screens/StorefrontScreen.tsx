@@ -131,6 +131,11 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Text style={styles.sellerName}>{getDisplayName(seller)}</Text>
+                {seller?.seller_tier === 'business' && (
+                  <View style={{ backgroundColor: COLORS.coral + '20', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: COLORS.coral, textTransform: 'uppercase' }}>Business</Text>
+                  </View>
+                )}
                 {seller && (seller.seller_tier === 'verified' || seller.seller_tier === 'business') && (
                   <MaterialCommunityIcons name="shield-check" size={16} color={COLORS.blue} />
                 )}
