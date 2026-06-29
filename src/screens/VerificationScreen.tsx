@@ -1,12 +1,8 @@
 import React, { useState, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
-import TextRecognition from '@react-native-ml-kit/text-recognition';
-import FaceDetection from '@react-native-ml-kit/face-detection';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../theme';
@@ -15,6 +11,20 @@ import { useTranslation } from '../i18n';
 import { uploadImage, submitVerification } from '../api';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
+
+let CameraView: any = null;
+let useCameraPermissions: any = () => [null, () => {}];
+let ImagePicker: any = null;
+let TextRecognition: any = null;
+let FaceDetection: any = null;
+if (Platform.OS !== 'web') {
+  const cam = require('expo-camera');
+  CameraView = cam.CameraView;
+  useCameraPermissions = cam.useCameraPermissions;
+  ImagePicker = require('expo-image-picker');
+  TextRecognition = require('@react-native-ml-kit/text-recognition').default;
+  FaceDetection = require('@react-native-ml-kit/face-detection').default;
+}
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -56,7 +66,7 @@ export default function VerificationScreen() {
       const text = result.text;
       const fields: OcrFields = {};
 
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
       const fullText = lines.join(' ');
 
       const cinMatch = fullText.match(/\b(\d{8,12})\b/);

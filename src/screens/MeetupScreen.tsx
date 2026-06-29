@@ -4,17 +4,18 @@ import {
   ScrollView, Modal, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
 import { COLORS, SPACING } from '../theme';
 
 let MapView: any = null;
 let Marker: any = null;
 let Circle: any = null;
+let ExpoLocation: any = null;
 if (Platform.OS !== 'web') {
   const maps = require('react-native-maps');
   MapView = maps.default;
   Marker = maps.Marker;
   Circle = maps.Circle;
+  ExpoLocation = require('expo-location');
 }
 import { store } from '../store';
 import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow, extendMeetup } from '../api';
@@ -54,7 +55,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
   const [refunding, setRefunding] = useState(false);
   const [timeLeft, setTimeLeft] = useState(MEETUP_TIMEOUT_MS);
   const [checkins, setCheckins] = useState<any[]>([]);
-  const locationWatcher = useRef<Location.LocationSubscription | null>(null);
+  const locationWatcher = useRef<any>(null);
 
   const isBuyer = order ? store.user?.id === order.buyer_id : false;
   const isSeller = order ? order.items?.some((i: any) => i.seller_id === store.user?.id) : false;
@@ -102,16 +103,17 @@ export default function MeetupScreen({ route, navigation }: Props) {
   }, []);
 
   useEffect(() => {
+    if (Platform.OS === 'web' || !ExpoLocation) return;
     let active = true;
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Location needed', 'Please enable location services to check in at the meetup.');
         return;
       }
-      locationWatcher.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
-        (pos) => {
+      locationWatcher.current = await ExpoLocation.watchPositionAsync(
+        { accuracy: ExpoLocation.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+        (pos: any) => {
           if (!active) return;
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
