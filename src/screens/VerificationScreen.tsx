@@ -42,6 +42,7 @@ export default function VerificationScreen() {
   const [faceScore, setFaceScore] = useState<number | null>(null);
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
   const [permission, requestPermission] = useCameraPermissions();
+  const [rejectedReasons, setRejectedReasons] = useState<string | null>(null);
   const cameraRef = useRef<any>(null);
 
   const totalSteps = 4;
@@ -184,18 +185,23 @@ export default function VerificationScreen() {
         cinNumber: frontOcr.cinNumber || '',
         sex: backOcr.sex || '',
       };
-      await submitVerification({
+      const res = await submitVerification({
         idFrontUrl,
         idBackUrl,
         selfieUrl,
         ocrResult,
         faceMatchScore: faceScore || 0,
-      });
-      Alert.alert(
-        t('common.success'),
-        'Verification submitted! You will be notified when it is reviewed.',
-        [{ text: 'OK', onPress: () => nav.goBack() }]
-      );
+      }) as { attempt: { status: string; rejection_reason?: string } };
+
+      if (res.attempt.status === 'verified') {
+        Alert.alert(
+          'Verified!',
+          'Your identity has been verified. You are now a Verified Seller.',
+          [{ text: 'OK', onPress: () => nav.goBack() }]
+        );
+      } else {
+        setRejectedReasons(res.attempt.rejection_reason || 'Verification failed. Please try again.');
+      }
     } catch (e: any) {
       Alert.alert(t('common.error'), e.message || 'Submission failed');
     }
@@ -349,13 +355,38 @@ export default function VerificationScreen() {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.retakeBtn} onPress={() => { setStep('cinFront'); setIdFrontUrl(''); setIdBackUrl(''); setSelfieUrl(''); setFrontOcr({}); setBackOcr({}); setFaceScore(null); }}>
+      <TouchableOpacity style={styles.retakeBtn} onPress={() => { setStep('cinFront'); setIdFrontUrl(''); setIdBackUrl(''); setSelfieUrl(''); setFrontOcr({}); setBackOcr({}); setFaceScore(null); setRejectedReasons(null); }}>
         <Text style={styles.retakeBtnText}>Retake All Photos</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 
-  if (loading && step === 'review') {
+  const renderRejected = () => (
+    <View style={styles.content}>
+      <View style={styles.infoIcon}>
+        <MaterialCommunityIcons name="close-circle-outline" size={48} color={COLORS.coral} />
+      </View>
+      <Text style={styles.infoTitle}>Verification Failed</Text>
+      <Text style={styles.infoDesc}>
+        We couldn't verify your identity. Please review the issues below and try again.
+      </Text>
+      {rejectedReasons && (
+        <View style={styles.rejectionBox}>
+          {rejectedReasons.split('. ').filter(Boolean).map((reason, i) => (
+            <View key={i} style={styles.rejectionItem}>
+              <MaterialCommunityIcons name="alert-circle" size={14} color={COLORS.coral} />
+              <Text style={styles.rejectionText}>{reason}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => { setStep('cinFront'); setIdFrontUrl(''); setIdBackUrl(''); setSelfieUrl(''); setFrontOcr({}); setBackOcr({}); setFaceScore(null); setRejectedReasons(null); }}>
+        <Text style={styles.primaryBtnText}>Try Again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  if (loading && step === 'review' && !rejectedReasons) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.topBar}>
@@ -387,7 +418,8 @@ export default function VerificationScreen() {
       {step === 'cinFront' && renderCamera('back', () => captureImage('front'), 'Capture the front of your CIN')}
       {step === 'cinBack' && renderCamera('back', () => captureImage('back'), 'Capture the back of your CIN')}
       {step === 'selfie' && renderCamera('front', captureSelfie, 'Take a selfie')}
-      {step === 'review' && renderReview()}
+      {step === 'review' && !rejectedReasons && renderReview()}
+      {rejectedReasons && renderRejected()}
     </View>
   );
 }
@@ -452,4 +484,10 @@ const styles = StyleSheet.create({
   loadingText: { fontSize: 14, color: COLORS.text2, marginTop: 12 },
   retakeBtn: { padding: 12, alignItems: 'center', marginTop: 8 },
   retakeBtnText: { color: COLORS.text2, fontSize: 13, fontWeight: '600' },
+  rejectionBox: {
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.coral,
+    borderRadius: 12, padding: 14, marginBottom: 24, gap: 8,
+  },
+  rejectionItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  rejectionText: { fontSize: 13, color: COLORS.text, flex: 1, lineHeight: 18 },
 });

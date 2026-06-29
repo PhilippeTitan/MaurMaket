@@ -3157,33 +3157,40 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
   }
   try {
     const existing = await pool.query(
-      `SELECT id, status FROM verification_attempts WHERE user_id = $1 AND status IN ('pending', 'verified') ORDER BY created_at DESC LIMIT 1`,
+      `SELECT id, status FROM verification_attempts WHERE user_id = $1 AND status = 'verified' ORDER BY created_at DESC LIMIT 1`,
       [req.user.id]
     );
-    if (existing.rows.length > 0 && existing.rows[0].status === 'verified') {
+    if (existing.rows.length > 0) {
       return res.status(400).json({ error: 'Already verified' });
     }
 
-    let autoStatus = 'pending';
+    let autoStatus = 'rejected';
     let rejectionReason = null;
 
     if (ocrResult && faceMatchScore) {
-      const nameMatch = ocrResult.fullName &&
-        ocrResult.fullName.toLowerCase().trim() === (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name?.toLowerCase().trim();
+      const userRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+      const userName = userRes.rows[0]?.full_name?.toLowerCase().trim();
+      const nameMatch = ocrResult.fullName && ocrResult.fullName.toLowerCase().trim() === userName;
       const hasCinNumber = ocrResult.cinNumber && /^\d{8,12}$/.test(ocrResult.cinNumber);
       const hasDob = ocrResult.dateOfBirth;
+      const hasPlaceOfBirth = ocrResult.placeOfBirth && ocrResult.placeOfBirth.length > 2;
+      const hasSex = ocrResult.sex && ocrResult.sex.length > 0;
       const faceOk = parseFloat(faceMatchScore) > 0.65;
 
-      if (nameMatch && hasCinNumber && hasDob && faceOk) {
+      if (nameMatch && hasCinNumber && hasDob && hasPlaceOfBirth && hasSex && faceOk) {
         autoStatus = 'verified';
       } else {
         const issues = [];
-        if (!nameMatch) issues.push('name_mismatch');
-        if (!hasCinNumber) issues.push('invalid_cin_number');
-        if (!hasDob) issues.push('missing_dob');
-        if (!faceOk) issues.push('face_match_failed');
-        rejectionReason = issues.join(',');
+        if (!nameMatch) issues.push('Name on CIN does not match your profile name');
+        if (!hasCinNumber) issues.push('CIN number not recognized');
+        if (!hasDob) issues.push('Date of birth not found on card');
+        if (!hasPlaceOfBirth) issues.push('Place of birth not found on card');
+        if (!hasSex) issues.push('Sex not found on CIN back');
+        if (!faceOk) issues.push('No face detected or face does not match');
+        rejectionReason = issues.join('. ');
       }
+    } else {
+      rejectionReason = 'OCR data or face detection missing — please ensure all photos are clear';
     }
 
     const result = await pool.query(
@@ -3199,12 +3206,17 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         [req.user.id]
       );
       createNotification(req.user.id, 'verification_approved', 'Identity Verified', 'Your identity has been verified! You are now a Verified Seller.', {});
+
+      // Auto-cleanup: NULL out image URLs (imgbb has 24h expiration)
+      await pool.query(
+        `UPDATE verification_attempts SET id_front_url = NULL, id_back_url = NULL, selfie_url = NULL WHERE id = $1`,
+        [result.rows[0].id]
+      );
     } else {
       await pool.query(
-        `UPDATE users SET id_submitted_at = CURRENT_TIMESTAMP, id_verification_result = 'pending' WHERE id = $1`,
+        `UPDATE users SET id_submitted_at = CURRENT_TIMESTAMP, id_verification_result = 'rejected' WHERE id = $1`,
         [req.user.id]
       );
-      createNotification(req.user.id, 'verification_submitted', 'Verification Submitted', 'Your ID verification has been submitted and is being reviewed.', {});
     }
 
     res.json({ attempt: result.rows[0] });
