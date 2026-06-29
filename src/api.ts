@@ -42,7 +42,12 @@ async function request<T = Record<string, unknown>>(
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: any;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`Server returned invalid response (${res.status}). Please try again.`);
+  }
   if (!res.ok) {
     const msg = data.error || data.message || 'Request failed';
     const detail = data.details ? ` (${data.details})` : '';

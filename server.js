@@ -2312,6 +2312,9 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
     if (orderResult.rows.length === 0) return res.status(404).json({ error: 'Pending order not found' });
     const order = orderResult.rows[0];
 
+    // Use unique referenceId for each retry attempt (MonCash rejects duplicates)
+    const retryReference = `${orderId}_retry_${Date.now()}`;
+
     const moncashRes = await fetch(
       process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
       {
@@ -2322,7 +2325,7 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
         },
         body: JSON.stringify({
           amount: parseFloat(order.total_amount),
-          referenceId: orderId,
+          referenceId: retryReference,
           returnUrl: `https://${req.get('host')}/payment/return?order=${orderId}`,
         }),
       }
