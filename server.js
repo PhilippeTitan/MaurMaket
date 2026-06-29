@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
+import cron from 'node-cron';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -1622,21 +1623,281 @@ app.put('/api/orders/:id/meetup/confirm', authRequired, async (req, res) => {
   }
 });
 
-app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
+// ───── Meetup Check-in + QR ─────
+
+const QR_SECRET = process.env.QR_SECRET || process.env.JWT_SECRET + '_qr';
+
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Buyer/Seller checks in at meetup location
+app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
+  const { lat, lng } = req.body;
+  if (!lat || !lng) return res.status(400).json({ error: 'Latitude and longitude required' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const orderResult = await client.query(
+      'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id]
+    );
+    if (orderResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    const order = orderResult.rows[0];
+    if (!order.meetup_confirmed) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Meetup location must be confirmed before checking in' });
+    }
+    if (order.status !== 'paid') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Order must be paid to check in' });
+    }
+
+    const role = order.buyer_id === req.user.id ? 'buyer' : 'seller';
+    const isSeller = role === 'seller';
+    const isBuyer = role === 'buyer';
+
+    // Only buyer or seller of this order can check in
+    if (!isBuyer && !isSeller) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Not a party to this order' });
+    }
+
+    // Upsert check-in
+    await client.query(
+      `INSERT INTO meetup_checkins (order_id, user_id, role, lat, lng)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (order_id, user_id) DO UPDATE SET lat = $4, lng = $5, checked_in_at = CURRENT_TIMESTAMP`,
+      [req.params.id, req.user.id, role, lat, lng]
+    );
+
+    // Check if the OTHER party has also checked in
+    const otherCheckin = await client.query(
+      'SELECT * FROM meetup_checkins WHERE order_id = $1 AND user_id != $2',
+      [req.params.id, req.user.id]
+    );
+
+    let proximityConfirmed = false;
+    let distance = null;
+
+    if (otherCheckin.rows.length > 0) {
+      const other = otherCheckin.rows[0];
+      distance = haversineDistance(lat, lng, parseFloat(other.lat), parseFloat(other.lng));
+      proximityConfirmed = distance <= 150;
+
+      if (proximityConfirmed && isBuyer) {
+        // Both are within 150m — generate QR code for the buyer
+        const nonce = crypto.randomBytes(16).toString('hex');
+        const qrToken = jwt.sign(
+          {
+            orderId: req.params.id,
+            buyerId: order.buyer_id,
+            sellerId: other.user_id,
+            gpsHash: crypto.createHmac('sha256', QR_SECRET).update(`${lat},${lng}`).digest('hex'),
+            nonce,
+          },
+          QR_SECRET,
+          { expiresIn: '30m' }
+        );
+        await client.query(
+          'UPDATE meetup_checkins SET qr_token = $1 WHERE order_id = $2 AND user_id = $3',
+          [qrToken, req.params.id, req.user.id]
+        );
+        // Log the event
+        await logOrderEvent(req.params.id, 'meetup_arrived', req.user.id, null, null, `Buyer and seller within ${Math.round(distance)}m`, client);
+      }
+    }
+
+    await client.query('COMMIT');
+
+    // Return check-in result
+    const response = {
+      checkedIn: true,
+      role,
+      otherPartyCheckedIn: otherCheckin.rows.length > 0,
+      proximityConfirmed,
+      distance: distance ? Math.round(distance) : null,
+    };
+
+    if (proximityConfirmed && isBuyer) {
+      const qrRow = await pool.query(
+        'SELECT qr_token FROM meetup_checkins WHERE order_id = $1 AND user_id = $2',
+        [req.params.id, req.user.id]
+      );
+      response.qrToken = qrRow.rows[0]?.qr_token || null;
+    }
+
+    res.json(response);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Meetup check-in error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Seller scans buyer's QR code
+app.post('/api/orders/:id/meetup/scan', authRequired, async (req, res) => {
+  const { qrToken } = req.body;
+  if (!qrToken) return res.status(400).json({ error: 'QR token required' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const orderResult = await client.query(
+      'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id]
+    );
+    if (orderResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    const order = orderResult.rows[0];
+
+    // Verify this is the seller
+    const isSeller = order.delivery_method === 'meetup';
+    const sellerItem = await pool.query(
+      'SELECT seller_id FROM order_items WHERE order_id = $1 AND seller_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (sellerItem.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Only the seller can scan the QR code' });
+    }
+
+    // Verify QR token
+    let decoded;
+    try {
+      decoded = jwt.verify(qrToken, QR_SECRET);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'QR code is invalid or expired' });
+    }
+
+    if (decoded.orderId !== req.params.id || decoded.sellerId !== req.user.id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'QR code does not match this order or seller' });
+    }
+
+    // Check if QR was already used
+    const existingScan = await pool.query(
+      'SELECT * FROM meetup_checkins WHERE qr_token = $1 AND qr_scanned = true',
+      [qrToken]
+    );
+    if (existingScan.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'QR code has already been used' });
+    }
+
+    // Verify GPS proximity at scan time
+    const buyerCheckin = await pool.query(
+      'SELECT * FROM meetup_checkins WHERE order_id = $1 AND user_id = $2',
+      [req.params.id, order.buyer_id]
+    );
+    const sellerCheckin = await pool.query(
+      'SELECT * FROM meetup_checkins WHERE order_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+
+    if (buyerCheckin.rows.length > 0 && sellerCheckin.rows.length > 0) {
+      const dist = haversineDistance(
+        parseFloat(buyerCheckin.rows[0].lat), parseFloat(buyerCheckin.rows[0].lng),
+        parseFloat(sellerCheckin.rows[0].lat), parseFloat(sellerCheckin.rows[0].lng)
+      );
+      if (dist > 150) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Parties are ${Math.round(dist)}m apart — must be within 150m to complete exchange` });
+      }
+    }
+
+    // Mark QR as scanned
+    await client.query(
+      'UPDATE meetup_checkins SET qr_scanned = true WHERE order_id = $1 AND user_id = $2',
+      [req.params.id, order.buyer_id]
+    );
+
+    // Log the event
+    await logOrderEvent(req.params.id, 'exchange_confirmed', req.user.id, null, null, 'QR code scanned — exchange confirmed', client);
+
+    await client.query('COMMIT');
+
+    res.json({
+      scanned: true,
+      message: 'Exchange confirmed! The buyer will be asked to confirm receipt.',
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('QR scan error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Get check-in status for an order
+app.get('/api/orders/:id/meetup/status', authRequired, async (req, res) => {
   try {
     const order = await canAccessOrder(req.user.id, req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.status === 'completed') return res.status(400).json({ error: 'Order already completed' });
-    if (order.status === 'cancelled') return res.status(400).json({ error: 'Order was cancelled' });
+
+    const checkins = await pool.query(
+      `SELECT mc.*, u.full_name, u.avatar_url
+       FROM meetup_checkins mc
+       JOIN users u ON mc.user_id = u.id
+       WHERE mc.order_id = $1`,
+      [req.params.id]
+    );
+
+    res.json({ checkins: checkins.rows });
+  } catch (err) {
+    console.error('Meetup status error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const orderResult = await client.query(
+      'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id]
+    );
+    if (orderResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    const order = orderResult.rows[0];
+    if (order.buyer_id !== req.user.id && req.user.role !== 'admin') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Only the buyer can complete this order' });
+    }
+    if (order.status === 'completed') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Order already completed' });
+    }
+    if (order.status === 'cancelled') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Order was cancelled' });
+    }
     // Allow completion from 'delivered' (shipping flow) OR 'paid' (meetup flow where delivery is skipped)
     if (order.status !== 'delivered' && order.status !== 'paid') {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Order must be delivered or paid (meetup) before completing' });
     }
-    await pool.query(
+    await client.query(
       `UPDATE orders SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [req.params.id]
     );
-    logOrderEvent(req.params.id, 'status_change', req.user.id, order.status, 'completed', 'Order completed');
+    await logOrderEvent(req.params.id, 'status_change', req.user.id, order.status, 'completed', 'Order completed', client);
+    await client.query('COMMIT');
     const sellerOfOrder = await pool.query(
       'SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1',
       [req.params.id]
@@ -1646,8 +1907,11 @@ app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
     }
     res.json({ updated: true, status: 'completed' });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Order complete error:', err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -2001,22 +2265,46 @@ app.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async (re
   }
   try {
     const check = await pool.query(
-      `SELECT o.id, o.status FROM orders o
+      `SELECT o.id, o.status, o.delivery_method FROM orders o
        JOIN order_items oi ON o.id = oi.order_id
        WHERE o.id = $1 AND oi.seller_id = $2`,
       [req.params.id, req.user.id]
     );
     if (check.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     const current = check.rows[0].status;
+    const deliveryMethod = check.rows[0].delivery_method;
+
+    // Block seller from advancing meetup orders via status endpoint
+    // Meetup orders are completed via QR scan + escrow release flow
+    if (deliveryMethod === 'meetup' && (status === 'shipped' || status === 'delivered')) {
+      return res.status(400).json({ error: 'Meetup orders are completed via the QR exchange flow, not status updates' });
+    }
+
     const transitions = { pending: 'processing', paid: 'processing', processing: 'shipped', shipped: 'delivered' };
     if (transitions[current] !== status) {
       return res.status(400).json({ error: `Cannot transition from ${current} to ${status}` });
     }
-    await pool.query(
-      `UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [status, req.params.id]
-    );
-    logOrderEvent(req.params.id, 'status_change', req.user.id, current, status, `Seller updated status`);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
+        [req.params.id]
+      );
+      await client.query(
+        `UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [status, req.params.id]
+      );
+      await logOrderEvent(req.params.id, 'status_change', req.user.id, current, status, 'Seller updated status', client);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
     const orderInfo = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [req.params.id]);
     if (orderInfo.rows.length > 0) {
       createNotification(orderInfo.rows[0].buyer_id, 'order_status', 'Order Updated', `Your order is now: ${status}`, { orderId: req.params.id });
@@ -3060,6 +3348,95 @@ app.get('*', (_req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
+// ───── Cron: Auto-refund expired meetup check-ins (every 5 minutes) ─────
+// If a meetup check-in happened but no QR scan within 90 minutes, auto-refund
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    const expiredCheckins = await pool.query(`
+      SELECT DISTINCT mc.order_id
+      FROM meetup_checkins mc
+      JOIN orders o ON mc.order_id = o.id
+      WHERE o.status = 'paid'
+        AND o.delivery_method = 'meetup'
+        AND mc.checked_in_at < NOW() - INTERVAL '90 minutes'
+        AND NOT EXISTS (
+          SELECT 1 FROM meetup_checkins mc2
+          WHERE mc2.order_id = mc.order_id AND mc2.qr_scanned = true
+        )
+    `);
+
+    for (const row of expiredCheckins.rows) {
+      const orderId = row.order_id;
+      console.log(`[CRON] Meetup expired for order ${orderId} — auto-refunding`);
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const orderResult = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
+        if (orderResult.rows.length === 0 || orderResult.rows[0].status !== 'paid') {
+          await client.query('ROLLBACK');
+          continue;
+        }
+        const order = orderResult.rows[0];
+
+        // Mark escrow as refunded
+        const escrows = await client.query(
+          "SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE",
+          [orderId]
+        );
+        for (const escrow of escrows.rows) {
+          await client.query(
+            "UPDATE order_escrow SET status = 'refunded', released_at = CURRENT_TIMESTAMP WHERE id = $1",
+            [escrow.id]
+          );
+        }
+
+        // Restore stock
+        const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [orderId]);
+        for (const item of items.rows) {
+          await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
+        }
+
+        // Cancel order
+        await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [orderId]);
+        await logOrderEvent(orderId, 'status_change', null, 'paid', 'cancelled', 'Meetup expired — auto-refund', client);
+        await client.query('COMMIT');
+
+        // Send refund payout to buyer
+        const buyerRes = await pool.query('SELECT phone FROM users WHERE id = $1', [order.buyer_id]);
+        const buyerPhone = buyerRes.rows[0]?.phone;
+        const totalRefund = escrows.rows.reduce((sum, e) => sum + parseFloat(e.gross_amount), 0);
+
+        if (totalRefund > 0 && buyerPhone) {
+          try {
+            const payoutRes = await fetch(
+              process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+              {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: Math.round(totalRefund), receiver: buyerPhone, referenceId: `refund_${orderId}` }),
+              }
+            );
+            if (payoutRes.ok) console.log(`[CRON] Refund Rs ${totalRefund} sent to buyer ${buyerPhone}`);
+            else console.error(`[CRON] Refund payout failed: ${await payoutRes.text()}`);
+          } catch (e) { console.error('[CRON] Refund payout error:', e.message); }
+        }
+
+        createNotification(order.buyer_id, 'order_status', 'Order Refunded',
+          `Your meetup order has expired. Rs ${totalRefund.toFixed(0)} refunded.`, { orderId });
+
+      } catch (e) {
+        await client.query('ROLLBACK');
+        console.error(`[CRON] Error refunding order ${orderId}:`, e.message);
+      } finally {
+        client.release();
+      }
+    }
+  } catch (err) {
+    console.error('[CRON] Meetup timeout check error:', err.message);
+  }
+});
+
 const __execPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 const __thisFile = fileURLToPath(import.meta.url);
 const isMain = __execPath === __thisFile || __execPath === path.resolve(__thisFile);
@@ -3070,6 +3447,7 @@ if (isMain) {
     // Legacy /uploads/ URL cleanup is now handled by the imgbb migration (images are hosted on imgbb)
     app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
+      console.log('Cron jobs active: meetup timeout auto-refund (every 5 min)');
     });
   });
 }
