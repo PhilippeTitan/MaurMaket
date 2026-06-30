@@ -283,6 +283,13 @@ export const getProductReviews = (productId: string) =>
 export const getSellerProfile = (sellerId: string) =>
   request(`/sellers/${sellerId}`);
 
+// Nearby sellers (map)
+export const getNearbySellers = (lat: number, lng: number, radius: number = 10) =>
+  request(`/sellers/nearby?lat=${lat}&lng=${lng}&radius=${radius}`);
+
+export const setSellerLocation = (lat: number, lng: number) =>
+  request('/seller/location', { method: 'PUT', body: JSON.stringify({ lat, lng }) });
+
 // Notifications
 export const getNotifications = () => request('/notifications');
 export const getUnreadCount = () => request('/notifications/unread-count');
