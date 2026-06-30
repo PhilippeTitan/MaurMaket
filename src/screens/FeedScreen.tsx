@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
-  RefreshControl, ActivityIndicator, LayoutChangeEvent, Image, Alert, Modal, Pressable,
+  RefreshControl, ActivityIndicator, LayoutChangeEvent, Image, Alert, Modal, Pressable, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -162,30 +162,13 @@ export default function FeedScreen() {
     }
   }, [screenHeight]);
 
-  const onScrollEndDrag = useCallback((e: {
-    nativeEvent: { velocity?: { y: number }; contentOffset: { y: number } };
-  }) => {
-    if (screenHeight === 0 || products.length === 0) return;
-    const velocityY = e.nativeEvent.velocity?.y ?? 0;
-    const currentOffset = e.nativeEvent.contentOffset.y;
-    const startIndex = dragStartIndexRef.current;
-    const FLICK_THRESHOLD = 0.25;
+  const onScrollEndDrag = useCallback(() => {
+    // Native snapToInterval handles the snap — no programmatic scroll needed.
+  }, []);
 
-    let targetIndex: number;
-    if (velocityY > FLICK_THRESHOLD) {
-      targetIndex = startIndex + 1;
-    } else if (velocityY < -FLICK_THRESHOLD) {
-      targetIndex = startIndex - 1;
-    } else {
-      // Slow drag, no flick — snap to whichever card is closer right now.
-      targetIndex = Math.round(currentOffset / screenHeight);
-    }
-
-    // Never move more than one card per gesture.
-    targetIndex = Math.max(startIndex - 1, Math.min(startIndex + 1, targetIndex));
-    targetIndex = Math.max(0, Math.min(products.length - 1, targetIndex));
-    flatListRef.current?.scrollToOffset({ offset: targetIndex * screenHeight, animated: true });
-  }, [screenHeight, products.length]);
+  const onMomentumScrollEnd = useCallback(() => {
+    dragStartIndexRef.current = Math.round(scrollOffsetRef.current / screenHeight);
+  }, [screenHeight]);
 
   const handleBookmark = async (product: Product) => {
     const wasWishlisted = wishlistedIds.has(product.id);
@@ -601,19 +584,19 @@ export default function FeedScreen() {
         renderItem={renderFeedItem}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
+        decelerationRate="fast"
         snapToInterval={screenHeight}
         snapToAlignment="start"
-        decelerationRate={0}
         disableIntervalMomentum
         onScroll={onScroll}
         scrollEventThrottle={16}
         onScrollBeginDrag={onScrollBeginDrag}
         onScrollEndDrag={onScrollEndDrag}
         onMomentumScrollEnd={onMomentumScrollEnd}
-        removeClippedSubviews
-        maxToRenderPerBatch={3}
-        windowSize={5}
-        initialNumToRender={3}
+        removeClippedSubviews={Platform.OS === 'android'}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        initialNumToRender={1}
         getItemLayout={(_data, index) => ({
           length: screenHeight,
           offset: screenHeight * index,
