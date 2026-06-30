@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import {
   getProducts, toggleWishlist, checkWishlist, createConversation, toggleFollow,
   getImageUrl, getConversationUnreadCount, getProductReviews, getFollowing,
@@ -855,7 +855,7 @@ const styles = StyleSheet.create({
   followBtn: {
     paddingHorizontal: 14,
     paddingVertical: 5,
-    borderRadius: 16,
+    borderRadius: RADIUS.media,
     borderWidth: 1,
     borderColor: COLORS.coral,
   },
@@ -877,7 +877,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,77,106,0.2)',
     borderWidth: 1,
     borderColor: COLORS.coral,
-    borderRadius: 8,
+    borderRadius: RADIUS.row,
     paddingHorizontal: 10,
     paddingVertical: 4,
     marginBottom: 6,
@@ -910,7 +910,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.card,
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   offerBtn: {
@@ -920,7 +920,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 5,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.card,
     backgroundColor: COLORS.blue,
   },
   offerBtnText: {
@@ -936,7 +936,7 @@ const styles = StyleSheet.create({
   buyBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.card,
     backgroundColor: COLORS.coral,
     alignItems: 'center',
   },
@@ -948,7 +948,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.card,
     backgroundColor: 'rgba(255,255,255,0.16)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.32)',
@@ -1054,7 +1054,7 @@ const styles = StyleSheet.create({
     gap: 2,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 999,
+    borderRadius: RADIUS.full,
     backgroundColor: COLORS.surface,
   },
   commentRating: { color: COLORS.text2, fontSize: 10, fontWeight: '700' },
@@ -1074,7 +1074,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.card,
     backgroundColor: COLORS.blue,
   },
   messageSellerText: { color: COLORS.white, fontSize: 13, fontWeight: '800' },
@@ -1087,7 +1087,7 @@ const styles = StyleSheet.create({
   feedTab: {
     paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: RADIUS.media,
     backgroundColor: 'rgba(255,255,255,0.1)',
   },
   feedTabActive: {

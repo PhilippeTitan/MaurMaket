@@ -2,23 +2,33 @@ import React from 'react';
 import { TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING } from '../theme';
+import { COLORS } from '../theme';
 
 interface Props {
   onPress: () => void;
   color?: string;
   topOffset?: number;
+  /** Button diameter — defaults to 36. Icon auto-sizes to 50%. */
+  size?: number;
 }
 
-export default function FloatingBackButton({ onPress, color = COLORS.white, topOffset = 12 }: Props) {
+export default function FloatingBackButton({
+  onPress,
+  color = COLORS.white,
+  topOffset = 12,
+  size = 36,
+}: Props) {
   const insets = useSafeAreaInsets();
   return (
     <TouchableOpacity
-      style={[styles.btn, { top: insets.top + topOffset }]}
+      style={[
+        styles.btn,
+        { top: insets.top + topOffset, width: size, height: size, borderRadius: size / 2 },
+      ]}
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <MaterialCommunityIcons name="arrow-left" size={18} color={color} />
+      <MaterialCommunityIcons name="arrow-left" size={Math.round(size * 0.5)} color={color} />
     </TouchableOpacity>
   );
 }
@@ -28,9 +38,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     zIndex: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',

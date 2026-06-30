@@ -4,9 +4,9 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING, getDisplayName } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName } from '../theme';
 import { store } from '../store';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenHeader from '../components/ScreenHeader';
 import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '../api';
 import { i18n, useTranslation, type Language } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -51,7 +51,7 @@ const SettingRow = ({
 
 export default function SettingsScreen({ navigation }: Props) {
   const { t, language } = useTranslation();
-  const insets = useSafeAreaInsets();
+
   const user = store.user;
   const isSeller = store.isSeller;
   const [loading, setLoading] = useState(false);
@@ -130,12 +130,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
-      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('settings.title')}</Text>
-      </View>
+      <ScreenHeader title={t('settings.title')} onBack={() => navigation.goBack()} />
 
       {/* ── Avatar ── */}
       <TouchableOpacity style={styles.avatarSection} onPress={handlePickAvatar} disabled={avatarUploading}>
@@ -320,11 +315,7 @@ export default function SettingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingBottom: 20 },
-  topbar: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
-  },
-  title: { fontSize: 18, fontWeight: '700', color: COLORS.text },
+
 
   /* Avatar */
   avatarSection: { alignItems: 'center', paddingVertical: 12 },
@@ -349,7 +340,7 @@ const styles = StyleSheet.create({
   },
   card: {
     marginHorizontal: SPACING.lg, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, overflow: 'hidden',
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, overflow: 'hidden',
   },
 
   /* Rows */
@@ -369,16 +360,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 13,
   },
   toggle: {
-    width: 44, height: 26, borderRadius: 13, padding: 2,
+    width: 44, height: 26, borderRadius: RADIUS.card, padding: 2,
     backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
     justifyContent: 'center',
   },
   toggleActive: { backgroundColor: COLORS.green + '40', borderColor: COLORS.green },
-  toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.text2 },
+  toggleKnob: { width: 20, height: 20, borderRadius: RADIUS.row, backgroundColor: COLORS.text2 },
   toggleKnobActive: { backgroundColor: COLORS.green, alignSelf: 'flex-end' },
 
   /* Store logo thumb */
-  storeLogoThumb: { width: 28, height: 28, borderRadius: 8 },
+  storeLogoThumb: { width: 28, height: 28, borderRadius: RADIUS.row },
 
   /* Status */
   statusRow: {
@@ -406,7 +397,7 @@ const styles = StyleSheet.create({
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     marginHorizontal: SPACING.lg, marginTop: 24,
-    padding: 12, borderRadius: 10,
+    padding: 12, borderRadius: RADIUS.row,
     borderWidth: 1, borderColor: COLORS.border,
     backgroundColor: COLORS.surface,
   },

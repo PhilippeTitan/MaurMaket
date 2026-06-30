@@ -7,13 +7,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { createProduct, getCategories, uploadImage, getSellerProducts } from '../api';
 import { store } from '../store';
 import type { Category } from '../types';
 import type { RootStackParamList } from '../navigation';
+import ScreenHeader from '../components/ScreenHeader';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -23,7 +23,6 @@ const THUMB_SIZE = 80;
 export default function AddListingScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
-  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -131,12 +130,7 @@ export default function AddListingScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.white} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('addListing.title')}</Text>
-      </View>
+      <ScreenHeader title={t('addListing.title')} onBack={() => nav.goBack()} />
 
       {atListingLimit ? (
         <View style={styles.limitBlock}>
@@ -227,49 +221,46 @@ export default function AddListingScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 40 },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  backBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
   imageLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 12, marginBottom: 6 },
   imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8, paddingTop: 6 },
-  thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, overflow: 'visible', marginRight: 8, backgroundColor: COLORS.surface2, position: 'relative' },
-  thumbImg: { width: '100%', height: '100%', borderRadius: 8 },
-  thumbRemove: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.bg, borderRadius: 10, zIndex: 1 },
+  thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: RADIUS.row, overflow: 'visible', marginRight: 8, backgroundColor: COLORS.surface2, position: 'relative' },
+  thumbImg: { width: '100%', height: '100%', borderRadius: RADIUS.row },
+  thumbRemove: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.bg, borderRadius: RADIUS.row, zIndex: 1 },
   addBtn: {
-    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, borderWidth: 1,
+    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: RADIUS.row, borderWidth: 1,
     borderColor: COLORS.border, borderStyle: 'dashed', alignItems: 'center',
     justifyContent: 'center', backgroundColor: COLORS.surface,
   },
   input: {
     marginHorizontal: SPACING.md, backgroundColor: COLORS.surface, borderWidth: 1,
-    borderColor: COLORS.border, borderRadius: 10, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,
+    borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
   sectionLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 8, marginBottom: 6 },
   catScroll: { paddingHorizontal: SPACING.md, marginBottom: 12 },
-  catPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, marginRight: 8 },
+  catPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.pill, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, marginRight: 8 },
   catPillActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
   catPillText: { fontSize: 12, color: COLORS.text2 },
   catPillTextActive: { color: COLORS.white, fontWeight: '700' },
-  submitBtn: { marginHorizontal: SPACING.md, backgroundColor: COLORS.coral, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8 },
+  submitBtn: { marginHorizontal: SPACING.md, backgroundColor: COLORS.coral, borderRadius: RADIUS.button, padding: 14, alignItems: 'center', marginTop: 8 },
   submitBtnDisabled: { opacity: 0.6 },
   submitText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
 
   /* Listing Limit */
   limitBlock: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, gap: 8 },
-  limitIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  limitIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   limitTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
   limitHint: { fontSize: 13, color: COLORS.text2, textAlign: 'center', lineHeight: 18 },
   upgradeBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginTop: 12, paddingHorizontal: 20, paddingVertical: 12,
-    backgroundColor: COLORS.green, borderRadius: 12,
+    backgroundColor: COLORS.green, borderRadius: RADIUS.button,
   },
   upgradeBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.white },
   limitBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginHorizontal: SPACING.md, marginBottom: 10, padding: 10,
-    backgroundColor: COLORS.yellow + '10', borderRadius: 8,
+    backgroundColor: COLORS.yellow + '10', borderRadius: RADIUS.row,
     borderWidth: 1, borderColor: COLORS.yellow + '30',
   },
   limitBannerText: { fontSize: 12, color: COLORS.yellow, fontWeight: '600' },

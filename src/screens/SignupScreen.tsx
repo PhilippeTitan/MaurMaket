@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { signup as apiSignup } from '../api';
 import { store } from '../store';
@@ -107,11 +107,11 @@ const styles = StyleSheet.create({
   subtitle: { textAlign: 'center', color: COLORS.text2, marginBottom: 28, fontSize: 15 },
   input: {
     width: '100%', padding: 14, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card,
     color: COLORS.text, fontSize: 16, marginBottom: 14,
   },
   btn: {
-    backgroundColor: COLORS.coral, padding: 14, borderRadius: 20,
+    backgroundColor: COLORS.coral, padding: 14, borderRadius: RADIUS.pill,
     alignItems: 'center', marginBottom: 16, marginTop: 4,
   },
   btnDisabled: { opacity: 0.5 },

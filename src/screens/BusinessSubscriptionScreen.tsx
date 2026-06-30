@@ -5,8 +5,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
+import ScreenHeader from '../components/ScreenHeader';
 import { useTranslation } from '../i18n';
 import { createSubscription, renewSubscription, getCurrentSubscription } from '../api';
 import { store } from '../store';
@@ -23,7 +23,7 @@ interface Subscription {
 export default function BusinessSubscriptionScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
-  const insets = useSafeAreaInsets();
+
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
@@ -71,13 +71,8 @@ export default function BusinessSubscriptionScreen() {
 
   if (fetching) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => nav.goBack()}>
-            <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Business Subscription</Text>
-        </View>
+      <View style={styles.container}>
+        <ScreenHeader title="Business Subscription" onBack={() => nav.goBack()} />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={COLORS.coral} />
         </View>
@@ -86,13 +81,8 @@ export default function BusinessSubscriptionScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Business Subscription</Text>
-      </View>
+    <View style={styles.container}>
+      <ScreenHeader title="Business Subscription" onBack={() => nav.goBack()} />
 
       {isActive ? (
         <View style={styles.content}>
@@ -195,20 +185,19 @@ const benefitStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
+
   content: { flex: 1, padding: SPACING.md, gap: 16 },
   heroCard: { alignItems: 'center', paddingVertical: 32, gap: 8 },
-  heroIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.coral + '20', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  heroIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.coral + '20', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },  // circle: size/2
   heroTitle: { fontSize: 24, fontWeight: '800', color: COLORS.text },
   heroPrice: { fontSize: 20, fontWeight: '700', color: COLORS.coral },
   heroDesc: { fontSize: 14, color: COLORS.text2, textAlign: 'center', lineHeight: 20, paddingHorizontal: 20 },
-  benefitsCard: { backgroundColor: COLORS.surface, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: COLORS.border },
+  benefitsCard: { backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 16, borderWidth: 1, borderColor: COLORS.border },
   benefitsTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: 8 },
-  primaryBtn: { backgroundColor: COLORS.coral, padding: 16, borderRadius: 12, alignItems: 'center' },
+  primaryBtn: { backgroundColor: COLORS.coral, padding: 16, borderRadius: RADIUS.button, alignItems: 'center' },
   primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
   disclaimer: { fontSize: 11, color: COLORS.text2, textAlign: 'center', lineHeight: 16 },
-  activeCard: { alignItems: 'center', paddingVertical: 32, gap: 8, backgroundColor: COLORS.surface, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border },
+  activeCard: { alignItems: 'center', paddingVertical: 32, gap: 8, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border },
   activeTitle: { fontSize: 20, fontWeight: '800', color: COLORS.green },
   activeExpiry: { fontSize: 14, color: COLORS.text2, textAlign: 'center' },
   daysLeft: { fontSize: 13, fontWeight: '700', color: COLORS.coral },

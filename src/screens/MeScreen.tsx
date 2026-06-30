@@ -6,7 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, getDisplayName } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName } from '../theme';
 import { useTranslation } from '../i18n';
 import { store } from '../store';
 import {
@@ -567,7 +567,7 @@ const styles = StyleSheet.create({
   },
   orderCard: {
     flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10,
-    backgroundColor: COLORS.surface, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.row, borderWidth: 1, borderColor: COLORS.border,
     position: 'relative',
   },
   orderBadge: {
@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
   tabContent: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: SPACING.md },
   card: {
-    width: '48%' as any, borderRadius: 10, overflow: 'hidden',
+    width: '48%' as any, borderRadius: RADIUS.row, overflow: 'hidden',
     backgroundColor: COLORS.surface2,
   },
   cardImgWrap: {
@@ -610,10 +610,10 @@ const styles = StyleSheet.create({
   },
   cardOverlayTop: { alignItems: 'flex-end' },
   cardOverlayBottom: {
-    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 8, padding: 8, gap: 2,
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: RADIUS.row, padding: 8, gap: 2,
   },
   priceBadge: {
-    backgroundColor: COLORS.coral, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3,
+    backgroundColor: COLORS.coral, borderRadius: RADIUS.pill, paddingHorizontal: 8, paddingVertical: 3,
   },
   priceBadgeText: { color: COLORS.white, fontSize: 11, fontWeight: '700' },
   cardName: { fontSize: 12, fontWeight: '600', color: '#fff', lineHeight: 16 },
@@ -631,14 +631,14 @@ const styles = StyleSheet.create({
   /* Reviews */
   reviewCard: {
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 12, padding: 12,
+    borderRadius: RADIUS.card, padding: 12,
   },
 
   /* Become a Seller Banner */
   sellBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     marginHorizontal: SPACING.md, marginTop: SPACING.md, padding: 12,
-    backgroundColor: COLORS.green + '10', borderRadius: 12,
+    backgroundColor: COLORS.green + '10', borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.green + '30',
   },
   sellTitle: { fontSize: 13, fontWeight: '700', color: COLORS.green },
@@ -657,13 +657,13 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.md, marginTop: SPACING.md,
   },
   actionBtn: {
-    flex: 1, minHeight: 40, borderRadius: 10,
+    flex: 1, minHeight: 40, borderRadius: RADIUS.row,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
   },
   actionBtnText: { fontSize: 12, fontWeight: '700' },
   emptyAction: {
-    marginTop: 8, minHeight: 38, paddingHorizontal: 14, borderRadius: 10,
+    marginTop: 8, minHeight: 38, paddingHorizontal: 14, borderRadius: RADIUS.row,
     backgroundColor: COLORS.coral, flexDirection: 'row', alignItems: 'center', gap: 5,
   },
   emptyActionText: { fontSize: 12, color: COLORS.white, fontWeight: '800' },
@@ -671,7 +671,7 @@ const styles = StyleSheet.create({
   /* Analytics Dashboard */
   analyticsCard: {
     marginHorizontal: SPACING.md, marginTop: SPACING.md, padding: 12,
-    backgroundColor: COLORS.surface, borderRadius: 12,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.border,
   },
   analyticsHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
@@ -679,7 +679,7 @@ const styles = StyleSheet.create({
   analyticsGrid: { flexDirection: 'row', gap: 8 },
   analyticsStat: {
     flex: 1, alignItems: 'center', paddingVertical: 8,
-    backgroundColor: COLORS.surface2, borderRadius: 8,
+    backgroundColor: COLORS.surface2, borderRadius: RADIUS.row,
   },
   analyticsStatValue: { fontSize: 16, fontWeight: '800', color: COLORS.text },
   analyticsStatLabel: { fontSize: 10, color: COLORS.text2, marginTop: 2 },
@@ -696,7 +696,7 @@ const styles = StyleSheet.create({
   /* Low Stock Alert */
   lowStockBanner: {
     marginHorizontal: SPACING.md, marginTop: SPACING.md, padding: 12,
-    backgroundColor: COLORS.yellow + '10', borderRadius: 12,
+    backgroundColor: COLORS.yellow + '10', borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.yellow + '30',
   },
   lowStockHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },

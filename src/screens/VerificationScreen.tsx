@@ -5,8 +5,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING } from '../theme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS, SPACING, RADIUS } from '../theme';
+import ScreenHeader from '../components/ScreenHeader';
 import { useTranslation } from '../i18n';
 import { uploadImage, submitVerification } from '../api';
 import { store } from '../store';
@@ -41,7 +41,7 @@ interface OcrFields {
 export default function VerificationScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
-  const insets = useSafeAreaInsets();
+
   const [step, setStep] = useState<Step>('info');
   const [loading, setLoading] = useState(false);
   const [idFrontUrl, setIdFrontUrl] = useState('');
@@ -409,13 +409,8 @@ export default function VerificationScreen() {
 
   if (loading && step === 'review' && !rejectedReasons) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => nav.goBack()}>
-            <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Verification</Text>
-        </View>
+      <View style={styles.container}>
+        <ScreenHeader title="Verification" onBack={() => nav.goBack()} />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={COLORS.coral} />
           <Text style={styles.loadingText}>Submitting verification...</Text>
@@ -425,13 +420,8 @@ export default function VerificationScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Verification</Text>
-      </View>
+    <View style={styles.container}>
+      <ScreenHeader title="Verification" onBack={() => nav.goBack()} />
 
       {step !== 'info' && renderStepIndicator()}
 
@@ -462,12 +452,11 @@ const ocrStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
+
   content: { flex: 1, padding: SPACING.md },
   steps: { flexDirection: 'row', justifyContent: 'center', gap: 12, paddingVertical: SPACING.md },
   stepWrap: {},
-  stepDot: { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  stepDot: { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },  // circle: size/2
   stepDotDone: { backgroundColor: COLORS.green },
   stepDotCurrent: { backgroundColor: COLORS.coral },
   stepNum: { fontSize: 12, color: COLORS.text2, fontWeight: '700' },
@@ -478,12 +467,12 @@ const styles = StyleSheet.create({
   requirements: { gap: 12, marginBottom: 32, paddingHorizontal: 20 },
   reqItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   reqText: { fontSize: 13, color: COLORS.text, flex: 1 },
-  primaryBtn: { backgroundColor: COLORS.coral, padding: 16, borderRadius: 12, alignItems: 'center' },
+  primaryBtn: { backgroundColor: COLORS.coral, padding: 16, borderRadius: RADIUS.button, alignItems: 'center' },
   primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
   cameraWrap: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
-  idFrameRect: { width: 300, height: 200, borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)', borderRadius: 12, borderStyle: 'dashed' },
-  idFrameCircle: { width: 220, height: 220, borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)', borderRadius: 110, borderStyle: 'dashed' },
+  idFrameRect: { width: 300, height: 200, borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)', borderRadius: RADIUS.card, borderStyle: 'dashed' },
+  idFrameCircle: { width: 220, height: 220, borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)', borderRadius: 110, borderStyle: 'dashed' },  // circle: size/2
   cameraActions: { position: 'absolute', bottom: 60, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 40 },
   captureBtn: { width: 72, height: 72, borderRadius: 36, borderWidth: 4, borderColor: COLORS.white, alignItems: 'center', justifyContent: 'center' },
   captureBtnInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: COLORS.white },
@@ -491,13 +480,13 @@ const styles = StyleSheet.create({
   cameraLabel: { position: 'absolute', bottom: 30, left: 0, right: 0, textAlign: 'center', color: COLORS.white, fontSize: 13, fontWeight: '600' },
   permissionWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 40 },
   permissionText: { fontSize: 14, color: COLORS.text2, textAlign: 'center' },
-  permissionBtn: { backgroundColor: COLORS.coral, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
+  permissionBtn: { backgroundColor: COLORS.coral, paddingHorizontal: 20, paddingVertical: 10, borderRadius: RADIUS.row, marginTop: 8 },
   permissionBtnText: { color: COLORS.white, fontWeight: '600' },
   reviewTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, marginBottom: 16 },
   reviewSection: { marginBottom: 20 },
   reviewLabel: { fontSize: 12, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
-  reviewImage: { width: '100%', height: 160, borderRadius: 10, backgroundColor: COLORS.surface2 },
-  reviewImageSmall: { width: 120, height: 120, borderRadius: 60, backgroundColor: COLORS.surface2 },
+  reviewImage: { width: '100%', height: 160, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
+  reviewImageSmall: { width: 120, height: 120, borderRadius: 60, backgroundColor: COLORS.surface2 },  // circle: size/2
   ocrFields: { marginTop: 8 },
   faceScoreText: { fontSize: 12, fontWeight: '600', marginTop: 8 },
   faceOk: { color: COLORS.green },
@@ -507,7 +496,7 @@ const styles = StyleSheet.create({
   retakeBtnText: { color: COLORS.text2, fontSize: 13, fontWeight: '600' },
   rejectionBox: {
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.coral,
-    borderRadius: 12, padding: 14, marginBottom: 24, gap: 8,
+    borderRadius: RADIUS.card, padding: 14, marginBottom: 24, gap: 8,
   },
   rejectionItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   rejectionText: { fontSize: 13, color: COLORS.text, flex: 1, lineHeight: 18 },

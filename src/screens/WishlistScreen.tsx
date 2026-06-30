@@ -5,19 +5,19 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING } from '../theme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { getWishlist, toggleWishlist, getImageUrl } from '../api';
 import type { Product } from '../types';
 import type { RootStackParamList } from '../navigation';
+import ScreenHeader from '../components/ScreenHeader';
+import EmptyState from '../components/EmptyState';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function WishlistScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
-  const insets = useSafeAreaInsets();
   const [items, setItems] = useState<Product[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -51,12 +51,7 @@ export default function WishlistScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('wishlist.title')}</Text>
-      </View>
+      <ScreenHeader title={t('wishlist.title')} onBack={() => nav.goBack()} />
       <FlatList
         data={items}
         keyExtractor={item => item.id}
@@ -93,10 +88,7 @@ export default function WishlistScreen() {
           loading ? (
             <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
           ) : !refreshing ? (
-            <View style={styles.empty}>
-              <MaterialCommunityIcons name="heart-outline" size={40} color={COLORS.text2} />
-              <Text style={styles.emptyText}>{t('wishlist.empty')}</Text>
-            </View>
+            <EmptyState icon="heart-outline" title={t('wishlist.empty')} size={56} />
           ) : null
         }
       />
@@ -106,15 +98,11 @@ export default function WishlistScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 12 },
-  thumb: { width: 48, height: 48, borderRadius: 8, backgroundColor: COLORS.surface2 },
-  thumbPlaceholder: { width: 48, height: 48, borderRadius: 8, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  thumb: { width: 48, height: 48, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
+  thumbPlaceholder: { width: 48, height: 48, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
   rowLeft: { flex: 1, gap: 2 },
   name: { fontSize: 13, color: COLORS.text, fontWeight: '600' },
   price: { fontSize: 12, color: COLORS.coral, fontWeight: '700' },
   stock: { fontSize: 11, color: COLORS.text2 },
-  empty: { alignItems: 'center', paddingTop: 80, gap: 8 },
-  emptyText: { fontSize: 14, color: COLORS.text2 },
 });

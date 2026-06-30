@@ -3,8 +3,9 @@ import {
   View, Text, FlatList, Image, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING } from '../theme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS, SPACING, RADIUS } from '../theme';
+import ScreenHeader from '../components/ScreenHeader';
+import EmptyState from '../components/EmptyState';
 import { store } from '../store';
 import { validatePromo, getImageUrl } from '../api';
 import { useTranslation } from '../i18n';
@@ -19,7 +20,6 @@ type SectionItem =
   | { type: 'item'; item: CartItem; key: string };
 
 export default function CartScreen({ navigation }: Props) {
-  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const [cart, setCart] = useState<CartItem[]>(store.cart);
   const [promoCode, setPromoCode] = useState('');
@@ -160,21 +160,10 @@ export default function CartScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('cart.title')} ({itemCount})</Text>
-      </View>
+      <ScreenHeader title={`${t('cart.title')} (${itemCount})`} onBack={() => navigation.goBack()} />
 
       {cart.length === 0 ? (
-        <View style={styles.empty}>
-          <View style={styles.emptyIcon}>
-            <MaterialCommunityIcons name="cart-outline" size={36} color={COLORS.text2} />
-          </View>
-          <Text style={styles.emptyText}>{t('cart.empty')}</Text>
-          <Text style={styles.emptyHint}>{t('cart.browseHint')}</Text>
-        </View>
+        <EmptyState icon="cart-outline" title={t('cart.empty')} hint={t('cart.browseHint')} />
       ) : (
         <View style={styles.cartBody}>
           <FlatList
@@ -228,19 +217,13 @@ export default function CartScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   cartBody: { flex: 1 },
-  topbar: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  title: { fontSize: 16, fontWeight: '700', color: COLORS.text },
   list: { padding: SPACING.md, paddingBottom: 220 },
   item: {
     flexDirection: 'row', backgroundColor: COLORS.surface, borderWidth: 1,
-    borderColor: COLORS.border, borderRadius: 12, padding: 10, marginBottom: 8, alignItems: 'center', gap: 10,
+    borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 10, marginBottom: 8, alignItems: 'center', gap: 10,
   },
   thumb: {
-    width: 52, height: 52, borderRadius: 10, backgroundColor: COLORS.surface2,
+    width: 52, height: 52, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2,
     justifyContent: 'center', alignItems: 'center', overflow: 'hidden',
   },
   thumbImg: { width: '100%', height: '100%' },
@@ -249,7 +232,7 @@ const styles = StyleSheet.create({
   itemPrice: { fontSize: 12, color: COLORS.coral, fontWeight: '700', marginTop: 2 },
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   qtyBtn: {
-    width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.surface2,
+    width: 24, height: 24, borderRadius: RADIUS.card, backgroundColor: COLORS.surface2,
     borderWidth: 1, borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center',
   },
   qtyBtnDisabled: { opacity: 0.45 },
@@ -269,11 +252,11 @@ const styles = StyleSheet.create({
   promoRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 },
   promoInput: {
     flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, color: COLORS.text, fontSize: 13,
+    borderRadius: RADIUS.row, paddingHorizontal: 10, paddingVertical: 6, color: COLORS.text, fontSize: 13,
   },
   promoBtn: {
     backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: RADIUS.row, paddingHorizontal: 14, paddingVertical: 8,
   },
   promoBtnText: { color: COLORS.text2, fontSize: 13, fontWeight: '500' },
   discountText: { fontSize: 12, color: COLORS.green, fontWeight: '600', marginBottom: 4 },
@@ -282,11 +265,8 @@ const styles = StyleSheet.create({
   totalLabel: { fontSize: 14, color: COLORS.text2 },
   totalValue: { fontSize: 18, color: COLORS.coral, fontWeight: '700' },
   checkoutBtn: {
-    backgroundColor: COLORS.coral, padding: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
+    backgroundColor: COLORS.coral, padding: 14, borderRadius: RADIUS.button, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
   },
   checkoutBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
-  emptyIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: COLORS.text2, fontSize: 15, fontWeight: '600' },
-  emptyHint: { color: COLORS.text2, fontSize: 12, opacity: 0.7, textAlign: 'center', paddingHorizontal: 40 },
+
 });

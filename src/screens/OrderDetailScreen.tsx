@@ -4,11 +4,12 @@ import {
   Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
+import ScreenHeader from '../components/ScreenHeader';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Order, OrderEvent } from '../types';
@@ -29,7 +30,7 @@ const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error
 
 export default function OrderDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
+
   const { orderId } = route.params;
   const [order, setOrder] = useState<Order | null>(null);
   const [events, setEvents] = useState<OrderEvent[]>([]);
@@ -167,12 +168,12 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
-      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('orderDetail.title')} #{order.id.slice(0, 8)}</Text>
-      </View>
+      <ScreenHeader
+        title={`${t('orderDetail.title')} #${order.id.slice(0, 8)}`}
+        onBack={() => navigation.goBack()}
+        variant="branded"
+        bordered={false}
+      />
 
       <View style={styles.card}>
         <View style={styles.row}>
@@ -459,14 +460,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
   scroll: { paddingBottom: 60 },
-  topbar: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
-  },
-  title: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.text },
+
   card: {
     marginHorizontal: SPACING.lg, marginBottom: 12, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.media, padding: 14,
   },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   label: { fontSize: 13, color: COLORS.text2 },
@@ -482,23 +479,23 @@ const styles = StyleSheet.create({
   eventNote: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
   eventTime: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
   actions: { marginHorizontal: SPACING.lg, gap: 8 },
-  cancelBtn: { padding: 14, borderRadius: 20, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
+  cancelBtn: { padding: 14, borderRadius: RADIUS.pill, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
   cancelBtnText: { color: COLORS.coral, fontWeight: '600', fontSize: 15 },
-  completeBtn: { padding: 14, borderRadius: 20, backgroundColor: COLORS.green, alignItems: 'center' },
+  completeBtn: { padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.green, alignItems: 'center' },
   completeBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
-  retryBtn: { padding: 14, borderRadius: 20, backgroundColor: COLORS.blue, alignItems: 'center' },
+  retryBtn: { padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.blue, alignItems: 'center' },
   retryBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
-  reorderBtn: { flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: 20, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
+  reorderBtn: { flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: RADIUS.pill, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
   reorderBtnText: { color: COLORS.coral, fontWeight: '600', fontSize: 15 },
   reviewBtn: {
-    flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: 20,
+    flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: RADIUS.pill,
     borderWidth: 1.5, borderColor: COLORS.yellow, alignItems: 'center',
   },
   reviewBtnText: { color: COLORS.yellow, fontWeight: '600', fontSize: 15 },
-  advanceBtn: { padding: 14, borderRadius: 20, backgroundColor: COLORS.blue, alignItems: 'center' },
+  advanceBtn: { padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.blue, alignItems: 'center' },
   advanceBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
   meetupBtn: {
-    flexDirection: 'row', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 20,
+    flexDirection: 'row', justifyContent: 'center', gap: 8, padding: 16, borderRadius: RADIUS.pill,
     backgroundColor: COLORS.green, alignItems: 'center',
   },
   meetupBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
@@ -510,7 +507,7 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    borderTopLeftRadius: RADIUS.pill, borderTopRightRadius: RADIUS.pill,
     padding: SPACING.lg, paddingBottom: SPACING.xxl + 20,
   },
   modalHeader: {
@@ -523,22 +520,22 @@ const styles = StyleSheet.create({
   },
   reviewInput: {
     backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 12, padding: 12, fontSize: 14, color: COLORS.text,
+    borderRadius: RADIUS.card, padding: 12, fontSize: 14, color: COLORS.text,
     minHeight: 100, marginBottom: SPACING.lg,
   },
   submitReviewBtn: {
-    padding: 14, borderRadius: 20, backgroundColor: COLORS.yellow, alignItems: 'center',
+    padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.yellow, alignItems: 'center',
   },
   submitReviewBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   disputeBtn: {
-    flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 12, borderRadius: 12,
+    flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 12, borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',
   },
   disputeBtnText: { color: COLORS.text2, fontWeight: '600', fontSize: 13 },
   disputeLabel: { fontSize: 12, fontWeight: '700', color: COLORS.text2, marginBottom: 8 },
   disputeReasonBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10,
-    paddingHorizontal: 4, borderRadius: 8,
+    paddingHorizontal: 4, borderRadius: RADIUS.row,
   },
   disputeReasonActive: { backgroundColor: COLORS.surface2 },
   disputeReasonText: { fontSize: 14, color: COLORS.text2 },

@@ -6,7 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { getOrder } from '../api';
 import type { RootStackParamList } from '../navigation';
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   },
   orderBadge: {
     marginTop: 20, paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: COLORS.surface, borderRadius: 20,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.pill,
     borderWidth: 1, borderColor: COLORS.border,
   },
   orderBadgeText: {
@@ -162,12 +162,12 @@ const styles = StyleSheet.create({
     marginTop: 32, gap: 12, width: '100%', paddingHorizontal: 20,
   },
   primaryBtn: {
-    paddingVertical: 14, borderRadius: 14,
+    paddingVertical: 14, borderRadius: RADIUS.button,
     backgroundColor: COLORS.coral, alignItems: 'center',
   },
   primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
   secondaryBtn: {
-    paddingVertical: 14, borderRadius: 14,
+    paddingVertical: 14, borderRadius: RADIUS.button,
     borderWidth: 1, borderColor: COLORS.border,
     backgroundColor: COLORS.surface, alignItems: 'center',
   },

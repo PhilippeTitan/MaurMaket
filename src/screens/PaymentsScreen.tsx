@@ -1,16 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, TextInput,
-  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { getSellerBalance, getSellerPayouts, requestPayout } from '../api';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
+import ScreenHeader from '../components/ScreenHeader';
+import EmptyState from '../components/EmptyState';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -84,16 +85,8 @@ export default function PaymentsScreen() {
   if (!isSeller) {
     return (
       <View style={styles.container}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => nav.goBack()}>
-            <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-          </TouchableOpacity>
-          <Text style={styles.title}>{t('payments.title')}</Text>
-        </View>
-        <View style={styles.empty}>
-          <MaterialCommunityIcons name="cash" size={40} color={COLORS.text2} />
-          <Text style={styles.emptyText}>{t('payments.notSeller')}</Text>
-        </View>
+        <ScreenHeader title={t('payments.title')} onBack={() => nav.goBack()} />
+        <EmptyState icon="cash" title={t('payments.notSeller')} />
       </View>
     );
   }
@@ -101,35 +94,22 @@ export default function PaymentsScreen() {
   if (store.user?.seller_tier === 'casual') {
     return (
       <View style={styles.container}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => nav.goBack()}>
-            <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-          </TouchableOpacity>
-          <Text style={styles.title}>{t('payments.title')}</Text>
-        </View>
-        <View style={styles.empty}>
-          <MaterialCommunityIcons name="lock-outline" size={40} color={COLORS.text2} />
-          <Text style={styles.emptyText}>{t('payments.payoutsRequireVerified')}</Text>
-          <Text style={styles.emptyHint}>{t('payments.upgradeHint')}</Text>
-          <TouchableOpacity
-            style={styles.upgradeBtn}
-            onPress={() => { nav.navigate('SellerOnboarding'); }}
-          >
-            <Text style={styles.upgradeBtnText}>{t('addListing.upgradeToVerified')}</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenHeader title={t('payments.title')} onBack={() => nav.goBack()} />
+        <EmptyState
+          icon="lock-outline"
+          title={t('payments.payoutsRequireVerified')}
+          hint={t('payments.upgradeHint')}
+          actionLabel={t('addListing.upgradeToVerified')}
+          onAction={() => { nav.navigate('SellerOnboarding'); }}
+          actionColor={COLORS.green}
+        />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('payments.title')}</Text>
-      </View>
+      <ScreenHeader title={t('payments.title')} onBack={() => nav.goBack()} />
       <FlatList
         data={payouts}
         keyExtractor={item => item.id}
@@ -184,11 +164,7 @@ export default function PaymentsScreen() {
         )}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         ListEmptyComponent={
-          !refreshing ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>{t('payments.noPayouts')}</Text>
-            </View>
-          ) : null
+          !refreshing ? <EmptyState icon="cash-multiple" title={t('payments.noPayouts')} /> : null
         }
       />
     </View>
@@ -197,9 +173,7 @@ export default function PaymentsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
-  balanceCard: { margin: SPACING.md, padding: SPACING.lg, backgroundColor: COLORS.surface, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border },
+  balanceCard: { margin: SPACING.md, padding: SPACING.lg, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border },
   balanceLabel: { fontSize: 12, color: COLORS.text2 },
   balanceValue: { fontSize: 28, color: COLORS.coral, fontWeight: '800', marginVertical: 4 },
   balanceStats: { flexDirection: 'row', gap: 20, marginTop: 8 },
@@ -207,23 +181,15 @@ const styles = StyleSheet.create({
   balanceStatNum: { fontSize: 13, color: COLORS.text, fontWeight: '700' },
   balanceStatLabel: { fontSize: 10, color: COLORS.text2 },
   requestSection: { paddingHorizontal: SPACING.md, flexDirection: 'row', gap: 8 },
-  input: { flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 10, color: COLORS.text, fontSize: 13 },
-  requestBtn: { backgroundColor: COLORS.coral, borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
+  input: { flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 10, color: COLORS.text, fontSize: 13 },
+  requestBtn: { backgroundColor: COLORS.coral, borderRadius: RADIUS.row, paddingHorizontal: 16, justifyContent: 'center' },
   requestBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
   sectionTitle: { fontSize: 12, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: SPACING.md, marginBottom: 8 },
   payoutRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   payoutAmount: { fontSize: 14, color: COLORS.text, fontWeight: '700' },
   payoutDate: { fontSize: 10, color: COLORS.text2, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, backgroundColor: COLORS.surface2 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.card, backgroundColor: COLORS.surface2 },
   statusCompleted: { backgroundColor: 'rgba(0,229,160,0.15)' },
   statusText: { fontSize: 10, color: COLORS.text2, fontWeight: '600', textTransform: 'capitalize' },
   statusTextCompleted: { color: COLORS.green },
-  empty: { alignItems: 'center', paddingTop: 80, gap: 8 },
-  emptyText: { fontSize: 14, color: COLORS.text2 },
-  emptyHint: { fontSize: 12, color: COLORS.text2, opacity: 0.7, textAlign: 'center', paddingHorizontal: 40 },
-  upgradeBtn: {
-    marginTop: 8, paddingHorizontal: 20, paddingVertical: 12,
-    backgroundColor: COLORS.green, borderRadius: 12,
-  },
-  upgradeBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.white },
 });

@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { becomeSeller, uploadImage } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
@@ -302,11 +302,11 @@ const styles = StyleSheet.create({
   tierCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     width: '100%', padding: 14, marginTop: 8,
-    backgroundColor: COLORS.surface, borderRadius: 14,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
     borderWidth: 1, borderColor: COLORS.border,
   },
   tierIcon: {
-    width: 44, height: 44, borderRadius: 12,
+    width: 44, height: 44, borderRadius: RADIUS.card,
     alignItems: 'center', justifyContent: 'center',
   },
   tierInfo: { flex: 1 },
@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
   tipsList: { width: '100%', gap: 10, marginTop: 12 },
   tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   tipIcon: {
-    width: 36, height: 36, borderRadius: 10,
+    width: 36, height: 36, borderRadius: RADIUS.row,
     alignItems: 'center', justifyContent: 'center', marginTop: 1,
   },
   tipContent: { flex: 1 },
@@ -335,12 +335,12 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   input: {
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    borderRadius: RADIUS.card, paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 14, color: COLORS.text,
   },
 
   logoPicker: {
-    width: 80, height: 80, borderRadius: 16,
+    width: 80, height: 80, borderRadius: RADIUS.media,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
   },
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
 
   idPicker: {
     width: '100%', paddingVertical: 24,
-    backgroundColor: COLORS.surface, borderRadius: 14,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
     borderWidth: 1.5, borderColor: COLORS.border, borderStyle: 'dashed',
     alignItems: 'center', marginTop: 8,
   },
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
   idUploadedText: { fontSize: 14, color: COLORS.green, fontWeight: '600' },
 
   primaryBtn: {
-    width: '100%', paddingVertical: 14, borderRadius: 14,
+    width: '100%', paddingVertical: 14, borderRadius: RADIUS.media,
     backgroundColor: COLORS.coral, alignItems: 'center', marginTop: 16,
   },
   primaryBtnDisabled: { opacity: 0.4 },

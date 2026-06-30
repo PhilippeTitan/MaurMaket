@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform, Alert, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMessages, sendMessage as apiSendMessage, getImageUrl } from '../api';
 import { useTranslation } from '../i18n';
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   headerName: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
   messageList: { padding: SPACING.md, paddingBottom: 8 },
   bubble: {
-    maxWidth: '75%', padding: 10, borderRadius: 16, marginBottom: 6,
+    maxWidth: '75%', padding: 10, borderRadius: RADIUS.media, marginBottom: 6,
   },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: COLORS.coral, borderBottomRightRadius: 4 },
   bubbleThem: { alignSelf: 'flex-start', backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderBottomLeftRadius: 4 },
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.md,
     marginBottom: 8,
     padding: 12,
-    borderRadius: 14,
+    borderRadius: RADIUS.media,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   offerChip: {
     paddingHorizontal: 9,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: RADIUS.full,
     backgroundColor: COLORS.surface2,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, color: COLORS.text,
+    borderRadius: RADIUS.pill, paddingHorizontal: 14, paddingVertical: 10, color: COLORS.text,
     fontSize: 14, maxHeight: 100,
   },
   sendBtn: {

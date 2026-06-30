@@ -3,11 +3,12 @@ import {
   View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl, useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, isVerifiedSeller, getDisplayName, getSellerAvatar } from '../theme';
+import { COLORS, SPACING, RADIUS, isVerifiedSeller, getDisplayName, getSellerAvatar } from '../theme';
 import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation, getConversations } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenHeader from '../components/ScreenHeader';
+import EmptyState from '../components/EmptyState';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
@@ -17,7 +18,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
 
 export default function StorefrontScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
+
   const { sellerId } = route.params;
   const [seller, setSeller] = useState<SellerProfile | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -119,12 +120,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{getDisplayName(seller) || t('storefront.store')}</Text>
-      </View>
+      <ScreenHeader title={getDisplayName(seller) || t('storefront.store')} onBack={() => navigation.goBack()} />
 
       <FlatList
         data={products}
@@ -216,12 +212,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           );
         }}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <View style={styles.emptyIcon}>
-              <MaterialCommunityIcons name="storefront-outline" size={28} color={COLORS.text2} />
-            </View>
-            <Text style={styles.emptyText}>{t('storefront.noProducts')}</Text>
-          </View>
+          <EmptyState icon="storefront-outline" title={t('storefront.noProducts')} />
         }
         ListFooterComponent={
           reviews.length > 0 ? (
@@ -264,13 +255,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
-  topbar: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  backBtn: { color: COLORS.text, fontSize: 24 },
-  title: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.text },
+
   scroll: { padding: SPACING.sm, paddingBottom: 100 },
   hero: { alignItems: 'center', paddingVertical: SPACING.lg, gap: 6, paddingHorizontal: SPACING.lg },
   avatar: {
@@ -286,7 +271,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11, color: COLORS.text2 },
   actionRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
   followBtn: {
-    flex: 1, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20,
+    flex: 1, paddingHorizontal: 24, paddingVertical: 10, borderRadius: RADIUS.pill,
     borderWidth: 1.5, borderColor: COLORS.blue, alignItems: 'center',
   },
   followBtnActive: { backgroundColor: COLORS.blue },
@@ -294,7 +279,7 @@ const styles = StyleSheet.create({
   followBtnTextActive: { color: COLORS.white },
   actionDisabled: { opacity: 0.55 },
   msgBtn: {
-    flex: 1, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20,
+    flex: 1, paddingHorizontal: 24, paddingVertical: 10, borderRadius: RADIUS.pill,
     borderWidth: 1.5, borderColor: COLORS.blue, alignItems: 'center',
     flexDirection: 'row', justifyContent: 'center', gap: 6,
   },
@@ -305,7 +290,7 @@ const styles = StyleSheet.create({
   },
   row: { justifyContent: 'space-between', paddingHorizontal: SPACING.xs },
   card: {
-    width: '48%', backgroundColor: COLORS.surface, borderRadius: 16,
+    width: '48%', backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
     marginBottom: SPACING.sm, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border,
   },
   cardImage: {
@@ -314,11 +299,9 @@ const styles = StyleSheet.create({
   cardImg: { width: '100%', height: '100%' },
   priceBadge: {
     position: 'absolute', top: 8, right: 8, backgroundColor: COLORS.coral,
-    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3,
+    borderRadius: RADIUS.pill, paddingHorizontal: 10, paddingVertical: 3,
   },
   priceText: { color: COLORS.white, fontSize: 11, fontWeight: '700' },
   cardName: { padding: 10, fontSize: 13, fontWeight: '600', color: COLORS.text },
-  empty: { alignItems: 'center', paddingTop: 40 },
-  emptyText: { textAlign: 'center', color: COLORS.text2, paddingTop: 12, fontSize: 14, fontWeight: '500' },
-  emptyIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', marginTop: 40 },
+
 });

@@ -22,6 +22,31 @@ export const SPACING = {
   xxl: 24,
 };
 
+// Unified corner-radius scale. Use these instead of one-off numbers so every
+// button/card/pill in the app shares the same visual language.
+export const RADIUS = {
+  // Rows inside a list/settings card (Settings rows, Address rows, etc.)
+  row: 10,
+  // Cards / surfaces (settings card, balance card, info card)
+  card: 12,
+  // Media cards (product cards, image-bearing tiles)
+  media: 16,
+  // Primary CTA buttons (Save, Submit, Checkout, Subscribe)
+  button: 12,
+  // Pill-shaped buttons (auth screens, follow/message, tab-style chips)
+  pill: 20,
+  // Fully round badges/avatars use 999 or half of width/height as before.
+  full: 999,
+};
+
+// Standard header heights/paddings so every screen's top bar lines up.
+export const HEADER = {
+  // Use with insets.top: paddingTop: insets.top + HEADER.topPad
+  topPad: SPACING.md,
+  // Title font size for utility/list screens (Settings, Cart, Orders list rows etc.)
+  titleSize: 16,
+};
+
 export const FONTS = {
   heading: 'Syne',
   body: 'Inter',

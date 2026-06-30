@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import { createConversation, getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -535,14 +535,14 @@ const styles = StyleSheet.create({
   stockOverlay: {
     position: 'absolute', bottom: 10, left: 10,
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: RADIUS.row,
     paddingHorizontal: 8, paddingVertical: 4,
   },
   stockDot: { width: 5, height: 5, borderRadius: 2.5 },
   stockOverlayText: { fontSize: 10, color: COLORS.white, fontWeight: '600' },
   priceOverlay: {
     position: 'absolute', bottom: 10, right: 10,
-    backgroundColor: COLORS.coral, borderRadius: 10,
+    backgroundColor: COLORS.coral, borderRadius: RADIUS.row,
     paddingHorizontal: 10, paddingVertical: 4,
   },
   priceOverlayText: { fontSize: 13, fontWeight: '800', color: COLORS.white },
@@ -675,13 +675,13 @@ const styles = StyleSheet.create({
   addBtn: {
     flex: 1.15,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 12, borderRadius: 10, backgroundColor: COLORS.coral,
+    paddingVertical: 12, borderRadius: RADIUS.row, backgroundColor: COLORS.coral,
   },
   ctaRow: { flexDirection: 'row', gap: 10 },
   offerBtn: {
     flex: 1,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 12, borderRadius: 10,
+    paddingVertical: 12, borderRadius: RADIUS.row,
     backgroundColor: COLORS.blue,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.16)',
@@ -690,13 +690,13 @@ const styles = StyleSheet.create({
   addBtnDisabled: { opacity: 0.4 },
   addBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
   ownProductRow: {
-    padding: 10, borderRadius: 10, backgroundColor: COLORS.surface,
+    padding: 10, borderRadius: RADIUS.row, backgroundColor: COLORS.surface,
     borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',
   },
   ownProductText: { color: COLORS.text2, fontWeight: '600', fontSize: 12 },
   editListingBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 12, borderRadius: 10, backgroundColor: COLORS.blue,
+    paddingVertical: 12, borderRadius: RADIUS.row, backgroundColor: COLORS.blue,
   },
   editListingBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
 });

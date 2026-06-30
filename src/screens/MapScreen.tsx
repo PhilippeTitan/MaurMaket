@@ -6,7 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
-import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import { store } from '../store';
 import { getNearbySellers, setSellerLocation, getImageUrl } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -659,7 +659,7 @@ const styles = StyleSheet.create({
   webSellerList: { marginTop: 20, width: '100%', maxWidth: 400 },
   webSellerItem: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 12, backgroundColor: COLORS.bg, borderRadius: 12,
+    padding: 12, backgroundColor: COLORS.bg, borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.border, marginBottom: 8,
   },
   webSellerName: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
@@ -677,7 +677,7 @@ const styles = StyleSheet.create({
   },
   topRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   countBadge: {
-    backgroundColor: COLORS.coral, borderRadius: 12,
+    backgroundColor: COLORS.coral, borderRadius: RADIUS.card,
     paddingHorizontal: 10, paddingVertical: 4,
   },
   countBadgeText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
@@ -715,7 +715,7 @@ const styles = StyleSheet.create({
   },
   filterRow: { flexDirection: 'row', gap: 8, marginBottom: SPACING.md },
   filterChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.media,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   filterChipActive: { backgroundColor: COLORS.blue, borderColor: COLORS.blue },
@@ -723,7 +723,7 @@ const styles = StyleSheet.create({
   filterTextActive: { color: COLORS.white },
   sellerList: { paddingBottom: SPACING.sm },
   sellerCard: {
-    width: 200, backgroundColor: COLORS.surface, borderRadius: 16,
+    width: 200, backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
     borderWidth: 1, borderColor: COLORS.border, marginRight: SPACING.md, overflow: 'hidden',
   },
   sellerCardImage: { width: 200, height: 100 },
@@ -758,7 +758,7 @@ const styles = StyleSheet.create({
   emptyAction: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginTop: 14, paddingHorizontal: 16, paddingVertical: 10,
-    backgroundColor: COLORS.coral, borderRadius: 12,
+    backgroundColor: COLORS.coral, borderRadius: RADIUS.card,
   },
   emptyActionText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
   previewCardContainer: {
@@ -768,7 +768,7 @@ const styles = StyleSheet.create({
     zIndex: 15,
   },
   previewCard: {
-    backgroundColor: COLORS.surface, borderRadius: 16,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
     borderWidth: 1, borderColor: COLORS.border, padding: 12,
     elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12,
   },
@@ -778,7 +778,7 @@ const styles = StyleSheet.create({
   previewName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   previewMeta: { color: COLORS.text2, fontSize: 11, marginTop: 1 },
   previewVisitBtn: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.row,
     backgroundColor: COLORS.coral,
   },
   previewVisitText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },

@@ -3,15 +3,16 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { getOrders, cancelOrder, completeOrder, getSellerOrders, updateOrderStatus } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useFocusEffect } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Order } from '../types';
+import ScreenHeader from '../components/ScreenHeader';
+import EmptyState from '../components/EmptyState';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Orders'>;
 
@@ -29,7 +30,6 @@ const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error
 
 export default function OrdersScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'buying' | 'selling'>('buying');
   const [buyOrders, setBuyOrders] = useState<Order[]>([]);
   const [sellOrders, setSellOrders] = useState<Order[]>([]);
@@ -131,12 +131,7 @@ export default function OrdersScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 12 }}>
-          <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('orders.title')}</Text>
-      </View>
+      <ScreenHeader title={t('orders.title')} onBack={() => navigation.goBack()} variant="branded" bordered={false} />
 
       {store.isSeller && (
         <View style={styles.tabRow}>
@@ -165,15 +160,11 @@ export default function OrdersScreen({ navigation }: Props) {
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={styles.emptyIcon}>
-                <MaterialCommunityIcons name="package-variant" size={32} color={COLORS.text2} />
-              </View>
-              <Text style={styles.emptyText}>{t('orders.noOrders')}</Text>
-              <Text style={styles.emptyHint}>
-                {tab === 'buying' ? t('orders.whenBuyersOrder') : t('orders.noSellingOrders')}
-              </Text>
-            </View>
+            <EmptyState
+              icon="package-variant"
+              title={t('orders.noOrders')}
+              hint={tab === 'buying' ? t('orders.whenBuyersOrder') : t('orders.noSellingOrders')}
+            />
           }
         />
       )}
@@ -183,13 +174,9 @@ export default function OrdersScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  topbar: {
-    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
-  },
-  title: { fontFamily: 'Syne', fontSize: 22, fontWeight: '800', color: COLORS.text },
   tabRow: {
     flexDirection: 'row', marginHorizontal: SPACING.lg, marginBottom: SPACING.sm,
-    backgroundColor: COLORS.surface, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
   },
   tab: { flex: 1, padding: 10, alignItems: 'center' },
   tabActive: { backgroundColor: COLORS.coral },
@@ -198,27 +185,23 @@ const styles = StyleSheet.create({
   list: { padding: SPACING.lg, paddingBottom: 100 },
   card: {
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 14, padding: 14, marginBottom: 8,
+    borderRadius: RADIUS.media, padding: 14, marginBottom: 8,
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   orderId: { fontSize: 12, color: COLORS.text2, fontFamily: 'monospace' },
-  statusBadge: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  statusBadge: { borderRadius: RADIUS.row, paddingHorizontal: 8, paddingVertical: 2 },
   statusText: { fontSize: 12, fontWeight: '600' },
   amount: { fontFamily: 'Syne', fontSize: 16, fontWeight: '700', color: COLORS.coral },
   date: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
   actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   actionBtn: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.row,
     backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
   },
   actionBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.text },
   detailBtn: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.row,
     borderWidth: 1, borderColor: COLORS.blue,
   },
   detailBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.blue },
-  empty: { alignItems: 'center', paddingTop: 80, gap: 8 },
-  emptyIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: COLORS.text2, fontSize: 15, fontWeight: '600' },
-  emptyHint: { color: COLORS.text2, fontSize: 12, opacity: 0.7 },
 });

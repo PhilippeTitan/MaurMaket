@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { getConversations, getNotifications, markNotificationRead, markAllNotificationsRead, getFollowing, getImageUrl, createConversation } from '../api';
 import type { Conversation, Notification, User } from '../types';
@@ -301,14 +301,14 @@ const styles = StyleSheet.create({
   tabActive: { borderBottomWidth: 2, borderBottomColor: COLORS.coral },
   tabText: { fontSize: 13, color: COLORS.text2, fontWeight: '500' },
   tabTextActive: { color: COLORS.text, fontWeight: '700' },
-  tabBadge: { backgroundColor: COLORS.coral, borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  tabBadge: { backgroundColor: COLORS.coral, borderRadius: RADIUS.row, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   tabBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: '700' },
   markAllBtn: { position: 'absolute', right: SPACING.md, top: 12 },
   markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '500' },
   searchBarWrap: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: COLORS.surface, borderRadius: 20,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.pill,
     paddingHorizontal: 12, height: 38,
   },
   searchBarInput: { flex: 1, color: COLORS.text, fontSize: 14, paddingVertical: 0 },

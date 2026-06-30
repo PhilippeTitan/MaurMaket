@@ -5,13 +5,13 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { getProduct, updateProduct, deleteProduct, getCategories, uploadImage, getImageUrl } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Category, ProductImage } from '../types';
+import ScreenHeader from '../components/ScreenHeader';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditListing'>;
 
@@ -20,7 +20,6 @@ const THUMB_SIZE = 80;
 
 export default function EditListingScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
   const { productId } = route.params;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -167,14 +166,9 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
+    <ScreenHeader title={t('editListing.title')} onBack={() => navigation.goBack()} />
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('editListing.title')}</Text>
-      </View>
-
       <Text style={styles.imageLabel}>{t('addListing.photos')} ({totalImages}/{MAX_IMAGES})</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageRow}>
         {existingImages
@@ -254,6 +248,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
         )}
       </TouchableOpacity>
     </ScrollView>
+    </View>
     </KeyboardAvoidingView>
   );
 }
@@ -262,24 +257,20 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 60 },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
-  topBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  title: { fontSize: 16, color: COLORS.text, fontWeight: '700', flex: 1, textAlign: 'center' },
+
   imageLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 12, marginBottom: 6 },
   imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8, paddingTop: 6 },
-  thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, overflow: 'visible', marginRight: 8, backgroundColor: COLORS.surface2, position: 'relative' },
-  thumbImg: { width: '100%', height: '100%', borderRadius: 8 },
-  thumbRemove: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.bg, borderRadius: 10, zIndex: 1 },
+  thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: RADIUS.row, overflow: 'visible', marginRight: 8, backgroundColor: COLORS.surface2, position: 'relative' },
+  thumbImg: { width: '100%', height: '100%', borderRadius: RADIUS.row },
+  thumbRemove: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.bg, borderRadius: RADIUS.row, zIndex: 1 },
   addBtn: {
-    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: 8, borderWidth: 1,
+    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: RADIUS.row, borderWidth: 1,
     borderColor: COLORS.border, borderStyle: 'dashed', alignItems: 'center',
     justifyContent: 'center', backgroundColor: COLORS.surface,
   },
   input: {
     marginHorizontal: SPACING.md, backgroundColor: COLORS.surface, borderWidth: 1,
-    borderColor: COLORS.border, borderRadius: 10, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,
+    borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
   toggleRow: {
@@ -289,17 +280,17 @@ const styles = StyleSheet.create({
   toggleText: { fontSize: 13, color: COLORS.text },
   sectionLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 8, marginBottom: 6 },
   catScroll: { paddingHorizontal: SPACING.md, marginBottom: 12 },
-  catPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, marginRight: 8 },
+  catPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.media, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, marginRight: 8 },
   catPillActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
   catPillText: { fontSize: 12, color: COLORS.text2 },
   catPillTextActive: { color: COLORS.white, fontWeight: '700' },
   saveBtn: {
-    marginHorizontal: SPACING.md, backgroundColor: COLORS.coral, borderRadius: 12,
+    marginHorizontal: SPACING.md, backgroundColor: COLORS.coral, borderRadius: RADIUS.button,
     padding: 14, alignItems: 'center', marginTop: 8,
   },
   saveBtnText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
   deleteBtn: {
-    marginHorizontal: SPACING.md, marginTop: 10, borderRadius: 12,
+    marginHorizontal: SPACING.md, marginTop: 10, borderRadius: RADIUS.button,
     padding: 14, alignItems: 'center', borderWidth: 1.5, borderColor: COLORS.coral,
   },
   deleteBtnText: { fontSize: 14, color: COLORS.coral, fontWeight: '600' },

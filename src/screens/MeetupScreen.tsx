@@ -4,7 +4,8 @@ import {
   ScrollView, Modal, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
+import ScreenHeader from '../components/ScreenHeader';
 
 let MapView: any = null;
 let Marker: any = null;
@@ -264,13 +265,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Meetup</Text>
-        <View style={{ width: 20 }} />
-      </View>
+      <ScreenHeader title="Meetup" onBack={() => navigation.goBack()} variant="branded" bordered={false} />
 
       {region && (
         <View style={styles.mapContainer}>
@@ -580,17 +575,13 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
-  topbar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
-  },
-  title: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.text },
-  mapContainer: { height: 260, marginHorizontal: SPACING.lg, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
+
+  mapContainer: { height: 260, marginHorizontal: SPACING.lg, borderRadius: RADIUS.media, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
   map: { flex: 1 },
   meetupPin: { alignItems: 'center' },
   distanceBadge: {
     position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: COLORS.surface, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12,
+    backgroundColor: COLORS.surface, paddingHorizontal: 10, paddingVertical: 5, borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.border,
   },
   distanceBadgeClose: { backgroundColor: COLORS.green, borderColor: COLORS.green },
@@ -614,54 +605,54 @@ const styles = StyleSheet.create({
   statusGrid: { flexDirection: 'row', gap: 10, marginBottom: SPACING.lg },
   statusCard: {
     flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 14, padding: 12, alignItems: 'center',
+    borderRadius: RADIUS.media, padding: 12, alignItems: 'center',
   },
   statusCardActive: { borderColor: COLORS.green },
   statusLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginTop: 6 },
   statusSub: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
   qrButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: 14, borderRadius: 16, backgroundColor: COLORS.blue, marginBottom: 10,
+    padding: 14, borderRadius: RADIUS.media, backgroundColor: COLORS.blue, marginBottom: 10,
   },
   qrButtonText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   scanButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: 14, borderRadius: 16, backgroundColor: COLORS.green, marginBottom: 10,
+    padding: 14, borderRadius: RADIUS.media, backgroundColor: COLORS.green, marginBottom: 10,
   },
   scanButtonText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   waitingCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: 14, borderRadius: 14, backgroundColor: COLORS.surface,
+    padding: 14, borderRadius: RADIUS.media, backgroundColor: COLORS.surface,
     borderWidth: 1, borderColor: COLORS.border, marginBottom: 10,
   },
   waitingText: { fontSize: 13, color: COLORS.text2, fontWeight: '600' },
   checkinBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: 16, borderRadius: 20, backgroundColor: COLORS.coral, marginBottom: 10,
+    padding: 16, borderRadius: RADIUS.pill, backgroundColor: COLORS.coral, marginBottom: 10,
   },
   checkinBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 16 },
   receiptBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: 16, borderRadius: 20, backgroundColor: COLORS.green, marginBottom: 10,
+    padding: 16, borderRadius: RADIUS.pill, backgroundColor: COLORS.green, marginBottom: 10,
   },
   receiptBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 16 },
   emergencyRow: { flexDirection: 'row', gap: 10, marginTop: 6 },
   emergencyBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: COLORS.coral,
+    padding: 12, borderRadius: RADIUS.card, borderWidth: 1.5, borderColor: COLORS.coral,
   },
   emergencyBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.coral },
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: SPACING.lg,
   },
   modalContent: {
-    backgroundColor: COLORS.surface, borderRadius: 20, padding: SPACING.lg, width: '100%', maxWidth: 380,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.pill, padding: SPACING.lg, width: '100%', maxWidth: 380,
   },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.lg,
   },
   modalTitle: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.text },
-  qrContainer: { alignItems: 'center', paddingVertical: 24, backgroundColor: COLORS.bg, borderRadius: 16, marginBottom: 14 },
+  qrContainer: { alignItems: 'center', paddingVertical: 24, backgroundColor: COLORS.bg, borderRadius: RADIUS.media, marginBottom: 14 },
   qrHint: { fontSize: 13, color: COLORS.text2, textAlign: 'center', marginBottom: 12 },
   copyTokenBtn: { alignItems: 'center', padding: 10 },
   copyTokenText: { fontSize: 13, color: COLORS.blue, fontWeight: '600' },
@@ -669,10 +660,10 @@ const styles = StyleSheet.create({
   scanInputRow: { marginBottom: 14 },
   scanInput: {
     backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 12, padding: 12, fontSize: 14, color: COLORS.text, minHeight: 44,
+    borderRadius: RADIUS.card, padding: 12, fontSize: 14, color: COLORS.text, minHeight: 44,
   },
   scanConfirmBtn: {
-    padding: 14, borderRadius: 20, backgroundColor: COLORS.green, alignItems: 'center',
+    padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.green, alignItems: 'center',
   },
   scanConfirmBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   receiptIcon: { alignItems: 'center', marginBottom: 14 },
@@ -680,7 +671,7 @@ const styles = StyleSheet.create({
   receiptSubtext: { fontSize: 13, color: COLORS.text2, textAlign: 'center', marginBottom: 18, lineHeight: 18 },
   receiptConfirmBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: 14, borderRadius: 20, backgroundColor: COLORS.green, marginBottom: 10,
+    padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.green, marginBottom: 10,
   },
   receiptConfirmBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   receiptDisputeBtn: { alignItems: 'center', padding: 10 },

@@ -6,9 +6,9 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenHeader from '../components/ScreenHeader';
 import { store } from '../store';
 import { createOrder, createPayment, getAddresses, getImageUrl } from '../api';
 import type { RootStackParamList } from '../navigation';
@@ -20,7 +20,7 @@ type DeliveryMethod = 'delivery' | 'meetup';
 
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
+
   const cart = store.cart;
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
   const [name, setName] = useState('');
@@ -117,15 +117,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <View>
-          <Text style={styles.title}>{t('checkout.title')}</Text>
-          <Text style={styles.subtitle}>{itemCount} {itemLabel} - Rs {subtotal.toLocaleString()}</Text>
-        </View>
-      </View>
+      <ScreenHeader
+        title={t('checkout.title')}
+        onBack={() => navigation.goBack()}
+        right={<Text style={styles.subtitle}>{itemCount} {itemLabel} - Rs {subtotal.toLocaleString()}</Text>}
+      />
 
       <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
       <View style={[styles.sellerSummary, sellerCount > 1 && styles.sellerSummaryMixed]}>
@@ -297,8 +293,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 40 },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, paddingBottom: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  title: { fontSize: 16, color: COLORS.text, fontWeight: '700' },
   subtitle: { fontSize: 11, color: COLORS.text2 },
   sectionLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0, paddingHorizontal: SPACING.md, marginTop: SPACING.md, marginBottom: 8 },
   sellerSummary: {
@@ -306,7 +300,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 12,
+    borderRadius: RADIUS.card,
     padding: 12,
     gap: 8,
   },
@@ -333,7 +327,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 12,
+    borderRadius: RADIUS.card,
     overflow: 'hidden',
   },
   orderItemRow: {
@@ -353,7 +347,7 @@ const styles = StyleSheet.create({
   orderItemQty: { fontSize: 12, color: COLORS.text2, fontWeight: '600' },
   orderItemPrice: { fontSize: 13, color: COLORS.coral, fontWeight: '700' },
   methodRow: { flexDirection: 'row', gap: 10, paddingHorizontal: SPACING.md },
-  methodCard: { flex: 1, alignItems: 'center', gap: 6, padding: 12, borderRadius: 10, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  methodCard: { flex: 1, alignItems: 'center', gap: 6, padding: 12, borderRadius: RADIUS.row, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
   methodActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
   methodText: { fontSize: 11, color: COLORS.text2 },
   methodTextActive: { color: COLORS.coral, fontWeight: '700' },
@@ -361,7 +355,7 @@ const styles = StyleSheet.create({
   addressList: { gap: 8, marginBottom: 12 },
   addressCard: {
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 10, padding: 12,
+    borderRadius: RADIUS.row, padding: 12,
   },
   addressCardActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
   addressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
@@ -374,17 +368,17 @@ const styles = StyleSheet.create({
   addAddressLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
   addAddressText: { fontSize: 12, color: COLORS.coral, fontWeight: '600' },
   input: {
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row,
     padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,
   },
-  meetupInfo: { flexDirection: 'row', gap: 8, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12 },
+  meetupInfo: { flexDirection: 'row', gap: 8, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12 },
   meetupInfoText: { flex: 1, fontSize: 12, color: COLORS.text2, lineHeight: 18 },
-  moncashBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: SPACING.md, backgroundColor: 'rgba(0,194,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,194,255,0.3)', borderRadius: 8, padding: 10 },
+  moncashBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: SPACING.md, backgroundColor: 'rgba(0,194,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,194,255,0.3)', borderRadius: RADIUS.row, padding: 10 },
   moncashText: { fontSize: 12, color: COLORS.blue },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', padding: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border, marginTop: SPACING.md },
   totalLabel: { fontSize: 14, color: COLORS.text2 },
   totalValue: { fontSize: 18, color: COLORS.coral, fontWeight: '700' },
-  ctaBtn: { marginHorizontal: SPACING.md, backgroundColor: COLORS.coral, borderRadius: 12, padding: 14, alignItems: 'center' },
+  ctaBtn: { marginHorizontal: SPACING.md, backgroundColor: COLORS.coral, borderRadius: RADIUS.button, padding: 14, alignItems: 'center' },
   ctaBtnDisabled: { opacity: 0.6 },
   ctaText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
 });

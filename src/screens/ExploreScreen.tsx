@@ -6,7 +6,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, getDisplayName } from '../theme';
+import { COLORS, RADIUS, getDisplayName } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
 import { store } from '../store';
 import { useFocusEffect } from '@react-navigation/native';
@@ -44,7 +44,7 @@ const NUM_COLS = 2;
 const COL_GAP = 6;
 const SIDE_PAD = 8;
 const CARD_W = (SCREEN_W - SIDE_PAD * 2 - COL_GAP) / NUM_COLS;
-const CARD_RADIUS = 10;
+
 const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
 const MIN_H = CARD_W * 0.6;
 const MAX_H = SCREEN_H * 0.52;
@@ -419,7 +419,7 @@ const styles = StyleSheet.create({
   },
   searchWrap: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: COLORS.surface, borderRadius: 24,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.pill,
     paddingHorizontal: 14, height: 44,
   },
   searchInput: { flex: 1, color: COLORS.text, fontSize: 15, paddingVertical: 0 },
@@ -449,7 +449,7 @@ const styles = StyleSheet.create({
   clearFilterText: { fontSize: 11, color: COLORS.coral, fontWeight: '600' },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.pill,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   chipActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: CARD_RADIUS,
+    borderRadius: RADIUS.row,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -495,13 +495,13 @@ const styles = StyleSheet.create({
   },
   cardOverlayBottom: {
     backgroundColor: 'rgba(0,0,0,0.45)',
-    borderRadius: 8,
+    borderRadius: RADIUS.row,
     padding: 8,
     gap: 2,
   },
   priceBadge: {
     backgroundColor: COLORS.coral,
-    borderRadius: 20,
+    borderRadius: RADIUS.pill,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
@@ -525,7 +525,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   modalContent: {
-    width: 240, backgroundColor: COLORS.surface, borderRadius: 12, padding: 10, gap: 2, overflow: 'hidden',
+    width: 240, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 10, gap: 2, overflow: 'hidden',
   },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, marginLeft: 4 },
   modalTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
@@ -542,12 +542,12 @@ const styles = StyleSheet.create({
   },
   priceInputModal: {
     flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: COLORS.text,
+    borderRadius: RADIUS.row, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: COLORS.text,
     height: 38, minWidth: 0,
   },
   priceDashModal: { fontSize: 14, color: COLORS.text2 },
   modalApplyBtn: {
-    backgroundColor: COLORS.coral, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: COLORS.coral, borderRadius: RADIUS.row, paddingHorizontal: 14, paddingVertical: 8,
     alignItems: 'center', marginTop: 12,
   },
   modalApplyText: { fontSize: 13, color: COLORS.white, fontWeight: '700' },

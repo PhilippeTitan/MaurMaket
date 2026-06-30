@@ -4,9 +4,9 @@ import {
   KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { store } from '../store';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenHeader from '../components/ScreenHeader';
 import { updateProfile, changePassword, updateSellerProfile } from '../api';
 import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -34,7 +34,6 @@ const FIELD_ICONS: Record<string, string> = {
 
 export default function SettingsEditScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
   const { field, title } = route.params;
   const user = store.user;
   const [loading, setLoading] = useState(false);
@@ -97,19 +96,19 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <View style={styles.container}>
-      <View style={[styles.topbar, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{title}</Text>
-        <TouchableOpacity onPress={handleSave} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator size="small" color={COLORS.coral} />
-          ) : (
-            <Text style={styles.saveTopBtn}>{t('settingsEdit.save')}</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader
+        title={title}
+        onBack={() => navigation.goBack()}
+        right={
+          <TouchableOpacity onPress={handleSave} disabled={loading}>
+            {loading ? (
+              <ActivityIndicator size="small" color={COLORS.coral} />
+            ) : (
+              <Text style={styles.saveTopBtn}>{t('settingsEdit.save')}</Text>
+            )}
+          </TouchableOpacity>
+        }
+      />
 
       <View style={styles.fieldCard}>
         <View style={styles.fieldRow}>
@@ -159,17 +158,11 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  topbar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  title: { fontSize: 16, fontWeight: '700', color: COLORS.text, flex: 1, textAlign: 'center' },
   saveTopBtn: { fontSize: 14, fontWeight: '700', color: COLORS.coral },
   fieldCard: {
     marginHorizontal: SPACING.lg, marginTop: SPACING.lg,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 12, overflow: 'hidden',
+    borderRadius: RADIUS.card, overflow: 'hidden',
   },
   fieldRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 14,
