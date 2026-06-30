@@ -2321,7 +2321,7 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
         body: JSON.stringify({
           amount: parseFloat(order.total_amount),
           referenceId: retryReference,
-          returnUrl: `https://${req.get('host')}/payment/return?order=${orderId}`,
+          returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
         }),
       }
     );
@@ -2825,7 +2825,7 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
         body: JSON.stringify({
           amount: parseFloat(order.total_amount),
           referenceId: orderId,
-          returnUrl: returnUrl || `https://${req.get('host')}/payment/return`,
+          returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return`,
         }),
       }
     );
