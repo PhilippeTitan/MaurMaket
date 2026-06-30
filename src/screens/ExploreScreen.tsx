@@ -152,7 +152,6 @@ export default function ExploreScreen({ navigation }: Props) {
     const imgFailed = failedImages.has(item.id);
     return (
       <TouchableOpacity
-        key={item.id}
         style={styles.card}
         activeOpacity={0.82}
         onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
@@ -295,10 +294,10 @@ export default function ExploreScreen({ navigation }: Props) {
           renderItem={() => (
             <View style={styles.grid}>
               <View style={styles.column}>
-                {leftCol.map(renderCard)}
+                {leftCol.map(item => <React.Fragment key={item.id}>{renderCard(item)}</React.Fragment>)}
               </View>
               <View style={styles.column}>
-                {rightCol.map(renderCard)}
+                {rightCol.map(item => <React.Fragment key={item.id}>{renderCard(item)}</React.Fragment>)}
               </View>
             </View>
           )}
