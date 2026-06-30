@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
 import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -14,6 +14,7 @@ import type { Product, Review } from '../types';
 import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
+import UserAvatar from '../components/UserAvatar';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -293,16 +294,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             activeOpacity={0.7}
             onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id })}
           >
-            <View style={styles.sellerAvatar}>
-              {getSellerAvatar(product.seller) ? (
-                <Image
-                  source={{ uri: getImageUrl(getSellerAvatar(product.seller)) || '' }}
-                  style={styles.sellerAvatarImg}
-                />
-              ) : (
-                <Text style={styles.sellerAvatarText}>{(getDisplayName(product.seller)).charAt(0)}</Text>
-              )}
-            </View>
+            <UserAvatar seller={product.seller} size={30} />
             <View style={styles.sellerInfo}>
               <Text style={styles.sellerName}>{getDisplayName(product.seller)}</Text>
               {(typeof product.category === 'string' ? product.category : product.category?.name) && (
@@ -490,13 +482,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 9,
     paddingHorizontal: 12, paddingVertical: 11,
   },
-  sellerAvatar: {
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: COLORS.coral, justifyContent: 'center', alignItems: 'center',
-    overflow: 'hidden', flexShrink: 0,
-  },
-  sellerAvatarImg: { width: 30, height: 30 },
-  sellerAvatarText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
   sellerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', minWidth: 0 },
   sellerName: { fontSize: 12, fontWeight: '600', color: COLORS.text },
   sellerMeta: { fontSize: 11, color: COLORS.text2 },

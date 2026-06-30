@@ -6,7 +6,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
+import { COLORS, RADIUS, getDisplayName } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
 import { store } from '../store';
 import { useFocusEffect } from '@react-navigation/native';
@@ -15,6 +15,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
 import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
+import UserAvatar from '../components/UserAvatar';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -153,7 +154,6 @@ export default function ExploreScreen({ navigation }: Props) {
     const images = item.images && item.images.length > 0
       ? item.images
       : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
-    const sellerAvatar = getSellerAvatar(item.seller);
     return (
       <TouchableOpacity
         style={styles.card}
@@ -195,13 +195,7 @@ export default function ExploreScreen({ navigation }: Props) {
           <View style={styles.cardInfoBar}>
             {item.seller && (
               <View style={styles.cardSellerRow}>
-                {sellerAvatar ? (
-                  <Image source={{ uri: getImageUrl(sellerAvatar) || '' }} style={styles.cardAvatar} />
-                ) : (
-                  <View style={styles.cardAvatarPlaceholder}>
-                    <Text style={styles.cardAvatarText}>{getDisplayName(item.seller)?.charAt(0) || '?'}</Text>
-                  </View>
-                )}
+                <UserAvatar seller={item.seller} size={20} />
                 <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
               </View>
             )}
@@ -527,15 +521,6 @@ const styles = StyleSheet.create({
   cardSellerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },
-  cardAvatar: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: COLORS.coral,
-  },
-  cardAvatarPlaceholder: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center',
-  },
-  cardAvatarText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
   cardName: { fontSize: 11, fontWeight: '600', color: COLORS.text, flex: 1 },
   cardDesc: { fontSize: 10, color: COLORS.text2, lineHeight: 13 },
 

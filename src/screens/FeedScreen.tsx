@@ -20,6 +20,7 @@ import type { RootStackParamList } from '../navigation';
 import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
+import UserAvatar from '../components/UserAvatar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -272,7 +273,6 @@ export default function FeedScreen() {
   const renderFeedItem = ({ item }: { item: Product }) => {
     const primaryImg = item.images?.find(i => i.is_primary) || item.images?.[0];
     const imgUrl = getImageUrl(primaryImg?.image_url);
-    const sellerInitial = getDisplayName(item.seller)?.[0] || '?';
     const isSoldOut = item.stock <= 0;
     const isFollowing = followedSellerIds.has(item.seller_id);
     const isOwnProduct = store.user?.id === item.seller_id;
@@ -335,13 +335,7 @@ export default function FeedScreen() {
               style={styles.sellerChip}
               onPress={() => item.seller && nav.navigate('Storefront', { sellerId: item.seller_id })}
             >
-              <View style={styles.sellerAvatar}>
-                {getSellerAvatar(item.seller) ? (
-                  <Image source={{ uri: getImageUrl(getSellerAvatar(item.seller)) || '' }} style={{ width: 28, height: 28, borderRadius: 14 }} />
-                ) : (
-                  <Text style={styles.sellerAvatarText}>{sellerInitial}</Text>
-                )}
-              </View>
+              <UserAvatar seller={item.seller} size={28} />
               <Text style={styles.sellerName} numberOfLines={1}>{getDisplayName(item.seller)}</Text>
             </TouchableOpacity>
             {!isOwnProduct && (
@@ -535,11 +529,7 @@ export default function FeedScreen() {
                 contentContainerStyle={{ paddingBottom: 12 }}
                 renderItem={({ item }) => (
                   <View style={styles.commentItem}>
-                    <View style={styles.commentAvatar}>
-                      <Text style={styles.commentAvatarText}>
-                        {(item.reviewer?.full_name || 'B')[0]}
-                      </Text>
-                    </View>
+                      <UserAvatar name={item.reviewer?.full_name || 'B'} size={28} />
                     <View style={styles.commentBody}>
                       <View style={styles.commentNameRow}>
                         <Text style={styles.commentName}>{item.reviewer?.full_name || 'Buyer'}</Text>
