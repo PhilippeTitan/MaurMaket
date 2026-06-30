@@ -192,23 +192,23 @@ export default function ExploreScreen({ navigation }: Props) {
               <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
             </View>
           </View>
-        </View>
-        <View style={styles.cardInfo}>
-          {item.seller && (
-            <View style={styles.cardSellerRow}>
-              {sellerAvatar ? (
-                <Image source={{ uri: getImageUrl(sellerAvatar) || '' }} style={styles.cardAvatar} />
-              ) : (
-                <View style={styles.cardAvatarPlaceholder}>
-                  <Text style={styles.cardAvatarText}>{getDisplayName(item.seller)?.charAt(0) || '?'}</Text>
-                </View>
-              )}
-              <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-            </View>
-          )}
-          {item.description ? (
-            <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
-          ) : null}
+          <View style={styles.cardInfoBar}>
+            {item.seller && (
+              <View style={styles.cardSellerRow}>
+                {sellerAvatar ? (
+                  <Image source={{ uri: getImageUrl(sellerAvatar) || '' }} style={styles.cardAvatar} />
+                ) : (
+                  <View style={styles.cardAvatarPlaceholder}>
+                    <Text style={styles.cardAvatarText}>{getDisplayName(item.seller)?.charAt(0) || '?'}</Text>
+                  </View>
+                )}
+                <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+              </View>
+            )}
+            {item.description ? (
+              <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
+            ) : null}
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -511,15 +511,17 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface2,
   },
   priceBadgePos: {
-    position: 'absolute', top: 8, left: 8,
+    position: 'absolute', top: 8, right: 8,
   },
   priceBadgeBg: {
     backgroundColor: 'rgba(0,0,0,0.55)',
     borderRadius: RADIUS.row,
     paddingHorizontal: 6, paddingVertical: 3,
   },
-  cardInfo: {
-    paddingHorizontal: 8, paddingVertical: 6,
+  cardInfoBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 8, paddingVertical: 5,
     gap: 2,
   },
   cardSellerRow: {
