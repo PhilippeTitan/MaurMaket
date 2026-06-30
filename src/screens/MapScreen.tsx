@@ -49,19 +49,21 @@ function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: n
     const avatarUrl = getImageUrl(getSellerAvatar(s)) || '';
     const ringColor = TIER_COLORS[s.seller_tier] || '#555';
     const hasImage = avatarUrl && !failedImages.has(`wv_${s.id}`);
-    const name = s.use_store_identity && s.store_name ? s.store_name : s.full_name;
-    const escapedName = name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     const escapedAvatar = hasImage ? avatarUrl.replace(/'/g, "\\'") : '';
     return `
       L.marker([${s.lat}, ${s.lng}], {
         icon: L.divIcon({
           className: '',
-          html: '<div class="marker-bubble" style="border-color:${ringColor};" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:\'tap\',id:\'${s.id}\'}))">' +
-            (${hasImage} ? '<img src="${escapedAvatar}" class="marker-img" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' : '') +
-            '<div class="marker-fallback" style="display:${hasImage ? 'none' : 'flex'}"><svg viewBox="0 0 24 24" width="16" height="16" fill="#8B949E"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
-            '</div>',
-          iconSize: [40, 48],
-          iconAnchor: [20, 48],
+          html: '<div class="snap-marker" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:\'tap\',id:\'${s.id}\'}))">' +
+            '<div class="snap-bubble" style="border-color:${ringColor};">' +
+              (${hasImage} ? '<img src="${escapedAvatar}" class="snap-img" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' : '') +
+              '<div class="snap-fallback" style="display:${hasImage ? 'none' : 'flex'}"><svg viewBox="0 0 24 24" width="20" height="20" fill="#8B949E"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
+            '</div>' +
+            '<div class="snap-tail-ring"></div>' +
+            '<div class="snap-tail"></div>' +
+          '</div>',
+          iconSize: [46, 56],
+          iconAnchor: [23, 56],
         })
       }).addTo(map);
     `;
@@ -71,9 +73,16 @@ function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: n
     L.marker([${myLocation.lat}, ${myLocation.lng}], {
       icon: L.divIcon({
         className: '',
-        html: '<div class="user-dot"><div class="user-dot-inner"></div></div>',
-        iconSize: [20, 20],
-        iconAnchor: [10, 10],
+        html: '<div class="user-marker">' +
+          '<div class="user-glow"></div>' +
+          '<div class="user-bubble">' +
+            '<svg viewBox="0 0 24 24" width="28" height="28" fill="#3B82F6"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg>' +
+          '</div>' +
+          '<div class="user-tail-ring"></div>' +
+          '<div class="user-tail"></div>' +
+        '</div>',
+        iconSize: [54, 66],
+        iconAnchor: [27, 66],
       })
     }).addTo(map);
   ` : '';
@@ -92,24 +101,61 @@ function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: n
   .leaflet-control-attribution { background:rgba(13,17,23,0.7) !important; color:#555 !important; font-size:9px !important; }
   .leaflet-control-attribution a { color:#555 !important; }
 
-  .marker-bubble {
-    width:40px; height:40px; border-radius:20px; border:2.5px solid #555;
-    background:#161B22; overflow:hidden; cursor:pointer;
-    display:flex; align-items:center; justify-content:center;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  .snap-marker {
+    position:relative; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center;
   }
-  .marker-img { width:34px; height:34px; border-radius:17px; object-fit:cover; }
-  .marker-fallback { display:flex; align-items:center; justify-content:center; width:34px; height:34px; }
+  .snap-bubble {
+    width:46px; height:46px; border-radius:23px; border:2.5px solid #555;
+    background:#161B22; overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  }
+  .snap-tail {
+    width:0; height:0;
+    border-left:6px solid transparent; border-right:6px solid transparent;
+    border-top:7px solid #161B22;
+    margin-top:-1px;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+  }
+  .snap-tail-ring {
+    width:0; height:0;
+    border-left:7px solid transparent; border-right:7px solid transparent;
+    border-top:8px solid #555;
+    margin-top:-8px;
+  }
+  .snap-img { width:40px; height:40px; border-radius:20px; object-fit:cover; }
+  .snap-fallback {
+    display:flex; align-items:center; justify-content:center; width:40px; height:40px;
+  }
 
-  .user-dot {
-    width:20px; height:20px; border-radius:10px;
-    background:rgba(59,130,246,0.25);
-    display:flex; align-items:center; justify-content:center;
+  .user-marker {
+    position:relative;
+    display:flex; flex-direction:column; align-items:center;
   }
-  .user-dot-inner {
-    width:10px; height:10px; border-radius:5px;
-    background:#3B82F6; border:2px solid #fff;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  .user-glow {
+    position:absolute; top:-10px; left:-10px;
+    width:66px; height:66px; border-radius:33px;
+    background:rgba(59,130,246,0.15);
+  }
+  .user-bubble {
+    width:54px; height:54px; border-radius:27px; border:3px solid #3B82F6;
+    background:#161B22; overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 2px 10px rgba(59,130,246,0.4);
+  }
+  .user-bubble svg { opacity:0.9; }
+  .user-tail {
+    width:0; height:0;
+    border-left:7px solid transparent; border-right:7px solid transparent;
+    border-top:8px solid #161B22;
+    margin-top:-1px;
+  }
+  .user-tail-ring {
+    width:0; height:0;
+    border-left:8px solid transparent; border-right:8px solid transparent;
+    border-top:9px solid #3B82F6;
+    margin-top:-9px;
   }
 </style>
 </head>
@@ -264,9 +310,16 @@ export default function MapScreen() {
           var myLoc = ${myLocation ? `L.marker([${myLocation.lat}, ${myLocation.lng}], {
             icon: L.divIcon({
               className: '',
-              html: '<div class="user-dot"><div class="user-dot-inner"></div></div>',
-              iconSize: [20, 20],
-              iconAnchor: [10, 10],
+              html: '<div class="user-marker">' +
+                '<div class="user-glow"></div>' +
+                '<div class="user-bubble">' +
+                  '<svg viewBox="0 0 24 24" width="28" height="28" fill="#3B82F6"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg>' +
+                '</div>' +
+                '<div class="user-tail-ring"></div>' +
+                '<div class="user-tail"></div>' +
+              '</div>',
+              iconSize: [54, 66],
+              iconAnchor: [27, 66],
             })
           }).addTo(map);` : 'null'}
 
@@ -278,12 +331,16 @@ export default function MapScreen() {
             return `L.marker([${s.lat}, ${s.lng}], {
               icon: L.divIcon({
                 className: '',
-                html: '<div class="marker-bubble" style="border-color:${ringColor};" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:\\'tap\\',id:\\'${s.id}\\'}))">' +
-                  ${hasImage} ? '<img src="${escapedAvatar}" class="marker-img" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' +
-                  '<div class="marker-fallback" style="display:${hasImage ? 'none' : 'flex'}"><svg viewBox="0 0 24 24" width="16" height="16" fill="#8B949E"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
-                  '</div>',
-                iconSize: [40, 48],
-                iconAnchor: [20, 48],
+                html: '<div class="snap-marker" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:\\'tap\\',id:\\'${s.id}\\'}))">' +
+                  '<div class="snap-bubble" style="border-color:${ringColor};">' +
+                    ${hasImage} ? '<img src="${escapedAvatar}" class="snap-img" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' +
+                    '<div class="snap-fallback" style="display:${hasImage ? 'none' : 'flex'}"><svg viewBox="0 0 24 24" width="20" height="20" fill="#8B949E"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
+                  '</div>' +
+                  '<div class="snap-tail-ring"></div>' +
+                  '<div class="snap-tail"></div>' +
+                '</div>',
+                iconSize: [46, 56],
+                iconAnchor: [23, 56],
               })
             }).addTo(map);`;
           }).join('\n          ')}
@@ -567,8 +624,8 @@ export default function MapScreen() {
           <Animated.View
             style={[styles.previewCard, { left: SPACING.lg, right: SPACING.lg, opacity: previewAnim, transform: [{ scale: previewAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] }]}
           >
-            <View style={styles.previewHeader}>
-              <View style={styles.previewAvatarWrap}>
+            <View style={styles.previewRow}>
+              <View style={[styles.previewAvatarWrap, { borderColor: TIER_COLORS[selectedSeller.seller_tier] || COLORS.border, borderWidth: 2 }]}>
                 {getAvatarUrl(selectedSeller) && !failedImages.has(`p_${selectedSeller.id}`) ? (
                   <Image
                     source={{ uri: getAvatarUrl(selectedSeller)! }}
@@ -577,13 +634,24 @@ export default function MapScreen() {
                   />
                 ) : (
                   <View style={[styles.previewAvatar, styles.previewAvatarFallback]}>
-                    <MaterialCommunityIcons name="account" size={24} color={COLORS.text2} />
+                    <MaterialCommunityIcons name="account" size={18} color={COLORS.text2} />
                   </View>
                 )}
               </View>
               <View style={styles.previewInfo}>
-                <Text style={styles.previewName} numberOfLines={1}>{getDisplayName(selectedSeller)}</Text>
-                <Text style={styles.previewDist}>{selectedSeller.distance_km < 1 ? '<1' : selectedSeller.distance_km.toFixed(1)} km away</Text>
+                <View style={styles.previewNameRow}>
+                  <Text style={styles.previewName} numberOfLines={1}>{getDisplayName(selectedSeller)}</Text>
+                  {selectedSeller.seller_tier !== 'casual' && selectedSeller.seller_tier !== 'none' && (
+                    <MaterialCommunityIcons
+                      name={selectedSeller.seller_tier === 'business' ? 'crown' : 'shield-check'}
+                      size={14}
+                      color={selectedSeller.seller_tier === 'business' ? COLORS.yellow : COLORS.green}
+                    />
+                  )}
+                </View>
+                <Text style={styles.previewMeta}>
+                  {selectedSeller.distance_km < 1 ? '<1' : selectedSeller.distance_km.toFixed(1)} km · {selectedSeller.product_count} items
+                </Text>
               </View>
               <TouchableOpacity
                 style={styles.previewVisitBtn}
@@ -595,39 +663,14 @@ export default function MapScreen() {
               >
                 <Text style={styles.previewVisitText}>Visit</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.previewCloseBtnInline}
+                onPress={() => setSelectedSeller(null)}
+                hitSlop={12}
+              >
+                <MaterialCommunityIcons name="close" size={14} color={COLORS.text2} />
+              </TouchableOpacity>
             </View>
-            <View style={styles.previewStats}>
-              {selectedSeller.avg_rating > 0 && (
-                <View style={styles.previewStat}>
-                  <MaterialCommunityIcons name="star" size={14} color={COLORS.yellow} />
-                  <Text style={styles.previewStatText}>{selectedSeller.avg_rating.toFixed(1)}</Text>
-                  <Text style={styles.previewStatDim}>({selectedSeller.review_count})</Text>
-                </View>
-              )}
-              <View style={styles.previewStat}>
-                <MaterialCommunityIcons name="package-variant" size={14} color={COLORS.text2} />
-                <Text style={styles.previewStatText}>{selectedSeller.product_count} items</Text>
-              </View>
-              {selectedSeller.seller_tier !== 'casual' && selectedSeller.seller_tier !== 'none' && (
-                <View style={styles.previewStat}>
-                  <MaterialCommunityIcons
-                    name={selectedSeller.seller_tier === 'business' ? 'crown' : 'shield-check'}
-                    size={14}
-                    color={selectedSeller.seller_tier === 'business' ? COLORS.yellow : COLORS.green}
-                  />
-                  <Text style={[styles.previewStatText, { color: selectedSeller.seller_tier === 'business' ? COLORS.yellow : COLORS.green }]}>
-                    {selectedSeller.seller_tier === 'business' ? 'Business' : 'Verified'}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <TouchableOpacity
-              style={styles.previewCloseBtn}
-              onPress={() => setSelectedSeller(null)}
-              hitSlop={12}
-            >
-              <MaterialCommunityIcons name="close" size={14} color={COLORS.text2} />
-            </TouchableOpacity>
           </Animated.View>
         </Animated.View>
       )}
@@ -760,35 +803,28 @@ const styles = StyleSheet.create({
   },
   previewCard: {
     backgroundColor: COLORS.surface, borderRadius: 16,
-    borderWidth: 1, borderColor: COLORS.border, padding: 14,
+    borderWidth: 1, borderColor: COLORS.border, padding: 12,
     elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12,
   },
-  previewCloseBtn: {
-    position: 'absolute', top: 8, right: 8,
-    width: 24, height: 24, borderRadius: 12,
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  previewAvatarWrap: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.surface2, overflow: 'hidden',
+  },
+  previewAvatar: { width: 40, height: 40, borderRadius: 20 },
+  previewAvatarFallback: { alignItems: 'center', justifyContent: 'center' },
+  previewInfo: { flex: 1 },
+  previewNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  previewName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  previewMeta: { color: COLORS.text2, fontSize: 11, marginTop: 1 },
+  previewVisitBtn: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,
+    backgroundColor: COLORS.coral,
+  },
+  previewVisitText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
+  previewCloseBtnInline: {
+    width: 22, height: 22, borderRadius: 11,
     backgroundColor: COLORS.surface2,
     alignItems: 'center', justifyContent: 'center',
   },
-  previewHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  previewAvatarWrap: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: COLORS.surface2, overflow: 'hidden',
-  },
-  previewAvatar: { width: 44, height: 44, borderRadius: 22 },
-  previewAvatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  previewInfo: { flex: 1 },
-  previewName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
-  previewDist: { color: COLORS.text2, fontSize: 12, marginTop: 1 },
-  previewVisitBtn: {
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12,
-    backgroundColor: COLORS.coral,
-  },
-  previewVisitText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
-  previewStats: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border,
-  },
-  previewStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  previewStatText: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
-  previewStatDim: { color: COLORS.text2, fontSize: 11 },
 });
