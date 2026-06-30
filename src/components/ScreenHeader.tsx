@@ -62,19 +62,21 @@ const styles = StyleSheet.create({
   backSpacer: { width: 35 },
   title: {
     flex: 1,
+    textAlign: 'center',
     fontSize: HEADER.titleSize,
     fontWeight: '700',
     color: COLORS.text,
   },
   titleBranded: {
     flex: 1,
+    textAlign: 'center',
     fontFamily: 'Syne',
     fontSize: 18,
     fontWeight: '800',
     color: COLORS.text,
   },
   right: {
-    minWidth: 20,
+    width: 35,
     alignItems: 'flex-end',
   },
 });

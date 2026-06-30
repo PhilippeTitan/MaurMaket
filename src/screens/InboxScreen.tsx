@@ -232,7 +232,8 @@ export default function InboxScreen() {
         {(route.params?.returnTab || nav.canGoBack()) && (
           <BackButton onPress={handleBack} />
         )}
-        <Text style={styles.title}>{t('inbox.title')}</Text>
+        <Text style={[styles.title, !(route.params?.returnTab || nav.canGoBack()) && { marginLeft: 35 }]}>{t('inbox.title')}</Text>
+        {(route.params?.returnTab || nav.canGoBack()) && <View style={styles.topBarSpacer} />}
       </View>
 
       <View style={styles.tabBar}>
@@ -286,12 +287,12 @@ export default function InboxScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   topBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'center',
     padding: SPACING.md, paddingBottom: SPACING.sm,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  backBtn: { padding: 2 },
-  title: { fontSize: 18, color: COLORS.text, fontWeight: '700' },
+  topBarSpacer: { width: 35 },
+  title: { flex: 1, textAlign: 'center', fontSize: 18, color: COLORS.text, fontWeight: '700' },
   tabBar: {
     flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border,
     paddingHorizontal: SPACING.md,
