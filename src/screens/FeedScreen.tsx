@@ -18,6 +18,7 @@ import { store } from '../store';
 import type { Product, Review } from '../types';
 import type { RootStackParamList } from '../navigation';
 import { useTranslation } from '../i18n';
+import SalePriceTag from '../components/SalePriceTag';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -33,7 +34,6 @@ export default function FeedScreen() {
   const [screenHeight, setScreenHeight] = useState(0);
   const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
   const [followedSellerIds, setFollowedSellerIds] = useState<Set<string>>(new Set());
-  const [addedProductIds, setAddedProductIds] = useState<Set<string>>(new Set());
   const [cartCount, setCartCount] = useState(store.cartCount);
   const [unreadCount, setUnreadCount] = useState(0);
   const [commentProduct, setCommentProduct] = useState<Product | null>(null);
@@ -46,6 +46,8 @@ export default function FeedScreen() {
   const checkedWishlistIds = useRef<Set<string>>(new Set());
   const viewStartTime = useRef<number>(Date.now());
   const currentProductId = useRef<string | null>(null);
+  const scrollOffsetRef = useRef(0);
+  const dragStartIndexRef = useRef(0);
 
   const fetchProducts = useCallback(async (p = 1, replace = false) => {
     try {
@@ -146,6 +148,45 @@ export default function FeedScreen() {
     setLoadingMore(false);
   }, [page, hasMore, loadingMore]);
 
+  // Manual single-card snap. We don't use native snapToInterval at all here —
+  // it was fighting our own scrollToOffset calls and causing the jerk-back.
+  // Instead: track the offset, and on release decide a target that's never
+  // more than one card away from where the drag started.
+  const onScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number } } }) => {
+    scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
+  }, []);
+
+  const onScrollBeginDrag = useCallback(() => {
+    if (screenHeight > 0) {
+      dragStartIndexRef.current = Math.round(scrollOffsetRef.current / screenHeight);
+    }
+  }, [screenHeight]);
+
+  const onScrollEndDrag = useCallback((e: {
+    nativeEvent: { velocity?: { y: number }; contentOffset: { y: number } };
+  }) => {
+    if (screenHeight === 0 || products.length === 0) return;
+    const velocityY = e.nativeEvent.velocity?.y ?? 0;
+    const currentOffset = e.nativeEvent.contentOffset.y;
+    const startIndex = dragStartIndexRef.current;
+    const FLICK_THRESHOLD = 0.25;
+
+    let targetIndex: number;
+    if (velocityY > FLICK_THRESHOLD) {
+      targetIndex = startIndex + 1;
+    } else if (velocityY < -FLICK_THRESHOLD) {
+      targetIndex = startIndex - 1;
+    } else {
+      // Slow drag, no flick — snap to whichever card is closer right now.
+      targetIndex = Math.round(currentOffset / screenHeight);
+    }
+
+    // Never move more than one card per gesture.
+    targetIndex = Math.max(startIndex - 1, Math.min(startIndex + 1, targetIndex));
+    targetIndex = Math.max(0, Math.min(products.length - 1, targetIndex));
+    flatListRef.current?.scrollToOffset({ offset: targetIndex * screenHeight, animated: true });
+  }, [screenHeight, products.length]);
+
   const handleBookmark = async (product: Product) => {
     const wasWishlisted = wishlistedIds.has(product.id);
     setWishlistedIds(prev => {
@@ -231,7 +272,7 @@ export default function FeedScreen() {
         draftOffer: {
           productId: product.id,
           productName: product.name,
-          listPrice: product.price,
+          listPrice: product.effective_price ?? product.price,
         },
       });
     } catch {
@@ -271,7 +312,10 @@ export default function FeedScreen() {
     const result = await store.addToCart({
       id: product.id,
       name: product.name,
-      price: product.price,
+      price: product.effective_price ?? product.price,
+      effective_price: product.effective_price,
+      is_on_sale: product.is_on_sale,
+      discount_pct: product.discount_pct,
       quantity: 1,
       images: product.images,
       seller_id: product.seller_id,
@@ -290,7 +334,10 @@ export default function FeedScreen() {
     const result = await store.addToCart({
       id: product.id,
       name: product.name,
-      price: product.price,
+      price: product.effective_price ?? product.price,
+      effective_price: product.effective_price,
+      is_on_sale: product.is_on_sale,
+      discount_pct: product.discount_pct,
       quantity: 1,
       images: product.images,
       seller_id: product.seller_id,
@@ -302,14 +349,32 @@ export default function FeedScreen() {
       Alert.alert('Stock limit', result.reason === 'out-of-stock' ? 'This item is sold out.' : `Only ${result.stock} available.`);
       return;
     }
-    setAddedProductIds(prev => new Set(prev).add(product.id));
-    setTimeout(() => {
-      setAddedProductIds(prev => {
-        const next = new Set(prev);
-        next.delete(product.id);
-        return next;
-      });
-    }, 1800);
+  };
+
+  const getCartQty = (productId: string) => {
+    return store.cart.find(c => c.id === productId)?.quantity || 0;
+  };
+
+  const handleIncrementCart = async (product: Product) => {
+    const qty = getCartQty(product.id);
+    if (qty === 0) {
+      await handleAddCart(product);
+      return;
+    }
+    if (qty >= product.stock) {
+      Alert.alert('Stock limit', `Only ${product.stock} available.`);
+      return;
+    }
+    await store.updateQuantity(product.id, qty + 1);
+  };
+
+  const handleDecrementCart = async (product: Product) => {
+    const qty = getCartQty(product.id);
+    if (qty <= 1) {
+      await store.removeFromCart(product.id);
+      return;
+    }
+    await store.updateQuantity(product.id, qty - 1);
   };
 
   const renderFeedItem = ({ item }: { item: Product }) => {
@@ -319,7 +384,7 @@ export default function FeedScreen() {
     const isSoldOut = item.stock <= 0;
     const isFollowing = followedSellerIds.has(item.seller_id);
     const isOwnProduct = store.user?.id === item.seller_id;
-    const wasJustAdded = addedProductIds.has(item.id);
+    const cartQty = getCartQty(item.id);
     const stockLabel = isSoldOut ? t('feed.soldOut') : item.stock === 1 ? t('feed.oneLeft') : `${item.stock} ${t('feed.available').toLowerCase()}`;
 
     return (
@@ -402,7 +467,13 @@ export default function FeedScreen() {
 
           {/* Price */}
           <View style={styles.priceTag}>
-            <Text style={styles.priceText}>Rs {item.price.toLocaleString()}</Text>
+            <SalePriceTag
+              price={item.price}
+              effectivePrice={item.effective_price ?? item.price}
+              isOnSale={item.is_on_sale || false}
+              discountPct={item.discount_pct || 0}
+              size="md"
+            />
           </View>
 
           {/* Product name + info */}
@@ -419,21 +490,41 @@ export default function FeedScreen() {
             ) : (
               <>
                 <TouchableOpacity
-                  style={[styles.offerBtn, isSoldOut && styles.actionDisabled]}
+                  style={[styles.iconCircle, isSoldOut && styles.actionDisabled]}
                   onPress={() => handleMakeOffer(item)}
                   disabled={isSoldOut}
                 >
-                  <MaterialCommunityIcons name="tag-outline" size={15} color={COLORS.white} />
-                  <Text style={styles.offerBtnText}>Offer</Text>
+                  <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.white} />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.cartBtn, (isSoldOut || wasJustAdded) && styles.actionDisabled]}
-                  onPress={() => handleAddCart(item)}
-                  disabled={isSoldOut}
-                >
-                  <MaterialCommunityIcons name={wasJustAdded ? 'check' : 'cart-plus'} size={16} color={COLORS.white} />
-                  <Text style={styles.cartBtnText}>{wasJustAdded ? 'Added' : t('feed.cart')}</Text>
-                </TouchableOpacity>
+
+                {cartQty > 0 ? (
+                  <View style={styles.cartStepper}>
+                    <TouchableOpacity
+                      style={styles.cartStepperBtn}
+                      onPress={() => handleDecrementCart(item)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <MaterialCommunityIcons name="minus" size={16} color={COLORS.white} />
+                    </TouchableOpacity>
+                    <Text style={styles.cartStepperQty}>{cartQty}</Text>
+                    <TouchableOpacity
+                      style={styles.cartStepperBtn}
+                      onPress={() => handleIncrementCart(item)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <MaterialCommunityIcons name="plus" size={16} color={COLORS.white} />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.iconCircle, isSoldOut && styles.actionDisabled]}
+                    onPress={() => handleIncrementCart(item)}
+                    disabled={isSoldOut}
+                  >
+                    <MaterialCommunityIcons name="cart-plus" size={18} color={COLORS.white} />
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
                   style={[styles.buyBtn, isSoldOut && styles.actionDisabled]}
                   onPress={() => handleBuy(item)}
@@ -509,12 +600,20 @@ export default function FeedScreen() {
         data={products}
         renderItem={renderFeedItem}
         keyExtractor={(item) => item.id}
-        pagingEnabled
         showsVerticalScrollIndicator={false}
         snapToInterval={screenHeight}
         snapToAlignment="start"
         decelerationRate={0}
-        disableIntervalMomentum={true}
+        disableIntervalMomentum
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        onScrollBeginDrag={onScrollBeginDrag}
+        onScrollEndDrag={onScrollEndDrag}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        removeClippedSubviews
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        initialNumToRender={3}
         getItemLayout={(_data, index) => ({
           length: screenHeight,
           offset: screenHeight * index,
@@ -901,42 +1000,44 @@ const styles = StyleSheet.create({
   },
   buyRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
   },
-  cartBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: RADIUS.card,
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  offerBtn: {
-    flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 12,
-    borderRadius: RADIUS.card,
-    backgroundColor: COLORS.blue,
+    flexShrink: 0,
   },
-  offerBtnText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: COLORS.white,
+  cartStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 44,
+    paddingHorizontal: 4,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    flexShrink: 0,
   },
-  cartBtnText: {
-    fontSize: 13,
+  cartStepperBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cartStepperQty: {
+    fontSize: 14,
     fontWeight: '700',
     color: COLORS.white,
+    minWidth: 18,
+    textAlign: 'center',
   },
   buyBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: RADIUS.card,
+    paddingVertical: 13,
+    borderRadius: 22,
     backgroundColor: COLORS.coral,
     alignItems: 'center',
   },

@@ -12,6 +12,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Review } from '../types';
 import { useTranslation } from '../i18n';
+import SalePriceTag from '../components/SalePriceTag';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -126,7 +127,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     const result = await store.addToCart({
       id: product.id,
       name: product.name,
-      price: product.price,
+      price: product.effective_price ?? product.price,
       quantity: 1,
       images: product.images,
       seller_id: product.seller_id,
@@ -159,7 +160,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         draftOffer: {
           productId: product.id,
           productName: product.name,
-          listPrice: product.price,
+          listPrice: product.effective_price ?? product.price,
         },
       });
     } catch {
@@ -171,7 +172,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     if (!product) return;
     try {
       await Share.share({
-        message: `Check out "${product.name}" on MaurMaket — Rs ${product.price.toLocaleString()}`,
+        message: `Check out "${product.name}" on MaurMaket — Rs ${(product.effective_price ?? product.price).toLocaleString()}`,
       });
     } catch { /* silent */ }
   };
@@ -197,7 +198,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           </View>
         )}
         <View style={styles.sellerCardPriceOverlay}>
-          <Text style={styles.sellerCardPrice}>Rs {item.price.toLocaleString()}</Text>
+          <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
         </View>
       </TouchableOpacity>
     );
@@ -233,7 +234,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             </View>
           )}
           <View style={styles.gridPriceOverlay}>
-            <Text style={styles.gridPriceText}>Rs {item.price.toLocaleString()}</Text>
+            <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
           </View>
         </TouchableOpacity>
       );
@@ -318,9 +319,9 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               {product.stock > 0 ? `${product.stock} ${t('productDetail.inStock').toLowerCase()}` : t('productDetail.outOfStock')}
             </Text>
           </View>
-          <View style={styles.priceOverlay}>
-            <Text style={styles.priceOverlayText}>Rs {product.price.toLocaleString()}</Text>
-          </View>
+        <View style={styles.priceOverlay}>
+          <SalePriceTag price={product.price} effectivePrice={product.effective_price ?? product.price} isOnSale={product.is_on_sale || false} discountPct={product.discount_pct || 0} size="lg" />
+        </View>
         </View>
 
         {/* ── Seller row ── */}

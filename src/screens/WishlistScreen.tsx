@@ -12,6 +12,7 @@ import type { Product } from '../types';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
+import SalePriceTag from '../components/SalePriceTag';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -72,7 +73,7 @@ export default function WishlistScreen() {
               )}
               <View style={styles.rowLeft}>
                 <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.price}>Rs {item.price.toLocaleString()}</Text>
+                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="md" />
                 {item.stock !== undefined && item.stock !== null && (
                   <Text style={styles.stock}>{item.stock > 0 ? t('feed.available') : t('feed.soldOut')}</Text>
                 )}

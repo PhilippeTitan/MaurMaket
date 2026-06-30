@@ -46,4 +46,5 @@ export type RootStackParamList = {
   SettingsEdit: { field: 'name' | 'email' | 'phone' | 'bio' | 'password' | 'storeName'; title: string };
   PaymentReturn: { orderId?: string };
   Meetup: { orderId: string };
+  PromoManagement: undefined;
 };

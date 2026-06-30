@@ -317,6 +317,7 @@ export const validatePromo = (code: string, orderTotal: number) =>
 export const createPromo = (data: Record<string, unknown>) =>
   request('/promos', { method: 'POST', body: JSON.stringify(data) });
 export const getMyPromos = () => request('/promos/mine');
+export const togglePromo = (id: string) => request(`/promos/${id}/toggle`, { method: 'PATCH' });
 
 // Addresses
 export const getAddresses = () => request('/addresses');

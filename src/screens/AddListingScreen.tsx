@@ -33,6 +33,9 @@ export default function AddListingScreen() {
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [listingCount, setListingCount] = useState<number | null>(null);
+  const [showSale, setShowSale] = useState(false);
+  const [salePrice, setSalePrice] = useState('');
+  const [saleEndDate, setSaleEndDate] = useState('');
   const isCasualSeller = store.user?.seller_tier === 'casual';
   const atListingLimit = isCasualSeller && listingCount !== null && listingCount >= 10;
 
@@ -116,6 +119,22 @@ export default function AddListingScreen() {
       if (categoryId) productData.categoryId = categoryId;
       if (uploadedUrls.length > 0) productData.images = uploadedUrls;
 
+      if (showSale && salePrice && saleEndDate) {
+        const origP = parseFloat(price);
+        const saleP = parseFloat(salePrice);
+        if (saleP >= origP) {
+          Alert.alert(t('common.error'), 'Sale price must be lower than the original price');
+          setLoading(false); setUploading(false); return;
+        }
+        const discountPct = Math.round((1 - saleP / origP) * 100);
+        if (discountPct > 25) {
+          Alert.alert(t('common.error'), 'Maximum discount is 25%');
+          setLoading(false); setUploading(false); return;
+        }
+        productData.sale_price = saleP;
+        productData.sale_ends_at = new Date(saleEndDate).toISOString();
+      }
+
       await createProduct(productData);
       Alert.alert(t('addListing.success'), t('addListing.created'));
       nav.goBack();
@@ -183,6 +202,24 @@ export default function AddListingScreen() {
           <TextInput style={styles.input} placeholder={t('addListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
           <TextInput style={[styles.input, styles.textArea]} placeholder={t('addListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
           <TextInput style={styles.input} placeholder={t('addListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" />
+
+          <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)}>
+            <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
+            <Text style={styles.saleToggleText}>{'🏷️ Run a sale'}</Text>
+          </TouchableOpacity>
+
+          {showSale && (
+            <View style={styles.saleSection}>
+              <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" />
+              <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} />
+              {price && salePrice && parseFloat(salePrice) < parseFloat(price) && (
+                <Text style={styles.saleHint}>
+                  -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {(parseFloat(price) - parseFloat(salePrice)).toLocaleString()} saved
+                </Text>
+              )}
+            </View>
+          )}
+
           <TextInput style={styles.input} placeholder={t('addListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" />
 
           <Text style={styles.sectionLabel}>{t('addListing.category')}</Text>
@@ -264,4 +301,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.yellow + '30',
   },
   limitBannerText: { fontSize: 12, color: COLORS.yellow, fontWeight: '600' },
+  saleToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: SPACING.md, marginBottom: 8, padding: 12,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row,
+  },
+  saleToggleText: { fontSize: 13, color: COLORS.text, fontWeight: '600' },
+  saleSection: { marginHorizontal: SPACING.md, marginBottom: 8, gap: 4 },
+  saleHint: { fontSize: 12, color: '#00E5A0', fontWeight: '600', paddingHorizontal: 4 },
 });

@@ -12,6 +12,7 @@ import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { CartItem } from '../types';
+import SalePriceTag from '../components/SalePriceTag';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Cart'>;
 
@@ -135,7 +136,7 @@ export default function CartScreen({ navigation }: Props) {
         </View>
         <View style={styles.info}>
           <Text style={styles.itemName} numberOfLines={1}>{cartItem.name}</Text>
-          <Text style={styles.itemPrice}>Rs {cartItem.price.toLocaleString()}</Text>
+          <SalePriceTag price={cartItem.price} effectivePrice={cartItem.effective_price ?? cartItem.price} isOnSale={cartItem.is_on_sale || false} discountPct={cartItem.discount_pct || 0} size="md" />
           <View style={styles.qtyRow}>
             <TouchableOpacity style={styles.qtyBtn} onPress={() => handleQuantity(cartItem.id, -1)}>
               <MaterialCommunityIcons name="minus" size={14} color={COLORS.text} />

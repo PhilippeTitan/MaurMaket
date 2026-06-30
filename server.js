@@ -401,6 +401,12 @@ async function runMigrations() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // Sale price columns on products
+    await c.query(`
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DECIMAL(10,2);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_starts_at TIMESTAMP;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_ends_at TIMESTAMP;
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -1202,11 +1208,11 @@ app.get('/api/products', async (req, res) => {
     params.push(seller);
   }
   if (minPrice) {
-    conditions.push(`p.price >= $${paramIndex++}`);
+    conditions.push(`(CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END) >= $${paramIndex++}`);
     params.push(minPrice);
   }
   if (maxPrice) {
-    conditions.push(`p.price <= $${paramIndex++}`);
+    conditions.push(`(CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END) <= $${paramIndex++}`);
     params.push(maxPrice);
   }
 
@@ -1299,9 +1305,9 @@ app.get('/api/products', async (req, res) => {
   } else if (!sort) {
     orderBy = 'p.created_at DESC';
   } else if (sort === 'price_asc') {
-    orderBy = 'p.price ASC';
+    orderBy = '(CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END) ASC';
   } else if (sort === 'price_desc') {
-    orderBy = 'p.price DESC';
+    orderBy = '(CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END) DESC';
   } else if (sort === 'oldest') {
     orderBy = 'p.created_at ASC';
   }
@@ -1315,6 +1321,10 @@ app.get('/api/products', async (req, res) => {
 
     const result = await pool.query(
       `SELECT p.id, p.name, p.description, p.price, p.stock, p.created_at, p.category_id,
+              p.sale_price, p.sale_starts_at, p.sale_ends_at,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
               u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar, u.use_store_identity,
               c.name AS category
               ${selectExtra},
@@ -1342,6 +1352,9 @@ app.get('/api/products/:id', async (req, res) => {
       `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar, u.phone AS seller_phone,
               u.store_name, u.store_logo_url, u.seller_tier, u.id_verified, u.use_store_identity,
               c.name AS category,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
               (SELECT json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
        FROM products p
        JOIN users u ON p.seller_id = u.id
@@ -1358,12 +1371,34 @@ app.get('/api/products/:id', async (req, res) => {
 });
 
 app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
-  const { name, description, price, stock, categoryId, images } = req.body;
+  const { name, description, price, stock, categoryId, images, sale_price, sale_starts_at, sale_ends_at } = req.body;
   if (!name || !price) {
     return res.status(400).json({ error: 'Name and price required' });
   }
   if (!images || !Array.isArray(images) || images.length === 0) {
     return res.status(400).json({ error: 'At least one image is required' });
+  }
+
+  // Sale price validation
+  if (sale_price !== undefined && sale_price !== null && sale_price !== '') {
+    const saleP = parseFloat(sale_price);
+    const origP = parseFloat(price);
+    if (isNaN(saleP) || saleP <= 0) {
+      return res.status(400).json({ error: 'Sale price must be a positive number' });
+    }
+    if (saleP >= origP) {
+      return res.status(400).json({ error: 'Sale price must be lower than the original price' });
+    }
+    const discountPct = Math.round((1 - saleP / origP) * 100);
+    if (discountPct > 25) {
+      return res.status(400).json({ error: 'Maximum discount is 25%' });
+    }
+    if (!sale_ends_at) {
+      return res.status(400).json({ error: 'Sale end date is required when setting a sale price' });
+    }
+    if (new Date(sale_ends_at) <= new Date()) {
+      return res.status(400).json({ error: 'Sale end date must be in the future' });
+    }
   }
 
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
@@ -1390,9 +1425,10 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
   try {
     await client.query('BEGIN');
     const productResult = await client.query(
-      `INSERT INTO products (seller_id, category_id, name, description, price, stock)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [req.user.id, categoryId || null, name, description || '', price, stock || 0]
+      `INSERT INTO products (seller_id, category_id, name, description, price, stock, sale_price, sale_starts_at, sale_ends_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [req.user.id, categoryId || null, name, description || '', price, stock || 0,
+       sale_price || null, sale_starts_at || null, sale_ends_at || null]
     );
     const product = productResult.rows[0];
 
@@ -1439,16 +1475,56 @@ app.delete('/api/products/:id', authRequired, sellerRequired, async (req, res) =
 app.put('/api/products/:id', authRequired, sellerRequired, async (req, res) => {
   const client = await pool.connect();
   try {
-    const check = await client.query('SELECT seller_id FROM products WHERE id = $1', [req.params.id]);
+    const check = await client.query('SELECT seller_id, price FROM products WHERE id = $1', [req.params.id]);
     if (check.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
     if (check.rows[0].seller_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not your product' });
     }
-    const { name, description, price, stock, isAvailable, categoryId, images } = req.body;
+    const { name, description, price, stock, isAvailable, categoryId, images, sale_price, sale_starts_at, sale_ends_at, clearSale } = req.body;
+
+    // Sale price validation
+    const effectivePrice = parseFloat(price || check.rows[0].price);
+    if (sale_price !== undefined && sale_price !== null && sale_price !== '') {
+      const saleP = parseFloat(sale_price);
+      if (isNaN(saleP) || saleP <= 0) {
+        return res.status(400).json({ error: 'Sale price must be a positive number' });
+      }
+      if (saleP >= effectivePrice) {
+        return res.status(400).json({ error: 'Sale price must be lower than the original price' });
+      }
+      const discountPct = Math.round((1 - saleP / effectivePrice) * 100);
+      if (discountPct > 25) {
+        return res.status(400).json({ error: 'Maximum discount is 25%' });
+      }
+      if (!sale_ends_at) {
+        return res.status(400).json({ error: 'Sale end date is required when setting a sale price' });
+      }
+      if (new Date(sale_ends_at) <= new Date()) {
+        return res.status(400).json({ error: 'Sale end date must be in the future' });
+      }
+    }
+
+    let salePriceVal, saleStartsVal, saleEndsVal;
+    if (clearSale) {
+      salePriceVal = null;
+      saleStartsVal = null;
+      saleEndsVal = null;
+    } else {
+      salePriceVal = sale_price !== undefined ? (sale_price || null) : undefined;
+      saleStartsVal = sale_starts_at !== undefined ? (sale_starts_at || null) : undefined;
+      saleEndsVal = sale_ends_at !== undefined ? (sale_ends_at || null) : undefined;
+    }
+
     await client.query('BEGIN');
     const result = await client.query(
-      `UPDATE products SET name = COALESCE($1, name), description = COALESCE($2, description), price = COALESCE($3, price), stock = COALESCE($4, stock), is_available = COALESCE($5, is_available), category_id = COALESCE($6, category_id), updated_at = CURRENT_TIMESTAMP WHERE id = $7 RETURNING *`,
-      [name, description, price, stock, isAvailable, categoryId, req.params.id]
+      `UPDATE products SET name = COALESCE($1, name), description = COALESCE($2, description),
+       price = COALESCE($3, price), stock = COALESCE($4, stock),
+       is_available = COALESCE($5, is_available), category_id = COALESCE($6, category_id),
+       sale_price = COALESCE($7, sale_price), sale_starts_at = COALESCE($8, sale_starts_at),
+       sale_ends_at = COALESCE($9, sale_ends_at),
+       updated_at = CURRENT_TIMESTAMP WHERE id = $10 RETURNING *`,
+      [name, description, price, stock, isAvailable, categoryId,
+       salePriceVal, saleStartsVal, saleEndsVal, req.params.id]
     );
     if (images && Array.isArray(images)) {
       await client.query('DELETE FROM product_images WHERE product_id = $1', [req.params.id]);
@@ -1575,7 +1651,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
     const orderItems = [];
 
     for (const item of items) {
-      const prod = await client.query('SELECT id, price, seller_id, stock FROM products WHERE id = $1 AND is_available = TRUE FOR UPDATE', [item.productId]);
+      const prod = await client.query('SELECT id, price, sale_price, sale_starts_at, sale_ends_at, seller_id, stock FROM products WHERE id = $1 AND is_available = TRUE FOR UPDATE', [item.productId]);
       if (prod.rows.length === 0) {
         throw new Error(`Product ${item.productId} not found or unavailable`);
       }
@@ -1585,7 +1661,9 @@ app.post('/api/orders', authRequired, async (req, res) => {
       if (prod.rows[0].stock < (item.quantity || 1)) {
         throw new Error(`Insufficient stock for product ${item.productId}`);
       }
-      const price = parseFloat(prod.rows[0].price);
+      const p = prod.rows[0];
+      const onSale = p.sale_price && (p.sale_starts_at === null || new Date(p.sale_starts_at) <= new Date()) && (p.sale_ends_at === null || new Date(p.sale_ends_at) >= new Date());
+      const price = onSale ? parseFloat(p.sale_price) : parseFloat(p.price);
       total += price * (item.quantity || 1);
       orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id });
     }
@@ -2586,6 +2664,23 @@ app.get('/api/promos/mine', authRequired, sellerRequired, async (req, res) => {
   }
 });
 
+// Toggle promo active/inactive
+app.patch('/api/promos/:id/toggle', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const check = await pool.query('SELECT seller_id, is_active FROM promo_codes WHERE id = $1', [req.params.id]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Promo not found' });
+    if (check.rows[0].seller_id !== req.user.id) return res.status(403).json({ error: 'Not your promo' });
+    const result = await pool.query(
+      `UPDATE promo_codes SET is_active = NOT is_active WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    res.json({ promo: result.rows[0] });
+  } catch (err) {
+    console.error('Promo toggle error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ───── Seller Analytics ─────
 
 app.get('/api/seller/analytics', authRequired, sellerRequired, async (req, res) => {
@@ -3260,7 +3355,52 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
     console.error('Payout request error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
-    c.release();
+    client.release();
+  }
+});
+
+// Dedicated sale lifecycle endpoint
+app.post('/api/products/:id/sale', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const check = await pool.query('SELECT seller_id, price FROM products WHERE id = $1', [req.params.id]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+    if (check.rows[0].seller_id !== req.user.id) return res.status(403).json({ error: 'Not your product' });
+
+    const { sale_price, sale_ends_at, clearSale } = req.body;
+
+    if (clearSale) {
+      const result = await pool.query(
+        `UPDATE products SET sale_price = NULL, sale_starts_at = NULL, sale_ends_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+        [req.params.id]
+      );
+      return res.json({ product: result.rows[0] });
+    }
+
+    if (!sale_price || !sale_ends_at) {
+      return res.status(400).json({ error: 'sale_price and sale_ends_at are required' });
+    }
+
+    const saleP = parseFloat(sale_price);
+    const origP = parseFloat(check.rows[0].price);
+    if (saleP >= origP) {
+      return res.status(400).json({ error: 'Sale price must be lower than the original price' });
+    }
+    const discountPct = Math.round((1 - saleP / origP) * 100);
+    if (discountPct > 25) {
+      return res.status(400).json({ error: 'Maximum discount is 25%' });
+    }
+    if (new Date(sale_ends_at) <= new Date()) {
+      return res.status(400).json({ error: 'Sale end date must be in the future' });
+    }
+
+    const result = await pool.query(
+      `UPDATE products SET sale_price = $1, sale_starts_at = COALESCE($2, NOW()), sale_ends_at = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4 RETURNING *`,
+      [saleP, req.body.sale_starts_at || null, sale_ends_at, req.params.id]
+    );
+    res.json({ product: result.rows[0] });
+  } catch (err) {
+    console.error('Sale update error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

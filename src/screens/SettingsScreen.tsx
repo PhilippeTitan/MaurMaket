@@ -276,6 +276,13 @@ export default function SettingsScreen({ navigation }: Props) {
               label={t('settings.businessSubscription')}
               onPress={() => { navigation.navigate('BusinessSubscription'); }}
             />
+            <View style={styles.divider} />
+            <SettingRow
+              icon="tag-outline"
+              iconColor={COLORS.coral}
+              label={t('me.promotions')}
+              onPress={() => { navigation.navigate('PromoManagement'); }}
+            />
           </View>
         </>
       )}

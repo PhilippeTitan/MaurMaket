@@ -13,6 +13,7 @@ import { store } from '../store';
 import { createOrder, createPayment, getAddresses, getImageUrl } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Address } from '../types';
+import SalePriceTag from '../components/SalePriceTag';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 

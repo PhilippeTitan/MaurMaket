@@ -1116,14 +1116,29 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] Nearby Market: Fix preview card touch-blocking overlay
 - [x] Nearby Market: Design polish (gradient, animations, error handling)
 
-### 🔲 Session 10: Map Fix + Push Notifications (in progress)
+### ✅ Session 10: Map Fix + Production Deploy
 - [x] Fix MapScreen: static imports (commits 8c65d40, 6a896c5) — tiles still blank, needs UrlTile
 - [x] Fix MapScreen: UrlTile + CartoDB dark tiles (commit bef7213) — still blank, Google SDK surface broken in Expo Go
-- [ ] Fix MapScreen: WebView + Leaflet approach (bypass Google Maps SDK entirely)
+- [x] Fix MapScreen: WebView + Leaflet approach (commit 5ab021b) — bypass Google Maps SDK entirely
+- [x] Snap Map-style markers v1 (commit cbbd121) — CSS border rings
+- [x] Mockup-matched markers (commit d3461b1) — gradient padding rings, tier-varying sizes
+- [x] Deployed to production (commit 8b59f97) — all session 9+ fixes live
+
+### Session 11: Sale Price + Promo Code Management (in progress)
+- [ ] DB migration: sale_price, sale_starts_at, sale_ends_at columns
+- [ ] Backend: sale price computed fields + validation + /sale endpoint
+- [ ] Frontend: Product type + SalePriceTag component
+- [ ] Seller UI: AddListing/EditListing sale toggle
+- [ ] Buyer UI: 10 price display locations updated
+- [ ] Backend: verify promo endpoints
+- [ ] PromoManagementScreen + navigation + SettingsScreen entry
+- [ ] i18n strings (sale + promo)
+- [ ] Commit, push, deploy
+
+### 🔲 Remaining Features (deferred)
 - [ ] Phase 9: Push notifications (expo-notifications + FCM/APNs)
 - [ ] Phase 10: Dispute resolution (hybrid auto-resolve + admin)
 - [ ] Image sharing in chat
 - [ ] Wishlist thumbnails (40x40 + stock indicator)
 - [ ] Delivery estimate on orders
-- [ ] Deploy production with all fixes
 - [ ] Phase 6: Multi-seller meetups (per-seller escrow UI)

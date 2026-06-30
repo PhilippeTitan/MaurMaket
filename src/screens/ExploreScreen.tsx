@@ -14,6 +14,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
 import { useTranslation } from '../i18n';
+import SalePriceTag from '../components/SalePriceTag';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -172,7 +173,7 @@ export default function ExploreScreen({ navigation }: Props) {
           <View style={styles.cardOverlay}>
             <View style={styles.cardOverlayTop}>
               <View style={styles.priceBadge}>
-                <Text style={styles.priceBadgeText}>Rs {item.price.toLocaleString()}</Text>
+                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
               </View>
             </View>
             <View style={styles.cardOverlayBottom}>

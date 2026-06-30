@@ -15,6 +15,7 @@ import {
 } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Order, Review } from '../types';
+import SalePriceTag from '../components/SalePriceTag';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -194,7 +195,7 @@ export default function MeScreen() {
           <View style={styles.cardOverlay}>
             <View style={styles.cardOverlayTop}>
               <View style={styles.priceBadge}>
-                <Text style={styles.priceBadgeText}>Rs {item.price.toLocaleString()}</Text>
+                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
               </View>
             </View>
             <View style={styles.cardOverlayBottom}>

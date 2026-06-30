@@ -38,6 +38,7 @@ import SellerOnboardingScreen from './src/screens/SellerOnboardingScreen';
 import EditListingScreen from './src/screens/EditListingScreen';
 import SettingsEditScreen from './src/screens/SettingsEditScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
+import PromoManagementScreen from './src/screens/PromoManagementScreen';
 
 const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
 
@@ -274,6 +275,7 @@ export default function App() {
             <Stack.Screen name="SettingsEdit" component={SettingsEditScreen} />
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
             <Stack.Screen name="Meetup" component={MeetupScreen} />
+            <Stack.Screen name="PromoManagement" component={PromoManagementScreen} />
           </>
         )}
       </Stack.Navigator>

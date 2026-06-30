@@ -35,6 +35,10 @@ export default function EditListingScreen({ route, navigation }: Props) {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showSale, setShowSale] = useState(false);
+  const [salePrice, setSalePrice] = useState('');
+  const [saleEndDate, setSaleEndDate] = useState('');
+  const [currentlyOnSale, setCurrentlyOnSale] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -52,6 +56,14 @@ export default function EditListingScreen({ route, navigation }: Props) {
         setIsAvailable(p.is_available !== false);
         setExistingImages(p.images || []);
         setCategories(catRes.categories || []);
+        if (p.sale_price) {
+          setShowSale(true);
+          setSalePrice(String(p.sale_price));
+          setCurrentlyOnSale(p.is_on_sale || false);
+        }
+        if (p.sale_ends_at) {
+          setSaleEndDate(p.sale_ends_at.split('T')[0]);
+        }
       } catch {
         Alert.alert(t('common.error'), t('editListing.loadError'));
         navigation.goBack();
@@ -129,6 +141,25 @@ export default function EditListingScreen({ route, navigation }: Props) {
       };
       if (categoryId) data.categoryId = categoryId;
       if (allImageUrls.length > 0) data.images = allImageUrls;
+
+      if (showSale && salePrice && saleEndDate) {
+        const origP = parseFloat(price);
+        const saleP = parseFloat(salePrice);
+        if (saleP >= origP) {
+          Alert.alert(t('common.error'), 'Sale price must be lower than the original price');
+          setSaving(false); setUploading(false); return;
+        }
+        const discountPct = Math.round((1 - saleP / origP) * 100);
+        if (discountPct > 25) {
+          Alert.alert(t('common.error'), 'Maximum discount is 25%');
+          setSaving(false); setUploading(false); return;
+        }
+        data.sale_price = saleP;
+        data.sale_ends_at = new Date(saleEndDate).toISOString();
+      } else {
+        data.clearSale = true;
+      }
+
       await updateProduct(productId, data);
       Alert.alert(t('editListing.saved'), t('editListing.productUpdated'));
       navigation.goBack();
@@ -199,6 +230,24 @@ export default function EditListingScreen({ route, navigation }: Props) {
       <TextInput style={styles.input} placeholder={t('editListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
       <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
       <TextInput style={styles.input} placeholder={t('editListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" />
+
+      <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)}>
+        <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
+        <Text style={styles.saleToggleText}>{'🏷️ Run a sale'}</Text>
+      </TouchableOpacity>
+
+      {showSale && (
+        <View style={styles.saleSection}>
+          <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" />
+          <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} />
+          {price && salePrice && parseFloat(salePrice) < parseFloat(price) && (
+            <Text style={styles.saleHint}>
+              -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {(parseFloat(price) - parseFloat(salePrice)).toLocaleString()} saved
+            </Text>
+          )}
+        </View>
+      )}
+
       <TextInput style={styles.input} placeholder={t('editListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" />
 
       <TouchableOpacity
@@ -294,4 +343,12 @@ const styles = StyleSheet.create({
     padding: 14, alignItems: 'center', borderWidth: 1.5, borderColor: COLORS.coral,
   },
   deleteBtnText: { fontSize: 14, color: COLORS.coral, fontWeight: '600' },
+  saleToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: SPACING.md, marginBottom: 8, padding: 12,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row,
+  },
+  saleToggleText: { fontSize: 13, color: COLORS.text, fontWeight: '600' },
+  saleSection: { marginHorizontal: SPACING.md, marginBottom: 8, gap: 4 },
+  saleHint: { fontSize: 12, color: '#00E5A0', fontWeight: '600', paddingHorizontal: 4 },
 });

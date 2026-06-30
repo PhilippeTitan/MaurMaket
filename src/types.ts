@@ -35,6 +35,12 @@ export interface Product {
   is_available: boolean;
   created_at: string;
   updated_at: string;
+  sale_price: number | null;
+  sale_starts_at: string | null;
+  sale_ends_at: string | null;
+  effective_price: number;
+  is_on_sale: boolean;
+  discount_pct: number;
   images?: ProductImage[];
   seller?: User;
   category?: Category;
@@ -52,6 +58,9 @@ export interface CartItem {
   id: string;
   name: string;
   price: number;
+  effective_price?: number;
+  is_on_sale?: boolean;
+  discount_pct?: number;
   quantity: number;
   images?: ProductImage[];
   seller_id: string;

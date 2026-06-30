@@ -13,6 +13,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Review, SellerProfile } from '../types';
+import SalePriceTag from '../components/SalePriceTag';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
 
@@ -204,7 +205,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               <View style={[styles.cardImage, { height: cardH }]}>
                 {imgUrl ? <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" /> : <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />}
                 <View style={styles.priceBadge}>
-                  <Text style={styles.priceText}>Rs {item.price.toLocaleString()}</Text>
+                  <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
                 </View>
               </View>
               <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
