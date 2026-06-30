@@ -20,6 +20,12 @@ const TIER_COLORS: Record<string, string> = {
   business: COLORS.yellow,
 };
 
+const TIER_MARKER: Record<string, { size: number; gradient: string; tailColor: string; iconColor: string }> = {
+  casual:   { size: 42, gradient: '#30363D',            tailColor: '#30363D', iconColor: '#8B949E' },
+  verified: { size: 46, gradient: 'linear-gradient(135deg,#5DCAA5,#1D9E75)', tailColor: '#1D9E75', iconColor: '#5DCAA5' },
+  business: { size: 50, gradient: 'linear-gradient(135deg,#EF9F27,#BA7517)', tailColor: '#BA7517', iconColor: '#EF9F27' },
+};
+
 const FILTERS = ['Nearby', 'Verified', 'Business', 'Top rated'];
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -47,23 +53,28 @@ function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: n
 
   const sellerMarkers = sellers.map(s => {
     const avatarUrl = getImageUrl(getSellerAvatar(s)) || '';
-    const ringColor = TIER_COLORS[s.seller_tier] || '#555';
+    const tier = TIER_MARKER[s.seller_tier] || TIER_MARKER.casual;
     const hasImage = avatarUrl && !failedImages.has(`wv_${s.id}`);
     const escapedAvatar = hasImage ? avatarUrl.replace(/'/g, "\\'") : '';
+    const sz = tier.size;
+    const inner = sz - 4;
+    const iconSz = Math.round(sz * 0.4);
+    const tailL = Math.round(sz * 0.22);
     return `
       L.marker([${s.lat}, ${s.lng}], {
         icon: L.divIcon({
           className: '',
           html: '<div class="snap-marker" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:\'tap\',id:\'${s.id}\'}))">' +
-            '<div class="snap-bubble" style="border-color:${ringColor};">' +
-              (${hasImage} ? '<img src="${escapedAvatar}" class="snap-img" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' : '') +
-              '<div class="snap-fallback" style="display:${hasImage ? 'none' : 'flex'}"><svg viewBox="0 0 24 24" width="20" height="20" fill="#8B949E"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
+            '<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${tier.gradient};padding:2px;box-shadow:0 2px 8px rgba(0,0,0,0.5)">' +
+              '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
+                (${hasImage} ? '<img src="${escapedAvatar}" class="snap-img" style="width:${inner}px;height:${inner}px;border-radius:${inner/2}px" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' : '') +
+                '<div class="snap-fallback" style="display:${hasImage ? 'none' : 'flex'};width:${inner}px;height:${inner}px"><svg viewBox="0 0 24 24" width="${iconSz}" height="${iconSz}" fill="${tier.iconColor}"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
+              '</div>' +
             '</div>' +
-            '<div class="snap-tail-ring"></div>' +
-            '<div class="snap-tail"></div>' +
+            '<div style="width:0;height:0;border-left:${tailL}px solid transparent;border-right:${tailL}px solid transparent;border-top:7px solid ${tier.tailColor};margin:0 auto"></div>' +
           '</div>',
-          iconSize: [46, 56],
-          iconAnchor: [23, 56],
+          iconSize: [sz, sz + 9],
+          iconAnchor: [sz / 2, sz + 9],
         })
       }).addTo(map);
     `;
@@ -74,15 +85,16 @@ function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: n
       icon: L.divIcon({
         className: '',
         html: '<div class="user-marker">' +
-          '<div class="user-glow"></div>' +
-          '<div class="user-bubble">' +
-            '<svg viewBox="0 0 24 24" width="28" height="28" fill="#3B82F6"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg>' +
+          '<div style="position:absolute;top:-9px;left:-9px;width:66px;height:66px;border-radius:50%;background:rgba(55,138,221,0.15)"></div>' +
+          '<div style="width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#378ADD,#185FA5);padding:3px;box-shadow:0 0 0 3px rgba(55,138,221,0.25)">' +
+            '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center">' +
+              '<svg viewBox="0 0 24 24" width="22" height="22" fill="#378ADD"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg>' +
+            '</div>' +
           '</div>' +
-          '<div class="user-tail-ring"></div>' +
-          '<div class="user-tail"></div>' +
+          '<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #185FA5;margin:0 auto"></div>' +
         '</div>',
-        iconSize: [54, 66],
-        iconAnchor: [27, 66],
+        iconSize: [54, 65],
+        iconAnchor: [27, 65],
       })
     }).addTo(map);
   ` : '';
@@ -105,57 +117,12 @@ function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: n
     position:relative; cursor:pointer;
     display:flex; flex-direction:column; align-items:center;
   }
-  .snap-bubble {
-    width:46px; height:46px; border-radius:23px; border:2.5px solid #555;
-    background:#161B22; overflow:hidden;
-    display:flex; align-items:center; justify-content:center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-  }
-  .snap-tail {
-    width:0; height:0;
-    border-left:6px solid transparent; border-right:6px solid transparent;
-    border-top:7px solid #161B22;
-    margin-top:-1px;
-    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
-  }
-  .snap-tail-ring {
-    width:0; height:0;
-    border-left:7px solid transparent; border-right:7px solid transparent;
-    border-top:8px solid #555;
-    margin-top:-8px;
-  }
-  .snap-img { width:40px; height:40px; border-radius:20px; object-fit:cover; }
-  .snap-fallback {
-    display:flex; align-items:center; justify-content:center; width:40px; height:40px;
-  }
+  .snap-img { border-radius:50%; object-fit:cover; }
+  .snap-fallback { display:flex; align-items:center; justify-content:center; }
 
   .user-marker {
     position:relative;
     display:flex; flex-direction:column; align-items:center;
-  }
-  .user-glow {
-    position:absolute; top:-10px; left:-10px;
-    width:66px; height:66px; border-radius:33px;
-    background:rgba(59,130,246,0.15);
-  }
-  .user-bubble {
-    width:54px; height:54px; border-radius:27px; border:3px solid #3B82F6;
-    background:#161B22; overflow:hidden;
-    display:flex; align-items:center; justify-content:center;
-    box-shadow: 0 2px 10px rgba(59,130,246,0.4);
-  }
-  .user-bubble svg { opacity:0.9; }
-  .user-tail {
-    width:0; height:0;
-    border-left:7px solid transparent; border-right:7px solid transparent;
-    border-top:8px solid #161B22;
-    margin-top:-1px;
-  }
-  .user-tail-ring {
-    width:0; height:0;
-    border-left:8px solid transparent; border-right:8px solid transparent;
-    border-top:9px solid #3B82F6;
-    margin-top:-9px;
   }
 </style>
 </head>
@@ -311,36 +278,42 @@ export default function MapScreen() {
             icon: L.divIcon({
               className: '',
               html: '<div class="user-marker">' +
-                '<div class="user-glow"></div>' +
-                '<div class="user-bubble">' +
-                  '<svg viewBox="0 0 24 24" width="28" height="28" fill="#3B82F6"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg>' +
+                '<div style="position:absolute;top:-9px;left:-9px;width:66px;height:66px;border-radius:50%;background:rgba(55,138,221,0.15)"></div>' +
+                '<div style="width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#378ADD,#185FA5);padding:3px;box-shadow:0 0 0 3px rgba(55,138,221,0.25)">' +
+                  '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center">' +
+                    '<svg viewBox="0 0 24 24" width="22" height="22" fill="#378ADD"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg>' +
+                  '</div>' +
                 '</div>' +
-                '<div class="user-tail-ring"></div>' +
-                '<div class="user-tail"></div>' +
+                '<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #185FA5;margin:0 auto"></div>' +
               '</div>',
-              iconSize: [54, 66],
-              iconAnchor: [27, 66],
+              iconSize: [54, 65],
+              iconAnchor: [27, 65],
             })
           }).addTo(map);` : 'null'}
 
           ${filteredSellers.map(s => {
             const avatarUrl = getImageUrl(getSellerAvatar(s)) || '';
-            const ringColor = TIER_COLORS[s.seller_tier] || '#555';
+            const tier = TIER_MARKER[s.seller_tier] || TIER_MARKER.casual;
             const hasImage = avatarUrl && !failedImages.has(`wv_${s.id}`);
             const escapedAvatar = hasImage ? avatarUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
+            const sz = tier.size;
+            const inner = sz - 4;
+            const iconSz = Math.round(sz * 0.4);
+            const tailL = Math.round(sz * 0.22);
             return `L.marker([${s.lat}, ${s.lng}], {
               icon: L.divIcon({
                 className: '',
                 html: '<div class="snap-marker" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:\\'tap\\',id:\\'${s.id}\\'}))">' +
-                  '<div class="snap-bubble" style="border-color:${ringColor};">' +
-                    ${hasImage} ? '<img src="${escapedAvatar}" class="snap-img" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' +
-                    '<div class="snap-fallback" style="display:${hasImage ? 'none' : 'flex'}"><svg viewBox="0 0 24 24" width="20" height="20" fill="#8B949E"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
+                  '<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${tier.gradient};padding:2px;box-shadow:0 2px 8px rgba(0,0,0,0.5)">' +
+                    '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
+                      ${hasImage} ? '<img src="${escapedAvatar}" class="snap-img" style="width:${inner}px;height:${inner}px;border-radius:${inner/2}px" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' +
+                      '<div class="snap-fallback" style="display:${hasImage ? 'none' : 'flex'};width:${inner}px;height:${inner}px"><svg viewBox="0 0 24 24" width="${iconSz}" height="${iconSz}" fill="${tier.iconColor}"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
+                    '</div>' +
                   '</div>' +
-                  '<div class="snap-tail-ring"></div>' +
-                  '<div class="snap-tail"></div>' +
+                  '<div style="width:0;height:0;border-left:${tailL}px solid transparent;border-right:${tailL}px solid transparent;border-top:7px solid ${tier.tailColor};margin:0 auto"></div>' +
                 '</div>',
-                iconSize: [46, 56],
-                iconAnchor: [23, 56],
+                iconSize: [${sz}, ${sz + 9}],
+                iconAnchor: [${sz / 2}, ${sz + 9}],
               })
             }).addTo(map);`;
           }).join('\n          ')}
@@ -625,18 +598,18 @@ export default function MapScreen() {
             style={[styles.previewCard, { left: SPACING.lg, right: SPACING.lg, opacity: previewAnim, transform: [{ scale: previewAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] }]}
           >
             <View style={styles.previewRow}>
-              <View style={[styles.previewAvatarWrap, { borderColor: TIER_COLORS[selectedSeller.seller_tier] || COLORS.border, borderWidth: 2 }]}>
-                {getAvatarUrl(selectedSeller) && !failedImages.has(`p_${selectedSeller.id}`) ? (
-                  <Image
-                    source={{ uri: getAvatarUrl(selectedSeller)! }}
-                    style={styles.previewAvatar}
-                    onError={() => markImageFailed(`p_${selectedSeller.id}`)}
-                  />
-                ) : (
-                  <View style={[styles.previewAvatar, styles.previewAvatarFallback]}>
+              <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: TIER_MARKER[selectedSeller.seller_tier]?.gradient || '#30363D', padding: 2, flexShrink: 0 }}>
+                <View style={{ width: '100%', height: '100%', borderRadius: 20, backgroundColor: COLORS.bg, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
+                  {getAvatarUrl(selectedSeller) && !failedImages.has(`p_${selectedSeller.id}`) ? (
+                    <Image
+                      source={{ uri: getAvatarUrl(selectedSeller)! }}
+                      style={{ width: 38, height: 38, borderRadius: 19 }}
+                      onError={() => markImageFailed(`p_${selectedSeller.id}`)}
+                    />
+                  ) : (
                     <MaterialCommunityIcons name="account" size={18} color={COLORS.text2} />
-                  </View>
-                )}
+                  )}
+                </View>
               </View>
               <View style={styles.previewInfo}>
                 <View style={styles.previewNameRow}>
@@ -645,12 +618,12 @@ export default function MapScreen() {
                     <MaterialCommunityIcons
                       name={selectedSeller.seller_tier === 'business' ? 'crown' : 'shield-check'}
                       size={14}
-                      color={selectedSeller.seller_tier === 'business' ? COLORS.yellow : COLORS.green}
+                      color={TIER_MARKER[selectedSeller.seller_tier]?.iconColor || COLORS.text2}
                     />
                   )}
                 </View>
                 <Text style={styles.previewMeta}>
-                  {selectedSeller.distance_km < 1 ? '<1' : selectedSeller.distance_km.toFixed(1)} km · {selectedSeller.product_count} items
+                  {selectedSeller.distance_km < 1 ? '<1' : selectedSeller.distance_km.toFixed(1)} km away · {selectedSeller.product_count} products{selectedSeller.avg_rating > 0 ? ` · ${selectedSeller.avg_rating.toFixed(1)}` : ''}
                 </Text>
               </View>
               <TouchableOpacity
@@ -662,13 +635,6 @@ export default function MapScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={styles.previewVisitText}>Visit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.previewCloseBtnInline}
-                onPress={() => setSelectedSeller(null)}
-                hitSlop={12}
-              >
-                <MaterialCommunityIcons name="close" size={14} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
           </Animated.View>
@@ -807,12 +773,6 @@ const styles = StyleSheet.create({
     elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12,
   },
   previewRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  previewAvatarWrap: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: COLORS.surface2, overflow: 'hidden',
-  },
-  previewAvatar: { width: 40, height: 40, borderRadius: 20 },
-  previewAvatarFallback: { alignItems: 'center', justifyContent: 'center' },
   previewInfo: { flex: 1 },
   previewNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   previewName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
@@ -822,9 +782,4 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.coral,
   },
   previewVisitText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
-  previewCloseBtnInline: {
-    width: 22, height: 22, borderRadius: 11,
-    backgroundColor: COLORS.surface2,
-    alignItems: 'center', justifyContent: 'center',
-  },
 });
