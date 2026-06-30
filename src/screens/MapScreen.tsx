@@ -13,7 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker } from 'react-native-maps';
 import * as ExpoLocation from 'expo-location';
 
 const TIER_COLORS: Record<string, string> = {
@@ -332,7 +332,6 @@ export default function MapScreen() {
     <View style={styles.container}>
       {Platform.OS !== 'web' ? (
         <MapView
-          provider={PROVIDER_GOOGLE}
           ref={mapRef}
           style={styles.map}
           initialRegion={region}
