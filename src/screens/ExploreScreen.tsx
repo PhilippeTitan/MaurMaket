@@ -166,7 +166,7 @@ export default function ExploreScreen({ navigation }: Props) {
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
-            keyExtractor={(img) => String(img.id)}
+            keyExtractor={(img, idx) => String(img.id || idx)}
             renderItem={({ item: img }) => {
               const url = getImageUrl(img.image_url);
               return (
