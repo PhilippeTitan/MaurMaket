@@ -335,7 +335,7 @@ export default function FeedScreen() {
               style={styles.sellerChip}
               onPress={() => item.seller && nav.navigate('Storefront', { sellerId: item.seller_id })}
             >
-              <UserAvatar seller={item.seller} size={35} />
+              <UserAvatar seller={item.seller} />
               <Text style={styles.sellerName} numberOfLines={1}>{getDisplayName(item.seller)}</Text>
             </TouchableOpacity>
             {!isOwnProduct && (
@@ -529,7 +529,7 @@ export default function FeedScreen() {
                 contentContainerStyle={{ paddingBottom: 12 }}
                 renderItem={({ item }) => (
                   <View style={styles.commentItem}>
-                      <UserAvatar name={item.reviewer?.full_name || 'B'} size={35} />
+                      <UserAvatar name={item.reviewer?.full_name || 'B'} />
                     <View style={styles.commentBody}>
                       <View style={styles.commentNameRow}>
                         <Text style={styles.commentName}>{item.reviewer?.full_name || 'Buyer'}</Text>

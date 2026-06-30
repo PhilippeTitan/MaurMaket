@@ -12,7 +12,7 @@ interface UserAvatarProps {
   ringColor?: string;
 }
 
-export default function UserAvatar({ seller, name, uri, size = 36, ringColor }: UserAvatarProps) {
+export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: UserAvatarProps) {
   const [failed, setFailed] = useState(false);
 
   const avatarUrl = uri
