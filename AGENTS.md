@@ -1118,7 +1118,8 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 
 ### 🔲 Session 10: Map Fix + Push Notifications (in progress)
 - [x] Fix MapScreen: static imports (commits 8c65d40, 6a896c5) — tiles still blank, needs UrlTile
-- [ ] Fix MapScreen: UrlTile + CartoDB dark tiles (bypass Google tile servers)
+- [x] Fix MapScreen: UrlTile + CartoDB dark tiles (commit bef7213) — still blank, Google SDK surface broken in Expo Go
+- [ ] Fix MapScreen: WebView + Leaflet approach (bypass Google Maps SDK entirely)
 - [ ] Phase 9: Push notifications (expo-notifications + FCM/APNs)
 - [ ] Phase 10: Dispute resolution (hybrid auto-resolve + admin)
 - [ ] Image sharing in chat

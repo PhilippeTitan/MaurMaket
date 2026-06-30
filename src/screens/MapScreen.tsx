@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform,
-  Animated, FlatList, Image, Pressable, PanResponder, Dimensions,
+  Animated, FlatList, Image, PanResponder, Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
 import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
 import { store } from '../store';
 import { getNearbySellers, setSellerLocation, getImageUrl } from '../api';
@@ -12,9 +13,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
-
-import MapView, { Marker, UrlTile } from 'react-native-maps';
-import * as ExpoLocation from 'expo-location';
 
 const TIER_COLORS: Record<string, string> = {
   casual: 'transparent',
@@ -42,10 +40,114 @@ interface NearbySeller {
   review_count: number;
 }
 
+function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: number } | null, failedImages: Set<string>) {
+  const centerLat = myLocation?.lat ?? 18.5944;
+  const centerLng = myLocation?.lng ?? -72.3074;
+  const zoom = myLocation ? 14 : 12;
+
+  const sellerMarkers = sellers.map(s => {
+    const avatarUrl = getImageUrl(getSellerAvatar(s)) || '';
+    const ringColor = TIER_COLORS[s.seller_tier] || '#555';
+    const hasImage = avatarUrl && !failedImages.has(`wv_${s.id}`);
+    const name = s.use_store_identity && s.store_name ? s.store_name : s.full_name;
+    const escapedName = name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const escapedAvatar = hasImage ? avatarUrl.replace(/'/g, "\\'") : '';
+    return `
+      L.marker([${s.lat}, ${s.lng}], {
+        icon: L.divIcon({
+          className: '',
+          html: '<div class="marker-bubble" style="border-color:${ringColor};" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:\'tap\',id:\'${s.id}\'}))">' +
+            (${hasImage} ? '<img src="${escapedAvatar}" class="marker-img" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' : '') +
+            '<div class="marker-fallback" style="display:${hasImage ? 'none' : 'flex'}"><svg viewBox="0 0 24 24" width="16" height="16" fill="#8B949E"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
+            '</div>',
+          iconSize: [40, 48],
+          iconAnchor: [20, 48],
+        })
+      }).addTo(map);
+    `;
+  }).join('\n    ');
+
+  const userMarker = myLocation ? `
+    L.marker([${myLocation.lat}, ${myLocation.lng}], {
+      icon: L.divIcon({
+        className: '',
+        html: '<div class="user-dot"><div class="user-dot-inner"></div></div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+      })
+    }).addTo(map);
+  ` : '';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body, #map { width:100%; height:100%; background:#0D1117; }
+  .leaflet-control-zoom { display:none; }
+  .leaflet-control-attribution { background:rgba(13,17,23,0.7) !important; color:#555 !important; font-size:9px !important; }
+  .leaflet-control-attribution a { color:#555 !important; }
+
+  .marker-bubble {
+    width:40px; height:40px; border-radius:20px; border:2.5px solid #555;
+    background:#161B22; overflow:hidden; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .marker-img { width:34px; height:34px; border-radius:17px; object-fit:cover; }
+  .marker-fallback { display:flex; align-items:center; justify-content:center; width:34px; height:34px; }
+
+  .user-dot {
+    width:20px; height:20px; border-radius:10px;
+    background:rgba(59,130,246,0.25);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .user-dot-inner {
+    width:10px; height:10px; border-radius:5px;
+    background:#3B82F6; border:2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  var map = L.map('map', {
+    zoomControl: false,
+    attributionControl: true
+  }).setView([${centerLat}, ${centerLng}], ${zoom});
+
+  L.tileLayer('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+    subdomains: 'abcd',
+    maxZoom: 20,
+  }).addTo(map);
+
+    ${userMarker}
+
+    ${sellerMarkers}
+
+  map.on('moveend', function() {
+    var c = map.getCenter();
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'move',
+      lat: c.lat,
+      lng: c.lng
+    }));
+  });
+</script>
+</body>
+</html>`;
+}
+
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const mapRef = useRef<any>(null);
+  const webViewRef = useRef<WebView>(null);
   const sheetAnim = useRef(new Animated.Value(1)).current;
   const sheetY = useRef(new Animated.Value(0)).current;
   const previewAnim = useRef(new Animated.Value(0)).current;
@@ -60,14 +162,7 @@ export default function MapScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [locationSaved, setLocationSaved] = useState(false);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
-  const [region, setRegion] = useState({
-    latitude: 18.5944,
-    longitude: -72.3074,
-    latitudeDelta: 0.15,
-    longitudeDelta: 0.15,
-  });
   const locationWatcher = useRef<any>(null);
-  const didAnimateToUser = useRef(false);
 
   const isSeller = store.isSeller;
   const fetchIdRef = useRef(0);
@@ -100,41 +195,40 @@ export default function MapScreen() {
   useEffect(() => {
     if (Platform.OS === 'web') {
       setLoading(false);
-      fetchSellers(region.latitude, region.longitude);
+      fetchSellers(18.5944, -72.3074);
       return;
     }
     let active = true;
     (async () => {
-      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      const { status } = await (await import('expo-location')).requestForegroundPermissionsAsync();
       if (status !== 'granted' || !active) {
         setLoading(false);
-        fetchSellers(region.latitude, region.longitude);
+        fetchSellers(18.5944, -72.3074);
         return;
       }
       try {
-        const loc = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.Balanced });
+        const ExpoLoc = await import('expo-location');
+        const loc = await ExpoLoc.getCurrentPositionAsync({ accuracy: ExpoLoc.Accuracy.Balanced });
         if (!active) return;
         const lat = loc.coords.latitude;
         const lng = loc.coords.longitude;
         setMyLocation({ lat, lng });
-        setRegion(prev => ({ ...prev, latitude: lat, longitude: lng }));
-        if (mapRef.current && !didAnimateToUser.current) {
-          didAnimateToUser.current = true;
-          mapRef.current.animateToRegion({ latitude: lat, longitude: lng, latitudeDelta: 0.08, longitudeDelta: 0.08 }, 600);
-        }
         await fetchSellers(lat, lng);
       } catch {
-        fetchSellers(region.latitude, region.longitude);
+        fetchSellers(18.5944, -72.3074);
       }
       setLoading(false);
 
-      locationWatcher.current = await ExpoLocation.watchPositionAsync(
-        { accuracy: ExpoLocation.Accuracy.Balanced, distanceInterval: 200, timeInterval: 15000 },
-        (pos: any) => {
-          if (!active) return;
-          setMyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        }
-      );
+      try {
+        const ExpoLoc = await import('expo-location');
+        locationWatcher.current = await ExpoLoc.watchPositionAsync(
+          { accuracy: ExpoLoc.Accuracy.Balanced, distanceInterval: 200, timeInterval: 15000 },
+          (pos: any) => {
+            if (!active) return;
+            setMyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          }
+        );
+      } catch {}
     })();
     return () => { active = false; locationWatcher.current?.remove(); };
   }, []);
@@ -159,19 +253,66 @@ export default function MapScreen() {
     }
   }, [selectedSeller]);
 
-  const handleRegionChangeComplete = useCallback((newRegion: any) => {
-    setRegion(newRegion);
-    fetchSellers(newRegion.latitude, newRegion.longitude, 20);
-  }, [fetchSellers]);
+  useEffect(() => {
+    if (mapReady && webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        (function() {
+          map.eachLayer(function(layer) {
+            if (layer instanceof L.Marker) map.removeLayer(layer);
+          });
+
+          var myLoc = ${myLocation ? `L.marker([${myLocation.lat}, ${myLocation.lng}], {
+            icon: L.divIcon({
+              className: '',
+              html: '<div class="user-dot"><div class="user-dot-inner"></div></div>',
+              iconSize: [20, 20],
+              iconAnchor: [10, 10],
+            })
+          }).addTo(map);` : 'null'}
+
+          ${filteredSellers.map(s => {
+            const avatarUrl = getImageUrl(getSellerAvatar(s)) || '';
+            const ringColor = TIER_COLORS[s.seller_tier] || '#555';
+            const hasImage = avatarUrl && !failedImages.has(`wv_${s.id}`);
+            const escapedAvatar = hasImage ? avatarUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
+            return `L.marker([${s.lat}, ${s.lng}], {
+              icon: L.divIcon({
+                className: '',
+                html: '<div class="marker-bubble" style="border-color:${ringColor};" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:\\'tap\\',id:\\'${s.id}\\'}))">' +
+                  ${hasImage} ? '<img src="${escapedAvatar}" class="marker-img" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' +
+                  '<div class="marker-fallback" style="display:${hasImage ? 'none' : 'flex'}"><svg viewBox="0 0 24 24" width="16" height="16" fill="#8B949E"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
+                  '</div>',
+                iconSize: [40, 48],
+                iconAnchor: [20, 48],
+              })
+            }).addTo(map);`;
+          }).join('\n          ')}
+
+          if (myLoc) map.setView([${myLocation?.lat ?? 18.5944}, ${myLocation?.lng ?? -72.3074}], 14);
+        })();
+        true;
+      `);
+    }
+  }, [mapReady, filteredSellers, failedImages, myLocation]);
+
+  const handleWebViewMessage = useCallback((event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'tap') {
+        const seller = filteredSellers.find(s => s.id === data.id);
+        if (seller) setSelectedSeller(seller);
+      } else if (data.type === 'move') {
+        fetchSellers(data.lat, data.lng, 20);
+      }
+    } catch {}
+  }, [filteredSellers, fetchSellers]);
 
   const centerOnMe = () => {
-    if (myLocation && mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: myLocation.lat,
-        longitude: myLocation.lng,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      }, 400);
+    if (myLocation && webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        map.setView([${myLocation.lat}, ${myLocation.lng}], 15, {animate:true});
+        true;
+      `);
     }
   };
 
@@ -210,35 +351,6 @@ export default function MapScreen() {
   };
 
   const markImageFailed = (id: string) => setFailedImages(prev => new Set(prev).add(id));
-
-  const renderSellerMarker = (seller: NearbySeller) => {
-    const ringColor = TIER_COLORS[seller.seller_tier] || 'transparent';
-    return (
-      <Marker
-        key={seller.id}
-        coordinate={{ latitude: seller.lat, longitude: seller.lng }}
-        onPress={() => setSelectedSeller(seller)}
-        tracksViewChanges={false}
-      >
-        <View style={styles.markerOuter}>
-          <View style={[styles.markerRing, ringColor !== 'transparent' && { borderColor: ringColor, borderWidth: 2.5 }]}>
-            {getAvatarUrl(seller) && !failedImages.has(`m_${seller.id}`) ? (
-              <Image
-                source={{ uri: getAvatarUrl(seller)! }}
-                style={styles.markerAvatar}
-                onError={() => markImageFailed(`m_${seller.id}`)}
-              />
-            ) : (
-              <View style={[styles.markerAvatar, styles.markerAvatarFallback]}>
-                <MaterialCommunityIcons name="account" size={18} color={COLORS.text2} />
-              </View>
-            )}
-          </View>
-          <View style={styles.markerDot} />
-        </View>
-      </Marker>
-    );
-  };
 
   const renderSellerCard = ({ item }: { item: NearbySeller }) => {
     const avatarUrl = getAvatarUrl(item);
@@ -312,26 +424,23 @@ export default function MapScreen() {
   }
 
   const previewBottom = sheetBottom + SHEET_HEIGHT + 12;
+  const mapHtml = buildMapHtml(filteredSellers, myLocation, failedImages);
 
   return (
     <View style={styles.container}>
       {Platform.OS !== 'web' ? (
-        <MapView
-          ref={mapRef}
+        <WebView
+          ref={webViewRef}
+          source={{ html: mapHtml }}
           style={styles.map}
-          initialRegion={region}
-          mapType={Platform.OS === 'android' ? 'none' : 'standard'}
-          showsUserLocation={!!myLocation}
-          showsMyLocationButton={false}
-          onRegionChangeComplete={handleRegionChangeComplete}
-          onMapReady={() => setMapReady(true)}
-        >
-          <UrlTile
-            urlTemplate="https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
-            maximumZ={19}
-          />
-          {mapReady && filteredSellers.map(renderSellerMarker)}
-        </MapView>
+          onMessage={handleWebViewMessage}
+          onLoadEnd={() => setMapReady(true)}
+          javaScriptEnabled
+          domStorageEnabled
+          originWhitelist={['*']}
+          scrollEnabled={false}
+          bounces={false}
+        />
       ) : (
         <View style={[styles.map, styles.webFallback]}>
           <MaterialCommunityIcons name="map-marker-radius" size={48} color={COLORS.coral} />
@@ -462,8 +571,7 @@ export default function MapScreen() {
               <View style={styles.previewAvatarWrap}>
                 {getAvatarUrl(selectedSeller) && !failedImages.has(`p_${selectedSeller.id}`) ? (
                   <Image
-                    source={{ uri: getAvatarUrl(selectedSeller)! }
-                  }
+                    source={{ uri: getAvatarUrl(selectedSeller)! }}
                     style={styles.previewAvatar}
                     onError={() => markImageFailed(`p_${selectedSeller.id}`)}
                   />
@@ -527,8 +635,6 @@ export default function MapScreen() {
   );
 }
 
-const AVATAR_SIZE = 38;
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
@@ -566,28 +672,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4,
   },
   countBadgeText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
-  markerOuter: { alignItems: 'center' },
-  markerRing: {
-    width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2,
-    borderWidth: 2, borderColor: 'transparent',
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: COLORS.surface,
-    overflow: 'hidden',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  markerAvatar: { width: AVATAR_SIZE - 6, height: AVATAR_SIZE - 6, borderRadius: (AVATAR_SIZE - 6) / 2 },
-  markerAvatarFallback: {
-    backgroundColor: COLORS.surface2,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  markerDot: {
-    width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.coral,
-    marginTop: -1,
-  },
   myLocationBtn: {
     position: 'absolute', right: SPACING.lg,
     width: 44, height: 44, borderRadius: 22,
