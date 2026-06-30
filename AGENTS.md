@@ -549,7 +549,7 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 4. ~~Promo discount recorded but buyer charged full amount~~ — Fixed: discount applied to `finalTotal` (server.js:1560)
 5. ~~Stock decremented before payment — ghost inventory on failed payments~~ — Fixed: stock now decremented in payment.completed webhook with FOR UPDATE locking (server.js:2904-2921)
 6. ~~`complete` endpoint requires `status === 'delivered'`~~ — Fixed: accepts `paid` for meetup orders
-7. ~~Feed snap fix reverted~~ — Fixed: `decelerationRate={0}` + `disableIntervalMomentum={true}`
+7. ~~Feed snap fix reverted~~ — Fixed: `decelerationRate="fast"` + `disableIntervalMomentum={true}` + `getItemLayout`. Removed programmatic `scrollToOffset` in `onScrollEndDrag` that was fighting native snap.
 
 ### ✅ Phase 1-6: Meetup Escrow + QR System — DONE
 - Phase 1: Escrow system (order_escrow table, modified webhook, pay-status polling)

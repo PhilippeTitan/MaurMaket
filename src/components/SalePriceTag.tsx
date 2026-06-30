@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, formatPrice } from '../theme';
 
 type Size = 'sm' | 'md' | 'lg';
 
@@ -25,7 +25,7 @@ export default function SalePriceTag({ price, effectivePrice, isOnSale, discount
     return (
       <View style={styles.row}>
         <Text style={[styles.salePrice, { fontSize: s.saleFontSize }]}>
-          Rs {price.toLocaleString()}
+          Rs {formatPrice(price)}
         </Text>
       </View>
     );
@@ -34,10 +34,10 @@ export default function SalePriceTag({ price, effectivePrice, isOnSale, discount
   return (
     <View style={styles.row}>
       <Text style={[styles.salePrice, { fontSize: s.saleFontSize }]}>
-        Rs {effectivePrice.toLocaleString()}
+        Rs {formatPrice(effectivePrice)}
       </Text>
       <Text style={[styles.originalPrice, { fontSize: s.origFontSize }]}>
-        Rs {price.toLocaleString()}
+        Rs {formatPrice(price)}
       </Text>
       {discountPct > 0 && (
         <View style={[styles.badge, { paddingHorizontal: s.badgePadH, paddingVertical: s.badgePadV, borderRadius: s.badgeRadius }]}>

@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { getOrders, cancelOrder, completeOrder, getSellerOrders, updateOrderStatus } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
@@ -93,7 +93,7 @@ export default function OrdersScreen({ navigation }: Props) {
           <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
         </View>
       </View>
-      <Text style={styles.amount}>Rs {Number(item.total_amount).toLocaleString()}</Text>
+      <Text style={styles.amount}>Rs {formatPrice(Number(item.total_amount))}</Text>
       <Text style={styles.date}>{new Date(item.created_at).toLocaleDateString()}</Text>
 
       <View style={styles.actions}>

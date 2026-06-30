@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform, Alert, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMessages, sendMessage as apiSendMessage, getImageUrl } from '../api';
 import { useTranslation } from '../i18n';
@@ -129,7 +129,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                     style={styles.offerChip}
                     onPress={() => setText(`Offer: Rs ${price} for ${draftOffer.productName}`)}
                   >
-                    <Text style={styles.offerChipText}>Rs {price.toLocaleString()}</Text>
+                    <Text style={styles.offerChipText}>Rs {formatPrice(price)}</Text>
                   </TouchableOpacity>
                 );
               })}

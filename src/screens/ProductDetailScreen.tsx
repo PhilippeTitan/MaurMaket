@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, Image, TouchableOpacity, ScrollView, StyleSheet, Alert,
-  ActivityIndicator, Dimensions, FlatList, Share,
+  ActivityIndicator, Dimensions, Share,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice } from '../theme';
 import { createConversation, getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -22,6 +22,9 @@ const GRID_GAP = 2;
 const GRID_COLS = 2;
 const SIDE_PAD = 2;
 const GRID_CARD_W = (SCREEN_W - GRID_GAP * (GRID_COLS + 1) - SIDE_PAD * 2) / GRID_COLS;
+const HERO_MAX_H = SCREEN_H * 0.65;
+const HERO_MIN_H = SCREEN_H * 0.3;
+const HERO_DEFAULT_H = SCREEN_H * 0.42;
 const GRID_MIN_H = GRID_CARD_W * 0.7;
 const GRID_MAX_H = SCREEN_H * 0.3;
 
@@ -40,6 +43,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [heroHeight, setHeroHeight] = useState(HERO_DEFAULT_H);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -115,6 +119,18 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     })();
   }, [productId]);
 
+  useEffect(() => {
+    const imgs = product?.images;
+    const img = imgs && imgs.length > 0 ? imgs[activeImageIndex] || imgs[0] : null;
+    const url = img ? getImageUrl(img.image_url) : null;
+    if (!url) { setHeroHeight(HERO_DEFAULT_H); return; }
+    Image.getSize(url, (w, h) => {
+      if (!mountedRef.current || w === 0) return;
+      const aspectH = (h / w) * SCREEN_W;
+      setHeroHeight(Math.max(HERO_MIN_H, Math.min(HERO_MAX_H, aspectH)));
+    }, () => { setHeroHeight(HERO_DEFAULT_H); });
+  }, [activeImageIndex, product]);
+
   const handleWishlist = async () => {
     try {
       const res = await toggleWishlist(productId) as { wishlisted: boolean };
@@ -172,7 +188,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     if (!product) return;
     try {
       await Share.share({
-        message: `Check out "${product.name}" on MaurMaket — Rs ${(product.effective_price ?? product.price).toLocaleString()}`,
+        message: `Check out "${product.name}" on MaurMaket — Rs ${formatPrice(product.effective_price ?? product.price)}`,
       });
     } catch { /* silent */ }
   };
@@ -262,32 +278,23 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* ── Hero image carousel ── */}
-        <View style={styles.hero}>
-          <FlatList
-            data={allImages}
-            keyExtractor={(item) => item.id}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(e) => {
-              const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
-              setActiveImageIndex(index);
-            }}
-            renderItem={({ item }) => {
-              const url = getImageUrl(item.image_url);
-              return (
-                <View style={{ width: SCREEN_W, height: SCREEN_H * 0.42 }}>
-                  {url ? (
-                    <Image source={{ uri: url }} style={styles.heroImg} resizeMode="cover" />
-                  ) : (
-                    <View style={styles.heroPlaceholder}>
-                      <MaterialCommunityIcons name="image-off-outline" size={40} color={COLORS.text2} />
-                    </View>
-                  )}
+        <View style={[styles.hero, { height: heroHeight }]}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => { if (allImages.length > 1) setActiveImageIndex((activeImageIndex + 1) % allImages.length); }}
+            style={{ width: SCREEN_W, height: heroHeight }}
+          >
+            {(() => {
+              const url = getImageUrl(allImages[activeImageIndex]?.image_url);
+              return url ? (
+                <Image source={{ uri: url }} style={styles.heroImg} resizeMode="cover" />
+              ) : (
+                <View style={styles.heroPlaceholder}>
+                  <MaterialCommunityIcons name="image-off-outline" size={40} color={COLORS.text2} />
                 </View>
               );
-            }}
-          />
+            })()}
+          </TouchableOpacity>
           {allImages.length > 1 && (
             <View style={styles.dotsRow}>
               {allImages.map((_, i) => (
@@ -313,15 +320,15 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           <TouchableOpacity style={[styles.shareBtn, { top: insets.top + 12 }]} onPress={handleShare}>
             <MaterialCommunityIcons name="share-variant" size={16} color={COLORS.white} />
           </TouchableOpacity>
+          <View style={styles.priceOverlay}>
+            <SalePriceTag price={product.price} effectivePrice={product.effective_price ?? product.price} isOnSale={product.is_on_sale || false} discountPct={product.discount_pct || 0} size="lg" />
+          </View>
           <View style={styles.stockOverlay}>
             <View style={[styles.stockDot, { backgroundColor: product.stock > 0 ? COLORS.green : COLORS.coral }]} />
             <Text style={styles.stockOverlayText}>
               {product.stock > 0 ? `${product.stock} ${t('productDetail.inStock').toLowerCase()}` : t('productDetail.outOfStock')}
             </Text>
           </View>
-        <View style={styles.priceOverlay}>
-          <SalePriceTag price={product.price} effectivePrice={product.effective_price ?? product.price} isOnSale={product.is_on_sale || false} discountPct={product.discount_pct || 0} size="lg" />
-        </View>
         </View>
 
         {/* ── Seller row ── */}
@@ -435,14 +442,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.sectionSeeAll}>See all</Text>
               </TouchableOpacity>
             </View>
-            <FlatList
-              data={sellerProducts}
-              renderItem={renderSellerCard}
-              keyExtractor={item => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.sellerScroll}
-            />
+            <View style={[styles.sellerScroll, { flexDirection: 'row', gap: 10 }]}>
+              {sellerProducts.map(item => (
+                <View key={item.id} style={{ width: 130 }}>{renderSellerCard({ item })}</View>
+              ))}
+            </View>
           </View>
         )}
 
@@ -512,7 +516,6 @@ const styles = StyleSheet.create({
   /* Hero */
   hero: {
     width: SCREEN_W,
-    height: SCREEN_H * 0.42,
     backgroundColor: COLORS.surface2,
     position: 'relative',
   },
@@ -533,6 +536,11 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
   },
+  priceOverlay: {
+    position: 'absolute', bottom: 10, right: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: RADIUS.row,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
   stockOverlay: {
     position: 'absolute', bottom: 10, left: 10,
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -541,14 +549,8 @@ const styles = StyleSheet.create({
   },
   stockDot: { width: 5, height: 5, borderRadius: 2.5 },
   stockOverlayText: { fontSize: 10, color: COLORS.white, fontWeight: '600' },
-  priceOverlay: {
-    position: 'absolute', bottom: 10, right: 10,
-    backgroundColor: COLORS.coral, borderRadius: RADIUS.row,
-    paddingHorizontal: 10, paddingVertical: 4,
-  },
-  priceOverlayText: { fontSize: 13, fontWeight: '800', color: COLORS.white },
   dotsRow: {
-    position: 'absolute', bottom: 50, left: 0, right: 0,
+    position: 'absolute', bottom: 40, left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'center', gap: 5,
   },
   dot: {

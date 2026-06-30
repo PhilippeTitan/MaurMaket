@@ -5,7 +5,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
 import { getSellerBalance, getSellerPayouts, requestPayout } from '../api';
 import { store } from '../store';
@@ -117,14 +117,14 @@ export default function PaymentsScreen() {
           <>
             <View style={styles.balanceCard}>
               <Text style={styles.balanceLabel}>{t('payments.availableBalance')}</Text>
-              <Text style={styles.balanceValue}>Rs {balance.toLocaleString()}</Text>
+              <Text style={styles.balanceValue}>Rs {formatPrice(balance)}</Text>
               <View style={styles.balanceStats}>
                 <View style={styles.balanceStat}>
-                  <Text style={styles.balanceStatNum}>Rs {totalEarned.toLocaleString()}</Text>
+                  <Text style={styles.balanceStatNum}>Rs {formatPrice(totalEarned)}</Text>
                   <Text style={styles.balanceStatLabel}>{t('payments.totalEarned')}</Text>
                 </View>
                 <View style={styles.balanceStat}>
-                  <Text style={styles.balanceStatNum}>Rs {totalPaidOut.toLocaleString()}</Text>
+                  <Text style={styles.balanceStatNum}>Rs {formatPrice(totalPaidOut)}</Text>
                   <Text style={styles.balanceStatLabel}>{t('payments.totalPaidOut')}</Text>
                 </View>
               </View>
@@ -152,7 +152,7 @@ export default function PaymentsScreen() {
         renderItem={({ item }) => (
           <View style={styles.payoutRow}>
             <View>
-              <Text style={styles.payoutAmount}>Rs {item.amount.toLocaleString()}</Text>
+              <Text style={styles.payoutAmount}>Rs {formatPrice(item.amount)}</Text>
               <Text style={styles.payoutDate}>{new Date(item.created_at).toLocaleDateString('fr-HT')}</Text>
             </View>
             <View style={[styles.statusBadge, item.status === 'completed' && styles.statusCompleted]}>

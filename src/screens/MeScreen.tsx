@@ -6,7 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS, getDisplayName } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
 import { store } from '../store';
 import {
@@ -343,7 +343,7 @@ export default function MeScreen() {
           <View style={styles.analyticsGrid}>
             <View style={styles.analyticsStat}>
               <Text style={styles.analyticsStatValue}>
-                Rs {Number(analyticsData.overview?.total_revenue || 0).toLocaleString()}
+                Rs {formatPrice(Number(analyticsData.overview?.total_revenue || 0))}
               </Text>
               <Text style={styles.analyticsStatLabel}>{t('me.totalRevenue')}</Text>
             </View>
@@ -370,7 +370,7 @@ export default function MeScreen() {
                 >
                   <View style={styles.topProductInfo}>
                     <Text style={styles.topProductName} numberOfLines={1}>{tp.name}</Text>
-                    <Text style={styles.topProductMeta}>{tp.units_sold} sold · Rs {tp.revenue.toLocaleString()}</Text>
+                    <Text style={styles.topProductMeta}>{tp.units_sold} sold · Rs {formatPrice(tp.revenue)}</Text>
                   </View>
                   <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.text2} />
                 </TouchableOpacity>

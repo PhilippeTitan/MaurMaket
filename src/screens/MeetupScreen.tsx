@@ -4,7 +4,7 @@ import {
   ScrollView, Modal, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 
 let MapView: any = null;
@@ -532,7 +532,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
               Did you receive your item in good condition?
             </Text>
             <Text style={styles.receiptSubtext}>
-              Confirming will release Rs {Number(order.total_amount).toLocaleString()} to the seller.
+              Confirming will release Rs {formatPrice(Number(order.total_amount))} to the seller.
             </Text>
             <TouchableOpacity
               style={[styles.receiptConfirmBtn, releaseLoading && { opacity: 0.5 }]}

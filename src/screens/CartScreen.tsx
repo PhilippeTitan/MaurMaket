@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, Image, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
 import { store } from '../store';
@@ -116,7 +116,7 @@ export default function CartScreen({ navigation }: Props) {
           <MaterialCommunityIcons name="storefront-outline" size={14} color={COLORS.coral} />
           <Text style={styles.sellerSectionName} numberOfLines={1}>{item.sellerName}</Text>
           <Text style={styles.sellerSectionMeta}>
-            {item.itemCount} {item.itemCount === 1 ? t('common.item') : t('common.items')} · Rs {item.total.toLocaleString()}
+            {item.itemCount} {item.itemCount === 1 ? t('common.item') : t('common.items')} · Rs {formatPrice(item.total)}
           </Text>
         </View>
       );
@@ -192,14 +192,14 @@ export default function CartScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
             {discount > 0 && (
-              <Text style={styles.discountText}>-Rs {discount.toLocaleString()} {t('cart.off')}</Text>
+              <Text style={styles.discountText}>-Rs {formatPrice(discount)} {t('cart.off')}</Text>
             )}
             {promoCode.trim() && discount === 0 && (
               <Text style={styles.discountHint}>{t('cart.promoHint')}</Text>
             )}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>{t('cart.total')}</Text>
-              <Text style={styles.totalValue}>Rs {finalTotal.toLocaleString()}</Text>
+              <Text style={styles.totalValue}>Rs {formatPrice(finalTotal)}</Text>
             </View>
             <TouchableOpacity
               style={styles.checkoutBtn}

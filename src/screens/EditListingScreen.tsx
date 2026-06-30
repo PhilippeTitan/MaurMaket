@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
 import { getProduct, updateProduct, deleteProduct, getCategories, uploadImage, getImageUrl } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -242,7 +242,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
           <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} />
           {price && salePrice && parseFloat(salePrice) < parseFloat(price) && (
             <Text style={styles.saleHint}>
-              -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {(parseFloat(price) - parseFloat(salePrice)).toLocaleString()} saved
+              -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {formatPrice(parseFloat(price) - parseFloat(salePrice))} saved
             </Text>
           )}
         </View>

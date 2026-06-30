@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
 import { createProduct, getCategories, uploadImage, getSellerProducts } from '../api';
 import { store } from '../store';
@@ -214,7 +214,7 @@ export default function AddListingScreen() {
               <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} />
               {price && salePrice && parseFloat(salePrice) < parseFloat(price) && (
                 <Text style={styles.saleHint}>
-                  -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {(parseFloat(price) - parseFloat(salePrice)).toLocaleString()} saved
+                  -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {formatPrice(parseFloat(price) - parseFloat(salePrice))} saved
                 </Text>
               )}
             </View>

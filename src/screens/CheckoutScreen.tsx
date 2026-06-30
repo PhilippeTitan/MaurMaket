@@ -6,7 +6,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
 import ScreenHeader from '../components/ScreenHeader';
 import { store } from '../store';
@@ -121,7 +121,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <ScreenHeader
         title={t('checkout.title')}
         onBack={() => navigation.goBack()}
-        right={<Text style={styles.subtitle}>{itemCount} {itemLabel} - Rs {subtotal.toLocaleString()}</Text>}
+        right={<Text style={styles.subtitle}>{itemCount} {itemLabel} - Rs {formatPrice(subtotal)}</Text>}
       />
 
       <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
@@ -145,7 +145,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <View key={group.sellerId} style={styles.sellerGroupRow}>
             <Text style={styles.sellerGroupName} numberOfLines={1}>{group.sellerName}</Text>
             <Text style={styles.sellerGroupMeta}>
-              {group.itemCount} {group.itemCount === 1 ? t('checkout.item') : t('checkout.items')} - Rs {group.total.toLocaleString()}
+              {group.itemCount} {group.itemCount === 1 ? t('checkout.item') : t('checkout.items')} - Rs {formatPrice(group.total)}
             </Text>
           </View>
         ))}
@@ -171,7 +171,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 <Text style={styles.orderItemSeller} numberOfLines={1}>{sellerName}</Text>
               </View>
               <Text style={styles.orderItemQty}>x{item.quantity}</Text>
-              <Text style={styles.orderItemPrice}>Rs {(item.price * item.quantity).toLocaleString()}</Text>
+              <Text style={styles.orderItemPrice}>Rs {formatPrice(item.price * item.quantity)}</Text>
             </View>
           );
         })}
@@ -272,7 +272,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>{t('common.total')}</Text>
-        <Text style={styles.totalValue}>Rs {subtotal.toLocaleString()}</Text>
+        <Text style={styles.totalValue}>Rs {formatPrice(subtotal)}</Text>
       </View>
 
       <TouchableOpacity

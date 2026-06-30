@@ -79,3 +79,10 @@ export function getSellerAvatar(seller: { avatar_url?: string | null; store_logo
   if (seller.use_store_identity && seller.store_logo_url) return seller.store_logo_url;
   return seller.avatar_url || null;
 }
+
+export function formatPrice(n: number): string {
+  if (n >= 1000 && n % 1000 === 0) {
+    return `${n / 1000}K`;
+  }
+  return n.toLocaleString();
+}

@@ -4,7 +4,7 @@ import {
   Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus } from '../api';
 import { store } from '../store';
@@ -183,7 +183,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         <View style={styles.row}>
           <Text style={styles.label}>{t('orderDetail.total')}</Text>
           <Text style={[styles.value, { color: COLORS.coral, fontWeight: '700' }]}>
-            Rs {Number(order.total_amount).toLocaleString()}
+            Rs {formatPrice(Number(order.total_amount))}
           </Text>
         </View>
         <View style={styles.row}>
@@ -205,7 +205,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               <Text style={styles.eventType}>{item.product_name || `Product #${item.product_id?.slice(0, 8)}`}</Text>
               <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 4 }}>
                 <Text style={styles.label}>x{item.quantity}</Text>
-                <Text style={[styles.value, { color: COLORS.coral }]}>Rs {Number(item.price).toLocaleString()}</Text>
+                <Text style={[styles.value, { color: COLORS.coral }]}>Rs {formatPrice(Number(item.price))}</Text>
               </View>
             </View>
           ))}

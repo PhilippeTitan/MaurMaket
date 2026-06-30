@@ -146,17 +146,17 @@ export default function PromoManagementScreen() {
         <ScreenHeader title="Promotions" onBack={() => nav.goBack()} />
 
         {activePromos.length > 0 && (
-          <>
+          <View key="active-section">
             <Text style={styles.sectionLabel}>ACTIVE ({activePromos.length})</Text>
             {activePromos.map(renderPromoCard)}
-          </>
+          </View>
         )}
 
         {inactivePromos.length > 0 && (
-          <>
+          <View key="inactive-section">
             <Text style={styles.sectionLabel}>EXPIRED / PAUSED ({inactivePromos.length})</Text>
             {inactivePromos.map(renderPromoCard)}
-          </>
+          </View>
         )}
 
         {promos.length === 0 && (
