@@ -195,7 +195,7 @@ export default function ExploreScreen({ navigation }: Props) {
           <View style={styles.cardInfoBar}>
             {item.seller && (
               <View style={styles.cardSellerRow}>
-                <UserAvatar seller={item.seller} size={20} />
+                <UserAvatar seller={item.seller} size={25} />
                 <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
               </View>
             )}

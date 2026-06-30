@@ -294,7 +294,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             activeOpacity={0.7}
             onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id })}
           >
-            <UserAvatar seller={product.seller} size={30} />
+            <UserAvatar seller={product.seller} size={35} />
             <View style={styles.sellerInfo}>
               <Text style={styles.sellerName}>{getDisplayName(product.seller)}</Text>
               {(typeof product.category === 'string' ? product.category : product.category?.name) && (
