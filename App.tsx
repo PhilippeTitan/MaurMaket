@@ -18,7 +18,7 @@ import SignupScreen from './src/screens/SignupScreen';
 import FeedScreen from './src/screens/FeedScreen';
 import ExploreScreen from './src/screens/ExploreScreen';
 import InboxScreen from './src/screens/InboxScreen';
-import MapScreen from './src/screens/MapScreen';
+const MapScreen = React.lazy(() => import('./src/screens/MapScreen'));
 import MeScreen from './src/screens/MeScreen';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import CartScreen from './src/screens/CartScreen';

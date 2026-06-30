@@ -1095,6 +1095,56 @@ app.put('/api/notifications/read-all', authRequired, async (req, res) => {
   }
 });
 
+// ───── Nearby sellers (map discovery) ─────
+
+app.get('/api/sellers/nearby', async (req, res) => {
+  const { lat, lng, radius = 10 } = req.query;
+  if (!lat || !lng) return res.status(400).json({ error: 'lat and lng query params required' });
+  const latNum = parseFloat(lat);
+  const lngNum = parseFloat(lng);
+  const radiusKm = parseFloat(radius);
+  if (isNaN(latNum) || isNaN(lngNum) || isNaN(radiusKm)) {
+    return res.status(400).json({ error: 'Invalid lat, lng, or radius' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.full_name, u.avatar_url, u.store_name, u.store_logo_url,
+              u.seller_tier, u.id_verified, u.use_store_identity,
+              sl.lat, sl.lng,
+              (6371 * acos(LEAST(1, GREATEST(-1,
+                cos(radians($1)) * cos(radians(sl.lat)) *
+                cos(radians(sl.lng) - radians($2)) +
+                sin(radians($1)) * sin(radians(sl.lat))
+              )))) AS distance_km,
+              (SELECT COUNT(*) FROM products p WHERE p.seller_id = u.id AND p.is_available = true) AS product_count,
+              (SELECT pi.image_url FROM product_images pi
+               JOIN products p ON pi.product_id = p.id
+               WHERE p.seller_id = u.id AND p.is_available = true
+               ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS primary_image,
+              COALESCE((SELECT AVG(r.rating)::numeric(3,2) FROM reviews r WHERE r.seller_id = u.id), 0) AS avg_rating,
+              (SELECT COUNT(*) FROM reviews r2 WHERE r2.seller_id = u.id) AS review_count
+       FROM seller_locations sl
+       JOIN users u ON u.id = sl.seller_id
+       WHERE u.role = 'seller'
+       ORDER BY distance_km ASC`,
+      [latNum, lngNum]
+    );
+    const filtered = result.rows.filter(r => parseFloat(r.distance_km) <= radiusKm);
+    res.json({ sellers: filtered.map(r => ({
+      ...r,
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lng),
+      distance_km: parseFloat(parseFloat(r.distance_km).toFixed(2)),
+      product_count: parseInt(r.product_count),
+      avg_rating: parseFloat(r.avg_rating) || 0,
+      review_count: parseInt(r.review_count),
+    }))});
+  } catch (err) {
+    console.error('Nearby sellers error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ───── Seller Profile / Stats (used by storefront) ─────
 
 app.get('/api/sellers/:id', async (req, res) => {
@@ -1125,60 +1175,6 @@ app.get('/api/sellers/:id', async (req, res) => {
     });
   } catch (err) {
     console.error('Seller profile error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// ───── Nearby sellers (map discovery) ─────
-
-app.get('/api/sellers/nearby', async (req, res) => {
-  const { lat, lng, radius = 10 } = req.query;
-  if (!lat || !lng) return res.status(400).json({ error: 'lat and lng query params required' });
-  const latNum = parseFloat(lat);
-  const lngNum = parseFloat(lng);
-  const radiusKm = parseFloat(radius);
-  if (isNaN(latNum) || isNaN(lngNum) || isNaN(radiusKm)) {
-    return res.status(400).json({ error: 'Invalid lat, lng, or radius' });
-  }
-  try {
-    const result = await pool.query(
-      `SELECT u.id, u.full_name, u.avatar_url, u.store_name, u.store_logo_url,
-              u.seller_tier, u.id_verified, u.use_store_identity,
-              sl.lat, sl.lng,
-              (6371 * acos(
-                cos(radians($1)) * cos(radians(sl.lat)) *
-                cos(radians(sl.lng) - radians($2)) +
-                sin(radians($1)) * sin(radians(sl.lat))
-              )) AS distance_km,
-              (SELECT COUNT(*) FROM products p WHERE p.seller_id = u.id AND p.is_available = true) AS product_count,
-              (SELECT pi.image_url FROM product_images pi
-               JOIN products p ON pi.product_id = p.id
-               WHERE p.seller_id = u.id AND p.is_available = true
-               ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS primary_image,
-              COALESCE((SELECT AVG(r.rating)::numeric(3,2) FROM reviews r WHERE r.seller_id = u.id), 0) AS avg_rating,
-              (SELECT COUNT(*) FROM reviews r2 WHERE r2.seller_id = u.id) AS review_count
-       FROM seller_locations sl
-       JOIN users u ON u.id = sl.seller_id
-       WHERE u.role = 'seller'
-         AND (6371 * acos(
-           cos(radians($1)) * cos(radians(sl.lat)) *
-           cos(radians(sl.lng) - radians($2)) +
-           sin(radians($1)) * sin(radians(sl.lat))
-         )) <= $3
-       ORDER BY distance_km ASC`,
-      [latNum, lngNum, radiusKm]
-    );
-    res.json({ sellers: result.rows.map(r => ({
-      ...r,
-      lat: parseFloat(r.lat),
-      lng: parseFloat(r.lng),
-      distance_km: parseFloat(parseFloat(r.distance_km).toFixed(2)),
-      product_count: parseInt(r.product_count),
-      avg_rating: parseFloat(r.avg_rating) || 0,
-      review_count: parseInt(r.review_count),
-    }))});
-  } catch (err) {
-    console.error('Nearby sellers error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

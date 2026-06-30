@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform,
-  Animated, FlatList, Image,
+  Animated, FlatList, Image, Pressable,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, getDisplayName, getSellerAvatar } from '../theme';
@@ -68,7 +68,7 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const mapRef = useRef<any>(null);
-  const sheetAnim = useRef(new Animated.Value(0)).current;
+  const sheetAnim = useRef(new Animated.Value(1)).current;
 
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [sellers, setSellers] = useState<NearbySeller[]>([]);
@@ -78,6 +78,8 @@ export default function MapScreen() {
   const [activeFilter, setActiveFilter] = useState('Nearby');
   const [settingLocation, setSettingLocation] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [locationSaved, setLocationSaved] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(true);
   const [region, setRegion] = useState({
     latitude: 18.5944,
     longitude: -72.3074,
@@ -171,6 +173,8 @@ export default function MapScreen() {
     setSettingLocation(true);
     try {
       await setSellerLocation(myLocation.lat, myLocation.lng);
+      setLocationSaved(true);
+      setTimeout(() => setLocationSaved(false), 2000);
     } catch {}
     setSettingLocation(false);
   };
@@ -344,14 +348,14 @@ export default function MapScreen() {
 
       {isSeller && Platform.OS !== 'web' && (
         <TouchableOpacity
-          style={[styles.setLocationBtn, { bottom: insets.bottom + 130 }]}
+          style={[styles.setLocationBtn, { bottom: insets.bottom + 130 }, locationSaved && styles.setLocationBtnSaved]}
           onPress={handleSetMyLocation}
-          disabled={settingLocation}
+          disabled={settingLocation || locationSaved}
         >
           {settingLocation ? (
             <ActivityIndicator size="small" color={COLORS.white} />
           ) : (
-            <MaterialCommunityIcons name="map-marker-plus" size={20} color={COLORS.white} />
+            <MaterialCommunityIcons name={locationSaved ? "check" : "map-marker-plus"} size={20} color={COLORS.white} />
           )}
         </TouchableOpacity>
       )}
@@ -402,16 +406,22 @@ export default function MapScreen() {
       </Animated.View>
 
       {selectedSeller && Platform.OS !== 'web' && (
-        <TouchableOpacity
-          style={styles.previewOverlay}
-          activeOpacity={1}
-          onPress={() => {
-            setSelectedSeller(null);
-            toggleSheet(false);
-          }}
+        <View
+          style={styles.previewCardContainer}
+          pointerEvents="box-none"
         >
-          <View style={[styles.previewCard, { bottom: insets.bottom + 360, left: SPACING.lg, right: SPACING.lg }]}>
+          <Pressable
+            style={[styles.previewCard, { left: SPACING.lg, right: SPACING.lg }]}
+            onPress={() => {}}
+          >
             <View style={styles.previewHeader}>
+              <TouchableOpacity
+                style={styles.previewCloseBtn}
+                onPress={() => setSelectedSeller(null)}
+                hitSlop={10}
+              >
+                <MaterialCommunityIcons name="close" size={16} color={COLORS.text2} />
+              </TouchableOpacity>
               <View style={styles.previewAvatarWrap}>
                 {getAvatarUrl(selectedSeller) ? (
                   <Image source={{ uri: getAvatarUrl(selectedSeller)! }} style={styles.previewAvatar} />
@@ -429,7 +439,6 @@ export default function MapScreen() {
                 style={styles.previewVisitBtn}
                 onPress={() => {
                   setSelectedSeller(null);
-                  toggleSheet(false);
                   navigateToStorefront(selectedSeller.id);
                 }}
               >
@@ -461,8 +470,8 @@ export default function MapScreen() {
                 </View>
               )}
             </View>
-          </View>
-        </TouchableOpacity>
+          </Pressable>
+        </View>
       )}
     </View>
   );
@@ -536,6 +545,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 6,
   },
+  setLocationBtnSaved: {
+    backgroundColor: COLORS.green,
+  },
   sheet: {
     position: 'absolute', left: 0, right: 0,
     height: 340,
@@ -592,12 +604,18 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginTop: 10 },
   emptySubtext: { color: COLORS.text2, fontSize: 12, marginTop: 4 },
-  previewOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'transparent',
+  previewCardContainer: {
+    position: 'absolute',
+    left: 0, right: 0,
+    bottom: 360,
+    alignItems: 'center',
+  },
+  previewCloseBtn: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: COLORS.surface2,
+    alignItems: 'center', justifyContent: 'center',
   },
   previewCard: {
-    position: 'absolute',
     backgroundColor: COLORS.surface, borderRadius: 16,
     borderWidth: 1, borderColor: COLORS.border, padding: 14,
     elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12,
