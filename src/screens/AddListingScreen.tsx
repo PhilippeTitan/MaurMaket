@@ -90,6 +90,10 @@ export default function AddListingScreen() {
       Alert.alert(t('addListing.missingInfo'), t('addListing.fillFields'));
       return;
     }
+    if (parseInt(stock, 10) < 1) {
+      Alert.alert(t('addListing.missingInfo'), 'Stock must be at least 1');
+      return;
+    }
 
     setLoading(true);
     try {

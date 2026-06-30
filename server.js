@@ -1375,6 +1375,9 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
   if (!name || !price) {
     return res.status(400).json({ error: 'Name and price required' });
   }
+  if (stock !== undefined && stock !== null && stock !== '' && parseInt(stock) < 1) {
+    return res.status(400).json({ error: 'Stock must be at least 1' });
+  }
   if (!images || !Array.isArray(images) || images.length === 0) {
     return res.status(400).json({ error: 'At least one image is required' });
   }
@@ -1481,6 +1484,10 @@ app.put('/api/products/:id', authRequired, sellerRequired, async (req, res) => {
       return res.status(403).json({ error: 'Not your product' });
     }
     const { name, description, price, stock, isAvailable, categoryId, images, sale_price, sale_starts_at, sale_ends_at, clearSale } = req.body;
+
+    if (stock !== undefined && stock !== null && stock !== '' && parseInt(stock) < 1) {
+      return res.status(400).json({ error: 'Stock must be at least 1' });
+    }
 
     // Sale price validation
     const effectivePrice = parseFloat(price || check.rows[0].price);

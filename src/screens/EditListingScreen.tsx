@@ -110,6 +110,10 @@ export default function EditListingScreen({ route, navigation }: Props) {
       Alert.alert(t('editListing.missingInfo'), t('editListing.fillFields'));
       return;
     }
+    if (parseInt(stock, 10) < 1) {
+      Alert.alert(t('editListing.missingInfo'), 'Stock must be at least 1');
+      return;
+    }
     setSaving(true);
     try {
       const uploadedUrls: string[] = [];
@@ -136,7 +140,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
         name,
         description,
         price: parseFloat(price),
-        stock: parseInt(stock, 10) || 0,
+        stock: parseInt(stock, 10) || 1,
         isAvailable,
       };
       if (categoryId) data.categoryId = categoryId;
