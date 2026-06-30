@@ -15,6 +15,7 @@ import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
 import UserAvatar from '../components/UserAvatar';
+import BackButton from '../components/BackButton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -261,9 +262,9 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               ))}
             </View>
           )}
-          <TouchableOpacity style={[styles.backBtn, { top: insets.top + 12 }]} onPress={() => navigation.goBack()}>
-            <MaterialCommunityIcons name="arrow-left" size={18} color={COLORS.white} />
-          </TouchableOpacity>
+          <View style={[styles.backBtn, { top: insets.top + 12 }]}>
+            <BackButton onPress={() => navigation.goBack()} variant="overlay" />
+          </View>
           {!isOwnProduct && (
             <TouchableOpacity style={[styles.wishlistBtn, { top: insets.top + 12 }]} onPress={handleWishlist}>
               <MaterialCommunityIcons
@@ -441,8 +442,6 @@ const styles = StyleSheet.create({
   heroPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   backBtn: {
     position: 'absolute', top: 44, left: 10,
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
   },
   wishlistBtn: {
     position: 'absolute', top: 44, right: 48,

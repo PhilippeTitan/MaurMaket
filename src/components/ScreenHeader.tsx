@@ -1,8 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, HEADER } from '../theme';
+import BackButton from './BackButton';
 
 interface Props {
   title: string;
@@ -31,9 +31,7 @@ export default function ScreenHeader({ title, onBack, right, bordered = true, va
       ]}
     >
       {onBack ? (
-        <TouchableOpacity onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
+        <BackButton onPress={onBack} />
       ) : (
         <View style={styles.backSpacer} />
       )}

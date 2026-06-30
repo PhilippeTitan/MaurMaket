@@ -11,6 +11,7 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { becomeSeller, uploadImage } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
+import BackButton from '../components/BackButton';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
 
@@ -253,9 +254,9 @@ export default function SellerOnboardingScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xl }]}>
-      <TouchableOpacity onPress={() => nav.goBack()} style={{ alignSelf: 'flex-start', marginBottom: 16 }}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.text2} />
-      </TouchableOpacity>
+      <View style={{ alignSelf: 'flex-start', marginBottom: 16 }}>
+        <BackButton onPress={() => nav.goBack()} size={24} />
+      </View>
       {step !== 'welcome' && step !== 'done' && (
         <View style={styles.stepIndicatorFlow}>
           {Array.from({ length: totalSteps }, (_, i) => (

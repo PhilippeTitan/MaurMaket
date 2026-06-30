@@ -8,6 +8,7 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMessages, sendMessage as apiSendMessage, getImageUrl } from '../api';
 import { useTranslation } from '../i18n';
+import BackButton from '../components/BackButton';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Message } from '../types';
@@ -76,9 +77,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
+        <BackButton onPress={() => navigation.goBack()} />
         <TouchableOpacity
           style={styles.headerProfile}
           onPress={() => otherUserId && navigation.navigate('Storefront', { sellerId: otherUserId })}

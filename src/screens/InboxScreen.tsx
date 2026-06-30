@@ -9,6 +9,7 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
+import BackButton from '../components/BackButton';
 import { getConversations, getNotifications, markNotificationRead, markAllNotificationsRead, getFollowing, getImageUrl, createConversation } from '../api';
 import type { Conversation, Notification, User } from '../types';
 import type { RootStackParamList } from '../navigation';
@@ -229,9 +230,7 @@ export default function InboxScreen() {
     <View style={styles.container}>
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
         {(route.params?.returnTab || nav.canGoBack()) && (
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-            <MaterialCommunityIcons name="arrow-left" size={20} color={COLORS.text2} />
-          </TouchableOpacity>
+          <BackButton onPress={handleBack} />
         )}
         <Text style={styles.title}>{t('inbox.title')}</Text>
       </View>
