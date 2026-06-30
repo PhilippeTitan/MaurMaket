@@ -6,13 +6,14 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice } from '../theme';
-import { createConversation, getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl } from '../api';
+import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Review } from '../types';
 import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
+import BuyRow from '../components/BuyRow';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -136,52 +137,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
       const res = await toggleWishlist(productId) as { wishlisted: boolean };
       setWishlisted(res.wishlisted);
     } catch { /* silent */ }
-  };
-
-  const handleAddToCart = async () => {
-    if (!product) return;
-    const result = await store.addToCart({
-      id: product.id,
-      name: product.name,
-      price: product.effective_price ?? product.price,
-      quantity: 1,
-      images: product.images,
-      seller_id: product.seller_id,
-      seller_name: product.seller?.full_name || null,
-      store_name: product.seller?.store_name || null,
-      stock: product.stock,
-    });
-    if (!result.added) {
-      Alert.alert('Stock limit', result.reason === 'out-of-stock' ? 'This item is sold out.' : `Only ${result.stock} available.`);
-      return;
-    }
-    Alert.alert('Added to Cart', 'Item added successfully', [
-      { text: 'Continue Shopping', style: 'cancel' },
-      { text: 'View Cart', onPress: () => navigation.navigate('Cart') },
-    ]);
-  };
-
-  const handleMakeOffer = async () => {
-    if (!product?.seller) return;
-    try {
-      const res = await createConversation({
-        sellerId: product.seller_id,
-        productId: product.id,
-      }) as { conversationId: string };
-      navigation.navigate('Chat', {
-        conversationId: res.conversationId,
-        otherUserName: getDisplayName(product.seller),
-        otherUserId: product.seller_id,
-        otherUserAvatar: product.seller.avatar_url,
-        draftOffer: {
-          productId: product.id,
-          productName: product.name,
-          listPrice: product.effective_price ?? product.price,
-        },
-      });
-    } catch {
-      Alert.alert('Message unavailable', 'Could not start negotiation right now.');
-    }
   };
 
   const handleShare = async () => {
@@ -472,36 +427,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
 
       {/* ── Sticky bottom CTA ── */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>
-        {isOwnProduct ? (
-          <TouchableOpacity
-            style={styles.editListingBtn}
-            onPress={() => navigation.navigate('EditListing', { productId: product.id })}
-          >
-            <MaterialCommunityIcons name="pencil-outline" size={16} color={COLORS.white} />
-              <Text style={styles.editListingBtnText}>{t('editListing.title')}</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.ctaRow}>
-            <TouchableOpacity
-              style={[styles.offerBtn, product.stock <= 0 && styles.addBtnDisabled]}
-              onPress={handleMakeOffer}
-              disabled={product.stock <= 0}
-            >
-              <MaterialCommunityIcons name="tag-outline" size={17} color={COLORS.white} />
-              <Text style={styles.offerBtnText}>{t('productDetail.makeOffer')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.addBtn, product.stock <= 0 && styles.addBtnDisabled]}
-              onPress={handleAddToCart}
-              disabled={product.stock <= 0}
-            >
-              <MaterialCommunityIcons name="cart-plus" size={17} color={COLORS.white} />
-              <Text style={styles.addBtnText}>
-                {product.stock <= 0 ? t('productDetail.outOfStock') : t('productDetail.addToCart')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        <BuyRow product={product} navigation={navigation} />
       </View>
     </View>
   );
@@ -675,26 +601,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingTop: 8,
     backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border,
   },
-  addBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 12, paddingHorizontal: 28, borderRadius: RADIUS.row, backgroundColor: COLORS.coral,
-  },
-  ctaRow: { flexDirection: 'row', gap: 10, justifyContent: 'center' },
-  offerBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 12, paddingHorizontal: 28, borderRadius: RADIUS.row,
-    backgroundColor: COLORS.blue,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-  },
-  offerBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
-  addBtnDisabled: { opacity: 0.4 },
-  addBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
-  ownProductRow: {
-    padding: 10, borderRadius: RADIUS.row, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',
-  },
-  ownProductText: { color: COLORS.text2, fontWeight: '600', fontSize: 12 },
   editListingBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: 12, borderRadius: RADIUS.row, backgroundColor: COLORS.blue,
