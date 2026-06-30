@@ -9,7 +9,7 @@ interface BackButtonProps {
   size?: number;
 }
 
-export default function BackButton({ onPress, variant = 'standard', size = 20 }: BackButtonProps) {
+export default function BackButton({ onPress, variant = 'standard', size = 35 }: BackButtonProps) {
   const isOverlay = variant === 'overlay';
   return (
     <TouchableOpacity
@@ -28,9 +28,9 @@ export default function BackButton({ onPress, variant = 'standard', size = 20 }:
 
 const styles = StyleSheet.create({
   overlay: {
-    width: 25,
-    height: 25,
-    borderRadius: 12.5,
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',

@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  backSpacer: { width: 20 },
+  backSpacer: { width: 35 },
   title: {
     flex: 1,
     fontSize: HEADER.titleSize,
