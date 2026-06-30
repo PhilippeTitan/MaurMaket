@@ -1026,9 +1026,101 @@ Implemented all planned features from Session 7's architecture. Also fixed web c
 | 7 | `decelerationRate={0}` + `disableIntervalMomentum` | FeedScreen.tsx:516 |
 
 ### Next Steps
-1. **Test local dev on phone** — Verify phone can reach `10.130.195.105:3001` in Expo Go
-2. **Phase 9: Push Notifications** — expo-notifications + FCM/APNs
-3. **Phase 10: Dispute Resolution** — Hybrid auto-resolve + admin panel
-4. **Phase 6: Multi-seller meetups** — Per-seller escrow tracking UI
-5. **Image sharing in chat** — Prevents WhatsApp exfiltration
-6. **Deploy to production** — Push fixes, verify Render auto-deploy
+1. **Phase 9: Push Notifications** — expo-notifications + FCM/APNs
+2. **Phase 10: Dispute Resolution** — Hybrid auto-resolve + admin panel
+3. **Phase 6: Multi-seller meetups** — Per-seller escrow tracking UI
+4. **Image sharing in chat** — Prevents WhatsApp exfiltration
+5. **Deploy to production** — Push fixes, verify Render auto-deploy
+
+---
+
+## Session 9 — 2026-06-30 (Nearby Market + Dev Fixes)
+
+### Context
+User tested app on physical device. Multiple issues found: retry payment 400, MonCash returnUrl HTTPS, ExploreScreen key warning, Nearby Market not working.
+
+### Completed This Session
+1. **P0-33 Stock Fix** — Moved stock decrement from order creation to payment.completed webhook with `SELECT ... FOR UPDATE` locking. Removed stock restore from buyer cancel and payment.failed webhook.
+2. **Retry Payment 400 Fix** — `request()` helper unconditionally set `Content-Type: application/json` even for POST requests with no body. Express.json() tried to parse empty body → 400. Fixed by only setting header when `options.body` exists.
+3. **MonCash returnUrl HTTPS Fix** — `req.get('host')` returned `localhost:3001` locally, making invalid `https://localhost:3001` URLs. Now uses `PRODUCTION_URL` env var (defaults to `https://maurmaket.onrender.com`).
+4. **ExploreScreen Key Fix** — VirtualizedList key warning from masonry grid. Moved `key` from inside `renderCard` to `React.Fragment` wrapper in `.map()`.
+5. **Nearby Market Build** — Full Snapchat-style map screen with:
+   - `seller_locations` table + haversine spatial query
+   - `GET /api/sellers/nearby` + `PUT /api/seller/location`
+   - Full-screen dark-themed react-native-maps with avatar markers
+   - Tier-colored marker rings (green=verified, gold=business)
+   - Tap marker → preview card with Visit button
+   - Bottom sheet with filter chips + horizontal seller cards
+   - My Location + Set My Location floating buttons
+   - Web fallback with seller list
+6. **Nearby Market Bug Fixes** — Route order (`/nearby` before `/:id`), haversine `LEAST/GREATEST` NaN guard, parameter count mismatch, lazy-load MapScreen, preview card touch-blocking overlay → non-capturing Pressable
+7. **Nearby Market Polish** — LinearGradient top bar, preview card fade/scale animation, image error handling (failedImages), pan gesture on sheet handle, empty state CTA for sellers, smooth first-load map animation, z-index layering
+
+### Commits
+- `2d5c874` — move stock decrement from order creation to payment webhook
+- `a19c4f3` — retry payment unique referenceId (earlier session)
+- `2a904c7` — Content-Type only when body exists
+- `6bf9073` — MonCash returnUrl uses production HTTPS
+- `b079a68` — ExploreScreen key fix
+- `1f38e10` — Nearby Market initial build
+- `0674fb1` — Route order, haversine guard, lazy-load, preview card fix
+- `cb78772` — Design polish: gradient, animation, error handling, pan gesture
+
+### Known Issues
+- Production Render still running old code (referenceId 409 on retry) — will auto-deploy on next push
+- No sellers have set location yet — need to test with real seller accounts
+
+---
+
+## Todo History
+
+> **Rule:** When a todo list is completed, add it here with a ✅ checkmark so future sessions don't redo completed work.
+
+### ✅ Phase 0: Emergency Fixes
+- [x] Remove `cleanupLegacyData()` — was wiping all data on restart
+- [x] Move `processed_events` INSERT inside transaction
+- [x] Fix meetup proposal notification → notify OTHER party
+- [x] Apply promo discount to order total (not just record it)
+- [x] Move stock decrement to payment webhook (P0-33)
+- [x] `complete` endpoint accepts `paid` for meetup orders
+- [x] Feed snap fix (`decelerationRate={0}`)
+
+### ✅ Phase 1-5: Escrow + Meetup + QR + Emergency
+- [x] Escrow system (order_escrow table, modified webhook)
+- [x] State machine (FOR UPDATE locking, node-cron timeouts)
+- [x] MeetupScreen (react-native-maps, GPS proximity, check-in)
+- [x] QR code (generation, scanning, 8-digit fallback)
+- [x] Emergency exits (extend +30m, cancel, emergency exit)
+
+### ✅ Phase 7: Feed Algorithm
+- [x] `feed_events` table + personalized scoring (CTE-based)
+- [x] Heart button wired (like/unlike toggle)
+- [x] Relevant/not_relevant in more menu
+- [x] Dwell time tracking via `onViewableItemsChanged`
+- [x] Tab swap ("New" first, "For You" second)
+
+### ✅ Phase 8: Verification Improvements
+- [x] Auto-reject (no pending state)
+- [x] Human-readable error messages
+- [x] imgbb image deletion + DB NULL after verify
+- [x] placeOfBirth + sex checks
+
+### ✅ Dev/Bug Fixes — Session 9
+- [x] Fix retry payment 400 (Content-Type on empty body)
+- [x] Fix MonCash returnUrl HTTPS (use production URL)
+- [x] Fix ExploreScreen VirtualizedList key warning
+- [x] Nearby Market: Build full Snapchat-style map screen
+- [x] Nearby Market: Fix route order (`/nearby` before `/:id`)
+- [x] Nearby Market: Haversine NaN guard (`LEAST/GREATEST`)
+- [x] Nearby Market: Lazy-load MapScreen for web compat
+- [x] Nearby Market: Fix preview card touch-blocking overlay
+- [x] Nearby Market: Design polish (gradient, animations, error handling)
+
+### 🔲 Still Open
+- [ ] Phase 6: Multi-seller meetups (per-seller escrow UI)
+- [ ] Phase 9: Push notifications (expo-notifications + FCM/APNs)
+- [ ] Phase 10: Dispute resolution (hybrid auto-resolve + admin)
+- [ ] Image sharing in chat
+- [ ] Wishlist thumbnails (40x40 + stock indicator)
+- [ ] Delivery estimate on orders
+- [ ] Deploy production with all fixes
