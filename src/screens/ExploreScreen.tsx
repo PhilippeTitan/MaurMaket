@@ -6,7 +6,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, RADIUS, getDisplayName } from '../theme';
+import { COLORS, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
 import { store } from '../store';
 import { useFocusEffect } from '@react-navigation/native';
@@ -148,9 +148,12 @@ export default function ExploreScreen({ navigation }: Props) {
   })();
 
   const renderCard = (item: Product) => {
-    const imgUrl = getItemImageUrl(item);
     const cardH = getCardHeight(item);
     const imgFailed = failedImages.has(item.id);
+    const images = item.images && item.images.length > 0
+      ? item.images
+      : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
+    const sellerAvatar = getSellerAvatar(item.seller);
     return (
       <TouchableOpacity
         style={styles.card}
@@ -158,33 +161,54 @@ export default function ExploreScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
       >
         <View style={[styles.cardImgWrap, { height: cardH }]}>
-          {imgUrl && !imgFailed ? (
-            <Image
-              source={{ uri: imgUrl }}
-              style={styles.cardImg}
-              resizeMode="cover"
-              onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-            />
-          ) : (
-            <View style={styles.cardPlaceholder}>
-              <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />
-            </View>
-          )}
-          <View style={styles.cardOverlay}>
-            <View style={styles.cardOverlayTop}>
-              <View style={styles.priceBadge}>
-                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-              </View>
-            </View>
-            <View style={styles.cardOverlayBottom}>
-              <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
-              {item.seller && (
-                <Text style={styles.cardSeller} numberOfLines={1}>
-                  {getDisplayName(item.seller)}
-                </Text>
-              )}
+          <FlatList
+            data={images}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(img) => String(img.id)}
+            renderItem={({ item: img }) => {
+              const url = getImageUrl(img.image_url);
+              return (
+                <View style={{ width: CARD_W, height: cardH }}>
+                  {url && !imgFailed ? (
+                    <Image
+                      source={{ uri: url }}
+                      style={styles.cardImg}
+                      resizeMode="cover"
+                      onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                    />
+                  ) : (
+                    <View style={styles.cardPlaceholder}>
+                      <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />
+                    </View>
+                  )}
+                </View>
+              );
+            }}
+          />
+          <View style={styles.priceBadgePos}>
+            <View style={styles.priceBadgeBg}>
+              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
             </View>
           </View>
+        </View>
+        <View style={styles.cardInfo}>
+          {item.seller && (
+            <View style={styles.cardSellerRow}>
+              {sellerAvatar ? (
+                <Image source={{ uri: getImageUrl(sellerAvatar) || '' }} style={styles.cardAvatar} />
+              ) : (
+                <View style={styles.cardAvatarPlaceholder}>
+                  <Text style={styles.cardAvatarText}>{getDisplayName(item.seller)?.charAt(0) || '?'}</Text>
+                </View>
+              )}
+              <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+            </View>
+          )}
+          {item.description ? (
+            <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
+          ) : null}
         </View>
       </TouchableOpacity>
     );
@@ -486,33 +510,32 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  cardOverlay: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: 'space-between',
-    padding: 8,
+  priceBadgePos: {
+    position: 'absolute', top: 8, left: 8,
   },
-  cardOverlayTop: {
-    alignItems: 'flex-end',
-  },
-  cardOverlayBottom: {
-    backgroundColor: 'rgba(0,0,0,0.45)',
+  priceBadgeBg: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
     borderRadius: RADIUS.row,
-    padding: 8,
+    paddingHorizontal: 6, paddingVertical: 3,
+  },
+  cardInfo: {
+    paddingHorizontal: 8, paddingVertical: 6,
     gap: 2,
   },
-  priceBadge: {
+  cardSellerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  cardAvatar: {
+    width: 20, height: 20, borderRadius: 10,
     backgroundColor: COLORS.coral,
-    borderRadius: RADIUS.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
   },
-  priceBadgeText: {
-    color: COLORS.white,
-    fontSize: 11,
-    fontWeight: '700',
+  cardAvatarPlaceholder: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center',
   },
-  cardName: { fontSize: 12, fontWeight: '600', color: '#fff', lineHeight: 16 },
-  cardSeller: { fontSize: 10, color: 'rgba(255,255,255,0.7)' },
+  cardAvatarText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
+  cardName: { fontSize: 11, fontWeight: '600', color: COLORS.text, flex: 1 },
+  cardDesc: { fontSize: 10, color: COLORS.text2, lineHeight: 13 },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
   emptyIcon: {
