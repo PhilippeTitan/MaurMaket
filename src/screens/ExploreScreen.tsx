@@ -3,8 +3,8 @@ import {
   View, Text, TextInput, Image, TouchableOpacity, StyleSheet,
   ActivityIndicator, Modal, Pressable, FlatList, Dimensions, Alert, RefreshControl,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
@@ -192,19 +192,21 @@ export default function ExploreScreen({ navigation }: Props) {
               <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
             </View>
           </View>
-          <View style={styles.cardInfoBar}>
-            {item.seller && (
-              <View style={styles.cardNameBubble}>
-                <UserAvatar seller={item.seller} />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
+            style={styles.cardGradient}
+          />
+          {item.seller && (
+            <View style={styles.cardBottomInfo}>
+              <UserAvatar seller={item.seller} />
+              <View style={{ flex: 1, marginLeft: 6 }}>
                 <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+                {item.description ? (
+                  <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
+                ) : null}
               </View>
-            )}
-            {item.description ? (
-              <View style={styles.cardDescBubble}>
-                <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
-              </View>
-            ) : null}
-          </View>
+            </View>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -514,27 +516,16 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.row,
     paddingHorizontal: 6, paddingVertical: 3,
   },
-  cardInfoBar: {
+  cardGradient: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    paddingHorizontal: 6, paddingBottom: 6,
-    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
-    gap: 4,
+    height: '55%',
   },
-  cardNameBubble: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: RADIUS.row,
-    paddingHorizontal: 6, paddingVertical: 4,
-    flexShrink: 1,
+  cardBottomInfo: {
+    position: 'absolute', bottom: 8, left: 8, right: 8,
+    flexDirection: 'row', alignItems: 'center',
   },
-  cardDescBubble: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: RADIUS.row,
-    paddingHorizontal: 6, paddingVertical: 4,
-    flexShrink: 1,
-  },
-  cardName: { fontSize: 11, fontWeight: '600', color: COLORS.white, flex: 1 },
-  cardDesc: { fontSize: 10, color: COLORS.white, lineHeight: 13, opacity: 0.8 },
+  cardName: { fontSize: 12, fontWeight: '600', color: COLORS.white, lineHeight: 16 },
+  cardDesc: { fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 13 },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
   emptyIcon: {
