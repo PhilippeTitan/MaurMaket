@@ -1125,14 +1125,14 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] Deployed to production (commit 8b59f97) — all session 9+ fixes live
 
 ### Session 11: Sale Price + Promo Code Management (in progress)
-- [ ] DB migration: sale_price, sale_starts_at, sale_ends_at columns
-- [ ] Backend: sale price computed fields + validation + /sale endpoint
-- [ ] Frontend: Product type + SalePriceTag component
-- [ ] Seller UI: AddListing/EditListing sale toggle
-- [ ] Buyer UI: 10 price display locations updated
-- [ ] Backend: verify promo endpoints
-- [ ] PromoManagementScreen + navigation + SettingsScreen entry
-- [ ] i18n strings (sale + promo)
+- [x] DB migration: sale_price, sale_starts_at, sale_ends_at columns
+- [x] Backend: sale price computed fields + validation + /sale endpoint
+- [x] Frontend: Product type + SalePriceTag component
+- [x] Seller UI: AddListing/EditListing sale toggle
+- [x] Buyer UI: 10 price display locations updated
+- [x] Backend: promo toggle endpoint + API function
+- [x] PromoManagementScreen + navigation + SettingsScreen entry
+- [x] i18n strings (sale + promo)
 - [ ] Commit, push, deploy
 
 ### 🔲 Remaining Features (deferred)
