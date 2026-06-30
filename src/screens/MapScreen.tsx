@@ -13,7 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, UrlTile } from 'react-native-maps';
 import * as ExpoLocation from 'expo-location';
 
 const TIER_COLORS: Record<string, string> = {
@@ -21,21 +21,6 @@ const TIER_COLORS: Record<string, string> = {
   verified: COLORS.green,
   business: COLORS.yellow,
 };
-
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#0D1117' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8B949E' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0D1117' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1C2235' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#8B949E' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#1C2235' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0D1117' }] },
-  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#161B22' }] },
-  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#8B949E' }] },
-  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#1C2235' }] },
-  { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#161B22' }] },
-  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#0D1117' }] },
-];
 
 const FILTERS = ['Nearby', 'Verified', 'Business', 'Top rated'];
 const SCREEN_W = Dimensions.get('window').width;
@@ -335,12 +320,16 @@ export default function MapScreen() {
           ref={mapRef}
           style={styles.map}
           initialRegion={region}
-          customMapStyle={DARK_MAP_STYLE}
+          mapType={Platform.OS === 'android' ? 'none' : 'standard'}
           showsUserLocation={!!myLocation}
           showsMyLocationButton={false}
           onRegionChangeComplete={handleRegionChangeComplete}
           onMapReady={() => setMapReady(true)}
         >
+          <UrlTile
+            urlTemplate="https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+            maximumZ={19}
+          />
           {mapReady && filteredSellers.map(renderSellerMarker)}
         </MapView>
       ) : (

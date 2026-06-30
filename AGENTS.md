@@ -1117,7 +1117,8 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] Nearby Market: Design polish (gradient, animations, error handling)
 
 ### 🔲 Session 10: Map Fix + Push Notifications (in progress)
-- [ ] Fix MapScreen: static imports + PROVIDER_GOOGLE + render condition
+- [x] Fix MapScreen: static imports (commits 8c65d40, 6a896c5) — tiles still blank, needs UrlTile
+- [ ] Fix MapScreen: UrlTile + CartoDB dark tiles (bypass Google tile servers)
 - [ ] Phase 9: Push notifications (expo-notifications + FCM/APNs)
 - [ ] Phase 10: Dispute resolution (hybrid auto-resolve + admin)
 - [ ] Image sharing in chat
@@ -1125,9 +1126,3 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [ ] Delivery estimate on orders
 - [ ] Deploy production with all fixes
 - [ ] Phase 6: Multi-seller meetups (per-seller escrow UI)
-- [ ] Phase 9: Push notifications (expo-notifications + FCM/APNs)
-- [ ] Phase 10: Dispute resolution (hybrid auto-resolve + admin)
-- [ ] Image sharing in chat
-- [ ] Wishlist thumbnails (40x40 + stock indicator)
-- [ ] Delivery estimate on orders
-- [ ] Deploy production with all fixes
