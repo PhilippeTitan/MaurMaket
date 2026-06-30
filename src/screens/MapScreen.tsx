@@ -13,17 +13,8 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
-let MapView: any = null;
-let Marker: any = null;
-let ExpoLocation: any = null;
-if (Platform.OS !== 'web') {
-  try {
-    const maps = require('react-native-maps');
-    MapView = maps.default;
-    Marker = maps.Marker;
-    ExpoLocation = require('expo-location');
-  } catch {}
-}
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import * as ExpoLocation from 'expo-location';
 
 const TIER_COLORS: Record<string, string> = {
   casual: 'transparent',
@@ -122,7 +113,7 @@ export default function MapScreen() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS === 'web' || !ExpoLocation) {
+    if (Platform.OS === 'web') {
       setLoading(false);
       fetchSellers(region.latitude, region.longitude);
       return;
@@ -339,8 +330,9 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      {Platform.OS !== 'web' && MapView ? (
+      {Platform.OS !== 'web' ? (
         <MapView
+          provider={PROVIDER_GOOGLE}
           ref={mapRef}
           style={styles.map}
           initialRegion={region}
