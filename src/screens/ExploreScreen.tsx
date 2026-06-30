@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, Image, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Modal, Pressable, FlatList, Dimensions, Alert, RefreshControl, ScrollView,
+  ActivityIndicator, Modal, Pressable, FlatList, Dimensions, Alert, RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -194,15 +194,15 @@ export default function ExploreScreen({ navigation }: Props) {
           </View>
           <View style={styles.cardInfoBar}>
             {item.seller && (
-              <View style={styles.cardSellerRow}>
+              <View style={styles.cardNameBubble}>
                 <UserAvatar seller={item.seller} />
                 <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
               </View>
             )}
             {item.description ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ overflow: 'hidden' }}>
-                <Text style={styles.cardDesc}>{item.description}</Text>
-              </ScrollView>
+              <View style={styles.cardDescBubble}>
+                <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
+              </View>
             ) : null}
           </View>
         </View>
@@ -516,12 +516,22 @@ const styles = StyleSheet.create({
   },
   cardInfoBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 8, paddingVertical: 5,
-    gap: 2,
+    paddingHorizontal: 6, paddingBottom: 6,
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
+    gap: 4,
   },
-  cardSellerRow: {
+  cardNameBubble: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: RADIUS.row,
+    paddingHorizontal: 6, paddingVertical: 4,
+    flexShrink: 1,
+  },
+  cardDescBubble: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: RADIUS.row,
+    paddingHorizontal: 6, paddingVertical: 4,
+    flexShrink: 1,
   },
   cardName: { fontSize: 11, fontWeight: '600', color: COLORS.white, flex: 1 },
   cardDesc: { fontSize: 10, color: COLORS.white, lineHeight: 13, opacity: 0.8 },
