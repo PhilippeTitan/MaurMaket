@@ -17,12 +17,14 @@ interface BuyRowProps {
 export default function BuyRow({ product, navigation }: BuyRowProps) {
   const { t } = useTranslation();
   const [cartQty, setCartQty] = useState(store.cart.find(c => c.id === product.id)?.quantity || 0);
+  const [cartCount, setCartCount] = useState(store.cartCount);
   const isOwnProduct = store.user?.id === product.seller_id;
   const isSoldOut = product.stock <= 0;
 
   useEffect(() => {
     const unsub = store.onChange(() => {
       setCartQty(store.cart.find(c => c.id === product.id)?.quantity || 0);
+      setCartCount(store.cartCount);
     });
     return unsub;
   }, [product.id]);
@@ -71,7 +73,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
   const handleBuy = async () => {
     const result = await addToCart();
     if (!result.added) {
-      Alert.alert('Stock limit', result.reason === 'out-of-stock' ? 'This item is sold out.' : `Only ${result.stock} available.`);
+      navigation.navigate('Cart');
       return;
     }
     navigation.navigate('Cart');
@@ -159,9 +161,21 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
         onPress={handleBuy}
         disabled={isSoldOut}
       >
-        <Text style={styles.buyBtnText}>{isSoldOut ? t('productDetail.outOfStock') : t('feed.buyNow')}</Text>
-      </TouchableOpacity>
-    </View>
+            <Text style={styles.buyBtnText}>{isSoldOut ? t('productDetail.outOfStock') : t('feed.buyNow')}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cartCircle}
+              onPress={() => navigation.navigate('Cart')}
+            >
+              <MaterialCommunityIcons name="cart-outline" size={20} color={COLORS.white} />
+              {cartCount > 0 && (
+                <View style={styles.cartBadge}>
+                  <Text style={styles.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
   );
 }
 
@@ -215,6 +229,26 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
   actionDisabled: { opacity: 0.45 },
+  cartCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  cartBadge: {
+    position: 'absolute', top: -2, right: -2,
+    backgroundColor: COLORS.coral,
+    borderRadius: 8,
+    minWidth: 16, height: 16,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  cartBadgeText: {
+    fontSize: 9, fontWeight: '700', color: COLORS.white,
+  },
   ownListingBtn: {
     flex: 1,
     flexDirection: 'row',

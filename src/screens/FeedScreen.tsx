@@ -406,22 +406,10 @@ export default function FeedScreen() {
             activeOpacity={0.82}
             onPress={() => nav.navigate('Inbox', { returnTab: 'FeedTab' })}
           >
-            <MaterialCommunityIcons name="message-text-outline" size={21} color={COLORS.white} />
+            <MaterialCommunityIcons name="message-text-outline" size={35} color={COLORS.white} />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.utilityBtn}
-            activeOpacity={0.82}
-            onPress={() => nav.navigate('Cart')}
-          >
-            <MaterialCommunityIcons name="cart-outline" size={22} color={COLORS.white} />
-            {cartCount > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
               </View>
             )}
           </TouchableOpacity>
