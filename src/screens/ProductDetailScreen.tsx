@@ -676,15 +676,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border,
   },
   addBtn: {
-    flex: 1.15,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 12, borderRadius: RADIUS.row, backgroundColor: COLORS.coral,
+    paddingVertical: 12, paddingHorizontal: 28, borderRadius: RADIUS.row, backgroundColor: COLORS.coral,
   },
-  ctaRow: { flexDirection: 'row', gap: 10 },
+  ctaRow: { flexDirection: 'row', gap: 10, justifyContent: 'center' },
   offerBtn: {
-    flex: 1,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 12, borderRadius: RADIUS.row,
+    paddingVertical: 12, paddingHorizontal: 28, borderRadius: RADIUS.row,
     backgroundColor: COLORS.blue,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.16)',
