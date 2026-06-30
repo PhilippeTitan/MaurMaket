@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, Image, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Modal, Pressable, FlatList, Dimensions, Alert, RefreshControl,
+  ActivityIndicator, Modal, Pressable, FlatList, Dimensions, Alert, RefreshControl, ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -195,12 +195,14 @@ export default function ExploreScreen({ navigation }: Props) {
           <View style={styles.cardInfoBar}>
             {item.seller && (
               <View style={styles.cardSellerRow}>
-                <UserAvatar seller={item.seller} size={25} />
+                <UserAvatar seller={item.seller} size={50} />
                 <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
               </View>
             )}
             {item.description ? (
-              <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ overflow: 'hidden' }}>
+                <Text style={styles.cardDesc}>{item.description}</Text>
+              </ScrollView>
             ) : null}
           </View>
         </View>
@@ -521,8 +523,8 @@ const styles = StyleSheet.create({
   cardSellerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },
-  cardName: { fontSize: 11, fontWeight: '600', color: COLORS.text, flex: 1 },
-  cardDesc: { fontSize: 10, color: COLORS.text2, lineHeight: 13 },
+  cardName: { fontSize: 11, fontWeight: '600', color: COLORS.white, flex: 1 },
+  cardDesc: { fontSize: 10, color: COLORS.white, lineHeight: 13, opacity: 0.8 },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
   emptyIcon: {
