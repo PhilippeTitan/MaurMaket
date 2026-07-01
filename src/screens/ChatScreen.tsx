@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
-  KeyboardAvoidingView, Platform, Alert, Image,
+  KeyboardAvoidingView, Platform, Alert, Image, Pressable,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
@@ -25,6 +25,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [offerDraftVisible, setOfferDraftVisible] = useState(Boolean(draftOffer));
+  const [profileMenuVisible, setProfileMenuVisible] = useState(false);
   const listRef = useRef<FlatList>(null);
 
   const fetchMessages = async () => {
@@ -80,7 +81,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         <BackButton onPress={() => navigation.goBack()} />
         <TouchableOpacity
           style={styles.headerProfile}
-          onPress={() => otherUserId && navigation.navigate('Storefront', { sellerId: otherUserId })}
+          onPress={() => setProfileMenuVisible(!profileMenuVisible)}
           activeOpacity={0.7}
         >
           {getImageUrl(otherUserAvatar) ? (
@@ -93,6 +94,31 @@ export default function ChatScreen({ route, navigation }: Props) {
           <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
         </TouchableOpacity>
       </View>
+
+      {profileMenuVisible && (
+        <Pressable style={styles.profileOverlay} onPress={() => setProfileMenuVisible(false)}>
+          <Pressable style={styles.profileDropdown} onPress={e => e.stopPropagation()}>
+            {getImageUrl(otherUserAvatar) ? (
+              <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.dropdownAvatar} />
+            ) : (
+              <View style={styles.dropdownAvatarFallback}>
+                <Text style={styles.dropdownAvatarText}>{(otherUserName || '?')[0]}</Text>
+              </View>
+            )}
+            <Text style={styles.dropdownName} numberOfLines={1}>{otherUserName}</Text>
+            <TouchableOpacity
+              style={styles.dropdownAction}
+              onPress={() => {
+                setProfileMenuVisible(false);
+                if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId });
+              }}
+            >
+              <MaterialCommunityIcons name="storefront-outline" size={20} color={COLORS.text} />
+              <Text style={styles.dropdownActionText}>View Store</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      )}
 
       {loading ? (
         <ActivityIndicator size="large" color={COLORS.coral} style={{ flex: 1 }} />
@@ -166,9 +192,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.bg,
   },
   headerProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
+  headerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(128,128,128,0.25)', alignItems: 'center', justifyContent: 'center' },
   headerAvatarImg: { width: 32, height: 32, borderRadius: 16 },
-  headerAvatarText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
+  headerAvatarText: { fontSize: 14, color: COLORS.text2, fontWeight: '700' },
   headerName: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
   messageList: { padding: SPACING.md, paddingBottom: 8 },
   bubble: {
@@ -227,4 +253,44 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.coral,
     justifyContent: 'center', alignItems: 'center',
   },
+  profileOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    zIndex: 20,
+  },
+  profileDropdown: {
+    position: 'absolute',
+    top: 110,
+    alignSelf: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.card,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    gap: 10,
+    minWidth: 200,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  dropdownAvatar: { width: 56, height: 56, borderRadius: 28 },
+  dropdownAvatarFallback: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: 'rgba(128,128,128,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  dropdownAvatarText: { fontSize: 22, color: COLORS.text2, fontWeight: '700' },
+  dropdownName: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  dropdownAction: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 10, paddingHorizontal: 16,
+    borderRadius: RADIUS.row,
+    backgroundColor: COLORS.surface2,
+    width: '100%',
+  },
+  dropdownActionText: { fontSize: 14, fontWeight: '600', color: COLORS.text },
 });
