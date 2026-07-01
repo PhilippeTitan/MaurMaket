@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, useWindowDimensions,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, useWindowDimensions, FlatList,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,6 +17,8 @@ import {
 import type { RootStackParamList } from '../navigation';
 import type { Product, Order, Review } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
+import StockBadge from '../components/StockBadge';
+import UserAvatar from '../components/UserAvatar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -61,11 +64,10 @@ export default function MeScreen() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [analyticsData, setAnalyticsData] = useState<SellerAnalyticsResponse | null>(null);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
-  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const { width: SCREEN_W } = useWindowDimensions();
   const CARD_W = (SCREEN_W - SPACING.md * 2 - 6) / 2;
   const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
-  const MIN_IMG_H = CARD_W * 0.6;
 
   const initials = getDisplayName(user).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
@@ -104,14 +106,6 @@ export default function MeScreen() {
         const fetched = sellerProds?.products || [];
         setProducts(fetched);
         setProductCount(fetched.length || 0);
-        fetched.forEach((p: Product) => {
-          const img = p.images?.find(i => i.is_primary) || p.images?.[0];
-          if (img?.image_url) {
-            Image.getSize(getImageUrl(img.image_url) || '', (w, h) => {
-              setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
-            }, () => {});
-          }
-        });
 
         if (user?.seller_tier !== 'casual') {
           try {
@@ -169,11 +163,11 @@ export default function MeScreen() {
   };
 
   const renderGridItem = (item: Product) => {
-    const img = item.images?.find(i => i.is_primary) || item.images?.[0];
-    const imgUrl = getImageUrl(img?.image_url);
     const isOwnProduct = isSeller && user?.id === item.seller_id;
-    const size = imageSizes[item.id];
-    const cardH = size && size.w > 0 ? Math.max(MIN_IMG_H, Math.round(CARD_W * size.h / size.w)) : DEFAULT_IMG_H;
+    const imgFailed = failedImages.has(item.id);
+    const images = item.images && item.images.length > 0
+      ? item.images
+      : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
     return (
       <TouchableOpacity
         key={item.id}
@@ -184,22 +178,52 @@ export default function MeScreen() {
           : nav.navigate('ProductDetail', { productId: item.id })
         }
       >
-        <View style={[styles.cardImgWrap, { height: cardH }]}>
-          {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" />
-          ) : (
-            <View style={styles.cardPlaceholder}>
-              <MaterialCommunityIcons name="image-off-outline" size={20} color={COLORS.text2} />
+        <View style={[styles.cardImgWrap, { height: DEFAULT_IMG_H }]}>
+          <FlatList
+            data={images}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(img, idx) => String(img.id || idx)}
+            renderItem={({ item: img }) => {
+              const url = getImageUrl(img.image_url);
+              return (
+                <View style={{ width: CARD_W, height: DEFAULT_IMG_H }}>
+                  {url && !imgFailed ? (
+                    <Image
+                      source={{ uri: url }}
+                      style={styles.cardImg}
+                      resizeMode="cover"
+                      onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                    />
+                  ) : (
+                    <View style={styles.cardPlaceholder}>
+                      <MaterialCommunityIcons name="image-off-outline" size={20} color={COLORS.text2} />
+                    </View>
+                  )}
+                </View>
+              );
+            }}
+          />
+          <View style={styles.stockBadgePos}>
+            <StockBadge stock={item.stock} size="sm" />
+          </View>
+          <View style={styles.priceBadgePos}>
+            <View style={styles.priceBadgeBg}>
+              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
             </View>
-          )}
-          <View style={styles.cardOverlay}>
-            <View style={styles.cardOverlayTop}>
-              <View style={styles.priceBadge}>
-                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-              </View>
-            </View>
-            <View style={styles.cardOverlayBottom}>
-              <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
+          </View>
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
+            style={styles.cardGradient}
+          />
+          <View style={styles.cardBottomInfo}>
+            <UserAvatar seller={item.seller} size={28} />
+            <View style={{ flex: 1, marginLeft: 6 }}>
+              <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+              {item.description ? (
+                <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
+              ) : null}
             </View>
           </View>
         </View>
@@ -605,24 +629,26 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  cardOverlay: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: 'space-between', padding: 8,
+  stockBadgePos: {
+    position: 'absolute', top: 6, left: 6,
   },
-  cardOverlayTop: { alignItems: 'flex-end' },
-  cardOverlayBottom: {
-    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: RADIUS.row, padding: 8, gap: 2,
+  priceBadgePos: {
+    position: 'absolute', top: 6, right: 6,
   },
-  priceBadge: {
-    backgroundColor: COLORS.coral, borderRadius: RADIUS.pill, paddingHorizontal: 8, paddingVertical: 3,
+  priceBadgeBg: {
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.row,
+    paddingHorizontal: 6, paddingVertical: 3,
   },
-  priceBadgeText: { color: COLORS.white, fontSize: 11, fontWeight: '700' },
-  cardName: { fontSize: 12, fontWeight: '600', color: '#fff', lineHeight: 16 },
-  editBadge: {
-    position: 'absolute', bottom: 4, right: 4,
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center',
+  cardGradient: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    height: '55%',
   },
+  cardBottomInfo: {
+    position: 'absolute', bottom: 6, left: 6, right: 6,
+    flexDirection: 'row', alignItems: 'center',
+  },
+  cardName: { fontSize: 12, fontWeight: '600', color: COLORS.white, lineHeight: 16 },
+  cardDesc: { fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 13 },
 
   /* Empty */
   empty: { alignItems: 'center', paddingVertical: 40, gap: 6 },
