@@ -241,7 +241,7 @@ export default function ExploreScreen({ navigation }: Props) {
             )}
           </View>
           <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
-            <MaterialCommunityIcons name="tune-variant" size={18} color={COLORS.text} />
+            <MaterialCommunityIcons name="tune-variant" size={35} color={COLORS.text} />
           </TouchableOpacity>
         </View>
 
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingBottom: 6,
   },
   filterBtn: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 45, height: 45, borderRadius: 22,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center',
   },
