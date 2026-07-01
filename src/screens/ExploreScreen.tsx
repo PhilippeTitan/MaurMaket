@@ -15,6 +15,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
 import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
+import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
@@ -187,6 +188,9 @@ export default function ExploreScreen({ navigation }: Props) {
               );
             }}
           />
+          <View style={styles.stockBadgePos}>
+            <StockBadge stock={item.stock} size="sm" />
+          </View>
           <View style={styles.priceBadgePos}>
             <View style={styles.priceBadgeBg}>
               <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
@@ -510,6 +514,9 @@ const styles = StyleSheet.create({
   },
   priceBadgePos: {
     position: 'absolute', top: 8, right: 8,
+  },
+  stockBadgePos: {
+    position: 'absolute', top: 8, left: 8,
   },
   priceBadgeBg: {
     backgroundColor: 'rgba(0,0,0,0.55)',

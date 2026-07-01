@@ -16,6 +16,7 @@ import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
 import UserAvatar from '../components/UserAvatar';
 import BackButton from '../components/BackButton';
+import StockBadge from '../components/StockBadge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -281,10 +282,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             <SalePriceTag price={product.price} effectivePrice={product.effective_price ?? product.price} isOnSale={product.is_on_sale || false} discountPct={product.discount_pct || 0} size="lg" />
           </View>
           <View style={styles.stockOverlay}>
-            <View style={[styles.stockDot, { backgroundColor: product.stock > 0 ? COLORS.green : COLORS.coral }]} />
-            <Text style={styles.stockOverlayText}>
-              {product.stock > 0 ? `${product.stock} ${t('productDetail.inStock').toLowerCase()}` : t('productDetail.outOfStock')}
-            </Text>
+            <StockBadge stock={product.stock} />
           </View>
         </View>
 
@@ -460,12 +458,7 @@ const styles = StyleSheet.create({
   },
   stockOverlay: {
     position: 'absolute', bottom: 10, left: 10,
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: RADIUS.row,
-    paddingHorizontal: 8, paddingVertical: 4,
   },
-  stockDot: { width: 5, height: 5, borderRadius: 2.5 },
-  stockOverlayText: { fontSize: 10, color: COLORS.white, fontWeight: '600' },
   dotsRow: {
     position: 'absolute', bottom: 40, left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'center', gap: 5,
