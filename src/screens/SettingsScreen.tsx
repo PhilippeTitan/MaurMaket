@@ -135,14 +135,17 @@ export default function SettingsScreen({ navigation }: Props) {
       {/* ── Avatar ── */}
       <TouchableOpacity style={styles.avatarSection} onPress={handlePickAvatar} disabled={avatarUploading}>
         <View style={styles.avatarWrap}>
-          {avatarUploading ? (
-            <ActivityIndicator color={COLORS.coral} />
-          ) : avatarUrl ? (
+          {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatarImg} />
           ) : (
             <Text style={styles.avatarText}>
               {user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?'}
             </Text>
+          )}
+          {avatarUploading && (
+            <View style={styles.avatarLoadingOverlay}>
+              <ActivityIndicator color={COLORS.white} size="small" />
+            </View>
           )}
           <View style={styles.cameraBadge}>
             <MaterialCommunityIcons name="camera" size={12} color={COLORS.white} />
@@ -327,11 +330,17 @@ const styles = StyleSheet.create({
   /* Avatar */
   avatarSection: { alignItems: 'center', paddingVertical: 12 },
   avatarWrap: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.coral,
-    alignItems: 'center', justifyContent: 'center', position: 'relative',
+    width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(128,128,128,0.25)',
+    alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden',
   },
   avatarImg: { width: 72, height: 72, borderRadius: 36 },
-  avatarText: { fontSize: 24, color: COLORS.white, fontWeight: '700' },
+  avatarText: { fontSize: 24, color: COLORS.text2, fontWeight: '700' },
+  avatarLoadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 36,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+  },
   cameraBadge: {
     position: 'absolute', bottom: -2, right: -2,
     width: 22, height: 22, borderRadius: 11,
