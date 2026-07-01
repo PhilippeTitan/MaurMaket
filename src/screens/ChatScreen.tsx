@@ -26,6 +26,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [sending, setSending] = useState(false);
   const [offerDraftVisible, setOfferDraftVisible] = useState(Boolean(draftOffer));
   const [profileMenuVisible, setProfileMenuVisible] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
   const listRef = useRef<FlatList>(null);
 
   const fetchMessages = async () => {
@@ -77,7 +78,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + SPACING.md }]}>
+      <View style={[styles.header, { paddingTop: insets.top + SPACING.md }]} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
         <BackButton onPress={() => navigation.goBack()} />
         <TouchableOpacity
           style={styles.headerProfile}
@@ -97,7 +98,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       {profileMenuVisible && (
         <Pressable style={styles.profileOverlay} onPress={() => setProfileMenuVisible(false)}>
-          <Pressable style={styles.profileDropdown} onPress={e => e.stopPropagation()}>
+          <View style={[styles.profileDropdown, { top: headerHeight || 110 }]}>
             {getImageUrl(otherUserAvatar) ? (
               <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.dropdownAvatar} />
             ) : (
@@ -116,7 +117,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               <MaterialCommunityIcons name="storefront-outline" size={20} color={COLORS.text} />
               <Text style={styles.dropdownActionText}>View Store</Text>
             </TouchableOpacity>
-          </Pressable>
+          </View>
         </Pressable>
       )}
 
