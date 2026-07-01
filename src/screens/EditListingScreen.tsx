@@ -208,8 +208,8 @@ export default function EditListingScreen({ route, navigation }: Props) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageRow}>
         {existingImages
           .filter(i => !removedExistingImageIds.includes(i.id))
-          .map(img => (
-            <View key={img.id} style={styles.thumbWrap}>
+          .map((img, idx) => (
+            <View key={img.id || `existing-${idx}`} style={styles.thumbWrap}>
               <Image source={{ uri: getImageUrl(img.image_url) || '' }} style={styles.thumbImg} />
               <TouchableOpacity style={styles.thumbRemove} onPress={() => removeExistingImage(img.id)}>
                 <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
@@ -268,9 +268,9 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
       <Text style={styles.sectionLabel}>{t('editListing.category')}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
-        {categories.map(cat => (
+        {categories.map((cat, idx) => (
           <TouchableOpacity
-            key={cat.id}
+            key={cat.id || `cat-${idx}`}
             style={[styles.catPill, categoryId === cat.id && styles.catPillActive]}
             onPress={() => setCategoryId(categoryId === cat.id ? null : cat.id)}
           >
