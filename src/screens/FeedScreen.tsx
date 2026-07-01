@@ -640,14 +640,10 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   utilityBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 50,
+    height: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(8,13,23,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
   },
   badge: {
     position: 'absolute',
