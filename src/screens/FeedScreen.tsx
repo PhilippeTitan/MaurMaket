@@ -727,7 +727,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingLeft: 14,
-    paddingRight: 80,
+    paddingRight: 14,
     paddingTop: SPACING.md,
     zIndex: 10,
   },
