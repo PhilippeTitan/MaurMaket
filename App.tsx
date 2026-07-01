@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Component, Suspense } from 'react';
+import React, { useEffect, useState, useRef, Component, Suspense } from 'react';
 import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -42,6 +42,13 @@ import PromoManagementScreen from './src/screens/PromoManagementScreen';
 
 const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
 
+function LazyMapScreen(props: any) {
+  return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><MapScreen {...props} /></Suspense>;
+}
+function LazyMeetupScreen(props: any) {
+  return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><MeetupScreen {...props} /></Suspense>;
+}
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -57,7 +64,7 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError:
           <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} />
           <Text style={{ color: COLORS.text, fontSize: 16, fontWeight: '700', marginTop: 12, textAlign: 'center' }}>Something went wrong</Text>
           <Text style={{ color: COLORS.text2, fontSize: 13, marginTop: 6, textAlign: 'center' }}>Please restart the app.</Text>
-          <TouchableOpacity onPress={() => {}} style={{ marginTop: 20, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 10, backgroundColor: COLORS.coral }}>
+          <TouchableOpacity onPress={() => this.setState({ hasError: false })} style={{ marginTop: 20, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 10, backgroundColor: COLORS.coral }}>
             <Text style={{ color: COLORS.white, fontWeight: '700' }}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -167,7 +174,7 @@ function MainTabs() {
         />
         <Tab.Screen
           name="MapTab"
-          component={MapScreen}
+          component={LazyMapScreen}
           options={{
             tabBarIcon: ({ color }) => (
               <MaterialCommunityIcons name="map-marker-radius-outline" size={26} color={color} />
@@ -212,6 +219,8 @@ export default function App() {
     return unsub;
   }, []);
 
+  const pendingDeepLink = useRef<string | null>(null);
+
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
       const url = event.url;
@@ -220,6 +229,8 @@ export default function App() {
         const orderId = match?.[1];
         if (navigationRef.isReady()) {
           navigationRef.navigate('PaymentReturn', { orderId });
+        } else {
+          pendingDeepLink.current = orderId || null;
         }
       }
     };
@@ -230,6 +241,8 @@ export default function App() {
         const orderId = match?.[1];
         if (navigationRef.isReady()) {
           navigationRef.navigate('PaymentReturn', { orderId });
+        } else {
+          pendingDeepLink.current = orderId || null;
         }
       }
     }).catch(() => {});
@@ -247,7 +260,13 @@ export default function App() {
   }
 
   const appContent = (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} onReady={() => {
+      if (pendingDeepLink.current) {
+        const orderId = pendingDeepLink.current;
+        pendingDeepLink.current = null;
+        navigationRef.navigate('PaymentReturn', { orderId });
+      }
+    }}>
       <StatusBar style="light" />
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isLoggedIn ? (
@@ -274,7 +293,7 @@ export default function App() {
             <Stack.Screen name="EditListing" component={EditListingScreen} />
             <Stack.Screen name="SettingsEdit" component={SettingsEditScreen} />
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
-            <Stack.Screen name="Meetup" component={MeetupScreen} />
+            <Stack.Screen name="Meetup" component={LazyMeetupScreen} />
             <Stack.Screen name="PromoManagement" component={PromoManagementScreen} />
           </>
         )}
@@ -282,7 +301,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <SafeAreaProvider><ErrorBoundary><Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}>{appContent}</Suspense></ErrorBoundary></SafeAreaProvider>;
+  return <SafeAreaProvider><ErrorBoundary>{appContent}</ErrorBoundary></SafeAreaProvider>;
 }
 
 const styles = StyleSheet.create({

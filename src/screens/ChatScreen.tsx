@@ -130,6 +130,26 @@ export default function ChatScreen({ route, navigation }: Props) {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.messageList}
           ref={listRef}
+          ListHeaderComponent={
+            <View style={styles.introHeader}>
+              {getImageUrl(otherUserAvatar) ? (
+                <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.introAvatar} />
+              ) : (
+                <View style={styles.introAvatarFallback}>
+                  <Text style={styles.introAvatarText}>{(otherUserName || '?')[0]}</Text>
+                </View>
+              )}
+              <Text style={styles.introName} numberOfLines={1}>{otherUserName}</Text>
+              <TouchableOpacity
+                style={styles.introViewProfileBtn}
+                onPress={() => {
+                  if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId });
+                }}
+              >
+                <Text style={styles.introViewProfileText}>View profile</Text>
+              </TouchableOpacity>
+            </View>
+          }
           onContentSizeChange={() => {
             if (listRef.current) {
               listRef.current.scrollToEnd({ animated: false });
@@ -198,6 +218,31 @@ const styles = StyleSheet.create({
   headerAvatarText: { fontSize: 14, color: COLORS.text2, fontWeight: '700' },
   headerName: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
   messageList: { padding: SPACING.md, paddingBottom: 8 },
+  introHeader: {
+    alignItems: 'center',
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.lg,
+    gap: 4,
+  },
+  introAvatar: { width: 84, height: 84, borderRadius: 42, marginBottom: 8 },
+  introAvatarFallback: {
+    width: 84, height: 84, borderRadius: 42,
+    backgroundColor: 'rgba(128,128,128,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 8,
+  },
+  introAvatarText: { fontSize: 32, color: COLORS.text2, fontWeight: '700' },
+  introName: { fontSize: 18, fontWeight: '700', color: COLORS.text },
+  introViewProfileBtn: {
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  introViewProfileText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   bubble: {
     maxWidth: '75%', padding: 10, borderRadius: RADIUS.media, marginBottom: 6,
   },
