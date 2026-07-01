@@ -1,24 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform,
-  Animated, FlatList, Image, PanResponder, Dimensions,
+  Animated, Image, PanResponder, Dimensions, Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import { store } from '../store';
-import { getNearbySellers, setSellerLocation, getImageUrl } from '../api';
+import { getNearbySellers, setSellerLocation, getImageUrl, getProducts, toggleFollow, getFollowing, getFollowerCount } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
-
-const TIER_COLORS: Record<string, string> = {
-  casual: 'transparent',
-  verified: COLORS.green,
-  business: COLORS.yellow,
-};
+import type { Product } from '../types';
+import { useTranslation } from '../i18n';
 
 const TIER_MARKER: Record<string, { size: number; gradient: string; tailColor: string; iconColor: string }> = {
   casual:   { size: 42, gradient: '#30363D',            tailColor: '#30363D', iconColor: '#8B949E' },
@@ -26,8 +22,9 @@ const TIER_MARKER: Record<string, { size: number; gradient: string; tailColor: s
   business: { size: 50, gradient: 'linear-gradient(135deg,#EF9F27,#BA7517)', tailColor: '#BA7517', iconColor: '#EF9F27' },
 };
 
-const FILTERS = ['Nearby', 'Verified', 'Business', 'Top rated'];
 const SCREEN_W = Dimensions.get('window').width;
+const PEEK_HEIGHT = 152;
+const FULL_HEIGHT = 400;
 
 interface NearbySeller {
   id: string;
@@ -160,36 +157,60 @@ function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: n
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { t } = useTranslation();
   const webViewRef = useRef<WebView>(null);
-  const sheetAnim = useRef(new Animated.Value(1)).current;
-  const sheetY = useRef(new Animated.Value(0)).current;
-  const previewAnim = useRef(new Animated.Value(0)).current;
+  // sheetState: 0 = hidden (below screen), 1 = peek, 2 = full (detail revealed)
+  const sheetState = useRef(new Animated.Value(0)).current;
+  const dragStartState = useRef(1);
 
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [sellers, setSellers] = useState<NearbySeller[]>([]);
-  const [filteredSellers, setFilteredSellers] = useState<NearbySeller[]>([]);
   const [selectedSeller, setSelectedSeller] = useState<NearbySeller | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState('Nearby');
   const [settingLocation, setSettingLocation] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [locationSaved, setLocationSaved] = useState(false);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+  const [followerCount, setFollowerCount] = useState<number | null>(null);
+  const [latestItems, setLatestItems] = useState<Product[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [avatarViewerUrl, setAvatarViewerUrl] = useState<string | null>(null);
   const locationWatcher = useRef<any>(null);
 
   const isSeller = store.isSeller;
   const fetchIdRef = useRef(0);
+  const detailFetchIdRef = useRef(0);
 
-  const SHEET_HEIGHT = 340;
   const sheetBottom = 56 + (insets.bottom > 0 ? insets.bottom : 0) + 8;
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 8,
+      onPanResponderGrant: () => {
+        // @ts-ignore - reading the current animated value synchronously
+        sheetState.stopAnimation((v: number) => { dragStartState.current = v; });
+      },
+      onPanResponderMove: (_, g) => {
+        const travel = FULL_HEIGHT - PEEK_HEIGHT || 1;
+        const delta = (-g.dy) / travel;
+        const next = Math.max(0, Math.min(2, dragStartState.current + delta));
+        sheetState.setValue(next);
+      },
       onPanResponderRelease: (_, g) => {
-        const open = g.vy < -0.3;
-        toggleSheet(open);
+        sheetState.stopAnimation((v: number) => {
+          let target: number;
+          if (g.vy < -0.5) target = Math.min(2, Math.ceil(v));
+          else if (g.vy > 0.5) target = Math.max(0, Math.floor(v));
+          else target = Math.round(v);
+          if (target === 0) {
+            setSelectedSeller(null);
+            return;
+          }
+          Animated.spring(sheetState, { toValue: target, useNativeDriver: true, tension: 70, friction: 12 }).start();
+        });
       },
     })
   ).current;
@@ -247,24 +268,47 @@ export default function MapScreen() {
   }, []);
 
   useEffect(() => {
-    let result = [...sellers];
-    if (activeFilter === 'Verified') {
-      result = result.filter(s => s.seller_tier === 'verified' || s.seller_tier === 'business');
-    } else if (activeFilter === 'Business') {
-      result = result.filter(s => s.seller_tier === 'business');
-    } else if (activeFilter === 'Top rated') {
-      result = result.filter(s => s.avg_rating >= 4.0 && s.review_count >= 3);
-    }
-    setFilteredSellers(result);
-  }, [sellers, activeFilter]);
-
-  useEffect(() => {
     if (selectedSeller) {
-      Animated.spring(previewAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 12 }).start();
+      dragStartState.current = 1;
+      Animated.spring(sheetState, { toValue: 1, useNativeDriver: true, tension: 70, friction: 12 }).start();
+
+      const thisDetailFetch = ++detailFetchIdRef.current;
+      setIsFollowing(false);
+      setFollowerCount(null);
+      setLatestItems([]);
+      setLoadingDetail(true);
+
+      (async () => {
+        try {
+          const [productsRes, followingRes, followerRes] = await Promise.allSettled([
+            getProducts({ seller: selectedSeller.id, limit: '3' }) as Promise<{ products: Product[] }>,
+            getFollowing(),
+            getFollowerCount(selectedSeller.id) as Promise<{ count?: number }>,
+          ]);
+          if (thisDetailFetch !== detailFetchIdRef.current) return;
+
+          if (productsRes.status === 'fulfilled') {
+            setLatestItems(productsRes.value.products || []);
+          }
+          if (followingRes.status === 'fulfilled') {
+            const raw = followingRes.value as unknown;
+            const list: any[] = Array.isArray(raw)
+              ? raw
+              : (raw as any)?.sellers || (raw as any)?.following || [];
+            setIsFollowing(list.some((s: any) => (s.id || s.seller_id) === selectedSeller.id));
+          }
+          if (followerRes.status === 'fulfilled') {
+            const count = (followerRes.value as any)?.count;
+            if (typeof count === 'number') setFollowerCount(count);
+          }
+        } finally {
+          if (thisDetailFetch === detailFetchIdRef.current) setLoadingDetail(false);
+        }
+      })();
     } else {
-      previewAnim.setValue(0);
+      Animated.spring(sheetState, { toValue: 0, useNativeDriver: true, tension: 70, friction: 12 }).start();
     }
-  }, [selectedSeller]);
+  }, [selectedSeller?.id]);
 
   useEffect(() => {
     if (mapReady && webViewRef.current) {
@@ -291,7 +335,7 @@ export default function MapScreen() {
             })
           }).addTo(map);` : 'null'}
 
-          ${filteredSellers.map(s => {
+          ${sellers.map(s => {
             const avatarUrl = getImageUrl(getSellerAvatar(s)) || '';
             const tier = TIER_MARKER[s.seller_tier] || TIER_MARKER.casual;
             const hasImage = avatarUrl && !failedImages.has(`wv_${s.id}`);
@@ -323,19 +367,19 @@ export default function MapScreen() {
         true;
       `);
     }
-  }, [mapReady, filteredSellers, failedImages, myLocation]);
+  }, [mapReady, sellers, failedImages, myLocation]);
 
   const handleWebViewMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'tap') {
-        const seller = filteredSellers.find(s => s.id === data.id);
+        const seller = sellers.find(s => s.id === data.id);
         if (seller) setSelectedSeller(seller);
       } else if (data.type === 'move') {
         fetchSellers(data.lat, data.lng, 20);
       }
     } catch {}
-  }, [filteredSellers, fetchSellers]);
+  }, [sellers, fetchSellers]);
 
   const centerOnMe = () => {
     if (myLocation && webViewRef.current) {
@@ -357,22 +401,8 @@ export default function MapScreen() {
     setSettingLocation(false);
   };
 
-  const toggleSheet = (open: boolean) => {
-    Animated.spring(sheetAnim, {
-      toValue: open ? 1 : 0,
-      useNativeDriver: true,
-      tension: 65,
-      friction: 11,
-    }).start();
-    Animated.spring(sheetY, {
-      toValue: open ? 0 : SHEET_HEIGHT - 80,
-      useNativeDriver: false,
-      tension: 65,
-      friction: 11,
-    }).start();
-  };
-
   const navigateToStorefront = (sellerId: string) => {
+    setSelectedSeller(null);
     navigation.navigate('Storefront', { sellerId });
   };
 
@@ -382,67 +412,22 @@ export default function MapScreen() {
 
   const markImageFailed = (id: string) => setFailedImages(prev => new Set(prev).add(id));
 
-  const renderSellerCard = ({ item }: { item: NearbySeller }) => {
-    const avatarUrl = getAvatarUrl(item);
-    const name = getDisplayName(item);
-    const ringColor = TIER_COLORS[item.seller_tier] || 'transparent';
-    const cardFailed = failedImages.has(`c_${item.id}`);
-    return (
-      <TouchableOpacity
-        style={styles.sellerCard}
-        activeOpacity={0.8}
-        onPress={() => navigateToStorefront(item.id)}
-      >
-        {item.primary_image && !cardFailed ? (
-          <Image
-            source={{ uri: getImageUrl(item.primary_image) || '' }}
-            style={styles.sellerCardImage}
-            resizeMode="cover"
-            onError={() => markImageFailed(`c_${item.id}`)}
-          />
-        ) : (
-          <View style={[styles.sellerCardImage, styles.sellerCardImageFallback]}>
-            <MaterialCommunityIcons name="image-outline" size={24} color={COLORS.text2} />
-          </View>
-        )}
-        <View style={styles.sellerCardContent}>
-          <View style={styles.sellerCardHeader}>
-            <View style={[styles.sellerCardAvatar, ringColor !== 'transparent' && { borderColor: ringColor, borderWidth: 1.5 }]}>
-              {avatarUrl && !failedImages.has(`a_${item.id}`) ? (
-                <Image source={{ uri: avatarUrl }} style={styles.sellerCardAvatarImg} onError={() => markImageFailed(`a_${item.id}`)} />
-              ) : (
-                <MaterialCommunityIcons name="account" size={12} color={COLORS.text2} />
-              )}
-            </View>
-            <View style={styles.sellerCardInfo}>
-              <Text style={styles.sellerCardName} numberOfLines={1}>{name}</Text>
-              <Text style={styles.sellerCardDist}>{item.distance_km < 1 ? '<1' : item.distance_km.toFixed(1)} km</Text>
-            </View>
-          </View>
-          <View style={styles.sellerCardStats}>
-            {item.avg_rating > 0 && (
-              <View style={styles.statRow}>
-                <MaterialCommunityIcons name="star" size={11} color={COLORS.yellow} />
-                <Text style={styles.statText}>{item.avg_rating.toFixed(1)}</Text>
-              </View>
-            )}
-            <View style={styles.statRow}>
-              <MaterialCommunityIcons name="package-variant" size={11} color={COLORS.text2} />
-              <Text style={styles.statText}>{item.product_count}</Text>
-            </View>
-            {item.seller_tier !== 'casual' && item.seller_tier !== 'none' && (
-              <View style={[styles.tierBadge, item.seller_tier === 'business' && styles.tierBadgeGold]}>
-                <MaterialCommunityIcons
-                  name={item.seller_tier === 'business' ? 'crown' : 'shield-check'}
-                  size={10}
-                  color={item.seller_tier === 'business' ? COLORS.yellow : COLORS.green}
-                />
-              </View>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
+  const handleFollowToggle = async () => {
+    if (!selectedSeller || followBusy) return;
+    const sellerId = selectedSeller.id;
+    const prevFollowing = isFollowing;
+    setFollowBusy(true);
+    setIsFollowing(!prevFollowing);
+    setFollowerCount(c => (c == null ? c : c + (prevFollowing ? -1 : 1)));
+    try {
+      const res = await toggleFollow(sellerId) as { following?: boolean };
+      if (typeof res.following === 'boolean') setIsFollowing(res.following);
+    } catch {
+      setIsFollowing(prevFollowing);
+      setFollowerCount(c => (c == null ? c : c + (prevFollowing ? 1 : -1)));
+    } finally {
+      setFollowBusy(false);
+    }
   };
 
   if (loading) {
@@ -453,8 +438,8 @@ export default function MapScreen() {
     );
   }
 
-  const previewBottom = sheetBottom + SHEET_HEIGHT + 12;
-  const mapHtml = buildMapHtml(filteredSellers, myLocation, failedImages);
+  const mapHtml = buildMapHtml(sellers, myLocation, failedImages);
+  const buttonBottom = sheetBottom + (selectedSeller ? PEEK_HEIGHT : 0) + 12;
 
   return (
     <View style={styles.container}>
@@ -476,10 +461,10 @@ export default function MapScreen() {
           <MaterialCommunityIcons name="map-marker-radius" size={48} color={COLORS.coral} />
           <Text style={styles.webFallbackTitle}>Nearby Market</Text>
           <Text style={styles.webFallbackText}>
-            {filteredSellers.length} seller{filteredSellers.length !== 1 ? 's' : ''} found nearby
+            {sellers.length} seller{sellers.length !== 1 ? 's' : ''} found nearby
           </Text>
           <View style={styles.webSellerList}>
-            {filteredSellers.map(s => (
+            {sellers.map(s => (
               <TouchableOpacity
                 key={s.id}
                 style={styles.webSellerItem}
@@ -501,9 +486,9 @@ export default function MapScreen() {
         <View style={styles.topBar}>
           <Text style={styles.topTitle}>Nearby Market</Text>
           <View style={styles.topRight}>
-            {filteredSellers.length > 0 && (
+            {sellers.length > 0 && (
               <View style={styles.countBadge}>
-                <Text style={styles.countBadgeText}>{filteredSellers.length}</Text>
+                <Text style={styles.countBadgeText}>{sellers.length}</Text>
               </View>
             )}
           </View>
@@ -512,7 +497,7 @@ export default function MapScreen() {
 
       {Platform.OS !== 'web' && (
         <TouchableOpacity
-          style={[styles.myLocationBtn, { bottom: sheetBottom + SHEET_HEIGHT + 12 }]}
+          style={[styles.myLocationBtn, { bottom: buttonBottom }]}
           onPress={centerOnMe}
           activeOpacity={0.7}
         >
@@ -522,7 +507,7 @@ export default function MapScreen() {
 
       {isSeller && Platform.OS !== 'web' && (
         <TouchableOpacity
-          style={[styles.setLocationBtn, { bottom: sheetBottom + SHEET_HEIGHT + 64 }, locationSaved && styles.setLocationBtnSaved]}
+          style={[styles.setLocationBtn, { bottom: buttonBottom + 52 }, locationSaved && styles.setLocationBtnSaved]}
           onPress={handleSetMyLocation}
           disabled={settingLocation || locationSaved}
           activeOpacity={0.7}
@@ -535,111 +520,174 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      <Animated.View
-        style={[
-          styles.sheet,
-          {
-            bottom: sheetBottom,
-            paddingBottom: insets.bottom + 20,
-            transform: [{
-              translateY: sheetAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [SHEET_HEIGHT - 80, 0],
-              }),
-            }],
-          },
-        ]}
-      >
-        <View {...panResponder.panHandlers}>
-          <View style={styles.handle} />
-        </View>
-        <View style={styles.filterRow}>
-          {FILTERS.map(f => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, activeFilter === f && styles.filterChipActive]}
-              onPress={() => setActiveFilter(f)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>{f}</Text>
+      {sellers.length === 0 && Platform.OS !== 'web' && !selectedSeller && (
+        <View style={[styles.emptyFloating, { bottom: sheetBottom + 12 }]}>
+          <MaterialCommunityIcons name="map-marker-off-outline" size={28} color={COLORS.text2} />
+          <Text style={styles.emptyText}>No sellers nearby</Text>
+          <Text style={styles.emptySubtext}>Sellers appear here after setting their location</Text>
+          {isSeller && (
+            <TouchableOpacity style={styles.emptyAction} onPress={handleSetMyLocation} activeOpacity={0.7}>
+              <MaterialCommunityIcons name="map-marker-plus" size={14} color={COLORS.white} />
+              <Text style={styles.emptyActionText}>Set my location</Text>
             </TouchableOpacity>
-          ))}
+          )}
         </View>
-
-        <FlatList
-          data={filteredSellers}
-          keyExtractor={item => item.id}
-          renderItem={renderSellerCard}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.sellerList}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="map-marker-off-outline" size={32} color={COLORS.text2} />
-              <Text style={styles.emptyText}>No sellers nearby</Text>
-              <Text style={styles.emptySubtext}>Sellers appear here after setting their location</Text>
-              {isSeller && (
-                <TouchableOpacity style={styles.emptyAction} onPress={handleSetMyLocation} activeOpacity={0.7}>
-                  <MaterialCommunityIcons name="map-marker-plus" size={14} color={COLORS.white} />
-                  <Text style={styles.emptyActionText}>Set my location</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          }
-        />
-      </Animated.View>
+      )}
 
       {selectedSeller && Platform.OS !== 'web' && (
         <Animated.View
-          style={[styles.previewCardContainer, { bottom: previewBottom }]}
-          pointerEvents="box-none"
+          style={[
+            styles.dragSheet,
+            {
+              bottom: sheetBottom,
+              height: FULL_HEIGHT,
+              paddingBottom: insets.bottom,
+              transform: [{
+                translateY: sheetState.interpolate({
+                  inputRange: [0, 1, 2],
+                  outputRange: [FULL_HEIGHT + 40, FULL_HEIGHT - PEEK_HEIGHT, 0],
+                }),
+              }],
+            },
+          ]}
         >
-          <Animated.View
-            style={[styles.previewCard, { left: SPACING.lg, right: SPACING.lg, opacity: previewAnim, transform: [{ scale: previewAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] }]}
-          >
-            <View style={styles.previewRow}>
-              <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: TIER_MARKER[selectedSeller.seller_tier]?.gradient || '#30363D', padding: 2, flexShrink: 0 }}>
-                <View style={{ width: '100%', height: '100%', borderRadius: 20, backgroundColor: COLORS.bg, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
+          <View {...panResponder.panHandlers} style={styles.dragHandleZone}>
+            <View style={styles.handle} />
+          </View>
+
+          <View style={styles.sheetHeaderRow}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                const url = getAvatarUrl(selectedSeller);
+                if (url) setAvatarViewerUrl(url);
+              }}
+            >
+              <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: TIER_MARKER[selectedSeller.seller_tier]?.gradient || '#30363D', padding: 2 }}>
+                <View style={{ width: '100%', height: '100%', borderRadius: 22, backgroundColor: COLORS.bg, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
                   {getAvatarUrl(selectedSeller) && !failedImages.has(`p_${selectedSeller.id}`) ? (
                     <Image
                       source={{ uri: getAvatarUrl(selectedSeller)! }}
-                      style={{ width: 38, height: 38, borderRadius: 19 }}
+                      style={{ width: 44, height: 44, borderRadius: 22 }}
                       onError={() => markImageFailed(`p_${selectedSeller.id}`)}
                     />
                   ) : (
-                    <MaterialCommunityIcons name="account" size={18} color={COLORS.text2} />
+                    <MaterialCommunityIcons name="account" size={20} color={COLORS.text2} />
                   )}
                 </View>
               </View>
-              <View style={styles.previewInfo}>
-                <View style={styles.previewNameRow}>
-                  <Text style={styles.previewName} numberOfLines={1}>{getDisplayName(selectedSeller)}</Text>
-                  {selectedSeller.seller_tier !== 'casual' && selectedSeller.seller_tier !== 'none' && (
-                    <MaterialCommunityIcons
-                      name={selectedSeller.seller_tier === 'business' ? 'crown' : 'shield-check'}
-                      size={14}
-                      color={TIER_MARKER[selectedSeller.seller_tier]?.iconColor || COLORS.text2}
-                    />
-                  )}
-                </View>
-                <Text style={styles.previewMeta}>
-                  {selectedSeller.distance_km < 1 ? '<1' : selectedSeller.distance_km.toFixed(1)} km away · {selectedSeller.product_count} products{selectedSeller.avg_rating > 0 ? ` · ${selectedSeller.avg_rating.toFixed(1)}` : ''}
-                </Text>
+            </TouchableOpacity>
+
+            <View style={styles.previewInfo}>
+              <View style={styles.previewNameRow}>
+                <Text style={styles.previewName} numberOfLines={1}>{getDisplayName(selectedSeller)}</Text>
+                {selectedSeller.seller_tier !== 'casual' && selectedSeller.seller_tier !== 'none' && (
+                  <MaterialCommunityIcons
+                    name={selectedSeller.seller_tier === 'business' ? 'crown' : 'shield-check'}
+                    size={14}
+                    color={TIER_MARKER[selectedSeller.seller_tier]?.iconColor || COLORS.text2}
+                  />
+                )}
               </View>
-              <TouchableOpacity
-                style={styles.previewVisitBtn}
-                onPress={() => {
-                  setSelectedSeller(null);
-                  navigateToStorefront(selectedSeller.id);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.previewVisitText}>Visit</Text>
-              </TouchableOpacity>
+              <Text style={styles.previewMeta}>
+                {selectedSeller.distance_km < 1 ? '<1' : selectedSeller.distance_km.toFixed(1)} km away
+              </Text>
             </View>
+
+            <TouchableOpacity
+              style={[styles.followBtn, isFollowing && styles.followBtnActive]}
+              onPress={handleFollowToggle}
+              disabled={followBusy}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
+                {isFollowing ? t('storefront.following') : t('storefront.follow')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.sheetStatsRow}>
+            <Text style={styles.sheetStatText}>
+              <Text style={styles.sheetStatValue}>{selectedSeller.product_count}</Text> products
+            </Text>
+            {selectedSeller.avg_rating > 0 && (
+              <Text style={styles.sheetStatText}>
+                <Text style={styles.sheetStatValue}>{selectedSeller.avg_rating.toFixed(1)}</Text> rating
+              </Text>
+            )}
+            {followerCount != null && (
+              <Text style={styles.sheetStatText}>
+                <Text style={styles.sheetStatValue}>{followerCount}</Text> {t('storefront.followers').toLowerCase()}
+              </Text>
+            )}
+          </View>
+
+          <Animated.View
+            style={[
+              styles.sheetDetail,
+              {
+                opacity: sheetState.interpolate({ inputRange: [1, 1.4, 2], outputRange: [0, 0, 1], extrapolate: 'clamp' }),
+              },
+            ]}
+            pointerEvents={latestItems.length ? 'auto' : 'none'}
+          >
+            <Text style={styles.sheetDetailLabel}>Latest items</Text>
+            {loadingDetail ? (
+              <ActivityIndicator size="small" color={COLORS.text2} style={{ marginTop: 8 }} />
+            ) : latestItems.length > 0 ? (
+              <View style={styles.latestItemsRow}>
+                {latestItems.map(p => {
+                  const img = getImageUrl(p.images?.[0]?.image_url) || null;
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={styles.latestItem}
+                      activeOpacity={0.8}
+                      onPress={() => navigateToStorefront(selectedSeller.id)}
+                    >
+                      {img && !failedImages.has(`li_${p.id}`) ? (
+                        <Image source={{ uri: img }} style={styles.latestItemImg} onError={() => markImageFailed(`li_${p.id}`)} />
+                      ) : (
+                        <View style={[styles.latestItemImg, styles.latestItemImgFallback]}>
+                          <MaterialCommunityIcons name="image-outline" size={20} color={COLORS.text2} />
+                        </View>
+                      )}
+                      <Text style={styles.latestItemPrice} numberOfLines={1}>Rs {p.price?.toLocaleString?.() ?? p.price}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={styles.sheetDetailEmpty}>No products listed yet</Text>
+            )}
+
+            <TouchableOpacity
+              style={styles.previewVisitBtn}
+              onPress={() => navigateToStorefront(selectedSeller.id)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.previewVisitText}>Visit storefront</Text>
+            </TouchableOpacity>
           </Animated.View>
         </Animated.View>
       )}
+
+      <Modal
+        visible={!!avatarViewerUrl}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAvatarViewerUrl(null)}
+      >
+        <TouchableOpacity
+          style={styles.avatarViewerBackdrop}
+          activeOpacity={1}
+          onPress={() => setAvatarViewerUrl(null)}
+        >
+          {avatarViewerUrl && (
+            <Image source={{ uri: avatarViewerUrl }} style={styles.avatarViewerImage} resizeMode="contain" />
+          )}
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -698,60 +746,13 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   setLocationBtnSaved: { backgroundColor: COLORS.green },
-  sheet: {
-    position: 'absolute', left: 0, right: 0,
-    height: 340,
-    backgroundColor: COLORS.bg,
-    borderTopWidth: 1, borderTopColor: COLORS.border,
-    borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
-    elevation: 12, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.4, shadowRadius: 12,
-    zIndex: 10,
-  },
-  handle: {
-    alignSelf: 'center', width: 42, height: 4, borderRadius: 2,
-    backgroundColor: COLORS.border, marginBottom: SPACING.md,
-  },
-  filterRow: { flexDirection: 'row', gap: 8, marginBottom: SPACING.md },
-  filterChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.media,
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-  },
-  filterChipActive: { backgroundColor: COLORS.blue, borderColor: COLORS.blue },
-  filterText: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
-  filterTextActive: { color: COLORS.white },
-  sellerList: { paddingBottom: SPACING.sm },
-  sellerCard: {
-    width: 200, backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
-    borderWidth: 1, borderColor: COLORS.border, marginRight: SPACING.md, overflow: 'hidden',
-  },
-  sellerCardImage: { width: 200, height: 100 },
-  sellerCardImageFallback: {
-    backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center',
-  },
-  sellerCardContent: { padding: 10 },
-  sellerCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  sellerCardAvatar: {
-    width: 26, height: 26, borderRadius: 13,
-    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: 'transparent',
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-  },
-  sellerCardAvatarImg: { width: 26, height: 26, borderRadius: 13 },
-  sellerCardInfo: { flex: 1 },
-  sellerCardName: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
-  sellerCardDist: { color: COLORS.text2, fontSize: 11 },
-  sellerCardStats: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  statRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  statText: { color: COLORS.text2, fontSize: 11, fontWeight: '600' },
-  tierBadge: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: 'rgba(0,229,160,0.12)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  tierBadgeGold: { backgroundColor: 'rgba(255,209,102,0.12)' },
-  emptyState: {
-    width: SCREEN_W - 80, alignItems: 'center', justifyContent: 'center', paddingVertical: 24,
+
+  emptyFloating: {
+    position: 'absolute', left: SPACING.lg, right: SPACING.lg,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 20,
+    zIndex: 8,
   },
   emptyText: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginTop: 10 },
   emptySubtext: { color: COLORS.text2, fontSize: 12, marginTop: 4, textAlign: 'center' },
@@ -761,25 +762,61 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.coral, borderRadius: RADIUS.card,
   },
   emptyActionText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
-  previewCardContainer: {
-    position: 'absolute',
-    left: 0, right: 0,
-    alignItems: 'center',
-    zIndex: 15,
+
+  dragSheet: {
+    position: 'absolute', left: 0, right: 0,
+    backgroundColor: COLORS.bg,
+    borderTopWidth: 1, borderTopColor: COLORS.border,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: SPACING.lg,
+    elevation: 12, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.4, shadowRadius: 12,
+    zIndex: 10,
   },
-  previewCard: {
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
-    borderWidth: 1, borderColor: COLORS.border, padding: 12,
-    elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12,
+  dragHandleZone: { paddingTop: SPACING.sm, paddingBottom: 4 },
+  handle: {
+    alignSelf: 'center', width: 42, height: 4, borderRadius: 2,
+    backgroundColor: COLORS.border,
   },
-  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+  followBtn: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.row,
+    borderWidth: 1, borderColor: COLORS.blue,
+  },
+  followBtnActive: { backgroundColor: COLORS.blue },
+  followBtnText: { color: COLORS.blue, fontSize: 12, fontWeight: '700' },
+  followBtnTextActive: { color: COLORS.white },
+  sheetStatsRow: {
+    flexDirection: 'row', gap: 16, marginTop: SPACING.md,
+    paddingBottom: SPACING.sm, borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+  },
+  sheetStatText: { color: COLORS.text2, fontSize: 12 },
+  sheetStatValue: { color: COLORS.text, fontWeight: '700' },
+  sheetDetail: { paddingTop: SPACING.md, paddingBottom: SPACING.md },
+  sheetDetailLabel: {
+    color: COLORS.text2, fontSize: 11, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8,
+  },
+  sheetDetailEmpty: { color: COLORS.text2, fontSize: 12 },
+  latestItemsRow: { flexDirection: 'row', gap: 8 },
+  latestItem: { width: 76 },
+  latestItemImg: { width: 76, height: 76, borderRadius: 10 },
+  latestItemImgFallback: { backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  latestItemPrice: { color: COLORS.text, fontSize: 11, marginTop: 4 },
+
   previewInfo: { flex: 1 },
   previewNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   previewName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   previewMeta: { color: COLORS.text2, fontSize: 11, marginTop: 1 },
   previewVisitBtn: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.row,
-    backgroundColor: COLORS.coral,
+    marginTop: SPACING.md,
+    paddingVertical: 10, borderRadius: RADIUS.card,
+    backgroundColor: COLORS.coral, alignItems: 'center',
   },
-  previewVisitText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
+  previewVisitText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
+
+  avatarViewerBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarViewerImage: { width: SCREEN_W - 40, height: SCREEN_W - 40, borderRadius: (SCREEN_W - 40) / 2 },
 });
