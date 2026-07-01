@@ -247,7 +247,7 @@ export default function MeScreen() {
             )}
           </View>
           <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')}>
-            <MaterialCommunityIcons name="cog-outline" size={24} color={COLORS.text} />
+            <MaterialCommunityIcons name="cog-outline" size={30} color={COLORS.text} />
           </TouchableOpacity>
         </View>
 
