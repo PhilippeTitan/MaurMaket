@@ -13,12 +13,54 @@ import type { User } from '../types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
+const GOOGLE_WEB_CLIENT_ID = '273654218158-1d5a7pmsaj5ql6ejshbbi5igjaqe22nh.apps.googleusercontent.com';
+const GOOGLE_REDIRECT_URI = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
+
 export default function LoginScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setGoogleLoading(true);
+      const Crypto = require('expo-crypto');
+      const WebBrowser = require('expo-web-browser');
+      WebBrowser.maybeCompleteAuthSession();
+
+      const state = Crypto.randomUUID();
+      const nonce = Crypto.randomUUID();
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${GOOGLE_WEB_CLIENT_ID}` +
+        `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` +
+        `&response_type=id_token` +
+        `&scope=${encodeURIComponent('openid profile email')}` +
+        `&state=${state}` +
+        `&nonce=${nonce}`;
+
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, GOOGLE_REDIRECT_URI);
+
+      if (result.type === 'success' && result.url) {
+        const hash = result.url.split('#')[1] || '';
+        const params = new URLSearchParams(hash);
+        const idToken = params.get('id_token');
+        if (idToken) {
+          const res = await googleAuth(idToken) as { user: User; token: string };
+          await store.setUser(res.user, res.token);
+        } else {
+          Alert.alert(t('common.error'), 'No ID token received from Google');
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Google sign-in failed';
+      Alert.alert(t('common.error'), message);
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -34,42 +76,6 @@ export default function LoginScreen({ navigation }: Props) {
       Alert.alert(t('common.error'), message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    try {
-      setGoogleLoading(true);
-      const { useAuthRequest, ResponseType } = require('expo-auth-session/providers/google');
-      const { makeRedirectUri } = require('expo-auth-session');
-      const Constants = require('expo-constants');
-
-      const clientId = Constants.default?.expoConfig?.extra?.eas?.projectId
-        ? undefined
-        : undefined;
-
-      const redirectUri = makeRedirectUri({ scheme: 'maurmaket' });
-
-      const [request, response, promptAsync] = useAuthRequest({
-        expoClientId: Constants.default?.expoConfig?.extra?.eas?.projectId,
-        clientId: clientId || undefined,
-        redirectUri,
-        scopes: ['profile', 'email'],
-        responseType: ResponseType.IdToken,
-      });
-
-      if (request) {
-        const result = await promptAsync();
-        if (result?.type === 'success' && result.params?.id_token) {
-          const res = await googleAuth(result.params.id_token) as { user: User; token: string };
-          await store.setUser(res.user, res.token);
-        }
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Google sign-in failed';
-      Alert.alert(t('common.error'), message);
-    } finally {
-      setGoogleLoading(false);
     }
   };
 

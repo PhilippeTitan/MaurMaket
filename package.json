@@ -40,6 +40,7 @@
     "expo-notifications": "^56.0.18",
     "expo-secure-store": "^56.0.4",
     "expo-status-bar": "~56.0.4",
+    "expo-web-browser": "~56.0.5",
     "express": "^4.21.2",
     "google-auth-library": "^10.9.0",
     "jsonwebtoken": "^9.0.3",

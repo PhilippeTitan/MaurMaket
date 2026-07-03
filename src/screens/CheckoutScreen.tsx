@@ -43,6 +43,20 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   useFocusEffect(useCallback(() => { fetchAddresses(); }, [fetchAddresses]));
 
+  useEffect(() => {
+    const user = store.user;
+    if (user && !name && !phone) {
+      setName(user.full_name || '');
+      setPhone(user.phone || '');
+    }
+    if (user && !address && user.location_address) {
+      setAddress(user.location_address);
+    }
+    if (user && !city && user.location_city) {
+      setCity(user.location_city);
+    }
+  }, []);
+
   const selectAddress = (addr: Address) => {
     setSelectedAddressId(addr.id);
     setName(addr.name);

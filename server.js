@@ -432,6 +432,13 @@ async function runMigrations() {
         expires_at TIMESTAMPTZ NOT NULL
       );
     `);
+    // User location fields
+    await c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS location_address TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS location_city TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS location_lat DECIMAL(10,7);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS location_lng DECIMAL(10,7);
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -630,7 +637,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -642,12 +649,25 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
 });
 
 app.put('/api/auth/profile', authRequired, async (req, res) => {
-  let { fullName, email, phone, bio, avatarUrl } = req.body;
+  let { fullName, email, phone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng } = req.body;
   if (phone) phone = phone.replace(/^\+/, '');
   try {
     const result = await pool.query(
-      `UPDATE users SET full_name = COALESCE($1, full_name), email = COALESCE($2, email), phone = COALESCE($3, phone), bio = COALESCE($4, bio), avatar_url = COALESCE($5, avatar_url), updated_at = CURRENT_TIMESTAMP WHERE id = $6 RETURNING id, full_name, email, phone, role, avatar_url, bio`,
-      [fullName, email || null, phone, bio, avatarUrl, req.user.id]
+      `UPDATE users SET
+        full_name = COALESCE($1, full_name),
+        email = COALESCE($2, email),
+        phone = COALESCE($3, phone),
+        bio = COALESCE($4, bio),
+        avatar_url = COALESCE($5, avatar_url),
+        location_address = COALESCE($7, location_address),
+        location_city = COALESCE($8, location_city),
+        location_lat = COALESCE($9, location_lat),
+        location_lng = COALESCE($10, location_lng),
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,
+                 location_address, location_city, location_lat, location_lng`,
+      [fullName, email || null, phone, bio, avatarUrl, req.user.id, locationAddress || null, locationCity || null, locationLat || null, locationLng || null]
     );
     res.json({ user: result.rows[0] });
   } catch (err) {
@@ -861,7 +881,7 @@ app.post('/api/auth/verify/check', authRequired, async (req, res) => {
     await pool.query('DELETE FROM otp_codes WHERE email = $1 AND purpose = $2', [user.email]);
 
     const updated = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng FROM users WHERE id = $1`,
       [req.user.id]
     );
     res.json({ success: true, user: updated.rows[0] });
@@ -928,7 +948,7 @@ app.post('/api/auth/google', async (req, res) => {
   const { idToken } = req.body;
   if (!idToken) return res.status(400).json({ error: 'Google ID token required' });
 
-  const googleClientId = process.env.GOOGLE_CLIENT_ID;
+  const googleClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
   if (!googleClientId) return res.status(500).json({ error: 'Google auth not configured' });
 
   try {
@@ -951,7 +971,7 @@ app.post('/api/auth/google', async (req, res) => {
       const updated = await pool.query(
         `UPDATE users SET email = $1, full_name = $2, avatar_url = $3, updated_at = CURRENT_TIMESTAMP
          WHERE google_id = $4
-         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified`,
+         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng`,
         [email, name, picture, googleId]
       );
       userRow = updated.rows[0];
@@ -961,7 +981,7 @@ app.post('/api/auth/google', async (req, res) => {
         const updated = await pool.query(
           `UPDATE users SET google_id = $1, avatar_url = COALESCE($2, avatar_url), updated_at = CURRENT_TIMESTAMP
            WHERE lower(email) = lower($3)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified`,
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng`,
           [googleId, picture, email]
         );
         userRow = updated.rows[0];
@@ -969,7 +989,7 @@ app.post('/api/auth/google', async (req, res) => {
         const inserted = await pool.query(
           `INSERT INTO users (email, google_id, full_name, avatar_url, role, email_verified)
            VALUES ($1, $2, $3, $4, 'buyer', true)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified`,
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng`,
           [email, googleId, name, picture]
         );
         userRow = inserted.rows[0];
@@ -1009,7 +1029,7 @@ app.put('/api/auth/become-seller', authRequired, async (req, res) => {
         use_store_identity = $6,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity, created_at`,
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity, created_at, location_address, location_city, location_lat, location_lng`,
       [req.user.id, sellerTier, storeName || null, storeLogoUrl || null, idDocumentUrl || null, useStoreIdentity]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -1057,7 +1077,7 @@ app.put('/api/auth/upgrade-tier', authRequired, sellerRequired, async (req, res)
     const result = await pool.query(
       `UPDATE users SET ${updates.join(', ')}
        WHERE id = $1
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity, created_at`,
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity, created_at, location_address, location_city, location_lat, location_lng`,
       values
     );
 
@@ -1097,7 +1117,7 @@ app.put('/api/auth/seller-profile', authRequired, sellerRequired, async (req, re
     values.push(req.user.id);
     const result = await pool.query(
       `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${idx}
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity, created_at`,
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity, created_at, location_address, location_city, location_lat, location_lng`,
       values
     );
     res.json({ user: result.rows[0] });

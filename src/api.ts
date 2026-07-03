@@ -20,13 +20,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.12.28.105:3002/api'
+    ? 'http://192.168.1.10:3002/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.12.28.105:3002'
+    ? 'http://192.168.1.10:3002'
     : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(
@@ -119,6 +119,10 @@ const normalizeProduct = (product: Product & Record<string, unknown>): Product =
       id_verification_result: null,
       use_store_identity: Boolean(withImages.use_store_identity),
       email_verified: Boolean(withImages.email_verified),
+      location_address: null,
+      location_city: null,
+      location_lat: null,
+      location_lng: null,
     },
   };
 };

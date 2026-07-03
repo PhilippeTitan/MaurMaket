@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Image, Platform,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Image, Platform, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -61,6 +61,10 @@ export default function SettingsScreen({ navigation }: Props) {
   const avatarUrl = getImageUrl(user?.avatar_url);
 
   const [locationStatus, setLocationStatus] = useState<string | null>(null);
+  const [locAddress, setLocAddress] = useState(user?.location_address || '');
+  const [locCity, setLocCity] = useState(user?.location_city || '');
+  const [locSaving, setLocSaving] = useState(false);
+  const [locDetecting, setLocDetecting] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -85,6 +89,54 @@ export default function SettingsScreen({ navigation }: Props) {
         );
       }
     } catch {}
+  };
+
+  const handleAutoDetect = async () => {
+    if (Platform.OS === 'web') return;
+    setLocDetecting(true);
+    try {
+      const Location = await import('expo-location');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(t('settings.locationDeniedTitle'), t('settings.locationDeniedMessage'));
+        setLocDetecting(false);
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude: lat, longitude: lng } = pos.coords;
+      const nominatimRes = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=fr,en`
+      );
+      const nominatim = await nominatimRes.json();
+      const a = nominatim.address || {};
+      const street = [a.road, a.house_number].filter(Boolean).join(' ') || '';
+      const area = a.neighbourhood || a.suburb || a.city_district || a.village || a.town || '';
+      const city = a.city || a.municipality || a.county || '';
+      setLocAddress(street || area || nominatim.display_name?.split(',')[0] || '');
+      setLocCity(area || city || '');
+      Alert.alert(
+        t('settings.locationSaved'),
+        t('settings.locationEditHint')
+      );
+    } catch {
+      Alert.alert(t('settings.error'), 'Could not detect location');
+    }
+    setLocDetecting(false);
+  };
+
+  const handleSaveLocation = async () => {
+    setLocSaving(true);
+    try {
+      const res = await updateProfile({
+        locationAddress: locAddress,
+        locationCity: locCity,
+      }) as { user: typeof user };
+      if (res.user) await store.setUser(res.user, store.token);
+      Alert.alert(t('settings.locationSaved'));
+    } catch {
+      Alert.alert(t('settings.locationSaveFailed'));
+    }
+    setLocSaving(false);
   };
 
   const handleLogout = () => {
@@ -377,10 +429,52 @@ export default function SettingsScreen({ navigation }: Props) {
         ))}
       </View>
 
-      {/* ── Location ── */}
+      {/* ── Delivery Location ── */}
+      <SectionHeader title={t('settings.deliveryLocation')} />
+      <View style={styles.card}>
+        <TextInput
+          style={styles.locInput}
+          placeholder={t('settings.deliveryAddress')}
+          placeholderTextColor={COLORS.text2}
+          value={locAddress}
+          onChangeText={setLocAddress}
+        />
+        <TextInput
+          style={styles.locInput}
+          placeholder={t('settings.deliveryCity')}
+          placeholderTextColor={COLORS.text2}
+          value={locCity}
+          onChangeText={setLocCity}
+        />
+        {Platform.OS !== 'web' && (
+          <TouchableOpacity style={styles.autoDetectBtn} onPress={handleAutoDetect} disabled={locDetecting}>
+            {locDetecting ? (
+              <ActivityIndicator size={14} color={COLORS.blue} />
+            ) : (
+              <MaterialCommunityIcons name="crosshairs-gps" size={16} color={COLORS.blue} />
+            )}
+            <Text style={styles.autoDetectText}>
+              {locDetecting ? t('settings.locationDetecting') : t('settings.autoDetect')}
+            </Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.saveLocBtn, locSaving && { opacity: 0.5 }]}
+          onPress={handleSaveLocation}
+          disabled={locSaving}
+        >
+          {locSaving ? (
+            <ActivityIndicator size={14} color={COLORS.white} />
+          ) : (
+            <Text style={styles.saveLocText}>{t('common.save')}</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Nearby Map ── */}
       {Platform.OS !== 'web' && (
         <>
-          <SectionHeader title={t('settings.location')} />
+          <SectionHeader title={t('settings.locationMap')} />
           <View style={styles.card}>
             <SettingRow
               icon="crosshairs-gps"
@@ -530,4 +624,21 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.row, backgroundColor: COLORS.blue,
   },
   tierUpgradeBtnText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
+
+  /* Location */
+  locInput: {
+    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.row, padding: 12, color: COLORS.text, fontSize: 13,
+    marginBottom: 8,
+  },
+  autoDetectBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 10,
+  },
+  autoDetectText: { fontSize: 13, color: COLORS.blue, fontWeight: '600' },
+  saveLocBtn: {
+    backgroundColor: COLORS.coral, borderRadius: RADIUS.row,
+    padding: 12, alignItems: 'center', marginTop: 4,
+  },
+  saveLocText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
 });

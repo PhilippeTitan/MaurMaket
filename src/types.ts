@@ -16,6 +16,10 @@ export interface User {
   id_verification_result: 'pending' | 'verified' | 'rejected' | null;
   use_store_identity: boolean;
   email_verified: boolean;
+  location_address: string | null;
+  location_city: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
 }
 
 export interface ProductImage {

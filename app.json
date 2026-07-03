@@ -36,12 +36,15 @@
           "locationAlwaysPermission": "Allow MaurMaket to use your location to show nearby sellers on the map.",
           "locationWhenInUsePermission": "Allow MaurMaket to use your location to show nearby sellers on the map."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {
         "projectId": "b3a3cf8a-409e-4977-9398-34cc75f8f496"
-      }
+      },
+      "googleAndroidClientId": "",
+      "googleIosClientId": ""
     },
     "owner": "maurinex"
   }
