@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import cron from 'node-cron';
+import nodemailer from 'nodemailer';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -22,6 +23,19 @@ if (!JWT_SECRET) {
 }
 const BCRYPT_ROUNDS = 10;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ───── Email Transporter (nodemailer) ─────
+const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '587', 10),
+  secure: parseInt(process.env.SMTP_PORT || '587', 10) === 465,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+}) : null;
+
+const PRODUCTION_URL = process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com';
 
 async function runMigrations() {
   const c = await pool.connect();
@@ -407,6 +421,17 @@ async function runMigrations() {
       ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_starts_at TIMESTAMP;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_ends_at TIMESTAMP;
     `);
+    // Email verification + Google Sign-In
+    await c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;
+      CREATE TABLE IF NOT EXISTS otp_codes (
+        email TEXT PRIMARY KEY,
+        code TEXT NOT NULL,
+        purpose TEXT NOT NULL DEFAULT 'verify',
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -605,7 +630,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -658,6 +683,304 @@ app.put('/api/auth/password', authRequired, async (req, res) => {
   } catch (err) {
     console.error('Password change error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Email Verification ─────
+
+const EMAIL_TEMPLATES = {
+  en: {
+    verify: {
+      subject: (code) => `Your MaurMaket Verification Code: ${code}`,
+      body: 'To verify your email address and unlock buying and selling on MaurMaket, use the secure code below.',
+      cta: 'Open in MaurMaket App',
+      fallback: 'Or enter the code manually in the app.',
+    },
+    reset: {
+      subject: (code) => `Your MaurMaket Password Reset Code: ${code}`,
+      body: 'To reset your password, use the secure code below.',
+      cta: 'Open in MaurMaket App',
+      fallback: 'Or enter the code manually in the app.',
+    },
+  },
+  fr: {
+    verify: {
+      subject: (code) => `Votre code de vérification MaurMaket : ${code}`,
+      body: "Pour vérifier votre adresse email et débloquer l'achat et la vente sur MaurMaket, utilisez le code sécurisé ci-dessous.",
+      cta: 'Ouvrir dans l\'app MaurMaket',
+      fallback: 'Ou entrez le code manuellement dans l\'app.',
+    },
+    reset: {
+      subject: (code) => `Votre code de réinitialisation MaurMaket : ${code}`,
+      body: 'Pour réinitialiser votre mot de passe, utilisez le code sécurisé ci-dessous.',
+      cta: 'Ouvrir dans l\'app MaurMaket',
+      fallback: 'Ou entrez le code manuellement dans l\'app.',
+    },
+  },
+  ht: {
+    verify: {
+      subject: (code) => `Kòd verifikasyon MaurMaket ou: ${code}`,
+      body: 'Pou verifye adrès imèl ou epi debloke achte ak vann sou MaurMaket, itilize kòd sekirite ki anba a.',
+      cta: 'Ouverture nan app MaurMaket',
+      fallback: 'Ou antre kòd la manyèlman nan app la.',
+    },
+    reset: {
+      subject: (code) => `Kòd renye paswòd MaurMaket ou: ${code}`,
+      body: 'Pou renye paswòd ou, itilize kòd sekirite ki anba a.',
+      cta: 'Ouverture nan app MaurMaket',
+      fallback: 'Ou antre kòd la manyèlman nan app la.',
+    },
+  },
+};
+
+function generateOtpCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function buildVerificationEmail(code, purpose, lang = 'en') {
+  const lng = EMAIL_TEMPLATES[lang] ? lang : 'en';
+  const t = EMAIL_TEMPLATES[lng][purpose] || EMAIL_TEMPLATES[lng].verify;
+  const deepLink = purpose === 'reset'
+    ? `maurmaket://reset-password?code=${code}`
+    : `maurmaket://verify?code=${code}`;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#0D1117;font-family:Arial,sans-serif;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#0D1117;padding:20px 10px;">
+    <tr><td align="center">
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:440px;background-color:#161B22;border:1px solid #30363D;border-radius:12px;overflow:hidden;">
+        <tr><td style="padding:30px 20px;text-align:center;">
+          <div style="margin-bottom:20px;">
+            <div style="font-size:22px;font-weight:800;color:#FF4D6A;letter-spacing:1px;">MaurMaket</div>
+            <div style="font-size:9px;letter-spacing:3px;color:#8B949E;text-transform:uppercase;">MARKETPLACE</div>
+          </div>
+          <div style="font-size:14px;font-weight:600;letter-spacing:2px;color:#fff;margin-bottom:12px;text-transform:uppercase;">
+            Verification Code
+          </div>
+          <p style="font-size:13px;line-height:1.5;color:#8B949E;margin:0 0 24px;">
+            ${t.body}
+          </p>
+          <div style="background:#0D1117;border:1px dashed #FF4D6A;border-radius:8px;padding:20px 10px;margin-bottom:20px;">
+            <div style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#FF4D6A;">
+              ${code.split('').join(' ')}
+            </div>
+          </div>
+          <a href="${deepLink}" style="display:inline-block;background:#FF4D6A;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 28px;border-radius:24px;margin-bottom:16px;">
+            ${t.cta}
+          </a>
+          <p style="font-size:11px;color:#484F58;margin-bottom:20px;">
+            ${t.fallback}
+          </p>
+          <p style="font-size:11px;color:#484F58;margin-bottom:0;">
+            Expires in 15 minutes &bull; Security ID: ${crypto.randomBytes(4).toString('hex').toUpperCase()}
+          </p>
+          <div style="border-top:1px solid #21262D;padding-top:15px;margin-top:20px;">
+            <div style="font-size:10px;color:#484F58;letter-spacing:1px;">&copy; ${new Date().getFullYear()} MAURINEX HUB</div>
+          </div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+  const plainText = purpose === 'reset'
+    ? `Your MaurMaket password reset code is: ${code}. It expires in 15 minutes.`
+    : `Your MaurMaket verification code is: ${code}. It expires in 15 minutes.`;
+
+  return { html, plainText, subject: t.subject(code) };
+}
+
+async function sendOtpEmail(email, code, purpose, lang) {
+  if (!emailTransporter) {
+    console.error('SMTP not configured — cannot send email');
+    return false;
+  }
+  const { html, plainText, subject } = buildVerificationEmail(code, purpose, lang);
+  try {
+    await emailTransporter.sendMail({
+      from: `"MaurMaket" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject,
+      text: plainText,
+      html,
+    });
+    return true;
+  } catch (err) {
+    console.error('Email send error:', err);
+    return false;
+  }
+}
+
+app.post('/api/auth/verify/send', authRequired, async (req, res) => {
+  const { language } = req.body || {};
+  try {
+    const userResult = await pool.query('SELECT email, email_verified FROM users WHERE id = $1', [req.user.id]);
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const user = userResult.rows[0];
+    if (user.email_verified) return res.status(400).json({ error: 'Email already verified' });
+
+    const code = generateOtpCode();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await pool.query(
+      `INSERT INTO otp_codes (email, code, purpose, expires_at)
+       VALUES ($1, $2, 'verify', $3)
+       ON CONFLICT (email) DO UPDATE SET code = $2, purpose = 'verify', expires_at = $3`,
+      [user.email, code, expiresAt]
+    );
+
+    const sent = await sendOtpEmail(user.email, code, 'verify', language || 'en');
+    if (!sent) return res.status(500).json({ error: 'Failed to send email. Please try again.' });
+
+    res.json({ success: true, email: user.email });
+  } catch (err) {
+    console.error('Verify send error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/auth/verify/check', authRequired, async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: 'Code required' });
+  try {
+    const userResult = await pool.query('SELECT email, email_verified FROM users WHERE id = $1', [req.user.id]);
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const user = userResult.rows[0];
+    if (user.email_verified) return res.status(400).json({ error: 'Email already verified' });
+
+    const otpResult = await pool.query(
+      `SELECT code FROM otp_codes WHERE email = $1 AND purpose = 'verify' AND expires_at > now()`,
+      [user.email]
+    );
+    if (otpResult.rowCount === 0 || otpResult.rows[0].code !== code) {
+      return res.status(400).json({ error: 'Invalid or expired code' });
+    }
+
+    await pool.query('UPDATE users SET email_verified = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [req.user.id]);
+    await pool.query('DELETE FROM otp_codes WHERE email = $1 AND purpose = $2', [user.email]);
+
+    const updated = await pool.query(
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified FROM users WHERE id = $1`,
+      [req.user.id]
+    );
+    res.json({ success: true, user: updated.rows[0] });
+  } catch (err) {
+    console.error('Verify check error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Forgot / Reset Password ─────
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email, language } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+  try {
+    const userResult = await pool.query('SELECT id, email FROM users WHERE lower(email) = lower($1)', [email]);
+    if (userResult.rows.length === 0) {
+      return res.json({ success: true, message: 'If that email exists, a code has been sent.' });
+    }
+    const user = userResult.rows[0];
+    const code = generateOtpCode();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await pool.query(
+      `INSERT INTO otp_codes (email, code, purpose, expires_at)
+       VALUES ($1, $2, 'reset', $3)
+       ON CONFLICT (email) DO UPDATE SET code = $2, purpose = 'reset', expires_at = $3`,
+      [user.email, code, expiresAt]
+    );
+
+    await sendOtpEmail(user.email, code, 'reset', language || 'en');
+    res.json({ success: true, message: 'If that email exists, a code has been sent.' });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { email, code, newPassword } = req.body;
+  if (!email || !code || !newPassword) return res.status(400).json({ error: 'Email, code, and new password required' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  try {
+    const otpResult = await pool.query(
+      `SELECT code FROM otp_codes WHERE lower(email) = lower($1) AND purpose = 'reset' AND expires_at > now()`,
+      [email]
+    );
+    if (otpResult.rowCount === 0 || otpResult.rows[0].code !== code) {
+      return res.status(400).json({ error: 'Invalid or expired code' });
+    }
+
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await pool.query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE lower(email) = lower($2)', [newHash, email]);
+    await pool.query('DELETE FROM otp_codes WHERE lower(email) = lower($1) AND purpose = $2', [email]);
+    res.json({ success: true, message: 'Password reset successful' });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Google Sign-In ─────
+
+app.post('/api/auth/google', async (req, res) => {
+  const { idToken } = req.body;
+  if (!idToken) return res.status(400).json({ error: 'Google ID token required' });
+
+  const googleClientId = process.env.GOOGLE_CLIENT_ID;
+  if (!googleClientId) return res.status(500).json({ error: 'Google auth not configured' });
+
+  try {
+    const { OAuth2Client } = await import('google-auth-library');
+    const googleClient = new OAuth2Client(googleClientId);
+    const ticket = await googleClient.verifyIdToken({ idToken, audience: googleClientId });
+    const payload = ticket.getPayload() || {};
+
+    const googleId = payload.sub;
+    const email = payload.email;
+    const name = payload.name || '';
+    const picture = payload.picture || '';
+
+    if (!googleId || !email) return res.status(400).json({ error: 'Invalid Google token' });
+
+    let userRow = null;
+
+    const byGoogleId = await pool.query('SELECT id FROM users WHERE google_id = $1', [googleId]);
+    if (byGoogleId.rows.length > 0) {
+      const updated = await pool.query(
+        `UPDATE users SET email = $1, full_name = $2, avatar_url = $3, updated_at = CURRENT_TIMESTAMP
+         WHERE google_id = $4
+         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified`,
+        [email, name, picture, googleId]
+      );
+      userRow = updated.rows[0];
+    } else {
+      const byEmail = await pool.query('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
+      if (byEmail.rows.length > 0) {
+        const updated = await pool.query(
+          `UPDATE users SET google_id = $1, avatar_url = COALESCE($2, avatar_url), updated_at = CURRENT_TIMESTAMP
+           WHERE lower(email) = lower($3)
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified`,
+          [googleId, picture, email]
+        );
+        userRow = updated.rows[0];
+      } else {
+        const inserted = await pool.query(
+          `INSERT INTO users (email, google_id, full_name, avatar_url, role, email_verified)
+           VALUES ($1, $2, $3, $4, 'buyer', true)
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified`,
+          [email, googleId, name, picture]
+        );
+        userRow = inserted.rows[0];
+      }
+    }
+
+    const token = jwt.sign({ id: userRow.id, email: userRow.email, role: userRow.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ user: userRow, token });
+  } catch (err) {
+    console.error('Google auth error:', err);
+    res.status(500).json({ error: 'Google authentication failed' });
   }
 });
 
@@ -1371,6 +1694,11 @@ app.get('/api/products/:id', async (req, res) => {
 });
 
 app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
+  // Email verification gate
+  const evCheck = await pool.query('SELECT email_verified FROM users WHERE id = $1', [req.user.id]);
+  if (!evCheck.rows[0]?.email_verified) {
+    return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to start selling.' });
+  }
   const { name, description, price, stock, categoryId, images, sale_price, sale_starts_at, sale_ends_at } = req.body;
   if (!name || !price) {
     return res.status(400).json({ error: 'Name and price required' });
@@ -1646,6 +1974,11 @@ app.get('/api/orders', authRequired, async (req, res) => {
 });
 
 app.post('/api/orders', authRequired, async (req, res) => {
+  // Email verification gate
+  const evCheck = await pool.query('SELECT email_verified FROM users WHERE id = $1', [req.user.id]);
+  if (!evCheck.rows[0]?.email_verified) {
+    return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to place orders.' });
+  }
   const { items, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, promoCode } = req.body;
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'Cart is empty' });
@@ -3256,6 +3589,11 @@ async function refundPayout(client, sellerId, amount, payoutId, errorMessage) {
 }
 
 app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req, res) => {
+  // Email verification gate
+  const evCheck = await pool.query('SELECT email_verified FROM users WHERE id = $1', [req.user.id]);
+  if (!evCheck.rows[0]?.email_verified) {
+    return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to request payouts.' });
+  }
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
   const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
   if (sellerTier === 'casual') {

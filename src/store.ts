@@ -47,6 +47,7 @@ export const store = {
   get cart() { return state.cart; },
   get isLoggedIn() { return !!state.token; },
   get isSeller() { return state.user?.role === 'seller'; },
+  get isEmailVerified() { return !!state.user?.email_verified; },
 
   async init() {
     const token = await storage.getItem('mm_token');

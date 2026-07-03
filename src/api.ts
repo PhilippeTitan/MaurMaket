@@ -118,6 +118,7 @@ const normalizeProduct = (product: Product & Record<string, unknown>): Product =
       id_verified_at: null,
       id_verification_result: null,
       use_store_identity: Boolean(withImages.use_store_identity),
+      email_verified: Boolean(withImages.email_verified),
     },
   };
 };
@@ -137,6 +138,24 @@ export const login = (email: string, password: string) =>
   request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
 
 export const getMe = () => request('/auth/me');
+
+// Email Verification
+export const sendVerifyCode = (language?: string) =>
+  request('/auth/verify/send', { method: 'POST', body: JSON.stringify({ language }) });
+
+export const checkVerifyCode = (code: string) =>
+  request('/auth/verify/check', { method: 'POST', body: JSON.stringify({ code }) });
+
+// Google Sign-In
+export const googleAuth = (idToken: string) =>
+  request('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) });
+
+// Forgot / Reset Password
+export const forgotPassword = (email: string, language?: string) =>
+  request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email, language }) });
+
+export const resetPassword = (email: string, code: string, newPassword: string) =>
+  request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, code, newPassword }) });
 
 export const updateProfile = (data: Record<string, string>) =>
   request('/auth/profile', { method: 'PUT', body: JSON.stringify(data) });

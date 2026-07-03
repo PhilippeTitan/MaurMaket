@@ -15,6 +15,8 @@ import type { RootStackParamList, AuthStackParamList, TabParamList } from './src
 
 import LoginScreen from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
+import EmailVerificationScreen from './src/screens/EmailVerificationScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import FeedScreen from './src/screens/FeedScreen';
 import ExploreScreen from './src/screens/ExploreScreen';
 import InboxScreen from './src/screens/InboxScreen';
@@ -95,6 +97,8 @@ function AuthNavigator() {
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Signup" component={SignupScreen} />
+      <AuthStack.Screen name="EmailVerification" component={EmailVerificationScreen} />
+      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
     </AuthStack.Navigator>
   );
 }
@@ -220,6 +224,7 @@ export default function App() {
   }, []);
 
   const pendingDeepLink = useRef<string | null>(null);
+  const pendingDeepLinkType = useRef<string | null>(null);
 
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
@@ -231,18 +236,61 @@ export default function App() {
           navigationRef.navigate('PaymentReturn', { orderId });
         } else {
           pendingDeepLink.current = orderId || null;
+          pendingDeepLinkType.current = 'payment-return';
+        }
+      } else if (url.includes('maurmaket://verify')) {
+        const match = url.match(/code=([^&]+)/);
+        const code = match?.[1];
+        if (store.isLoggedIn) {
+          if (navigationRef.isReady()) {
+            navigationRef.navigate('EmailVerification', { code });
+          } else {
+            pendingDeepLink.current = code || null;
+            pendingDeepLinkType.current = 'verify';
+          }
+        }
+      } else if (url.includes('maurmaket://reset-password')) {
+        const match = url.match(/code=([^&]+)/);
+        const code = match?.[1];
+        if (navigationRef.isReady()) {
+          navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code } });
+        } else {
+          pendingDeepLink.current = code || null;
+          pendingDeepLinkType.current = 'reset-password';
         }
       }
     };
 
     Linking.getInitialURL().then((url) => {
-      if (url && url.includes('payment-return')) {
+      if (!url) return;
+      if (url.includes('payment-return')) {
         const match = url.match(/orderId=([^&]+)/);
         const orderId = match?.[1];
         if (navigationRef.isReady()) {
           navigationRef.navigate('PaymentReturn', { orderId });
         } else {
           pendingDeepLink.current = orderId || null;
+          pendingDeepLinkType.current = 'payment-return';
+        }
+      } else if (url.includes('maurmaket://verify')) {
+        const match = url.match(/code=([^&]+)/);
+        const code = match?.[1];
+        if (store.isLoggedIn) {
+          if (navigationRef.isReady()) {
+            navigationRef.navigate('EmailVerification', { code });
+          } else {
+            pendingDeepLink.current = code || null;
+            pendingDeepLinkType.current = 'verify';
+          }
+        }
+      } else if (url.includes('maurmaket://reset-password')) {
+        const match = url.match(/code=([^&]+)/);
+        const code = match?.[1];
+        if (navigationRef.isReady()) {
+          navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code } });
+        } else {
+          pendingDeepLink.current = code || null;
+          pendingDeepLinkType.current = 'reset-password';
         }
       }
     }).catch(() => {});
@@ -262,9 +310,17 @@ export default function App() {
   const appContent = (
     <NavigationContainer ref={navigationRef} onReady={() => {
       if (pendingDeepLink.current) {
-        const orderId = pendingDeepLink.current;
+        const value = pendingDeepLink.current;
+        const type = pendingDeepLinkType.current;
         pendingDeepLink.current = null;
-        navigationRef.navigate('PaymentReturn', { orderId });
+        pendingDeepLinkType.current = null;
+        if (type === 'payment-return') {
+          navigationRef.navigate('PaymentReturn', { orderId: value });
+        } else if (type === 'verify' && store.isLoggedIn) {
+          navigationRef.navigate('EmailVerification', { code: value });
+        } else if (type === 'reset-password') {
+          navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code: value } });
+        }
       }
     }}>
       <StatusBar style="light" />
@@ -295,6 +351,8 @@ export default function App() {
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
             <Stack.Screen name="Meetup" component={LazyMeetupScreen} />
             <Stack.Screen name="PromoManagement" component={PromoManagementScreen} />
+            <Stack.Screen name="EmailVerification" component={EmailVerificationScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ presentation: 'modal' }} />
           </>
         )}
       </Stack.Navigator>

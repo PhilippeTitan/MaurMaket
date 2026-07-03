@@ -3,6 +3,8 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
+  EmailVerification: { code?: string } | undefined;
+  ForgotPassword: { code?: string } | undefined;
 };
 
 export type TabParamList = {
@@ -47,4 +49,6 @@ export type RootStackParamList = {
   PaymentReturn: { orderId?: string };
   Meetup: { orderId: string };
   PromoManagement: undefined;
+  EmailVerification: { code?: string } | undefined;
+  ForgotPassword: { code?: string } | undefined;
 };

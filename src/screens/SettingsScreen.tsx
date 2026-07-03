@@ -185,6 +185,19 @@ export default function SettingsScreen({ navigation }: Props) {
       <View style={styles.card}>
         <SettingRow icon="account-outline" label={t('settings.fullName')} value={getDisplayName(user)} onPress={() => goEdit('name', t('settings.fullName'))} />
         <SettingRow icon="email-outline" label={t('settings.email')} value={user?.email} onPress={() => goEdit('email', t('settings.email'))} />
+        {user?.email_verified ? (
+          <View style={styles.verifyRow}>
+            <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
+            <Text style={styles.verifyLabel}>{t('settings.emailVerified')}</Text>
+            <Text style={[styles.verifyBadge, { color: COLORS.green }]}>{t('settings.verified')}</Text>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.verifyRow} onPress={() => navigation.navigate('EmailVerification')}>
+            <MaterialCommunityIcons name="shield-alert-outline" size={18} color={COLORS.coral} />
+            <Text style={styles.verifyLabel}>{t('settings.emailVerified')}</Text>
+            <Text style={[styles.verifyBadge, { color: COLORS.coral }]}>{t('settings.verifyEmail')}</Text>
+          </TouchableOpacity>
+        )}
         <SettingRow icon="phone-outline" label={t('settings.phone')} value={user?.phone ? `+509 ${user.phone}` : ''} onPress={() => goEdit('phone', t('settings.phone'))} />
         <SettingRow icon="text-short" label={t('settings.bio')} value={user?.bio || t('settings.bio')} onPress={() => goEdit('bio', t('settings.bio'))} />
         <SettingRow icon="lock-outline" label={t('settings.changePassword')} value="••••••••" onPress={() => goEdit('password', t('settings.changePassword'))} />
@@ -257,7 +270,7 @@ export default function SettingsScreen({ navigation }: Props) {
               <>
                 <View style={styles.tierRow}>
                   <View style={styles.tierDotWrap}>
-                    <View style={[styles.tierDot, { backgroundColor: COLORS.green }]} />
+                    <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
                   </View>
                   <Text style={styles.tierLabel}>{t('settings.casualSeller')}</Text>
                   <Text style={[styles.tierStatus, { color: COLORS.green }]}>{t('settings.tierActive')}</Text>
@@ -289,7 +302,7 @@ export default function SettingsScreen({ navigation }: Props) {
               <>
                 <View style={styles.tierRow}>
                   <View style={styles.tierDotWrap}>
-                    <View style={[styles.tierDot, { backgroundColor: COLORS.green }]} />
+                    <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
                   </View>
                   <Text style={styles.tierLabel}>{t('settings.verifiedSeller')}</Text>
                   <Text style={[styles.tierStatus, { color: COLORS.green }]}>{t('settings.tierActive')}</Text>
@@ -313,7 +326,7 @@ export default function SettingsScreen({ navigation }: Props) {
               <>
                 <View style={styles.tierRow}>
                   <View style={styles.tierDotWrap}>
-                    <View style={[styles.tierDot, { backgroundColor: COLORS.green }]} />
+                    <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
                   </View>
                   <Text style={styles.tierLabel}>{t('settings.businessSeller')}</Text>
                   <Text style={[styles.tierStatus, { color: COLORS.green }]}>{t('settings.tierActive')}</Text>
@@ -378,7 +391,7 @@ export default function SettingsScreen({ navigation }: Props) {
               chevron={locationStatus !== 'granted'}
               rightContent={
                 locationStatus === 'granted' ? (
-                  <MaterialCommunityIcons name="check-circle" size={18} color={COLORS.green} />
+                  <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
                 ) : undefined
               }
             />
@@ -483,6 +496,14 @@ const styles = StyleSheet.create({
   },
   langText: { fontSize: 14, color: COLORS.text, fontWeight: '600' },
   langTextActive: { color: COLORS.coral },
+
+  /* Email verification */
+  verifyRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 13,
+  },
+  verifyLabel: { flex: 1, fontSize: 14, color: COLORS.text, fontWeight: '500' },
+  verifyBadge: { fontSize: 12, fontWeight: '700' },
 
   /* Logout */
   logoutBtn: {

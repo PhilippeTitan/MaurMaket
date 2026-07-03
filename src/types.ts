@@ -15,6 +15,7 @@ export interface User {
   id_verified_at: string | null;
   id_verification_result: 'pending' | 'verified' | 'rejected' | null;
   use_store_identity: boolean;
+  email_verified: boolean;
 }
 
 export interface ProductImage {
