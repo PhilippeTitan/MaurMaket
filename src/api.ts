@@ -2,16 +2,16 @@ import { Platform } from 'react-native';
 import type { Conversation, Product } from './types';
 
 const getWebApiBase = () => {
-  if (typeof window === 'undefined') return 'http://localhost:3001/api';
+  if (typeof window === 'undefined') return 'http://localhost:3002/api';
   const { hostname } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:3001/api';
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:3002/api';
   return `https://molecules-restaurant-diploma-fate.trycloudflare.com/api`;
 };
 
 const getWebUploadBase = () => {
-  if (typeof window === 'undefined') return 'http://localhost:3001';
+  if (typeof window === 'undefined') return 'http://localhost:3002';
   const { hostname } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:3001';
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:3002';
   return `https://molecules-restaurant-diploma-fate.trycloudflare.com`;
 };
 
@@ -20,13 +20,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.14.206.105:3001/api'
+    ? 'http://10.12.28.105:3002/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.14.206.105:3001'
+    ? 'http://10.12.28.105:3002'
     : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(

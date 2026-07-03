@@ -8,7 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS } from '../theme';
-import { becomeSeller, uploadImage } from '../api';
+import { becomeSeller, upgradeTier, uploadImage } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
@@ -70,7 +70,9 @@ export default function SellerOnboardingScreen() {
       if (chosenTier === 'business' && storeLogoUrl) data.storeLogoUrl = storeLogoUrl;
       if ((chosenTier === 'verified' || chosenTier === 'business') && idDocUrl) data.idDocumentUrl = idDocUrl;
 
-      const res = await becomeSeller(data) as { user: typeof store.user; token: string };
+      const res = store.isSeller
+        ? await upgradeTier(data) as { user: typeof store.user; token: string }
+        : await becomeSeller(data) as { user: typeof store.user; token: string };
       if (res.user && res.token) {
         await store.setUser(res.user, res.token);
       }
@@ -102,7 +104,9 @@ export default function SellerOnboardingScreen() {
     setLoading(true);
     try {
       const data: { tier: string } = { tier };
-      const res = await becomeSeller(data) as { user: typeof store.user; token: string };
+      const res = store.isSeller
+        ? await upgradeTier(data) as { user: typeof store.user; token: string }
+        : await becomeSeller(data) as { user: typeof store.user; token: string };
       if (res.user && res.token) {
         await store.setUser(res.user, res.token);
       }

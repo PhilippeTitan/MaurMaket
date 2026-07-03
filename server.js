@@ -3450,12 +3450,12 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
     if (ocrResult && faceMatchScore) {
       const userRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
       const userName = userRes.rows[0]?.full_name?.toLowerCase().trim();
-      const nameMatch = ocrResult.fullName && ocrResult.fullName.toLowerCase().trim() === userName;
+      const nameMatch = ocrResult.fullName && ocrResult.fullName.trim().length >= 3 && !/^\d+$/.test(ocrResult.fullName.trim()) && ocrResult.fullName.toLowerCase().trim() === userName;
       const hasCinNumber = ocrResult.cinNumber && /^\d{8,12}$/.test(ocrResult.cinNumber);
-      const hasDob = ocrResult.dateOfBirth;
-      const hasPlaceOfBirth = ocrResult.placeOfBirth && ocrResult.placeOfBirth.length > 2;
-      const hasSex = ocrResult.sex && ocrResult.sex.length > 0;
-      const faceOk = parseFloat(faceMatchScore) > 0.65;
+      const hasDob = ocrResult.dateOfBirth && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(ocrResult.dateOfBirth);
+      const hasPlaceOfBirth = ocrResult.placeOfBirth && ocrResult.placeOfBirth.trim().length >= 3 && !/^\d+$/.test(ocrResult.placeOfBirth.trim());
+      const hasSex = ocrResult.sex && /^(M|F|MASCULIN|FÉMININ|MALE|FEMALE)$/i.test(ocrResult.sex);
+      const faceOk = parseFloat(faceMatchScore) >= 0.5;
 
       if (nameMatch && hasCinNumber && hasDob && hasPlaceOfBirth && hasSex && faceOk) {
         autoStatus = 'verified';

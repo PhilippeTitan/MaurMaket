@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Image, Platform,
 } from 'react-native';
@@ -59,6 +59,33 @@ export default function SettingsScreen({ navigation }: Props) {
   const [storeLogoUploading, setStoreLogoUploading] = useState(false);
 
   const avatarUrl = getImageUrl(user?.avatar_url);
+
+  const [locationStatus, setLocationStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    (async () => {
+      try {
+        const { status } = await (await import('expo-location')).getForegroundPermissionsAsync();
+        setLocationStatus(status);
+      } catch {}
+    })();
+  }, []);
+
+  const handleRequestLocation = async () => {
+    if (Platform.OS === 'web') return;
+    try {
+      const Location = await import('expo-location');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationStatus(status);
+      if (status !== 'granted') {
+        Alert.alert(
+          t('settings.locationDeniedTitle'),
+          t('settings.locationDeniedMessage')
+        );
+      }
+    } catch {}
+  };
 
   const handleLogout = () => {
     if (Platform.OS === 'web') {
@@ -222,71 +249,97 @@ export default function SettingsScreen({ navigation }: Props) {
                 />
               </>
             )}
-            {user?.seller_tier !== 'business' && (
+          </View>
+
+          {/* ── Tier Progression ── */}
+          <View style={styles.card}>
+            {user?.seller_tier === 'casual' && (
               <>
+                <View style={styles.tierRow}>
+                  <View style={styles.tierDotWrap}>
+                    <View style={[styles.tierDot, { backgroundColor: COLORS.green }]} />
+                  </View>
+                  <Text style={styles.tierLabel}>{t('settings.casualSeller')}</Text>
+                  <Text style={[styles.tierStatus, { color: COLORS.green }]}>{t('settings.tierActive')}</Text>
+                </View>
                 <View style={styles.divider} />
-                <SettingRow
-                  icon={user?.id_verification_result === 'verified' ? 'shield-check' : 'shield-plus-outline'}
-                  iconColor={user?.id_verification_result === 'verified' ? COLORS.green : COLORS.blue}
-                  label={t('settings.verifyIdentity')}
-                  value={user?.id_verification_result === 'verified' ? t('settings.verified') : user?.id_verification_result === 'pending' ? t('settings.pending') : t('settings.notVerified')}
-                  onPress={() => navigation.navigate('Verification')}
-                />
+                <View style={styles.tierRow}>
+                  <View style={styles.tierDotWrap}>
+                    <View style={[styles.tierDot, { backgroundColor: COLORS.surface2 }]} />
+                  </View>
+                  <Text style={[styles.tierLabel, styles.tierGreyed]}>{t('settings.verifiedSeller')}</Text>
+                  <TouchableOpacity
+                    style={styles.tierUpgradeBtn}
+                    onPress={() => navigation.navigate('Verification')}
+                  >
+                    <Text style={styles.tierUpgradeBtnText}>{t('settings.tierUpgrade')}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.tierRow}>
+                  <View style={styles.tierDotWrap}>
+                    <View style={[styles.tierDot, { backgroundColor: COLORS.surface2 }]} />
+                  </View>
+                  <Text style={[styles.tierLabel, styles.tierGreyed]}>{t('settings.businessSeller')}</Text>
+                  <MaterialCommunityIcons name="lock-outline" size={14} color={COLORS.surface2} />
+                </View>
+              </>
+            )}
+            {user?.seller_tier === 'verified' && (
+              <>
+                <View style={styles.tierRow}>
+                  <View style={styles.tierDotWrap}>
+                    <View style={[styles.tierDot, { backgroundColor: COLORS.green }]} />
+                  </View>
+                  <Text style={styles.tierLabel}>{t('settings.verifiedSeller')}</Text>
+                  <Text style={[styles.tierStatus, { color: COLORS.green }]}>{t('settings.tierActive')}</Text>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.tierRow}>
+                  <View style={styles.tierDotWrap}>
+                    <View style={[styles.tierDot, { backgroundColor: COLORS.surface2 }]} />
+                  </View>
+                  <Text style={[styles.tierLabel, styles.tierGreyed]}>{t('settings.businessSeller')}</Text>
+                  <TouchableOpacity
+                    style={styles.tierUpgradeBtn}
+                    onPress={() => navigation.navigate('BusinessSubscription')}
+                  >
+                    <Text style={styles.tierUpgradeBtnText}>{t('settings.tierUpgrade')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+            {user?.seller_tier === 'business' && (
+              <>
+                <View style={styles.tierRow}>
+                  <View style={styles.tierDotWrap}>
+                    <View style={[styles.tierDot, { backgroundColor: COLORS.green }]} />
+                  </View>
+                  <Text style={styles.tierLabel}>{t('settings.businessSeller')}</Text>
+                  <Text style={[styles.tierStatus, { color: COLORS.green }]}>{t('settings.tierActive')}</Text>
+                </View>
               </>
             )}
           </View>
-        </>
-      )}
 
-      {/* ── Upgrade ── */}
-      {isSeller && user?.seller_tier === 'casual' && (
-        <>
-          <SectionHeader title={t('settings.upgradeSeller')} />
-          <View style={styles.card}>
-            <SettingRow
-              icon="shield-check-outline"
-              iconColor={COLORS.green}
-              label={t('settings.upgradeSeller')}
-              value={t('settings.verifiedSeller')}
-              onPress={() => { navigation.navigate('SellerOnboarding'); }}
-            />
-          </View>
-        </>
-      )}
-
-      {isSeller && user?.seller_tier === 'verified' && (
-        <>
-          <SectionHeader title={t('settings.upgradeSeller')} />
-          <View style={styles.card}>
-            <SettingRow
-              icon="storefront-outline"
-              iconColor={COLORS.coral}
-              label={t('settings.goBusiness')}
-              value={t('settings.businessSeller')}
-              onPress={() => { navigation.navigate('BusinessSubscription'); }}
-            />
-          </View>
-        </>
-      )}
-
-      {isSeller && user?.seller_tier === 'business' && (
-        <>
-          <SectionHeader title={t('settings.subscription')} />
-          <View style={styles.card}>
-            <SettingRow
-              icon="calendar-clock-outline"
-              iconColor={COLORS.green}
-              label={t('settings.businessSubscription')}
-              onPress={() => { navigation.navigate('BusinessSubscription'); }}
-            />
-            <View style={styles.divider} />
-            <SettingRow
-              icon="tag-outline"
-              iconColor={COLORS.coral}
-              label={t('me.promotions')}
-              onPress={() => { navigation.navigate('PromoManagement'); }}
-            />
-          </View>
+          {/* ── Subscription (business) ── */}
+          {isSeller && user?.seller_tier === 'business' && (
+            <View style={styles.card}>
+              <SettingRow
+                icon="calendar-clock-outline"
+                iconColor={COLORS.green}
+                label={t('settings.businessSubscription')}
+                onPress={() => { navigation.navigate('BusinessSubscription'); }}
+              />
+              <View style={styles.divider} />
+              <SettingRow
+                icon="tag-outline"
+                iconColor={COLORS.coral}
+                label={t('me.promotions')}
+                onPress={() => { navigation.navigate('PromoManagement'); }}
+              />
+            </View>
+          )}
         </>
       )}
 
@@ -310,6 +363,28 @@ export default function SettingsScreen({ navigation }: Props) {
           </React.Fragment>
         ))}
       </View>
+
+      {/* ── Location ── */}
+      {Platform.OS !== 'web' && (
+        <>
+          <SectionHeader title={t('settings.location')} />
+          <View style={styles.card}>
+            <SettingRow
+              icon="crosshairs-gps"
+              iconColor={locationStatus === 'granted' ? COLORS.green : COLORS.coral}
+              label={t('settings.locationMap')}
+              value={locationStatus === 'granted' ? t('settings.locationGranted') : t('settings.locationNotGranted')}
+              onPress={locationStatus !== 'granted' ? handleRequestLocation : undefined}
+              chevron={locationStatus !== 'granted'}
+              rightContent={
+                locationStatus === 'granted' ? (
+                  <MaterialCommunityIcons name="check-circle" size={18} color={COLORS.green} />
+                ) : undefined
+              }
+            />
+          </View>
+        </>
+      )}
 
       {/* ── Logout ── */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
@@ -418,4 +493,20 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
   },
   logoutText: { color: COLORS.coral, fontWeight: '600', fontSize: 14 },
+
+  /* Tier progression */
+  tierRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 13,
+  },
+  tierDotWrap: { width: 20, alignItems: 'center' },
+  tierDot: { width: 10, height: 10, borderRadius: 5 },
+  tierLabel: { flex: 1, fontSize: 14, color: COLORS.text, fontWeight: '600' },
+  tierGreyed: { color: COLORS.text2, fontWeight: '400' },
+  tierStatus: { fontSize: 12, fontWeight: '700' },
+  tierUpgradeBtn: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: RADIUS.row, backgroundColor: COLORS.blue,
+  },
+  tierUpgradeBtnText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
 });

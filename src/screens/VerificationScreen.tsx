@@ -53,6 +53,7 @@ export default function VerificationScreen() {
   const [frontOcr, setFrontOcr] = useState<OcrFields>({});
   const [backOcr, setBackOcr] = useState<OcrFields>({});
   const [faceScore, setFaceScore] = useState<number | null>(null);
+  const [frontFaceData, setFrontFaceData] = useState<any>(null);
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const [rejectedReasons, setRejectedReasons] = useState<string | null>(null);
@@ -140,6 +141,12 @@ export default function VerificationScreen() {
         setFrontOcr(fields);
         setIdFrontUrl(url);
         if (uploadRes.deleteUrl) setIdFrontDeleteUrl(uploadRes.deleteUrl);
+        try {
+          const faces = await FaceDetection.detect(uri, { detectionMode: 1 });
+          if (faces.length > 0) {
+            setFrontFaceData(faces[0]);
+          }
+        } catch { /* face detection on CIN is best-effort */ }
         setStep('cinBack');
       }
     } catch (e: any) {
@@ -169,12 +176,38 @@ export default function VerificationScreen() {
           try {
             const faces = await FaceDetection.detect(photo.uri);
             if (faces.length > 0) {
-              setFaceScore(0.85);
+              if (frontFaceData) {
+                const selfieFace = faces[0];
+                const cinBounds = frontFaceData.bounds;
+                const selfieBounds = selfieFace.bounds;
+                const cinRatio = cinBounds.width / cinBounds.height;
+                const selfieRatio = selfieBounds.width / selfieBounds.height;
+                const ratioDiff = Math.abs(cinRatio - selfieRatio);
+                const cinSize = cinBounds.width * cinBounds.height;
+                const selfieSize = selfieBounds.width * selfieBounds.height;
+                const sizeRatio = Math.min(cinSize, selfieSize) / Math.max(cinSize, selfieSize);
+                const hasLandmarks = (selfieFace.landmarks?.length || 0) > 0;
+                let score = 0.5;
+                if (ratioDiff < 0.3) score += 0.2;
+                else if (ratioDiff < 0.5) score += 0.1;
+                if (sizeRatio > 0.3) score += 0.15;
+                if (hasLandmarks) score += 0.15;
+                setFaceScore(Math.round(Math.min(1, score) * 100) / 100);
+              } else {
+                const selfieFace = faces[0];
+                const bounds = selfieFace.bounds;
+                const ratio = bounds.width / bounds.height;
+                const hasLandmarks = (selfieFace.landmarks?.length || 0) > 0;
+                let score = 0.5;
+                if (ratio > 0.5 && ratio < 1.2) score += 0.2;
+                if (hasLandmarks) score += 0.15;
+                setFaceScore(Math.round(Math.min(1, score) * 100) / 100);
+              }
             } else {
-              setFaceScore(0.3);
+              setFaceScore(0.2);
             }
           } catch {
-            setFaceScore(0.75);
+            setFaceScore(0.3);
           }
 
           setStep('review');

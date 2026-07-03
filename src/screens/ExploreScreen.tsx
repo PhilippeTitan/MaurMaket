@@ -47,11 +47,9 @@ const NUM_COLS = 2;
 const COL_GAP = 6;
 const SIDE_PAD = 8;
 const CARD_W = (SCREEN_W - SIDE_PAD * 2 - COL_GAP) / NUM_COLS;
-
 const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
 const MIN_H = CARD_W * 0.6;
 const MAX_H = SCREEN_H * 0.52;
-const FOOTER_H = 40;
 
 export default function ExploreScreen({ navigation }: Props) {
   const { t } = useTranslation();
@@ -240,12 +238,6 @@ export default function ExploreScreen({ navigation }: Props) {
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
-            <MaterialCommunityIcons name="tune-variant" size={30} color={COLORS.text} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.filterBar}>
           {(sortBy !== 'newest' || minPrice || maxPrice) && (
             <TouchableOpacity
               style={styles.clearFilterBtn}
@@ -255,12 +247,27 @@ export default function ExploreScreen({ navigation }: Props) {
               <Text style={styles.clearFilterText}>Clear</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
+            <MaterialCommunityIcons name="tune-variant" size={30} color={COLORS.text} />
+          </TouchableOpacity>
         </View>
+      </View>
 
-        <View style={styles.chipsWrapper}>
+      <View style={styles.chipsWrapper}>
+          <View style={styles.chipFadeLeftWrap} pointerEvents="none">
+            {[1,.93,.86,.79,.72,.65,.58,.51,.44,.37,.30,.23,.16,.09,.02].map((op, i) => (
+              <View key={i} style={{ flex: 1, backgroundColor: `rgba(13,17,23,${op})` }} />
+            ))}
+          </View>
+          <View style={styles.chipFadeRightWrap} pointerEvents="none">
+            {[.02,.09,.16,.23,.30,.37,.44,.51,.58,.65,.72,.79,.86,.93,1].map((op, i) => (
+              <View key={i} style={{ flex: 1, backgroundColor: `rgba(13,17,23,${op})` }} />
+            ))}
+          </View>
           <FlatList
             ref={categoryListRef}
             horizontal
+            overScrollMode="never"
             data={[{ id: '', name: t('explore.all') }, ...categories]}
             keyExtractor={c => String(c.id || 'all')}
             showsHorizontalScrollIndicator={false}
@@ -287,22 +294,7 @@ export default function ExploreScreen({ navigation }: Props) {
               );
             }}
           />
-          <LinearGradient
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            colors={[COLORS.bg, 'transparent']}
-            style={styles.chipFadeLeft}
-            pointerEvents="none"
-          />
-          <LinearGradient
-            start={{ x: 1, y: 0 }}
-            end={{ x: 0, y: 0 }}
-            colors={[COLORS.bg, 'transparent']}
-            style={styles.chipFadeRight}
-            pointerEvents="none"
-          />
         </View>
-      </View>
 
       {loading ? (
         <ActivityIndicator size="small" color={COLORS.coral} style={{ marginTop: 40 }} />
@@ -382,7 +374,7 @@ export default function ExploreScreen({ navigation }: Props) {
               <TouchableOpacity
                 key={option.value}
                 style={[styles.modalItem, sortBy === option.value && styles.modalItemActive]}
-                onPress={() => setSortBy(option.value)}
+                onPress={() => { setSortBy(option.value); setSortModal(false); }}
               >
                 <MaterialCommunityIcons
                   name={sortBy === option.value ? 'radiobox-marked' : 'radiobox-blank'}
@@ -458,12 +450,15 @@ const styles = StyleSheet.create({
 
   chipsWrapper: { position: 'relative', backgroundColor: COLORS.bg },
   chipsRow: { paddingHorizontal: 12, gap: 8, paddingVertical: 8 },
-  chipFadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 28, zIndex: 2 },
-  chipFadeRight: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 28, zIndex: 2 },
-  filterBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingBottom: 6,
+  chipFadeLeftWrap: {
+    position: 'absolute', left: 0, top: 0, bottom: 0, width: 28, zIndex: 3,
+    flexDirection: 'row',
   },
+  chipFadeRightWrap: {
+    position: 'absolute', right: 0, top: 0, bottom: 0, width: 28, zIndex: 3,
+    flexDirection: 'row',
+  },
+
   filterBtn: {
     width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',

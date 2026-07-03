@@ -17,9 +17,9 @@ import type { Product } from '../types';
 import { useTranslation } from '../i18n';
 
 const TIER_MARKER: Record<string, { size: number; gradient: string; tailColor: string; iconColor: string }> = {
-  casual:   { size: 42, gradient: '#30363D',            tailColor: '#30363D', iconColor: '#8B949E' },
-  verified: { size: 46, gradient: 'linear-gradient(135deg,#5DCAA5,#1D9E75)', tailColor: '#1D9E75', iconColor: '#5DCAA5' },
-  business: { size: 50, gradient: 'linear-gradient(135deg,#EF9F27,#BA7517)', tailColor: '#BA7517', iconColor: '#EF9F27' },
+  casual:   { size: 42, gradient: '#F5A623',            tailColor: '#F5A623', iconColor: '#F5A623' },
+  verified: { size: 46, gradient: '#1D9E75',            tailColor: '#1D9E75', iconColor: '#5DCAA5' },
+  business: { size: 50, gradient: '#E04050',            tailColor: '#E04050', iconColor: '#FF6B7A' },
 };
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -43,7 +43,7 @@ interface NearbySeller {
   review_count: number;
 }
 
-function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: number } | null, failedImages: Set<string>) {
+function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: number } | null, failedImages: Set<string>, userAvatarUrl: string | null) {
   const centerLat = myLocation?.lat ?? 18.5944;
   const centerLng = myLocation?.lng ?? -72.3074;
   const zoom = myLocation ? 14 : 12;
@@ -77,6 +77,9 @@ function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: n
     `;
   }).join('\n    ');
 
+  const hasUserAvatar = !!userAvatarUrl;
+  const escapedUserAvatar = hasUserAvatar ? userAvatarUrl.replace(/'/g, "\\'") : '';
+
   const userMarker = myLocation ? `
     L.marker([${myLocation.lat}, ${myLocation.lng}], {
       icon: L.divIcon({
@@ -84,8 +87,9 @@ function buildMapHtml(sellers: NearbySeller[], myLocation: { lat: number; lng: n
         html: '<div class="user-marker">' +
           '<div style="position:absolute;top:-9px;left:-9px;width:66px;height:66px;border-radius:50%;background:rgba(55,138,221,0.15)"></div>' +
           '<div style="width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#378ADD,#185FA5);padding:3px;box-shadow:0 0 0 3px rgba(55,138,221,0.25)">' +
-            '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center">' +
-              '<svg viewBox="0 0 24 24" width="22" height="22" fill="#378ADD"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg>' +
+            '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
+              ${hasUserAvatar ? `'<img src="${escapedUserAvatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>'` : ''} +
+              '<div class="snap-fallback" style="display:${hasUserAvatar ? 'none' : 'flex'};width:100%;height:100%"><svg viewBox="0 0 24 24" width="22" height="22" fill="#378ADD"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg></div>' +
             '</div>' +
           '</div>' +
           '<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #185FA5;margin:0 auto"></div>' +
@@ -177,6 +181,7 @@ export default function MapScreen() {
   const [latestItems, setLatestItems] = useState<Product[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [avatarViewerUrl, setAvatarViewerUrl] = useState<string | null>(null);
+  const [showEmptyBanner, setShowEmptyBanner] = useState(false);
   const locationWatcher = useRef<any>(null);
 
   const isSeller = store.isSeller;
@@ -311,6 +316,16 @@ export default function MapScreen() {
   }, [selectedSeller?.id]);
 
   useEffect(() => {
+    if (sellers.length === 0 && !loading && !selectedSeller) {
+      setShowEmptyBanner(true);
+      const timer = setTimeout(() => setShowEmptyBanner(false), 3000);
+      return () => clearTimeout(timer);
+    } else {
+      setShowEmptyBanner(false);
+    }
+  }, [sellers.length, loading, selectedSeller?.id]);
+
+  useEffect(() => {
     if (mapReady && webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         (function() {
@@ -324,8 +339,9 @@ export default function MapScreen() {
               html: '<div class="user-marker">' +
                 '<div style="position:absolute;top:-9px;left:-9px;width:66px;height:66px;border-radius:50%;background:rgba(55,138,221,0.15)"></div>' +
                 '<div style="width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#378ADD,#185FA5);padding:3px;box-shadow:0 0 0 3px rgba(55,138,221,0.25)">' +
-                  '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center">' +
-                    '<svg viewBox="0 0 24 24" width="22" height="22" fill="#378ADD"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg>' +
+                  '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
+                    ${hasUserAvatarForMap ? `'<img src="${escapedUserAvatarForMap}" style="width:100%;height:100%;border-radius:50%;object-fit:cover" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>'` : ''} +
+                    '<div class="snap-fallback" style="display:${hasUserAvatarForMap ? 'none' : 'flex'};width:100%;height:100%"><svg viewBox="0 0 24 24" width="22" height="22" fill="#378ADD"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg></div>' +
                   '</div>' +
                 '</div>' +
                 '<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #185FA5;margin:0 auto"></div>' +
@@ -396,6 +412,7 @@ export default function MapScreen() {
     try {
       await setSellerLocation(myLocation.lat, myLocation.lng);
       setLocationSaved(true);
+      fetchSellers(myLocation.lat, myLocation.lng, 20);
       setTimeout(() => setLocationSaved(false), 2000);
     } catch {}
     setSettingLocation(false);
@@ -438,21 +455,26 @@ export default function MapScreen() {
     );
   }
 
-  const mapHtml = buildMapHtml(sellers, myLocation, failedImages);
+  const mapHtml = buildMapHtml(sellers, myLocation, failedImages, getImageUrl(store.user?.avatar_url) || null);
   const buttonBottom = sheetBottom + (selectedSeller ? PEEK_HEIGHT : 0) + 12;
+  const userAvatarForMap = getImageUrl(store.user?.avatar_url) || null;
+  const hasUserAvatarForMap = !!userAvatarForMap;
+  const escapedUserAvatarForMap = hasUserAvatarForMap ? userAvatarForMap.replace(/'/g, "\\'") : '';
 
   return (
     <View style={styles.container}>
       {Platform.OS !== 'web' ? (
         <WebView
           ref={webViewRef}
-          source={{ html: mapHtml }}
+          source={{ html: mapHtml, baseUrl: 'https://maurmaket.local' }}
           style={styles.map}
           onMessage={handleWebViewMessage}
           onLoadEnd={() => setMapReady(true)}
           javaScriptEnabled
           domStorageEnabled
           originWhitelist={['*']}
+          allowUniversalAccessFromFileURLs
+          allowFileAccess
           scrollEnabled={false}
           bounces={false}
         />
@@ -520,15 +542,13 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {sellers.length === 0 && Platform.OS !== 'web' && !selectedSeller && (
-        <View style={[styles.emptyFloating, { bottom: sheetBottom + 12 }]}>
-          <MaterialCommunityIcons name="map-marker-off-outline" size={28} color={COLORS.text2} />
-          <Text style={styles.emptyText}>No sellers nearby</Text>
-          <Text style={styles.emptySubtext}>Sellers appear here after setting their location</Text>
+      {showEmptyBanner && (
+        <View style={[styles.emptyBanner, { top: insets.top + SPACING.sm + 44 }]}>
+          <MaterialCommunityIcons name="map-marker-off-outline" size={16} color={COLORS.text2} />
+          <Text style={styles.emptyBannerText}>No sellers nearby</Text>
           {isSeller && (
-            <TouchableOpacity style={styles.emptyAction} onPress={handleSetMyLocation} activeOpacity={0.7}>
-              <MaterialCommunityIcons name="map-marker-plus" size={14} color={COLORS.white} />
-              <Text style={styles.emptyActionText}>Set my location</Text>
+            <TouchableOpacity onPress={handleSetMyLocation} activeOpacity={0.7}>
+              <Text style={styles.emptyBannerAction}>Set location</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -747,21 +767,15 @@ const styles = StyleSheet.create({
   },
   setLocationBtnSaved: { backgroundColor: COLORS.green },
 
-  emptyFloating: {
+  emptyBanner: {
     position: 'absolute', left: SPACING.lg, right: SPACING.lg,
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
-    borderWidth: 1, borderColor: COLORS.border,
-    alignItems: 'center', justifyContent: 'center', paddingVertical: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(13,17,23,0.85)', borderRadius: RADIUS.card,
+    paddingHorizontal: 14, paddingVertical: 10,
     zIndex: 8,
   },
-  emptyText: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginTop: 10 },
-  emptySubtext: { color: COLORS.text2, fontSize: 12, marginTop: 4, textAlign: 'center' },
-  emptyAction: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginTop: 14, paddingHorizontal: 16, paddingVertical: 10,
-    backgroundColor: COLORS.coral, borderRadius: RADIUS.card,
-  },
-  emptyActionText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
+  emptyBannerText: { flex: 1, color: COLORS.text2, fontSize: 13 },
+  emptyBannerAction: { color: COLORS.coral, fontSize: 13, fontWeight: '700' },
 
   dragSheet: {
     position: 'absolute', left: 0, right: 0,

@@ -6,6 +6,15 @@
 ## Safety Rules
 - **NEVER kill node.exe processes**: OpenCode runs on Node.js. Killing random `node.exe` processes can kill OpenCode itself. Never use `taskkill`, `kill`, or any command that terminates node processes unless explicitly told to kill a specific process you started.
 
+## Dev Workflow
+- **Local backend**: Port 3002 (port 3001 blocked by Windows). Start with `set PORT=3002 && node server.js` or use `start-backend.bat`. Batch file sets `PORT=3002` automatically.
+- **Local frontend**: Expo Go on phone via LAN. Start with `npx expo start --clear` or use `start-frontend.bat`.
+- **Batch files**: `start-backend.bat` and `start-frontend.bat` in project root for quick restart.
+- **Frontend IP**: Changes with network. Check `ipconfig` for current Wi-Fi IPv4. Update `src/api.ts` lines 23, 29 (`API_BASE` and `UPLOAD_BASE`) with new IP for native dev.
+- **Production**: Backend on `maurmaket.onrender.com`. `isDev` flag in `api.ts` (line 18) gates dev vs prod URLs — never change the production URL.
+- **When user reports frontend issue**: Check both `src/api.ts` (is the URL/IP correct?) AND the backend CMD window (any crashes?). Ask which CMD windows are open.
+- **When user reports backend issue**: Check `curl localhost:3002/api/health`. If backend crashed, check the backend CMD window for error output.
+
 ## Overview
 Haitian marketplace (e-commerce) app connecting buyers and sellers. React Native/Expo mobile app (TikTok-style vertical swipe feed) + Express.js backend. MonCash payments, seller dashboard, commission system.
 
