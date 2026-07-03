@@ -243,7 +243,7 @@ export default function ExploreScreen({ navigation }: Props) {
               style={styles.clearFilterBtn}
               onPress={() => { setSortBy('newest'); setMinPrice(''); setMaxPrice(''); }}
             >
-              <MaterialCommunityIcons name="close" size={14} color={COLORS.text} />
+              <MaterialCommunityIcons name="close" size={25} color={COLORS.text} />
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
