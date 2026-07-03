@@ -207,6 +207,8 @@ const translations: Record<Language, Record<string, string>> = {
     'settings.locationDeniedMessage': 'Location permission is needed to show nearby sellers on the map. Please enable it in your device settings.',
     'settings.tierActive': 'Active',
     'settings.tierUpgrade': 'Upgrade',
+    'settings.emailVerified': 'Email Verified',
+    'settings.verifyEmail': 'Verify',
 
     'productDetail.addToCart': 'Add to Cart',
     'productDetail.buyNow': 'Buy Now',
@@ -706,6 +708,8 @@ const translations: Record<Language, Record<string, string>> = {
     'settings.locationDeniedMessage': 'Pèmisyon kote nesesè pou montre vandè ki pre sou kat la. Tanpri aktive li nan paramèt aparèy ou.',
     'settings.tierActive': 'Aktif',
     'settings.tierUpgrade': 'Mete ajou',
+    'settings.emailVerified': 'Imèl Verifye',
+    'settings.verifyEmail': 'Verifye',
 
     'productDetail.addToCart': 'Ajoute nan Panyen',
     'productDetail.buyNow': 'Achte Kounye a',
@@ -1205,6 +1209,8 @@ const translations: Record<Language, Record<string, string>> = {
     'settings.locationDeniedMessage': 'La permission de localisation est nécessaire pour afficher les vendeurs à proximité sur la carte. Veuillez l\'activer dans les paramètres de votre appareil.',
     'settings.tierActive': 'Actif',
     'settings.tierUpgrade': 'Mettre à niveau',
+    'settings.emailVerified': 'Email Vérifié',
+    'settings.verifyEmail': 'Vérifier',
 
     'productDetail.addToCart': 'Ajouter au panier',
     'productDetail.buyNow': 'Acheter maintenant',
