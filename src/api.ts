@@ -20,13 +20,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://192.168.1.10:3002/api'
+    ? 'http://192.168.1.10:3001/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://192.168.1.10:3002'
+    ? 'http://192.168.1.10:3001'
     : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(
@@ -142,6 +142,8 @@ export const login = (email: string, password: string) =>
   request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
 
 export const getMe = () => request('/auth/me');
+export const savePushToken = (pushToken: string) =>
+  request('/users/push-token', { method: 'POST', body: JSON.stringify({ pushToken }) });
 
 // Email Verification
 export const sendVerifyCode = (language?: string) =>
@@ -330,8 +332,8 @@ export const createConversation = (data: Record<string, string>) =>
   request('/conversations', { method: 'POST', body: JSON.stringify(data) });
 export const getMessages = (conversationId: string) =>
   request(`/conversations/${conversationId}/messages`);
-export const sendMessage = (conversationId: string, content: string) =>
-  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content }) });
+export const sendMessage = (conversationId: string, content: string, imageUrl?: string) =>
+  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text' }) });
 export const getConversationUnreadCount = () => request('/conversations/unread-count');
 
 // Promos

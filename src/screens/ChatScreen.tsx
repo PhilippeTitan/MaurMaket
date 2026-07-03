@@ -6,13 +6,14 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage, getImageUrl } from '../api';
+import { getMessages, sendMessage as apiSendMessage, getImageUrl, uploadImage } from '../api';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Message } from '../types';
 import { store } from '../store';
+import * as ImagePicker from 'expo-image-picker';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -65,12 +66,36 @@ export default function ChatScreen({ route, navigation }: Props) {
     setSending(false);
   };
 
+  const handleSendImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        allowsEditing: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      setSending(true);
+      const r = await uploadImage(result.assets[0].uri);
+      await apiSendMessage(conversationId, '', r.url);
+      await fetchMessages();
+    } catch {
+      Alert.alert(t('common.error'), t('chat.sendFailed'));
+    }
+    setSending(false);
+  };
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.sender_id === store.user?.id;
+    const isImage = item.message_type === 'image' && item.image_url;
     return (
-      <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
-        <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.content}</Text>
-        <Text style={styles.bubbleTime}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+      <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}>
+        {isImage ? (
+          <Image source={{ uri: getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" />
+        ) : null}
+        {item.content ? (
+          <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.content}</Text>
+        ) : null}
+        <Text style={[styles.bubbleTime, isImage && styles.bubbleTimeImage]}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
       </View>
     );
   };
@@ -188,6 +213,9 @@ export default function ChatScreen({ route, navigation }: Props) {
       )}
 
       <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
+        <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending}>
+          <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.text2} />
+        </TouchableOpacity>
         <TextInput
           style={styles.input}
           value={text}
@@ -196,7 +224,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           placeholderTextColor={COLORS.text2}
           multiline
         />
-        <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={sending || !text.trim()}>
+        <TouchableOpacity style={[styles.sendBtn, { opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()}>
           <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
         </TouchableOpacity>
       </View>
@@ -250,7 +278,10 @@ const styles = StyleSheet.create({
   bubbleThem: { alignSelf: 'flex-start', backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderBottomLeftRadius: 4 },
   bubbleText: { fontSize: 14, color: COLORS.text },
   bubbleTextMe: { color: COLORS.white },
+  bubbleImage: { padding: 4 },
+  chatImage: { width: 200, height: 200, borderRadius: RADIUS.media },
   bubbleTime: { fontSize: 10, color: COLORS.text2, marginTop: 2, alignSelf: 'flex-end' },
+  bubbleTimeImage: { marginTop: 4 },
   offerDock: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -294,6 +325,10 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.pill, paddingHorizontal: 14, paddingVertical: 10, color: COLORS.text,
     fontSize: 14, maxHeight: 100,
+  },
+  cameraBtn: {
+    width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   sendBtn: {
     width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.coral,

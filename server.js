@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import cron from 'node-cron';
 import nodemailer from 'nodemailer';
+import { Expo } from 'expo-server-sdk';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -439,6 +440,15 @@ async function runMigrations() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS location_lat DECIMAL(10,7);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS location_lng DECIMAL(10,7);
     `);
+    // Push token
+    await c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;`);
+    // Message media columns
+    await c.query(`
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type VARCHAR(20) DEFAULT 'text';
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_url TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_width INTEGER;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_height INTEGER;
+    `);
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -514,6 +524,28 @@ async function createNotification(userId, type, title, body, data, db) {
     );
   } catch (err) {
     console.error('Failed to create notification:', err);
+  }
+  // Fire-and-forget push notification
+  sendPushNotification(userId, title, body, data);
+}
+
+// Push notification helper (fire-and-forget)
+const expo = new Expo();
+async function sendPushNotification(userId, title, body, data) {
+  try {
+    const result = await pool.query('SELECT push_token FROM users WHERE id = $1', [userId]);
+    const token = result.rows[0]?.push_token;
+    if (!token || !Expo.isExpoPushToken(token)) return;
+    await expo.sendPushNotificationsAsync([{
+      to: token,
+      title,
+      body: body || '',
+      data: data || {},
+      sound: 'default',
+      badge: 1,
+    }]);
+  } catch (err) {
+    console.error('Push notification failed:', err.message);
   }
 }
 
@@ -673,6 +705,18 @@ app.put('/api/auth/profile', authRequired, async (req, res) => {
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Email already in use' });
     console.error('Profile update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/users/push-token', authRequired, async (req, res) => {
+  const { pushToken } = req.body;
+  if (!pushToken) return res.status(400).json({ error: 'Push token required' });
+  try {
+    await pool.query('UPDATE users SET push_token = $1 WHERE id = $2', [pushToken, req.user.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Push token save error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1320,6 +1364,10 @@ app.get('/api/wishlist', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT w.*, p.name, p.price, p.stock,
+              p.sale_price, p.sale_starts_at, p.sale_ends_at,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
               (SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS image_url
        FROM wishlists w JOIN products p ON w.product_id = p.id
        WHERE w.user_id = $1
@@ -1356,7 +1404,7 @@ app.post('/api/follow/:sellerId', authRequired, async (req, res) => {
     await pool.query('INSERT INTO follows (follower_id, seller_id) VALUES ($1, $2)', [req.user.id, req.params.sellerId]);
     const follower = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
     const followerName = follower.rows[0]?.full_name || 'Someone';
-    createNotification(req.params.sellerId, 'new_follower', 'New Follower', `${followerName} started following you`, {});
+    createNotification(req.params.sellerId, 'new_follower', 'New Follower', `${followerName} started following you`, { followerId: req.user.id });
     res.json({ following: true });
   } catch (err) {
     console.error('Follow toggle error:', err);
@@ -1793,6 +1841,17 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
+    // Notify followers of new product
+    try {
+      const followers = await pool.query('SELECT follower_id FROM follows WHERE seller_id = $1', [req.user.id]);
+      if (followers.rows.length > 0) {
+        const sellerName = (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name || 'A seller';
+        for (const f of followers.rows) {
+          createNotification(f.follower_id, 'new_product_from_followed', `New Listing from ${sellerName}`,
+            `${sellerName} just listed "${name}" for Rs ${price}`, { productId: product.id, sellerId: req.user.id });
+        }
+      }
+    } catch (e) { console.error('Follower notification error:', e.message); }
     res.status(201).json({ product });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -2122,6 +2181,12 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
     );
     await client.query('COMMIT');
     logOrderEvent(req.params.id, 'status_change', req.user.id, 'pending', 'cancelled', 'Cancelled by buyer');
+    // Notify sellers of cancelled order
+    const cancelledSellers = await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [req.params.id]);
+    for (const row of cancelledSellers.rows) {
+      createNotification(row.seller_id, 'order_cancelled', 'Order Cancelled',
+        `A buyer cancelled their order.`, { orderId: req.params.id });
+    }
     res.json({ cancelled: true });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -2511,12 +2576,12 @@ app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
     );
     await logOrderEvent(req.params.id, 'status_change', req.user.id, order.status, 'completed', 'Order completed', client);
     await client.query('COMMIT');
-    const sellerOfOrder = await pool.query(
-      'SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1',
+    const sellersOfOrder = await pool.query(
+      'SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1',
       [req.params.id]
     );
-    if (sellerOfOrder.rows.length > 0) {
-      createNotification(sellerOfOrder.rows[0].seller_id, 'order_status', 'Order Completed', 'An order has been marked as completed', { orderId: req.params.id });
+    for (const row of sellersOfOrder.rows) {
+      createNotification(row.seller_id, 'order_status', 'Order Completed', 'An order has been marked as completed', { orderId: req.params.id });
     }
     res.json({ updated: true, status: 'completed' });
   } catch (err) {
@@ -2759,6 +2824,12 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
 
     createNotification(o.buyer_id, 'order_status', 'Order Refunded',
       `Rs ${totalRefund.toFixed(0)} refunded for order`, { orderId: req.params.id });
+
+    // Notify sellers that escrow was refunded
+    for (const escrow of escrows.rows) {
+      createNotification(escrow.seller_id, 'escrow_refunded', 'Order Refunded',
+        `An order has been refunded. Rs ${parseFloat(escrow.gross_amount).toFixed(0)} has been returned to the buyer.`, { orderId: req.params.id });
+    }
 
     res.json({ refunded: true, amount: totalRefund });
   } catch (err) {
@@ -3100,6 +3171,15 @@ app.post('/api/disputes', authRequired, async (req, res) => {
       `INSERT INTO disputes (order_id, raised_by, reason, description) VALUES ($1, $2, $3, $4) RETURNING *`,
       [orderId, req.user.id, reason, description || null]
     );
+    // Notify the other party of the dispute
+    const otherPartyId = order.buyer_id === req.user.id
+      ? (await pool.query('SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1', [orderId])).rows[0]?.seller_id
+      : order.buyer_id;
+    if (otherPartyId) {
+      const raiserName = (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name || 'Someone';
+      createNotification(otherPartyId, 'dispute_opened', 'Dispute Opened',
+        `${raiserName} opened a dispute on this order: ${reason}`, { disputeId: result.rows[0].id, orderId, reason });
+    }
     res.status(201).json({ dispute: result.rows[0] });
   } catch (err) {
     console.error('Dispute create error:', err);
@@ -3181,6 +3261,21 @@ app.put('/api/admin/disputes/:id', authRequired, adminRequired, async (req, res)
       `UPDATE disputes SET status = $1, resolution = COALESCE($2, resolution), updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
       [status, resolution || null, req.params.id]
     );
+    // Notify both parties of dispute update
+    const disputeInfo = await pool.query(
+      `SELECT d.order_id, d.raised_by, o.buyer_id FROM disputes d JOIN orders o ON d.order_id = o.id WHERE d.id = $1`,
+      [req.params.id]
+    );
+    if (disputeInfo.rows.length > 0) {
+      const { order_id, raised_by, buyer_id } = disputeInfo.rows[0];
+      const sellerRes = await pool.query('SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1', [order_id]);
+      const sellerId = sellerRes.rows[0]?.seller_id;
+      const msg = resolution ? `Your dispute has been ${status}. ${resolution}` : `Your dispute has been ${status}.`;
+      const parties = [buyer_id, sellerId].filter(Boolean);
+      for (const pid of parties) {
+        createNotification(pid, 'dispute_resolved', 'Dispute Updated', msg, { disputeId: req.params.id, orderId: order_id });
+      }
+    }
     res.json({ updated: true });
   } catch (err) {
     console.error('Admin dispute update error:', err);
@@ -3202,7 +3297,7 @@ app.post('/api/orders/:id/note', authRequired, sellerRequired, async (req, res) 
     );
     if (check.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     logOrderEvent(req.params.id, 'note_added', req.user.id, null, null, note.trim());
-    createNotification(check.rows[0].buyer_id, 'order_status', 'Seller Note', note.trim(), { orderId: req.params.id });
+    createNotification(check.rows[0].buyer_id, 'order_note', 'Seller Note', note.trim(), { orderId: req.params.id });
     res.json({ updated: true });
   } catch (err) {
     console.error('Order note error:', err);
@@ -3218,7 +3313,7 @@ app.get('/api/conversations', authRequired, async (req, res) => {
       `SELECT c.*, 
               CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
               u.full_name AS other_party_name, u.avatar_url AS other_party_avatar,
-              (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message,
+              (SELECT CASE WHEN message_type = 'image' THEN '📷 Photo' ELSE content END FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message,
               (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_id != $1 AND is_read = false) AS unread_count
        FROM conversations c
        JOIN users u ON u.id = CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END
@@ -3295,8 +3390,10 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
 });
 
 app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
-  const { content } = req.body;
-  if (!content || !content.trim()) return res.status(400).json({ error: 'Message content required' });
+  const { content, imageUrl, messageType } = req.body;
+  const msgType = messageType || 'text';
+  if (msgType === 'image' && !imageUrl) return res.status(400).json({ error: 'Image URL required for image messages' });
+  if (msgType === 'text' && (!content || !content.trim())) return res.status(400).json({ error: 'Message content required' });
   try {
     const conv = await pool.query(
       'SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
@@ -3304,13 +3401,18 @@ app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
     );
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
     const result = await pool.query(
-      `INSERT INTO messages (conversation_id, sender_id, content) VALUES ($1, $2, $3) RETURNING *`,
-      [req.params.id, req.user.id, content.trim()]
+      `INSERT INTO messages (conversation_id, sender_id, content, message_type, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.params.id, req.user.id, content?.trim() || null, msgType, imageUrl || null]
     );
     await pool.query(
       'UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1',
       [req.params.id]
     );
+    // Notify the other party of new message
+    const recipientId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
+    const senderName = (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name || 'Someone';
+    const preview = content.trim().length > 80 ? content.trim().substring(0, 80) + '...' : content.trim();
+    createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, { conversationId: req.params.id, senderId: req.user.id });
     res.status(201).json({ message: result.rows[0] });
   } catch (err) {
     console.error('Message send error:', err);
@@ -3452,6 +3554,12 @@ app.post('/api/payments/webhook', async (req, res) => {
             return res.status(200).json({ received: true, stock_issue: true });
           }
           await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.product_id]);
+          // Check if product sold out
+          const stockRes = await client.query('SELECT stock, seller_id, name FROM products WHERE id = $1', [oi.product_id]);
+          if (stockRes.rows.length > 0 && stockRes.rows[0].stock <= 0) {
+            createNotification(stockRes.rows[0].seller_id, 'product_sold_out', 'Product Sold Out',
+              `"${stockRes.rows[0].name}" is now out of stock.`, { productId: oi.product_id });
+          }
         }
 
         const items = await client.query(
@@ -3491,6 +3599,13 @@ app.post('/api/payments/webhook', async (req, res) => {
         for (const sid of sellerIds) {
           createNotification(sid, 'order_status', 'Payment Received', `Payment for order is held in escrow until exchange is confirmed`, { orderId: reference });
         }
+        // Notify buyer that payment was successful
+        const buyerOrder = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [reference]);
+        if (buyerOrder.rows.length > 0) {
+          const totalPaid = items.rows.reduce((sum, r) => sum + parseFloat(r.total), 0);
+          createNotification(buyerOrder.rows[0].buyer_id, 'payment_confirmed', 'Payment Confirmed',
+            `Your payment of Rs ${totalPaid.toFixed(0)} was successful.`, { orderId: reference });
+        }
         console.log(`Order ${reference} paid, funds held in escrow`);
       } catch (e) {
         await client.query('ROLLBACK');
@@ -3519,6 +3634,12 @@ app.post('/api/payments/webhook', async (req, res) => {
         client.release();
       }
       console.log(`Order ${reference} cancelled via webhook`);
+      // Notify buyer of payment failure
+      const failedOrder = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [reference]);
+      if (failedOrder.rows.length > 0) {
+        createNotification(failedOrder.rows[0].buyer_id, 'payment_failed', 'Payment Failed',
+          'Your payment could not be processed. The order has been cancelled. Please try again.', { orderId: reference });
+      }
     } else if (event === 'payout.completed') {
       await pool.query(
         `UPDATE payouts SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
@@ -3543,6 +3664,11 @@ app.post('/api/payments/webhook', async (req, res) => {
         );
         await client.query('COMMIT');
         console.log(`Payout ${reference} failed, balance refunded`);
+        // Notify seller of payout failure
+        if (payout.rows.length > 0) {
+          createNotification(payout.rows[0].seller_id, 'payout_failed', 'Payout Failed',
+            `Your payout of Rs ${parseFloat(payout.rows[0].amount).toFixed(0)} could not be processed. The amount has been returned to your balance.`, { payoutId: reference });
+        }
       } catch (e) {
         await client.query('ROLLBACK');
         throw e;
@@ -3860,6 +3986,8 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         `UPDATE users SET id_submitted_at = CURRENT_TIMESTAMP, id_verification_result = 'rejected' WHERE id = $1`,
         [req.user.id]
       );
+      createNotification(req.user.id, 'verification_rejected', 'Verification Not Approved',
+        rejectionReason || 'Your identity verification was not approved. Please try again.', { attemptId: result.rows[0].id });
     }
 
     res.json({ attempt: result.rows[0] });
@@ -4205,6 +4333,13 @@ cron.schedule('*/5 * * * *', async () => {
 
         createNotification(order.buyer_id, 'order_status', 'Order Refunded',
           `Your meetup order has expired. Rs ${totalRefund.toFixed(0)} refunded.`, { orderId });
+
+        // Notify sellers of the cancelled order
+        const sellerNotify = await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [orderId]);
+        for (const row of sellerNotify.rows) {
+          createNotification(row.seller_id, 'meetup_expired', 'Meetup Expired',
+            `Your meetup for this order expired without exchange. The order has been cancelled.`, { orderId });
+        }
 
       } catch (e) {
         await client.query('ROLLBACK');

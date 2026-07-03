@@ -41,18 +41,23 @@ export default function LoginScreen({ navigation }: Props) {
         `&state=${state}` +
         `&nonce=${nonce}`;
 
+      console.log('GOOGLE_AUTH: Opening browser with redirect:', GOOGLE_REDIRECT_URI);
       const result = await WebBrowser.openAuthSessionAsync(authUrl, GOOGLE_REDIRECT_URI);
+      console.log('GOOGLE_AUTH_RESULT:', JSON.stringify(result));
 
       if (result.type === 'success' && result.url) {
         const hash = result.url.split('#')[1] || '';
         const params = new URLSearchParams(hash);
         const idToken = params.get('id_token');
+        console.log('GOOGLE_ID_TOKEN:', idToken ? 'received' : 'missing');
         if (idToken) {
           const res = await googleAuth(idToken) as { user: User; token: string };
           await store.setUser(res.user, res.token);
         } else {
           Alert.alert(t('common.error'), 'No ID token received from Google');
         }
+      } else {
+        console.log('GOOGLE_AUTH_CANCELLED_OR_FAILED:', result.type);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Google sign-in failed';

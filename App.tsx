@@ -10,6 +10,7 @@ import { store } from './src/store';
 import { COLORS, SPACING } from './src/theme';
 import { i18n } from './src/i18n';
 import { getMe } from './src/api';
+import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/notifications';
 import type { User } from './src/types';
 import type { RootStackParamList, AuthStackParamList, TabParamList } from './src/navigation';
 
@@ -210,6 +211,7 @@ export default function App() {
         try {
           const res = await getMe() as { user: User };
           await store.setUser(res.user, store.token);
+          registerForPushNotificationsAsync();
         } catch {
           await store.logout();
         }
@@ -297,6 +299,10 @@ export default function App() {
 
     const sub = Linking.addEventListener('url', handleDeepLink);
     return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    setupNotificationListeners(navigationRef);
   }, []);
 
   if (isLoggedIn === null) {
