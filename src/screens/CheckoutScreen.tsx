@@ -121,7 +121,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <ScreenHeader
         title={t('checkout.title')}
         onBack={() => navigation.goBack()}
-        right={<Text style={styles.subtitle}>{itemCount} {itemLabel} - Rs {formatPrice(subtotal)}</Text>}
       />
 
       <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
