@@ -243,8 +243,7 @@ export default function ExploreScreen({ navigation }: Props) {
               style={styles.clearFilterBtn}
               onPress={() => { setSortBy('newest'); setMinPrice(''); setMaxPrice(''); }}
             >
-              <MaterialCommunityIcons name="close" size={12} color={COLORS.coral} />
-              <Text style={styles.clearFilterText}>Clear</Text>
+              <MaterialCommunityIcons name="close" size={14} color={COLORS.text} />
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
@@ -464,10 +463,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   clearFilterBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
-    paddingHorizontal: 8, paddingVertical: 4,
+    width: 38, height: 38, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.surface,
   },
-  clearFilterText: { fontSize: 11, color: COLORS.coral, fontWeight: '600' },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.pill,
