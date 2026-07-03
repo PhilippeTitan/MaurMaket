@@ -29,7 +29,6 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-auth-session",
       [
         "expo-location",
         {
