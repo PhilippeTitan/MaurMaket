@@ -1,8 +1,14 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { savePushToken } from './api';
 
+function isExpoGo(): boolean {
+  return Constants.executionEnvironment === 'storeClient';
+}
+
 export async function registerForPushNotificationsAsync() {
+  if (isExpoGo()) return null;
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -18,7 +24,7 @@ export async function registerForPushNotificationsAsync() {
     }
     return token?.data || null;
   } catch (err) {
-    console.error('Push registration failed:', err);
+    console.warn('Push registration skipped:', err instanceof Error ? err.message : err);
     return null;
   }
 }
