@@ -37,7 +37,8 @@
           "locationWhenInUsePermission": "Allow MaurMaket to use your location to show nearby sellers on the map."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-asset"
     ],
     "extra": {
       "eas": {

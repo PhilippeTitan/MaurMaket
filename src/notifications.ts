@@ -1,4 +1,3 @@
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { savePushToken } from './api';
@@ -7,8 +6,19 @@ function isExpoGo(): boolean {
   return Constants.executionEnvironment === 'storeClient';
 }
 
+function getNotifications() {
+  if (isExpoGo()) return null;
+  try {
+    return require('expo-notifications');
+  } catch {
+    return null;
+  }
+}
+
 export async function registerForPushNotificationsAsync() {
   if (isExpoGo()) return null;
+  const Notifications = getNotifications();
+  if (!Notifications) return null;
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -30,6 +40,9 @@ export async function registerForPushNotificationsAsync() {
 }
 
 export function setupNotificationListeners(navigationRef: any) {
+  const Notifications = getNotifications();
+  if (!Notifications) return;
+
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -40,7 +53,7 @@ export function setupNotificationListeners(navigationRef: any) {
     }),
   });
 
-  Notifications.addNotificationResponseReceivedListener((response) => {
+  Notifications.addNotificationResponseReceivedListener((response: any) => {
     const data = response.notification.request.content.data;
     if (!navigationRef?.isReady?.()) return;
 

@@ -579,11 +579,9 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 - Phase 10 hybrid dispute: auto-resolve simple cases (timeout → refund, QR scanned → release), admin panel later
 
 ### Still Open (Medium Priority)
-4. **Image sharing in chat** — prevents off-app WhatsApp exfiltration
-5. **Wishlist thumbnails** — text-only list, needs 40x40 thumbnails + stock indicator
-6. **Delivery estimate on orders** — buyers need "when should I expect this?" answered
-8. Hardcoded `paddingTop: SPACING.xl + 40` in CartScreen, ChatScreen
-10. Seller analytics gated too aggressively — show teaser metrics to casual sellers with upgrade nudge
+3. **Delivery estimate on orders** — buyers need "when should I expect this?" answered
+6. Hardcoded `paddingTop: SPACING.xl + 40` in CartScreen, ChatScreen
+8. Seller analytics gated too aggressively — show teaser metrics to casual sellers with upgrade nudge
 
 ## Session Compact — 2026-06-28 (UI Polish + Upload Fix)
 
@@ -647,6 +645,16 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 9. `resizeMode="contain"` causes letterbox gaps — use `cover` + dynamic heights
 10. The app's real competition is WhatsApp + Facebook Marketplace, not Vinted/Depop
 11. Multi-image listings are the #1 missing trust signal in C2C commerce
+
+## Dev Workflow
+- **Batch files**: `start-backend.bat` and `start-frontend.bat` in project root for quick restart.
+- **Port**: Backend runs on **3001** (batch file tries 3002 but falls back to 3001 if occupied). Update `src/api.ts` lines 23, 29 accordingly.
+- **Frontend IP**: Changes with network. Currently `192.168.1.10`. Update `src/api.ts` lines 23, 29 (`API_BASE` and `UPLOAD_BASE`) with `ipconfig` Wi-Fi IPv4 when IP changes.
+- **Production**: Backend on `maurmaket.onrender.com`. `isDev` flag in `api.ts` (line 18) gates dev vs prod URLs — never change the production URL.
+- **When user reports frontend issue**: Check both `src/api.ts` (is the URL/IP correct?) AND the backend CMD window (any crashes?). Ask which CMD windows are open.
+- **When user reports backend issue**: Check `curl localhost:3001/api/health`. If backend crashed, check the backend CMD window for error output.
+- **Local APK build**: JDK 17 at `C:\tools\jdk-17.0.13+11`, Android SDK at `C:\Users\drato\AppData\Local\Android\Sdk`. Run `.\gradlew.bat assembleRelease --no-daemon` in `android/` directory. APK output: `android/app/build/outputs/apk/release/app-release.apk`. **First build takes 20-30 min** (downloads Gradle, NDK, CMake). Subsequent builds ~5-10 min.
+- **`eas build --local`**: Does NOT work on Windows (requires macOS/Linux). Use `gradlew` directly or EAS cloud build.
 
 ## Session 6 — 2026-06-28 (ID Verification + Subscription + Inbox Redesign)
 
@@ -1144,10 +1152,33 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] i18n strings (sale + promo)
 - [ ] Commit, push, deploy
 
+### ✅ Session 12: Push Notifications + Image Sharing + Wishlist Fix + Build Setup
+- [x] Wishlist sale price fix: added sale_price, sale_starts_at, sale_ends_at to wishlist SQL query
+- [x] Push notifications server: expo-server-sdk installed, push_token column, POST /api/users/push-token, sendPushNotification() helper, createNotification() wired to push
+- [x] Push notifications client: src/notifications.ts (registerForPushNotificationsAsync + setupNotificationListeners with tap-to-navigate by data.type), src/api.ts savePushToken(), App.tsx wired on login
+- [x] Fix 5 notification bugs: Order Completed → all sellers, seller note type → order_note, meetup timeout → sellers, payment webhook → buyer, escrow refund → sellers
+- [x] Add 13 notification triggers: new_message, payment_confirmed, payment_failed, payout_failed, verification_rejected, dispute_opened, dispute_resolved, order_cancelled, product_sold_out, new_product_from_followed, follow data enrichment
+- [x] Image sharing server: messages table migration (message_type, image_url), POST messages accepts imageUrl + messageType, conversations list shows "📷 Photo"
+- [x] Image sharing client: Message interface updated, sendMessage() extended, ChatScreen camera button + image picker + image rendering
+- [x] Expo Go fix: isExpoGo() check skips push registration in Expo Go SDK 53+
+- [x] Local build setup: JDK 17 installed (C:\tools\jdk-17.0.13+11), JAVA_HOME set, ANDROID_HOME set, Android SDK installed (platforms;android-36, build-tools;36.0.0, platform-tools, ndk;27.1.12297006, cmake;3.22.1)
+- [x] expo prebuild succeeded (android/ directory generated)
+- [x] Gradle build in progress (deps cached, compilation started)
+- [x] Added GOOGLE_OAUTH_CLIENT_ID to .env
+
+### ✅ Session 13: Local Build + Env Vars + AGENTS.md
+- [x] Set JAVA_HOME + ANDROID_HOME environment variables (User scope)
+- [x] Download + install Android SDK cmdline-tools (146MB)
+- [x] Install SDK packages: android-36, build-tools-36, ndk-27.1, cmake-3.22.1, build-tools-35
+- [x] expo prebuild → android/ directory generated
+- [x] Gradle assembleRelease started (deps cached, compilation in progress — needs terminal run)
+- [x] Added GOOGLE_OAUTH_CLIENT_ID to local .env
+- [x] Updated AGENTS.md todo history
+
 ### 🔲 Remaining Features (deferred)
-- [ ] Phase 9: Push notifications (expo-notifications + FCM/APNs)
+- [ ] Run Gradle assembleRelease in terminal (user action — deps cached, ~10-15 min)
+- [ ] Add SMTP env vars to Render (need Gmail address + app password)
+- [ ] Add GOOGLE_OAUTH_CLIENT_ID to Render env vars
 - [ ] Phase 10: Dispute resolution (hybrid auto-resolve + admin)
-- [ ] Image sharing in chat
-- [ ] Wishlist thumbnails (40x40 + stock indicator)
 - [ ] Delivery estimate on orders
 - [ ] Phase 6: Multi-seller meetups (per-seller escrow UI)
