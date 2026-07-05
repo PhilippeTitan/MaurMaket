@@ -232,7 +232,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           placeholderTextColor={COLORS.text2}
           multiline
           accessibilityLabel="message input"
-          accessibilityRole="text"
+         
         />
         <TouchableOpacity style={[styles.sendBtn, { opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()} accessibilityLabel="send message" accessibilityRole="button">
           <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />

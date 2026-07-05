@@ -140,7 +140,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
           maxLength={6}
           autoFocus
           accessibilityLabel="verification code"
-          accessibilityRole="text"
+         
         />
 
         <TouchableOpacity

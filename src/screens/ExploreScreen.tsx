@@ -426,7 +426,7 @@ export default function ExploreScreen({ navigation }: Props) {
                 value={minPrice}
                 onChangeText={setMinPrice}
                 keyboardType="numeric"
-                accessibilityRole="text"
+               
                 accessibilityLabel="minimum price"
               />
               <Text style={styles.priceDashModal}>-</Text>
@@ -437,7 +437,7 @@ export default function ExploreScreen({ navigation }: Props) {
                 value={maxPrice}
                 onChangeText={setMaxPrice}
                 keyboardType="numeric"
-                accessibilityRole="text"
+               
                 accessibilityLabel="maximum price"
               />
             </View>

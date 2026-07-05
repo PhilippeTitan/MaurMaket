@@ -131,7 +131,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               returnKeyType="done"
               onSubmitEditing={handleSendCode}
               accessibilityLabel="email address"
-              accessibilityRole="text"
+             
             />
 
             <TouchableOpacity
@@ -173,7 +173,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               maxLength={6}
               autoFocus
               accessibilityLabel="verification code"
-              accessibilityRole="text"
+             
             />
 
             <TextInput
@@ -185,7 +185,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               secureTextEntry
               returnKeyType="next"
               accessibilityLabel="new password"
-              accessibilityRole="text"
+             
             />
 
             <TextInput
@@ -198,7 +198,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               returnKeyType="done"
               onSubmitEditing={handleResetPassword}
               accessibilityLabel="confirm password"
-              accessibilityRole="text"
+             
             />
 
             <TouchableOpacity

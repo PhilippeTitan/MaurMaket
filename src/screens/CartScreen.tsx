@@ -194,7 +194,7 @@ export default function CartScreen({ navigation }: Props) {
                 value={promoCode}
                 onChangeText={setPromoCode}
                 autoCapitalize="characters"
-                accessibilityRole="text"
+               
                 accessibilityLabel={t('accessibility.promoCode')}
               />
               <TouchableOpacity

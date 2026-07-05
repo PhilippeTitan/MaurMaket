@@ -505,7 +505,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
                 autoCapitalize="none"
                 autoCorrect={false}
                 accessibilityLabel="qr code input"
-                accessibilityRole="text"
+               
               />
             </View>
             <TouchableOpacity

@@ -154,7 +154,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                 placeholder={t('settingsEdit.firstName')}
                 placeholderTextColor={COLORS.text2}
                 autoFocus
-                accessibilityRole="text"
+               
                 accessibilityLabel="first name"
               />
             </View>
@@ -166,7 +166,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                 onChangeText={setMiddleName}
                 placeholder={t('settingsEdit.middleNameOptional')}
                 placeholderTextColor={COLORS.text2}
-                accessibilityRole="text"
+               
                 accessibilityLabel="middle name"
               />
             </View>
@@ -178,7 +178,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                 onChangeText={setLastName}
                 placeholder={t('settingsEdit.lastName')}
                 placeholderTextColor={COLORS.text2}
-                accessibilityRole="text"
+               
                 accessibilityLabel="last name"
               />
             </View>
@@ -203,7 +203,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
               numberOfLines={field === 'bio' ? 4 : 1}
               textAlignVertical={field === 'bio' ? 'top' : 'center'}
               autoFocus
-              accessibilityRole="text"
+             
               accessibilityLabel={field === 'password' ? 'new password' : field === 'storeName' ? 'store name' : field}
             />
           </View>
@@ -219,7 +219,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
               placeholder={t('settingsEdit.currentPasswordPlaceholder')}
               placeholderTextColor={COLORS.text2}
               secureTextEntry
-              accessibilityRole="text"
+             
               accessibilityLabel="current password"
             />
           </View>

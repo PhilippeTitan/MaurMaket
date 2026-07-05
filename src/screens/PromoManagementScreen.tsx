@@ -191,7 +191,7 @@ export default function PromoManagementScreen() {
             <ScrollView contentContainerStyle={styles.modalScroll}>
               <Text style={styles.fieldLabel}>Code</Text>
               <View style={styles.codeRow}>
-                <TextInput style={[styles.input, { flex: 1 }]} placeholder="XKMP-2B7N" placeholderTextColor={COLORS.text2} value={code} onChangeText={setCode} autoCapitalize="characters" accessibilityRole="text" accessibilityLabel="promo code" />
+                <TextInput style={[styles.input, { flex: 1 }]} placeholder="XKMP-2B7N" placeholderTextColor={COLORS.text2} value={code} onChangeText={setCode} autoCapitalize="characters" accessibilityLabel="promo code" />
                 <TouchableOpacity style={styles.generateBtn} onPress={() => setCode(generateCode())} accessibilityRole="button" accessibilityLabel="generate code">
                   <MaterialCommunityIcons name="dice-5-outline" size={20} color={COLORS.coral} />
                 </TouchableOpacity>
@@ -207,16 +207,16 @@ export default function PromoManagementScreen() {
               </View>
 
               <Text style={styles.fieldLabel}>Discount Value</Text>
-              <TextInput style={styles.input} placeholder={discountType === 'percentage' ? '10' : '100'} placeholderTextColor={COLORS.text2} value={discountValue} onChangeText={setDiscountValue} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="discount value" />
+              <TextInput style={styles.input} placeholder={discountType === 'percentage' ? '10' : '100'} placeholderTextColor={COLORS.text2} value={discountValue} onChangeText={setDiscountValue} keyboardType="numeric" accessibilityLabel="discount value" />
 
               <Text style={styles.fieldLabel}>Minimum order (optional)</Text>
-              <TextInput style={styles.input} placeholder="Rs 500" placeholderTextColor={COLORS.text2} value={minOrder} onChangeText={setMinOrder} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="minimum order" />
+              <TextInput style={styles.input} placeholder="Rs 500" placeholderTextColor={COLORS.text2} value={minOrder} onChangeText={setMinOrder} keyboardType="numeric" accessibilityLabel="minimum order" />
 
               <Text style={styles.fieldLabel}>Max uses (optional)</Text>
-              <TextInput style={styles.input} placeholder="100" placeholderTextColor={COLORS.text2} value={maxUses} onChangeText={setMaxUses} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="max uses" />
+              <TextInput style={styles.input} placeholder="100" placeholderTextColor={COLORS.text2} value={maxUses} onChangeText={setMaxUses} keyboardType="numeric" accessibilityLabel="max uses" />
 
               <Text style={styles.fieldLabel}>Expires (optional, YYYY-MM-DD)</Text>
-              <TextInput style={styles.input} placeholder="2026-12-31" placeholderTextColor={COLORS.text2} value={validUntil} onChangeText={setValidUntil} accessibilityRole="text" accessibilityLabel="expires" />
+              <TextInput style={styles.input} placeholder="2026-12-31" placeholderTextColor={COLORS.text2} value={validUntil} onChangeText={setValidUntil} accessibilityLabel="expires" />
 
               <TouchableOpacity style={[styles.submitBtn, creating && { opacity: 0.5 }]} onPress={handleCreate} disabled={creating} accessibilityRole="button" accessibilityLabel="create code">
                 {creating ? <ActivityIndicator color={COLORS.white} /> : (

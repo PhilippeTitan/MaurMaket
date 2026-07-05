@@ -147,11 +147,11 @@ export default function AddressesScreen() {
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
-            <TextInput style={styles.input} placeholder={t('addresses.label')} placeholderTextColor={COLORS.text2} value={form.label} onChangeText={v => setForm(p => ({ ...p, label: v }))} accessibilityLabel="address label" accessibilityRole="text" />
-            <TextInput style={styles.input} placeholder={t('addresses.fullName')} placeholderTextColor={COLORS.text2} value={form.name} onChangeText={v => setForm(p => ({ ...p, name: v }))} accessibilityLabel="full name" accessibilityRole="text" />
-            <TextInput style={styles.input} placeholder={t('addresses.phone')} placeholderTextColor={COLORS.text2} value={form.phone} onChangeText={v => setForm(p => ({ ...p, phone: v }))} keyboardType="phone-pad" accessibilityLabel="phone number" accessibilityRole="text" />
-            <TextInput style={styles.input} placeholder={t('addresses.address')} placeholderTextColor={COLORS.text2} value={form.address} onChangeText={v => setForm(p => ({ ...p, address: v }))} accessibilityLabel="address" accessibilityRole="text" />
-            <TextInput style={styles.input} placeholder={t('addresses.city')} placeholderTextColor={COLORS.text2} value={form.city} onChangeText={v => setForm(p => ({ ...p, city: v }))} accessibilityLabel="city" accessibilityRole="text" />
+            <TextInput style={styles.input} placeholder={t('addresses.label')} placeholderTextColor={COLORS.text2} value={form.label} onChangeText={v => setForm(p => ({ ...p, label: v }))} accessibilityLabel="address label" />
+            <TextInput style={styles.input} placeholder={t('addresses.fullName')} placeholderTextColor={COLORS.text2} value={form.name} onChangeText={v => setForm(p => ({ ...p, name: v }))} accessibilityLabel="full name" />
+            <TextInput style={styles.input} placeholder={t('addresses.phone')} placeholderTextColor={COLORS.text2} value={form.phone} onChangeText={v => setForm(p => ({ ...p, phone: v }))} keyboardType="phone-pad" accessibilityLabel="phone number" />
+            <TextInput style={styles.input} placeholder={t('addresses.address')} placeholderTextColor={COLORS.text2} value={form.address} onChangeText={v => setForm(p => ({ ...p, address: v }))} accessibilityLabel="address" />
+            <TextInput style={styles.input} placeholder={t('addresses.city')} placeholderTextColor={COLORS.text2} value={form.city} onChangeText={v => setForm(p => ({ ...p, city: v }))} accessibilityLabel="city" />
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving} accessibilityLabel="save address" accessibilityRole="button">
               <Text style={styles.saveBtnText}>{saving ? t('addresses.saving') : t('addresses.saveAddress')}</Text>
             </TouchableOpacity>

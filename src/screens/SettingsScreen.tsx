@@ -451,7 +451,7 @@ export default function SettingsScreen({ navigation }: Props) {
           placeholderTextColor={COLORS.text2}
           value={locAddress}
           onChangeText={setLocAddress}
-          accessibilityRole="text"
+         
           accessibilityLabel="delivery address"
         />
         <TextInput
@@ -460,7 +460,7 @@ export default function SettingsScreen({ navigation }: Props) {
           placeholderTextColor={COLORS.text2}
           value={locCity}
           onChangeText={setLocCity}
-          accessibilityRole="text"
+         
           accessibilityLabel="delivery city"
         />
         {Platform.OS !== 'web' && (

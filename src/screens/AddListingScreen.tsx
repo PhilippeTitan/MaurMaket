@@ -205,9 +205,9 @@ export default function AddListingScreen() {
             )}
           </ScrollView>
 
-          <TextInput style={styles.input} placeholder={t('addListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityRole="text" accessibilityLabel="product name" />
-          <TextInput style={[styles.input, styles.textArea]} placeholder={t('addListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} accessibilityRole="text" accessibilityLabel="description" />
-          <TextInput style={styles.input} placeholder={t('addListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="price" />
+          <TextInput style={styles.input} placeholder={t('addListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityLabel="product name" />
+          <TextInput style={[styles.input, styles.textArea]} placeholder={t('addListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} accessibilityLabel="description" />
+          <TextInput style={styles.input} placeholder={t('addListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" accessibilityLabel="price" />
 
           <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
             <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
@@ -216,8 +216,8 @@ export default function AddListingScreen() {
 
           {showSale && (
             <View style={styles.saleSection}>
-              <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="sale price" />
-              <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} accessibilityRole="text" accessibilityLabel="sale end date" />
+              <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" accessibilityLabel="sale price" />
+              <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} accessibilityLabel="sale end date" />
               {price && salePrice && parseFloat(salePrice) < parseFloat(price) && (
                 <Text style={styles.saleHint}>
                   -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {formatPrice(parseFloat(price) - parseFloat(salePrice))} saved
@@ -226,7 +226,7 @@ export default function AddListingScreen() {
             </View>
           )}
 
-          <TextInput style={styles.input} placeholder={t('addListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="quantity" />
+          <TextInput style={styles.input} placeholder={t('addListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" accessibilityLabel="quantity" />
 
           <Text style={styles.sectionLabel}>{t('addListing.category')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>

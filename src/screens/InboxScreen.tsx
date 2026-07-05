@@ -212,7 +212,7 @@ export default function InboxScreen() {
             value={search}
             onChangeText={setSearch}
             accessibilityLabel="search messages"
-            accessibilityRole="text"
+           
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="clear search" accessibilityRole="button">

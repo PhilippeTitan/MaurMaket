@@ -256,11 +256,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           )}
 
           <Text style={styles.sectionLabel}>{t('checkout.deliveryInfo')}</Text>
-          <TextInput style={styles.input} placeholder={t('checkout.fullName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityLabel="full name" accessibilityRole="text" />
-          <TextInput style={styles.input} placeholder={t('checkout.phone')} placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad" accessibilityLabel="phone number" accessibilityRole="text" />
-          <TextInput style={styles.input} placeholder={t('checkout.address')} placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress} accessibilityLabel="delivery address" accessibilityRole="text" />
-          <TextInput style={styles.input} placeholder={t('checkout.city')} placeholderTextColor={COLORS.text2} value={city} onChangeText={setCity} accessibilityLabel="city" accessibilityRole="text" />
-          <TextInput style={styles.input} placeholder={t('checkout.note')} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline accessibilityLabel="delivery note" accessibilityRole="text" />
+          <TextInput style={styles.input} placeholder={t('checkout.fullName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityLabel="full name" />
+          <TextInput style={styles.input} placeholder={t('checkout.phone')} placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad" accessibilityLabel="phone number" />
+          <TextInput style={styles.input} placeholder={t('checkout.address')} placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress} accessibilityLabel="delivery address" />
+          <TextInput style={styles.input} placeholder={t('checkout.city')} placeholderTextColor={COLORS.text2} value={city} onChangeText={setCity} accessibilityLabel="city" />
+          <TextInput style={styles.input} placeholder={t('checkout.note')} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline accessibilityLabel="delivery note" />
         </View>
       ) : (
         <View style={styles.fields}>
@@ -283,7 +283,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           onChangeText={setPromoCode}
           autoCapitalize="characters"
           accessibilityLabel="promo code"
-          accessibilityRole="text"
+         
         />
       </View>
 

@@ -514,7 +514,7 @@ const ALLOWED_ORIGINS = [
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) callback(null, true);
-    else callback(null, true); // Native apps don't send Origin header
+    else callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
 }));

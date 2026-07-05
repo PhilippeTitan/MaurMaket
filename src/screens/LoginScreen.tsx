@@ -102,7 +102,7 @@ export default function LoginScreen({ navigation }: Props) {
           autoCapitalize="none"
           keyboardType="email-address"
           returnKeyType="next"
-          accessibilityRole="text"
+         
           accessibilityLabel={t('accessibility.email')}
         />
         <TextInput
@@ -114,7 +114,7 @@ export default function LoginScreen({ navigation }: Props) {
           secureTextEntry
           returnKeyType="done"
           onSubmitEditing={handleLogin}
-          accessibilityRole="text"
+         
           accessibilityLabel={t('accessibility.password')}
         />
 

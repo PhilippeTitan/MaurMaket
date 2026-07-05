@@ -375,7 +375,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               numberOfLines={4}
               textAlignVertical="top"
               accessibilityLabel="review comment"
-              accessibilityRole="text"
+             
             />
 
             <TouchableOpacity
@@ -445,7 +445,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               numberOfLines={3}
               textAlignVertical="top"
               accessibilityLabel="dispute description"
-              accessibilityRole="text"
+             
             />
 
             <TouchableOpacity

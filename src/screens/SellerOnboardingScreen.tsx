@@ -218,7 +218,7 @@ export default function SellerOnboardingScreen() {
                 onChangeText={setStoreName}
                 maxLength={50}
                 accessibilityLabel="store name"
-                accessibilityRole="text"
+               
               />
             </View>
 

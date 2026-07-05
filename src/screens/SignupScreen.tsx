@@ -97,7 +97,7 @@ export default function SignupScreen({ navigation }: Props) {
           value={fullName}
           onChangeText={setFullName}
           returnKeyType="next"
-          accessibilityRole="text"
+         
           accessibilityLabel={t('accessibility.fullName')}
         />
         <TextInput
@@ -109,7 +109,7 @@ export default function SignupScreen({ navigation }: Props) {
           autoCapitalize="none"
           keyboardType="email-address"
           returnKeyType="next"
-          accessibilityRole="text"
+         
           accessibilityLabel={t('accessibility.email')}
         />
         <TextInput
@@ -120,7 +120,7 @@ export default function SignupScreen({ navigation }: Props) {
           onChangeText={setPhone}
           keyboardType="phone-pad"
           returnKeyType="next"
-          accessibilityRole="text"
+         
           accessibilityLabel={t('accessibility.phone')}
         />
         <TextInput
@@ -132,7 +132,7 @@ export default function SignupScreen({ navigation }: Props) {
           secureTextEntry
           returnKeyType="done"
           onSubmitEditing={handleSignup}
-          accessibilityRole="text"
+         
           accessibilityLabel={t('accessibility.password')}
         />
 
