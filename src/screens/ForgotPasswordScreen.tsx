@@ -106,7 +106,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={[styles.content, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} accessibilityLabel="go back" accessibilityRole="button">
           <MaterialCommunityIcons name="arrow-left" size={35} color={COLORS.text} />
         </TouchableOpacity>
 
@@ -130,12 +130,16 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               keyboardType="email-address"
               returnKeyType="done"
               onSubmitEditing={handleSendCode}
+              accessibilityLabel="email address"
+              accessibilityRole="text"
             />
 
             <TouchableOpacity
               style={[styles.primaryBtn, loading && styles.btnDisabled]}
               onPress={handleSendCode}
               disabled={loading}
+              accessibilityLabel="send code"
+              accessibilityRole="button"
             >
               <Text style={styles.primaryBtnText}>
                 {loading ? t('common.loading') : t('reset.sendCode')}
@@ -168,6 +172,8 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               keyboardType="number-pad"
               maxLength={6}
               autoFocus
+              accessibilityLabel="verification code"
+              accessibilityRole="text"
             />
 
             <TextInput
@@ -178,6 +184,8 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               onChangeText={setNewPassword}
               secureTextEntry
               returnKeyType="next"
+              accessibilityLabel="new password"
+              accessibilityRole="text"
             />
 
             <TextInput
@@ -189,12 +197,16 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               secureTextEntry
               returnKeyType="done"
               onSubmitEditing={handleResetPassword}
+              accessibilityLabel="confirm password"
+              accessibilityRole="text"
             />
 
             <TouchableOpacity
               style={[styles.primaryBtn, (loading || code.length !== 6 || !newPassword || !confirmPassword) && styles.btnDisabled]}
               onPress={handleResetPassword}
               disabled={loading || code.length !== 6 || !newPassword || !confirmPassword}
+              accessibilityLabel="reset password"
+              accessibilityRole="button"
             >
               <Text style={styles.primaryBtnText}>
                 {loading ? t('common.loading') : t('reset.resetPassword')}
@@ -205,7 +217,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               {cooldown > 0 ? (
                 <Text style={styles.resendCooldown}>{t('verify.resendIn', { seconds: String(cooldown) })}</Text>
               ) : (
-                <TouchableOpacity onPress={handleResend}>
+                <TouchableOpacity onPress={handleResend} accessibilityLabel="resend code" accessibilityRole="button">
                   <Text style={styles.resendBtn}>{t('verify.resend')}</Text>
                 </TouchableOpacity>
               )}

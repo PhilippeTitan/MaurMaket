@@ -97,6 +97,8 @@ export default function SignupScreen({ navigation }: Props) {
           value={fullName}
           onChangeText={setFullName}
           returnKeyType="next"
+          accessibilityRole="text"
+          accessibilityLabel={t('accessibility.fullName')}
         />
         <TextInput
           style={styles.input}
@@ -107,6 +109,8 @@ export default function SignupScreen({ navigation }: Props) {
           autoCapitalize="none"
           keyboardType="email-address"
           returnKeyType="next"
+          accessibilityRole="text"
+          accessibilityLabel={t('accessibility.email')}
         />
         <TextInput
           style={styles.input}
@@ -116,6 +120,8 @@ export default function SignupScreen({ navigation }: Props) {
           onChangeText={setPhone}
           keyboardType="phone-pad"
           returnKeyType="next"
+          accessibilityRole="text"
+          accessibilityLabel={t('accessibility.phone')}
         />
         <TextInput
           style={styles.input}
@@ -126,12 +132,16 @@ export default function SignupScreen({ navigation }: Props) {
           secureTextEntry
           returnKeyType="done"
           onSubmitEditing={handleSignup}
+          accessibilityRole="text"
+          accessibilityLabel={t('accessibility.password')}
         />
 
         <TouchableOpacity
           style={[styles.btn, loading && styles.btnDisabled]}
           onPress={handleSignup}
           disabled={loading}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.createAccount')}
         >
           <Text style={styles.btnText}>{loading ? t('common.loading') : t('auth.createAccount')}</Text>
         </TouchableOpacity>
@@ -146,12 +156,18 @@ export default function SignupScreen({ navigation }: Props) {
           style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
           onPress={handleGoogleSignIn}
           disabled={googleLoading}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.signInWithGoogle')}
         >
           <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
           <Text style={styles.googleBtnText}>{t('auth.googleSignIn')}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Login')}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.goToLogin')}
+        >
           <Text style={styles.link}>{t('auth.hasAccount')} <Text style={styles.linkBold}>{t('auth.signIn')}</Text></Text>
         </TouchableOpacity>
       </ScrollView>

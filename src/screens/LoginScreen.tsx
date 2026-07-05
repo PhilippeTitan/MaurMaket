@@ -102,6 +102,8 @@ export default function LoginScreen({ navigation }: Props) {
           autoCapitalize="none"
           keyboardType="email-address"
           returnKeyType="next"
+          accessibilityRole="text"
+          accessibilityLabel={t('accessibility.email')}
         />
         <TextInput
           style={styles.input}
@@ -112,17 +114,26 @@ export default function LoginScreen({ navigation }: Props) {
           secureTextEntry
           returnKeyType="done"
           onSubmitEditing={handleLogin}
+          accessibilityRole="text"
+          accessibilityLabel={t('accessibility.password')}
         />
 
         <TouchableOpacity
           style={[styles.btn, loading && styles.btnDisabled]}
           onPress={handleLogin}
           disabled={loading}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.signIn')}
         >
           <Text style={styles.btnText}>{loading ? t('common.loading') : t('auth.signIn')}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.forgotBtn} onPress={() => navigation.navigate('ForgotPassword')}>
+        <TouchableOpacity
+          style={styles.forgotBtn}
+          onPress={() => navigation.navigate('ForgotPassword')}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.forgotPassword')}
+        >
           <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
         </TouchableOpacity>
 
@@ -136,12 +147,18 @@ export default function LoginScreen({ navigation }: Props) {
           style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
           onPress={handleGoogleSignIn}
           disabled={googleLoading}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.signInWithGoogle')}
         >
           <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
           <Text style={styles.googleBtnText}>{t('auth.googleSignIn')}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Signup')}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.goToSignup')}
+        >
           <Text style={styles.link}>{t('auth.noAccount')} <Text style={styles.linkBold}>{t('auth.signUp')}</Text></Text>
         </TouchableOpacity>
       </ScrollView>

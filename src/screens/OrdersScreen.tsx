@@ -98,31 +98,31 @@ export default function OrdersScreen({ navigation }: Props) {
 
       <View style={styles.actions}>
         {tab === 'buying' && item.status === 'pending' && (
-          <TouchableOpacity style={styles.actionBtn} onPress={() => handleCancel(item.id)}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => handleCancel(item.id)} accessibilityLabel="cancel order" accessibilityRole="button">
             <Text style={styles.actionBtnText}>{t('orderDetail.cancel')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'buying' && item.status === 'delivered' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleComplete(item.id)}>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleComplete(item.id)} accessibilityLabel="confirm received" accessibilityRole="button">
             <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.completed')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'selling' && item.status === 'paid' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'processing')}>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'processing')} accessibilityLabel="mark processing" accessibilityRole="button">
             <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.processing')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'selling' && item.status === 'processing' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'shipped')}>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'shipped')} accessibilityLabel="mark shipped" accessibilityRole="button">
             <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.shipped')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'selling' && item.status === 'shipped' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleStatusUpdate(item.id, 'delivered')}>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleStatusUpdate(item.id, 'delivered')} accessibilityLabel="mark delivered" accessibilityRole="button">
             <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.delivered')}</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={styles.detailBtn} onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })}>
+        <TouchableOpacity style={styles.detailBtn} onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })} accessibilityLabel="view order details" accessibilityRole="button">
           <Text style={styles.detailBtnText}>{t('orderDetail.title')}</Text>
         </TouchableOpacity>
       </View>
@@ -138,12 +138,16 @@ export default function OrdersScreen({ navigation }: Props) {
           <TouchableOpacity
             style={[styles.tab, tab === 'buying' && styles.tabActive]}
             onPress={() => setTab('buying')}
+            accessibilityLabel="show buying orders"
+            accessibilityRole="button"
           >
             <Text style={[styles.tabText, tab === 'buying' && styles.tabTextActive]}>{t('orders.buying')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, tab === 'selling' && styles.tabActive]}
             onPress={() => setTab('selling')}
+            accessibilityLabel="show selling orders"
+            accessibilityRole="button"
           >
             <Text style={[styles.tabText, tab === 'selling' && styles.tabTextActive]}>{t('orders.selling')}</Text>
           </TouchableOpacity>

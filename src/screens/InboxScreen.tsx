@@ -10,6 +10,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
+import EmptyState from '../components/EmptyState';
 import { getConversations, getNotifications, markNotificationRead, markAllNotificationsRead, getFollowing, getImageUrl, createConversation } from '../api';
 import type { Conversation, Notification, User } from '../types';
 import type { RootStackParamList } from '../navigation';
@@ -121,6 +122,8 @@ export default function InboxScreen() {
       <TouchableOpacity
         style={styles.convo}
         onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId: (item as any).other_party_id, otherUserAvatar: (item as any).other_party_avatar })}
+        accessibilityLabel={`conversation with ${otherName}`}
+        accessibilityRole="button"
       >
         <View style={[styles.convoAvatar, { backgroundColor: COLORS.coral }]}>
           {avatarUrl ? (
@@ -147,6 +150,8 @@ export default function InboxScreen() {
     <TouchableOpacity
       style={[styles.notifItem, !item.is_read && styles.notifItemUnread]}
       onPress={() => handleNotificationPress(item)}
+      accessibilityLabel={item.title}
+      accessibilityRole="button"
     >
       <View style={[styles.notifDot, !item.is_read && styles.notifDotUnread]} />
       <View style={styles.notifInfo}>
@@ -176,7 +181,7 @@ export default function InboxScreen() {
       }
     };
     return (
-      <TouchableOpacity style={styles.sellerBubble} onPress={handlePress}>
+      <TouchableOpacity style={styles.sellerBubble} onPress={handlePress} accessibilityLabel={`message ${seller.full_name}`} accessibilityRole="button">
         <View style={[styles.sellerBubbleRing, { borderColor: COLORS.coral }]}>
           <View style={[styles.sellerBubbleAvatar, { backgroundColor: COLORS.coral }]}>
             {avatarUrl ? (
@@ -206,9 +211,11 @@ export default function InboxScreen() {
             placeholderTextColor={COLORS.text2}
             value={search}
             onChangeText={setSearch}
+            accessibilityLabel="search messages"
+            accessibilityRole="text"
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
+            <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="clear search" accessibilityRole="button">
               <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text2} />
             </TouchableOpacity>
           )}
@@ -240,12 +247,16 @@ export default function InboxScreen() {
         <TouchableOpacity
           style={[styles.tab, activeTab === 'messages' && styles.tabActive]}
           onPress={() => setActiveTab('messages')}
+          accessibilityLabel="messages"
+          accessibilityRole="button"
         >
           <Text style={[styles.tabText, activeTab === 'messages' && styles.tabTextActive]}>Messages</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'notifications' && styles.tabActive]}
           onPress={() => setActiveTab('notifications')}
+          accessibilityLabel="notifications"
+          accessibilityRole="button"
         >
           <Text style={[styles.tabText, activeTab === 'notifications' && styles.tabTextActive]}>Notifications</Text>
           {unreadNotifCount > 0 && (
@@ -255,7 +266,7 @@ export default function InboxScreen() {
           )}
         </TouchableOpacity>
         {activeTab === 'notifications' && unreadNotifCount > 0 && (
-          <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn}>
+          <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
             <Text style={styles.markAllText}>Mark all read</Text>
           </TouchableOpacity>
         )}
@@ -273,10 +284,11 @@ export default function InboxScreen() {
           loading ? (
             <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
           ) : (
-            <View style={styles.empty}>
-              <MaterialCommunityIcons name={isMessages ? 'message-outline' : 'bell-outline'} size={40} color={COLORS.text2} />
-              <Text style={styles.emptyText}>{isMessages ? t('inbox.noMessages') : 'No notifications yet'}</Text>
-            </View>
+            <EmptyState
+              icon={isMessages ? 'message-outline' : 'bell-outline'}
+              title={isMessages ? t('inbox.noMessages') : 'No notifications yet'}
+              size={56}
+            />
           )
         }
       />

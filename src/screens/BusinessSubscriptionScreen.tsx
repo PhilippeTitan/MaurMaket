@@ -96,7 +96,7 @@ export default function BusinessSubscriptionScreen() {
           </View>
 
           {daysLeft <= 7 && (
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleRenew} disabled={loading}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleRenew} disabled={loading} accessibilityLabel="renew subscription" accessibilityRole="button">
               {loading ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
@@ -122,7 +122,7 @@ export default function BusinessSubscriptionScreen() {
               Your Business subscription has expired. You have been moved to Verified tier. Renew to regain Business benefits.
             </Text>
           </View>
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleRenew} disabled={loading}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleRenew} disabled={loading} accessibilityLabel="renew subscription" accessibilityRole="button">
             {loading ? (
               <ActivityIndicator size="small" color={COLORS.white} />
             ) : (
@@ -152,7 +152,7 @@ export default function BusinessSubscriptionScreen() {
             <BenefitRow icon="shield-check" text="Business trust badge" />
           </View>
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleSubscribe} disabled={loading}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleSubscribe} disabled={loading} accessibilityLabel="subscribe now" accessibilityRole="button">
             {loading ? (
               <ActivityIndicator size="small" color={COLORS.white} />
             ) : (

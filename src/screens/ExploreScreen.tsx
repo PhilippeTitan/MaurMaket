@@ -17,6 +17,7 @@ import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
 import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
+import EmptyState from '../components/EmptyState';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -158,6 +159,8 @@ export default function ExploreScreen({ navigation }: Props) {
         style={styles.card}
         activeOpacity={0.82}
         onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+        accessibilityRole="button"
+        accessibilityLabel={t('accessibility.viewProduct')}
       >
         <View style={[styles.cardImgWrap, { height: cardH }]}>
           <FlatList
@@ -231,9 +234,15 @@ export default function ExploreScreen({ navigation }: Props) {
               value={search}
               onChangeText={setSearch}
               onSubmitEditing={fetchProducts}
+              accessibilityRole="search"
+              accessibilityLabel={t('accessibility.searchProducts')}
             />
             {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')}>
+              <TouchableOpacity
+                onPress={() => setSearch('')}
+                accessibilityRole="button"
+                accessibilityLabel={t('accessibility.clearSearch')}
+              >
                 <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             )}
@@ -242,11 +251,18 @@ export default function ExploreScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.clearFilterBtn}
               onPress={() => { setSortBy('newest'); setMinPrice(''); setMaxPrice(''); }}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.clearFilters')}
             >
               <MaterialCommunityIcons name="close" size={25} color={COLORS.text} />
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.filterBtn} onPress={() => setSortModal(true)}>
+          <TouchableOpacity
+            style={styles.filterBtn}
+            onPress={() => setSortModal(true)}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.sortFilter')}
+          >
             <MaterialCommunityIcons name="tune-variant" size={30} color={COLORS.text} />
           </TouchableOpacity>
         </View>
@@ -278,6 +294,8 @@ export default function ExploreScreen({ navigation }: Props) {
                 <TouchableOpacity
                   style={[styles.chip, isActive && styles.chipActive]}
                   onPress={() => selectCategory(cat.id === '' ? '' : categoryName === selectedCat ? '' : categoryName)}
+                  accessibilityRole="button"
+                  accessibilityLabel={cat.id === '' ? t('accessibility.selectCategory') : cat.name}
                 >
                   {cat.id !== '' && (
                     <MaterialCommunityIcons
@@ -298,12 +316,11 @@ export default function ExploreScreen({ navigation }: Props) {
       {loading ? (
         <ActivityIndicator size="small" color={COLORS.coral} style={{ marginTop: 40 }} />
       ) : products.length === 0 ? (
-        <View style={styles.empty}>
-          <View style={styles.emptyIcon}>
-            <MaterialCommunityIcons name="magnify-close" size={28} color={COLORS.text2} />
-          </View>
-          <Text style={styles.emptyText}>{t('explore.noProducts')}</Text>
-        </View>
+        <EmptyState
+          icon="magnify-close"
+          title={t('explore.noProducts')}
+          size={64}
+        />
       ) : (
         <FlatList
           style={{ flex: 1 }}
@@ -329,13 +346,19 @@ export default function ExploreScreen({ navigation }: Props) {
           <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Categories</Text>
-              <TouchableOpacity onPress={() => setCatModal(false)}>
+              <TouchableOpacity
+                onPress={() => setCatModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel={t('accessibility.close')}
+              >
                 <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             <TouchableOpacity
               style={[styles.modalItem, !selectedCat && styles.modalItemActive]}
               onPress={() => { selectCategory(''); setCatModal(false); }}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.selectCategory')}
             >
               <MaterialCommunityIcons name="apps" size={18} color={!selectedCat ? COLORS.coral : COLORS.text2} />
               <Text style={[styles.modalItemText, !selectedCat && styles.modalItemTextActive]}>{t('explore.all')}</Text>
@@ -345,6 +368,8 @@ export default function ExploreScreen({ navigation }: Props) {
                 key={cat.id}
                 style={[styles.modalItem, selectedCat === cat.name && styles.modalItemActive]}
                 onPress={() => { selectCategory(cat.name); setCatModal(false); }}
+                accessibilityRole="button"
+                accessibilityLabel={cat.name}
               >
                 <MaterialCommunityIcons
                   name={(CAT_ICONS[cat.name.toLowerCase()] as any) || 'tag-outline'}
@@ -365,7 +390,11 @@ export default function ExploreScreen({ navigation }: Props) {
           <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Sort by</Text>
-              <TouchableOpacity onPress={() => setSortModal(false)}>
+              <TouchableOpacity
+                onPress={() => setSortModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel={t('accessibility.close')}
+              >
                 <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -374,6 +403,8 @@ export default function ExploreScreen({ navigation }: Props) {
                 key={option.value}
                 style={[styles.modalItem, sortBy === option.value && styles.modalItemActive]}
                 onPress={() => { setSortBy(option.value); setSortModal(false); }}
+                accessibilityRole="button"
+                accessibilityLabel={t(option.label)}
               >
                 <MaterialCommunityIcons
                   name={sortBy === option.value ? 'radiobox-marked' : 'radiobox-blank'}
@@ -395,6 +426,8 @@ export default function ExploreScreen({ navigation }: Props) {
                 value={minPrice}
                 onChangeText={setMinPrice}
                 keyboardType="numeric"
+                accessibilityRole="text"
+                accessibilityLabel="minimum price"
               />
               <Text style={styles.priceDashModal}>-</Text>
               <TextInput
@@ -404,11 +437,15 @@ export default function ExploreScreen({ navigation }: Props) {
                 value={maxPrice}
                 onChangeText={setMaxPrice}
                 keyboardType="numeric"
+                accessibilityRole="text"
+                accessibilityLabel="maximum price"
               />
             </View>
             <TouchableOpacity
               style={styles.modalApplyBtn}
               onPress={() => { setSortModal(false); fetchProducts(); }}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.apply')}
             >
               <Text style={styles.modalApplyText}>Apply</Text>
             </TouchableOpacity>

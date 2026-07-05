@@ -132,7 +132,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
         title={title}
         onBack={() => navigation.goBack()}
         right={field !== 'name' ? (
-          <TouchableOpacity onPress={handleSave} disabled={loading}>
+          <TouchableOpacity onPress={handleSave} disabled={loading} accessibilityRole="button" accessibilityLabel="save">
             {loading ? (
               <ActivityIndicator size="small" color={COLORS.coral} />
             ) : (
@@ -154,6 +154,8 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                 placeholder={t('settingsEdit.firstName')}
                 placeholderTextColor={COLORS.text2}
                 autoFocus
+                accessibilityRole="text"
+                accessibilityLabel="first name"
               />
             </View>
             <View style={[styles.fieldRow, { borderTopWidth: 1, borderTopColor: COLORS.border }]}>
@@ -164,6 +166,8 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                 onChangeText={setMiddleName}
                 placeholder={t('settingsEdit.middleNameOptional')}
                 placeholderTextColor={COLORS.text2}
+                accessibilityRole="text"
+                accessibilityLabel="middle name"
               />
             </View>
             <View style={[styles.fieldRow, { borderTopWidth: 1, borderTopColor: COLORS.border }]}>
@@ -174,6 +178,8 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                 onChangeText={setLastName}
                 placeholder={t('settingsEdit.lastName')}
                 placeholderTextColor={COLORS.text2}
+                accessibilityRole="text"
+                accessibilityLabel="last name"
               />
             </View>
           </>
@@ -197,6 +203,8 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
               numberOfLines={field === 'bio' ? 4 : 1}
               textAlignVertical={field === 'bio' ? 'top' : 'center'}
               autoFocus
+              accessibilityRole="text"
+              accessibilityLabel={field === 'password' ? 'new password' : field === 'storeName' ? 'store name' : field}
             />
           </View>
         )}
@@ -211,6 +219,8 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
               placeholder={t('settingsEdit.currentPasswordPlaceholder')}
               placeholderTextColor={COLORS.text2}
               secureTextEntry
+              accessibilityRole="text"
+              accessibilityLabel="current password"
             />
           </View>
         )}
@@ -225,6 +235,8 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
           style={[styles.bottomSaveBtn, loading && { opacity: 0.5 }]}
           onPress={handleSave}
           disabled={loading}
+          accessibilityRole="button"
+          accessibilityLabel="save"
         >
           {loading ? (
             <ActivityIndicator color={COLORS.white} />

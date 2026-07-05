@@ -137,11 +137,15 @@ export default function PaymentsScreen() {
                 value={amount}
                 onChangeText={setAmount}
                 keyboardType="numeric"
+                accessibilityLabel="payout amount"
+                accessibilityRole="text"
               />
               <TouchableOpacity
                 style={[styles.requestBtn, requesting && { opacity: 0.6 }]}
                 onPress={handleRequestPayout}
                 disabled={requesting}
+                accessibilityLabel="request payout"
+                accessibilityRole="button"
               >
                 <Text style={styles.requestBtnText}>{requesting ? t('payments.loading') : t('payments.requestPayout')}</Text>
               </TouchableOpacity>

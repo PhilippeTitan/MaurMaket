@@ -63,6 +63,8 @@ export default function WishlistScreen() {
             <TouchableOpacity
               style={styles.row}
               onPress={() => nav.navigate('ProductDetail', { productId: item.id })}
+              accessibilityLabel={item.name}
+              accessibilityRole="button"
             >
               {imgUrl ? (
                 <Image source={{ uri: imgUrl }} style={styles.thumb} resizeMode="cover" />
@@ -78,7 +80,7 @@ export default function WishlistScreen() {
                   <Text style={styles.stock}>{item.stock > 0 ? t('feed.available') : t('feed.soldOut')}</Text>
                 )}
               </View>
-              <TouchableOpacity onPress={() => handleRemove(item.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <TouchableOpacity onPress={() => handleRemove(item.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="remove from wishlist" accessibilityRole="button">
                 <MaterialCommunityIcons name="heart-off" size={18} color={COLORS.coral} />
               </TouchableOpacity>
             </TouchableOpacity>

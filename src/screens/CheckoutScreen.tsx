@@ -195,6 +195,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         <TouchableOpacity
           style={[styles.methodCard, method === 'delivery' && styles.methodActive]}
           onPress={() => setMethod('delivery')}
+          accessibilityLabel="select delivery method"
+          accessibilityRole="button"
         >
           <MaterialCommunityIcons name="truck-delivery" size={20} color={method === 'delivery' ? COLORS.coral : COLORS.text2} />
           <Text style={[styles.methodText, method === 'delivery' && styles.methodTextActive]}>{t('checkout.delivery')}</Text>
@@ -202,6 +204,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         <TouchableOpacity
           style={[styles.methodCard, method === 'meetup' && styles.methodActive]}
           onPress={() => setMethod('meetup')}
+          accessibilityLabel="select meetup method"
+          accessibilityRole="button"
         >
           <MaterialCommunityIcons name="map-marker" size={20} color={method === 'meetup' ? COLORS.coral : COLORS.text2} />
           <Text style={[styles.methodText, method === 'meetup' && styles.methodTextActive]}>{t('checkout.meetup')}</Text>
@@ -219,6 +223,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     key={addr.id}
                     style={[styles.addressCard, selectedAddressId === addr.id && styles.addressCardActive]}
                     onPress={() => selectAddress(addr)}
+                    accessibilityLabel={`select ${addr.label} address`}
+                    accessibilityRole="button"
                   >
                     <View style={styles.addressHeader}>
                       <View style={styles.addressLabel}>
@@ -240,6 +246,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               <TouchableOpacity
                 style={styles.addAddressLink}
                 onPress={() => navigation.navigate('Addresses')}
+                accessibilityLabel="manage addresses"
+                accessibilityRole="button"
               >
                 <MaterialCommunityIcons name="plus-circle-outline" size={16} color={COLORS.coral} />
                 <Text style={styles.addAddressText}>{t('checkout.manageAddresses')}</Text>
@@ -248,11 +256,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           )}
 
           <Text style={styles.sectionLabel}>{t('checkout.deliveryInfo')}</Text>
-          <TextInput style={styles.input} placeholder={t('checkout.fullName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
-          <TextInput style={styles.input} placeholder={t('checkout.phone')} placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-          <TextInput style={styles.input} placeholder={t('checkout.address')} placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress} />
-          <TextInput style={styles.input} placeholder={t('checkout.city')} placeholderTextColor={COLORS.text2} value={city} onChangeText={setCity} />
-          <TextInput style={styles.input} placeholder={t('checkout.note')} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline />
+          <TextInput style={styles.input} placeholder={t('checkout.fullName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityLabel="full name" accessibilityRole="text" />
+          <TextInput style={styles.input} placeholder={t('checkout.phone')} placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad" accessibilityLabel="phone number" accessibilityRole="text" />
+          <TextInput style={styles.input} placeholder={t('checkout.address')} placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress} accessibilityLabel="delivery address" accessibilityRole="text" />
+          <TextInput style={styles.input} placeholder={t('checkout.city')} placeholderTextColor={COLORS.text2} value={city} onChangeText={setCity} accessibilityLabel="city" accessibilityRole="text" />
+          <TextInput style={styles.input} placeholder={t('checkout.note')} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline accessibilityLabel="delivery note" accessibilityRole="text" />
         </View>
       ) : (
         <View style={styles.fields}>
@@ -274,6 +282,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           value={promoCode}
           onChangeText={setPromoCode}
           autoCapitalize="characters"
+          accessibilityLabel="promo code"
+          accessibilityRole="text"
         />
       </View>
 
@@ -292,6 +302,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         style={[styles.ctaBtn, loading && styles.ctaBtnDisabled]}
         onPress={handleCheckout}
         disabled={loading}
+        accessibilityLabel="place order"
+        accessibilityRole="button"
       >
         {loading ? (
           <ActivityIndicator color={COLORS.white} />

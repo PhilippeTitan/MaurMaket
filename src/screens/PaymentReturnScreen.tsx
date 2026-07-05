@@ -92,6 +92,8 @@ export default function PaymentReturnScreen() {
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={() => nav.replace('OrderDetail', { orderId })}
+              accessibilityLabel="view order"
+              accessibilityRole="button"
             >
               <Text style={styles.primaryBtnText}>{t('paymentReturn.viewOrder')}</Text>
             </TouchableOpacity>
@@ -99,6 +101,8 @@ export default function PaymentReturnScreen() {
           <TouchableOpacity
             style={styles.secondaryBtn}
             onPress={() => nav.popToTop()}
+            accessibilityLabel="back to home"
+            accessibilityRole="button"
           >
             <Text style={styles.secondaryBtnText}>{t('paymentReturn.backToHome')}</Text>
           </TouchableOpacity>

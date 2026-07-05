@@ -211,7 +211,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
           .map((img, idx) => (
             <View key={img.id || `existing-${idx}`} style={styles.thumbWrap}>
               <Image source={{ uri: getImageUrl(img.image_url) || '' }} style={styles.thumbImg} />
-              <TouchableOpacity style={styles.thumbRemove} onPress={() => removeExistingImage(img.id)}>
+              <TouchableOpacity style={styles.thumbRemove} onPress={() => removeExistingImage(img.id)} accessibilityRole="button" accessibilityLabel="remove image">
                 <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
               </TouchableOpacity>
             </View>
@@ -219,31 +219,31 @@ export default function EditListingScreen({ route, navigation }: Props) {
         {newImageUris.map((uri, idx) => (
           <View key={`new-${idx}`} style={styles.thumbWrap}>
             <Image source={{ uri }} style={styles.thumbImg} />
-            <TouchableOpacity style={styles.thumbRemove} onPress={() => removeNewImage(idx)}>
+            <TouchableOpacity style={styles.thumbRemove} onPress={() => removeNewImage(idx)} accessibilityRole="button" accessibilityLabel="remove image">
               <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
             </TouchableOpacity>
           </View>
         ))}
         {totalImages < MAX_IMAGES && (
-          <TouchableOpacity style={styles.addBtn} onPress={pickImages}>
+          <TouchableOpacity style={styles.addBtn} onPress={pickImages} accessibilityRole="button" accessibilityLabel="add image">
             <MaterialCommunityIcons name="camera-plus" size={28} color={COLORS.text2} />
           </TouchableOpacity>
         )}
       </ScrollView>
 
-      <TextInput style={styles.input} placeholder={t('editListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
-      <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
-      <TextInput style={styles.input} placeholder={t('editListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" />
+      <TextInput style={styles.input} placeholder={t('editListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityRole="text" accessibilityLabel="product name" />
+      <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} accessibilityRole="text" accessibilityLabel="description" />
+      <TextInput style={styles.input} placeholder={t('editListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="price" />
 
-      <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)}>
+      <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
         <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
         <Text style={styles.saleToggleText}>{'🏷️ Run a sale'}</Text>
       </TouchableOpacity>
 
       {showSale && (
         <View style={styles.saleSection}>
-          <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" />
-          <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} />
+          <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="sale price" />
+          <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} accessibilityRole="text" accessibilityLabel="sale end date" />
           {price && salePrice && parseFloat(salePrice) < parseFloat(price) && (
             <Text style={styles.saleHint}>
               -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {formatPrice(parseFloat(price) - parseFloat(salePrice))} saved
@@ -252,11 +252,14 @@ export default function EditListingScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      <TextInput style={styles.input} placeholder={t('editListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" />
+      <TextInput style={styles.input} placeholder={t('editListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="quantity" />
 
       <TouchableOpacity
         style={styles.toggleRow}
         onPress={() => setIsAvailable(!isAvailable)}
+        accessibilityRole="button"
+        accessibilityLabel="available"
+        accessibilityState={{ checked: isAvailable }}
       >
         <MaterialCommunityIcons
           name={isAvailable ? 'checkbox-marked' : 'checkbox-blank-outline'}
@@ -273,6 +276,9 @@ export default function EditListingScreen({ route, navigation }: Props) {
             key={cat.id || `cat-${idx}`}
             style={[styles.catPill, categoryId === cat.id && styles.catPillActive]}
             onPress={() => setCategoryId(categoryId === cat.id ? null : cat.id)}
+            accessibilityRole="button"
+            accessibilityLabel={cat.name.toLowerCase()}
+            accessibilityState={{ selected: categoryId === cat.id }}
           >
             <Text style={[styles.catPillText, categoryId === cat.id && styles.catPillTextActive]}>
               {cat.name}
@@ -285,6 +291,8 @@ export default function EditListingScreen({ route, navigation }: Props) {
         style={[styles.saveBtn, saving && { opacity: 0.5 }]}
         onPress={handleSave}
         disabled={saving}
+        accessibilityRole="button"
+        accessibilityLabel="save changes"
       >
         {saving ? <ActivityIndicator color={COLORS.white} /> : (
           <Text style={styles.saveBtnText}>{t('editListing.saveChanges')}</Text>
@@ -295,6 +303,8 @@ export default function EditListingScreen({ route, navigation }: Props) {
         style={[styles.deleteBtn, deleting && { opacity: 0.5 }]}
         onPress={handleDelete}
         disabled={deleting}
+        accessibilityRole="button"
+        accessibilityLabel="delete product"
       >
         {deleting ? <ActivityIndicator color={COLORS.coral} /> : (
           <Text style={styles.deleteBtnText}>{t('editListing.deleteProduct')}</Text>

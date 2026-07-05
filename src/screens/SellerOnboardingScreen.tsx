@@ -130,10 +130,10 @@ export default function SellerOnboardingScreen() {
             <Text style={styles.subtitle}>
               {t('sellerOnboarding.startSubtitle')}
             </Text>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('choose')}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('choose')} accessibilityLabel="get started" accessibilityRole="button">
               <Text style={styles.primaryBtnText}>{t('sellerOnboarding.getStart')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.linkBtn} onPress={() => nav.goBack()}>
+            <TouchableOpacity style={styles.linkBtn} onPress={() => nav.goBack()} accessibilityLabel="maybe later" accessibilityRole="button">
               <Text style={styles.linkBtnText}>{t('sellerOnboarding.maybeLater')}</Text>
             </TouchableOpacity>
           </View>
@@ -168,6 +168,8 @@ export default function SellerOnboardingScreen() {
                   onPress={() => !disabled && handleChooseTier(tier.key)}
                   activeOpacity={disabled ? 1 : 0.8}
                   disabled={disabled}
+                  accessibilityLabel={`select ${tier.key} tier`}
+                  accessibilityRole="button"
                 >
                   <View style={[styles.tierIcon, { backgroundColor: (disabled ? COLORS.text2 : tier.iconBg) + '20' }]}>
                     <MaterialCommunityIcons name={tier.icon as any} size={26} color={disabled ? COLORS.text2 : tier.color} />
@@ -193,7 +195,7 @@ export default function SellerOnboardingScreen() {
               );
             })}
 
-            <TouchableOpacity style={styles.linkBtn} onPress={() => setStep('welcome')}>
+            <TouchableOpacity style={styles.linkBtn} onPress={() => setStep('welcome')} accessibilityLabel="go back" accessibilityRole="button">
               <Text style={styles.linkBtnText}>{t('sellerOnboarding.back')}</Text>
             </TouchableOpacity>
           </View>
@@ -215,12 +217,14 @@ export default function SellerOnboardingScreen() {
                 value={storeName}
                 onChangeText={setStoreName}
                 maxLength={50}
+                accessibilityLabel="store name"
+                accessibilityRole="text"
               />
             </View>
 
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>{t('sellerOnboarding.storeLogoOptional')}</Text>
-              <TouchableOpacity style={styles.logoPicker} onPress={handlePickLogo} disabled={pickLoading}>
+              <TouchableOpacity style={styles.logoPicker} onPress={handlePickLogo} disabled={pickLoading} accessibilityLabel="add store logo" accessibilityRole="button">
                 {pickLoading ? (
                   <ActivityIndicator size="small" color={COLORS.coral} />
                 ) : storeLogoUrl ? (
@@ -241,10 +245,12 @@ export default function SellerOnboardingScreen() {
                 if (success !== false) nav.navigate('BusinessSubscription');
               }}
               disabled={!storeName.trim() || loading}
+              accessibilityLabel="continue"
+              accessibilityRole="button"
             >
               <Text style={styles.primaryBtnText}>{t('sellerOnboarding.continue')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.linkBtn} onPress={() => setStep('choose')}>
+            <TouchableOpacity style={styles.linkBtn} onPress={() => setStep('choose')} accessibilityLabel="go back" accessibilityRole="button">
               <Text style={styles.linkBtnText}>{t('sellerOnboarding.back')}</Text>
             </TouchableOpacity>
           </View>

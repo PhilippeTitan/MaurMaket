@@ -268,6 +268,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={styles.meetupBtn}
             onPress={() => navigation.navigate('Meetup', { orderId })}
+            accessibilityLabel="go to meetup"
+            accessibilityRole="button"
           >
             <MaterialCommunityIcons name="map-marker-radius" size={18} color={COLORS.white} />
             <Text style={styles.meetupBtnText}>Go to Meetup</Text>
@@ -276,21 +278,21 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
         {/* ── Seller actions ── */}
         {isSellerOfOrder && order.status === 'paid' && (
-          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('processing')} disabled={actionLoading}>
+          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('processing')} disabled={actionLoading} accessibilityLabel="mark processing" accessibilityRole="button">
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
               <Text style={styles.advanceBtnText}>{t('orderDetail.processing')}</Text>
             )}
           </TouchableOpacity>
         )}
         {isSellerOfOrder && order.status === 'processing' && (
-          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('shipped')} disabled={actionLoading}>
+          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('shipped')} disabled={actionLoading} accessibilityLabel="mark shipped" accessibilityRole="button">
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
               <Text style={styles.advanceBtnText}>{t('orderDetail.shipped')}</Text>
             )}
           </TouchableOpacity>
         )}
         {isSellerOfOrder && order.status === 'shipped' && (
-          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('delivered')} disabled={actionLoading}>
+          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('delivered')} disabled={actionLoading} accessibilityLabel="mark delivered" accessibilityRole="button">
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
               <Text style={styles.advanceBtnText}>{t('orderDetail.markDelivered')}</Text>
             )}
@@ -300,37 +302,37 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         {/* ── Buyer actions ── */}
         {store.user?.id === order.buyer_id && order.status === 'pending' && (
           <>
-            <TouchableOpacity style={styles.retryBtn} onPress={handleRetryPayment} disabled={actionLoading}>
+            <TouchableOpacity style={styles.retryBtn} onPress={handleRetryPayment} disabled={actionLoading} accessibilityLabel="retry payment" accessibilityRole="button">
               {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
                 <Text style={styles.retryBtnText}>{t('orderDetail.retryPayment')}</Text>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} disabled={actionLoading}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} disabled={actionLoading} accessibilityLabel="cancel order" accessibilityRole="button">
               <Text style={styles.cancelBtnText}>{t('orderDetail.cancelOrder')}</Text>
             </TouchableOpacity>
           </>
         )}
         {store.user?.id === order.buyer_id && order.status === 'delivered' && (
-          <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={actionLoading}>
+          <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={actionLoading} accessibilityLabel="confirm received" accessibilityRole="button">
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
               <Text style={styles.completeBtnText}>{t('orderDetail.completed')}</Text>
             )}
           </TouchableOpacity>
         )}
         {order.status === 'completed' && store.user?.id === order.buyer_id && (
-          <TouchableOpacity style={styles.reviewBtn} onPress={() => setReviewModalVisible(true)}>
+          <TouchableOpacity style={styles.reviewBtn} onPress={() => setReviewModalVisible(true)} accessibilityLabel="review order" accessibilityRole="button">
             <MaterialCommunityIcons name="star-outline" size={16} color={COLORS.yellow} />
             <Text style={styles.reviewBtnText}>{t('orderDetail.reviewOrder')}</Text>
           </TouchableOpacity>
         )}
         {(order.status === 'completed' || order.status === 'delivered') && (
-          <TouchableOpacity style={styles.reorderBtn} onPress={handleReorder} disabled={actionLoading}>
+          <TouchableOpacity style={styles.reorderBtn} onPress={handleReorder} disabled={actionLoading} accessibilityLabel="reorder" accessibilityRole="button">
             <MaterialCommunityIcons name="replay" size={16} color={COLORS.coral} />
             <Text style={styles.reorderBtnText}>{t('orderDetail.reorder')}</Text>
           </TouchableOpacity>
         )}
         {['delivered', 'shipped', 'completed'].includes(order.status) && store.user?.id === order.buyer_id && (
-          <TouchableOpacity style={styles.disputeBtn} onPress={() => setDisputeModalVisible(true)}>
+          <TouchableOpacity style={styles.disputeBtn} onPress={() => setDisputeModalVisible(true)} accessibilityLabel="open dispute" accessibilityRole="button">
             <MaterialCommunityIcons name="flag-outline" size={16} color={COLORS.text2} />
             <Text style={styles.disputeBtnText}>{t('orderDetail.openDispute')}</Text>
           </TouchableOpacity>
@@ -346,14 +348,14 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('orderDetail.reviewOrder')}</Text>
-              <TouchableOpacity onPress={() => setReviewModalVisible(false)}>
+              <TouchableOpacity onPress={() => setReviewModalVisible(false)} accessibilityLabel="close review modal" accessibilityRole="button">
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.starsPicker}>
               {[1, 2, 3, 4, 5].map(star => (
-                <TouchableOpacity key={star} onPress={() => setReviewRating(star)}>
+                <TouchableOpacity key={star} onPress={() => setReviewRating(star)} accessibilityLabel={`rate ${star} star${star > 1 ? 's' : ''}`} accessibilityRole="button">
                   <MaterialCommunityIcons
                     name={star <= reviewRating ? 'star' : 'star-outline'}
                     size={36}
@@ -372,12 +374,16 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              accessibilityLabel="review comment"
+              accessibilityRole="text"
             />
 
             <TouchableOpacity
               style={[styles.submitReviewBtn, reviewSubmitting && { opacity: 0.5 }]}
               onPress={handleSubmitReview}
               disabled={reviewSubmitting}
+              accessibilityLabel="submit review"
+              accessibilityRole="button"
             >
               {reviewSubmitting ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
@@ -398,7 +404,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('orderDetail.openDispute')}</Text>
-              <TouchableOpacity onPress={() => setDisputeModalVisible(false)}>
+              <TouchableOpacity onPress={() => setDisputeModalVisible(false)} accessibilityLabel="close dispute modal" accessibilityRole="button">
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -415,6 +421,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                 key={reason.key}
                 style={[styles.disputeReasonBtn, disputeReason === reason.key && styles.disputeReasonActive]}
                 onPress={() => setDisputeReason(reason.key)}
+                accessibilityLabel={reason.label}
+                accessibilityRole="button"
               >
                 <MaterialCommunityIcons
                   name={disputeReason === reason.key ? 'radiobox-marked' : 'radiobox-blank'}
@@ -436,12 +444,16 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               multiline
               numberOfLines={3}
               textAlignVertical="top"
+              accessibilityLabel="dispute description"
+              accessibilityRole="text"
             />
 
             <TouchableOpacity
               style={[styles.submitReviewBtn, { backgroundColor: COLORS.coral }, disputeSubmitting && { opacity: 0.5 }]}
               onPress={handleSubmitDispute}
               disabled={disputeSubmitting}
+              accessibilityLabel="submit dispute"
+              accessibilityRole="button"
             >
               {disputeSubmitting ? (
                 <ActivityIndicator size="small" color={COLORS.white} />

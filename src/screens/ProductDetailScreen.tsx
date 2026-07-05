@@ -163,6 +163,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         style={styles.sellerCard}
         activeOpacity={0.8}
         onPress={() => navigation.push('ProductDetail', { productId: item.id })}
+        accessibilityRole="button"
+        accessibilityLabel={t('accessibility.viewProduct')}
       >
         {imgUrl ? (
           <Image source={{ uri: imgUrl }} style={styles.sellerCardImg} resizeMode="cover" />
@@ -199,6 +201,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           style={[styles.gridCard, { height: cardH }]}
           activeOpacity={0.82}
           onPress={() => navigation.push('ProductDetail', { productId: item.id })}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.viewProduct')}
         >
           {imgUrl ? (
             <Image source={{ uri: imgUrl }} style={styles.gridCardImg} resizeMode="cover" />
@@ -241,6 +245,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             activeOpacity={0.9}
             onPress={() => { if (allImages.length > 1) setActiveImageIndex((activeImageIndex + 1) % allImages.length); }}
             style={{ width: SCREEN_W, height: heroHeight }}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.nextImage')}
           >
             {(() => {
               const url = getImageUrl(allImages[activeImageIndex]?.image_url);
@@ -267,7 +273,12 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             <BackButton onPress={() => navigation.goBack()} variant="overlay" />
           </View>
           {!isOwnProduct && (
-            <TouchableOpacity style={[styles.wishlistBtn, { top: insets.top + 12 }]} onPress={handleWishlist}>
+            <TouchableOpacity
+              style={[styles.wishlistBtn, { top: insets.top + 12 }]}
+              onPress={handleWishlist}
+              accessibilityRole="button"
+              accessibilityLabel={wishlisted ? t('accessibility.removeFromWishlist') : t('accessibility.addToWishlist')}
+            >
               <MaterialCommunityIcons
                 name={wishlisted ? 'heart' : 'heart-outline'}
                 size={18}
@@ -275,7 +286,12 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               />
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={[styles.shareBtn, { top: insets.top + 12 }]} onPress={handleShare}>
+          <TouchableOpacity
+            style={[styles.shareBtn, { top: insets.top + 12 }]}
+            onPress={handleShare}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.shareProduct')}
+          >
             <MaterialCommunityIcons name="share-variant" size={16} color={COLORS.white} />
           </TouchableOpacity>
           <View style={styles.priceOverlay}>
@@ -292,6 +308,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             style={styles.sellerRow}
             activeOpacity={0.7}
             onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id })}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.visitStore')}
           >
             <UserAvatar seller={product.seller} />
             <View style={styles.sellerInfo}>
@@ -370,7 +388,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               </View>
             ))}
             {productReviews.length > 5 && (
-              <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 10 }}>
+              <TouchableOpacity
+                style={{ alignItems: 'center', paddingVertical: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('accessibility.viewReviews')}
+              >
                 <Text style={styles.seeAllReviews}>
                   {t('productDetail.reviews')} ({productReviews.length})
                 </Text>
@@ -384,7 +406,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           <View style={styles.sectionBorder}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>More from {getDisplayName(product.seller)}</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id })}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id })}
+                accessibilityRole="button"
+                accessibilityLabel={t('accessibility.visitStore')}
+              >
                 <Text style={styles.sectionSeeAll}>See all</Text>
               </TouchableOpacity>
             </View>

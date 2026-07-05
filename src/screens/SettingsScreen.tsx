@@ -26,6 +26,7 @@ const SettingRow = ({
   onPress,
   chevron = true,
   rightContent,
+  rowAccessibilityLabel,
 }: {
   icon: string;
   iconColor?: string;
@@ -34,8 +35,9 @@ const SettingRow = ({
   onPress?: () => void;
   chevron?: boolean;
   rightContent?: React.ReactNode;
+  rowAccessibilityLabel?: string;
 }) => (
-  <TouchableOpacity style={styles.row} onPress={onPress} disabled={!onPress} activeOpacity={onPress ? 0.6 : 1}>
+  <TouchableOpacity style={styles.row} onPress={onPress} disabled={!onPress} activeOpacity={onPress ? 0.6 : 1} accessibilityRole="button" accessibilityLabel={rowAccessibilityLabel || label.toLowerCase()}>
     <MaterialCommunityIcons name={icon as any} size={18} color={iconColor || COLORS.text2} />
     <Text style={styles.rowLabel}>{label}</Text>
     <View style={styles.rowRight}>
@@ -212,10 +214,10 @@ export default function SettingsScreen({ navigation }: Props) {
       <ScreenHeader title={t('settings.title')} onBack={() => navigation.goBack()} />
 
       {/* ── Avatar ── */}
-      <TouchableOpacity style={styles.avatarSection} onPress={handlePickAvatar} disabled={avatarUploading}>
+      <TouchableOpacity style={styles.avatarSection} onPress={handlePickAvatar} disabled={avatarUploading} accessibilityRole="button" accessibilityLabel="change avatar">
         <View style={styles.avatarWrap}>
           {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={styles.avatarImg} />
+            <Image source={{ uri: avatarUrl }} style={styles.avatarImg} accessibilityLabel="profile avatar" />
           ) : (
             <Text style={styles.avatarText}>
               {user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?'}
@@ -244,7 +246,7 @@ export default function SettingsScreen({ navigation }: Props) {
             <Text style={[styles.verifyBadge, { color: COLORS.green }]}>{t('settings.verified')}</Text>
           </View>
         ) : (
-          <TouchableOpacity style={styles.verifyRow} onPress={() => navigation.navigate('EmailVerification')}>
+          <TouchableOpacity style={styles.verifyRow} onPress={() => navigation.navigate('EmailVerification')} accessibilityRole="button" accessibilityLabel="verify email">
             <MaterialCommunityIcons name="shield-alert-outline" size={18} color={COLORS.coral} />
             <Text style={styles.verifyLabel}>{t('settings.emailVerified')}</Text>
             <Text style={[styles.verifyBadge, { color: COLORS.coral }]}>{t('settings.verifyEmail')}</Text>
@@ -292,6 +294,9 @@ export default function SettingsScreen({ navigation }: Props) {
                       style={[styles.toggle, user?.use_store_identity && styles.toggleActive]}
                       onPress={() => handleToggleStoreIdentity(!user?.use_store_identity)}
                       disabled={loading}
+                      accessibilityRole="button"
+                      accessibilityLabel="use store identity"
+                      accessibilityState={{ checked: user?.use_store_identity }}
                     >
                       <View style={[styles.toggleKnob, user?.use_store_identity && styles.toggleKnobActive]} />
                     </TouchableOpacity>
@@ -304,6 +309,7 @@ export default function SettingsScreen({ navigation }: Props) {
                   value={user?.store_logo_url ? t('settings.changeLogo') : t('settings.addLogo')}
                   onPress={handlePickStoreLogo}
                   chevron={false}
+                  rowAccessibilityLabel="change store logo"
                   rightContent={storeLogoUploading ? (
                     <ActivityIndicator size="small" color={COLORS.coral} />
                   ) : user?.store_logo_url ? (
@@ -336,6 +342,8 @@ export default function SettingsScreen({ navigation }: Props) {
                   <TouchableOpacity
                     style={styles.tierUpgradeBtn}
                     onPress={() => navigation.navigate('Verification')}
+                    accessibilityRole="button"
+                    accessibilityLabel="upgrade to verified"
                   >
                     <Text style={styles.tierUpgradeBtnText}>{t('settings.tierUpgrade')}</Text>
                   </TouchableOpacity>
@@ -368,6 +376,8 @@ export default function SettingsScreen({ navigation }: Props) {
                   <TouchableOpacity
                     style={styles.tierUpgradeBtn}
                     onPress={() => navigation.navigate('BusinessSubscription')}
+                    accessibilityRole="button"
+                    accessibilityLabel="upgrade to business"
                   >
                     <Text style={styles.tierUpgradeBtnText}>{t('settings.tierUpgrade')}</Text>
                   </TouchableOpacity>
@@ -416,6 +426,9 @@ export default function SettingsScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.langRow}
               onPress={async () => { await i18n.setLanguage(lang); }}
+              accessibilityRole="button"
+              accessibilityLabel={lang === 'en' ? 'english' : lang === 'ht' ? 'haitian creole' : 'french'}
+              accessibilityState={{ selected: language === lang }}
             >
               <Text style={[styles.langText, language === lang && styles.langTextActive]}>
                 {lang === 'en' ? t('settings.english') : lang === 'ht' ? t('settings.haitian') : t('settings.french')}
@@ -438,6 +451,8 @@ export default function SettingsScreen({ navigation }: Props) {
           placeholderTextColor={COLORS.text2}
           value={locAddress}
           onChangeText={setLocAddress}
+          accessibilityRole="text"
+          accessibilityLabel="delivery address"
         />
         <TextInput
           style={styles.locInput}
@@ -445,9 +460,11 @@ export default function SettingsScreen({ navigation }: Props) {
           placeholderTextColor={COLORS.text2}
           value={locCity}
           onChangeText={setLocCity}
+          accessibilityRole="text"
+          accessibilityLabel="delivery city"
         />
         {Platform.OS !== 'web' && (
-          <TouchableOpacity style={styles.autoDetectBtn} onPress={handleAutoDetect} disabled={locDetecting}>
+          <TouchableOpacity style={styles.autoDetectBtn} onPress={handleAutoDetect} disabled={locDetecting} accessibilityRole="button" accessibilityLabel="auto detect location">
             {locDetecting ? (
               <ActivityIndicator size={14} color={COLORS.blue} />
             ) : (
@@ -462,6 +479,8 @@ export default function SettingsScreen({ navigation }: Props) {
           style={[styles.saveLocBtn, locSaving && { opacity: 0.5 }]}
           onPress={handleSaveLocation}
           disabled={locSaving}
+          accessibilityRole="button"
+          accessibilityLabel="save location"
         >
           {locSaving ? (
             <ActivityIndicator size={14} color={COLORS.white} />
@@ -494,7 +513,7 @@ export default function SettingsScreen({ navigation }: Props) {
       )}
 
       {/* ── Logout ── */}
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} accessibilityRole="button" accessibilityLabel="logout">
         <MaterialCommunityIcons name="logout" size={16} color={COLORS.coral} />
         <Text style={styles.logoutText}>{t('settings.logout')}</Text>
       </TouchableOpacity>

@@ -109,6 +109,8 @@ export default function ChatScreen({ route, navigation }: Props) {
           style={styles.headerProfile}
           onPress={() => setProfileMenuVisible(!profileMenuVisible)}
           activeOpacity={0.7}
+          accessibilityLabel="view profile menu"
+          accessibilityRole="button"
         >
           {getImageUrl(otherUserAvatar) ? (
             <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.headerAvatarImg} />
@@ -138,6 +140,8 @@ export default function ChatScreen({ route, navigation }: Props) {
                 setProfileMenuVisible(false);
                 if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId });
               }}
+              accessibilityLabel="view store"
+              accessibilityRole="button"
             >
               <MaterialCommunityIcons name="storefront-outline" size={20} color={COLORS.text} />
               <Text style={styles.dropdownActionText}>View Store</Text>
@@ -170,6 +174,8 @@ export default function ChatScreen({ route, navigation }: Props) {
                 onPress={() => {
                   if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId });
                 }}
+                accessibilityLabel="view profile"
+                accessibilityRole="button"
               >
                 <Text style={styles.introViewProfileText}>View profile</Text>
               </TouchableOpacity>
@@ -199,6 +205,8 @@ export default function ChatScreen({ route, navigation }: Props) {
                     key={multiplier}
                     style={styles.offerChip}
                     onPress={() => setText(`Offer: Rs ${price} for ${draftOffer.productName}`)}
+                    accessibilityLabel={`offer rs ${price}`}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.offerChipText}>Rs {formatPrice(price)}</Text>
                   </TouchableOpacity>
@@ -206,14 +214,14 @@ export default function ChatScreen({ route, navigation }: Props) {
               })}
             </View>
           </View>
-          <TouchableOpacity onPress={() => setOfferDraftVisible(false)} style={styles.offerClose}>
+          <TouchableOpacity onPress={() => setOfferDraftVisible(false)} style={styles.offerClose} accessibilityLabel="close offer" accessibilityRole="button">
             <MaterialCommunityIcons name="close" size={16} color={COLORS.text2} />
           </TouchableOpacity>
         </View>
       )}
 
       <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
-        <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending}>
+        <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending} accessibilityLabel="attach photo" accessibilityRole="button">
           <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.text2} />
         </TouchableOpacity>
         <TextInput
@@ -223,8 +231,10 @@ export default function ChatScreen({ route, navigation }: Props) {
           placeholder={t('chat.placeholder')}
           placeholderTextColor={COLORS.text2}
           multiline
+          accessibilityLabel="message input"
+          accessibilityRole="text"
         />
-        <TouchableOpacity style={[styles.sendBtn, { opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()}>
+        <TouchableOpacity style={[styles.sendBtn, { opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()} accessibilityLabel="send message" accessibilityRole="button">
           <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
         </TouchableOpacity>
       </View>

@@ -21,6 +21,7 @@ import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
 import UserAvatar from '../components/UserAvatar';
+import EmptyState from '../components/EmptyState';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -294,7 +295,12 @@ export default function FeedScreen() {
 
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item)}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => handleLike(item)}
+            accessibilityRole="button"
+            accessibilityLabel={likedIds.has(item.id) ? t('accessibility.unlike') : t('accessibility.like')}
+          >
             <MaterialCommunityIcons
               name={likedIds.has(item.id) ? 'heart' : 'heart-outline'}
               size={28}
@@ -302,21 +308,36 @@ export default function FeedScreen() {
             />
           </TouchableOpacity>
           {!isOwnProduct && (
-            <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenComments(item)}>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => handleOpenComments(item)}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.viewReviews')}
+            >
               <MaterialCommunityIcons name="comment-outline" size={28} color={COLORS.white} />
               {(item.review_count || 0) > 0 && (
                 <Text style={styles.actionCount}>{item.review_count}</Text>
               )}
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.actionBtn} onPress={() => handleBookmark(item)}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => handleBookmark(item)}
+            accessibilityRole="button"
+            accessibilityLabel={wishlistedIds.has(item.id) ? t('accessibility.unbookmark') : t('accessibility.bookmark')}
+          >
             <MaterialCommunityIcons
               name={wishlistedIds.has(item.id) ? 'bookmark' : 'bookmark-outline'}
               size={28}
               color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => setMoreProduct(item)}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => setMoreProduct(item)}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.moreOptions')}
+          >
             <MaterialCommunityIcons name="dots-horizontal" size={28} color={COLORS.white} />
           </TouchableOpacity>
         </View>
@@ -334,6 +355,8 @@ export default function FeedScreen() {
             <TouchableOpacity
               style={styles.sellerChip}
               onPress={() => item.seller && nav.navigate('Storefront', { sellerId: item.seller_id })}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.visitStore')}
             >
               <UserAvatar seller={item.seller} />
               <Text style={styles.sellerName} numberOfLines={1}>{getDisplayName(item.seller)}</Text>
@@ -342,6 +365,8 @@ export default function FeedScreen() {
               <TouchableOpacity
                 style={[styles.followBtn, isFollowing && styles.followBtnActive]}
                 onPress={() => item.seller_id && handleFollow(item.seller_id)}
+                accessibilityRole="button"
+                accessibilityLabel={isFollowing ? t('accessibility.unfollow') : t('accessibility.follow')}
               >
                 <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
                   {isFollowing ? t('storefront.following') : t('feed.follow')}
@@ -390,12 +415,16 @@ export default function FeedScreen() {
           <TouchableOpacity
             style={[styles.feedTab, feedTab === 'new' && styles.feedTabActive]}
             onPress={() => { setFeedTab('new'); setPage(1); setProducts([]); }}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.newTab')}
           >
             <Text style={[styles.feedTabText, feedTab === 'new' && styles.feedTabTextActive]}>New</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.feedTab, feedTab === 'forYou' && styles.feedTabActive]}
             onPress={() => { setFeedTab('forYou'); setPage(1); setProducts([]); }}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.forYouTab')}
           >
             <Text style={[styles.feedTabText, feedTab === 'forYou' && styles.feedTabTextActive]}>For You</Text>
           </TouchableOpacity>
@@ -405,6 +434,8 @@ export default function FeedScreen() {
             style={styles.utilityBtn}
             activeOpacity={0.82}
             onPress={() => nav.navigate('Inbox', { returnTab: 'FeedTab' })}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.messages')}
           >
             <MaterialCommunityIcons name="message-text-outline" size={35} color={COLORS.white} />
             {unreadCount > 0 && (
@@ -470,11 +501,12 @@ export default function FeedScreen() {
         ListEmptyComponent={
           !refreshing ? (
             <View style={[styles.empty, { height: screenHeight }]}>
-              <View style={styles.emptyIcon}>
-                <MaterialCommunityIcons name="fire" size={36} color={COLORS.text2} />
-              </View>
-              <Text style={styles.emptyText}>{t('feed.noProducts')}</Text>
-              <Text style={styles.emptyHint}>{t('feed.checkBack')}</Text>
+              <EmptyState
+                icon="fire"
+                title={t('feed.noProducts')}
+                hint={t('feed.checkBack')}
+                size={72}
+              />
             </View>
           ) : null
         }
@@ -490,6 +522,8 @@ export default function FeedScreen() {
             style={styles.commentDismissArea}
             activeOpacity={1}
             onPress={() => setCommentProduct(null)}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.close')}
           />
           <View style={styles.commentSheet}>
             <View style={styles.sheetHandle} />
@@ -500,7 +534,12 @@ export default function FeedScreen() {
                   {commentProduct?.name}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.sheetIconBtn} onPress={() => setCommentProduct(null)}>
+              <TouchableOpacity
+                style={styles.sheetIconBtn}
+                onPress={() => setCommentProduct(null)}
+                accessibilityRole="button"
+                accessibilityLabel={t('accessibility.close')}
+              >
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -549,6 +588,8 @@ export default function FeedScreen() {
                   setCommentProduct(null);
                   handleChat(product);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('accessibility.messageSeller')}
               >
                 <MaterialCommunityIcons name="message-outline" size={17} color={COLORS.white} />
                 <Text style={styles.messageSellerText}>{t('productDetail.messageSeller')}</Text>
@@ -570,30 +611,52 @@ export default function FeedScreen() {
             style={styles.commentDismissArea}
             activeOpacity={1}
             onPress={() => setMoreProduct(null)}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.close')}
           />
           <View style={styles.moreSheet}>
             <View style={styles.sheetHandle} />
-            <TouchableOpacity style={styles.moreItem} onPress={() => {
-              if (moreProduct) trackFeedEvent(moreProduct.id, 'relevant');
-              setMoreProduct(null);
-            }}>
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => {
+                if (moreProduct) trackFeedEvent(moreProduct.id, 'relevant');
+                setMoreProduct(null);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.markRelevant')}
+            >
               <MaterialCommunityIcons name="thumb-up-outline" size={18} color={COLORS.text} />
               <Text style={styles.moreItemText}>Relevant</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.moreItem} onPress={() => {
-              if (moreProduct) trackFeedEvent(moreProduct.id, 'not_relevant');
-              setMoreProduct(null);
-            }}>
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => {
+                if (moreProduct) trackFeedEvent(moreProduct.id, 'not_relevant');
+                setMoreProduct(null);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.markNotRelevant')}
+            >
               <MaterialCommunityIcons name="thumb-down-outline" size={18} color={COLORS.text} />
               <Text style={styles.moreItemText}>Not relevant</Text>
             </TouchableOpacity>
             <View style={styles.moreDivider} />
-            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => { setMoreProduct(null); }}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.share')}
+            >
               <MaterialCommunityIcons name="share-variant-outline" size={18} color={COLORS.text} />
               <Text style={styles.moreItemText}>Share</Text>
             </TouchableOpacity>
             <View style={styles.moreDivider} />
-            <TouchableOpacity style={styles.moreItem} onPress={() => { setMoreProduct(null); }}>
+            <TouchableOpacity
+              style={styles.moreItem}
+              onPress={() => { setMoreProduct(null); }}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.report')}
+            >
               <MaterialCommunityIcons name="flag-outline" size={18} color={COLORS.coral} />
               <Text style={[styles.moreItemText, { color: COLORS.coral }]}>Report</Text>
             </TouchableOpacity>

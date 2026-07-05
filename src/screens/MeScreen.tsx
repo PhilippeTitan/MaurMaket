@@ -177,6 +177,8 @@ export default function MeScreen() {
           ? nav.navigate('EditListing', { productId: item.id })
           : nav.navigate('ProductDetail', { productId: item.id })
         }
+        accessibilityRole="button"
+        accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
       >
         <View style={[styles.cardImgWrap, { height: DEFAULT_IMG_H }]}>
           <FlatList
@@ -240,6 +242,8 @@ export default function MeScreen() {
         key={label}
         style={styles.orderCard}
         onPress={() => nav.navigate('Orders')}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}, ${count} items`}
       >
         {count > 0 && (
           <View style={[styles.orderBadge, { backgroundColor: cardColor }]}>
@@ -270,7 +274,7 @@ export default function MeScreen() {
               <MaterialCommunityIcons name="shield-check" size={16} color={COLORS.blue} />
             )}
           </View>
-          <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')}>
+          <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')} accessibilityRole="button" accessibilityLabel="settings">
             <MaterialCommunityIcons name="cog-outline" size={30} color={COLORS.text} />
           </TouchableOpacity>
         </View>
@@ -279,7 +283,7 @@ export default function MeScreen() {
         <View style={styles.avatarRow}>
           <View style={styles.avatar}>
             {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImg} />
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImg} accessibilityLabel="profile avatar" />
             ) : (
               <Text style={styles.avatarText}>{initials}</Text>
             )}
@@ -305,12 +309,12 @@ export default function MeScreen() {
           {(isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business')) && (
             <View style={styles.nameRow}>
               {isSeller && user?.seller_tier === 'verified' && (
-                <TouchableOpacity onPress={() => nav.navigate('Settings')} style={styles.tierBadge}>
+                <TouchableOpacity onPress={() => nav.navigate('Settings')} style={styles.tierBadge} accessibilityRole="button" accessibilityLabel="go business">
                   <Text style={styles.tierBadgeText}>Go Business</Text>
                 </TouchableOpacity>
               )}
               {isSeller && user?.seller_tier === 'business' && (
-                <TouchableOpacity style={[styles.tierBadge, { backgroundColor: COLORS.coral + '20' }]}>
+                <TouchableOpacity style={[styles.tierBadge, { backgroundColor: COLORS.coral + '20' }]} accessibilityRole="button" accessibilityLabel="business tier">
                   <Text style={[styles.tierBadgeText, { color: COLORS.coral }]}>Business</Text>
                 </TouchableOpacity>
               )}
@@ -328,6 +332,8 @@ export default function MeScreen() {
         <TouchableOpacity
           style={styles.sellBanner}
           onPress={() => nav.navigate('SellerOnboarding')}
+          accessibilityRole="button"
+          accessibilityLabel="become a seller"
         >
           <MaterialCommunityIcons name="store-plus-outline" size={20} color={COLORS.green} />
           <View style={{ flex: 1 }}>
@@ -343,6 +349,8 @@ export default function MeScreen() {
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={() => nav.navigate('Settings')}
+            accessibilityRole="button"
+            accessibilityLabel="edit profile"
           >
             <MaterialCommunityIcons name="pencil-outline" size={16} color={COLORS.text} />
             <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.editProfile')}</Text>
@@ -350,6 +358,8 @@ export default function MeScreen() {
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={() => nav.navigate('AddListing')}
+            accessibilityRole="button"
+            accessibilityLabel="add listing"
           >
             <MaterialCommunityIcons name="plus" size={16} color={COLORS.text} />
             <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.listings')}</Text>
@@ -391,6 +401,8 @@ export default function MeScreen() {
                   key={tp.id}
                   style={styles.topProductRow}
                   onPress={() => nav.navigate('EditListing', { productId: tp.id })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`edit ${tp.name}`}
                 >
                   <View style={styles.topProductInfo}>
                     <Text style={styles.topProductName} numberOfLines={1}>{tp.name}</Text>
@@ -419,6 +431,8 @@ export default function MeScreen() {
               key={p.id}
               style={styles.lowStockItem}
               onPress={() => nav.navigate('EditListing', { productId: p.id })}
+              accessibilityRole="button"
+              accessibilityLabel={`edit ${p.name}, ${p.stock} left`}
             >
               <Text style={styles.lowStockItemName} numberOfLines={1}>{p.name}</Text>
               <Text style={styles.lowStockItemStock}>{p.stock} left</Text>
@@ -442,6 +456,9 @@ export default function MeScreen() {
         <TouchableOpacity
           style={[styles.tab, activeTab === 'listings' && styles.tabActive]}
           onPress={() => setActiveTab('listings')}
+          accessibilityRole="button"
+          accessibilityLabel="listings"
+          accessibilityState={{ selected: activeTab === 'listings' }}
         >
           <MaterialCommunityIcons
             name={isSeller ? 'view-grid-outline' : 'shopping-outline'}
@@ -452,6 +469,9 @@ export default function MeScreen() {
         <TouchableOpacity
           style={[styles.tab, activeTab === 'reviews' && styles.tabActive]}
           onPress={() => setActiveTab('reviews')}
+          accessibilityRole="button"
+          accessibilityLabel="reviews"
+          accessibilityState={{ selected: activeTab === 'reviews' }}
         >
           <MaterialCommunityIcons
             name="star-outline"
@@ -462,6 +482,9 @@ export default function MeScreen() {
         <TouchableOpacity
           style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
           onPress={() => setActiveTab('saved')}
+          accessibilityRole="button"
+          accessibilityLabel="saved"
+          accessibilityState={{ selected: activeTab === 'saved' }}
         >
           <MaterialCommunityIcons
             name="heart-outline"
@@ -484,7 +507,7 @@ export default function MeScreen() {
                 <MaterialCommunityIcons name="storefront-outline" size={32} color={COLORS.text2} />
                 <Text style={styles.emptyText}>{t('me.noListings')}</Text>
                 <Text style={styles.emptyHint}>Add your first product so buyers have something to open from your shop.</Text>
-                <TouchableOpacity style={styles.emptyAction} onPress={() => nav.navigate('AddListing')}>
+                <TouchableOpacity style={styles.emptyAction} onPress={() => nav.navigate('AddListing')} accessibilityRole="button" accessibilityLabel="add listing">
                   <MaterialCommunityIcons name="plus" size={16} color={COLORS.white} />
                   <Text style={styles.emptyActionText}>Add listing</Text>
                 </TouchableOpacity>

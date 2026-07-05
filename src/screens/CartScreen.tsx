@@ -138,7 +138,12 @@ export default function CartScreen({ navigation }: Props) {
           <Text style={styles.itemName} numberOfLines={1}>{cartItem.name}</Text>
           <SalePriceTag price={cartItem.price} effectivePrice={cartItem.effective_price ?? cartItem.price} isOnSale={cartItem.is_on_sale || false} discountPct={cartItem.discount_pct || 0} size="md" />
           <View style={styles.qtyRow}>
-            <TouchableOpacity style={styles.qtyBtn} onPress={() => handleQuantity(cartItem.id, -1)}>
+            <TouchableOpacity
+              style={styles.qtyBtn}
+              onPress={() => handleQuantity(cartItem.id, -1)}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.decreaseQuantity')}
+            >
               <MaterialCommunityIcons name="minus" size={14} color={COLORS.text} />
             </TouchableOpacity>
             <Text style={styles.qtyVal}>{cartItem.quantity}</Text>
@@ -146,13 +151,20 @@ export default function CartScreen({ navigation }: Props) {
               style={[styles.qtyBtn, atStockLimit && styles.qtyBtnDisabled]}
               onPress={() => handleQuantity(cartItem.id, 1)}
               disabled={atStockLimit}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.increaseQuantity')}
             >
               <MaterialCommunityIcons name="plus" size={14} color={atStockLimit ? COLORS.text2 : COLORS.text} />
             </TouchableOpacity>
           </View>
           {atStockLimit && <Text style={styles.stockLimit}>{t('cart.onlyAvailable', { count: String(stock) })}</Text>}
         </View>
-        <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemove(cartItem.id)}>
+        <TouchableOpacity
+          style={styles.removeBtn}
+          onPress={() => handleRemove(cartItem.id)}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.removeItem')}
+        >
           <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
         </TouchableOpacity>
       </View>
@@ -182,11 +194,15 @@ export default function CartScreen({ navigation }: Props) {
                 value={promoCode}
                 onChangeText={setPromoCode}
                 autoCapitalize="characters"
+                accessibilityRole="text"
+                accessibilityLabel={t('accessibility.promoCode')}
               />
               <TouchableOpacity
                 style={styles.promoBtn}
                 onPress={handleApplyPromo}
                 disabled={promoLoading}
+                accessibilityRole="button"
+                accessibilityLabel={t('accessibility.apply')}
               >
                 <Text style={styles.promoBtnText}>{promoLoading ? '...' : t('cart.apply')}</Text>
               </TouchableOpacity>
@@ -204,6 +220,8 @@ export default function CartScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.checkoutBtn}
               onPress={() => navigation.navigate('Checkout', promoCode.trim() ? { promoCode: promoCode.trim() } : undefined)}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.checkout')}
             >
               <Text style={styles.checkoutBtnText}>{t('cart.proceedCheckout')}</Text>
               <MaterialCommunityIcons name="arrow-right" size={18} color={COLORS.white} />

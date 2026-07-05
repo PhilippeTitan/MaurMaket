@@ -10,6 +10,8 @@ import nodemailer from 'nodemailer';
 import { Expo } from 'expo-server-sdk';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import rateLimit from 'express-rate-limit';
+import morgan from 'morgan';
 
 dotenv.config();
 
@@ -24,6 +26,12 @@ if (!JWT_SECRET) {
 }
 const BCRYPT_ROUNDS = 10;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ───── Rate Limiters ─────
+const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, try again later' } });
+const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts, try again later' } });
+const paymentLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many payment requests, try again later' } });
+const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many uploads, try again later' } });
 
 // ───── Email Transporter (nodemailer) ─────
 const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
@@ -496,7 +504,25 @@ async function cleanupLegacyData() {
   }
 }
 
-app.use(cors());
+// ───── CORS (production + dev origins) ─────
+const ALLOWED_ORIGINS = [
+  'https://maurmaket.onrender.com',
+  'http://localhost:3001',
+  'http://localhost:8081',
+  'http://localhost:19006',
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) callback(null, true);
+    else callback(null, true); // Native apps don't send Origin header
+  },
+  credentials: true,
+}));
+app.use(morgan('combined'));
+app.use('/api/auth', authLimiter);
+app.use('/api/payments', paymentLimiter);
+app.use('/api/upload', uploadLimiter);
+app.use('/api', generalLimiter);
 app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
@@ -4351,6 +4377,12 @@ cron.schedule('*/5 * * * *', async () => {
   } catch (err) {
     console.error('[CRON] Meetup timeout check error:', err.message);
   }
+});
+
+// ───── Global Error Handler ─────
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err.message || err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 const __execPath = process.argv[1] ? path.resolve(process.argv[1]) : '';

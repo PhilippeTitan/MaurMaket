@@ -173,6 +173,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                     style={[styles.followBtn, following && styles.followBtnActive, followLoading && styles.actionDisabled]}
                     onPress={handleFollow}
                     disabled={followLoading}
+                    accessibilityLabel={following ? "unfollow seller" : "follow seller"}
+                    accessibilityRole="button"
                   >
                     <Text style={[styles.followBtnText, following && styles.followBtnTextActive]}>
                       {followLoading ? '...' : following ? t('storefront.following') : t('storefront.follow')}
@@ -182,6 +184,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                     style={[styles.msgBtn, messageLoading && styles.actionDisabled]}
                     onPress={handleMessage}
                     disabled={messageLoading}
+                    accessibilityLabel="message seller"
+                    accessibilityRole="button"
                   >
                     <MaterialCommunityIcons name="message-outline" size={16} color={COLORS.blue} />
                     <Text style={styles.msgBtnText}>{messageLoading ? t('storefront.opening') : t('storefront.message')}</Text>
@@ -201,6 +205,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
             <TouchableOpacity
               style={[styles.card, { height: cardH + 50 }]}
               onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+              accessibilityLabel={`view ${item.name}`}
+              accessibilityRole="button"
             >
               <View style={[styles.cardImage, { height: cardH }]}>
                 {imgUrl ? <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" /> : <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />}

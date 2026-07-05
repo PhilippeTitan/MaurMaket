@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator, Platform, Modal,
+  Alert, ActivityIndicator, Platform, Modal, KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -126,7 +126,7 @@ export default function PromoManagementScreen() {
           {promo.uses_count} uses{promo.max_uses ? `/${promo.max_uses}` : ''} · {formatTimeLeft(promo.valid_until)}
         </Text>
 
-        <TouchableOpacity style={styles.toggleBtn} onPress={() => handleToggle(promo)}>
+        <TouchableOpacity style={styles.toggleBtn} onPress={() => handleToggle(promo)} accessibilityRole="button" accessibilityLabel={promo.is_active ? 'pause promo' : 'reactivate promo'}>
           <MaterialCommunityIcons name={promo.is_active ? 'pause' : 'play'} size={14} color={promo.is_active ? COLORS.yellow : COLORS.green} />
           <Text style={[styles.toggleBtnText, { color: promo.is_active ? COLORS.yellow : COLORS.green }]}>
             {promo.is_active ? 'Pause' : 'Reactivate'}
@@ -170,7 +170,7 @@ export default function PromoManagementScreen() {
 
       {/* Create button */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
-        <TouchableOpacity style={styles.createBtn} onPress={() => setShowCreate(true)}>
+        <TouchableOpacity style={styles.createBtn} onPress={() => setShowCreate(true)} accessibilityRole="button" accessibilityLabel="create promo code">
           <MaterialCommunityIcons name="plus" size={18} color={COLORS.white} />
           <Text style={styles.createBtnText}>Create Promo Code</Text>
         </TouchableOpacity>
@@ -179,9 +179,9 @@ export default function PromoManagementScreen() {
       {/* Create modal */}
       <Modal visible={showCreate} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setShowCreate(false)}>
+              <TouchableOpacity onPress={() => setShowCreate(false)} accessibilityRole="button" accessibilityLabel="close">
                 <MaterialCommunityIcons name="close" size={24} color={COLORS.text} />
               </TouchableOpacity>
               <Text style={styles.modalTitle}>Create Promo Code</Text>
@@ -191,8 +191,8 @@ export default function PromoManagementScreen() {
             <ScrollView contentContainerStyle={styles.modalScroll}>
               <Text style={styles.fieldLabel}>Code</Text>
               <View style={styles.codeRow}>
-                <TextInput style={[styles.input, { flex: 1 }]} placeholder="XKMP-2B7N" placeholderTextColor={COLORS.text2} value={code} onChangeText={setCode} autoCapitalize="characters" />
-                <TouchableOpacity style={styles.generateBtn} onPress={() => setCode(generateCode())}>
+                <TextInput style={[styles.input, { flex: 1 }]} placeholder="XKMP-2B7N" placeholderTextColor={COLORS.text2} value={code} onChangeText={setCode} autoCapitalize="characters" accessibilityRole="text" accessibilityLabel="promo code" />
+                <TouchableOpacity style={styles.generateBtn} onPress={() => setCode(generateCode())} accessibilityRole="button" accessibilityLabel="generate code">
                   <MaterialCommunityIcons name="dice-5-outline" size={20} color={COLORS.coral} />
                 </TouchableOpacity>
               </View>
@@ -200,31 +200,31 @@ export default function PromoManagementScreen() {
               <Text style={styles.fieldLabel}>Discount Type</Text>
               <View style={styles.typeRow}>
                 {DISCOUNT_TYPES.map(dt => (
-                  <TouchableOpacity key={dt} style={[styles.typeBtn, discountType === dt && styles.typeBtnActive]} onPress={() => setDiscountType(dt)}>
+                  <TouchableOpacity key={dt} style={[styles.typeBtn, discountType === dt && styles.typeBtnActive]} onPress={() => setDiscountType(dt)} accessibilityRole="button" accessibilityLabel={dt === 'percentage' ? 'percentage' : 'fixed amount'} accessibilityState={{ selected: discountType === dt }}>
                     <Text style={[styles.typeBtnText, discountType === dt && styles.typeBtnTextActive]}>{dt === 'percentage' ? '%' : 'Rs'}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
               <Text style={styles.fieldLabel}>Discount Value</Text>
-              <TextInput style={styles.input} placeholder={discountType === 'percentage' ? '10' : '100'} placeholderTextColor={COLORS.text2} value={discountValue} onChangeText={setDiscountValue} keyboardType="numeric" />
+              <TextInput style={styles.input} placeholder={discountType === 'percentage' ? '10' : '100'} placeholderTextColor={COLORS.text2} value={discountValue} onChangeText={setDiscountValue} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="discount value" />
 
               <Text style={styles.fieldLabel}>Minimum order (optional)</Text>
-              <TextInput style={styles.input} placeholder="Rs 500" placeholderTextColor={COLORS.text2} value={minOrder} onChangeText={setMinOrder} keyboardType="numeric" />
+              <TextInput style={styles.input} placeholder="Rs 500" placeholderTextColor={COLORS.text2} value={minOrder} onChangeText={setMinOrder} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="minimum order" />
 
               <Text style={styles.fieldLabel}>Max uses (optional)</Text>
-              <TextInput style={styles.input} placeholder="100" placeholderTextColor={COLORS.text2} value={maxUses} onChangeText={setMaxUses} keyboardType="numeric" />
+              <TextInput style={styles.input} placeholder="100" placeholderTextColor={COLORS.text2} value={maxUses} onChangeText={setMaxUses} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="max uses" />
 
               <Text style={styles.fieldLabel}>Expires (optional, YYYY-MM-DD)</Text>
-              <TextInput style={styles.input} placeholder="2026-12-31" placeholderTextColor={COLORS.text2} value={validUntil} onChangeText={setValidUntil} />
+              <TextInput style={styles.input} placeholder="2026-12-31" placeholderTextColor={COLORS.text2} value={validUntil} onChangeText={setValidUntil} accessibilityRole="text" accessibilityLabel="expires" />
 
-              <TouchableOpacity style={[styles.submitBtn, creating && { opacity: 0.5 }]} onPress={handleCreate} disabled={creating}>
+              <TouchableOpacity style={[styles.submitBtn, creating && { opacity: 0.5 }]} onPress={handleCreate} disabled={creating} accessibilityRole="button" accessibilityLabel="create code">
                 {creating ? <ActivityIndicator color={COLORS.white} /> : (
                   <Text style={styles.submitBtnText}>Create Code</Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </View>

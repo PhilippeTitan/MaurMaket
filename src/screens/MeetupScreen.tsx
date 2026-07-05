@@ -359,7 +359,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
         {/* QR section for buyer */}
         {isBuyer && myCheckedIn && otherCheckedIn && proximityConfirmed && qrToken && (
-          <TouchableOpacity style={styles.qrButton} onPress={() => setQrModalVisible(true)}>
+          <TouchableOpacity style={styles.qrButton} onPress={() => setQrModalVisible(true)} accessibilityLabel="show qr code" accessibilityRole="button">
             <MaterialCommunityIcons name="qrcode" size={20} color={COLORS.white} />
             <Text style={styles.qrButtonText}>Show QR Code</Text>
           </TouchableOpacity>
@@ -367,7 +367,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
         {/* Scan section for seller */}
         {isSeller && myCheckedIn && otherCheckedIn && proximityConfirmed && (
-          <TouchableOpacity style={styles.scanButton} onPress={() => setScanModalVisible(true)}>
+          <TouchableOpacity style={styles.scanButton} onPress={() => setScanModalVisible(true)} accessibilityLabel="scan buyer qr" accessibilityRole="button">
             <MaterialCommunityIcons name="qrcode-scan" size={20} color={COLORS.white} />
             <Text style={styles.scanButtonText}>Scan Buyer's QR</Text>
           </TouchableOpacity>
@@ -396,6 +396,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
             style={[styles.checkinBtn, checkinLoading && { opacity: 0.5 }]}
             onPress={handleCheckin}
             disabled={checkinLoading}
+            accessibilityLabel="i'm here"
+            accessibilityRole="button"
           >
             {checkinLoading ? (
               <ActivityIndicator size="small" color={COLORS.white} />
@@ -413,6 +415,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={styles.receiptBtn}
             onPress={() => setReceiptModalVisible(true)}
+            accessibilityLabel="confirm receipt"
+            accessibilityRole="button"
           >
             <MaterialCommunityIcons name="hand-coin-outline" size={18} color={COLORS.white} />
             <Text style={styles.receiptBtnText}>Confirm receipt</Text>
@@ -422,11 +426,11 @@ export default function MeetupScreen({ route, navigation }: Props) {
         {/* Cancel / Emergency */}
         {order.status === 'paid' && (
           <View style={styles.emergencyRow}>
-            <TouchableOpacity style={[styles.emergencyBtn, { borderColor: COLORS.blue }]} onPress={handleExtend}>
+            <TouchableOpacity style={[styles.emergencyBtn, { borderColor: COLORS.blue }]} onPress={handleExtend} accessibilityLabel="extend time 30 minutes" accessibilityRole="button">
               <MaterialCommunityIcons name="clock-plus" size={16} color={COLORS.blue} />
               <Text style={[styles.emergencyBtnText, { color: COLORS.blue }]}>Extend +30m</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.emergencyBtn} onPress={handleRefund} disabled={refunding}>
+            <TouchableOpacity style={styles.emergencyBtn} onPress={handleRefund} disabled={refunding} accessibilityLabel="cancel meetup" accessibilityRole="button">
               {refunding ? (
                 <ActivityIndicator size="small" color={COLORS.coral} />
               ) : (
@@ -436,7 +440,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
                 </>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.emergencyBtn, { borderColor: '#FF2D2D' }]} onPress={handleEmergencyExit}>
+            <TouchableOpacity style={[styles.emergencyBtn, { borderColor: '#FF2D2D' }]} onPress={handleEmergencyExit} accessibilityLabel="emergency exit" accessibilityRole="button">
               <MaterialCommunityIcons name="shield-alert" size={16} color="#FF2D2D" />
               <Text style={[styles.emergencyBtnText, { color: '#FF2D2D' }]}>Emergency</Text>
             </TouchableOpacity>
@@ -450,7 +454,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Show this QR code</Text>
-              <TouchableOpacity onPress={() => setQrModalVisible(false)}>
+              <TouchableOpacity onPress={() => setQrModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -468,6 +472,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
                     Alert.alert('Copied', 'QR token copied to clipboard.');
                   }
                 }}
+                accessibilityLabel="copy code"
+                accessibilityRole="button"
               >
                 <Text style={styles.copyTokenText}>Copy code</Text>
               </TouchableOpacity>
@@ -482,7 +488,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Scan buyer's QR</Text>
-              <TouchableOpacity onPress={() => setScanModalVisible(false)}>
+              <TouchableOpacity onPress={() => setScanModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -498,12 +504,16 @@ export default function MeetupScreen({ route, navigation }: Props) {
                 onChangeText={setScanInput}
                 autoCapitalize="none"
                 autoCorrect={false}
+                accessibilityLabel="qr code input"
+                accessibilityRole="text"
               />
             </View>
             <TouchableOpacity
               style={[styles.scanConfirmBtn, scanLoading && { opacity: 0.5 }]}
               onPress={handleScan}
               disabled={scanLoading}
+              accessibilityLabel="confirm exchange"
+              accessibilityRole="button"
             >
               {scanLoading ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
@@ -521,7 +531,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Confirm receipt</Text>
-              <TouchableOpacity onPress={() => setReceiptModalVisible(false)}>
+              <TouchableOpacity onPress={() => setReceiptModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
                 <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -538,6 +548,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
               style={[styles.receiptConfirmBtn, releaseLoading && { opacity: 0.5 }]}
               onPress={handleConfirmReceipt}
               disabled={releaseLoading}
+              accessibilityLabel="yes, i received it"
+              accessibilityRole="button"
             >
               {releaseLoading ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
@@ -554,6 +566,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
                 setReceiptModalVisible(false);
                 Alert.alert('Dispute opened', 'Support will review this order. Your payment is held securely.');
               }}
+              accessibilityLabel="open dispute"
+              accessibilityRole="button"
             >
               <Text style={styles.receiptDisputeBtnText}>No, open a dispute</Text>
             </TouchableOpacity>

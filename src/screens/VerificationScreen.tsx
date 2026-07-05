@@ -296,7 +296,7 @@ export default function VerificationScreen() {
         <View style={styles.permissionWrap}>
           <MaterialCommunityIcons name="camera-off-outline" size={48} color={COLORS.text2} />
           <Text style={styles.permissionText}>Camera access is required</Text>
-          <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
+          <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission} accessibilityLabel="grant permission" accessibilityRole="button">
             <Text style={styles.permissionBtnText}>Grant Permission</Text>
           </TouchableOpacity>
         </View>
@@ -313,14 +313,14 @@ export default function VerificationScreen() {
         </>
       )}
       <View style={styles.cameraActions}>
-        <TouchableOpacity style={styles.captureBtn} onPress={onCapture} disabled={loading}>
+        <TouchableOpacity style={styles.captureBtn} onPress={onCapture} disabled={loading} accessibilityLabel="capture photo" accessibilityRole="button">
           {loading ? (
             <ActivityIndicator size="small" color={COLORS.white} />
           ) : (
             <View style={styles.captureBtnInner} />
           )}
         </TouchableOpacity>
-        <TouchableOpacity style={styles.galleryBtn} onPress={() => pickImage(facing)} disabled={loading}>
+        <TouchableOpacity style={styles.galleryBtn} onPress={() => pickImage(facing)} disabled={loading} accessibilityLabel="pick from gallery" accessibilityRole="button">
           <MaterialCommunityIcons name="image-multiple" size={24} color={COLORS.white} />
         </TouchableOpacity>
       </View>
@@ -352,7 +352,7 @@ export default function VerificationScreen() {
           <Text style={styles.reqText}>Instant approval if all fields match</Text>
         </View>
       </View>
-      <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('cinFront')}>
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('cinFront')} accessibilityLabel="start verification" accessibilityRole="button">
         <Text style={styles.primaryBtnText}>Start Verification</Text>
       </TouchableOpacity>
     </View>
@@ -401,6 +401,8 @@ export default function VerificationScreen() {
         style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
         onPress={handleSubmit}
         disabled={loading}
+        accessibilityLabel="submit for verification"
+        accessibilityRole="button"
       >
         {loading ? (
           <ActivityIndicator size="small" color={COLORS.white} />
@@ -409,7 +411,7 @@ export default function VerificationScreen() {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.retakeBtn} onPress={() => { setStep('cinFront'); setIdFrontUrl(''); setIdBackUrl(''); setSelfieUrl(''); setFrontOcr({}); setBackOcr({}); setFaceScore(null); setRejectedReasons(null); }}>
+      <TouchableOpacity style={styles.retakeBtn} onPress={() => { setStep('cinFront'); setIdFrontUrl(''); setIdBackUrl(''); setSelfieUrl(''); setFrontOcr({}); setBackOcr({}); setFaceScore(null); setRejectedReasons(null); }} accessibilityLabel="retake all photos" accessibilityRole="button">
         <Text style={styles.retakeBtnText}>Retake All Photos</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -434,7 +436,7 @@ export default function VerificationScreen() {
           ))}
         </View>
       )}
-      <TouchableOpacity style={styles.primaryBtn} onPress={() => { setStep('cinFront'); setIdFrontUrl(''); setIdBackUrl(''); setSelfieUrl(''); setFrontOcr({}); setBackOcr({}); setFaceScore(null); setRejectedReasons(null); }}>
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => { setStep('cinFront'); setIdFrontUrl(''); setIdBackUrl(''); setSelfieUrl(''); setFrontOcr({}); setBackOcr({}); setFaceScore(null); setRejectedReasons(null); }} accessibilityLabel="try again" accessibilityRole="button">
         <Text style={styles.primaryBtnText}>Try Again</Text>
       </TouchableOpacity>
     </View>

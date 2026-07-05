@@ -170,6 +170,8 @@ export default function AddListingScreen() {
           <TouchableOpacity
             style={styles.upgradeBtn}
             onPress={() => { nav.navigate('SellerOnboarding'); }}
+            accessibilityRole="button"
+            accessibilityLabel="upgrade to verified"
           >
             <MaterialCommunityIcons name="shield-check-outline" size={18} color={COLORS.white} />
             <Text style={styles.upgradeBtnText}>{t('addListing.upgradeToVerified')}</Text>
@@ -191,31 +193,31 @@ export default function AddListingScreen() {
             {imageUris.map((uri, idx) => (
               <View key={idx} style={styles.thumbWrap}>
                 <Image source={{ uri }} style={styles.thumbImg} />
-                <TouchableOpacity style={styles.thumbRemove} onPress={() => removeImage(idx)}>
+                <TouchableOpacity style={styles.thumbRemove} onPress={() => removeImage(idx)} accessibilityRole="button" accessibilityLabel="remove image">
                   <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
                 </TouchableOpacity>
               </View>
             ))}
             {imageUris.length < MAX_IMAGES && (
-              <TouchableOpacity style={styles.addBtn} onPress={pickImages}>
+              <TouchableOpacity style={styles.addBtn} onPress={pickImages} accessibilityRole="button" accessibilityLabel="add image">
                 <MaterialCommunityIcons name="camera-plus" size={28} color={COLORS.text2} />
               </TouchableOpacity>
             )}
           </ScrollView>
 
-          <TextInput style={styles.input} placeholder={t('addListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} />
-          <TextInput style={[styles.input, styles.textArea]} placeholder={t('addListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} />
-          <TextInput style={styles.input} placeholder={t('addListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" />
+          <TextInput style={styles.input} placeholder={t('addListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityRole="text" accessibilityLabel="product name" />
+          <TextInput style={[styles.input, styles.textArea]} placeholder={t('addListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} accessibilityRole="text" accessibilityLabel="description" />
+          <TextInput style={styles.input} placeholder={t('addListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="price" />
 
-          <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)}>
+          <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
             <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
             <Text style={styles.saleToggleText}>{'🏷️ Run a sale'}</Text>
           </TouchableOpacity>
 
           {showSale && (
             <View style={styles.saleSection}>
-              <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" />
-              <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} />
+              <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="sale price" />
+              <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} accessibilityRole="text" accessibilityLabel="sale end date" />
               {price && salePrice && parseFloat(salePrice) < parseFloat(price) && (
                 <Text style={styles.saleHint}>
                   -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {formatPrice(parseFloat(price) - parseFloat(salePrice))} saved
@@ -224,7 +226,7 @@ export default function AddListingScreen() {
             </View>
           )}
 
-          <TextInput style={styles.input} placeholder={t('addListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" />
+          <TextInput style={styles.input} placeholder={t('addListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" accessibilityRole="text" accessibilityLabel="quantity" />
 
           <Text style={styles.sectionLabel}>{t('addListing.category')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
@@ -233,6 +235,9 @@ export default function AddListingScreen() {
                 key={cat.id}
                 style={[styles.catPill, categoryId === cat.id && styles.catPillActive]}
                 onPress={() => setCategoryId(categoryId === cat.id ? null : cat.id)}
+                accessibilityRole="button"
+                accessibilityLabel={cat.name.toLowerCase()}
+                accessibilityState={{ selected: categoryId === cat.id }}
               >
                 <Text style={[styles.catPillText, categoryId === cat.id && styles.catPillTextActive]}>
                   {cat.name}
@@ -245,6 +250,8 @@ export default function AddListingScreen() {
             style={[styles.submitBtn, (loading || uploading) && styles.submitBtnDisabled]}
             onPress={handleSubmit}
             disabled={loading || uploading}
+            accessibilityRole="button"
+            accessibilityLabel="publish listing"
           >
             {loading || uploading ? (
               <ActivityIndicator color={COLORS.white} />

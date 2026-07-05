@@ -90,7 +90,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
           </View>
           <Text style={styles.successTitle}>{t('verify.success')}</Text>
           <Text style={styles.successSub}>{t('verify.successSub')}</Text>
-          <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.goBack()} accessibilityLabel="done" accessibilityRole="button">
             <Text style={styles.doneBtnText}>{t('common.done')}</Text>
           </TouchableOpacity>
         </View>
@@ -104,7 +104,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={[styles.content, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} accessibilityLabel="go back" accessibilityRole="button">
           <MaterialCommunityIcons name="arrow-left" size={35} color={COLORS.text} />
         </TouchableOpacity>
 
@@ -139,12 +139,16 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
           keyboardType="number-pad"
           maxLength={6}
           autoFocus
+          accessibilityLabel="verification code"
+          accessibilityRole="text"
         />
 
         <TouchableOpacity
           style={[styles.verifyBtn, (loading || code.length !== 6) && styles.verifyBtnDisabled]}
           onPress={() => handleVerify()}
           disabled={loading || code.length !== 6}
+          accessibilityLabel="verify"
+          accessibilityRole="button"
         >
           <Text style={styles.verifyBtnText}>
             {loading ? t('common.loading') : t('verify.verify')}
@@ -155,7 +159,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
           {cooldown > 0 ? (
             <Text style={styles.resendCooldown}>{t('verify.resendIn', { seconds: String(cooldown) })}</Text>
           ) : (
-            <TouchableOpacity onPress={handleResend}>
+            <TouchableOpacity onPress={handleResend} accessibilityLabel="resend code" accessibilityRole="button">
               <Text style={styles.resendBtn}>{t('verify.resend')}</Text>
             </TouchableOpacity>
           )}
