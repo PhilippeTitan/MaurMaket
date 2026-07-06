@@ -273,6 +273,9 @@ export const createPayment = (orderId: string, returnUrl: string) =>
 export const retryPayment = (orderId: string) =>
   request(`/payments/retry/${orderId}`, { method: 'POST' });
 
+export const checkPaymentStatus = (orderId: string) =>
+  request(`/payments/${orderId}/status`);
+
 // Wishlist
 export const toggleWishlist = (productId: string) =>
   request(`/wishlist/${productId}`, { method: 'POST' });
@@ -330,8 +333,10 @@ export const getConversations = async () => {
 };
 export const createConversation = (data: Record<string, string>) =>
   request('/conversations', { method: 'POST', body: JSON.stringify(data) });
-export const getMessages = (conversationId: string) =>
-  request(`/conversations/${conversationId}/messages`);
+export const getMessages = (conversationId: string, params?: { limit?: number; offset?: number }) => {
+  const qs = params ? `?${new URLSearchParams({ ...(params.limit != null && { limit: String(params.limit) }), ...(params.offset != null && { offset: String(params.offset) }) }).toString()}` : '';
+  return request(`/conversations/${conversationId}/messages${qs}`);
+};
 export const sendMessage = (conversationId: string, content: string, imageUrl?: string) =>
   request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text' }) });
 export const getConversationUnreadCount = () => request('/conversations/unread-count');

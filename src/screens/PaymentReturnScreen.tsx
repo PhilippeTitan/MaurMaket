@@ -8,9 +8,8 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
-import { getOrder } from '../api';
+import { checkPaymentStatus } from '../api';
 import type { RootStackParamList } from '../navigation';
-import type { Order } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -37,14 +36,18 @@ export default function PaymentReturnScreen() {
 
     pollRef.current = setInterval(async () => {
       try {
-        const res = await getOrder(orderId) as { order: Order };
-        if (res.order?.status === 'paid' || res.order?.status === 'processing' || res.order?.status === 'shipped') {
+        const res = await checkPaymentStatus(orderId) as { status: string };
+        if (res.status === 'paid' || res.status === 'processing' || res.status === 'shipped' || res.status === 'completed') {
           setStatus('confirmed');
           if (pollRef.current) clearInterval(pollRef.current);
           if (elapsedRef.current) clearInterval(elapsedRef.current);
           setTimeout(() => {
             nav.replace('OrderDetail', { orderId: orderId! });
           }, 2000);
+        } else if (res.status === 'cancelled') {
+          setStatus('timeout');
+          if (pollRef.current) clearInterval(pollRef.current);
+          if (elapsedRef.current) clearInterval(elapsedRef.current);
         }
       } catch { /* keep polling */ }
     }, 3000);

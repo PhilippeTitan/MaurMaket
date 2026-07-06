@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
-  KeyboardAvoidingView, Platform, Alert, Image, Pressable,
+  KeyboardAvoidingView, Platform, Alert, Image, Pressable, AppState, AppStateStatus,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
@@ -28,20 +28,55 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [offerDraftVisible, setOfferDraftVisible] = useState(Boolean(draftOffer));
   const [profileMenuVisible, setProfileMenuVisible] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const listRef = useRef<FlatList>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const appState = useRef(AppState.currentState);
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (pageNum = 0, append = false) => {
     try {
-      const res = await getMessages(conversationId) as { messages: Message[] };
-      setMessages(res.messages || []);
+      const res = await getMessages(conversationId, { limit: 50, offset: pageNum * 50 }) as { messages: Message[] };
+      const msgs = res.messages || [];
+      if (append) {
+        setMessages(prev => [...msgs, ...prev]);
+      } else {
+        setMessages(msgs);
+      }
+      setHasMore(msgs.length === 50);
     } catch { /* ignore */ }
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchMessages();
-    const interval = setInterval(fetchMessages, 5000);
-    return () => clearInterval(interval);
+    fetchMessages(0, false);
+    setPage(0);
+
+    const startPolling = () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(() => fetchMessages(0, false), 5000);
+    };
+    const stopPolling = () => {
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    };
+
+    startPolling();
+
+    const handleAppState = (next: AppStateStatus) => {
+      if (appState.current.match(/active/) && next.match(/inactive|background/)) {
+        stopPolling();
+      } else if (appState.current.match(/inactive|background/) && next === 'active') {
+        fetchMessages(0, false);
+        startPolling();
+      }
+      appState.current = next;
+    };
+    const sub = AppState.addEventListener('change', handleAppState);
+
+    return () => {
+      stopPolling();
+      sub.remove();
+    };
   }, [conversationId]);
 
   useEffect(() => {
@@ -159,6 +194,15 @@ export default function ChatScreen({ route, navigation }: Props) {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.messageList}
           ref={listRef}
+          onEndReached={() => {
+            if (hasMore && !loading) {
+              const nextPage = page + 1;
+              setPage(nextPage);
+              fetchMessages(nextPage, true);
+            }
+          }}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={hasMore && messages.length > 0 ? <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} /> : null}
           ListHeaderComponent={
             <View style={styles.introHeader}>
               {getImageUrl(otherUserAvatar) ? (

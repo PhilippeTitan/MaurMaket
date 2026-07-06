@@ -26,7 +26,7 @@ export default function StockBadge({ stock, size = 'md' }: StockBadgeProps) {
   const isSm = size === 'sm';
 
   return (
-    <View style={[styles.badge, isSm && styles.badgeSm]}>
+    <View style={[styles.badge, isSm && styles.badgeSm]} accessibilityLabel={label}>
       <View style={[styles.dot, isSm && styles.dotSm, { backgroundColor: dotColor }]} />
       <Text style={[styles.text, isSm && styles.textSm]} numberOfLines={1}>
         {label}

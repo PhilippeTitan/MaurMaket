@@ -16,6 +16,8 @@ export default function BackButton({ onPress, variant = 'standard', size = 35 }:
       onPress={onPress}
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       style={isOverlay ? styles.overlay : undefined}
+      accessibilityLabel="Go back"
+      accessibilityRole="button"
     >
       <MaterialCommunityIcons
         name="arrow-left"

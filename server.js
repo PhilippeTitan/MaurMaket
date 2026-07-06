@@ -837,7 +837,7 @@ const EMAIL_TEMPLATES = {
 };
 
 function generateOtpCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 function buildVerificationEmail(code, purpose, lang = 'en') {
@@ -956,7 +956,12 @@ app.post('/api/auth/verify/check', authRequired, async (req, res) => {
       `SELECT code FROM otp_codes WHERE email = $1 AND purpose = 'verify' AND expires_at > now()`,
       [user.email]
     );
-    if (otpResult.rowCount === 0 || otpResult.rows[0].code !== code) {
+    if (otpResult.rowCount === 0) {
+      return res.status(400).json({ error: 'Invalid or expired code' });
+    }
+    const storedBuf = Buffer.from(otpResult.rows[0].code, 'utf8');
+    const inputBuf = Buffer.from(String(code), 'utf8');
+    if (storedBuf.length !== inputBuf.length || !crypto.timingSafeEqual(storedBuf, inputBuf)) {
       return res.status(400).json({ error: 'Invalid or expired code' });
     }
 
@@ -1011,7 +1016,12 @@ app.post('/api/auth/reset-password', async (req, res) => {
       `SELECT code FROM otp_codes WHERE lower(email) = lower($1) AND purpose = 'reset' AND expires_at > now()`,
       [email]
     );
-    if (otpResult.rowCount === 0 || otpResult.rows[0].code !== code) {
+    if (otpResult.rowCount === 0) {
+      return res.status(400).json({ error: 'Invalid or expired code' });
+    }
+    const storedBuf = Buffer.from(otpResult.rows[0].code, 'utf8');
+    const inputBuf = Buffer.from(String(code), 'utf8');
+    if (storedBuf.length !== inputBuf.length || !crypto.timingSafeEqual(storedBuf, inputBuf)) {
       return res.status(400).json({ error: 'Invalid or expired code' });
     }
 
@@ -1094,13 +1104,9 @@ app.put('/api/auth/become-seller', authRequired, async (req, res) => {
     if (req.user.role === 'seller') {
       return res.status(400).json({ error: 'You are already a seller' });
     }
-    const { storeName, storeLogoUrl, idDocumentUrl, tier } = req.body;
-    let sellerTier;
-    if (tier === 'verified') sellerTier = 'verified';
-    else if (tier === 'business') sellerTier = 'business';
-    else sellerTier = 'casual';
-    const idSubmittedAt = ((sellerTier === 'verified' || sellerTier === 'business') && idDocumentUrl) ? 'CURRENT_TIMESTAMP' : null;
-    const useStoreIdentity = (sellerTier === 'business' && storeName) ? true : false;
+    const { storeName, storeLogoUrl, idDocumentUrl } = req.body;
+    const sellerTier = 'casual';
+    const useStoreIdentity = false;
     const result = await pool.query(
       `UPDATE users SET
         role = 'seller',
@@ -1586,7 +1592,7 @@ app.get('/api/sellers/nearby', async (req, res) => {
 app.get('/api/sellers/:id', async (req, res) => {
   try {
     const userResult = await pool.query(
-      `SELECT id, full_name, email, phone, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, id_verification_result, use_store_identity FROM users WHERE id = $1 AND role = 'seller'`,
+      `SELECT id, full_name, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, id_verification_result, use_store_identity FROM users WHERE id = $1 AND role = 'seller'`,
       [req.params.id]
     );
     if (userResult.rows.length === 0) return res.status(404).json({ error: 'Seller not found' });
@@ -2132,7 +2138,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
     let promoId = null;
     if (promoCode) {
       const promoResult = await client.query(
-        `SELECT * FROM promo_codes WHERE code = $1 AND is_active = true AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)`,
+        `SELECT * FROM promo_codes WHERE code = $1 AND is_active = true AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP) FOR UPDATE`,
         [promoCode.toUpperCase()]
       );
       if (promoResult.rows.length > 0) {
@@ -2243,14 +2249,21 @@ app.post('/api/orders/:id/reorder', authRequired, async (req, res) => {
     const order = await canAccessOrder(req.user.id, req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     const items = await pool.query(
-      `SELECT oi.product_id, oi.quantity, p.name, p.price, p.stock, p.is_available
+      `SELECT oi.product_id, oi.quantity, p.name, p.price, p.stock, p.is_available, p.seller_id,
+              p.sale_price, p.sale_starts_at, p.sale_ends_at,
+              (SELECT json_agg(json_build_object('id', pi.id, 'url', pi.image_url, 'is_primary', pi.is_primary, 'display_order', pi.display_order) ORDER BY pi.is_primary DESC, pi.display_order)
+               FROM product_images pi WHERE pi.product_id = p.id) AS images
        FROM order_items oi JOIN products p ON oi.product_id = p.id
        WHERE oi.order_id = $1`,
       [req.params.id]
     );
     const availableItems = items.rows
       .filter(item => item.is_available && item.stock > 0)
-      .map(item => ({ productId: item.product_id, name: item.name, price: item.price, stock: item.stock }));
+      .map(item => {
+        const isOnSale = item.sale_price && (item.sale_starts_at === null || new Date(item.sale_starts_at) <= new Date()) && (item.sale_ends_at === null || new Date(item.sale_ends_at) >= new Date());
+        const effectivePrice = isOnSale ? parseFloat(item.sale_price) : parseFloat(item.price);
+        return { productId: item.product_id, sellerId: item.seller_id, name: item.name, price: effectivePrice, stock: item.stock, images: item.images || [] };
+      });
     res.json({ items: availableItems });
   } catch (err) {
     console.error('Reorder error:', err);
@@ -3074,7 +3087,7 @@ app.post('/api/promos/validate', authRequired, async (req, res) => {
   if (!code) return res.status(400).json({ error: 'Code required' });
   try {
     const result = await pool.query(
-      `SELECT * FROM promo_codes WHERE code = $1 AND is_active = true AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)`,
+      `SELECT * FROM promo_codes WHERE code = $1 AND is_active = true AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP) FOR UPDATE`,
       [code.toUpperCase()]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Invalid or expired promo code' });
@@ -3389,7 +3402,7 @@ app.post('/api/conversations', authRequired, async (req, res) => {
     }
     if (req.user.id === sellerId) return res.status(400).json({ error: 'Cannot message yourself' });
     const existing = await pool.query(
-      `SELECT id FROM conversations WHERE buyer_id = $1 AND seller_id = $2 AND ($3::uuid IS NULL OR order_id = $3)`,
+      `SELECT id FROM conversations WHERE ((buyer_id = $1 AND seller_id = $2) OR (buyer_id = $2 AND seller_id = $1)) AND ($3::uuid IS NULL OR order_id = $3)`,
       [req.user.id, sellerId, orderId || null]
     );
     if (existing.rows.length > 0) return res.json({ conversationId: existing.rows[0].id });
@@ -3416,12 +3429,15 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
       'UPDATE messages SET is_read = true WHERE conversation_id = $1 AND sender_id != $2',
       [req.params.id, req.user.id]
     );
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = parseInt(req.query.offset) || 0;
     const result = await pool.query(
       `SELECT m.*, u.full_name AS sender_name
        FROM messages m JOIN users u ON m.sender_id = u.id
        WHERE m.conversation_id = $1
-       ORDER BY m.created_at ASC`,
-      [req.params.id]
+       ORDER BY m.created_at ASC
+       LIMIT $2 OFFSET $3`,
+      [req.params.id, limit, offset]
     );
     res.json({ messages: result.rows });
   } catch (err) {
@@ -3524,6 +3540,52 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
     res.json({ paymentUrl: data.paymentUrl });
   } catch (err) {
     console.error('Payment create error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
+  try {
+    const orderResult = await pool.query(
+      "SELECT id, status, moncash_reference FROM orders WHERE id = $1 AND buyer_id = $2",
+      [req.params.orderId, req.user.id]
+    );
+    if (orderResult.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    const order = orderResult.rows[0];
+
+    if (order.status !== 'pending') {
+      return res.json({ status: order.status });
+    }
+
+    const referenceId = order.moncash_reference || order.id;
+    try {
+      const payStatusUrl = (process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create').replace('pay-create', 'pay-status');
+      const moncashRes = await fetch(payStatusUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.MCC_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ referenceId }),
+      });
+
+      if (moncashRes.ok) {
+        const data = await moncashRes.json();
+        if (data.status === 'completed' || data.paid === true) {
+          await pool.query("UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [order.id]);
+          return res.json({ status: 'paid' });
+        } else if (data.status === 'failed' || data.status === 'expired') {
+          await pool.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [order.id]);
+          return res.json({ status: 'cancelled' });
+        }
+      }
+    } catch (pollErr) {
+      console.error('MonCash pay-status poll error:', pollErr.message);
+    }
+
+    res.json({ status: 'pending' });
+  } catch (err) {
+    console.error('Payment status check error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4188,43 +4250,54 @@ app.post('/api/subscriptions/webhook', express.json(), async (req, res) => {
     const { event, data } = req.body;
     if (event === 'payment.completed' && data?.referenceId) {
       const orderId = data.referenceId;
-      const orderRes = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [orderId]);
-      if (orderRes.rows.length === 0) return res.json({ received: true });
-      const sellerId = orderRes.rows[0].buyer_id;
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const orderRes = await client.query('SELECT buyer_id FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
+        if (orderRes.rows.length === 0) { await client.query('ROLLBACK'); return res.json({ received: true }); }
+        const sellerId = orderRes.rows[0].buyer_id;
 
-      const isSubscriptionOrder = orderId.startsWith('sub_');
-      if (isSubscriptionOrder) {
-        const now = new Date();
-        const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const isSubscriptionOrder = orderId.startsWith('sub_');
+        if (isSubscriptionOrder) {
+          const now = new Date();
+          const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-        const existing = await pool.query(
-          `SELECT id FROM seller_subscriptions WHERE seller_id = $1 AND status IN ('active', 'past_due') ORDER BY expires_at DESC LIMIT 1`,
-          [sellerId]
-        );
-
-        if (existing.rows.length > 0) {
-          await pool.query(
-            `UPDATE seller_subscriptions SET status = 'active', expires_at = $2, last_payment_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-            [existing.rows[0].id, expiresAt]
+          const existing = await client.query(
+            `SELECT id FROM seller_subscriptions WHERE seller_id = $1 AND status IN ('active', 'past_due') ORDER BY expires_at DESC LIMIT 1 FOR UPDATE`,
+            [sellerId]
           );
-        } else {
-          await pool.query(
-            `INSERT INTO seller_subscriptions (seller_id, status, started_at, expires_at, last_payment_at) VALUES ($1, 'active', CURRENT_TIMESTAMP, $2, CURRENT_TIMESTAMP)`,
-            [sellerId, expiresAt]
+
+          if (existing.rows.length > 0) {
+            await client.query(
+              `UPDATE seller_subscriptions SET status = 'active', expires_at = $2, last_payment_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+              [existing.rows[0].id, expiresAt]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO seller_subscriptions (seller_id, status, started_at, expires_at, last_payment_at) VALUES ($1, 'active', CURRENT_TIMESTAMP, $2, CURRENT_TIMESTAMP)`,
+              [sellerId, expiresAt]
+            );
+          }
+
+          await client.query('UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['completed', orderId]);
+          await client.query(
+            `UPDATE users SET seller_tier = 'business', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND seller_tier != 'business'`,
+            [sellerId]
           );
+          createNotification(sellerId, 'subscription_activated', 'Business Subscription Active', `Your Business subscription is active until ${expiresAt.toLocaleDateString()}.`, {});
         }
 
-        await pool.query('UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['completed', orderId]);
-        await pool.query(
-          `UPDATE users SET seller_tier = 'business', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND seller_tier != 'business'`,
-          [sellerId]
-        );
-        createNotification(sellerId, 'subscription_activated', 'Business Subscription Active', `Your Business subscription is active until ${expiresAt.toLocaleDateString()}.`, {});
-      }
-
-      // Record event for idempotency
-      if (eventId) {
-        await pool.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+        // Record event for idempotency — inside transaction
+        if (eventId) {
+          await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+        }
+        await client.query('COMMIT');
+      } catch (txErr) {
+        await client.query('ROLLBACK');
+        console.error('Subscription webhook tx error:', txErr);
+        throw txErr;
+      } finally {
+        client.release();
       }
     }
     res.json({ received: true });
@@ -4424,8 +4497,12 @@ app.use((err, req, res, next) => {
 });
 
 // ───── Graceful Shutdown ─────
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection:', reason);
+});
+
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully...');
+  console.log('SIGTERM received. Shutting down gracefully...');
   try { await pool.end(); } catch {}
   process.exit(0);
 });

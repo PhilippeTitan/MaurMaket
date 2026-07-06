@@ -1275,6 +1275,23 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] MapScreen: invalidateSize() fix + error state with retry
 - [x] Post-Deploy Audit Protocol added to AGENTS.md (7 parallel agents)
 
+### ✅ Session 15: Second Audit Pass — Security + Reliability + Chat + Accessibility
+- [x] Re-ran 7 audit agents (second pass, 165+ new findings)
+- [x] Fixed become-seller tier escalation — removed `tier` param, always starts as `casual`
+- [x] Fixed OTP security: `Math.random()` → `crypto.randomInt()`, `===` → `crypto.timingSafeEqual`
+- [x] Removed seller email/phone from public `GET /api/sellers/:id` endpoint (PII exposure)
+- [x] Added `process.on('unhandledRejection')` handler for async error visibility
+- [x] Fixed conversation duplicate check — bidirectional `(buyer=$1 AND seller=$2) OR (buyer=$2 AND seller=$1)`
+- [x] Wrapped subscription webhook in transaction (processed_events inside tx)
+- [x] Added `FOR UPDATE` on promo_codes in both validate + order creation (race condition fix)
+- [x] Added `GET /api/payments/:orderId/status` pay-status fallback endpoint (MonCash poll)
+- [x] Reorder endpoint: added `seller_id`, `images[]`, `sale_price` with JOIN
+- [x] Chat polling: AppState listener pauses on background, resumes on foreground
+- [x] Chat messages: LIMIT/OFFSET pagination (max 200 per page)
+- [x] Accessibility: added `accessibilityLabel`/`accessibilityRole` to BackButton, UserAvatar, SalePriceTag, StockBadge
+- [x] PaymentReturnScreen: uses new pay-status endpoint instead of getOrder polling
+- [x] TypeScript check passed (no errors)
+
 ### 🔲 Remaining Features (deferred)
 - [ ] Run Gradle assembleRelease in terminal (user action — deps cached, ~10-15 min)
 - [ ] Add SMTP env vars to Render (need Gmail address + app password)

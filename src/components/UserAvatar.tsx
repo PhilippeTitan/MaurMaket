@@ -37,9 +37,10 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
             source={{ uri: avatarUrl }}
             style={{ width: size, height: size, borderRadius: r }}
             onError={() => setFailed(true)}
+            accessibilityLabel={`Avatar for ${label}`}
           />
         ) : (
-          <Text style={[styles.initial, { fontSize }]}>{initial}</Text>
+          <Text style={[styles.initial, { fontSize }]} accessibilityLabel={`Avatar for ${label}`}>{initial}</Text>
         )}
       </View>
     </View>
