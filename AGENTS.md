@@ -1292,8 +1292,15 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] PaymentReturnScreen: uses new pay-status endpoint instead of getOrder polling
 - [x] TypeScript check passed (no errors)
 
+### ✅ Session 16: Map Tiles Fix + Phase 2 Committed + APK Build
+- [x] Fixed grey map tiles: switched from CartoDB `dark_all` to `rastertiles/voyager` (colorful, bright)
+- [x] Added `subdomains: "abcd"` + `crossOrigin: true` to tile layer
+- [x] Updated map background to light `#F2F1ED` to match voyager tiles
+- [x] Committed + pushed Phase 2 MapScreen (bottom sheet, markers via postMessage, caching, tile fix)
+- [x] Built APK with Phase 2 changes (11m 49s, deps cached)
+- [x] Copied APK to `C:\Users\drato\Downloads\MaurMaket.apk`
+
 ### 🔲 Remaining Features (deferred)
-- [ ] Run Gradle assembleRelease in terminal (user action — deps cached, ~10-15 min)
 - [ ] Add SMTP env vars to Render (need Gmail address + app password)
 - [ ] Add GOOGLE_OAUTH_CLIENT_ID to Render env vars
 - [ ] Phase 10: Dispute resolution (hybrid auto-resolve + admin)

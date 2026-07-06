@@ -34,14 +34,30 @@ export default function ChatScreen({ route, navigation }: Props) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appState = useRef(AppState.currentState);
 
+  const lastMessageTime = useRef<string | null>(null);
+  const sendingRef = useRef(false);
+
   const fetchMessages = async (pageNum = 0, append = false) => {
     try {
-      const res = await getMessages(conversationId, { limit: 50, offset: pageNum * 50 }) as { messages: Message[] };
+      const params: Record<string, string | number> = { limit: 50, offset: pageNum * 50 };
+      if (!append && lastMessageTime.current) {
+        (params as Record<string, string>).since = lastMessageTime.current;
+      }
+      const res = await getMessages(conversationId, params) as { messages: Message[] };
       const msgs = res.messages || [];
       if (append) {
         setMessages(prev => [...msgs, ...prev]);
+      } else if (lastMessageTime.current && msgs.length > 0) {
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const newMsgs = msgs.filter(m => !existingIds.has(m.id));
+          return newMsgs.length > 0 ? [...prev, ...newMsgs] : prev;
+        });
       } else {
         setMessages(msgs);
+      }
+      if (msgs.length > 0) {
+        lastMessageTime.current = msgs[msgs.length - 1].created_at;
       }
       setHasMore(msgs.length === 50);
     } catch { /* ignore */ }
@@ -49,6 +65,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   };
 
   useEffect(() => {
+    lastMessageTime.current = null;
     fetchMessages(0, false);
     setPage(0);
 
@@ -87,18 +104,22 @@ export default function ChatScreen({ route, navigation }: Props) {
   }, [draftOffer]);
 
   const handleSend = async () => {
-    if (!text.trim() || sending) return;
+    if (!text.trim() || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     const msg = text.trim();
     setText('');
     try {
       await apiSendMessage(conversationId, msg);
+      lastMessageTime.current = null;
       await fetchMessages();
     } catch {
       Alert.alert(t('common.error'), t('chat.sendFailed'));
       setText(msg);
+    } finally {
+      setSending(false);
+      sendingRef.current = false;
     }
-    setSending(false);
   };
 
   const handleSendImage = async () => {
@@ -109,14 +130,18 @@ export default function ChatScreen({ route, navigation }: Props) {
         allowsEditing: false,
       });
       if (result.canceled || !result.assets?.[0]) return;
+      sendingRef.current = true;
       setSending(true);
       const r = await uploadImage(result.assets[0].uri);
       await apiSendMessage(conversationId, '', r.url);
+      lastMessageTime.current = null;
       await fetchMessages();
     } catch {
       Alert.alert(t('common.error'), t('chat.sendFailed'));
+    } finally {
+      setSending(false);
+      sendingRef.current = false;
     }
-    setSending(false);
   };
 
   const renderMessage = ({ item }: { item: Message }) => {

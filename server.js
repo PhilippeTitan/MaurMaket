@@ -637,9 +637,9 @@ app.post('/api/auth/signup', async (req, res) => {
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email, and password required' });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  }
+  if (fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
+  if (email.length > 254) return res.status(400).json({ error: 'Email too long' });
+  if (password.length < 6 || password.length > 128) return res.status(400).json({ error: 'Password must be 6-128 characters' });
   try {
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const cleanPhone = phone ? phone.replace(/^\+/, '') : null;
@@ -681,7 +681,9 @@ app.post('/api/auth/login', async (req, res) => {
     } catch {}
     if (!passwordValid) {
       const shaHash = crypto.createHash('sha256').update(password).digest('hex');
-      if (shaHash === user.password_hash) {
+      const storedBuf = Buffer.from(user.password_hash, 'hex');
+      const inputBuf = Buffer.from(shaHash, 'hex');
+      if (storedBuf.length === inputBuf.length && crypto.timingSafeEqual(storedBuf, inputBuf)) {
         passwordValid = true;
         const bcryptHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
         await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [bcryptHash, user.id]);
@@ -724,6 +726,10 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
 app.put('/api/auth/profile', authRequired, async (req, res) => {
   let { fullName, email, phone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng } = req.body;
   if (phone) phone = phone.replace(/^\+/, '');
+  if (fullName && fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
+  if (bio && bio.length > 500) return res.status(400).json({ error: 'Bio too long (max 500 characters)' });
+  if (locationAddress && locationAddress.length > 200) return res.status(400).json({ error: 'Address too long (max 200 characters)' });
+  if (locationCity && locationCity.length > 100) return res.status(400).json({ error: 'City too long (max 100 characters)' });
   try {
     const result = await pool.query(
       `UPDATE users SET
@@ -1116,7 +1122,6 @@ app.put('/api/auth/become-seller', authRequired, async (req, res) => {
         store_name = COALESCE($3, store_name),
         store_logo_url = COALESCE($4, store_logo_url),
         id_document_url = COALESCE($5, id_document_url),
-        id_submitted_at = ${idSubmittedAt || 'id_submitted_at'},
         use_store_identity = $6,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
@@ -1817,6 +1822,8 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
   if (!name || !price) {
     return res.status(400).json({ error: 'Name and price required' });
   }
+  if (name.length > 200) return res.status(400).json({ error: 'Product name too long (max 200 characters)' });
+  if (description && description.length > 5000) return res.status(400).json({ error: 'Description too long (max 5000 characters)' });
   if (stock !== undefined && stock !== null && stock !== '' && parseInt(stock) < 1) {
     return res.status(400).json({ error: 'Stock must be at least 1' });
   }
@@ -2220,16 +2227,24 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Only the buyer can cancel this order' });
     }
-    if (order.rows[0].status !== 'pending') {
+    if (order.rows[0].status !== 'pending' && order.rows[0].status !== 'paid') {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Only pending orders can be cancelled' });
+      return res.status(400).json({ error: 'Only pending or paid orders can be cancelled' });
     }
+    if (order.rows[0].status === 'paid') {
+      const hasCheckin = await client.query('SELECT 1 FROM meetup_checkins WHERE order_id = $1', [req.params.id]);
+      if (hasCheckin.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Cannot cancel after check-in — use the meetup flow' });
+      }
+    }
+    const oldStatus = order.rows[0].status;
     await client.query(
       "UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
       [req.params.id]
     );
     await client.query('COMMIT');
-    logOrderEvent(req.params.id, 'status_change', req.user.id, 'pending', 'cancelled', 'Cancelled by buyer');
+    logOrderEvent(req.params.id, 'status_change', req.user.id, oldStatus, 'cancelled', 'Cancelled by buyer');
     // Notify sellers of cancelled order
     const cancelledSellers = await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [req.params.id]);
     for (const row of cancelledSellers.rows) {
@@ -2742,6 +2757,7 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
               receiver: process.env.PLATFORM_PHONE,
               referenceId: `platform_${req.params.id}`,
             }),
+            signal: AbortSignal.timeout(15000),
           }
         );
 
@@ -2843,6 +2859,7 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
     // Restore stock
     const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
     for (const item of items.rows) {
+      await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
       await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
     }
 
@@ -2864,6 +2881,7 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
               receiver: buyerPhone,
               referenceId: `refund_${req.params.id}`,
             }),
+            signal: AbortSignal.timeout(15000),
           }
         );
 
@@ -2920,6 +2938,7 @@ app.get('/api/orders/:id/escrow', authRequired, async (req, res) => {
 
 app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
   const { orderId } = req.params;
+  const { returnUrl } = req.body;
   try {
     const orderResult = await pool.query(
       "SELECT * FROM orders WHERE id = $1 AND buyer_id = $2 AND status = 'pending'",
@@ -2942,8 +2961,9 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
         body: JSON.stringify({
           amount: parseFloat(order.total_amount),
           referenceId: retryReference,
-          returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
+          returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
         }),
+        signal: AbortSignal.timeout(15000),
       }
     );
 
@@ -3030,34 +3050,30 @@ app.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async (re
     return res.status(400).json({ error: `Status must be one of: ${allowed.join(', ')}` });
   }
   try {
-    const check = await pool.query(
-      `SELECT o.id, o.status, o.delivery_method FROM orders o
-       JOIN order_items oi ON o.id = oi.order_id
-       WHERE o.id = $1 AND oi.seller_id = $2`,
-      [req.params.id, req.user.id]
-    );
-    if (check.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    const current = check.rows[0].status;
-    const deliveryMethod = check.rows[0].delivery_method;
-
-    // Block seller from advancing meetup orders via status endpoint
-    // Meetup orders are completed via QR scan + escrow release flow
-    if (deliveryMethod === 'meetup' && (status === 'shipped' || status === 'delivered')) {
-      return res.status(400).json({ error: 'Meetup orders are completed via the QR exchange flow, not status updates' });
-    }
-
-    const transitions = { pending: 'processing', paid: 'processing', processing: 'shipped', shipped: 'delivered' };
-    if (transitions[current] !== status) {
-      return res.status(400).json({ error: `Cannot transition from ${current} to ${status}` });
-    }
-
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(
-        'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
-        [req.params.id]
+      const check = await client.query(
+        `SELECT o.id, o.status, o.delivery_method FROM orders o
+         JOIN order_items oi ON o.id = oi.order_id
+         WHERE o.id = $1 AND oi.seller_id = $2 FOR UPDATE`,
+        [req.params.id, req.user.id]
       );
+      if (check.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
+      const current = check.rows[0].status;
+      const deliveryMethod = check.rows[0].delivery_method;
+
+      if (deliveryMethod === 'meetup' && (status === 'shipped' || status === 'delivered')) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Meetup orders are completed via the QR exchange flow, not status updates' });
+      }
+
+      const transitions = { pending: 'processing', paid: 'processing', processing: 'shipped', shipped: 'delivered' };
+      if (transitions[current] !== status) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Cannot transition from ${current} to ${status}` });
+      }
+
       await client.query(
         `UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
         [status, req.params.id]
@@ -3433,14 +3449,18 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
     );
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const offset = parseInt(req.query.offset) || 0;
-    const result = await pool.query(
-      `SELECT m.*, u.full_name AS sender_name
+    const since = req.query.since;
+    let query = `SELECT m.*, u.full_name AS sender_name
        FROM messages m JOIN users u ON m.sender_id = u.id
-       WHERE m.conversation_id = $1
-       ORDER BY m.created_at ASC
-       LIMIT $2 OFFSET $3`,
-      [req.params.id, limit, offset]
-    );
+       WHERE m.conversation_id = $1`;
+    const params = [req.params.id];
+    if (since) {
+      params.push(since);
+      query += ` AND m.created_at > $${params.length}`;
+    }
+    query += ` ORDER BY m.created_at ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(limit, offset);
+    const result = await pool.query(query, params);
     res.json({ messages: result.rows });
   } catch (err) {
     console.error('Messages fetch error:', err);
@@ -3524,6 +3544,7 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
           referenceId: orderId,
           returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return`,
         }),
+        signal: AbortSignal.timeout(15000),
       }
     );
 
@@ -3569,15 +3590,14 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ referenceId }),
+        signal: AbortSignal.timeout(15000),
       });
 
       if (moncashRes.ok) {
         const data = await moncashRes.json();
         if (data.status === 'completed' || data.paid === true) {
-          await pool.query("UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [order.id]);
           return res.json({ status: 'paid' });
         } else if (data.status === 'failed' || data.status === 'expired') {
-          await pool.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [order.id]);
           return res.json({ status: 'cancelled' });
         }
       }
@@ -3631,6 +3651,10 @@ app.post('/api/payments/webhook', async (req, res) => {
 
   try {
     if (event === 'payment.completed') {
+      // Subscription payments (sub_*) are handled by /api/subscriptions/webhook
+      if (reference && reference.startsWith('sub_')) {
+        return res.json({ received: true, skipped: 'subscription' });
+      }
 
       const client = await pool.connect();
       try {
@@ -3733,7 +3757,8 @@ app.post('/api/payments/webhook', async (req, res) => {
       try {
         await client.query('BEGIN');
         // Stock was never decremented (decrement happens on payment.completed), so no restore needed
-        await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [reference]);
+        // Only cancel if still pending — avoid overwriting a 'paid' status from a concurrent completed webhook
+        await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [reference]);
         await logOrderEvent(reference, 'status_change', null, 'pending', 'cancelled', 'Payment failed', client);
         await client.query('COMMIT');
       } catch (e) {
@@ -3759,8 +3784,13 @@ app.post('/api/payments/webhook', async (req, res) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const payout = await client.query('SELECT seller_id, amount FROM payouts WHERE id = $1', [reference]);
-        if (payout.rows.length > 0) {
+        if (eventId) {
+          const already = await client.query('SELECT 1 FROM processed_events WHERE id = $1', [eventId]);
+          if (already.rows.length > 0) { await client.query('ROLLBACK'); return res.json({ received: true, idempotent: true }); }
+          await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+        }
+        const payout = await client.query('SELECT seller_id, amount, status FROM payouts WHERE id = $1 FOR UPDATE', [reference]);
+        if (payout.rows.length > 0 && payout.rows[0].status !== 'failed') {
           const { seller_id, amount } = payout.rows[0];
           await client.query(
             'UPDATE seller_balances SET balance = balance + $1, total_paid_out = total_paid_out - $1, updated_at = CURRENT_TIMESTAMP WHERE seller_id = $2',
@@ -3919,6 +3949,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ amount, receiver: phone, referenceId: payout.id }),
+          signal: AbortSignal.timeout(15000),
         }
       );
 
@@ -4002,14 +4033,6 @@ app.post('/api/products/:id/sale', authRequired, sellerRequired, async (req, res
     console.error('Sale update error:', err);
     res.status(500).json({ error: 'Server error' });
   }
-});
-
-// ───── Upload config (imgbb key for client-side direct upload) ─────
-
-app.get('/api/upload/config', authRequired, (_req, res) => {
-  const key = process.env.IMGBB_KEY;
-  if (!key) return res.status(500).json({ error: 'Upload service not configured' });
-  res.json({ imgbbKey: key });
 });
 
 // ───── Health check ─────
@@ -4168,6 +4191,7 @@ app.post('/api/subscriptions/create', authRequired, sellerRequired, async (req, 
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: req.body.returnUrl || '' }),
+      signal: AbortSignal.timeout(15000),
     });
     const payData = await mccRes.json();
     if (!mccRes.ok || !payData.paymentUrl) {
@@ -4214,6 +4238,7 @@ app.post('/api/subscriptions/renew', authRequired, sellerRequired, async (req, r
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: req.body.returnUrl || '' }),
+      signal: AbortSignal.timeout(15000),
     });
     const payData = await mccRes.json();
     if (!mccRes.ok || !payData.paymentUrl) {
@@ -4226,14 +4251,14 @@ app.post('/api/subscriptions/renew', authRequired, sellerRequired, async (req, r
   }
 });
 
-app.post('/api/subscriptions/webhook', express.json(), async (req, res) => {
+app.post('/api/subscriptions/webhook', async (req, res) => {
   try {
     const signature = req.headers['x-mcc-signature'] || '';
     const secret = process.env.MCC_WEBHOOK_SECRET || '';
     if (!secret) {
       return res.status(500).json({ error: 'Webhook not configured' });
     }
-    const hmac = crypto.createHmac('sha256', secret).update(req.rawBody || '').digest('hex');
+    const hmac = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody || '').digest('hex');
     const sigBuf = Buffer.from(signature);
     const expBuf = Buffer.from(hmac);
     if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
@@ -4368,7 +4393,7 @@ app.post('/api/feed/event', authRequired, async (req, res) => {
 app.get('/', (_req, res) => res.status(200).json({ status: 'ok' }));
 
 // ───── Map Crash Reports ─────
-app.post('/api/debug/map-report', express.json({ limit: '50kb' }), (req, res) => {
+app.post('/api/debug/map-report', authRequired, express.json({ limit: '50kb' }), (req, res) => {
   const { logs, platform, appVersion, timestamp } = req.body;
   console.error(`\n=== MAP DEBUG REPORT [${timestamp || new Date().toISOString()}] platform=${platform} appVersion=${appVersion} ===`);
   if (Array.isArray(logs)) {
@@ -4407,7 +4432,7 @@ app.get('/api/debug', authRequired, adminRequired, async (_req, res) => {
       { headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}` } }
     );
     const data = await mccRes.json();
-    res.json({ mccStatus: mccRes.status, mccOk: mccRes.ok, data, hasKey: !!process.env.MCC_KEY, keyPrefix: (process.env.MCC_KEY || '').slice(0, 10) });
+    res.json({ mccStatus: mccRes.status, mccOk: mccRes.ok, data, hasKey: !!process.env.MCC_KEY });
   } catch (err) {
     res.status(500).json({ error: err.message, hasKey: !!process.env.MCC_KEY });
   }
@@ -4463,6 +4488,7 @@ cron.schedule('*/5 * * * *', async () => {
         // Restore stock
         const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [orderId]);
         for (const item of items.rows) {
+          await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
           await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
         }
 

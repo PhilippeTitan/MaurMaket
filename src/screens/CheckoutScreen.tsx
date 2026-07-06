@@ -105,7 +105,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       return;
     }
 
-    if (method === 'delivery' && (!name || !phone || !address)) {
+    if (method === 'delivery' && (!name || !phone || !address || !city)) {
       Alert.alert(t('checkout.missingInfo'), t('checkout.fillRequired'));
       return;
     }
