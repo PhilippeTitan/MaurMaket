@@ -1251,6 +1251,30 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] Added GOOGLE_OAUTH_CLIENT_ID to local .env
 - [x] Updated AGENTS.md todo history
 
+### ✅ Session 14: Full Platform Audit + Critical Fixes + Audit Protocol
+- [x] Full platform audit with 7 parallel agents (Performance, Buyer/Seller, Design, Backend Security, Backend Reliability, Chat, Checkout)
+- [x] 165+ findings across all agents (14 Critical, 30 High, 35 Medium, 86 Low)
+- [x] Fixed 10 Critical bugs:
+  - Image messages NOT NULL constraint → DROP NOT NULL + placeholder content
+  - client.release() → c.release() (pool exhaustion)
+  - Deleted cleanupLegacyData() function
+  - Webhook HMAC timing attack → crypto.timingSafeEqual
+  - Subscription webhook: idempotency check + HMAC fix
+  - require('jsonwebtoken') duplicate removed
+  - Image notification crash (null content trim)
+  - Reorder: actually adds items to cart
+  - CheckoutScreen promo discount display
+  - Image messages notification preview crash
+- [x] 25+ database indexes added (all foreign keys + common queries)
+- [x] Connection pool config (max 15, idle 30s, connect 5s, error handler)
+- [x] Graceful shutdown (SIGTERM/SIGINT → close pool → exit)
+- [x] Password validation on signup (min 6 chars)
+- [x] Message length validation (max 5000 chars)
+- [x] Max 8 images per product enforced server-side
+- [x] cleanupOldNotifications: only delete read > 7 days (was deleting ALL)
+- [x] MapScreen: invalidateSize() fix + error state with retry
+- [x] Post-Deploy Audit Protocol added to AGENTS.md (7 parallel agents)
+
 ### 🔲 Remaining Features (deferred)
 - [ ] Run Gradle assembleRelease in terminal (user action — deps cached, ~10-15 min)
 - [ ] Add SMTP env vars to Render (need Gmail address + app password)
