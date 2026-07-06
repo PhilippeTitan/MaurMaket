@@ -5,9 +5,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { WebView } from 'react-native-webview';
+import MapView, { Marker, UrlTile } from 'react-native-maps';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
-import { LEAFLET_JS, LEAFLET_CSS } from '../leafletAssets';
 import { store } from '../store';
 import { getNearbySellers, setSellerLocation, getImageUrl, getProducts, toggleFollow, getFollowing, getFollowerCount } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,60 +43,13 @@ interface NearbySeller {
   review_count: number;
 }
 
-let _cachedUri: string | null = null;
-
-async function loadMapHtml(): Promise<string> {
-  if (_cachedUri) return _cachedUri;
-  const { cacheDirectory, writeAsStringAsync } = await import('expo-file-system/legacy');
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<style>${LEAFLET_CSS}</style>
-<script>${LEAFLET_JS}</script>
-<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-html, body, #map { width:100%; height:100%; background:#0D1117; }
-.leaflet-control-zoom { display:none; }
-.leaflet-control-attribution { background:rgba(13,17,23,0.7) !important; color:#555 !important; font-size:9px !important; }
-.leaflet-control-attribution a { color:#555 !important; }
-.snap-marker { position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; }
-.snap-img { border-radius:50%; object-fit:cover; }
-.snap-fallback { display:flex; align-items:center; justify-content:center; }
-.user-marker { position:relative; display:flex; flex-direction:column; align-items:center; }
-</style>
-</head>
-<body>
-<div id="map"></div>
-<script>
-var map = L.map("map", { zoomControl: false, attributionControl: true }).setView([18.5944, -72.3074], 12);
-L.tileLayer("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-  attribution: "&copy; <a href='https://carto.com/'>CARTO</a> &copy; <a href='https://www.openstreetmap.org/copyright'>OSM</a>",
-  subdomains: "abcd",
-  maxZoom: 20
-}).addTo(map);
-setTimeout(function() { map.invalidateSize(); }, 100);
-window.addEventListener('load', function() { map.invalidateSize(); });
-map.on("moveend", function() {
-  var c = map.getCenter();
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:"move",lat:c.lat,lng:c.lng}));
-});
-</script>
-</body>
-</html>`;
-  const path = (cacheDirectory || '') + 'maurmaket_map.html';
-  await writeAsStringAsync(path, html);
-  _cachedUri = path;
-  return _cachedUri;
-}
+const CARTO_DARK_URL = 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { t } = useTranslation();
-  const webViewRef = useRef<WebView>(null);
-  // sheetState: 0 = hidden (below screen), 1 = peek, 2 = full (detail revealed)
+  const mapRef = useRef<MapView>(null);
   const sheetState = useRef(new Animated.Value(0)).current;
   const dragStartState = useRef(1);
 
@@ -116,7 +68,6 @@ export default function MapScreen() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [avatarViewerUrl, setAvatarViewerUrl] = useState<string | null>(null);
   const [showEmptyBanner, setShowEmptyBanner] = useState(false);
-  const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const locationWatcher = useRef<any>(null);
 
   const isSeller = store.isSeller;
@@ -130,7 +81,7 @@ export default function MapScreen() {
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 8,
       onPanResponderGrant: () => {
-        // @ts-ignore - reading the current animated value synchronously
+        // @ts-ignore
         sheetState.stopAnimation((v: number) => { dragStartState.current = v; });
       },
       onPanResponderMove: (_, g) => {
@@ -164,15 +115,6 @@ export default function MapScreen() {
     } catch {
       if (thisFetch !== fetchIdRef.current) return;
     }
-  }, []);
-
-  const [mapLoadError, setMapLoadError] = useState(false);
-
-  useEffect(() => {
-    loadMapHtml().then(html => setHtmlContent(html)).catch(err => {
-      console.warn('Map HTML load failed:', err);
-      setMapLoadError(true);
-    });
   }, []);
 
   useEffect(() => {
@@ -269,84 +211,18 @@ export default function MapScreen() {
     }
   }, [sellers.length, loading, selectedSeller?.id]);
 
-  useEffect(() => {
-    if (mapReady && webViewRef.current) {
-      webViewRef.current.injectJavaScript(`
-        (function() {
-          map.eachLayer(function(layer) {
-            if (layer instanceof L.Marker) map.removeLayer(layer);
-          });
-
-          var myLoc = ${myLocation ? `L.marker([${myLocation.lat}, ${myLocation.lng}], {
-            icon: L.divIcon({
-              className: '',
-              html: '<div class="user-marker">' +
-                '<div style="position:absolute;top:-9px;left:-9px;width:66px;height:66px;border-radius:50%;background:rgba(55,138,221,0.15)"></div>' +
-                '<div style="width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#378ADD,#185FA5);padding:3px;box-shadow:0 0 0 3px rgba(55,138,221,0.25)">' +
-                  '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
-                    ${hasUserAvatarForMap ? `'<img src="${escapedUserAvatarForMap}" style="width:100%;height:100%;border-radius:50%;object-fit:cover" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>'` : ''} +
-                    '<div class="snap-fallback" style="display:${hasUserAvatarForMap ? 'none' : 'flex'};width:100%;height:100%"><svg viewBox="0 0 24 24" width="22" height="22" fill="#378ADD"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"/></svg></div>' +
-                  '</div>' +
-                '</div>' +
-                '<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #185FA5;margin:0 auto"></div>' +
-              '</div>',
-              iconSize: [54, 65],
-              iconAnchor: [27, 65],
-            })
-          }).addTo(map);` : 'null'}
-
-          ${sellers.map(s => {
-            const avatarUrl = getImageUrl(getSellerAvatar(s)) || '';
-            const tier = TIER_MARKER[s.seller_tier] || TIER_MARKER.casual;
-            const hasImage = avatarUrl && !failedImages.has(`wv_${s.id}`);
-            const escapedAvatar = hasImage ? avatarUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
-            const sz = tier.size;
-            const inner = sz - 4;
-            const iconSz = Math.round(sz * 0.4);
-            const tailL = Math.round(sz * 0.22);
-            return `L.marker([${s.lat}, ${s.lng}], {
-              icon: L.divIcon({
-                className: '',
-                html: '<div class="snap-marker" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:\\'tap\\',id:\\'${s.id}\\'}))">' +
-                  '<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${tier.gradient};padding:2px;box-shadow:0 2px 8px rgba(0,0,0,0.5)">' +
-                    '<div style="width:100%;height:100%;border-radius:50%;background:#0D1117;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
-                      (${hasImage} ? '<img src="${escapedAvatar}" class="snap-img" style="width:${inner}px;height:${inner}px;border-radius:${inner/2}px" onerror="this.style.display=none;this.nextElementSibling.style.display=flex"/>' : '') +
-                      '<div class="snap-fallback" style="display:${hasImage ? 'none' : 'flex'};width:${inner}px;height:${inner}px"><svg viewBox="0 0 24 24" width="${iconSz}" height="${iconSz}" fill="${tier.iconColor}"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>' +
-                    '</div>' +
-                  '</div>' +
-                  '<div style="width:0;height:0;border-left:${tailL}px solid transparent;border-right:${tailL}px solid transparent;border-top:7px solid ${tier.tailColor};margin:0 auto"></div>' +
-                '</div>',
-                iconSize: [${sz}, ${sz + 9}],
-                iconAnchor: [${sz / 2}, ${sz + 9}],
-              })
-            }).addTo(map);`;
-          }).join('\n          ')}
-
-          if (myLoc) map.setView([${myLocation?.lat ?? 18.5944}, ${myLocation?.lng ?? -72.3074}], 14);
-        })();
-        true;
-      `);
-    }
-  }, [mapReady, sellers, failedImages, myLocation]);
-
-  const handleWebViewMessage = useCallback((event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'tap') {
-        const seller = sellers.find(s => s.id === data.id);
-        if (seller) setSelectedSeller(seller);
-      } else if (data.type === 'move') {
-        fetchSellers(data.lat, data.lng, 20);
-      }
-    } catch {}
-  }, [sellers, fetchSellers]);
+  const handleRegionChangeComplete = useCallback((region: any) => {
+    fetchSellers(region.latitude, region.longitude, 20);
+  }, [fetchSellers]);
 
   const centerOnMe = () => {
-    if (myLocation && webViewRef.current) {
-      webViewRef.current.injectJavaScript(`
-        map.setView([${myLocation.lat}, ${myLocation.lng}], 15, {animate:true});
-        true;
-      `);
+    if (myLocation && mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: myLocation.lat,
+        longitude: myLocation.lng,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      }, 300);
     }
   };
 
@@ -399,54 +275,73 @@ export default function MapScreen() {
     );
   }
 
-  if (!htmlContent) {
-    if (mapLoadError) {
-      return (
-        <View style={styles.loading}>
-          <MaterialCommunityIcons name="map-outline" size={48} color={COLORS.text2} />
-          <Text style={{ color: COLORS.text2, marginTop: 12 }}>Map failed to load</Text>
-          <TouchableOpacity onPress={() => { setMapLoadError(false); loadMapHtml().then(h => setHtmlContent(h)).catch(e => { setMapLoadError(true); }); }} style={{ marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: COLORS.coral }}>
-            <Text style={{ color: COLORS.white }}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={COLORS.coral} />
-      </View>
-    );
-  }
-
   const buttonBottom = sheetBottom + (selectedSeller ? PEEK_HEIGHT : 0) + 12;
-  const userAvatarForMap = getImageUrl(store.user?.avatar_url) || null;
-  const hasUserAvatarForMap = !!userAvatarForMap;
-  const escapedUserAvatarForMap = hasUserAvatarForMap ? userAvatarForMap.replace(/'/g, "\\'") : '';
+
+  const initialRegion = {
+    latitude: myLocation?.lat ?? 18.5944,
+    longitude: myLocation?.lng ?? -72.3074,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  };
 
   return (
     <View style={styles.container}>
       {Platform.OS !== 'web' ? (
-        <>
-        <WebView
-          ref={webViewRef}
-          source={{ uri: htmlContent }}
+        <MapView
+          ref={mapRef}
           style={styles.map}
-          onMessage={handleWebViewMessage}
-          onLoadEnd={() => setMapReady(true)}
-          onError={(e) => console.warn('WebView error:', e.nativeEvent)}
-          onHttpError={(e) => console.warn('WebView HTTP error:', e.nativeEvent.statusCode)}
-          javaScriptEnabled
-          domStorageEnabled
-          geolocationEnabled
-          originWhitelist={['*']}
-          allowUniversalAccessFromFileURLs
-          allowFileAccess
-          mixedContentMode="always"
-          setSupportMultipleWindows={false}
-          scrollEnabled={false}
-          bounces={false}
-        />
-        </>
+          initialRegion={initialRegion}
+          showsUserLocation={!!myLocation}
+          showsMyLocationButton={false}
+          onRegionChangeComplete={handleRegionChangeComplete}
+          onMapReady={() => setMapReady(true)}
+        >
+          <UrlTile
+            urlTemplate={CARTO_DARK_URL}
+            maximumZ={19}
+            shouldReplaceMapContent
+          />
+          {mapReady && sellers.map(s => {
+            const tier = TIER_MARKER[s.seller_tier] || TIER_MARKER.casual;
+            const avatarUrl = getAvatarUrl(s);
+            const hasImage = avatarUrl && !failedImages.has(`m_${s.id}`);
+            return (
+              <Marker
+                key={s.id}
+                coordinate={{ latitude: s.lat, longitude: s.lng }}
+                tracksViewChanges={false}
+                onPress={() => setSelectedSeller(s)}
+              >
+                <View style={[styles.markerOuter, { width: tier.size, height: tier.size + 8 }]}>
+                  <View style={[styles.markerRing, {
+                    width: tier.size, height: tier.size,
+                    borderRadius: tier.size / 2,
+                    backgroundColor: tier.gradient,
+                    padding: 2,
+                  }]}>
+                    <View style={styles.markerInner}>
+                      {hasImage ? (
+                        <Image
+                          source={{ uri: avatarUrl! }}
+                          style={{ width: tier.size - 8, height: tier.size - 8, borderRadius: (tier.size - 8) / 2 }}
+                          onError={() => markImageFailed(`m_${s.id}`)}
+                        />
+                      ) : (
+                        <MaterialCommunityIcons name="account" size={tier.size * 0.4} color={tier.iconColor} />
+                      )}
+                    </View>
+                  </View>
+                  <View style={[styles.markerTail, {
+                    borderLeftWidth: tier.size * 0.15,
+                    borderRightWidth: tier.size * 0.15,
+                    borderTopWidth: 7,
+                    borderTopColor: tier.tailColor,
+                  }]} />
+                </View>
+              </Marker>
+            );
+          })}
+        </MapView>
       ) : (
         <View style={[styles.map, styles.webFallback]}>
           <MaterialCommunityIcons name="map-marker-radius" size={48} color={COLORS.coral} />
@@ -701,6 +596,16 @@ const styles = StyleSheet.create({
   },
   webSellerName: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
   webSellerDist: { color: COLORS.text2, fontSize: 12 },
+
+  markerOuter: { alignItems: 'center' },
+  markerRing: { alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 4 },
+  markerInner: {
+    width: '100%', height: '100%', borderRadius: 999,
+    backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  markerTail: { width: 0, height: 0, marginTop: -1 },
+
   topGradient: {
     position: 'absolute', top: 0, left: 0, right: 0,
     paddingHorizontal: SPACING.lg, paddingBottom: SPACING.lg,
