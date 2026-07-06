@@ -84,14 +84,16 @@ function setSellerMarkers(sellers) {
     var size = isVer?50:isBiz?56:44;
     var shape = isBiz?'14px':'50%';
     var badge = isVer?'<div style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:'+color+';border:2px solid #fff;display:flex;align-items:center;justify-content:center"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>':'';
-    var glyph = isBiz
-      ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v11h16V9M4 9h16M9 21v-6h6v6"/></svg>'
-      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/></svg>';
+    var inner = s.avatar
+      ? '<img src="'+s.avatar+'" style="width:'+(size-6)+'px;height:'+(size-6)+'px;border-radius:'+shape+';object-fit:cover"/>'
+      : (isBiz
+        ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v11h16V9M4 9h16M9 21v-6h6v6"/></svg>'
+        : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/></svg>');
     var icon = L.divIcon({
       className:'',
       iconSize:[64,size+16],iconAnchor:[32,size+16],
       html:'<div style="display:flex;flex-direction:column;align-items:center;position:relative">' +
-        '<div style="position:relative;width:'+size+'px;height:'+size+'px;border-radius:'+shape+';background:'+color+';border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3)">'+glyph+badge+'</div>' +
+        '<div style="position:relative;width:'+size+'px;height:'+size+'px;border-radius:'+shape+';background:'+color+';border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3);overflow:hidden">'+inner+badge+'</div>' +
         '<div class="seller-tail" style="border-top:9px solid '+color+'"></div></div>'
     });
     var marker = L.marker([s.lat,s.lng],{icon:icon});
@@ -153,10 +155,14 @@ export default function MapScreen() {
 
   const injectMarkers = useCallback((list: NearbySeller[]) => {
     if (!webViewRef.current) return;
-    const data = list.map(s => ({
-      id: s.id, lat: s.lat, lng: s.lng, tier: s.seller_tier,
-      name: s.use_store_identity ? s.store_name : s.full_name,
-    }));
+    const data = list.map(s => {
+      const raw = s.use_store_identity ? s.store_logo_url : s.avatar_url;
+      return {
+        id: s.id, lat: s.lat, lng: s.lng, tier: s.seller_tier,
+        name: s.use_store_identity ? s.store_name : s.full_name,
+        avatar: raw ? getImageUrl(raw) : null,
+      };
+    });
     webViewRef.current.injectJavaScript(`setSellerMarkers(${JSON.stringify(data)});`);
   }, []);
 
@@ -346,7 +352,7 @@ export default function MapScreen() {
 
       {selectedSeller && (
         <Animated.View style={[styles.sheet, {
-          bottom: 56 + (insets.bottom > 0 ? insets.bottom : 8),
+          bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + (insets.bottom > 0 ? 8 : 16),
           height: sheetHeight,
           opacity: sheetOpacity,
         }]}>
