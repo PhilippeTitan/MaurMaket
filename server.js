@@ -1752,7 +1752,7 @@ app.get('/api/products', async (req, res) => {
   try {
     const countResult = await pool.query(
       `SELECT COUNT(*) FROM products p LEFT JOIN categories c ON p.category_id = c.id ${where}`,
-      params
+      personalized === 'true' && params.length > 0 ? params.slice(0, -1) : params
     );
     const total = parseInt(countResult.rows[0].count);
 
