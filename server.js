@@ -21,11 +21,13 @@ const pool = new Pool({
   max: 15,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
+  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
 });
 pool.on('error', (err) => {
   console.error('Unexpected pool error:', err);
 });
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -4361,6 +4363,9 @@ app.post('/api/feed/event', authRequired, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// ───── Root Health Check (Render) ─────
+app.get('/', (_req, res) => res.status(200).json({ status: 'ok' }));
 
 app.get('/api/health', async (_req, res) => {
   try {
