@@ -4367,6 +4367,24 @@ app.post('/api/feed/event', authRequired, async (req, res) => {
 // ───── Root Health Check (Render) ─────
 app.get('/', (_req, res) => res.status(200).json({ status: 'ok' }));
 
+// ───── Map Crash Reports ─────
+app.post('/api/debug/map-report', express.json({ limit: '50kb' }), (req, res) => {
+  const { logs, platform, appVersion, timestamp } = req.body;
+  console.error(`\n=== MAP DEBUG REPORT [${timestamp || new Date().toISOString()}] platform=${platform} appVersion=${appVersion} ===`);
+  if (Array.isArray(logs)) {
+    logs.forEach((l) => console.error(`  ${l}`));
+  } else {
+    console.error('  raw:', JSON.stringify(logs).slice(0, 2000));
+  }
+  console.error('=== END MAP DEBUG REPORT ===\n');
+  res.json({ ok: true });
+});
+
+// ───── Map Config (MapTiler key for client) ─────
+app.get('/api/map-config', (_req, res) => {
+  res.json({ maptilerKey: process.env.MAPTILER_KEY || null });
+});
+
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
