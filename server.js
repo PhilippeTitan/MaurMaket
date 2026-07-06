@@ -1738,6 +1738,7 @@ app.get('/api/products', async (req, res) => {
       ORDER BY total_score DESC, p2.created_at DESC
     ) score ON score.product_id = p.id`;
     params.push(userId);
+    paramIndex++;
     orderBy = 'COALESCE(score.total_score, 0) DESC, p.created_at DESC';
   } else if (!sort) {
     orderBy = 'p.created_at DESC';
