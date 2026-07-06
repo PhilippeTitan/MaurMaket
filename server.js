@@ -1721,7 +1721,7 @@ app.get('/api/products', async (req, res) => {
         ) AS total_score
       FROM products p2
       WHERE p2.is_available = TRUE
-        AND (
+        AND EXISTS (
           SELECT 1 FROM user_follows WHERE seller_id = p2.seller_id
           UNION ALL
           SELECT 1 FROM user_wishlists WHERE product_id = p2.id
@@ -1733,7 +1733,6 @@ app.get('/api/products', async (req, res) => {
           SELECT 1 FROM user_not_relevant WHERE product_id = p2.id
           UNION ALL
           SELECT 1 FROM user_purchases WHERE seller_id = p2.seller_id OR category_id = p2.category_id
-          LIMIT 1
         )
       ORDER BY total_score DESC, p2.created_at DESC
     ) score ON score.product_id = p.id`;
