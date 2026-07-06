@@ -1410,7 +1410,7 @@ app.post('/api/wishlist/:productId', authRequired, async (req, res) => {
 app.get('/api/wishlist', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT w.*, p.name, p.price, p.stock,
+      `SELECT p.id, p.seller_id, p.name, p.price, p.stock,
               p.sale_price, p.sale_starts_at, p.sale_ends_at,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
