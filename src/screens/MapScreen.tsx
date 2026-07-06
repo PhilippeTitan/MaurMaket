@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Animated, Image,
+  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Animated, Image, PanResponder,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -78,13 +78,21 @@ var highlightedId = null;
 function setSellerMarkers(sellers) {
   sellerLayer.clearLayers();
   sellers.forEach(function(s) {
-    var color = s.tier==='business'?'#E04050':s.tier==='verified'?'#1D9E75':'#F5A623';
+    var isBiz = s.tier==='business';
+    var isVer = s.tier==='verified';
+    var color = isBiz?'#E04050':isVer?'#1D9E75':'#F5A623';
+    var size = isVer?50:isBiz?56:44;
+    var shape = isBiz?'14px':'50%';
+    var badge = isVer?'<div style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:'+color+';border:2px solid #fff;display:flex;align-items:center;justify-content:center"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>':'';
+    var glyph = isBiz
+      ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v11h16V9M4 9h16M9 21v-6h6v6"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/></svg>';
     var icon = L.divIcon({
       className:'',
-      iconSize:[40,52],iconAnchor:[20,52],
-      html:'<div style="display:flex;flex-direction:column;align-items:center">' +
-        '<div class="seller-ring" style="background:'+color+';width:36px;height:36px"><span style="font-size:16px">👤</span></div>' +
-        '<div class="seller-tail" style="border-top:8px solid '+color+'"></div></div>'
+      iconSize:[64,size+16],iconAnchor:[32,size+16],
+      html:'<div style="display:flex;flex-direction:column;align-items:center;position:relative">' +
+        '<div style="position:relative;width:'+size+'px;height:'+size+'px;border-radius:'+shape+';background:'+color+';border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3)">'+glyph+badge+'</div>' +
+        '<div class="seller-tail" style="border-top:9px solid '+color+'"></div></div>'
     });
     var marker = L.marker([s.lat,s.lng],{icon:icon});
     marker.on('click',function(){
@@ -130,6 +138,7 @@ export default function MapScreen() {
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedSeller, setSelectedSeller] = useState<NearbySeller | null>(null);
   const [sheetExpanded, setSheetExpanded] = useState(false);
+  useEffect(() => { sheetExpandedRef.current = sheetExpanded; }, [sheetExpanded]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followerCount, setFollowerCount] = useState<number | null>(null);
@@ -138,6 +147,7 @@ export default function MapScreen() {
 
   const fetchIdRef = useRef(0);
   const detailFetchIdRef = useRef(0);
+  const sheetExpandedRef = useRef(false);
 
   const dbg = useCallback((_msg: string) => {}, []);
 
@@ -294,6 +304,26 @@ export default function MapScreen() {
   });
   const sheetOpacity = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
+  const dragStartExpanded = useRef(false);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_evt, gesture) => Math.abs(gesture.dy) > 6,
+      onPanResponderGrant: () => { dragStartExpanded.current = sheetExpandedRef.current; },
+      onPanResponderRelease: (_evt, gesture) => {
+        const draggedUp = gesture.dy < -20;
+        const draggedDown = gesture.dy > 20;
+        if (draggedUp && !dragStartExpanded.current) {
+          setSheetExpanded(true);
+          Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
+        } else if (draggedDown && dragStartExpanded.current) {
+          setSheetExpanded(false);
+          Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
+        }
+      },
+    })
+  ).current;
+
   const sellerAvatar = selectedSeller ? getImageUrl(getSellerAvatar(selectedSeller)) : null;
 
   return (
@@ -320,12 +350,15 @@ export default function MapScreen() {
           height: sheetHeight,
           opacity: sheetOpacity,
         }]}>
-          <TouchableOpacity activeOpacity={0.9} onPress={() => {
-            if (sheetExpanded) { setSheetExpanded(false); Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start(); }
-            else { setSheetExpanded(true); Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start(); }
-          }} style={styles.chevronRow}>
-            <MaterialCommunityIcons name={sheetExpanded ? 'chevron-down' : 'chevron-up'} size={20} color={COLORS.text2} />
-          </TouchableOpacity>
+          <View {...panResponder.panHandlers} style={styles.dragHandleArea}>
+            <TouchableOpacity activeOpacity={0.9} onPress={() => {
+              if (sheetExpanded) { setSheetExpanded(false); Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start(); }
+              else { setSheetExpanded(true); Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start(); }
+            }} style={styles.chevronRow} accessibilityLabel={sheetExpanded ? 'collapse seller details' : 'expand seller details'} accessibilityRole="button">
+              <View style={styles.dragBar} />
+              <MaterialCommunityIcons name={sheetExpanded ? 'chevron-down' : 'chevron-up'} size={20} color={COLORS.text2} />
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity activeOpacity={0.8} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id })} style={styles.sheetTop}>
             {sellerAvatar ? (
@@ -394,6 +427,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderTopWidth: 1, borderTopColor: COLORS.border || '#30363D',
   },
+  dragHandleArea: { width: '100%' },
+  dragBar: { width: 36, height: 4, borderRadius: 2, backgroundColor: COLORS.border || '#30363D', marginBottom: 4 },
   chevronRow: { alignItems: 'center', paddingVertical: 6 },
   sheetTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingBottom: 10, gap: 10 },
   sheetAvatar: { width: 44, height: 44, borderRadius: 22 },
