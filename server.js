@@ -16,7 +16,15 @@ import morgan from 'morgan';
 dotenv.config();
 
 const { Pool } = pg;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 15,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
+pool.on('error', (err) => {
+  console.error('Unexpected pool error:', err);
+});
 const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -457,6 +465,38 @@ async function runMigrations() {
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_width INTEGER;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_height INTEGER;
     `);
+    // Allow NULL content for image messages
+    await c.query(`ALTER TABLE messages ALTER COLUMN content DROP NOT NULL;`);
+
+    // Performance indexes
+    await c.query(`
+      CREATE INDEX IF NOT EXISTS idx_products_seller_id ON products(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
+      CREATE INDEX IF NOT EXISTS idx_products_is_available ON products(is_available);
+      CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_product_images_product_id ON product_images(product_id);
+      CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+      CREATE INDEX IF NOT EXISTS idx_order_items_seller_id ON order_items(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_buyer_id ON orders(buyer_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+      CREATE INDEX IF NOT EXISTS idx_notifications_user_id_is_read ON notifications(user_id, is_read);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_conversations_buyer_id ON conversations(buyer_id);
+      CREATE INDEX IF NOT EXISTS idx_conversations_seller_id ON conversations(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_wishlists_user_id ON wishlists(user_id);
+      CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows(follower_id);
+      CREATE INDEX IF NOT EXISTS idx_follows_seller_id ON follows(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_feed_events_user_rate ON feed_events(user_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_order_escrow_order_id_status ON order_escrow(order_id, status);
+      CREATE INDEX IF NOT EXISTS idx_meetup_checkins_order_id ON meetup_checkins(order_id);
+      CREATE INDEX IF NOT EXISTS idx_order_events_order_id ON order_events(order_id);
+      CREATE INDEX IF NOT EXISTS idx_reviews_seller_id ON reviews(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_reviews_order_id ON reviews(order_id);
+      CREATE INDEX IF NOT EXISTS idx_seller_balances_seller_id ON seller_balances(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_promo_codes_seller_id ON promo_codes(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_promo_codes_code ON promo_codes(code);
+    `);
+
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
@@ -467,40 +507,10 @@ async function runMigrations() {
 
 async function cleanupOldNotifications() {
   try {
-    const result = await pool.query("DELETE FROM notifications WHERE type = 'new_message'");
-    if (result.rowCount > 0) console.log(`Cleaned up ${result.rowCount} old message notifications`);
+    const result = await pool.query("DELETE FROM notifications WHERE type = 'new_message' AND is_read = true AND created_at < NOW() - INTERVAL '7 days'");
+    if (result.rowCount > 0) console.log(`Cleaned up ${result.rowCount} old read message notifications`);
   } catch (err) {
     console.error('Notification cleanup error:', err);
-  }
-}
-
-async function cleanupLegacyData() {
-  const c = await pool.connect();
-  try {
-    await c.query('BEGIN');
-    await c.query('DELETE FROM product_images');
-    await c.query('UPDATE conversations SET product_id = NULL WHERE product_id IS NOT NULL');
-    await c.query('DELETE FROM order_events');
-    await c.query('DELETE FROM reviews');
-    await c.query('DELETE FROM platform_revenue');
-    await c.query('DELETE FROM promo_uses');
-    await c.query('DELETE FROM disputes');
-    await c.query('DELETE FROM order_items');
-    await c.query('DELETE FROM orders');
-    const r2 = await c.query('DELETE FROM products');
-    const r3 = await c.query('DELETE FROM verification_attempts');
-    const r4 = await c.query("UPDATE users SET avatar_url = NULL WHERE avatar_url LIKE '/uploads/%'");
-    const r5 = await c.query("UPDATE users SET store_logo_url = NULL WHERE store_logo_url LIKE '/uploads/%'");
-    const r6 = await c.query("UPDATE users SET id_document_url = NULL WHERE id_document_url LIKE '/uploads/%'");
-    await c.query('COMMIT');
-    const total = r2.rowCount + r3.rowCount;
-    const usersFixed = r4.rowCount + r5.rowCount + r6.rowCount;
-    if (total > 0 || usersFixed > 0) console.log(`Legacy data cleanup: ${r2.rowCount} products, ${r3.rowCount} verifications, ${usersFixed} user URLs cleared`);
-  } catch (err) {
-    await c.query('ROLLBACK');
-    console.error('Legacy data cleanup error:', err);
-  } finally {
-    c.release();
   }
 }
 
@@ -624,6 +634,9 @@ app.post('/api/auth/signup', async (req, res) => {
   const { fullName, email, password, phone } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email, and password required' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
   try {
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -1644,7 +1657,6 @@ app.get('/api/products', async (req, res) => {
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7);
-        const jwt = require('jsonwebtoken');
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         userId = decoded.id;
         usePersonalized = true;
@@ -1802,6 +1814,9 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
   }
   if (!images || !Array.isArray(images) || images.length === 0) {
     return res.status(400).json({ error: 'At least one image is required' });
+  }
+  if (images.length > 8) {
+    return res.status(400).json({ error: 'Maximum 8 images allowed' });
   }
 
   // Sale price validation
@@ -3420,15 +3435,17 @@ app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
   const msgType = messageType || 'text';
   if (msgType === 'image' && !imageUrl) return res.status(400).json({ error: 'Image URL required for image messages' });
   if (msgType === 'text' && (!content || !content.trim())) return res.status(400).json({ error: 'Message content required' });
+  if (content && content.length > 5000) return res.status(400).json({ error: 'Message too long (max 5000 characters)' });
   try {
     const conv = await pool.query(
       'SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
       [req.params.id, req.user.id]
     );
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    const storedContent = msgType === 'image' ? (content?.trim() || '\ud83d\udcf7 Photo') : content?.trim() || null;
     const result = await pool.query(
       `INSERT INTO messages (conversation_id, sender_id, content, message_type, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [req.params.id, req.user.id, content?.trim() || null, msgType, imageUrl || null]
+      [req.params.id, req.user.id, storedContent, msgType, imageUrl || null]
     );
     await pool.query(
       'UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1',
@@ -3437,7 +3454,7 @@ app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
     // Notify the other party of new message
     const recipientId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
     const senderName = (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name || 'Someone';
-    const preview = content.trim().length > 80 ? content.trim().substring(0, 80) + '...' : content.trim();
+    const preview = content?.trim() ? (content.trim().length > 80 ? content.trim().substring(0, 80) + '...' : content.trim()) : '\ud83d\udcf7 Photo';
     createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, { conversationId: req.params.id, senderId: req.user.id });
     res.status(201).json({ message: result.rows[0] });
   } catch (err) {
@@ -3529,7 +3546,9 @@ app.post('/api/payments/webhook', async (req, res) => {
     return res.status(401).json({ error: 'Webhook timestamp expired' });
   }
   const expected = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-  if (expected !== signature) {
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
@@ -3872,7 +3891,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
     console.error('Payout request error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
-    client.release();
+    c.release();
   }
 });
 
@@ -4147,9 +4166,23 @@ app.post('/api/subscriptions/webhook', express.json(), async (req, res) => {
   try {
     const signature = req.headers['x-mcc-signature'] || '';
     const secret = process.env.MCC_WEBHOOK_SECRET || '';
+    if (!secret) {
+      return res.status(500).json({ error: 'Webhook not configured' });
+    }
     const hmac = crypto.createHmac('sha256', secret).update(req.rawBody || '').digest('hex');
-    if (secret && signature !== hmac) {
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(hmac);
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    // Idempotency check
+    const eventId = req.body?.id || req.body?.data?.id;
+    if (eventId) {
+      const already = await pool.query('SELECT 1 FROM processed_events WHERE id = $1', [eventId]);
+      if (already.rows.length > 0) {
+        return res.json({ received: true, idempotent: true });
+      }
     }
 
     const { event, data } = req.body;
@@ -4187,6 +4220,11 @@ app.post('/api/subscriptions/webhook', express.json(), async (req, res) => {
           [sellerId]
         );
         createNotification(sellerId, 'subscription_activated', 'Business Subscription Active', `Your Business subscription is active until ${expiresAt.toLocaleDateString()}.`, {});
+      }
+
+      // Record event for idempotency
+      if (eventId) {
+        await pool.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
       }
     }
     res.json({ received: true });
@@ -4383,6 +4421,18 @@ cron.schedule('*/5 * * * *', async () => {
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message || err);
   res.status(500).json({ error: 'Internal server error' });
+});
+
+// ───── Graceful Shutdown ─────
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  try { await pool.end(); } catch {}
+  process.exit(0);
+});
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, shutting down gracefully...');
+  try { await pool.end(); } catch {}
+  process.exit(0);
 });
 
 const __execPath = process.argv[1] ? path.resolve(process.argv[1]) : '';

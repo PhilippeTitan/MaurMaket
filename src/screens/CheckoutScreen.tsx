@@ -8,6 +8,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
+import { validatePromo } from '../api';
 import ScreenHeader from '../components/ScreenHeader';
 import { store } from '../store';
 import { createOrder, createPayment, getAddresses, getImageUrl } from '../api';
@@ -31,6 +32,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [promoCode, setPromoCode] = useState(route.params?.promoCode || '');
+  const [discount, setDiscount] = useState(0);
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
 
@@ -57,6 +59,22 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     }
   }, []);
 
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Validate promo code when it changes
+  useEffect(() => {
+    if (!promoCode.trim()) { setDiscount(0); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await validatePromo(promoCode.trim(), subtotal) as any;
+        if (res?.discount) setDiscount(Number(res.discount));
+        else setDiscount(0);
+      } catch { setDiscount(0); }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [promoCode, subtotal]);
+
   const selectAddress = (addr: Address) => {
     setSelectedAddressId(addr.id);
     setName(addr.name);
@@ -65,8 +83,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     setCity(addr.city);
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const finalTotal = Math.max(0, subtotal - discount);
   const itemLabel = itemCount === 1 ? t('checkout.item') : t('checkout.items');
   const sellerGroups = cart.reduce<Array<{ sellerId: string; sellerName: string; itemCount: number; total: number }>>((groups, item) => {
     const sellerName = item.store_name || item.seller_name || `Seller ${item.seller_id.slice(0, 6)}`;
@@ -293,9 +310,21 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         <Text style={styles.moncashText}>{t('checkout.moncashNote')}</Text>
       </View>
 
+      {discount > 0 && (
+        <View style={styles.totalRow}>
+          <Text style={[styles.totalLabel, { color: COLORS.text2 }]}>{t('cart.subtotal')}</Text>
+          <Text style={[styles.totalValue, { color: COLORS.text2, textDecorationLine: 'line-through' }]}>Rs {formatPrice(subtotal)}</Text>
+        </View>
+      )}
+      {discount > 0 && (
+        <View style={styles.totalRow}>
+          <Text style={[styles.totalLabel, { color: COLORS.green }]}>Discount</Text>
+          <Text style={[styles.totalValue, { color: COLORS.green }]}>-Rs {formatPrice(discount)}</Text>
+        </View>
+      )}
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>{t('common.total')}</Text>
-        <Text style={styles.totalValue}>Rs {formatPrice(subtotal)}</Text>
+        <Text style={styles.totalValue}>Rs {formatPrice(finalTotal)}</Text>
       </View>
 
       <TouchableOpacity

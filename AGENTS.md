@@ -6,6 +6,82 @@
 ## Safety Rules
 - **NEVER kill node.exe processes**: OpenCode runs on Node.js. Killing random `node.exe` processes can kill OpenCode itself. Never use `taskkill`, `kill`, or any command that terminates node processes unless explicitly told to kill a specific process you started.
 
+## Post-Deploy Audit Protocol
+
+After every major feature, refactor, or batch of fixes, re-run the full audit suite before declaring "done." This catches regressions and new issues introduced by the changes.
+
+### When to Run
+- After completing a phase (Phase 0-10)
+- After a major feature (map, verification, escrow, feed, etc.)
+- After 10+ file changes in a single session
+- Before deploying to production
+- When the user says "audit" or "scan everything"
+
+### The 7 Audit Agents
+
+Launch all 7 in parallel via the `task` tool with `subagent_type: explore`:
+
+| # | Agent | What It Checks | Prompt Keywords |
+|---|-------|----------------|-----------------|
+| 1 | **Performance** | N+1 queries, missing indexes, unbounded queries, image handling, FlatList config, API deduplication, connection pool, request caching | "performance audit", "N+1", "index", "pagination", "image caching", "FlatList" |
+| 2 | **Buyer/Seller Flows** | Every user journey end-to-end: browse→cart→checkout→pay, signup→on→→→, order management, meetup, escrow, payouts, reviews, disputes, promo codes, subscription | "buyer seller flow", "stress test", "edge cases", "race conditions" |
+| 3 | **Design/UI** | Visual consistency, accessibility (labels, roles, hints, touch targets), safe areas, keyboard avoidance, i18n completeness, color/spacing constants, tab styles, card layouts, empty states, loading states | "design audit", "accessibility", "consistency", "safe area", "i18n" |
+| 4 | **Backend Security** | SQL injection, auth bypass, authorization, input validation, rate limiting, JWT security, webhook HMAC, secrets exposure, CORS, input length, OTP security | "security audit", "SQL injection", "auth bypass", "HMAC", "rate limit" |
+| 5 | **Backend Reliability** | Error handling, transactions, connection pool, idempotency, race conditions, timeouts, graceful shutdown, cron jobs, health checks | "reliability audit", "error handling", "transaction", "timeout" |
+| 6 | **Chat/Messaging** | Conversation creation, message sending/receiving, image messages, pagination, read receipts, polling, notification, deduplication, rate limiting | "chat audit", "messaging", "conversation", "image message" |
+| 7 | **Order/Checkout/Payment** | Cart management, checkout flow, MonCash redirect, webhook processing, stock decrement, promo discount, escrow, cancellation, retry, race conditions | "checkout audit", "payment flow", "promo discount", "stock race" |
+
+### Audit Prompt Template
+
+For each agent, use this template (customize the focus area):
+
+```
+You are a [ROLE] auditor for a Haitian marketplace app called MaurMaket. 
+The backend is Express.js on port 3001, production at maurmaket.onrender.com.
+Login test account: lexikonstrsut@gmail.com / Melmil12345
+
+Do a THOROUGH [FOCUS] audit. Check:
+[list specific areas from the table above]
+
+For each issue found, return:
+- Severity (Critical/High/Medium/Low)
+- File + line number
+- What the issue is
+- Estimated impact
+- How to reproduce
+- Suggested fix
+```
+
+### Post-Audit Workflow
+
+1. **Launch all 7 agents in parallel** (single message with 7 `task` tool calls)
+2. **Collect results** — each agent returns a structured report
+3. **Deduplicate** — merge overlapping findings across agents
+4. **Prioritize** — group by severity (Critical → High → Medium → Low)
+5. **Present to user** — show the master summary table
+6. **Fix in order** — tackle Critical first, then High, etc.
+7. **Re-run affected agents** — after fixes, re-run only the agents whose areas were changed
+
+### Example Usage
+
+```
+User: "Audit everything"
+Agent: [Launches all 7 audit agents in parallel, collects results, presents master summary]
+
+User: "Fix the critical ones"
+Agent: [Fixes Critical items, re-runs affected agents to verify]
+
+User: "Good, now fix high"
+Agent: [Fixes High items, re-runs affected agents]
+```
+
+### Notes
+- Each agent reads files independently — no shared context between agents
+- Agent 1 (Performance) and Agent 4 (Security) often find overlapping server.js issues — deduplicate in post-processing
+- Agent 3 (Design) is purely frontend — doesn't touch server.js
+- Agent 6 (Chat) and Agent 7 (Checkout) overlap on server.js endpoints — merge findings
+- All agents should check both `src/screens/` and `server.js` unless specifically frontend/backend only
+
 ## Dev Workflow
 - **Local backend**: Port 3002 (port 3001 blocked by Windows). Start with `set PORT=3002 && node server.js` or use `start-backend.bat`. Batch file sets `PORT=3002` automatically.
 - **Local frontend**: Expo Go on phone via LAN. Start with `npx expo start --clear` or use `start-frontend.bat`.

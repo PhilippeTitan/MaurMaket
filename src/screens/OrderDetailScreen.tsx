@@ -93,11 +93,30 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   const handleReorder = async () => {
     setActionLoading(true);
     try {
-      await reorder(orderId);
-      Alert.alert('Added', 'Items added to your cart.', [
-        { text: 'View Cart', onPress: () => navigation.navigate('Cart') },
-        { text: 'Continue Shopping', style: 'cancel' },
-      ]);
+      const res = await reorder(orderId);
+      const items = (res as any)?.items || [];
+      let addedCount = 0;
+      for (const item of items) {
+        const result = await store.addToCart({
+          id: item.productId,
+          name: item.name,
+          price: item.price,
+          stock: item.stock,
+          image: undefined,
+          sellerId: undefined,
+          sellerName: undefined,
+          salePrice: undefined,
+        } as any);
+        if (result.added) addedCount++;
+      }
+      if (addedCount > 0) {
+        Alert.alert('Added', `${addedCount} item${addedCount > 1 ? 's' : ''} added to your cart.`, [
+          { text: 'View Cart', onPress: () => navigation.navigate('Cart' as any) },
+          { text: 'Continue Shopping', style: 'cancel' },
+        ]);
+      } else {
+        Alert.alert('Unavailable', 'Items from this order are no longer available.');
+      }
     } catch (err: unknown) {
       Alert.alert(t('common.error'), errorMessage(err, 'Could not reorder'));
     }

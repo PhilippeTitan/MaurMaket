@@ -77,6 +77,8 @@ L.tileLayer("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
   subdomains: "abcd",
   maxZoom: 20
 }).addTo(map);
+setTimeout(function() { map.invalidateSize(); }, 100);
+window.addEventListener('load', function() { map.invalidateSize(); });
 map.on("moveend", function() {
   var c = map.getCenter();
   window.ReactNativeWebView.postMessage(JSON.stringify({type:"move",lat:c.lat,lng:c.lng}));
@@ -164,8 +166,13 @@ export default function MapScreen() {
     }
   }, []);
 
+  const [mapLoadError, setMapLoadError] = useState(false);
+
   useEffect(() => {
-    loadMapHtml().then(html => setHtmlContent(html)).catch(() => {});
+    loadMapHtml().then(html => setHtmlContent(html)).catch(err => {
+      console.warn('Map HTML load failed:', err);
+      setMapLoadError(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -393,6 +400,17 @@ export default function MapScreen() {
   }
 
   if (!htmlContent) {
+    if (mapLoadError) {
+      return (
+        <View style={styles.loading}>
+          <MaterialCommunityIcons name="map-outline" size={48} color={COLORS.text2} />
+          <Text style={{ color: COLORS.text2, marginTop: 12 }}>Map failed to load</Text>
+          <TouchableOpacity onPress={() => { setMapLoadError(false); loadMapHtml().then(h => setHtmlContent(h)).catch(e => { setMapLoadError(true); }); }} style={{ marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: COLORS.coral }}>
+            <Text style={{ color: COLORS.white }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={COLORS.coral} />
