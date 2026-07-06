@@ -478,12 +478,14 @@ export default function MapScreen() {
         <>
         <WebView
           ref={webViewRef}
-          source={{ uri: htmlContent }}
+          source={htmlContent ? { uri: htmlContent } : undefined}
           style={styles.map}
           onMessage={handleWebViewMessage}
-          onLoadEnd={() => setMapReady(true)}
-          onError={(e) => console.warn('WebView error:', e.nativeEvent)}
-          onHttpError={(e) => console.warn('WebView HTTP error:', e.nativeEvent.statusCode)}
+          onLoadStart={() => { dbg('WebView onLoadStart uri=' + (htmlContent || 'null').slice(0, 80)); }}
+          onLoadEnd={() => { dbg('WebView onLoadEnd OK'); setMapReady(true); }}
+          onError={(e: any) => { const msg = 'WebView ERROR: ' + (e?.nativeEvent?.description || JSON.stringify(e?.nativeEvent)); dbg(msg); console.warn(msg); }}
+          onHttpError={(e: any) => { const msg = 'WebView HTTP ' + (e?.nativeEvent?.statusCode || '?'); dbg(msg); console.warn(msg); }}
+          onContentProcessDidTerminate={() => dbg('WebView PROCESS TERMINATED')}
           javaScriptEnabled
           domStorageEnabled
           geolocationEnabled

@@ -104,24 +104,46 @@ export default function SettingsScreen({ navigation }: Props) {
         setLocDetecting(false);
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+        mayShowUserSettingsDialog: true,
+      });
       const { latitude: lat, longitude: lng } = pos.coords;
-      const nominatimRes = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=fr,en`
-      );
-      const nominatim = await nominatimRes.json();
-      const a = nominatim.address || {};
-      const street = [a.road, a.house_number].filter(Boolean).join(' ') || '';
-      const area = a.neighbourhood || a.suburb || a.city_district || a.village || a.town || '';
-      const city = a.city || a.municipality || a.county || '';
-      setLocAddress(street || area || nominatim.display_name?.split(',')[0] || '');
-      setLocCity(area || city || '');
-      Alert.alert(
-        t('settings.locationSaved'),
-        t('settings.locationEditHint')
-      );
-    } catch {
-      Alert.alert(t('settings.error'), 'Could not detect location');
+      let address = '';
+      let city = '';
+      try {
+        const nominatimRes = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=fr,en`,
+          { headers: { 'User-Agent': 'MaurMaket/1.0' } }
+        );
+        const nominatim = await nominatimRes.json();
+        const a = nominatim.address || {};
+        const street = [a.road, a.house_number].filter(Boolean).join(' ') || '';
+        const area = a.neighbourhood || a.suburb || a.city_district || a.village || a.town || '';
+        city = a.city || a.municipality || a.county || '';
+        address = street || area || nominatim.display_name?.split(',')[0] || '';
+        city = area || city || '';
+      } catch {}
+      setLocAddress(address);
+      setLocCity(city);
+      try {
+        const res = await updateProfile({
+          locationAddress: address,
+          locationCity: city,
+          locationLat: String(lat),
+          locationLng: String(lng),
+        }) as { user: typeof user };
+        if (res.user) await store.setUser(res.user, store.token);
+        Alert.alert(t('settings.locationSaved'), t('settings.locationEditHint'));
+      } catch {
+        Alert.alert(t('settings.locationSaved'), t('settings.locationEditHint'));
+      }
+    } catch (err: any) {
+      if (err?.code === 'E_LOCATION_SERVICES_DISABLED') {
+        Alert.alert(t('settings.error'), 'GPS is turned off. Please enable Location Services in your phone settings.');
+      } else {
+        Alert.alert(t('settings.error'), 'Could not detect location. Make sure you are outdoors or near a window.');
+      }
     }
     setLocDetecting(false);
   };
