@@ -4077,6 +4077,10 @@ function extractSex(text) {
   return sexMatch ? sexMatch[1].toUpperCase() : null;
 }
 
+function normalizeString(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
 async function luxandSimilarity(faceUrl1, faceUrl2) {
   const apiKey = process.env.LUXAND_KEY;
   if (!apiKey) throw new Error('LUXAND_KEY not configured');
@@ -4152,11 +4156,11 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         ocrResult = { ...frontFields, sex, rawFront: frontText, rawBack: backText };
 
         const userRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
-        const userName = userRes.rows[0]?.full_name?.toLowerCase().trim();
+        const userName = normalizeString(userRes.rows[0]?.full_name || '');
 
         const nameMatch = frontFields.fullName && frontFields.fullName.trim().length >= 3
           && !/^\d+$/.test(frontFields.fullName.trim())
-          && frontFields.fullName.toLowerCase().trim() === userName;
+          && normalizeString(frontFields.fullName) === userName;
         const hasCinNumber = frontFields.cinNumber && /^\d{8,12}$/.test(frontFields.cinNumber);
         const hasDob = frontFields.dateOfBirth && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(frontFields.dateOfBirth);
         const hasPlaceOfBirth = frontFields.placeOfBirth && frontFields.placeOfBirth.trim().length >= 3 && !/^\d+$/.test(frontFields.placeOfBirth.trim());
@@ -4177,23 +4181,26 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         issues.push('Could not read any text from ID card — please retake with better lighting');
       }
 
-      if (process.env.LUXAND_KEY && issues.length === 0) {
-        console.log(`🔍 [VERIFY] Calling Luxand face comparison (CIN front vs selfie)...`);
-        try {
-          const { score, similar } = await luxandSimilarity(idFrontUrl, selfieUrl);
-          ocrResult.faceScore = score;
-          console.log(`✅ [VERIFY] Luxand result: score=${score} similar=${similar} → ${score >= 0.3 ? '✅ PASS' : '❌ FAIL'}`);
-          if (score < 0.3) {
-            issues.push('Face in selfie does not match the CIN photo');
+      if (issues.length === 0) {
+        if (!process.env.LUXAND_KEY) {
+          console.log(`❌ [VERIFY] LUXAND_KEY not configured — rejecting (fail-closed)`);
+          issues.push('Verification service unavailable. Please try again later.');
+        } else {
+          console.log(`🔍 [VERIFY] Calling Luxand face comparison (CIN front vs selfie)...`);
+          try {
+            const { score, similar } = await luxandSimilarity(idFrontUrl, selfieUrl);
+            ocrResult.faceScore = score;
+            console.log(`✅ [VERIFY] Luxand result: score=${score} similar=${similar} → ${score >= 0.15 ? '✅ PASS' : '❌ FAIL'}`);
+            if (score < 0.15) {
+              issues.push('Face in selfie does not match the CIN photo');
+            }
+          } catch (e) {
+            console.error(`❌ [VERIFY] Luxand failed:`, e.message);
+            issues.push('Face verification temporarily unavailable — please try again');
           }
-        } catch (e) {
-          console.error(`❌ [VERIFY] Luxand failed:`, e.message);
-          issues.push('Face verification temporarily unavailable — please try again');
         }
-      } else if (issues.length > 0) {
-        console.log(`⏭️ [VERIFY] Skipping Luxand (OCR issues found)`);
       } else {
-        console.log(`⏭️ [VERIFY] Skipping Luxand (LUXAND_KEY not set)`);
+        console.log(`⏭️ [VERIFY] Skipping Luxand (OCR issues found)`);
       }
 
       if (issues.length === 0) {
