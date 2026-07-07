@@ -227,13 +227,6 @@ export default function VerificationScreen() {
     }
     setLoading(true);
     try {
-      const ocrResult = {
-        fullName: frontOcr.fullName || '',
-        dateOfBirth: frontOcr.dateOfBirth || '',
-        placeOfBirth: frontOcr.placeOfBirth || '',
-        cinNumber: frontOcr.cinNumber || '',
-        sex: backOcr.sex || '',
-      };
       const res = await submitVerification({
         idFrontUrl,
         idBackUrl,
@@ -243,8 +236,6 @@ export default function VerificationScreen() {
           idBack: idBackDeleteUrl || undefined,
           selfie: selfieDeleteUrl || undefined,
         },
-        ocrResult,
-        faceMatchScore: faceScore || 0,
       }) as { attempt: { status: string; rejection_reason?: string } };
 
       if (res.attempt.status === 'verified') {

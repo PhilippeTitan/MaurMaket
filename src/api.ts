@@ -457,8 +457,6 @@ export const submitVerification = (data: {
   idBackUrl: string;
   selfieUrl: string;
   deleteUrls?: { idFront?: string; idBack?: string; selfie?: string };
-  ocrResult?: Record<string, string>;
-  faceMatchScore?: number;
 }) => request('/verification/submit', { method: 'POST', body: JSON.stringify(data) });
 
 // Subscriptions

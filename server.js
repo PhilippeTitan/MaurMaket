@@ -4039,8 +4039,105 @@ app.post('/api/products/:id/sale', authRequired, sellerRequired, async (req, res
 
 // ───── ID Verification ─────
 
+// Cloud Vision API helpers
+async function cloudVisionDetect(imageUrl, features) {
+  const apiKey = process.env.GOOGLE_CLOUD_VISION_KEY;
+  if (!apiKey) throw new Error('GOOGLE_CLOUD_VISION_KEY not configured');
+  const resp = await fetch(
+    `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          image: { source: { imageUri: imageUrl } },
+          features,
+        }],
+      }),
+      signal: AbortSignal.timeout(30000),
+    }
+  );
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => 'unknown');
+    throw new Error(`Cloud Vision API error ${resp.status}: ${errText}`);
+  }
+  const data = await resp.json();
+  if (data.responses?.[0]?.error) throw new Error(data.responses[0].error.message);
+  return data.responses?.[0] || {};
+}
+
+function extractCinFields(text) {
+  const fields = {};
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const fullText = lines.join(' ');
+
+  const cinMatch = fullText.match(/\b(\d{8,12})\b/);
+  if (cinMatch) fields.cinNumber = cinMatch[1];
+
+  const dobMatch = fullText.match(/(\d{2}[\/\-]\d{2}[\/\-]\d{4})/);
+  if (dobMatch) fields.dateOfBirth = dobMatch[1];
+
+  if (lines.length > 0) fields.fullName = lines[0];
+
+  const pobMatch = fullText.match(/(?:N[eé]\(e\)?\s+(?:[àa]\s+))([\w\s]+?)(?:\s+le|\s+\d)/i);
+  if (pobMatch) fields.placeOfBirth = pobMatch[1].trim();
+
+  return fields;
+}
+
+function extractSex(text) {
+  const sexMatch = text.match(/ Sexe\s*:\s*(M|F)/i) || text.match(/\b(MASCULIN|F[ÉE]MININ|MALE|FEMALE)\b/i);
+  return sexMatch ? sexMatch[1].toUpperCase() : null;
+}
+
+function compareFaces(face1, face2) {
+  if (!face1 || !face2) return { score: 0, reason: 'Face not detected in one or both images' };
+
+  const lm1 = face1.landmarks || [];
+  const lm2 = face2.landmarks || [];
+  if (lm1.length === 0 || lm2.length === 0) return { score: 0, reason: 'No facial landmarks found' };
+
+  const bp1 = face1.boundingPoly?.vertices || [];
+  const bp2 = face2.boundingPoly?.vertices || [];
+  if (bp1.length < 3 || bp2.length < 3) return { score: 0, reason: 'Incomplete face bounding box' };
+
+  const fw1 = (bp1[1]?.x || 0) - (bp1[0]?.x || 1);
+  const fh1 = (bp1[2]?.y || 0) - (bp1[0]?.y || 1);
+  const fw2 = (bp2[1]?.x || 0) - (bp2[0]?.x || 1);
+  const fh2 = (bp2[2]?.y || 0) - (bp2[0]?.y || 1);
+  if (fw1 <= 0 || fh1 <= 0 || fw2 <= 0 || fh2 <= 0) return { score: 0, reason: 'Invalid face dimensions' };
+
+  const ratio1 = fw1 / fh1;
+  const ratio2 = fw2 / fh2;
+  const ratioSim = 1 - Math.min(Math.abs(ratio1 - ratio2) / Math.max(ratio1, ratio2), 1);
+
+  const getLm = (lms, type) => lms.find(l => l.type === type)?.position;
+  const eye1 = getLm(lm1, 'LEFT_EYE');
+  const eye2r = getLm(lm1, 'RIGHT_EYE');
+  const nose1 = getLm(lm1, 'NOSE_TIP');
+  const eye1b = getLm(lm2, 'LEFT_EYE');
+  const eye2br = getLm(lm2, 'RIGHT_EYE');
+  const nose2 = getLm(lm2, 'NOSE_TIP');
+
+  if (!eye1 || !eye2r || !nose1 || !eye1b || !eye2br || !nose2) {
+    return { score: ratioSim * 0.5, reason: 'Partial landmarks only (face shape comparison)' };
+  }
+
+  const dist = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+  const eyeDist1 = dist(eye1, eye2r) / fw1;
+  const eyeNose1 = dist({ x: (eye1.x + eye2r.x) / 2, y: (eye1.y + eye2r.y) / 2 }, nose1) / fh1;
+  const eyeDist2 = dist(eye1b, eye2br) / fw2;
+  const eyeNose2 = dist({ x: (eye1b.x + eye2br.x) / 2, y: (eye1b.y + eye2br.y) / 2 }, nose2) / fh2;
+
+  const eyeSim = 1 - Math.min(Math.abs(eyeDist1 - eyeDist2) / Math.max(eyeDist1, eyeDist2), 1);
+  const noseSim = 1 - Math.min(Math.abs(eyeNose1 - eyeNose2) / Math.max(eyeNose1, eyeNose2), 1);
+
+  const score = ratioSim * 0.3 + eyeSim * 0.35 + noseSim * 0.35;
+  return { score: Math.round(score * 100) / 100, reason: null };
+}
+
 app.post('/api/verification/submit', authRequired, sellerRequired, async (req, res) => {
-  const { idFrontUrl, idBackUrl, selfieUrl, deleteUrls, ocrResult, faceMatchScore } = req.body;
+  const { idFrontUrl, idBackUrl, selfieUrl, deleteUrls } = req.body;
   if (!idFrontUrl || !idBackUrl || !selfieUrl) {
     return res.status(400).json({ error: 'CIN front, back, and selfie are required' });
   }
@@ -4062,38 +4159,90 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
 
     let autoStatus = 'rejected';
     let rejectionReason = null;
+    let ocrResult = null;
+    let faceMatchScore = null;
 
-    if (ocrResult && faceMatchScore) {
-      const userRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
-      const userName = userRes.rows[0]?.full_name?.toLowerCase().trim();
-      const nameMatch = ocrResult.fullName && ocrResult.fullName.trim().length >= 3 && !/^\d+$/.test(ocrResult.fullName.trim()) && ocrResult.fullName.toLowerCase().trim() === userName;
-      const hasCinNumber = ocrResult.cinNumber && /^\d{8,12}$/.test(ocrResult.cinNumber);
-      const hasDob = ocrResult.dateOfBirth && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(ocrResult.dateOfBirth);
-      const hasPlaceOfBirth = ocrResult.placeOfBirth && ocrResult.placeOfBirth.trim().length >= 3 && !/^\d+$/.test(ocrResult.placeOfBirth.trim());
-      const hasSex = ocrResult.sex && /^(M|F|MASCULIN|FÉMININ|MALE|FEMALE)$/i.test(ocrResult.sex);
-      const faceOk = parseFloat(faceMatchScore) >= 0.5;
+    if (!process.env.GOOGLE_CLOUD_VISION_KEY) {
+      rejectionReason = 'Verification service not configured. Please try again later.';
+    } else {
+      const issues = [];
+      let frontText = '';
+      let backText = '';
+      let frontFace = null;
+      let selfieFace = null;
 
-      if (nameMatch && hasCinNumber && hasDob && hasPlaceOfBirth && hasSex && faceOk) {
-        autoStatus = 'verified';
-      } else {
-        const issues = [];
+      try {
+        const [frontVision, backVision] = await Promise.all([
+          cloudVisionDetect(idFrontUrl, [{ type: 'TEXT_DETECTION', maxResults: 1 }]),
+          cloudVisionDetect(idBackUrl, [{ type: 'TEXT_DETECTION', maxResults: 1 }]),
+        ]);
+        frontText = frontVision.textAnnotations?.[0]?.description || '';
+        backText = backVision.textAnnotations?.[0]?.description || '';
+      } catch (e) {
+        console.error('Cloud Vision OCR failed:', e.message);
+        rejectionReason = 'Could not read ID card photos. Please ensure images are clear and well-lit.';
+      }
+
+      if (frontText || backText) {
+        const frontFields = extractCinFields(frontText);
+        const sex = extractSex(backText);
+        ocrResult = { ...frontFields, sex };
+
+        const userRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+        const userName = userRes.rows[0]?.full_name?.toLowerCase().trim();
+
+        const nameMatch = frontFields.fullName && frontFields.fullName.trim().length >= 3
+          && !/^\d+$/.test(frontFields.fullName.trim())
+          && frontFields.fullName.toLowerCase().trim() === userName;
+        const hasCinNumber = frontFields.cinNumber && /^\d{8,12}$/.test(frontFields.cinNumber);
+        const hasDob = frontFields.dateOfBirth && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(frontFields.dateOfBirth);
+        const hasPlaceOfBirth = frontFields.placeOfBirth && frontFields.placeOfBirth.trim().length >= 3 && !/^\d+$/.test(frontFields.placeOfBirth.trim());
+        const hasSex = sex && /^(M|F|MASCULIN|FÉMININ|MALE|FEMALE)$/i.test(sex);
+
         if (!nameMatch) issues.push('Name on CIN does not match your profile name');
         if (!hasCinNumber) issues.push('CIN number not recognized');
         if (!hasDob) issues.push('Date of birth not found on card');
         if (!hasPlaceOfBirth) issues.push('Place of birth not found on card');
         if (!hasSex) issues.push('Sex not found on CIN back');
-        if (!faceOk) issues.push('No face detected or face does not match');
+      } else {
+        issues.push('Could not read any text from ID card — please retake with better lighting');
+      }
+
+      try {
+        const [frontFaceVision, selfieFaceVision] = await Promise.all([
+          cloudVisionDetect(idFrontUrl, [{ type: 'FACE_DETECTION', maxResults: 1 }]),
+          cloudVisionDetect(selfieUrl, [{ type: 'FACE_DETECTION', maxResults: 1 }]),
+        ]);
+        frontFace = frontFaceVision.faceAnnotations?.[0] || null;
+        selfieFace = selfieFaceVision.faceAnnotations?.[0] || null;
+      } catch (e) {
+        console.error('Cloud Vision face detection failed:', e.message);
+      }
+
+      if (frontFace && selfieFace) {
+        const { score, reason } = compareFaces(frontFace, selfieFace);
+        faceMatchScore = score;
+        if (score < 0.3) {
+          issues.push(reason || 'Face does not match between ID and selfie');
+        }
+      } else {
+        faceMatchScore = 0;
+        if (!frontFace) issues.push('No face detected on CIN front');
+        if (!selfieFace) issues.push('No face detected in selfie');
+      }
+
+      if (issues.length === 0) {
+        autoStatus = 'verified';
+      } else {
         rejectionReason = issues.join('. ');
       }
-    } else {
-      rejectionReason = 'OCR data or face detection missing — please ensure all photos are clear';
     }
 
     const result = await pool.query(
       `INSERT INTO verification_attempts (user_id, status, id_front_url, id_back_url, selfie_url, ocr_result, face_match_score, rejection_reason, verified_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${autoStatus === 'verified' ? 'CURRENT_TIMESTAMP' : 'NULL'})
        RETURNING *`,
-      [req.user.id, autoStatus, idFrontUrl, idBackUrl, selfieUrl, ocrResult ? JSON.stringify(ocrResult) : null, faceMatchScore || null, rejectionReason]
+      [req.user.id, autoStatus, idFrontUrl, idBackUrl, selfieUrl, ocrResult ? JSON.stringify(ocrResult) : null, faceMatchScore, rejectionReason]
     );
 
     if (autoStatus === 'verified') {
@@ -4103,7 +4252,6 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
       );
       createNotification(req.user.id, 'verification_approved', 'Identity Verified', 'Your identity has been verified! You are now a Verified Seller.', {});
 
-      // Auto-cleanup: Delete images from imgbb + NULL out DB URLs
       await Promise.all([
         deleteImgbbImage(deleteUrls?.idFront),
         deleteImgbbImage(deleteUrls?.idBack),
