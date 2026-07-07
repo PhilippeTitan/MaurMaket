@@ -93,6 +93,7 @@ export default function VerificationScreen() {
   };
 
   const captureImage = async (facing: 'front' | 'back') => {
+    console.log(`📷 [VERIFY] Capture requested — facing: ${facing}`);
     if (!permission?.granted) {
       const p = await requestPermission();
       if (!p.granted) {
@@ -102,14 +103,17 @@ export default function VerificationScreen() {
     }
 
     try {
+      console.log(`📷 [VERIFY] Camera ref: ${cameraRef.current ? '✅ ready' : '❌ null'}`);
       if (cameraRef.current) {
-        const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+        const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, skipProcessing: true });
+        console.log(`📸 [VERIFY] Photo captured: ${photo?.uri ? '✅ ' + photo.uri.substring(0, 60) + '...' : '❌ no uri'}`);
         if (photo?.uri) {
           await handleImageCapture(photo.uri, facing);
         }
       }
-    } catch {
-      Alert.alert(t('common.error'), 'Failed to capture image');
+    } catch (e: any) {
+      console.error(`❌ [VERIFY] Capture error (${facing}):`, e?.message || e);
+      Alert.alert(t('common.error'), e?.message || 'Failed to capture image');
     }
   };
 
@@ -125,37 +129,44 @@ export default function VerificationScreen() {
   };
 
   const handleImageCapture = async (uri: string, facing: 'front' | 'back') => {
+    console.log(`⬆️ [VERIFY] Uploading ${facing} image to imgbb...`);
     setLoading(true);
     try {
       const uploadRes = await uploadImage(uri);
       const url = uploadRes.url;
+      console.log(`✅ [VERIFY] ${facing} upload done: ${url}`);
 
       if (facing === 'back') {
         const fields = await processImage(uri, false);
+        console.log(`📝 [VERIFY] Back OCR (ML Kit):`, JSON.stringify(fields));
         setBackOcr(fields);
         setIdBackUrl(url);
         if (uploadRes.deleteUrl) setIdBackDeleteUrl(uploadRes.deleteUrl);
         setStep('selfie');
       } else {
         const fields = await processImage(uri, true);
+        console.log(`📝 [VERIFY] Front OCR (ML Kit):`, JSON.stringify(fields));
         setFrontOcr(fields);
         setIdFrontUrl(url);
         if (uploadRes.deleteUrl) setIdFrontDeleteUrl(uploadRes.deleteUrl);
         try {
           const faces = await FaceDetection.detect(uri, { detectionMode: 1 });
+          console.log(`👁️ [VERIFY] Front face detection: ${faces.length > 0 ? '✅ face found' : '❌ no face'}`);
           if (faces.length > 0) {
             setFrontFaceData(faces[0]);
           }
-        } catch { /* face detection on CIN is best-effort */ }
+        } catch (e: any) { console.log(`👁️ [VERIFY] Front face detection error:`, e?.message); }
         setStep('cinBack');
       }
     } catch (e: any) {
+      console.error(`❌ [VERIFY] ${facing} upload/process failed:`, e.message || e);
       Alert.alert(t('common.error'), e.message || 'Failed to process image');
     }
     setLoading(false);
   };
 
   const captureSelfie = async () => {
+    console.log(`📷 [VERIFY] Selfie requested — switching to front camera`);
     setCameraFacing('front');
     if (!permission?.granted) {
       const p = await requestPermission();
@@ -166,11 +177,17 @@ export default function VerificationScreen() {
     }
     setLoading(true);
     try {
+      console.log(`⏳ [VERIFY] Waiting 500ms for camera switch...`);
+      await new Promise(r => setTimeout(r, 500));
+      console.log(`📷 [VERIFY] Selfie camera ref: ${cameraRef.current ? '✅ ready' : '❌ null'}`);
       if (cameraRef.current) {
-        const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+        const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, skipProcessing: true });
+        console.log(`📸 [VERIFY] Selfie captured: ${photo?.uri ? '✅' : '❌ no uri'}`);
         if (photo?.uri) {
+          console.log(`⬆️ [VERIFY] Uploading selfie to imgbb...`);
           const uploadRes = await uploadImage(photo.uri);
           setSelfieUrl(uploadRes.url);
+          console.log(`✅ [VERIFY] Selfie upload done: ${uploadRes.url}`);
           if (uploadRes.deleteUrl) setSelfieDeleteUrl(uploadRes.deleteUrl);
 
           try {
@@ -213,14 +230,16 @@ export default function VerificationScreen() {
           setStep('review');
         }
       }
-    } catch {
-      Alert.alert(t('common.error'), 'Failed to capture selfie');
+    } catch (e: any) {
+      console.error('Selfie capture error:', e);
+      Alert.alert(t('common.error'), e?.message || 'Failed to capture selfie');
     }
     setLoading(false);
     setCameraFacing('back');
   };
 
   const handleSubmit = async () => {
+    console.log(`🚀 [VERIFY] Submitting to server — front: ${idFrontUrl ? '✅' : '❌'} back: ${idBackUrl ? '✅' : '❌'} selfie: ${selfieUrl ? '✅' : '❌'}`);
     if (!idFrontUrl || !idBackUrl || !selfieUrl) {
       Alert.alert(t('common.error'), 'Please capture CIN front, CIN back, and selfie before submitting.');
       return;
@@ -238,16 +257,20 @@ export default function VerificationScreen() {
         },
       }) as { attempt: { status: string; rejection_reason?: string } };
 
+      console.log(`📨 [VERIFY] Server response: status=${res.attempt.status}`);
       if (res.attempt.status === 'verified') {
+        console.log(`✅ [VERIFY] VERIFIED!`);
         Alert.alert(
           'Verified!',
           'Your identity has been verified. You are now a Verified Seller.',
           [{ text: 'OK', onPress: () => nav.goBack() }]
         );
       } else {
+        console.log(`❌ [VERIFY] Rejected: ${res.attempt.rejection_reason}`);
         setRejectedReasons(res.attempt.rejection_reason || 'Verification failed. Please try again.');
       }
     } catch (e: any) {
+      console.error(`❌ [VERIFY] Submit failed:`, e.message || e);
       Alert.alert(t('common.error'), e.message || 'Submission failed');
     }
     setLoading(false);

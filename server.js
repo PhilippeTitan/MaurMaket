@@ -4039,36 +4039,23 @@ app.post('/api/products/:id/sale', authRequired, sellerRequired, async (req, res
 
 // ───── ID Verification ─────
 
-// Cloud Vision API helpers
-async function cloudVisionDetect(imageUrl, features) {
-  const apiKey = process.env.GOOGLE_CLOUD_VISION_KEY;
-  if (!apiKey) throw new Error('GOOGLE_CLOUD_VISION_KEY not configured');
+// OCR.space API helper
+async function ocrSpaceParse(imageUrl) {
+  const apiKey = process.env.OCR_SPACE_KEY;
+  if (!apiKey) throw new Error('OCR_SPACE_KEY not configured');
   const resp = await fetch(
-    `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: [{
-          image: { source: { imageUri: imageUrl } },
-          features,
-        }],
-      }),
-      signal: AbortSignal.timeout(30000),
-    }
+    `https://api.ocr.space/parse/imageurl?apikey=${encodeURIComponent(apiKey)}&url=${encodeURIComponent(imageUrl)}&language=eng&OCREngine=2`,
+    { signal: AbortSignal.timeout(30000) }
   );
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => 'unknown');
-    throw new Error(`Cloud Vision API error ${resp.status}: ${errText}`);
-  }
+  if (!resp.ok) throw new Error(`OCR.space HTTP ${resp.status}`);
   const data = await resp.json();
-  if (data.responses?.[0]?.error) throw new Error(data.responses[0].error.message);
-  return data.responses?.[0] || {};
+  if (data.IsErroredOnProcessing) throw new Error(data.ErrorMessage?.[0] || 'OCR processing failed');
+  return data.ParsedResults?.[0]?.ParsedText || '';
 }
 
 function extractCinFields(text) {
   const fields = {};
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const fullText = lines.join(' ');
 
   const cinMatch = fullText.match(/\b(\d{8,12})\b/);
@@ -4090,55 +4077,30 @@ function extractSex(text) {
   return sexMatch ? sexMatch[1].toUpperCase() : null;
 }
 
-function compareFaces(face1, face2) {
-  if (!face1 || !face2) return { score: 0, reason: 'Face not detected in one or both images' };
-
-  const lm1 = face1.landmarks || [];
-  const lm2 = face2.landmarks || [];
-  if (lm1.length === 0 || lm2.length === 0) return { score: 0, reason: 'No facial landmarks found' };
-
-  const bp1 = face1.boundingPoly?.vertices || [];
-  const bp2 = face2.boundingPoly?.vertices || [];
-  if (bp1.length < 3 || bp2.length < 3) return { score: 0, reason: 'Incomplete face bounding box' };
-
-  const fw1 = (bp1[1]?.x || 0) - (bp1[0]?.x || 1);
-  const fh1 = (bp1[2]?.y || 0) - (bp1[0]?.y || 1);
-  const fw2 = (bp2[1]?.x || 0) - (bp2[0]?.x || 1);
-  const fh2 = (bp2[2]?.y || 0) - (bp2[0]?.y || 1);
-  if (fw1 <= 0 || fh1 <= 0 || fw2 <= 0 || fh2 <= 0) return { score: 0, reason: 'Invalid face dimensions' };
-
-  const ratio1 = fw1 / fh1;
-  const ratio2 = fw2 / fh2;
-  const ratioSim = 1 - Math.min(Math.abs(ratio1 - ratio2) / Math.max(ratio1, ratio2), 1);
-
-  const getLm = (lms, type) => lms.find(l => l.type === type)?.position;
-  const eye1 = getLm(lm1, 'LEFT_EYE');
-  const eye2r = getLm(lm1, 'RIGHT_EYE');
-  const nose1 = getLm(lm1, 'NOSE_TIP');
-  const eye1b = getLm(lm2, 'LEFT_EYE');
-  const eye2br = getLm(lm2, 'RIGHT_EYE');
-  const nose2 = getLm(lm2, 'NOSE_TIP');
-
-  if (!eye1 || !eye2r || !nose1 || !eye1b || !eye2br || !nose2) {
-    return { score: ratioSim * 0.5, reason: 'Partial landmarks only (face shape comparison)' };
-  }
-
-  const dist = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
-  const eyeDist1 = dist(eye1, eye2r) / fw1;
-  const eyeNose1 = dist({ x: (eye1.x + eye2r.x) / 2, y: (eye1.y + eye2r.y) / 2 }, nose1) / fh1;
-  const eyeDist2 = dist(eye1b, eye2br) / fw2;
-  const eyeNose2 = dist({ x: (eye1b.x + eye2br.x) / 2, y: (eye1b.y + eye2br.y) / 2 }, nose2) / fh2;
-
-  const eyeSim = 1 - Math.min(Math.abs(eyeDist1 - eyeDist2) / Math.max(eyeDist1, eyeDist2), 1);
-  const noseSim = 1 - Math.min(Math.abs(eyeNose1 - eyeNose2) / Math.max(eyeNose1, eyeNose2), 1);
-
-  const score = ratioSim * 0.3 + eyeSim * 0.35 + noseSim * 0.35;
-  return { score: Math.round(score * 100) / 100, reason: null };
+async function luxandSimilarity(faceUrl1, faceUrl2) {
+  const apiKey = process.env.LUXAND_KEY;
+  if (!apiKey) throw new Error('LUXAND_KEY not configured');
+  const form = new FormData();
+  form.append('face1', faceUrl1);
+  form.append('face2', faceUrl2);
+  const resp = await fetch('https://api.luxand.cloud/photo/similarity', {
+    method: 'POST',
+    headers: { 'token': apiKey },
+    body: form,
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!resp.ok) throw new Error(`Luxand API HTTP ${resp.status}`);
+  const data = await resp.json();
+  if (data.status === 'failure') throw new Error(data.message || 'Luxand similarity failed');
+  return { score: data.score || 0, similar: data.similar || false };
 }
 
 app.post('/api/verification/submit', authRequired, sellerRequired, async (req, res) => {
   const { idFrontUrl, idBackUrl, selfieUrl, deleteUrls } = req.body;
+  console.log(`🔍 [VERIFY] Submission started for user ${req.user.id}`);
+  console.log(`🔍 [VERIFY] Front: ${idFrontUrl ? '✅' : '❌'} | Back: ${idBackUrl ? '✅' : '❌'} | Selfie: ${selfieUrl ? '✅' : '❌'}`);
   if (!idFrontUrl || !idBackUrl || !selfieUrl) {
+    console.log(`❌ [VERIFY] Missing required images`);
     return res.status(400).json({ error: 'CIN front, back, and selfie are required' });
   }
 
@@ -4160,33 +4122,34 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
     let autoStatus = 'rejected';
     let rejectionReason = null;
     let ocrResult = null;
-    let faceMatchScore = null;
 
-    if (!process.env.GOOGLE_CLOUD_VISION_KEY) {
+    if (!process.env.OCR_SPACE_KEY) {
+      console.log(`❌ [VERIFY] OCR_SPACE_KEY not configured`);
       rejectionReason = 'Verification service not configured. Please try again later.';
     } else {
       const issues = [];
       let frontText = '';
       let backText = '';
-      let frontFace = null;
-      let selfieFace = null;
 
+      console.log(`📡 [VERIFY] Calling OCR.space for front + back...`);
       try {
-        const [frontVision, backVision] = await Promise.all([
-          cloudVisionDetect(idFrontUrl, [{ type: 'TEXT_DETECTION', maxResults: 1 }]),
-          cloudVisionDetect(idBackUrl, [{ type: 'TEXT_DETECTION', maxResults: 1 }]),
+        const [frontOcr, backOcr] = await Promise.all([
+          ocrSpaceParse(idFrontUrl),
+          ocrSpaceParse(idBackUrl),
         ]);
-        frontText = frontVision.textAnnotations?.[0]?.description || '';
-        backText = backVision.textAnnotations?.[0]?.description || '';
+        frontText = frontOcr;
+        backText = backOcr;
+        console.log(`✅ [VERIFY] OCR front (${frontText.length} chars): ${frontText.substring(0, 200).replace(/\n/g, ' | ')}`);
+        console.log(`✅ [VERIFY] OCR back (${backText.length} chars): ${backText.substring(0, 200).replace(/\n/g, ' | ')}`);
       } catch (e) {
-        console.error('Cloud Vision OCR failed:', e.message);
+        console.error(`❌ [VERIFY] OCR.space failed:`, e.message);
         rejectionReason = 'Could not read ID card photos. Please ensure images are clear and well-lit.';
       }
 
       if (frontText || backText) {
         const frontFields = extractCinFields(frontText);
         const sex = extractSex(backText);
-        ocrResult = { ...frontFields, sex };
+        ocrResult = { ...frontFields, sex, rawFront: frontText, rawBack: backText };
 
         const userRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
         const userName = userRes.rows[0]?.full_name?.toLowerCase().trim();
@@ -4199,6 +4162,12 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         const hasPlaceOfBirth = frontFields.placeOfBirth && frontFields.placeOfBirth.trim().length >= 3 && !/^\d+$/.test(frontFields.placeOfBirth.trim());
         const hasSex = sex && /^(M|F|MASCULIN|FÉMININ|MALE|FEMALE)$/i.test(sex);
 
+        console.log(`👤 [VERIFY] Name: profile="${userName}" | CIN="${frontFields.fullName}" → ${nameMatch ? '✅ MATCH' : '❌ MISMATCH'}`);
+        console.log(`📋 [VERIFY] CIN#: ${hasCinNumber ? '✅' : '❌'} ${frontFields.cinNumber || 'N/A'}`);
+        console.log(`📋 [VERIFY] DOB: ${hasDob ? '✅' : '❌'} ${frontFields.dateOfBirth || 'N/A'}`);
+        console.log(`📋 [VERIFY] POB: ${hasPlaceOfBirth ? '✅' : '❌'} ${frontFields.placeOfBirth || 'N/A'}`);
+        console.log(`📋 [VERIFY] Sex: ${hasSex ? '✅' : '❌'} ${sex || 'N/A'}`);
+
         if (!nameMatch) issues.push('Name on CIN does not match your profile name');
         if (!hasCinNumber) issues.push('CIN number not recognized');
         if (!hasDob) issues.push('Date of birth not found on card');
@@ -4208,32 +4177,30 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         issues.push('Could not read any text from ID card — please retake with better lighting');
       }
 
-      try {
-        const [frontFaceVision, selfieFaceVision] = await Promise.all([
-          cloudVisionDetect(idFrontUrl, [{ type: 'FACE_DETECTION', maxResults: 1 }]),
-          cloudVisionDetect(selfieUrl, [{ type: 'FACE_DETECTION', maxResults: 1 }]),
-        ]);
-        frontFace = frontFaceVision.faceAnnotations?.[0] || null;
-        selfieFace = selfieFaceVision.faceAnnotations?.[0] || null;
-      } catch (e) {
-        console.error('Cloud Vision face detection failed:', e.message);
-      }
-
-      if (frontFace && selfieFace) {
-        const { score, reason } = compareFaces(frontFace, selfieFace);
-        faceMatchScore = score;
-        if (score < 0.3) {
-          issues.push(reason || 'Face does not match between ID and selfie');
+      if (process.env.LUXAND_KEY && issues.length === 0) {
+        console.log(`🔍 [VERIFY] Calling Luxand face comparison (CIN front vs selfie)...`);
+        try {
+          const { score, similar } = await luxandSimilarity(idFrontUrl, selfieUrl);
+          ocrResult.faceScore = score;
+          console.log(`✅ [VERIFY] Luxand result: score=${score} similar=${similar} → ${score >= 0.3 ? '✅ PASS' : '❌ FAIL'}`);
+          if (score < 0.3) {
+            issues.push('Face in selfie does not match the CIN photo');
+          }
+        } catch (e) {
+          console.error(`❌ [VERIFY] Luxand failed:`, e.message);
+          issues.push('Face verification temporarily unavailable — please try again');
         }
+      } else if (issues.length > 0) {
+        console.log(`⏭️ [VERIFY] Skipping Luxand (OCR issues found)`);
       } else {
-        faceMatchScore = 0;
-        if (!frontFace) issues.push('No face detected on CIN front');
-        if (!selfieFace) issues.push('No face detected in selfie');
+        console.log(`⏭️ [VERIFY] Skipping Luxand (LUXAND_KEY not set)`);
       }
 
       if (issues.length === 0) {
+        console.log(`✅ [VERIFY] All checks passed → auto-verifying`);
         autoStatus = 'verified';
       } else {
+        console.log(`❌ [VERIFY] Rejection reasons: ${issues.join(' | ')}`);
         rejectionReason = issues.join('. ');
       }
     }
@@ -4242,7 +4209,7 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
       `INSERT INTO verification_attempts (user_id, status, id_front_url, id_back_url, selfie_url, ocr_result, face_match_score, rejection_reason, verified_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${autoStatus === 'verified' ? 'CURRENT_TIMESTAMP' : 'NULL'})
        RETURNING *`,
-      [req.user.id, autoStatus, idFrontUrl, idBackUrl, selfieUrl, ocrResult ? JSON.stringify(ocrResult) : null, faceMatchScore, rejectionReason]
+      [req.user.id, autoStatus, idFrontUrl, idBackUrl, selfieUrl, ocrResult ? JSON.stringify(ocrResult) : null, null, rejectionReason]
     );
 
     if (autoStatus === 'verified') {
@@ -4556,6 +4523,11 @@ app.post('/api/debug/map-report', authRequired, express.json({ limit: '50kb' }),
 // ───── Map Config (MapTiler key for client) ─────
 app.get('/api/map-config', (_req, res) => {
   res.json({ maptilerKey: process.env.MAPTILER_KEY || null });
+});
+
+app.get('/api/upload/config', authRequired, (_req, res) => {
+  if (!process.env.IMGBB_KEY) return res.status(503).json({ error: 'Upload service not configured' });
+  res.json({ imgbbKey: process.env.IMGBB_KEY });
 });
 
 app.get('/api/health', async (_req, res) => {
