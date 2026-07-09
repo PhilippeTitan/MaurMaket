@@ -42,6 +42,7 @@ import EditListingScreen from './src/screens/EditListingScreen';
 import SettingsEditScreen from './src/screens/SettingsEditScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
 import PromoManagementScreen from './src/screens/PromoManagementScreen';
+import NotificationScreen from './src/screens/NotificationScreen';
 
 const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
 
@@ -120,7 +121,7 @@ function MainTabs() {
             paddingBottom: insets.bottom > 0 ? insets.bottom - 4 : 0,
             paddingTop: 0,
             height: 56 + (insets.bottom > 0 ? insets.bottom : 0),
-            marginBottom: insets.bottom > 0 ? 8 : 16,
+            marginBottom: insets.bottom > 0 ? 12 : 16,
             marginHorizontal: 16,
             elevation: 8,
             shadowColor: '#000',
@@ -357,6 +358,7 @@ export default function App() {
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
             <Stack.Screen name="Meetup" component={LazyMeetupScreen} />
             <Stack.Screen name="PromoManagement" component={PromoManagementScreen} />
+            <Stack.Screen name="Notification" component={NotificationScreen} />
             <Stack.Screen name="EmailVerification" component={EmailVerificationScreen} options={{ presentation: 'modal' }} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ presentation: 'modal' }} />
           </>

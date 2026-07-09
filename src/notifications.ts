@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { savePushToken } from './api';
+import { routeNotification } from './notificationRouting';
 
 function isExpoGo(): boolean {
   return Constants.executionEnvironment === 'storeClient';
@@ -56,49 +57,6 @@ export function setupNotificationListeners(navigationRef: any) {
   Notifications.addNotificationResponseReceivedListener((response: any) => {
     const data = response.notification.request.content.data;
     if (!navigationRef?.isReady?.()) return;
-
-    switch (data?.type) {
-      case 'order_status':
-      case 'payment_confirmed':
-      case 'payment_failed':
-      case 'order_cancelled':
-        if (data.orderId) navigationRef.navigate('OrderDetail', { orderId: data.orderId });
-        break;
-      case 'new_message':
-        if (data.conversationId) navigationRef.navigate('Chat', { conversationId: data.conversationId, otherPartyName: '' });
-        break;
-      case 'meetup_proposed':
-      case 'meetup_confirmed':
-      case 'meetup_expired':
-        if (data.orderId) navigationRef.navigate('Meetup', { orderId: data.orderId });
-        break;
-      case 'review_received':
-      case 'order_note':
-        navigationRef.navigate('Orders');
-        break;
-      case 'new_follower':
-        navigationRef.navigate('MeTab');
-        break;
-      case 'verification_approved':
-      case 'verification_rejected':
-      case 'subscription_activated':
-      case 'subscription_expired':
-        navigationRef.navigate('Settings');
-        break;
-      case 'escrow_refunded':
-      case 'payout_failed':
-        navigationRef.navigate('Payments');
-        break;
-      case 'dispute_opened':
-      case 'dispute_resolved':
-        navigationRef.navigate('Orders');
-        break;
-      case 'new_product_from_followed':
-        if (data.productId) navigationRef.navigate('ProductDetail', { productId: data.productId });
-        break;
-      default:
-        navigationRef.navigate('Inbox');
-        break;
-    }
+    routeNotification(navigationRef, data?.type, data);
   });
 }

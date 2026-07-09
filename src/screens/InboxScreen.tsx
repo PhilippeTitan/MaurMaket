@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator, TextInput, Image, ScrollView,
 } from 'react-native';
@@ -12,11 +12,12 @@ import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
 import { getConversations, getNotifications, markNotificationRead, markAllNotificationsRead, getFollowing, getImageUrl, createConversation } from '../api';
+import { routeNotification } from '../notificationRouting';
 import type { Conversation, Notification, User } from '../types';
 import type { RootStackParamList } from '../navigation';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type InboxTab = 'messages' | 'notifications';
+type InboxTab = 'primary' | 'general';
 
 const INBOX_CACHE_TTL = 15_000;
 let _inboxCache: { data: any; timestamp: number } | null = null;
@@ -33,18 +34,43 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('fr-HT', { day: 'numeric', month: 'short' });
 }
 
+function getNotifIcon(type: string): { icon: string; color: string } {
+  switch (type) {
+    case 'new_message': return { icon: 'message-text-outline', color: COLORS.blue };
+    case 'order_status':
+    case 'payment_confirmed':
+    case 'payment_failed':
+    case 'order_cancelled': return { icon: 'package-variant', color: '#1D9E75' };
+    case 'meetup_proposed':
+    case 'meetup_confirmed':
+    case 'meetup_expired': return { icon: 'map-marker-outline', color: COLORS.blue };
+    case 'review_received': return { icon: 'star-outline', color: '#F5A623' };
+    case 'new_follower': return { icon: 'account-plus-outline', color: COLORS.coral };
+    case 'new_product_from_followed': return { icon: 'tag-outline', color: '#1D9E75' };
+    case 'escrow_refunded':
+    case 'payout_failed': return { icon: 'currency-usd', color: COLORS.coral };
+    case 'subscription_expired':
+    case 'subscription_activated': return { icon: 'crown-outline', color: '#F5A623' };
+    case 'verification_approved':
+    case 'verification_rejected': return { icon: 'shield-check-outline', color: '#1D9E75' };
+    case 'low_stock':
+    case 'product_sold_out': return { icon: 'alert-circle-outline', color: COLORS.coral };
+    default: return { icon: 'bell-outline', color: COLORS.text2 };
+  }
+}
+
 export default function InboxScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'Inbox'>>();
-  const [activeTab, setActiveTab] = useState<InboxTab>('messages');
+  const [activeTab, setActiveTab] = useState<InboxTab>('primary');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [followedSellers, setFollowedSellers] = useState<User[]>([]);
+  const [followedSellers, setFollowedSellers] = useState<any[]>([]);
 
   const fetchData = useCallback(async (force = false) => {
     if (!force && _inboxCache && Date.now() - _inboxCache.timestamp < INBOX_CACHE_TTL) {
@@ -59,7 +85,7 @@ export default function InboxScreen() {
       const [convos, notifs, followingRes] = await Promise.all([
         getConversations() as Promise<{ conversations: Conversation[] }>,
         getNotifications() as Promise<{ notifications: Notification[] }>,
-        getFollowing() as Promise<{ following: User[] }>,
+        getFollowing() as Promise<{ following: any[] }>,
       ]);
       const conversations = convos.conversations || [];
       const notifications = notifs.notifications || [];
@@ -85,12 +111,7 @@ export default function InboxScreen() {
       try { await markNotificationRead(notif.id); } catch { /* silent */ }
       setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
     }
-    const data = notif.data as any;
-    if (data?.orderId) {
-      nav.navigate('OrderDetail', { orderId: data.orderId });
-    } else if (data?.conversationId) {
-      nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: 'Chat' });
-    }
+    routeNotification(nav, notif.type, notif.data as Record<string, any>);
   };
 
   const handleMarkAllRead = async () => {
@@ -132,54 +153,83 @@ export default function InboxScreen() {
     const initial = otherName[0] || '?';
     const hasUnread = (item.unread_count || 0) > 0;
     const avatarUrl = getImageUrl((item as any).other_party_avatar);
+    const storeName = (item as any).other_party_store_name;
+    const sellerTier = (item as any).other_party_seller_tier;
+    const otherUserId = (item as any).other_party_id;
 
     return (
+      <View style={styles.convo}>
+        <TouchableOpacity
+          style={styles.convoMain}
+          onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId, otherUserAvatar: (item as any).other_party_avatar })}
+          accessibilityLabel={`conversation with ${otherName}`}
+          accessibilityRole="button"
+          activeOpacity={0.7}
+        >
+          <View style={[styles.convoAvatar, { backgroundColor: COLORS.coral }]}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.convoAvatarImg} />
+            ) : (
+              <Text style={styles.convoAvatarText}>{initial}</Text>
+            )}
+            {hasUnread && <View style={styles.convoUnreadBadge} />}
+          </View>
+          <View style={styles.convoBody}>
+            <View style={styles.convoNameRow}>
+              <Text style={[styles.convoName, hasUnread && styles.convoNameBold]} numberOfLines={1}>{otherName}</Text>
+              <Text style={styles.convoTime}>{timeAgo(item.last_message_at || item.created_at)}</Text>
+            </View>
+            {storeName ? (
+              <Text style={styles.convoStore} numberOfLines={1}>{storeName}</Text>
+            ) : sellerTier && sellerTier !== 'none' ? (
+              <Text style={styles.convoTier} numberOfLines={1}>{sellerTier} seller</Text>
+            ) : null}
+            <Text style={[styles.convoMsg, hasUnread && styles.convoMsgUnread]} numberOfLines={1}>
+              {item.last_message?.content || (item as any).last_message || 'No messages yet'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+        {otherUserId && (
+          <TouchableOpacity
+            style={styles.convoStoreBtn}
+            onPress={() => nav.navigate('Storefront', { sellerId: otherUserId })}
+            accessibilityLabel={`visit ${otherName}'s store`}
+            accessibilityRole="button"
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="storefront-outline" size={18} color={COLORS.coral} />
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  const renderNotification = ({ item }: { item: Notification }) => {
+    const { icon, color } = getNotifIcon(item.type);
+    return (
       <TouchableOpacity
-        style={styles.convo}
-        onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId: (item as any).other_party_id, otherUserAvatar: (item as any).other_party_avatar })}
-        accessibilityLabel={`conversation with ${otherName}`}
+        style={[styles.notifItem, !item.is_read && styles.notifItemUnread]}
+        onPress={() => handleNotificationPress(item)}
+        accessibilityLabel={item.title}
         accessibilityRole="button"
       >
-        <View style={[styles.convoAvatar, { backgroundColor: COLORS.coral }]}>
-          {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={styles.convoAvatarImg} />
-          ) : (
-            <Text style={styles.convoAvatarText}>{initial}</Text>
-          )}
+        <View style={[styles.notifIconWrap, { backgroundColor: color + '18' }]}>
+          <MaterialCommunityIcons name={icon as any} size={18} color={color} />
         </View>
-        <View style={styles.convoBody}>
-          <Text style={[styles.convoName, hasUnread && styles.convoNameBold]}>{otherName}</Text>
-          <Text style={[styles.convoMsg, hasUnread && styles.convoMsgUnread]} numberOfLines={1}>
-            {item.last_message?.content || (item as any).last_message || 'No messages yet'}
-          </Text>
+        <View style={styles.notifInfo}>
+          <Text style={[styles.notifTitle, !item.is_read && styles.notifTitleUnread]} numberOfLines={1}>{item.title}</Text>
+          {item.body && <Text style={styles.notifBody} numberOfLines={2}>{item.body}</Text>}
+          <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
         </View>
-        <View style={styles.convoRight}>
-          <Text style={styles.convoTime}>{timeAgo(item.last_message_at || item.created_at)}</Text>
-          {hasUnread && <View style={styles.unreadDot} />}
-        </View>
+        {!item.is_read && <View style={[styles.notifDot, { backgroundColor: color }]} />}
       </TouchableOpacity>
     );
   };
 
-  const renderNotification = ({ item }: { item: Notification }) => (
-    <TouchableOpacity
-      style={[styles.notifItem, !item.is_read && styles.notifItemUnread]}
-      onPress={() => handleNotificationPress(item)}
-      accessibilityLabel={item.title}
-      accessibilityRole="button"
-    >
-      <View style={[styles.notifDot, !item.is_read && styles.notifDotUnread]} />
-      <View style={styles.notifInfo}>
-        <Text style={styles.notifTitle}>{item.title}</Text>
-        {item.body && <Text style={styles.notifBody} numberOfLines={2}>{item.body}</Text>}
-        <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const SellerBubble = ({ seller }: { seller: User }) => {
+  const SellerBubble = ({ seller }: { seller: any }) => {
     const initial = (seller.full_name || '?')[0];
     const avatarUrl = getImageUrl(seller.avatar_url);
+    const hasActivity = seller.has_unread_activity;
     const handlePress = async () => {
       try {
         const existing = conversations.find(c => c.seller_id === seller.id || c.buyer_id === seller.id);
@@ -197,7 +247,7 @@ export default function InboxScreen() {
     };
     return (
       <TouchableOpacity style={styles.sellerBubble} onPress={handlePress} accessibilityLabel={`message ${seller.full_name}`} accessibilityRole="button">
-        <View style={[styles.sellerBubbleRing, { borderColor: COLORS.coral }]}>
+        <View style={[styles.sellerBubbleRing, { borderColor: hasActivity ? COLORS.coral : COLORS.border }]}>
           <View style={[styles.sellerBubbleAvatar, { backgroundColor: COLORS.coral }]}>
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.sellerBubbleImg} />
@@ -213,9 +263,9 @@ export default function InboxScreen() {
     );
   };
 
-  const isMessages = activeTab === 'messages';
+  const isPrimary = activeTab === 'primary';
 
-  const headerForMessages = isMessages ? (
+  const headerForPrimary = isPrimary ? (
     <>
       <View style={styles.searchBarWrap}>
         <View style={styles.searchBar}>
@@ -227,7 +277,6 @@ export default function InboxScreen() {
             value={search}
             onChangeText={setSearch}
             accessibilityLabel="search messages"
-           
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="clear search" accessibilityRole="button">
@@ -239,7 +288,7 @@ export default function InboxScreen() {
       {followedSellers.length > 0 && (
         <View style={styles.bubblesSection}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
-            {followedSellers.map(seller => (
+            {followedSellers.map((seller: any) => (
               <SellerBubble key={seller.id} seller={seller} />
             ))}
           </ScrollView>
@@ -255,32 +304,40 @@ export default function InboxScreen() {
           <BackButton onPress={handleBack} />
         )}
         <Text style={[styles.title, !(route.params?.returnTab || nav.canGoBack()) && { marginLeft: 35 }]}>{t('inbox.title')}</Text>
-        {(route.params?.returnTab || nav.canGoBack()) && <View style={styles.topBarSpacer} />}
+        <TouchableOpacity
+          style={styles.bellBtn}
+          onPress={() => nav.navigate('Notification')}
+          accessibilityLabel="view all notifications"
+          accessibilityRole="button"
+        >
+          <MaterialCommunityIcons name="bell-outline" size={22} color={COLORS.text} />
+          {unreadNotifCount > 0 && <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{unreadNotifCount > 9 ? '9+' : unreadNotifCount}</Text></View>}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.tabBar}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'messages' && styles.tabActive]}
-          onPress={() => setActiveTab('messages')}
-          accessibilityLabel="messages"
+          style={[styles.tab, activeTab === 'primary' && styles.tabActive]}
+          onPress={() => setActiveTab('primary')}
+          accessibilityLabel="primary"
           accessibilityRole="button"
         >
-          <Text style={[styles.tabText, activeTab === 'messages' && styles.tabTextActive]}>Messages</Text>
+          <Text style={[styles.tabText, activeTab === 'primary' && styles.tabTextActive]}>Primary</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'notifications' && styles.tabActive]}
-          onPress={() => setActiveTab('notifications')}
-          accessibilityLabel="notifications"
+          style={[styles.tab, activeTab === 'general' && styles.tabActive]}
+          onPress={() => setActiveTab('general')}
+          accessibilityLabel="general"
           accessibilityRole="button"
         >
-          <Text style={[styles.tabText, activeTab === 'notifications' && styles.tabTextActive]}>Notifications</Text>
+          <Text style={[styles.tabText, activeTab === 'general' && styles.tabTextActive]}>General</Text>
           {unreadNotifCount > 0 && (
             <View style={styles.tabBadge}>
               <Text style={styles.tabBadgeText}>{unreadNotifCount > 9 ? '9+' : unreadNotifCount}</Text>
             </View>
           )}
         </TouchableOpacity>
-        {activeTab === 'notifications' && unreadNotifCount > 0 && (
+        {activeTab === 'general' && unreadNotifCount > 0 && (
           <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
             <Text style={styles.markAllText}>Mark all read</Text>
           </TouchableOpacity>
@@ -289,10 +346,10 @@ export default function InboxScreen() {
 
       <FlatList
         key={activeTab}
-        data={(isMessages ? filteredConversations : notifications) as any}
-        renderItem={(isMessages ? renderConversation : renderNotification) as any}
+        data={(isPrimary ? filteredConversations : notifications) as any}
+        renderItem={(isPrimary ? renderConversation : renderNotification) as any}
         keyExtractor={(item: any) => item.id}
-        ListHeaderComponent={headerForMessages}
+        ListHeaderComponent={headerForPrimary}
         contentContainerStyle={{ paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         ListEmptyComponent={
@@ -300,8 +357,8 @@ export default function InboxScreen() {
             <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
           ) : (
             <EmptyState
-              icon={isMessages ? 'message-outline' : 'bell-outline'}
-              title={isMessages ? t('inbox.noMessages') : 'No notifications yet'}
+              icon={isPrimary ? 'message-outline' : 'bell-outline'}
+              title={isPrimary ? t('inbox.noMessages') : 'No notifications yet'}
               size={56}
             />
           )
@@ -318,8 +375,10 @@ const styles = StyleSheet.create({
     padding: SPACING.md, paddingBottom: SPACING.sm,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  topBarSpacer: { width: 35 },
   title: { flex: 1, textAlign: 'center', fontSize: 18, color: COLORS.text, fontWeight: '700' },
+  bellBtn: { position: 'relative', padding: 8, borderRadius: 20 },
+  bellBadge: { position: 'absolute', top: 2, right: 2, backgroundColor: COLORS.coral, borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  bellBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '700' },
   tabBar: {
     flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border,
     paddingHorizontal: SPACING.md,
@@ -347,26 +406,29 @@ const styles = StyleSheet.create({
   sellerBubbleImg: { width: 54, height: 54, borderRadius: 27 },
   sellerBubbleText: { fontSize: 20, color: COLORS.white, fontWeight: '700' },
   sellerBubbleName: { fontSize: 11, color: COLORS.text2, marginTop: 4, textAlign: 'center' },
-  convo: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 10 },
-  convoAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  convoAvatarImg: { width: 44, height: 44, borderRadius: 22 },
-  convoAvatarText: { fontSize: 16, color: COLORS.white, fontWeight: '700' },
+  convo: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 10 },
+  convoMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  convoAvatar: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  convoAvatarImg: { width: 56, height: 56, borderRadius: 28 },
+  convoAvatarText: { fontSize: 20, color: COLORS.white, fontWeight: '700' },
+  convoUnreadBadge: { position: 'absolute', top: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: '#00C853', borderWidth: 2, borderColor: COLORS.bg },
   convoBody: { flex: 1 },
-  convoName: { fontSize: 14, color: COLORS.text, fontWeight: '500' },
+  convoNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  convoName: { fontSize: 15, color: COLORS.text, fontWeight: '500', flex: 1 },
   convoNameBold: { fontWeight: '700' },
-  convoMsg: { fontSize: 12, color: COLORS.text2, marginTop: 1 },
+  convoStore: { fontSize: 12, color: COLORS.coral, marginTop: 1 },
+  convoTier: { fontSize: 11, color: COLORS.text2, marginTop: 1, textTransform: 'capitalize' },
+  convoMsg: { fontSize: 13, color: COLORS.text2, marginTop: 2 },
   convoMsgUnread: { color: COLORS.text, fontWeight: '500' },
-  convoRight: { alignItems: 'flex-end', gap: 4 },
-  convoTime: { fontSize: 10, color: COLORS.text2 },
-  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#00C853' },
-  notifItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  convoTime: { fontSize: 11, color: COLORS.text2 },
+  convoStoreBtn: { padding: 8, borderRadius: 20, backgroundColor: COLORS.surface },
+  notifItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   notifItemUnread: { backgroundColor: COLORS.surface },
-  notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.border, marginTop: 5 },
-  notifDotUnread: { backgroundColor: '#00C853' },
+  notifIconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   notifInfo: { flex: 1 },
-  notifTitle: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  notifTitle: { fontSize: 14, fontWeight: '500', color: COLORS.text },
+  notifTitleUnread: { fontWeight: '700' },
   notifBody: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
   notifTime: { fontSize: 11, color: COLORS.text2, marginTop: 4 },
-  empty: { alignItems: 'center', justifyContent: 'center', paddingTop: 100, gap: 8 },
-  emptyText: { fontSize: 14, color: COLORS.text2 },
+  notifDot: { width: 8, height: 8, borderRadius: 4 },
 });

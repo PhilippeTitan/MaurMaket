@@ -574,14 +574,41 @@ async function sendPushNotification(userId, title, body, data) {
     const result = await pool.query('SELECT push_token FROM users WHERE id = $1', [userId]);
     const token = result.rows[0]?.push_token;
     if (!token || !Expo.isExpoPushToken(token)) return;
-    await expo.sendPushNotificationsAsync([{
+    const payload = {
       to: token,
       title,
       body: body || '',
       data: data || {},
       sound: 'default',
       badge: 1,
-    }]);
+    };
+    // Look up rich image for push notification based on type
+    try {
+      if (data?.type === 'new_message' && data.senderId) {
+        const avatarRes = await pool.query('SELECT avatar_url FROM users WHERE id = $1', [data.senderId]);
+        if (avatarRes.rows[0]?.avatar_url) {
+          payload.icon = avatarRes.rows[0].avatar_url;
+        }
+      } else if (data?.type === 'new_product_from_followed' && data.productId) {
+        const imgRes = await pool.query('SELECT image_url FROM product_images WHERE product_id = $1 AND is_primary = true LIMIT 1', [data.productId]);
+        if (imgRes.rows[0]?.image_url) {
+          payload.icon = imgRes.rows[0].image_url;
+        }
+      } else if (data?.orderId && ['order_status', 'payment_confirmed', 'payment_failed', 'order_cancelled', 'review_received', 'meetup_proposed', 'meetup_confirmed', 'meetup_expired'].includes(data.type)) {
+        const imgRes = await pool.query(
+          `SELECT pi.image_url FROM product_images pi
+           JOIN order_items oi ON oi.product_id = pi.product_id
+           WHERE oi.order_id = $1 AND pi.is_primary = true
+           LIMIT 1`, [data.orderId]
+        );
+        if (imgRes.rows[0]?.image_url) {
+          payload.icon = imgRes.rows[0].image_url;
+        }
+      }
+    } catch (imgErr) {
+      // Image lookup is best-effort — don't block the notification
+    }
+    await expo.sendPushNotificationsAsync([payload]);
   } catch (err) {
     console.error('Push notification failed:', err.message);
   }
@@ -1456,7 +1483,7 @@ app.post('/api/follow/:sellerId', authRequired, async (req, res) => {
     await pool.query('INSERT INTO follows (follower_id, seller_id) VALUES ($1, $2)', [req.user.id, req.params.sellerId]);
     const follower = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
     const followerName = follower.rows[0]?.full_name || 'Someone';
-    createNotification(req.params.sellerId, 'new_follower', 'New Follower', `${followerName} started following you`, { followerId: req.user.id });
+    createNotification(req.params.sellerId, 'new_follower', 'New Follower', `${followerName} started following you`, { followerId: req.user.id, sellerId: req.params.sellerId });
     res.json({ following: true });
   } catch (err) {
     console.error('Follow toggle error:', err);
@@ -1467,7 +1494,14 @@ app.post('/api/follow/:sellerId', authRequired, async (req, res) => {
 app.get('/api/following', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT f.*, u.full_name, u.avatar_url
+      `SELECT f.*, u.full_name, u.avatar_url,
+        EXISTS(
+          SELECT 1 FROM notifications n
+          WHERE n.user_id = f.follower_id
+          AND n.type = 'new_product_from_followed'
+          AND n.is_read = false
+          AND (n.data->>'sellerId')::uuid = f.seller_id
+        ) AS has_unread_activity
        FROM follows f JOIN users u ON f.seller_id = u.id
        WHERE f.follower_id = $1
        ORDER BY f.created_at DESC`,
@@ -1902,9 +1936,12 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
       const followers = await pool.query('SELECT follower_id FROM follows WHERE seller_id = $1', [req.user.id]);
       if (followers.rows.length > 0) {
         const sellerName = (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name || 'A seller';
+        const productImage = (await pool.query('SELECT image_url FROM product_images WHERE product_id = $1 AND is_primary = true LIMIT 1', [product.id])).rows[0]?.image_url;
         for (const f of followers.rows) {
+          const notifData = { productId: product.id, sellerId: req.user.id };
+          if (productImage) notifData.image = productImage;
           createNotification(f.follower_id, 'new_product_from_followed', `New Listing from ${sellerName}`,
-            `${sellerName} just listed "${name}" for Rs ${price}`, { productId: product.id, sellerId: req.user.id });
+            `${sellerName} just listed "${name}" for Rs ${price}`, notifData);
         }
       }
     } catch (e) { console.error('Follower notification error:', e.message); }
@@ -2194,8 +2231,18 @@ app.post('/api/orders', authRequired, async (req, res) => {
     const buyerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
     const buyerName = buyerInfo.rows[0]?.full_name || 'Someone';
     const sellerIds = [...new Set(orderItems.map(i => i.sellerId))];
+    // Get first product image per seller for notification thumbnails
+    const orderImages = await pool.query(
+      `SELECT DISTINCT ON (oi.seller_id) oi.seller_id, pi.image_url
+       FROM order_items oi JOIN product_images pi ON pi.product_id = oi.product_id
+       WHERE oi.order_id = $1 AND pi.is_primary = true`, [order.id]
+    );
+    const imageBySeller = {};
+    for (const row of orderImages.rows) imageBySeller[row.seller_id] = row.image_url;
     for (const sid of sellerIds) {
-      createNotification(sid, 'order_status', 'New Order', `New order from ${buyerName} — Rs ${finalTotal.toFixed(0)}`, { orderId: order.id });
+      const notifData = { orderId: order.id };
+      if (imageBySeller[sid]) notifData.image = imageBySeller[sid];
+      createNotification(sid, 'order_status', 'New Order', `New order from ${buyerName} — Rs ${finalTotal.toFixed(0)}`, notifData);
       const lowStock = await pool.query('SELECT id, name, stock FROM products WHERE seller_id = $1 AND stock <= 3 AND is_available = true', [sid]);
       for (const p of lowStock.rows) {
         createNotification(sid, 'low_stock', 'Low Stock Alert', `"${p.name}" has only ${p.stock} left`, { productId: p.id });
@@ -3491,9 +3538,12 @@ app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
     );
     // Notify the other party of new message
     const recipientId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
-    const senderName = (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name || 'Someone';
+    const senderInfo = (await pool.query('SELECT full_name, avatar_url FROM users WHERE id = $1', [req.user.id])).rows[0];
+    const senderName = senderInfo?.full_name || 'Someone';
     const preview = content?.trim() ? (content.trim().length > 80 ? content.trim().substring(0, 80) + '...' : content.trim()) : '\ud83d\udcf7 Photo';
-    createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, { conversationId: req.params.id, senderId: req.user.id });
+    const notifData = { conversationId: req.params.id, senderId: req.user.id };
+    if (senderInfo?.avatar_url) notifData.image = senderInfo.avatar_url;
+    createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, notifData);
     res.status(201).json({ message: result.rows[0] });
   } catch (err) {
     console.error('Message send error:', err);

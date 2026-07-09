@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import type { Conversation, Product } from './types';
 
 const getWebApiBase = () => {
@@ -15,18 +16,27 @@ const getWebUploadBase = () => {
   return `https://molecules-restaurant-diploma-fate.trycloudflare.com`;
 };
 
+const getDevHost = (): string => {
+  const hostUri = Constants.expoConfig?.hostUri ?? (Constants as any).manifest?.debuggerHost;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    if (ip && ip !== 'localhost' && ip !== '127.0.0.1') return ip;
+  }
+  return 'localhost';
+};
+
 const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.236.148.105:3001/api'
+    ? 'http://10.118.134.105:3001/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.236.148.105:3001'
+    ? 'http://10.118.134.105:3001'
     : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(

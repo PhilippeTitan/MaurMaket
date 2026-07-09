@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Animated, Image, PanResponder,
+  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Animated, Image,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -20,8 +20,6 @@ const TIER_COLORS: Record<string, string> = {
   casual: '#F5A623', verified: '#1D9E75', business: '#E04050',
 };
 const SCREEN_W = Dimensions.get('window').width;
-const COLLAPSED_H = 64;
-const EXPANDED_H = 200;
 
 interface NearbySeller {
   id: string;
@@ -140,7 +138,6 @@ export default function MapScreen() {
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedSeller, setSelectedSeller] = useState<NearbySeller | null>(null);
   const [sheetExpanded, setSheetExpanded] = useState(false);
-  useEffect(() => { sheetExpandedRef.current = sheetExpanded; }, [sheetExpanded]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followerCount, setFollowerCount] = useState<number | null>(null);
@@ -149,7 +146,6 @@ export default function MapScreen() {
 
   const fetchIdRef = useRef(0);
   const detailFetchIdRef = useRef(0);
-  const sheetExpandedRef = useRef(false);
 
   const dbg = useCallback((_msg: string) => {}, []);
 
@@ -172,6 +168,7 @@ export default function MapScreen() {
   }, []);
 
   const openSheet = useCallback((seller: NearbySeller) => {
+    if (store.user && seller.id === store.user.id) return;
     setSelectedSeller(seller);
     setSheetExpanded(false);
     setLatestItems([]);
@@ -305,30 +302,16 @@ export default function MapScreen() {
     } catch {}
   }, [sellers, fetchSellers, openSheet]);
 
-  const sheetHeight = sheetAnim.interpolate({
-    inputRange: [0, 1], outputRange: [0, sheetExpanded ? EXPANDED_H : COLLAPSED_H],
-  });
   const sheetOpacity = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
-  const dragStartExpanded = useRef(false);
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_evt, gesture) => Math.abs(gesture.dy) > 6,
-      onPanResponderGrant: () => { dragStartExpanded.current = sheetExpandedRef.current; },
-      onPanResponderRelease: (_evt, gesture) => {
-        const draggedUp = gesture.dy < -20;
-        const draggedDown = gesture.dy > 20;
-        if (draggedUp && !dragStartExpanded.current) {
-          setSheetExpanded(true);
-          Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
-        } else if (draggedDown && dragStartExpanded.current) {
-          setSheetExpanded(false);
-          Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
-        }
-      },
-    })
-  ).current;
+  const toggleSheet = () => {
+    if (sheetExpanded) {
+      setSheetExpanded(false);
+    } else {
+      setSheetExpanded(true);
+    }
+    Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
+  };
 
   const sellerAvatar = selectedSeller ? getImageUrl(getSellerAvatar(selectedSeller)) : null;
 
@@ -351,72 +334,73 @@ export default function MapScreen() {
       />
 
       {selectedSeller && (
-        <Animated.View style={[styles.sheet, {
-          bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + (insets.bottom > 0 ? 8 : 16),
-          height: sheetHeight,
+        <>
+          <TouchableOpacity activeOpacity={1} onPress={() => { setSelectedSeller(null); setSheetExpanded(false); }} style={styles.mapOverlay} />
+          <Animated.View style={[styles.sheet, {
+          bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + (insets.bottom > 0 ? 8 : 16) + 8,
+          maxHeight: '60%',
           opacity: sheetOpacity,
         }]}>
-          <View {...panResponder.panHandlers} style={styles.dragHandleArea}>
-            <TouchableOpacity activeOpacity={0.9} onPress={() => {
-              if (sheetExpanded) { setSheetExpanded(false); Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start(); }
-              else { setSheetExpanded(true); Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start(); }
-            }} style={styles.chevronRow} accessibilityLabel={sheetExpanded ? 'collapse seller details' : 'expand seller details'} accessibilityRole="button">
-              <View style={styles.dragBar} />
-              <MaterialCommunityIcons name={sheetExpanded ? 'chevron-down' : 'chevron-up'} size={20} color={COLORS.text2} />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity activeOpacity={0.8} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id })} style={styles.sheetTop}>
-            {sellerAvatar ? (
-              <Image source={{ uri: sellerAvatar }} style={styles.sheetAvatar} />
-            ) : (
-              <View style={[styles.sheetAvatar, styles.sheetAvatarFallback]}>
-                <Text style={styles.sheetAvatarText}>{(selectedSeller.full_name || '?')[0]}</Text>
-              </View>
-            )}
-            <View style={styles.sheetInfo}>
-              <Text style={styles.sheetName} numberOfLines={1}>{getDisplayName(selectedSeller)}</Text>
-              <View style={styles.sheetMeta}>
-                <View style={[styles.tierDot, { backgroundColor: TIER_COLORS[selectedSeller.seller_tier] || '#F5A623' }]} />
-                <Text style={styles.sheetTier}>{selectedSeller.seller_tier}</Text>
-                {followerCount !== null && <Text style={styles.sheetFollower}>{followerCount} follower{followerCount !== 1 ? 's' : ''}</Text>}
-              </View>
-            </View>
-            <TouchableOpacity onPress={handleFollowToggle} disabled={followBusy} style={[styles.followBtn, isFollowing && styles.followBtnActive]}>
-              <Text style={[styles.followText, isFollowing && styles.followTextActive]}>{isFollowing ? 'Following' : 'Follow'}</Text>
-            </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.9} onPress={toggleSheet} style={styles.chevronRow} accessibilityLabel={sheetExpanded ? 'collapse seller details' : 'expand seller details'} accessibilityRole="button">
+            <MaterialCommunityIcons name={sheetExpanded ? 'chevron-down' : 'chevron-up'} size={30} color={COLORS.text2} />
           </TouchableOpacity>
 
-          {sheetExpanded && (
-            <View style={styles.sheetItems}>
-              <Text style={styles.sheetItemsLabel}>Latest items</Text>
-              {loadingDetail ? (
-                <Text style={styles.sheetItemsEmpty}>Loading...</Text>
-              ) : latestItems.length > 0 ? (
-                <Animated.ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.itemsScroll}>
-                  {latestItems.map(item => {
-                    const img = getImageUrl(item.images?.[0]?.image_url);
-                    return (
-                      <TouchableOpacity key={item.id} style={styles.itemCard} onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}>
-                        {img ? (
-                          <Image source={{ uri: img }} style={styles.itemImg} />
-                        ) : (
-                          <View style={[styles.itemImg, styles.itemImgFallback]}>
-                            <MaterialCommunityIcons name="image-outline" size={20} color={COLORS.text2} />
-                          </View>
-                        )}
-                        <Text style={styles.itemPrice} numberOfLines={1}>Rs {(item.sale_price ?? item.price)?.toLocaleString?.() ?? item.price}</Text>
-                        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </Animated.ScrollView>
-              ) : (
-                <Text style={styles.sheetItemsEmpty}>No products listed yet</Text>
-              )}
+          <View style={styles.sheetContent}>
+            <View style={styles.sheetTop}>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id })} accessibilityLabel="visit seller profile" accessibilityRole="button">
+                {sellerAvatar ? (
+                  <Image source={{ uri: sellerAvatar }} style={styles.sheetAvatar} />
+                ) : (
+                  <View style={[styles.sheetAvatar, styles.sheetAvatarFallback]}>
+                    <Text style={styles.sheetAvatarText}>{(selectedSeller.full_name || '?')[0]}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <View style={styles.sheetInfo}>
+                <Text style={styles.sheetName} numberOfLines={1}>{getDisplayName(selectedSeller)}</Text>
+                <View style={styles.sheetMeta}>
+                  <View style={[styles.tierDot, { backgroundColor: TIER_COLORS[selectedSeller.seller_tier] || '#F5A623' }]} />
+                  <Text style={styles.sheetTier}>{selectedSeller.seller_tier}</Text>
+                  {followerCount !== null && <Text style={styles.sheetFollower}>{followerCount} follower{followerCount !== 1 ? 's' : ''}</Text>}
+                </View>
+              </View>
+              <TouchableOpacity onPress={handleFollowToggle} disabled={followBusy} style={[styles.followBtn, isFollowing && styles.followBtnActive]} accessibilityLabel={isFollowing ? 'unfollow seller' : 'follow seller'} accessibilityRole="button">
+                <Text style={[styles.followText, isFollowing && styles.followTextActive]}>{isFollowing ? 'Following' : 'Follow'}</Text>
+              </TouchableOpacity>
             </View>
-          )}
+
+            {sheetExpanded && (
+              <View style={styles.sheetItems}>
+                <Text style={styles.sheetItemsLabel}>Latest items</Text>
+                {loadingDetail ? (
+                  <Text style={styles.sheetItemsEmpty}>Loading...</Text>
+                ) : latestItems.length > 0 ? (
+                  <Animated.ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.itemsScroll}>
+                    {latestItems.map(item => {
+                      const img = getImageUrl(item.images?.[0]?.image_url);
+                      return (
+                        <TouchableOpacity key={item.id} style={styles.itemCard} onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}>
+                          {img ? (
+                            <Image source={{ uri: img }} style={styles.itemImg} />
+                          ) : (
+                            <View style={[styles.itemImg, styles.itemImgFallback]}>
+                              <MaterialCommunityIcons name="image-outline" size={20} color={COLORS.text2} />
+                            </View>
+                          )}
+                          <Text style={styles.itemPrice} numberOfLines={1}>Rs {(item.sale_price ?? item.price)?.toLocaleString?.() ?? item.price}</Text>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </Animated.ScrollView>
+                ) : (
+                  <Text style={styles.sheetItemsEmpty}>No products listed yet</Text>
+                )}
+              </View>
+            )}
+          </View>
         </Animated.View>
+        </>
       )}
     </View>
   );
@@ -425,17 +409,17 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   map: { flex: 1 },
+  mapOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
 
   sheet: {
-    position: 'absolute', left: 0, right: 0,
+    position: 'absolute', left: 12, right: 12,
     backgroundColor: COLORS.surface || '#161B22',
-    borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    borderRadius: 16,
+    borderWidth: 1, borderColor: COLORS.border || '#30363D',
     overflow: 'hidden',
-    borderTopWidth: 1, borderTopColor: COLORS.border || '#30363D',
   },
-  dragHandleArea: { width: '100%' },
-  dragBar: { width: 36, height: 4, borderRadius: 2, backgroundColor: COLORS.border || '#30363D', marginBottom: 4 },
   chevronRow: { alignItems: 'center', paddingVertical: 6 },
+  sheetContent: {},
   sheetTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingBottom: 10, gap: 10 },
   sheetAvatar: { width: 44, height: 44, borderRadius: 22 },
   sheetAvatarFallback: { backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
