@@ -96,7 +96,7 @@ if (typeof document !== 'undefined') {
 
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 200 }}>
+    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 200, contentStyle: { backgroundColor: COLORS.bg } }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Signup" component={SignupScreen} />
       <AuthStack.Screen name="EmailVerification" component={EmailVerificationScreen} />
@@ -332,7 +332,7 @@ export default function App() {
       }
     }}>
       <StatusBar style="light" />
-      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 200 }}>
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 200, contentStyle: { backgroundColor: COLORS.bg } }}>
         {!isLoggedIn ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
         ) : (
