@@ -11,9 +11,8 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
-import { getConversations, getNotifications, markNotificationRead, markAllNotificationsRead, getFollowing, getImageUrl, createConversation } from '../api';
-import { routeNotification } from '../notificationRouting';
-import type { Conversation, Notification, User } from '../types';
+import { getConversations, getNotifications, getFollowing, getImageUrl, createConversation } from '../api';
+import type { Conversation } from '../types';
 import type { RootStackParamList } from '../navigation';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -34,31 +33,6 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('fr-HT', { day: 'numeric', month: 'short' });
 }
 
-function getNotifIcon(type: string): { icon: string; color: string } {
-  switch (type) {
-    case 'new_message': return { icon: 'message-text-outline', color: COLORS.blue };
-    case 'order_status':
-    case 'payment_confirmed':
-    case 'payment_failed':
-    case 'order_cancelled': return { icon: 'package-variant', color: '#1D9E75' };
-    case 'meetup_proposed':
-    case 'meetup_confirmed':
-    case 'meetup_expired': return { icon: 'map-marker-outline', color: COLORS.blue };
-    case 'review_received': return { icon: 'star-outline', color: '#F5A623' };
-    case 'new_follower': return { icon: 'account-plus-outline', color: COLORS.coral };
-    case 'new_product_from_followed': return { icon: 'tag-outline', color: '#1D9E75' };
-    case 'escrow_refunded':
-    case 'payout_failed': return { icon: 'currency-usd', color: COLORS.coral };
-    case 'subscription_expired':
-    case 'subscription_activated': return { icon: 'crown-outline', color: '#F5A623' };
-    case 'verification_approved':
-    case 'verification_rejected': return { icon: 'shield-check-outline', color: '#1D9E75' };
-    case 'low_stock':
-    case 'product_sold_out': return { icon: 'alert-circle-outline', color: COLORS.coral };
-    default: return { icon: 'bell-outline', color: COLORS.text2 };
-  }
-}
-
 export default function InboxScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -66,11 +40,13 @@ export default function InboxScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'Inbox'>>();
   const [activeTab, setActiveTab] = useState<InboxTab>('primary');
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [followedSellers, setFollowedSellers] = useState<any[]>([]);
+
+  const followedIds = new Set(followedSellers.map((s: any) => s.id));
 
   const fetchData = useCallback(async (force = false) => {
     if (!force && _inboxCache && Date.now() - _inboxCache.timestamp < INBOX_CACHE_TTL) {
@@ -84,7 +60,7 @@ export default function InboxScreen() {
     try {
       const [convos, notifs, followingRes] = await Promise.all([
         getConversations() as Promise<{ conversations: Conversation[] }>,
-        getNotifications() as Promise<{ notifications: Notification[] }>,
+        getNotifications() as Promise<{ notifications: any[] }>,
         getFollowing() as Promise<{ following: any[] }>,
       ]);
       const conversations = convos.conversations || [];
@@ -106,19 +82,6 @@ export default function InboxScreen() {
     setRefreshing(false);
   }, []);
 
-  const handleNotificationPress = async (notif: Notification) => {
-    if (!notif.is_read) {
-      try { await markNotificationRead(notif.id); } catch { /* silent */ }
-      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
-    }
-    routeNotification(nav, notif.type, notif.data as Record<string, any>);
-  };
-
-  const handleMarkAllRead = async () => {
-    try { await markAllNotificationsRead(); } catch { /* silent */ }
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-  };
-
   const handleBack = () => {
     if (route.params?.returnTab) {
       nav.navigate('Main', { screen: route.params.returnTab });
@@ -131,14 +94,21 @@ export default function InboxScreen() {
     nav.navigate('Main', { screen: 'FeedTab' });
   };
 
-  const unreadNotifCount = notifications.filter(n => !n.is_read).length;
+  const unreadNotifCount = notifications.filter((n: any) => !n.is_read).length;
 
-  const filteredConversations = conversations
+  const sortedConversations = conversations
     .slice()
     .sort((a, b) => {
       const ta = new Date(b.last_message_at || b.created_at || 0).getTime();
       const tb = new Date(a.last_message_at || a.created_at || 0).getTime();
       return ta - tb;
+    });
+
+  const filteredConversations = sortedConversations
+    .filter(c => {
+      const otherId = (c as any).other_party_id;
+      if (activeTab === 'primary') return otherId && followedIds.has(otherId);
+      return true;
     })
     .filter(c => {
       if (!search.trim()) return true;
@@ -204,28 +174,6 @@ export default function InboxScreen() {
     );
   };
 
-  const renderNotification = ({ item }: { item: Notification }) => {
-    const { icon, color } = getNotifIcon(item.type);
-    return (
-      <TouchableOpacity
-        style={[styles.notifItem, !item.is_read && styles.notifItemUnread]}
-        onPress={() => handleNotificationPress(item)}
-        accessibilityLabel={item.title}
-        accessibilityRole="button"
-      >
-        <View style={[styles.notifIconWrap, { backgroundColor: color + '18' }]}>
-          <MaterialCommunityIcons name={icon as any} size={18} color={color} />
-        </View>
-        <View style={styles.notifInfo}>
-          <Text style={[styles.notifTitle, !item.is_read && styles.notifTitleUnread]} numberOfLines={1}>{item.title}</Text>
-          {item.body && <Text style={styles.notifBody} numberOfLines={2}>{item.body}</Text>}
-          <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
-        </View>
-        {!item.is_read && <View style={[styles.notifDot, { backgroundColor: color }]} />}
-      </TouchableOpacity>
-    );
-  };
-
   const SellerBubble = ({ seller }: { seller: any }) => {
     const initial = (seller.full_name || '?')[0];
     const avatarUrl = getImageUrl(seller.avatar_url);
@@ -263,10 +211,9 @@ export default function InboxScreen() {
     );
   };
 
-  const isPrimary = activeTab === 'primary';
-
-  const headerForPrimary = isPrimary ? (
+  const listHeader = (
     <>
+      {/* Search bar */}
       <View style={styles.searchBarWrap}>
         <View style={styles.searchBar}>
           <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
@@ -285,7 +232,40 @@ export default function InboxScreen() {
           )}
         </View>
       </View>
-      {followedSellers.length > 0 && (
+
+      {/* Filter row: Primary | General ... Mark all read */}
+      <View style={styles.filterRow}>
+        <View style={styles.filterTabs}>
+          <TouchableOpacity
+            style={[styles.filterTab, activeTab === 'primary' && styles.filterTabActive]}
+            onPress={() => setActiveTab('primary')}
+            accessibilityLabel="primary"
+            accessibilityRole="button"
+          >
+            <Text style={[styles.filterTabText, activeTab === 'primary' && styles.filterTabTextActive]}>Primary</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterTab, activeTab === 'general' && styles.filterTabActive]}
+            onPress={() => setActiveTab('general')}
+            accessibilityLabel="general"
+            accessibilityRole="button"
+          >
+            <Text style={[styles.filterTabText, activeTab === 'general' && styles.filterTabTextActive]}>General</Text>
+          </TouchableOpacity>
+        </View>
+        {unreadNotifCount > 0 && (
+          <TouchableOpacity onPress={async () => {
+            const { markAllNotificationsRead } = await import('../api');
+            try { await markAllNotificationsRead(); } catch { /* silent */ }
+            setNotifications((prev: any[]) => prev.map(n => ({ ...n, is_read: true })));
+          }} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
+            <Text style={styles.markAllText}>Mark all read</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Bubbles (Primary only) */}
+      {activeTab === 'primary' && followedSellers.length > 0 && (
         <View style={styles.bubblesSection}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
             {followedSellers.map((seller: any) => (
@@ -295,7 +275,7 @@ export default function InboxScreen() {
         </View>
       )}
     </>
-  ) : null;
+  );
 
   return (
     <View style={styles.container}>
@@ -315,41 +295,11 @@ export default function InboxScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'primary' && styles.tabActive]}
-          onPress={() => setActiveTab('primary')}
-          accessibilityLabel="primary"
-          accessibilityRole="button"
-        >
-          <Text style={[styles.tabText, activeTab === 'primary' && styles.tabTextActive]}>Primary</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'general' && styles.tabActive]}
-          onPress={() => setActiveTab('general')}
-          accessibilityLabel="general"
-          accessibilityRole="button"
-        >
-          <Text style={[styles.tabText, activeTab === 'general' && styles.tabTextActive]}>General</Text>
-          {unreadNotifCount > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{unreadNotifCount > 9 ? '9+' : unreadNotifCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-        {activeTab === 'general' && unreadNotifCount > 0 && (
-          <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
-            <Text style={styles.markAllText}>Mark all read</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
       <FlatList
-        key={activeTab}
-        data={(isPrimary ? filteredConversations : notifications) as any}
-        renderItem={(isPrimary ? renderConversation : renderNotification) as any}
+        data={filteredConversations as any}
+        renderItem={renderConversation as any}
         keyExtractor={(item: any) => item.id}
-        ListHeaderComponent={headerForPrimary}
+        ListHeaderComponent={listHeader}
         contentContainerStyle={{ paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         ListEmptyComponent={
@@ -357,8 +307,8 @@ export default function InboxScreen() {
             <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
           ) : (
             <EmptyState
-              icon={isPrimary ? 'message-outline' : 'bell-outline'}
-              title={isPrimary ? t('inbox.noMessages') : 'No notifications yet'}
+              icon="message-outline"
+              title={activeTab === 'primary' ? 'No conversations with followed sellers' : t('inbox.noMessages')}
               size={56}
             />
           )
@@ -379,18 +329,6 @@ const styles = StyleSheet.create({
   bellBtn: { position: 'relative', padding: 8, borderRadius: 20 },
   bellBadge: { position: 'absolute', top: 2, right: 2, backgroundColor: COLORS.coral, borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   bellBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '700' },
-  tabBar: {
-    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border,
-    paddingHorizontal: SPACING.md,
-  },
-  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: COLORS.coral },
-  tabText: { fontSize: 13, color: COLORS.text2, fontWeight: '500' },
-  tabTextActive: { color: COLORS.text, fontWeight: '700' },
-  tabBadge: { backgroundColor: COLORS.coral, borderRadius: RADIUS.row, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  tabBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: '700' },
-  markAllBtn: { position: 'absolute', right: SPACING.md, top: 12 },
-  markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '500' },
   searchBarWrap: { paddingHorizontal: SPACING.md, paddingTop: SPACING.sm },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -398,7 +336,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, height: 38,
   },
   searchBarInput: { flex: 1, color: COLORS.text, fontSize: 14, paddingVertical: 0 },
-  bubblesSection: { paddingTop: SPACING.sm, paddingBottom: 4 },
+  filterRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, paddingBottom: SPACING.xs,
+  },
+  filterTabs: { flexDirection: 'row', gap: SPACING.md },
+  filterTab: { paddingVertical: 4 },
+  filterTabActive: { borderBottomWidth: 2, borderBottomColor: COLORS.coral },
+  filterTabText: { fontSize: 14, color: COLORS.text2, fontWeight: '500' },
+  filterTabTextActive: { color: COLORS.text, fontWeight: '700' },
+  markAllBtn: { paddingVertical: 4 },
+  markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '500' },
+  bubblesSection: { paddingTop: SPACING.xs, paddingBottom: 4 },
   bubblesRow: { paddingHorizontal: SPACING.md, gap: 14 },
   sellerBubble: { alignItems: 'center', width: 64 },
   sellerBubbleRing: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
@@ -422,13 +371,4 @@ const styles = StyleSheet.create({
   convoMsgUnread: { color: COLORS.text, fontWeight: '500' },
   convoTime: { fontSize: 11, color: COLORS.text2 },
   convoStoreBtn: { padding: 8, borderRadius: 20, backgroundColor: COLORS.surface },
-  notifItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  notifItemUnread: { backgroundColor: COLORS.surface },
-  notifIconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  notifInfo: { flex: 1 },
-  notifTitle: { fontSize: 14, fontWeight: '500', color: COLORS.text },
-  notifTitleUnread: { fontWeight: '700' },
-  notifBody: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
-  notifTime: { fontSize: 11, color: COLORS.text2, marginTop: 4 },
-  notifDot: { width: 8, height: 8, borderRadius: 4 },
 });
