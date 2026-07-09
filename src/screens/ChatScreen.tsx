@@ -98,8 +98,6 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     if (!draftOffer) return;
-    const suggested = Math.max(1, Math.round(draftOffer.listPrice * 0.9));
-    setText(`Offer: Rs ${suggested} for ${draftOffer.productName}`);
     setOfferDraftVisible(true);
   }, [draftOffer]);
 
@@ -144,9 +142,89 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
   };
 
+  const handleSendOffer = async (price: number) => {
+    if (!draftOffer || sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      const { sendOffer } = await import('../api');
+      await sendOffer(conversationId, {
+        productId: draftOffer.productId,
+        productName: draftOffer.productName,
+        offeredPrice: price,
+        listPrice: draftOffer.listPrice,
+      });
+      lastMessageTime.current = null;
+      await fetchMessages();
+      setOfferDraftVisible(false);
+    } catch {
+      Alert.alert(t('common.error'), t('chat.sendFailed'));
+    } finally {
+      setSending(false);
+      sendingRef.current = false;
+    }
+  };
+
+  const handleOfferRespond = async (messageId: string, action: 'accepted' | 'declined') => {
+    try {
+      const { respondToOffer } = await import('../api');
+      await respondToOffer(messageId, action);
+      lastMessageTime.current = null;
+      await fetchMessages();
+      if (action === 'accepted') {
+        Alert.alert('Offer accepted', 'The buyer can now check out at the agreed price.');
+      }
+    } catch {
+      Alert.alert(t('common.error'), 'Could not respond to offer.');
+    }
+  };
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.sender_id === store.user?.id;
     const isImage = item.message_type === 'image' && item.image_url;
+    const isOffer = item.message_type === 'offer';
+
+    if (isOffer) {
+      const offerData = item.offer_data as { productId: string; productName: string; offeredPrice: number; listPrice: number; status: 'pending' | 'accepted' | 'declined' | 'countered' } | undefined;
+      if (!offerData) return null;
+      const isPending = offerData.status === 'pending';
+      const canRespond = isPending && !isMe;
+      return (
+        <View style={[styles.offerMsgWrap, isMe ? styles.offerMsgWrapMe : styles.offerMsgWrapThem]}>
+          <View style={styles.offerMsgCard}>
+            <View style={styles.offerMsgIconWrap}>
+              <MaterialCommunityIcons name="tag-outline" size={16} color={COLORS.coral} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.offerMsgEyebrow}>{isMe ? 'Your offer' : 'Offer received'}</Text>
+              <Text style={styles.offerMsgProduct} numberOfLines={1}>{offerData.productName}</Text>
+              <View style={styles.offerMsgPriceRow}>
+                <Text style={styles.offerMsgPrice}>Rs {formatPrice(offerData.offeredPrice)}</Text>
+                <Text style={styles.offerMsgListPrice}>Rs {formatPrice(offerData.listPrice)}</Text>
+              </View>
+              <Text style={[
+                styles.offerMsgStatus,
+                offerData.status === 'accepted' && styles.offerMsgStatusAccepted,
+                offerData.status === 'declined' && styles.offerMsgStatusDeclined,
+              ]}>
+                {offerData.status === 'pending' ? 'Waiting for response' : offerData.status === 'accepted' ? 'Accepted' : offerData.status === 'declined' ? 'Declined' : 'Countered'}
+              </Text>
+            </View>
+          </View>
+          {canRespond && (
+            <View style={styles.offerMsgActions}>
+              <TouchableOpacity style={styles.offerMsgDecline} onPress={() => handleOfferRespond(item.id, 'declined')} accessibilityLabel="decline offer" accessibilityRole="button">
+                <Text style={styles.offerMsgDeclineText}>Decline</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.offerMsgAccept} onPress={() => handleOfferRespond(item.id, 'accepted')} accessibilityLabel="accept offer" accessibilityRole="button">
+                <Text style={styles.offerMsgAcceptText}>Accept</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}>
         {isImage ? (
@@ -273,8 +351,9 @@ export default function ChatScreen({ route, navigation }: Props) {
                   <TouchableOpacity
                     key={multiplier}
                     style={styles.offerChip}
-                    onPress={() => setText(`Offer: Rs ${price} for ${draftOffer.productName}`)}
-                    accessibilityLabel={`offer rs ${price}`}
+                    onPress={() => handleSendOffer(price)}
+                    disabled={sending}
+                    accessibilityLabel={`send offer rs ${price}`}
                     accessibilityRole="button"
                   >
                     <Text style={styles.offerChipText}>Rs {formatPrice(price)}</Text>
@@ -361,6 +440,37 @@ const styles = StyleSheet.create({
   chatImage: { width: 200, height: 200, borderRadius: RADIUS.media },
   bubbleTime: { fontSize: 10, color: COLORS.text2, marginTop: 2, alignSelf: 'flex-end' },
   bubbleTimeImage: { marginTop: 4 },
+  offerMsgWrap: { maxWidth: '78%', marginBottom: 8 },
+  offerMsgWrapMe: { alignSelf: 'flex-end' },
+  offerMsgWrapThem: { alignSelf: 'flex-start' },
+  offerMsgCard: {
+    flexDirection: 'row', gap: 10, padding: 12,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.media,
+  },
+  offerMsgIconWrap: {
+    width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(216,90,48,0.15)',
+  },
+  offerMsgEyebrow: { fontSize: 10, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase' },
+  offerMsgProduct: { fontSize: 13, color: COLORS.text, fontWeight: '700', marginTop: 2 },
+  offerMsgPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4 },
+  offerMsgPrice: { fontSize: 16, color: COLORS.coral, fontWeight: '700' },
+  offerMsgListPrice: { fontSize: 12, color: COLORS.text2, textDecorationLine: 'line-through' },
+  offerMsgStatus: { fontSize: 11, color: COLORS.text2, marginTop: 4 },
+  offerMsgStatusAccepted: { color: '#1D9E75', fontWeight: '700' },
+  offerMsgStatusDeclined: { color: '#E24B4A', fontWeight: '700' },
+  offerMsgActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  offerMsgDecline: {
+    flex: 1, paddingVertical: 8, borderRadius: RADIUS.pill, alignItems: 'center',
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+  },
+  offerMsgDeclineText: { fontSize: 12, color: COLORS.text2, fontWeight: '700' },
+  offerMsgAccept: {
+    flex: 1, paddingVertical: 8, borderRadius: RADIUS.pill, alignItems: 'center',
+    backgroundColor: COLORS.coral,
+  },
+  offerMsgAcceptText: { fontSize: 12, color: COLORS.white, fontWeight: '700' },
   offerDock: {
     flexDirection: 'row',
     alignItems: 'flex-start',

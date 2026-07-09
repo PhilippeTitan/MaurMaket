@@ -470,6 +470,25 @@ async function runMigrations() {
     // Allow NULL content for image messages
     await c.query(`ALTER TABLE messages ALTER COLUMN content DROP NOT NULL;`);
 
+    // Structured offer/negotiation system
+    await c.query(`
+      CREATE TABLE IF NOT EXISTS message_offers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        message_id UUID REFERENCES messages(id) ON DELETE CASCADE NOT NULL,
+        conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE NOT NULL,
+        product_id UUID REFERENCES products(id) NOT NULL,
+        buyer_id UUID REFERENCES users(id) NOT NULL,
+        seller_id UUID REFERENCES users(id) NOT NULL,
+        offered_price DECIMAL(10,2) NOT NULL CHECK (offered_price > 0),
+        list_price DECIMAL(10,2) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending', 'accepted', 'declined', 'expired', 'redeemed')),
+        expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '48 hours'),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        responded_at TIMESTAMP
+      );
+    `);
+
     // Performance indexes
     await c.query(`
       CREATE INDEX IF NOT EXISTS idx_products_seller_id ON products(seller_id);
@@ -497,6 +516,9 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_seller_balances_seller_id ON seller_balances(seller_id);
       CREATE INDEX IF NOT EXISTS idx_promo_codes_seller_id ON promo_codes(seller_id);
       CREATE INDEX IF NOT EXISTS idx_promo_codes_code ON promo_codes(code);
+      CREATE INDEX IF NOT EXISTS idx_message_offers_conversation ON message_offers(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_message_offers_buyer_product ON message_offers(buyer_id, product_id, status);
+      CREATE INDEX IF NOT EXISTS idx_message_offers_status_expires ON message_offers(status, expires_at);
     `);
 
     console.log('Migrations complete');
@@ -2174,8 +2196,26 @@ app.post('/api/orders', authRequired, async (req, res) => {
         throw new Error(`Insufficient stock for product ${item.productId}`);
       }
       const p = prod.rows[0];
-      const onSale = p.sale_price && (p.sale_starts_at === null || new Date(p.sale_starts_at) <= new Date()) && (p.sale_ends_at === null || new Date(p.sale_ends_at) >= new Date());
-      const price = onSale ? parseFloat(p.sale_price) : parseFloat(p.price);
+      // Price resolution: accepted offer > sale price > list price
+      let price;
+      const offerCheck = await client.query(
+        `SELECT mo.offered_price FROM message_offers mo
+         WHERE mo.product_id = $1 AND mo.buyer_id = $2 AND mo.status = 'accepted'
+         AND mo.responded_at IS NOT NULL
+         ORDER BY mo.responded_at DESC LIMIT 1`,
+        [item.productId, req.user.id]
+      );
+      if (offerCheck.rows.length > 0) {
+        price = parseFloat(offerCheck.rows[0].offered_price);
+        // Mark offer as redeemed so it can't be reused
+        await client.query(
+          "UPDATE message_offers SET status = 'redeemed' WHERE product_id = $1 AND buyer_id = $2 AND status = 'accepted'",
+          [item.productId, req.user.id]
+        );
+      } else {
+        const onSale = p.sale_price && (p.sale_starts_at === null || new Date(p.sale_starts_at) <= new Date()) && (p.sale_ends_at === null || new Date(p.sale_ends_at) >= new Date());
+        price = onSale ? parseFloat(p.sale_price) : parseFloat(p.price);
+      }
       total += price * (item.quantity || 1);
       orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id });
     }
@@ -2286,12 +2326,58 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
       }
     }
     const oldStatus = order.rows[0].status;
+
+    // If order was paid: refund escrow + restore stock
+    let totalRefund = 0;
+    if (oldStatus === 'paid') {
+      const escrows = await client.query(
+        "SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE",
+        [req.params.id]
+      );
+      for (const escrow of escrows.rows) {
+        await client.query(
+          "UPDATE order_escrow SET status = 'refunded', released_at = CURRENT_TIMESTAMP WHERE id = $1",
+          [escrow.id]
+        );
+      }
+      totalRefund = escrows.rows.reduce((sum, e) => sum + parseFloat(e.gross_amount), 0);
+
+      const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
+      for (const item of items.rows) {
+        await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
+        await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
+      }
+    }
+
     await client.query(
       "UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
       [req.params.id]
     );
     await client.query('COMMIT');
     logOrderEvent(req.params.id, 'status_change', req.user.id, oldStatus, 'cancelled', 'Cancelled by buyer');
+
+    // Send refund payout to buyer if paid order
+    if (oldStatus === 'paid' && totalRefund > 0) {
+      const buyerRes = await pool.query('SELECT phone FROM users WHERE id = $1', [order.rows[0].buyer_id]);
+      const buyerPhone = buyerRes.rows[0]?.phone;
+      if (buyerPhone) {
+        try {
+          const payoutRes = await fetch(
+            process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+            {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amount: Math.round(totalRefund), receiver: buyerPhone, referenceId: `cancel_refund_${req.params.id}` }),
+            }
+          );
+          if (payoutRes.ok) console.log(`[CANCEL] Refund Rs ${totalRefund} sent to buyer ${buyerPhone}`);
+          else console.error(`[CANCEL] Refund payout failed: ${await payoutRes.text()}`);
+        } catch (e) { console.error('[CANCEL] Refund payout error:', e.message); }
+      }
+      createNotification(order.rows[0].buyer_id, 'order_status', 'Order Refunded',
+        `Your cancelled order has been refunded Rs ${totalRefund.toFixed(0)}.`, { orderId: req.params.id });
+    }
+
     // Notify sellers of cancelled order
     const cancelledSellers = await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [req.params.id]);
     for (const row of cancelledSellers.rows) {
@@ -3490,10 +3576,17 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
       [req.params.id, req.user.id]
     );
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
-    await pool.query(
-      'UPDATE messages SET is_read = true WHERE conversation_id = $1 AND sender_id != $2',
+    // Only mark as read if there are actually unread messages from the other party
+    const unreadCheck = await pool.query(
+      'SELECT 1 FROM messages WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false LIMIT 1',
       [req.params.id, req.user.id]
     );
+    if (unreadCheck.rows.length > 0) {
+      await pool.query(
+        'UPDATE messages SET is_read = true WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false',
+        [req.params.id, req.user.id]
+      );
+    }
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const offset = parseInt(req.query.offset) || 0;
     const since = req.query.since;
@@ -3541,7 +3634,7 @@ app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
     const senderInfo = (await pool.query('SELECT full_name, avatar_url FROM users WHERE id = $1', [req.user.id])).rows[0];
     const senderName = senderInfo?.full_name || 'Someone';
     const preview = content?.trim() ? (content.trim().length > 80 ? content.trim().substring(0, 80) + '...' : content.trim()) : '\ud83d\udcf7 Photo';
-    const notifData = { conversationId: req.params.id, senderId: req.user.id };
+    const notifData = { conversationId: req.params.id, senderId: req.user.id, senderName };
     if (senderInfo?.avatar_url) notifData.image = senderInfo.avatar_url;
     createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, notifData);
     res.status(201).json({ message: result.rows[0] });
@@ -3562,6 +3655,160 @@ app.get('/api/conversations/unread-count', authRequired, async (req, res) => {
     res.json({ count: parseInt(result.rows[0].count) });
   } catch (err) {
     console.error('Unread count error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Structured Offer Routes ─────
+
+// Send an offer in a conversation
+app.post('/api/conversations/:id/offer', authRequired, async (req, res) => {
+  try {
+    const { productId, productName, offeredPrice, listPrice } = req.body;
+    if (!productId || !offeredPrice || offeredPrice <= 0) {
+      return res.status(400).json({ error: 'Valid productId and offeredPrice required' });
+    }
+
+    const conv = await pool.query(
+      'SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [req.params.id, req.user.id]
+    );
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+
+    const conversation = conv.rows[0];
+    const buyerId = conversation.buyer_id;
+    const sellerId = conversation.seller_id;
+
+    // Only the buyer can send offers
+    if (req.user.id !== buyerId) {
+      return res.status(403).json({ error: 'Only the buyer can send offers' });
+    }
+
+    // Validate product belongs to this conversation's seller
+    const product = await pool.query(
+      'SELECT id, price, stock, seller_id, name FROM products WHERE id = $1 AND is_available = true',
+      [productId]
+    );
+    if (product.rows.length === 0) return res.status(404).json({ error: 'Product not found or unavailable' });
+    if (product.rows[0].seller_id !== sellerId) {
+      return res.status(400).json({ error: 'Product does not belong to this seller' });
+    }
+    if (product.rows[0].stock <= 0) {
+      return res.status(400).json({ error: 'Product is out of stock' });
+    }
+
+    // Check for existing pending offer on this product from this buyer in this conversation
+    const existingOffer = await pool.query(
+      "SELECT id FROM message_offers WHERE product_id = $1 AND buyer_id = $2 AND conversation_id = $3 AND status = 'pending'",
+      [productId, buyerId, req.params.id]
+    );
+    if (existingOffer.rows.length > 0) {
+      return res.status(400).json({ error: 'You already have a pending offer for this product' });
+    }
+
+    // Create the message
+    const msgResult = await pool.query(
+      `INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, NULL, 'offer') RETURNING *`,
+      [req.params.id, req.user.id]
+    );
+    const message = msgResult.rows[0];
+
+    // Create the offer record
+    const offerResult = await pool.query(
+      `INSERT INTO message_offers (message_id, conversation_id, product_id, buyer_id, seller_id, offered_price, list_price)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [message.id, req.params.id, productId, buyerId, sellerId, offeredPrice, listPrice]
+    );
+    const offer = offerResult.rows[0];
+
+    // Update conversation last_message_at
+    await pool.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
+
+    // Notify seller
+    const buyerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [buyerId]);
+    const buyerName = buyerInfo.rows[0]?.full_name || 'A buyer';
+    createNotification(sellerId, 'new_message', 'New Offer',
+      `${buyerName} offered Rs ${offeredPrice} for ${productName || product.rows[0].name}`,
+      { conversationId: req.params.id, senderId: buyerId, senderName: buyerName });
+
+    res.status(201).json({
+      message: { ...message, offer_data: {
+        productId: offer.product_id,
+        productName: productName || product.rows[0].name,
+        offeredPrice: parseFloat(offer.offered_price),
+        listPrice: parseFloat(offer.list_price),
+        status: offer.status,
+      }}
+    });
+  } catch (err) {
+    console.error('Send offer error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Respond to an offer (accept/decline)
+app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
+  try {
+    const { action } = req.body;
+    if (!action || !['accepted', 'declined'].includes(action)) {
+      return res.status(400).json({ error: 'Action must be "accepted" or "declined"' });
+    }
+
+    const offerRes = await pool.query(
+      'SELECT mo.*, m.conversation_id FROM message_offers mo JOIN messages m ON mo.message_id = m.id WHERE mo.message_id = $1',
+      [req.params.messageId]
+    );
+    if (offerRes.rows.length === 0) return res.status(404).json({ error: 'Offer not found' });
+
+    const offer = offerRes.rows[0];
+
+    // Only the seller can respond
+    if (req.user.id !== offer.seller_id) {
+      return res.status(403).json({ error: 'Only the seller can respond to offers' });
+    }
+
+    // Must be pending and not expired
+    if (offer.status !== 'pending') {
+      return res.status(400).json({ error: `Offer is already ${offer.status}` });
+    }
+    if (offer.expires_at && new Date(offer.expires_at) < new Date()) {
+      await pool.query("UPDATE message_offers SET status = 'expired' WHERE message_id = $1", [req.params.messageId]);
+      return res.status(400).json({ error: 'Offer has expired' });
+    }
+
+    // Update offer status
+    await pool.query(
+      'UPDATE message_offers SET status = $1, responded_at = CURRENT_TIMESTAMP WHERE message_id = $2',
+      [action, req.params.messageId]
+    );
+
+    // Send a system message in the conversation
+    const sellerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+    const sellerName = sellerInfo.rows[0]?.full_name || 'Seller';
+    const productInfo = await pool.query('SELECT name FROM products WHERE id = $1', [offer.product_id]);
+    const productName = productInfo.rows[0]?.name || 'the item';
+    const systemContent = action === 'accepted'
+      ? `Offer accepted — you can now check out "${productName}" at Rs ${offer.offered_price}`
+      : `Offer declined for "${productName}"`;
+
+    await pool.query(
+      `INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, $3, 'text')`,
+      [offer.conversation_id, req.user.id, systemContent]
+    );
+    await pool.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [offer.conversation_id]);
+
+    // Notify buyer
+    const buyerNotifMsg = action === 'accepted'
+      ? `Your offer of Rs ${offer.offered_price} for "${productName}" was accepted! You can now check out at the agreed price.`
+      : `Your offer of Rs ${offer.offered_price} for "${productName}" was declined.`;
+    createNotification(offer.buyer_id, 'new_message',
+      action === 'accepted' ? 'Offer Accepted' : 'Offer Declined',
+      buyerNotifMsg,
+      { conversationId: offer.conversation_id, senderId: req.user.id, senderName: sellerName });
+
+    res.json({ success: true, status: action });
+  } catch (err) {
+    console.error('Respond to offer error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3731,10 +3978,39 @@ app.post('/api/payments/webhook', async (req, res) => {
             [oi.product_id]
           );
           if (stockCheck.rows.length === 0 || stockCheck.rows[0].stock < oi.quantity) {
-            // Insufficient stock — rollback payment, this order will be stuck in pending
+            // Insufficient stock — rollback payment and refund buyer
             await client.query('ROLLBACK');
-            console.error(`Order ${reference}: insufficient stock for product ${oi.product_id}, payment rolled back`);
-            return res.status(200).json({ received: true, stock_issue: true });
+            console.error(`Order ${reference}: insufficient stock for product ${oi.product_id}, processing refund`);
+            const orderFull = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [reference]);
+            const buyerId = orderFull.rows[0]?.buyer_id;
+            if (buyerId) {
+              const buyerPhoneRes = await pool.query('SELECT phone FROM users WHERE id = $1', [buyerId]);
+              const buyerPhone = buyerPhoneRes.rows[0]?.phone;
+              const grossTotal = orderItems.rows.reduce((sum, oi2) => {
+                const prodRow = orderItems.rows.find(r => r.product_id === oi2.product_id);
+                return sum + (prodRow ? parseFloat(prodRow.quantity) * 0 : 0);
+              }, 0);
+              // Calculate total from order items
+              const totalRes = await pool.query('SELECT total_amount FROM orders WHERE id = $1', [reference]);
+              const refundAmount = parseFloat(totalRes.rows[0]?.total_amount || 0);
+              if (refundAmount > 0 && buyerPhone) {
+                try {
+                  const payoutRes = await fetch(
+                    process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+                    {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ amount: Math.round(refundAmount), receiver: buyerPhone, referenceId: `stock_refund_${reference}` }),
+                    }
+                  );
+                  if (payoutRes.ok) console.log(`[WEBHOOK] Stock refund Rs ${refundAmount} sent to buyer ${buyerPhone}`);
+                  else console.error(`[WEBHOOK] Stock refund payout failed: ${await payoutRes.text()}`);
+                } catch (e) { console.error('[WEBHOOK] Stock refund payout error:', e.message); }
+              }
+              createNotification(buyerId, 'order_status', 'Payment Refunded',
+                `Your order could not be fulfilled due to stock issues. Rs ${refundAmount.toFixed(0)} refunded.`, { orderId: reference });
+            }
+            return res.status(200).json({ received: true, stock_issue: true, refunded: true });
           }
           await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.product_id]);
           // Check if product sold out
@@ -4716,6 +4992,26 @@ cron.schedule('*/5 * * * *', async () => {
   }
 });
 
+// ───── Cron: Expire stale offers (every 15 minutes) ─────
+cron.schedule('*/15 * * * *', async () => {
+  try {
+    const expired = await pool.query(
+      "UPDATE message_offers SET status = 'expired' WHERE status = 'pending' AND expires_at < CURRENT_TIMESTAMP RETURNING buyer_id, product_id"
+    );
+    if (expired.rows.length > 0) {
+      console.log(`[CRON] Expired ${expired.rows.length} stale offers`);
+      for (const row of expired.rows) {
+        const productInfo = await pool.query('SELECT name FROM products WHERE id = $1', [row.product_id]);
+        createNotification(row.buyer_id, 'new_message', 'Offer Expired',
+          `Your offer for "${productInfo.rows[0]?.name || 'a product'}" has expired.`,
+          {});
+      }
+    }
+  } catch (err) {
+    console.error('[CRON] Offer expiry error:', err.message);
+  }
+});
+
 // ───── Global Error Handler ─────
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message || err);
@@ -4748,7 +5044,7 @@ if (isMain) {
     // Legacy /uploads/ URL cleanup is now handled by the imgbb migration (images are hosted on imgbb)
     app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
-      console.log('Cron jobs active: meetup timeout auto-refund (every 5 min)');
+      console.log('Cron jobs active: meetup timeout auto-refund (every 5 min), offer expiry (every 15 min)');
     });
   });
 }

@@ -32,7 +32,7 @@ export default function CartScreen({ navigation }: Props) {
     return unsub;
   }, []);
 
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const total = cart.reduce((sum, item) => sum + (item.effective_price ?? item.price) * item.quantity, 0);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const finalTotal = Math.max(0, total - discount);
   const sellerGroups = cart.reduce<Array<{ sellerId: string; sellerName: string; itemCount: number; total: number }>>((groups, item) => {
@@ -40,9 +40,9 @@ export default function CartScreen({ navigation }: Props) {
     const existing = groups.find(group => group.sellerId === item.seller_id);
     if (existing) {
       existing.itemCount += item.quantity;
-      existing.total += item.price * item.quantity;
+      existing.total += (item.effective_price ?? item.price) * item.quantity;
     } else {
-      groups.push({ sellerId: item.seller_id, sellerName, itemCount: item.quantity, total: item.price * item.quantity });
+      groups.push({ sellerId: item.seller_id, sellerName, itemCount: item.quantity, total: (item.effective_price ?? item.price) * item.quantity });
     }
     return groups;
   }, []);

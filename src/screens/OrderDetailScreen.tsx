@@ -102,8 +102,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           name: item.name,
           price: item.price,
           stock: item.stock,
-          image: undefined,
-          sellerId: undefined,
+          image: item.images?.[0]?.url,
+          sellerId: item.sellerId,
           sellerName: undefined,
           salePrice: undefined,
         } as any);

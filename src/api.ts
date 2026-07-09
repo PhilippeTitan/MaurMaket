@@ -343,13 +343,19 @@ export const getConversations = async () => {
 };
 export const createConversation = (data: Record<string, string>) =>
   request('/conversations', { method: 'POST', body: JSON.stringify(data) });
-export const getMessages = (conversationId: string, params?: { limit?: number; offset?: number }) => {
-  const qs = params ? `?${new URLSearchParams({ ...(params.limit != null && { limit: String(params.limit) }), ...(params.offset != null && { offset: String(params.offset) }) }).toString()}` : '';
+export const getMessages = (conversationId: string, params?: { limit?: number; offset?: number; since?: string }) => {
+  const qs = params ? `?${new URLSearchParams({ ...(params.limit != null && { limit: String(params.limit) }), ...(params.offset != null && { offset: String(params.offset) }), ...(params.since && { since: params.since }) }).toString()}` : '';
   return request(`/conversations/${conversationId}/messages${qs}`);
 };
 export const sendMessage = (conversationId: string, content: string, imageUrl?: string) =>
   request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text' }) });
 export const getConversationUnreadCount = () => request('/conversations/unread-count');
+
+// Offers
+export const sendOffer = (conversationId: string, data: { productId: string; productName: string; offeredPrice: number; listPrice: number }) =>
+  request(`/conversations/${conversationId}/offer`, { method: 'POST', body: JSON.stringify(data) });
+export const respondToOffer = (messageId: string, action: 'accepted' | 'declined') =>
+  request(`/offers/${messageId}/respond`, { method: 'POST', body: JSON.stringify({ action }) });
 
 // Promos
 export const validatePromo = (code: string, orderTotal: number) =>

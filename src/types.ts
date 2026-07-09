@@ -163,6 +163,13 @@ export interface Message {
   content: string;
   message_type?: string;
   image_url?: string;
+  offer_data?: {
+    productId: string;
+    productName: string;
+    offeredPrice: number;
+    listPrice: number;
+    status: 'pending' | 'accepted' | 'declined' | 'countered';
+  };
   is_read: boolean;
   created_at: string;
 }
