@@ -18,6 +18,9 @@ import type { RootStackParamList } from '../navigation';
 import type { Product, Order, Review } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
 import StockBadge from '../components/StockBadge';
+
+const profileCache: Record<string, { data: any; timestamp: number }> = {};
+const CACHE_TTL = 60_000;
 import UserAvatar from '../components/UserAvatar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -77,7 +80,21 @@ export default function MeScreen() {
 
   const avatarUrl = getImageUrl(user?.avatar_url);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (force = false) => {
+    const uid = user?.id || '';
+    const cached = profileCache[uid];
+    if (!force && cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      const d = cached.data;
+      setOrderCount(d.orderCount); setSellingOrderCount(d.sellingOrderCount);
+      setToPay(d.toPay); setToShip(d.toShip); setToReceive(d.toReceive); setToReview(d.toReview);
+      setHasOrders(d.hasOrders); setProducts(d.products); setProductCount(d.productCount);
+      setRating(d.rating); setReviewCount(d.reviewCount); setAnalyticsData(d.analyticsData);
+      setFollowerCount(d.followerCount); setFollowingCount(d.followingCount);
+      setWishlist(d.wishlist); setReviews(d.reviews); setLowStockProducts(d.lowStockProducts);
+      return;
+    }
+
+    let cacheData: Record<string, any> = {};
     try {
       const [ordersRes, buyerOrdersRes] = await Promise.all([
         isSeller
@@ -87,60 +104,74 @@ export default function MeScreen() {
       ]);
 
       const allBuyerOrders = buyerOrdersRes.buyerOrders || [];
+      const sellingOrders = (ordersRes as { orders?: Order[] }).orders || [];
+      cacheData.orderCount = allBuyerOrders.length;
+      cacheData.sellingOrderCount = sellingOrders.length;
       setOrderCount(allBuyerOrders.length);
-      setSellingOrderCount((ordersRes as { orders?: Order[] }).orders?.length || 0);
+      setSellingOrderCount(sellingOrders.length);
 
       const pending = allBuyerOrders.filter((o: Order) => o.status === 'pending').length;
       const paid = allBuyerOrders.filter((o: Order) => o.status === 'paid').length;
       const shipped = allBuyerOrders.filter((o: Order) => o.status === 'shipped').length;
       const delivered = allBuyerOrders.filter((o: Order) => o.status === 'delivered').length;
-      setToPay(pending);
-      setToShip(paid);
-      setToReceive(shipped);
-      setToReview(delivered);
+      cacheData.toPay = pending; cacheData.toShip = paid; cacheData.toReceive = shipped; cacheData.toReview = delivered;
+      cacheData.hasOrders = allBuyerOrders.length > 0;
+      setToPay(pending); setToShip(paid); setToReceive(shipped); setToReview(delivered);
       setHasOrders(allBuyerOrders.length > 0);
 
+      let products: Product[] = [];
+      let analyticsData: SellerAnalyticsResponse | null = null;
+      let rating = 0;
+      let reviewCount = 0;
       if (isSeller) {
         let sellerProds: { products: Product[] } | null = null;
         try { sellerProds = await getSellerProducts() as { products: Product[] }; } catch { /* ignore */ }
-        const fetched = sellerProds?.products || [];
-        setProducts(fetched);
-        setProductCount(fetched.length || 0);
+        products = sellerProds?.products || [];
+        setProducts(products);
+        setProductCount(products.length || 0);
+        cacheData.products = products; cacheData.productCount = products.length;
 
         if (user?.seller_tier !== 'casual') {
           try {
             const analytics = await getSellerAnalytics() as SellerAnalyticsResponse;
             const overview = analytics.overview || analytics;
-            setRating(Number(overview.avg_rating || 0));
-            setReviewCount(Number(overview.review_count || 0));
-            setAnalyticsData(analytics);
+            rating = Number(overview.avg_rating || 0);
+            reviewCount = Number(overview.review_count || 0);
+            analyticsData = analytics;
+            setRating(rating); setReviewCount(reviewCount); setAnalyticsData(analytics);
           } catch { /* ignore */ }
         }
       }
+      cacheData.rating = rating; cacheData.reviewCount = reviewCount; cacheData.analyticsData = analyticsData;
 
       let followerRes: { count: number } | null = null;
       try { followerRes = await getFollowerCount(user?.id || '') as { count: number }; } catch { /* ignore */ }
-      setFollowerCount(followerRes?.count || 0);
+      const fc = followerRes?.count || 0;
+      cacheData.followerCount = fc;
+      setFollowerCount(fc);
 
       let followingRes: { following?: unknown[] } | null = null;
       try { followingRes = await getFollowing() as { following?: unknown[] }; } catch { /* ignore */ }
-      setFollowingCount(followingRes?.following?.length || 0);
+      const fcing = followingRes?.following?.length || 0;
+      cacheData.followingCount = fcing;
+      setFollowingCount(fcing);
 
-      let wishlistRes: { items: Product[] } | null = null;
-      try { wishlistRes = await getWishlist() as { items: Product[] }; } catch { /* ignore */ }
-      setWishlist(wishlistRes?.items || []);
+      let wishlistItems: Product[] = [];
+      try { const wr = await getWishlist() as { items: Product[] }; wishlistItems = wr?.items || []; } catch { /* ignore */ }
+      cacheData.wishlist = wishlistItems;
+      setWishlist(wishlistItems);
 
+      let reviewsList: Review[] = [];
+      let lowStock: Product[] = [];
       if (isSeller && user?.id) {
-        let reviewRes: { reviews: Review[] } | null = null;
-        try { reviewRes = await getSellerReviews(user.id) as { reviews: Review[] }; } catch { /* ignore */ }
-        setReviews(reviewRes?.reviews || []);
-
-        try {
-          const lowStockRes = await getLowStockProducts() as { products?: Product[] };
-          setLowStockProducts(lowStockRes.products || []);
-        } catch { /* ignore */ }
+        try { const rr = await getSellerReviews(user.id) as { reviews: Review[] }; reviewsList = rr?.reviews || []; } catch { /* ignore */ }
+        try { const ls = await getLowStockProducts() as { products?: Product[] }; lowStock = ls.products || []; } catch { /* ignore */ }
       }
+      cacheData.reviews = reviewsList; cacheData.lowStockProducts = lowStock;
+      setReviews(reviewsList); setLowStockProducts(lowStock);
     } catch { /* silent */ }
+
+    if (uid) profileCache[uid] = { timestamp: Date.now(), data: cacheData };
   }, [isSeller, user?.id]);
 
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
@@ -154,7 +185,7 @@ export default function MeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await fetchData(true);
     setRefreshing(false);
   }, [fetchData]);
 

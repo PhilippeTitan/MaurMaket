@@ -16,6 +16,9 @@ import SalePriceTag from '../components/SalePriceTag';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+const WISHLIST_CACHE_TTL = 60_000;
+let _wishlistCache: { data: any; timestamp: number } | null = null;
+
 export default function WishlistScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
@@ -23,10 +26,17 @@ export default function WishlistScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (force = false) => {
+    if (!force && _wishlistCache && Date.now() - _wishlistCache.timestamp < WISHLIST_CACHE_TTL) {
+      setItems(_wishlistCache.data.items);
+      setLoading(false);
+      return;
+    }
     try {
       const res = await getWishlist() as { items: Product[] };
-      setItems(res.items || []);
+      const items = res.items || [];
+      setItems(items);
+      _wishlistCache = { timestamp: Date.now(), data: { items } };
     } catch { Alert.alert(t('common.error'), t('wishlist.loadFailed')); }
     setLoading(false);
   }, []);
@@ -35,7 +45,7 @@ export default function WishlistScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await fetchData(true);
     setRefreshing(false);
   }, []);
 

@@ -18,6 +18,9 @@ import type { RootStackParamList } from '../navigation';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type InboxTab = 'messages' | 'notifications';
 
+const INBOX_CACHE_TTL = 15_000;
+let _inboxCache: { data: any; timestamp: number } | null = null;
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -43,16 +46,28 @@ export default function InboxScreen() {
   const [search, setSearch] = useState('');
   const [followedSellers, setFollowedSellers] = useState<User[]>([]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (force = false) => {
+    if (!force && _inboxCache && Date.now() - _inboxCache.timestamp < INBOX_CACHE_TTL) {
+      const d = _inboxCache.data;
+      setConversations(d.conversations);
+      setNotifications(d.notifications);
+      setFollowedSellers(d.followedSellers);
+      setLoading(false);
+      return;
+    }
     try {
       const [convos, notifs, followingRes] = await Promise.all([
         getConversations() as Promise<{ conversations: Conversation[] }>,
         getNotifications() as Promise<{ notifications: Notification[] }>,
         getFollowing() as Promise<{ following: User[] }>,
       ]);
-      setConversations(convos.conversations || []);
-      setNotifications(notifs.notifications || []);
-      setFollowedSellers(followingRes.following || []);
+      const conversations = convos.conversations || [];
+      const notifications = notifs.notifications || [];
+      const followedSellers = followingRes.following || [];
+      setConversations(conversations);
+      setNotifications(notifications);
+      setFollowedSellers(followedSellers);
+      _inboxCache = { timestamp: Date.now(), data: { conversations, notifications, followedSellers } };
     } catch { Alert.alert(t('common.error'), 'Could not load data.'); }
     setLoading(false);
   }, []);
@@ -61,7 +76,7 @@ export default function InboxScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await fetchData(true);
     setRefreshing(false);
   }, []);
 

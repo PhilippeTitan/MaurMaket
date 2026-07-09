@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
@@ -15,6 +15,9 @@ import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Orders'>;
+
+const ORDERS_CACHE_TTL = 30_000;
+let _ordersCache: { data: any; timestamp: number } | null = null;
 
 const STATUS_COLORS: Record<string, string> = {
   pending: COLORS.blue,
@@ -36,15 +39,25 @@ export default function OrdersScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (force = false) => {
+    if (!force && _ordersCache && Date.now() - _ordersCache.timestamp < ORDERS_CACHE_TTL) {
+      const d = _ordersCache.data;
+      setBuyOrders(d.buyOrders);
+      setSellOrders(d.sellOrders);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [buyRes, sellRes] = await Promise.all([
         getOrders() as Promise<{ buyerOrders: Order[] }>,
         store.isSeller ? getSellerOrders() as Promise<{ orders: Order[] }> : Promise.resolve({ orders: [] }),
       ]);
-      setBuyOrders(buyRes.buyerOrders || []);
-      setSellOrders(sellRes.orders || []);
+      const buyOrders = buyRes.buyerOrders || [];
+      const sellOrders = sellRes.orders || [];
+      setBuyOrders(buyOrders);
+      setSellOrders(sellOrders);
+      _ordersCache = { timestamp: Date.now(), data: { buyOrders, sellOrders } };
     } catch (err: unknown) {
       Alert.alert(t('common.error'), errorMessage(err, 'Could not load orders.'));
     }
@@ -53,14 +66,9 @@ export default function OrdersScreen({ navigation }: Props) {
 
   useFocusEffect(useCallback(() => { fetchOrders(); }, [fetchOrders]));
 
-  useEffect(() => {
-    const unsub = store.onChange(fetchOrders);
-    return unsub;
-  }, [fetchOrders]);
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchOrders();
+    await fetchOrders(true);
     setRefreshing(false);
   }, []);
 

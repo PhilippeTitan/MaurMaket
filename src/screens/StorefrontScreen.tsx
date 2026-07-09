@@ -17,6 +17,9 @@ import SalePriceTag from '../components/SalePriceTag';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
 
+const STOREFRONT_CACHE_TTL = 60_000;
+let _storefrontCache: Record<string, { data: any; timestamp: number }> = {};
+
 export default function StorefrontScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
 
@@ -36,7 +39,25 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
   const MIN_IMG_H = CARD_W * 0.6;
 
-  const fetchSellerData = useCallback(async () => {
+  const fetchSellerData = useCallback(async (force = false) => {
+    if (!force && _storefrontCache[sellerId] && Date.now() - _storefrontCache[sellerId].timestamp < STOREFRONT_CACHE_TTL) {
+      const d = _storefrontCache[sellerId].data;
+      setSeller(d.seller);
+      setProducts(d.products);
+      setReviews(d.reviews);
+      setFollowing(d.following);
+      setFollowerCount(d.followerCount);
+      (d.products || []).forEach((p: Product) => {
+        const img = p.images?.find((i: any) => i.is_primary) || p.images?.[0];
+        if (img?.image_url) {
+          Image.getSize(getImageUrl(img.image_url) || '', (w, h) => {
+            setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
+          }, () => {});
+        }
+      });
+      setLoading(false);
+      return;
+    }
     try {
       const [sellerRes, prodRes, revRes, followingRes] = await Promise.all([
         getSellerProfile(sellerId) as Promise<{ seller: SellerProfile }>,
@@ -44,9 +65,16 @@ export default function StorefrontScreen({ route, navigation }: Props) {
         getSellerReviews(sellerId) as Promise<{ reviews: Review[] }>,
         store.isLoggedIn ? import('../api').then(m => m.getFollowing()) as Promise<{ following?: Array<{ seller_id?: string; id?: string }> }> : Promise.resolve({ following: [] }),
       ]);
-      setSeller(sellerRes.seller);
-      setProducts(prodRes.products || []);
-      (prodRes.products || []).forEach((p: Product) => {
+      const seller = sellerRes.seller;
+      const products = prodRes.products || [];
+      const reviews = revRes.reviews || [];
+      const followIds = (followingRes.following || []).map(f => f.seller_id || f.id).filter(Boolean);
+      const isFollowing = followIds.includes(sellerId);
+      setSeller(seller);
+      setProducts(products);
+      setReviews(reviews);
+      setFollowing(isFollowing);
+      products.forEach((p: Product) => {
         const img = p.images?.find(i => i.is_primary) || p.images?.[0];
         if (img?.image_url) {
           Image.getSize(getImageUrl(img.image_url) || '', (w, h) => {
@@ -54,12 +82,11 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           }, () => {});
         }
       });
-      setReviews(revRes.reviews || []);
-      const followIds = (followingRes.following || []).map(f => f.seller_id || f.id).filter(Boolean);
-      setFollowing(followIds.includes(sellerId));
       const countRes = await getFollowerCount(sellerId) as { count: number };
-      setFollowerCount(countRes.count || 0);
-      } catch {       Alert.alert(t('common.error'), 'Could not load seller profile.'); }
+      const followerCount = countRes.count || 0;
+      setFollowerCount(followerCount);
+      _storefrontCache[sellerId] = { timestamp: Date.now(), data: { seller, products, reviews, following: isFollowing, followerCount } };
+    } catch { Alert.alert(t('common.error'), 'Could not load seller profile.'); }
     setLoading(false);
   }, [sellerId]);
 
@@ -253,7 +280,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
             </View>
           ) : null
         }
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchSellerData(); setRefreshing(false); }} tintColor={COLORS.coral} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchSellerData(true); setRefreshing(false); }} tintColor={COLORS.coral} />}
       />
     </View>
   );

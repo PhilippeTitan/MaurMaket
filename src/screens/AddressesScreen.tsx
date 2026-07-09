@@ -17,6 +17,9 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 const EMPTY_FORM = { label: '', name: '', phone: '', address: '', city: '' };
 
+const ADDRESSES_CACHE_TTL = 60_000;
+let _addressesCache: { data: any; timestamp: number } | null = null;
+
 export default function AddressesScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
@@ -28,10 +31,17 @@ export default function AddressesScreen() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (force = false) => {
+    if (!force && _addressesCache && Date.now() - _addressesCache.timestamp < ADDRESSES_CACHE_TTL) {
+      setAddresses(_addressesCache.data.addresses);
+      setLoading(false);
+      return;
+    }
     try {
       const res = await getAddresses() as { addresses: Address[] };
-      setAddresses(res.addresses || []);
+      const addresses = res.addresses || [];
+      setAddresses(addresses);
+      _addressesCache = { timestamp: Date.now(), data: { addresses } };
     } catch { Alert.alert(t('common.error'), t('addresses.loadFailed')); }
     setLoading(false);
   }, []);
@@ -40,7 +50,7 @@ export default function AddressesScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await fetchData(true);
     setRefreshing(false);
   }, []);
 

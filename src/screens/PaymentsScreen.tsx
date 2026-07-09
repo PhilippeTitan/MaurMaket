@@ -23,6 +23,9 @@ interface Payout {
   created_at: string;
 }
 
+const PAYMENTS_CACHE_TTL = 30_000;
+let _paymentsCache: { data: any; timestamp: number } | null = null;
+
 export default function PaymentsScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
@@ -36,17 +39,31 @@ export default function PaymentsScreen() {
   const [requesting, setRequesting] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (force = false) => {
     if (!isSeller) return;
+    if (!force && _paymentsCache && Date.now() - _paymentsCache.timestamp < PAYMENTS_CACHE_TTL) {
+      const d = _paymentsCache.data;
+      setBalance(d.balance);
+      setTotalEarned(d.totalEarned);
+      setTotalPaidOut(d.totalPaidOut);
+      setPayouts(d.payouts);
+      setLoading(false);
+      return;
+    }
     try {
       const [balRes, payRes] = await Promise.all([
         getSellerBalance() as Promise<{ balance: number; total_earned: number; total_paid_out: number }>,
         getSellerPayouts() as Promise<{ payouts: Payout[] }>,
       ]);
-      setBalance(balRes.balance || 0);
-      setTotalEarned(balRes.total_earned || 0);
-      setTotalPaidOut(balRes.total_paid_out || 0);
-      setPayouts(payRes.payouts || []);
+      const balance = balRes.balance || 0;
+      const totalEarned = balRes.total_earned || 0;
+      const totalPaidOut = balRes.total_paid_out || 0;
+      const payouts = payRes.payouts || [];
+      setBalance(balance);
+      setTotalEarned(totalEarned);
+      setTotalPaidOut(totalPaidOut);
+      setPayouts(payouts);
+      _paymentsCache = { timestamp: Date.now(), data: { balance, totalEarned, totalPaidOut, payouts } };
     } catch { Alert.alert(t('common.error'), t('payments.loadFailed')); }
     setLoading(false);
   }, [isSeller]);
@@ -55,7 +72,7 @@ export default function PaymentsScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await fetchData(true);
     setRefreshing(false);
   }, []);
 
