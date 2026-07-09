@@ -46,7 +46,7 @@ export default function InboxScreen() {
   const [search, setSearch] = useState('');
   const [followedSellers, setFollowedSellers] = useState<any[]>([]);
 
-  const followedIds = new Set(followedSellers.map((s: any) => s.id));
+  const followedIds = new Set(followedSellers.map((s: any) => s.seller_id));
 
   const fetchData = useCallback(async (force = false) => {
     if (!force && _inboxCache && Date.now() - _inboxCache.timestamp < INBOX_CACHE_TTL) {
@@ -180,14 +180,14 @@ export default function InboxScreen() {
     const hasActivity = seller.has_unread_activity;
     const handlePress = async () => {
       try {
-        const existing = conversations.find(c => c.seller_id === seller.id || c.buyer_id === seller.id);
+        const existing = conversations.find(c => c.seller_id === seller.seller_id || c.buyer_id === seller.seller_id);
         if (existing) {
-          nav.navigate('Chat', { conversationId: existing.id, otherUserName: seller.full_name, otherUserId: seller.id, otherUserAvatar: seller.avatar_url });
+          nav.navigate('Chat', { conversationId: existing.id, otherUserName: seller.full_name, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url });
           return;
         }
-        const res = await createConversation({ sellerId: seller.id }) as { conversationId: string };
+        const res = await createConversation({ sellerId: seller.seller_id }) as { conversationId: string };
         if (res.conversationId) {
-          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: seller.full_name, otherUserId: seller.id, otherUserAvatar: seller.avatar_url });
+          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: seller.full_name, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url });
         }
       } catch {
         Alert.alert('Error', 'Could not start conversation.');
@@ -269,7 +269,7 @@ export default function InboxScreen() {
         <View style={styles.bubblesSection}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
             {followedSellers.map((seller: any) => (
-              <SellerBubble key={seller.id} seller={seller} />
+              <SellerBubble key={seller.seller_id} seller={seller} />
             ))}
           </ScrollView>
         </View>
