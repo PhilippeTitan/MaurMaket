@@ -4,6 +4,7 @@ import {
   Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
@@ -212,7 +213,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
             <View key={img.id || `existing-${idx}`} style={styles.thumbWrap}>
               <Image source={{ uri: getImageUrl(img.image_url) || '' }} style={styles.thumbImg} />
               <TouchableOpacity style={styles.thumbRemove} onPress={() => removeExistingImage(img.id)} accessibilityRole="button" accessibilityLabel="remove image">
-                <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
+                <Icon name="close-circle" size={20} color={COLORS.coral} />
               </TouchableOpacity>
             </View>
           ))}
@@ -220,13 +221,13 @@ export default function EditListingScreen({ route, navigation }: Props) {
           <View key={`new-${idx}`} style={styles.thumbWrap}>
             <Image source={{ uri }} style={styles.thumbImg} />
             <TouchableOpacity style={styles.thumbRemove} onPress={() => removeNewImage(idx)} accessibilityRole="button" accessibilityLabel="remove image">
-              <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
+              <Icon name="close-circle" size={20} color={COLORS.coral} />
             </TouchableOpacity>
           </View>
         ))}
         {totalImages < MAX_IMAGES && (
           <TouchableOpacity style={styles.addBtn} onPress={pickImages} accessibilityRole="button" accessibilityLabel="add image">
-            <MaterialCommunityIcons name="camera-plus" size={28} color={COLORS.text2} />
+            <Icon name="add-photo" size={28} color={COLORS.text2} />
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -237,7 +238,8 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
       <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
         <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
-        <Text style={styles.saleToggleText}>{'🏷️ Run a sale'}</Text>
+        <Icon name="sale-tag" size={16} color={showSale ? COLORS.coral : COLORS.text2} />
+        <Text style={styles.saleToggleText}> Run a sale</Text>
       </TouchableOpacity>
 
       {showSale && (

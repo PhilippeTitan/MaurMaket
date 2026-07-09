@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from './icons/Icon';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
 import { store } from '../store';
 import { createConversation } from '../api';
@@ -112,7 +113,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
         style={styles.ownListingBtn}
         onPress={() => navigation.navigate('ProductDetail', { productId: product.id })}
       >
-        <MaterialCommunityIcons name="storefront-outline" size={16} color={COLORS.white} />
+        <Icon name="storefront" size={16} color={COLORS.white} />
         <Text style={styles.ownListingText}>View Your Listing</Text>
       </TouchableOpacity>
     );
@@ -125,7 +126,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
         onPress={handleMakeOffer}
         disabled={isSoldOut}
       >
-        <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.white} />
+        <Icon name="sale-tag" size={18} color={COLORS.white} />
       </TouchableOpacity>
 
       {cartQty > 0 ? (
@@ -135,7 +136,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
             onPress={handleDecrementCart}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MaterialCommunityIcons name="minus" size={16} color={COLORS.white} />
+            <Icon name="minus" size={16} color={COLORS.white} />
           </TouchableOpacity>
           <Text style={styles.cartStepperQty}>{cartQty}</Text>
           <TouchableOpacity
@@ -143,7 +144,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
             onPress={handleIncrementCart}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MaterialCommunityIcons name="plus" size={16} color={COLORS.white} />
+            <Icon name="plus" size={16} color={COLORS.white} />
           </TouchableOpacity>
         </View>
       ) : (
@@ -168,7 +169,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
               style={styles.cartCircle}
               onPress={() => navigation.navigate('Cart')}
             >
-              <MaterialCommunityIcons name="cart-outline" size={20} color={COLORS.white} />
+              <Icon name="cart" size={20} color={COLORS.white} />
               {cartCount > 0 && (
                 <View style={styles.cartBadge}>
                   <Text style={styles.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>

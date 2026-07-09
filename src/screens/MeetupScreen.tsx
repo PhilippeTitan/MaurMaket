@@ -4,6 +4,7 @@ import {
   ScrollView, Modal, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 
@@ -278,7 +279,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             >
               <Marker coordinate={{ latitude: meetupLat!, longitude: meetupLng! }} title="Meetup spot">
                 <View style={styles.meetupPin}>
-                  <MaterialCommunityIcons name="map-marker" size={28} color={COLORS.coral} />
+                  <Icon name="location-pin" size={28} color={COLORS.coral} />
                 </View>
               </Marker>
               {myCheckedIn && (
@@ -293,7 +294,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             </MapView>
           ) : (
             <View style={[styles.map, { backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
-              <MaterialCommunityIcons name="map-marker-radius" size={48} color={COLORS.coral} />
+              <Icon name="map" size={48} color={COLORS.coral} />
               <Text style={{ color: COLORS.text, fontWeight: '700', marginTop: 10, textAlign: 'center' }}>
                 {order.meetup_address || 'Meetup location'}
               </Text>
@@ -336,8 +337,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
         {/* Status cards */}
         <View style={styles.statusGrid}>
           <View style={[styles.statusCard, myCheckedIn && styles.statusCardActive]}>
-            <MaterialCommunityIcons
-              name={myCheckedIn ? 'check-circle' : 'clock-outline'}
+            <Icon
+              name={myCheckedIn ? 'check-circle' : 'time'}
               size={18}
               color={myCheckedIn ? COLORS.green : COLORS.text2}
             />
@@ -345,8 +346,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
             <Text style={styles.statusSub}>{myCheckedIn ? 'Checked in' : 'Not here yet'}</Text>
           </View>
           <View style={[styles.statusCard, otherCheckedIn && styles.statusCardActive]}>
-            <MaterialCommunityIcons
-              name={otherCheckedIn ? 'check-circle' : 'clock-outline'}
+            <Icon
+              name={otherCheckedIn ? 'check-circle' : 'time'}
               size={18}
               color={otherCheckedIn ? COLORS.green : COLORS.text2}
             />
@@ -360,7 +361,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
         {/* QR section for buyer */}
         {isBuyer && myCheckedIn && otherCheckedIn && proximityConfirmed && qrToken && (
           <TouchableOpacity style={styles.qrButton} onPress={() => setQrModalVisible(true)} accessibilityLabel="show qr code" accessibilityRole="button">
-            <MaterialCommunityIcons name="qrcode" size={20} color={COLORS.white} />
+            <Icon name="qr-code" size={20} color={COLORS.white} />
             <Text style={styles.qrButtonText}>Show QR Code</Text>
           </TouchableOpacity>
         )}
@@ -418,7 +419,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             accessibilityLabel="confirm receipt"
             accessibilityRole="button"
           >
-            <MaterialCommunityIcons name="hand-coin-outline" size={18} color={COLORS.white} />
+            <Icon name="offer-coin" size={18} color={COLORS.white} />
             <Text style={styles.receiptBtnText}>Confirm receipt</Text>
           </TouchableOpacity>
         )}
@@ -455,11 +456,11 @@ export default function MeetupScreen({ route, navigation }: Props) {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Show this QR code</Text>
               <TouchableOpacity onPress={() => setQrModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
-                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+                <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             <View style={styles.qrContainer}>
-              <MaterialCommunityIcons name="qrcode" size={180} color={COLORS.text} />
+              <Icon name="qr-code" size={180} color={COLORS.text} />
             </View>
             <Text style={styles.qrHint}>Seller will scan this to confirm the exchange.</Text>
             {qrToken && (
@@ -489,7 +490,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Scan buyer's QR</Text>
               <TouchableOpacity onPress={() => setScanModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
-                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+                <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             <Text style={styles.scanHint}>
@@ -532,11 +533,11 @@ export default function MeetupScreen({ route, navigation }: Props) {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Confirm receipt</Text>
               <TouchableOpacity onPress={() => setReceiptModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
-                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+                <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             <View style={styles.receiptIcon}>
-              <MaterialCommunityIcons name="hand-coin-outline" size={48} color={COLORS.green} />
+              <Icon name="offer-coin" size={48} color={COLORS.green} />
             </View>
             <Text style={styles.receiptText}>
               Did you receive your item in good condition?
@@ -555,7 +556,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
                 <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
                 <>
-                  <MaterialCommunityIcons name="check-circle" size={18} color={COLORS.white} />
+                  <Icon name="check-circle" size={18} color={COLORS.white} />
                   <Text style={styles.receiptConfirmBtnText}>Yes, I received it</Text>
                 </>
               )}

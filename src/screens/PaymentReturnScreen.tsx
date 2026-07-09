@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -69,7 +69,7 @@ export default function PaymentReturnScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.iconCircle}>
-          <MaterialCommunityIcons name="check-circle" size={64} color={COLORS.green} />
+          <Icon name="check-circle" size={64} color={COLORS.green} />
         </View>
         <Text style={styles.title}>{t('paymentReturn.confirmed')}</Text>
         <Text style={styles.subtitle}>{t('paymentReturn.confirmedSubtitle')}</Text>
@@ -82,7 +82,7 @@ export default function PaymentReturnScreen() {
     return (
       <View style={styles.container}>
         <View style={[styles.iconCircle, { borderColor: COLORS.yellow }]}>
-          <MaterialCommunityIcons name="clock-outline" size={56} color={COLORS.yellow} />
+          <Icon name="time" size={56} color={COLORS.yellow} />
         </View>
         <Text style={styles.title}>{t('paymentReturn.processing')}</Text>
         <Text style={styles.subtitle}>

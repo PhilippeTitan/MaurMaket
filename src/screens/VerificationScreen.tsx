@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
@@ -185,7 +186,7 @@ export default function VerificationScreen() {
             stepLabel(n) === 'current' && styles.stepDotCurrent,
           ]}>
             {stepLabel(n) === 'done' ? (
-              <MaterialCommunityIcons name="check" size={12} color={COLORS.white} />
+              <Icon name="check" size={12} color={COLORS.white} />
             ) : (
               <Text style={[styles.stepNum, stepLabel(n) === 'current' && styles.stepNumCurrent]}>{n}</Text>
             )}
@@ -235,7 +236,7 @@ export default function VerificationScreen() {
   const renderInfo = () => (
     <View style={styles.content}>
       <View style={styles.infoIcon}>
-        <MaterialCommunityIcons name="shield-lock-outline" size={48} color={COLORS.coral} />
+        <Icon name="secure-account" size={48} color={COLORS.coral} />
       </View>
       <Text style={styles.infoTitle}>Verify Your Identity</Text>
       <Text style={styles.infoDesc}>
@@ -248,11 +249,11 @@ export default function VerificationScreen() {
           <Text style={styles.reqText}>Haitian CIN — front and back</Text>
         </View>
         <View style={styles.reqItem}>
-          <MaterialCommunityIcons name="camera" size={20} color={COLORS.coral} />
+          <Icon name="camera" size={20} color={COLORS.coral} />
           <Text style={styles.reqText}>A clear selfie</Text>
         </View>
         <View style={styles.reqItem}>
-          <MaterialCommunityIcons name="shield-check" size={20} color={COLORS.green} />
+          <Icon name="verified" size={20} color={COLORS.green} />
           <Text style={styles.reqText}>Instant approval if all fields match</Text>
         </View>
       </View>

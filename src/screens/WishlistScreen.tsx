@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
@@ -80,7 +81,7 @@ export default function WishlistScreen() {
                 <Image source={{ uri: imgUrl }} style={styles.thumb} resizeMode="cover" />
               ) : (
                 <View style={styles.thumbPlaceholder}>
-                  <MaterialCommunityIcons name="image-off-outline" size={20} color={COLORS.text2} />
+                  <Icon name="image-unavailable" size={20} color={COLORS.text2} />
                 </View>
               )}
               <View style={styles.rowLeft}>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from './icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../theme';
 
@@ -28,7 +28,7 @@ export default function FloatingBackButton({
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <MaterialCommunityIcons name="arrow-left" size={Math.round(size * 0.5)} color={color} />
+      <Icon name="back" size={Math.round(size * 0.5)} color={color} />
     </TouchableOpacity>
   );
 }

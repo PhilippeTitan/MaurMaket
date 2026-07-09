@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
@@ -211,7 +212,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
 
         {field === 'password' && (
           <View style={[styles.fieldRow, { borderTopWidth: 1, borderTopColor: COLORS.border }]}>
-            <MaterialCommunityIcons name="lock-outline" size={18} color={COLORS.text2} />
+            <Icon name="locked" size={18} color={COLORS.text2} />
             <TextInput
               style={styles.fieldInput}
               value={currentPassword}

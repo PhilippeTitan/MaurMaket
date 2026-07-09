@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, useWindowDimensions, FlatList,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -231,7 +232,7 @@ export default function MeScreen() {
                     />
                   ) : (
                     <View style={styles.cardPlaceholder}>
-                      <MaterialCommunityIcons name="image-off-outline" size={20} color={COLORS.text2} />
+                      <Icon name="image-unavailable" size={20} color={COLORS.text2} />
                     </View>
                   )}
                 </View>
@@ -302,7 +303,7 @@ export default function MeScreen() {
           <View style={styles.topBarNameWrap}>
             <Text style={styles.topBarName} numberOfLines={1}>{getDisplayName(user)}</Text>
             {isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business') && (
-              <MaterialCommunityIcons name="shield-check" size={16} color={COLORS.blue} />
+              <Icon name="verified" size={16} color={COLORS.blue} />
             )}
           </View>
           <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')} accessibilityRole="button" accessibilityLabel="settings">
@@ -371,7 +372,7 @@ export default function MeScreen() {
             <Text style={styles.sellTitle}>{t('me.startSelling')}</Text>
             <Text style={styles.sellHint}>List your first product in seconds</Text>
           </View>
-          <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.green} />
+          <Icon name="chevron-right" size={18} color={COLORS.green} />
         </TouchableOpacity>
       )}
 
@@ -383,7 +384,7 @@ export default function MeScreen() {
             accessibilityRole="button"
             accessibilityLabel="edit profile"
           >
-            <MaterialCommunityIcons name="pencil-outline" size={16} color={COLORS.text} />
+            <Icon name="edit" size={16} color={COLORS.text} />
             <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.editProfile')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -392,7 +393,7 @@ export default function MeScreen() {
             accessibilityRole="button"
             accessibilityLabel="add listing"
           >
-            <MaterialCommunityIcons name="plus" size={16} color={COLORS.text} />
+            <Icon name="plus" size={16} color={COLORS.text} />
             <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.listings')}</Text>
           </TouchableOpacity>
         </View>
@@ -418,7 +419,7 @@ export default function MeScreen() {
             </View>
             <View style={styles.analyticsStat}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <MaterialCommunityIcons name="star" size={12} color={COLORS.yellow} />
+                <Icon name="rating" size={12} color={COLORS.yellow} />
                 <Text style={styles.analyticsStatValue}>{Number(analyticsData.overview?.avg_rating || 0).toFixed(1)}</Text>
               </View>
               <Text style={styles.analyticsStatLabel}>{t('me.avgRating')}</Text>
@@ -439,7 +440,7 @@ export default function MeScreen() {
                     <Text style={styles.topProductName} numberOfLines={1}>{tp.name}</Text>
                     <Text style={styles.topProductMeta}>{tp.units_sold} sold · Rs {formatPrice(tp.revenue)}</Text>
                   </View>
-                  <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.text2} />
+                  <Icon name="chevron-right" size={16} color={COLORS.text2} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -451,7 +452,7 @@ export default function MeScreen() {
       {isSeller && lowStockProducts.length > 0 && (
         <View style={styles.lowStockBanner}>
           <View style={styles.lowStockHeader}>
-            <MaterialCommunityIcons name="alert-circle-outline" size={18} color={COLORS.yellow} />
+            <Icon name="alert" size={18} color={COLORS.yellow} />
             <Text style={styles.lowStockTitle}>Low Stock Alert</Text>
           </View>
           <Text style={styles.lowStockHint}>
@@ -504,11 +505,7 @@ export default function MeScreen() {
           accessibilityLabel="reviews"
           accessibilityState={{ selected: activeTab === 'reviews' }}
         >
-          <MaterialCommunityIcons
-            name="star-outline"
-            size={22}
-            color={activeTab === 'reviews' ? COLORS.text : COLORS.text2}
-          />
+          <Icon name="rate-this" size={22} color={activeTab === 'reviews' ? COLORS.text : COLORS.text2} />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
@@ -535,11 +532,11 @@ export default function MeScreen() {
               </View>
             ) : (
               <View style={styles.empty}>
-                <MaterialCommunityIcons name="storefront-outline" size={32} color={COLORS.text2} />
+                <Icon name="storefront" size={32} color={COLORS.text2} />
                 <Text style={styles.emptyText}>{t('me.noListings')}</Text>
                 <Text style={styles.emptyHint}>Add your first product so buyers have something to open from your shop.</Text>
                 <TouchableOpacity style={styles.emptyAction} onPress={() => nav.navigate('AddListing')} accessibilityRole="button" accessibilityLabel="add listing">
-                  <MaterialCommunityIcons name="plus" size={16} color={COLORS.white} />
+                  <Icon name="plus" size={16} color={COLORS.white} />
                   <Text style={styles.emptyActionText}>Add listing</Text>
                 </TouchableOpacity>
               </View>

@@ -4,6 +4,7 @@ import {
   Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
@@ -158,7 +159,7 @@ export default function AddListingScreen() {
       {atListingLimit ? (
         <View style={styles.limitBlock}>
           <View style={styles.limitIcon}>
-            <MaterialCommunityIcons name="package-variant" size={40} color={COLORS.text2} />
+            <Icon name="package" size={40} color={COLORS.text2} />
           </View>
           <Text style={styles.limitTitle}>{t('addListing.listingLimit')}</Text>
           <Text style={styles.limitHint}>
@@ -181,7 +182,7 @@ export default function AddListingScreen() {
         <>
           {isCasualSeller && listingCount !== null && (
             <View style={styles.limitBanner}>
-              <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.yellow} />
+              <Icon name="info" size={16} color={COLORS.yellow} />
               <Text style={styles.limitBannerText}>
                 {t('addListing.listingsUsed', { count: listingCount })}
               </Text>
@@ -194,13 +195,13 @@ export default function AddListingScreen() {
               <View key={idx} style={styles.thumbWrap}>
                 <Image source={{ uri }} style={styles.thumbImg} />
                 <TouchableOpacity style={styles.thumbRemove} onPress={() => removeImage(idx)} accessibilityRole="button" accessibilityLabel="remove image">
-                  <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.coral} />
+                  <Icon name="close-circle" size={20} color={COLORS.coral} />
                 </TouchableOpacity>
               </View>
             ))}
             {imageUris.length < MAX_IMAGES && (
               <TouchableOpacity style={styles.addBtn} onPress={pickImages} accessibilityRole="button" accessibilityLabel="add image">
-                <MaterialCommunityIcons name="camera-plus" size={28} color={COLORS.text2} />
+                <Icon name="add-photo" size={28} color={COLORS.text2} />
               </TouchableOpacity>
             )}
           </ScrollView>
@@ -211,7 +212,8 @@ export default function AddListingScreen() {
 
           <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
             <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
-            <Text style={styles.saleToggleText}>{'🏷️ Run a sale'}</Text>
+            <Icon name="sale-tag" size={16} color={showSale ? COLORS.coral : COLORS.text2} />
+            <Text style={styles.saleToggleText}> Run a sale</Text>
           </TouchableOpacity>
 
           {showSale && (

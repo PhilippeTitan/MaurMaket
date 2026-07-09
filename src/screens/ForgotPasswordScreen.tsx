@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
@@ -107,7 +108,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
     >
       <View style={[styles.content, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} accessibilityLabel="go back" accessibilityRole="button">
-          <MaterialCommunityIcons name="arrow-left" size={35} color={COLORS.text} />
+          <Icon name="back" size={35} color={COLORS.text} />
         </TouchableOpacity>
 
         {step === 'email' ? (

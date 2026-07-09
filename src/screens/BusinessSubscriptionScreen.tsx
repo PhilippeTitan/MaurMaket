@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Linking,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
@@ -87,7 +88,7 @@ export default function BusinessSubscriptionScreen() {
       {isActive ? (
         <View style={styles.content}>
           <View style={styles.activeCard}>
-            <MaterialCommunityIcons name="check-circle" size={48} color={COLORS.green} />
+            <Icon name="check-circle" size={48} color={COLORS.green} />
             <Text style={styles.activeTitle}>You're a Business Seller!</Text>
             <Text style={styles.activeExpiry}>
               Your subscription is active until {expiresAt?.toLocaleDateString('en-HT', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -134,7 +135,7 @@ export default function BusinessSubscriptionScreen() {
         <View style={styles.content}>
           <View style={styles.heroCard}>
             <View style={styles.heroIcon}>
-              <MaterialCommunityIcons name="storefront-outline" size={48} color={COLORS.coral} />
+              <Icon name="storefront" size={48} color={COLORS.coral} />
             </View>
             <Text style={styles.heroTitle}>Go Business</Text>
             <Text style={styles.heroPrice}>Rs 2,500/month</Text>

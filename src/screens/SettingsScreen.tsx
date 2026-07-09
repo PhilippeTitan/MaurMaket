@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Image, Platform, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, getDisplayName } from '../theme';
 import { store } from '../store';
@@ -45,7 +46,7 @@ const SettingRow = ({
         <Text style={styles.rowValue} numberOfLines={1}>{value || ''}</Text>
       )}
       {chevron && onPress && (
-        <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.text2} />
+        <Icon name="chevron-right" size={16} color={COLORS.text2} />
       )}
     </View>
   </TouchableOpacity>
@@ -251,7 +252,7 @@ export default function SettingsScreen({ navigation }: Props) {
             </View>
           )}
           <View style={styles.cameraBadge}>
-            <MaterialCommunityIcons name="camera" size={12} color={COLORS.white} />
+            <Icon name="camera" size={12} color={COLORS.white} />
           </View>
         </View>
       </TouchableOpacity>
@@ -263,8 +264,8 @@ export default function SettingsScreen({ navigation }: Props) {
         <SettingRow icon="email-outline" label={t('settings.email')} value={user?.email} onPress={() => goEdit('email', t('settings.email'))} />
         {user?.email_verified ? (
           <View style={styles.verifyRow}>
-            <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
-            <Text style={styles.verifyLabel}>{t('settings.emailVerified')}</Text>
+                    <Icon name="verified" size={18} color={COLORS.green} />
+                    <Text style={styles.verifyLabel}>{t('settings.emailVerified')}</Text>
             <Text style={[styles.verifyBadge, { color: COLORS.green }]}>{t('settings.verified')}</Text>
           </View>
         ) : (
@@ -309,7 +310,7 @@ export default function SettingsScreen({ navigation }: Props) {
               <>
                 <View style={styles.divider} />
                 <View style={styles.toggleRow}>
-                  <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.text2} />
+                  <Icon name="sale-tag" size={18} color={COLORS.text2} />
                   <Text style={styles.rowLabel}>{t('settings.useStoreIdentity')}</Text>
                   <View style={styles.rowRight}>
                     <TouchableOpacity
@@ -350,9 +351,9 @@ export default function SettingsScreen({ navigation }: Props) {
               <>
                 <View style={styles.tierRow}>
                   <View style={styles.tierDotWrap}>
-                    <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
-                  </View>
-                  <Text style={styles.tierLabel}>{t('settings.casualSeller')}</Text>
+          <Icon name="verified" size={18} color={COLORS.green} />
+          </View>
+          <Text style={styles.tierLabel}>{t('settings.casualSeller')}</Text>
                   <Text style={[styles.tierStatus, { color: COLORS.green }]}>{t('settings.tierActive')}</Text>
                 </View>
                 <View style={styles.divider} />
@@ -376,7 +377,7 @@ export default function SettingsScreen({ navigation }: Props) {
                     <View style={[styles.tierDot, { backgroundColor: COLORS.surface2 }]} />
                   </View>
                   <Text style={[styles.tierLabel, styles.tierGreyed]}>{t('settings.businessSeller')}</Text>
-                  <MaterialCommunityIcons name="lock-outline" size={14} color={COLORS.surface2} />
+                  <Icon name="locked" size={14} color={COLORS.surface2} />
                 </View>
               </>
             )}
@@ -384,7 +385,7 @@ export default function SettingsScreen({ navigation }: Props) {
               <>
                 <View style={styles.tierRow}>
                   <View style={styles.tierDotWrap}>
-                    <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
+                    <Icon name="verified" size={18} color={COLORS.green} />
                   </View>
                   <Text style={styles.tierLabel}>{t('settings.verifiedSeller')}</Text>
                   <Text style={[styles.tierStatus, { color: COLORS.green }]}>{t('settings.tierActive')}</Text>
@@ -410,7 +411,7 @@ export default function SettingsScreen({ navigation }: Props) {
               <>
                 <View style={styles.tierRow}>
                   <View style={styles.tierDotWrap}>
-                    <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
+                    <Icon name="verified" size={18} color={COLORS.green} />
                   </View>
                   <Text style={styles.tierLabel}>{t('settings.businessSeller')}</Text>
                   <Text style={[styles.tierStatus, { color: COLORS.green }]}>{t('settings.tierActive')}</Text>
@@ -456,7 +457,7 @@ export default function SettingsScreen({ navigation }: Props) {
                 {lang === 'en' ? t('settings.english') : lang === 'ht' ? t('settings.haitian') : t('settings.french')}
               </Text>
               {language === lang && (
-                <MaterialCommunityIcons name="check" size={16} color={COLORS.coral} />
+                <Icon name="check" size={16} color={COLORS.coral} />
               )}
             </TouchableOpacity>
             {idx < arr.length - 1 && <View style={styles.divider} />}
@@ -490,7 +491,7 @@ export default function SettingsScreen({ navigation }: Props) {
             {locDetecting ? (
               <ActivityIndicator size={14} color={COLORS.blue} />
             ) : (
-              <MaterialCommunityIcons name="crosshairs-gps" size={16} color={COLORS.blue} />
+              <Icon name="my-location" size={16} color={COLORS.blue} />
             )}
             <Text style={styles.autoDetectText}>
               {locDetecting ? t('settings.locationDetecting') : t('settings.autoDetect')}
@@ -526,7 +527,7 @@ export default function SettingsScreen({ navigation }: Props) {
               chevron={locationStatus !== 'granted'}
               rightContent={
                 locationStatus === 'granted' ? (
-                  <MaterialCommunityIcons name="shield-check" size={18} color={COLORS.green} />
+                  <Icon name="verified" size={18} color={COLORS.green} />
                 ) : undefined
               }
             />

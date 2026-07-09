@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl, useWindowDimensions,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, isVerifiedSeller, getDisplayName, getSellerAvatar } from '../theme';
 import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation, getConversations } from '../api';
 import { store } from '../store';
@@ -174,7 +174,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                   </View>
                 )}
                 {seller && (seller.seller_tier === 'verified' || seller.seller_tier === 'business') && (
-                  <MaterialCommunityIcons name="shield-check" size={16} color={COLORS.blue} />
+                  <Icon name="verified" size={16} color={COLORS.blue} />
                 )}
               </View>
               {seller?.bio && <Text style={styles.bio}>{seller.bio}</Text>}
@@ -214,7 +214,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                     accessibilityLabel="message seller"
                     accessibilityRole="button"
                   >
-                    <MaterialCommunityIcons name="message-outline" size={16} color={COLORS.blue} />
+                    <Icon name="message" size={16} color={COLORS.blue} />
                     <Text style={styles.msgBtnText}>{messageLoading ? t('storefront.opening') : t('storefront.message')}</Text>
                   </TouchableOpacity>
                 </View>
@@ -236,7 +236,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               accessibilityRole="button"
             >
               <View style={[styles.cardImage, { height: cardH }]}>
-                {imgUrl ? <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" /> : <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />}
+                {imgUrl ? <Image source={{ uri: imgUrl }} style={styles.cardImg} resizeMode="cover" /> : <Icon name="image-unavailable" size={24} color={COLORS.text2} />}
                 <View style={styles.priceBadge}>
                   <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
                 </View>
@@ -265,9 +265,9 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                     </Text>
                     <View style={{ flexDirection: 'row', gap: 2 }}>
                       {[1, 2, 3, 4, 5].map(s => (
-                        <MaterialCommunityIcons
+                        <Icon
                           key={s}
-                          name={s <= rev.rating ? 'star' : 'star-outline'}
+                          name={s <= rev.rating ? 'rating' : 'rate-this'}
                           size={14}
                           color={s <= rev.rating ? COLORS.yellow : COLORS.text2}
                         />

@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
@@ -182,7 +183,7 @@ export default function ExploreScreen({ navigation }: Props) {
                     />
                   ) : (
                     <View style={styles.cardPlaceholder}>
-                      <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />
+                      <Icon name="image-unavailable" size={24} color={COLORS.text2} />
                     </View>
                   )}
                 </View>
@@ -226,7 +227,7 @@ export default function ExploreScreen({ navigation }: Props) {
 
         <View style={styles.searchRow}>
           <View style={styles.searchWrap}>
-            <MaterialCommunityIcons name="magnify" size={22} color={COLORS.text2} />
+            <Icon name="search" size={22} color={COLORS.text2} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search..."
@@ -243,7 +244,7 @@ export default function ExploreScreen({ navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={t('accessibility.clearSearch')}
               >
-                <MaterialCommunityIcons name="close-circle" size={20} color={COLORS.text2} />
+                <Icon name="close-circle" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             )}
           </View>
@@ -254,7 +255,7 @@ export default function ExploreScreen({ navigation }: Props) {
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.clearFilters')}
             >
-              <MaterialCommunityIcons name="close" size={25} color={COLORS.text} />
+              <Icon name="close" size={25} color={COLORS.text} />
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -351,7 +352,7 @@ export default function ExploreScreen({ navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={t('accessibility.close')}
               >
-                <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
+                <Icon name="close" size={18} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             <TouchableOpacity
@@ -395,7 +396,7 @@ export default function ExploreScreen({ navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={t('accessibility.close')}
               >
-                <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
+                <Icon name="close" size={18} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             {SORT_OPTIONS.map(option => (

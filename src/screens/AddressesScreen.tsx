@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Ale
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
@@ -106,7 +107,7 @@ export default function AddressesScreen() {
         onBack={() => nav.goBack()}
         right={
           <TouchableOpacity onPress={openAdd} accessibilityLabel="add address" accessibilityRole="button">
-            <MaterialCommunityIcons name="plus" size={22} color={COLORS.coral} />
+            <Icon name="plus" size={22} color={COLORS.coral} />
           </TouchableOpacity>
         }
       />
@@ -116,7 +117,7 @@ export default function AddressesScreen() {
         renderItem={({ item }) => (
           <View style={styles.row}>
             <View style={styles.rowLeft}>
-              <MaterialCommunityIcons name="map-marker" size={16} color={COLORS.text2} />
+              <Icon name="location-pin" size={16} color={COLORS.text2} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>{item.label}</Text>
                 <Text style={styles.detail}>{item.name} · {item.phone}</Text>
@@ -125,7 +126,7 @@ export default function AddressesScreen() {
             </View>
             <View style={styles.rowActions}>
               <TouchableOpacity onPress={() => openEdit(item)} accessibilityLabel="edit address" accessibilityRole="button">
-                <MaterialCommunityIcons name="pencil-outline" size={18} color={COLORS.text2} />
+                <Icon name="edit" size={18} color={COLORS.text2} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => handleDelete(item.id)} accessibilityLabel="delete address" accessibilityRole="button">
                 <MaterialCommunityIcons name="trash-can-outline" size={18} color={COLORS.text2} />
@@ -154,7 +155,7 @@ export default function AddressesScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{editingId ? t('addresses.editAddress') : t('addresses.addAddress')}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)} accessibilityLabel="close modal" accessibilityRole="button">
-                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+                <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             <TextInput style={styles.input} placeholder={t('addresses.label')} placeholderTextColor={COLORS.text2} value={form.label} onChangeText={v => setForm(p => ({ ...p, label: v }))} accessibilityLabel="address label" />

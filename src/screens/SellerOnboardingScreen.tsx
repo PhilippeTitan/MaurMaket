@@ -4,6 +4,7 @@ import {
   ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
@@ -190,7 +191,7 @@ export default function SellerOnboardingScreen() {
                       ))}
                     </View>
                   </View>
-                  {!isDowngrade && <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />}
+                  {!isDowngrade && <Icon name="chevron-right" size={20} color={COLORS.text2} />}
                 </TouchableOpacity>
               );
             })}

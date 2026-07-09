@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
@@ -86,7 +87,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
       <View style={[styles.container, { paddingTop: insets.top + SPACING.xl }]}>
         <View style={styles.successWrap}>
           <View style={styles.successIcon}>
-            <MaterialCommunityIcons name="shield-check" size={56} color={COLORS.green} />
+            <Icon name="verified" size={56} color={COLORS.green} />
           </View>
           <Text style={styles.successTitle}>{t('verify.success')}</Text>
           <Text style={styles.successSub}>{t('verify.successSub')}</Text>
@@ -105,7 +106,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
     >
       <View style={[styles.content, { paddingTop: insets.top + SPACING.md }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} accessibilityLabel="go back" accessibilityRole="button">
-          <MaterialCommunityIcons name="arrow-left" size={35} color={COLORS.text} />
+          <Icon name="back" size={35} color={COLORS.text} />
         </TouchableOpacity>
 
         <View style={styles.header}>

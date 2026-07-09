@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { getOrders, cancelOrder, completeOrder, getSellerOrders, updateOrderStatus } from '../api';
 import { store } from '../store';

@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
@@ -193,7 +194,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 {imgUrl ? (
                   <Image source={{ uri: imgUrl }} style={styles.orderItemImg} resizeMode="cover" />
                 ) : (
-                  <MaterialCommunityIcons name="image-off-outline" size={16} color={COLORS.text2} />
+                  <Icon name="image-unavailable" size={16} color={COLORS.text2} />
                 )}
               </View>
               <View style={styles.orderItemInfo}>
@@ -215,7 +216,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           accessibilityLabel="select delivery method"
           accessibilityRole="button"
         >
-          <MaterialCommunityIcons name="truck-delivery" size={20} color={method === 'delivery' ? COLORS.coral : COLORS.text2} />
+          <Icon name="delivery" size={20} color={method === 'delivery' ? COLORS.coral : COLORS.text2} />
           <Text style={[styles.methodText, method === 'delivery' && styles.methodTextActive]}>{t('checkout.delivery')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -224,7 +225,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           accessibilityLabel="select meetup method"
           accessibilityRole="button"
         >
-          <MaterialCommunityIcons name="map-marker" size={20} color={method === 'meetup' ? COLORS.coral : COLORS.text2} />
+          <Icon name="location-pin" size={20} color={method === 'meetup' ? COLORS.coral : COLORS.text2} />
           <Text style={[styles.methodText, method === 'meetup' && styles.methodTextActive]}>{t('checkout.meetup')}</Text>
         </TouchableOpacity>
       </View>

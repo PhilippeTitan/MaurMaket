@@ -1,6 +1,6 @@
 import React from 'react';
 import { TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from './icons/Icon';
 import { COLORS } from '../theme';
 
 interface BackButtonProps {
@@ -19,8 +19,8 @@ export default function BackButton({ onPress, variant = 'standard', size = 35 }:
       accessibilityLabel="Go back"
       accessibilityRole="button"
     >
-      <MaterialCommunityIcons
-        name="arrow-left"
+      <Icon
+        name="back"
         size={size}
         color={isOverlay ? COLORS.white : COLORS.text2}
       />

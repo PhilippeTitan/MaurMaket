@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Dimensions, Share,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
 import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl } from '../api';
@@ -170,7 +171,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           <Image source={{ uri: imgUrl }} style={styles.sellerCardImg} resizeMode="cover" />
         ) : (
           <View style={styles.sellerCardPlaceholder}>
-            <MaterialCommunityIcons name="image-off-outline" size={16} color={COLORS.text2} />
+            <Icon name="image-unavailable" size={16} color={COLORS.text2} />
           </View>
         )}
         <View style={styles.sellerCardPriceOverlay}>
@@ -208,7 +209,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             <Image source={{ uri: imgUrl }} style={styles.gridCardImg} resizeMode="cover" />
           ) : (
             <View style={styles.gridCardPlaceholder}>
-              <MaterialCommunityIcons name="image-off-outline" size={18} color={COLORS.text2} />
+              <Icon name="image-unavailable" size={18} color={COLORS.text2} />
             </View>
           )}
           <View style={styles.gridPriceOverlay}>
@@ -254,7 +255,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                 <Image source={{ uri: url }} style={styles.heroImg} resizeMode="cover" />
               ) : (
                 <View style={styles.heroPlaceholder}>
-                  <MaterialCommunityIcons name="image-off-outline" size={40} color={COLORS.text2} />
+                  <Icon name="image-unavailable" size={40} color={COLORS.text2} />
                 </View>
               );
             })()}
@@ -320,7 +321,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             </View>
             {(sellerReviews.length > 0 || productReviews.length > 0) && (
               <View style={styles.sellerRatingRow}>
-                <MaterialCommunityIcons name="star" size={11} color={COLORS.yellow} />
+                <Icon name="rating" size={11} color={COLORS.yellow} />
                 <Text style={styles.sellerRating}>{avgRating.toFixed(1)}</Text>
               </View>
             )}
@@ -342,7 +343,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={styles.sectionTitle}>{t('productDetail.reviews')}</Text>
                 <View style={styles.ratingBadge}>
-                  <MaterialCommunityIcons name="star" size={10} color={COLORS.yellow} />
+                  <Icon name="rating" size={10} color={COLORS.yellow} />
                   <Text style={styles.ratingBadgeText}>{avgRating.toFixed(1)}</Text>
                 </View>
                 <Text style={styles.reviewCount}>({productReviews.length})</Text>
@@ -364,9 +365,9 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   </View>
                   <View style={styles.starsRow}>
                     {[1, 2, 3, 4, 5].map(star => (
-                      <MaterialCommunityIcons
+                      <Icon
                         key={star}
-                        name={star <= review.rating ? 'star' : 'star-outline'}
+                        name={star <= review.rating ? 'rating' : 'rate-this'}
                         size={12}
                         color={star <= review.rating ? COLORS.yellow : COLORS.text2}
                       />

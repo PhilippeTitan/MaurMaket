@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator, TextInput, Image, ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -167,7 +168,7 @@ export default function InboxScreen() {
             accessibilityRole="button"
             activeOpacity={0.7}
           >
-            <MaterialCommunityIcons name="storefront-outline" size={18} color={COLORS.coral} />
+            <Icon name="storefront" size={18} color={COLORS.coral} />
           </TouchableOpacity>
         )}
       </View>
@@ -216,7 +217,7 @@ export default function InboxScreen() {
       {/* Search bar */}
       <View style={styles.searchBarWrap}>
         <View style={styles.searchBar}>
-          <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
+          <Icon name="search" size={18} color={COLORS.text2} />
           <TextInput
             style={styles.searchBarInput}
             placeholder="Search messages..."
@@ -227,7 +228,7 @@ export default function InboxScreen() {
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="clear search" accessibilityRole="button">
-              <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text2} />
+              <Icon name="close-circle" size={16} color={COLORS.text2} />
             </TouchableOpacity>
           )}
         </View>

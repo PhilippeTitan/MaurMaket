@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -289,7 +290,7 @@ export default function FeedScreen() {
               <Image source={{ uri: imgUrl }} style={styles.mediaContain} resizeMode="contain" />
             </>
           ) : (
-            <MaterialCommunityIcons name="image-off-outline" size={48} color={COLORS.text2} />
+            <Icon name="image-unavailable" size={48} color={COLORS.text2} />
           )}
         </View>
 
@@ -540,7 +541,7 @@ export default function FeedScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('accessibility.close')}
               >
-                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+                <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
 
@@ -561,7 +562,7 @@ export default function FeedScreen() {
                       <View style={styles.commentNameRow}>
                         <Text style={styles.commentName}>{item.reviewer?.full_name || 'Buyer'}</Text>
                         <View style={styles.commentStars}>
-                          <MaterialCommunityIcons name="star" size={11} color={COLORS.yellow} />
+                          <Icon name="rating" size={11} color={COLORS.yellow} />
                           <Text style={styles.commentRating}>{item.rating}</Text>
                         </View>
                       </View>
@@ -591,7 +592,7 @@ export default function FeedScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('accessibility.messageSeller')}
               >
-                <MaterialCommunityIcons name="message-outline" size={17} color={COLORS.white} />
+                <Icon name="message" size={17} color={COLORS.white} />
                 <Text style={styles.messageSellerText}>{t('productDetail.messageSeller')}</Text>
               </TouchableOpacity>
             )}

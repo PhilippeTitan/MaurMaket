@@ -4,6 +4,7 @@ import {
   Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus } from '../api';
@@ -235,7 +236,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>{t('orderDetail.deliveryAddress')}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
+            <Icon name="location-pin" size={14} color={COLORS.coral} />
             <Text style={styles.meetupText}>{order.delivery_name}</Text>
           </View>
           <Text style={styles.meetupText}>{order.delivery_address}{order.delivery_city ? `, ${order.delivery_city}` : ''}</Text>
@@ -248,13 +249,13 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>{t('orderDetail.meetup')} {t('orderDetail.deliveryMethod')}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
+            <Icon name="location-pin" size={14} color={COLORS.coral} />
             <Text style={styles.meetupText}>{order.meetup_address}</Text>
           </View>
           {order.meetup_note && <Text style={styles.meetupNote}>{t('orderDetail.note')}: {order.meetup_note}</Text>}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <MaterialCommunityIcons
-              name={order.meetup_confirmed ? 'check-circle' : 'clock-outline'}
+            <Icon
+              name={order.meetup_confirmed ? 'check-circle' : 'time'}
               size={14}
               color={order.meetup_confirmed ? COLORS.green : COLORS.yellow}
             />
@@ -290,7 +291,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             accessibilityLabel="go to meetup"
             accessibilityRole="button"
           >
-            <MaterialCommunityIcons name="map-marker-radius" size={18} color={COLORS.white} />
+            <Icon name="map" size={18} color={COLORS.white} />
             <Text style={styles.meetupBtnText}>Go to Meetup</Text>
           </TouchableOpacity>
         )}
@@ -340,7 +341,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         )}
         {order.status === 'completed' && store.user?.id === order.buyer_id && (
           <TouchableOpacity style={styles.reviewBtn} onPress={() => setReviewModalVisible(true)} accessibilityLabel="review order" accessibilityRole="button">
-            <MaterialCommunityIcons name="star-outline" size={16} color={COLORS.yellow} />
+            <Icon name="rate-this" size={16} color={COLORS.yellow} />
             <Text style={styles.reviewBtnText}>{t('orderDetail.reviewOrder')}</Text>
           </TouchableOpacity>
         )}
@@ -368,15 +369,15 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('orderDetail.reviewOrder')}</Text>
               <TouchableOpacity onPress={() => setReviewModalVisible(false)} accessibilityLabel="close review modal" accessibilityRole="button">
-                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+                <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.starsPicker}>
               {[1, 2, 3, 4, 5].map(star => (
                 <TouchableOpacity key={star} onPress={() => setReviewRating(star)} accessibilityLabel={`rate ${star} star${star > 1 ? 's' : ''}`} accessibilityRole="button">
-                  <MaterialCommunityIcons
-                    name={star <= reviewRating ? 'star' : 'star-outline'}
+                  <Icon
+                    name={star <= reviewRating ? 'rating' : 'rate-this'}
                     size={36}
                     color={star <= reviewRating ? COLORS.yellow : COLORS.surface2}
                   />
@@ -424,7 +425,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('orderDetail.openDispute')}</Text>
               <TouchableOpacity onPress={() => setDisputeModalVisible(false)} accessibilityLabel="close dispute modal" accessibilityRole="button">
-                <MaterialCommunityIcons name="close" size={20} color={COLORS.text2} />
+                <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
 

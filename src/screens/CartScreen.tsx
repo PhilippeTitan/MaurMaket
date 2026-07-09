@@ -3,6 +3,7 @@ import {
   View, Text, FlatList, Image, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
@@ -113,7 +114,7 @@ export default function CartScreen({ navigation }: Props) {
     if (item.type === 'sellerHeader') {
       return (
         <View style={styles.sellerSectionHeader}>
-          <MaterialCommunityIcons name="storefront-outline" size={14} color={COLORS.coral} />
+          <Icon name="storefront" size={14} color={COLORS.coral} />
           <Text style={styles.sellerSectionName} numberOfLines={1}>{item.sellerName}</Text>
           <Text style={styles.sellerSectionMeta}>
             {item.itemCount} {item.itemCount === 1 ? t('common.item') : t('common.items')} · Rs {formatPrice(item.total)}
@@ -131,7 +132,7 @@ export default function CartScreen({ navigation }: Props) {
           {imgUrl ? (
             <Image source={{ uri: imgUrl }} style={styles.thumbImg} resizeMode="cover" />
           ) : (
-            <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />
+            <Icon name="image-unavailable" size={24} color={COLORS.text2} />
           )}
         </View>
         <View style={styles.info}>
@@ -144,7 +145,7 @@ export default function CartScreen({ navigation }: Props) {
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.decreaseQuantity')}
             >
-              <MaterialCommunityIcons name="minus" size={14} color={COLORS.text} />
+              <Icon name="minus" size={14} color={COLORS.text} />
             </TouchableOpacity>
             <Text style={styles.qtyVal}>{cartItem.quantity}</Text>
             <TouchableOpacity
@@ -154,7 +155,7 @@ export default function CartScreen({ navigation }: Props) {
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.increaseQuantity')}
             >
-              <MaterialCommunityIcons name="plus" size={14} color={atStockLimit ? COLORS.text2 : COLORS.text} />
+              <Icon name="plus" size={14} color={atStockLimit ? COLORS.text2 : COLORS.text} />
             </TouchableOpacity>
           </View>
           {atStockLimit && <Text style={styles.stockLimit}>{t('cart.onlyAvailable', { count: String(stock) })}</Text>}
@@ -165,7 +166,7 @@ export default function CartScreen({ navigation }: Props) {
           accessibilityRole="button"
           accessibilityLabel={t('accessibility.removeItem')}
         >
-          <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
+          <Icon name="close" size={18} color={COLORS.text2} />
         </TouchableOpacity>
       </View>
     );

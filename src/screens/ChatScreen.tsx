@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView, Platform, Alert, Image, Pressable, AppState, AppStateStatus,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMessages, sendMessage as apiSendMessage, getImageUrl, uploadImage } from '../api';
@@ -193,7 +194,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         <View style={[styles.offerMsgWrap, isMe ? styles.offerMsgWrapMe : styles.offerMsgWrapThem]}>
           <View style={styles.offerMsgCard}>
             <View style={styles.offerMsgIconWrap}>
-              <MaterialCommunityIcons name="tag-outline" size={16} color={COLORS.coral} />
+              <Icon name="sale-tag" size={16} color={COLORS.coral} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.offerMsgEyebrow}>{isMe ? 'Your offer' : 'Offer received'}</Text>
@@ -281,7 +282,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               accessibilityLabel="view store"
               accessibilityRole="button"
             >
-              <MaterialCommunityIcons name="storefront-outline" size={20} color={COLORS.text} />
+              <Icon name="storefront" size={20} color={COLORS.text} />
               <Text style={styles.dropdownActionText}>View Store</Text>
             </TouchableOpacity>
           </View>
@@ -339,7 +340,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       {draftOffer && offerDraftVisible && (
         <View style={styles.offerDock}>
           <View style={styles.offerIcon}>
-            <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.white} />
+            <Icon name="sale-tag" size={18} color={COLORS.white} />
           </View>
           <View style={styles.offerBody}>
             <Text style={styles.offerEyebrow}>{t('chat.negotiationDraft')}</Text>
@@ -363,7 +364,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             </View>
           </View>
           <TouchableOpacity onPress={() => setOfferDraftVisible(false)} style={styles.offerClose} accessibilityLabel="close offer" accessibilityRole="button">
-            <MaterialCommunityIcons name="close" size={16} color={COLORS.text2} />
+            <Icon name="close" size={16} color={COLORS.text2} />
           </TouchableOpacity>
         </View>
       )}

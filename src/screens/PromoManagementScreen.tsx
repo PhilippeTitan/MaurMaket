@@ -4,6 +4,7 @@ import {
   Alert, ActivityIndicator, Platform, Modal, KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { COLORS, SPACING, RADIUS } from '../theme';
@@ -161,7 +162,7 @@ export default function PromoManagementScreen() {
 
         {promos.length === 0 && (
           <View style={styles.empty}>
-            <MaterialCommunityIcons name="tag-outline" size={40} color={COLORS.text2} />
+            <Icon name="sale-tag" size={40} color={COLORS.text2} />
             <Text style={styles.emptyText}>No promo codes yet</Text>
             <Text style={styles.emptyHint}>Create your first promo code to attract buyers</Text>
           </View>
@@ -171,7 +172,7 @@ export default function PromoManagementScreen() {
       {/* Create button */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
         <TouchableOpacity style={styles.createBtn} onPress={() => setShowCreate(true)} accessibilityRole="button" accessibilityLabel="create promo code">
-          <MaterialCommunityIcons name="plus" size={18} color={COLORS.white} />
+          <Icon name="plus" size={18} color={COLORS.white} />
           <Text style={styles.createBtnText}>Create Promo Code</Text>
         </TouchableOpacity>
       </View>
@@ -182,7 +183,7 @@ export default function PromoManagementScreen() {
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setShowCreate(false)} accessibilityRole="button" accessibilityLabel="close">
-                <MaterialCommunityIcons name="close" size={24} color={COLORS.text} />
+                <Icon name="close" size={24} color={COLORS.text} />
               </TouchableOpacity>
               <Text style={styles.modalTitle}>Create Promo Code</Text>
               <View style={{ width: 24 }} />
