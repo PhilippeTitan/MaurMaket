@@ -96,7 +96,7 @@ if (typeof document !== 'undefined') {
 
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 200 }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Signup" component={SignupScreen} />
       <AuthStack.Screen name="EmailVerification" component={EmailVerificationScreen} />
@@ -113,6 +113,7 @@ function MainTabs() {
         screenOptions={{
           headerShown: false,
           tabBarShowLabel: false,
+          animation: 'fade',
           tabBarStyle: {
             backgroundColor: COLORS.surface,
             borderRadius: 28,
@@ -331,16 +332,16 @@ export default function App() {
       }
     }}>
       <StatusBar style="light" />
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 200 }}>
         {!isLoggedIn ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
         ) : (
           <>
             <Stack.Screen name="Main" component={MainTabs} />
-            <Stack.Screen name="ProductDetail" component={ProductDetailScreen} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="Cart" component={CartScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+            <Stack.Screen name="Cart" component={CartScreen} />
             <Stack.Screen name="Checkout" component={CheckoutScreen} />
-            <Stack.Screen name="AddListing" component={AddListingScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="AddListing" component={AddListingScreen} />
             <Stack.Screen name="SellerOnboarding" component={SellerOnboardingScreen} />
             <Stack.Screen name="Storefront" component={StorefrontScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
@@ -359,8 +360,8 @@ export default function App() {
             <Stack.Screen name="Meetup" component={LazyMeetupScreen} />
             <Stack.Screen name="PromoManagement" component={PromoManagementScreen} />
             <Stack.Screen name="Notification" component={NotificationScreen} />
-            <Stack.Screen name="EmailVerification" component={EmailVerificationScreen} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="EmailVerification" component={EmailVerificationScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           </>
         )}
       </Stack.Navigator>
