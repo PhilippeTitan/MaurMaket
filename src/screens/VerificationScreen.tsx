@@ -14,10 +14,14 @@ import type { RootStackParamList } from '../navigation';
 
 let CameraView: any = null;
 let useCameraPermissions: any = () => [null, () => {}];
+let FaceDetection: any = null;
+let ImageManipulator: any = null;
 if (Platform.OS !== 'web') {
   const cam = require('expo-camera');
   CameraView = cam.CameraView;
   useCameraPermissions = cam.useCameraPermissions;
+  try { FaceDetection = require('@react-native-ml-kit/face-detection').default; } catch {}
+  try { ImageManipulator = require('expo-image-manipulator'); } catch {}
 }
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -30,9 +34,11 @@ export default function VerificationScreen() {
   const [step, setStep] = useState<Step>('info');
   const [loading, setLoading] = useState(false);
   const [idFrontUrl, setIdFrontUrl] = useState('');
+  const [idFaceUrl, setIdFaceUrl] = useState('');
   const [idBackUrl, setIdBackUrl] = useState('');
   const [selfieUrl, setSelfieUrl] = useState('');
   const [idFrontDeleteUrl, setIdFrontDeleteUrl] = useState('');
+  const [idFaceDeleteUrl, setIdFaceDeleteUrl] = useState('');
   const [idBackDeleteUrl, setIdBackDeleteUrl] = useState('');
   const [selfieDeleteUrl, setSelfieDeleteUrl] = useState('');
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
@@ -65,6 +71,37 @@ export default function VerificationScreen() {
           if (facing === 'front') {
             setIdFrontUrl(uploadRes.url);
             if (uploadRes.deleteUrl) setIdFrontDeleteUrl(uploadRes.deleteUrl);
+            if (FaceDetection && ImageManipulator) {
+              try {
+                console.log(`🔍 [VERIFY] Detecting face in CIN front for crop...`);
+                const faces = await FaceDetection.detect(photo.uri, { detectionMode: 0 });
+                if (faces && faces.length > 0) {
+                  const face = faces[0].bounds;
+                  const imgW = faces[0].frame?.width || photo.width || 1080;
+                  const imgH = faces[0].frame?.height || photo.height || 1920;
+                  const pad = 0.4;
+                  const x = Math.max(0, Math.round(face.x - face.width * pad));
+                  const y = Math.max(0, Math.round(face.y - face.height * pad));
+                  const w = Math.min(imgW - x, Math.round(face.width * (1 + pad * 2)));
+                  const h = Math.min(imgH - y, Math.round(face.height * (1 + pad * 2)));
+                  console.log(`🔍 [VERIFY] Face crop: x=${x} y=${y} w=${w} h=${h}`);
+                  const manipulated = await ImageManipulator.manipulateAsync(
+                    photo.uri,
+                    [{ crop: { originX: x, originY: y, width: w, height: h } }],
+                    { compress: 0.8, format: 'jpeg' }
+                  );
+                  console.log(`⬆️ [VERIFY] Uploading cropped face to imgbb...`);
+                  const faceUpload = await uploadImage(manipulated.uri);
+                  setIdFaceUrl(faceUpload.url);
+                  if (faceUpload.deleteUrl) setIdFaceDeleteUrl(faceUpload.deleteUrl);
+                  console.log(`✅ [VERIFY] Cropped face uploaded: ${faceUpload.url}`);
+                } else {
+                  console.log(`⚠️ [VERIFY] No face detected in CIN front — will use full image`);
+                }
+              } catch (e: any) {
+                console.log(`⚠️ [VERIFY] Face crop failed: ${e?.message} — will use full image`);
+              }
+            }
             setStep('cinBack');
           } else {
             setIdBackUrl(uploadRes.url);
@@ -118,20 +155,21 @@ export default function VerificationScreen() {
   };
 
   const submitAll = async (selfie: string, front: string, back: string) => {
-    console.log(`🚀 [VERIFY] Auto-submitting — front: ${front ? '✅' : '❌'} back: ${back ? '✅' : '❌'} selfie: ${selfie ? '✅' : '❌'}`);
+    console.log(`🚀 [VERIFY] Auto-submitting — front: ${front ? '✅' : '❌'} face: ${idFaceUrl ? '✅' : '❌'} back: ${back ? '✅' : '❌'} selfie: ${selfie ? '✅' : '❌'}`);
     setStep('processing');
     setProgressText('Reading ID card...');
 
     try {
-      // Switch progress text after a delay to match server timing
       const progressTimer = setTimeout(() => setProgressText('Comparing face...'), 5000);
 
       const res = await submitVerification({
         idFrontUrl: front,
+        idFaceUrl: idFaceUrl || undefined,
         idBackUrl: back,
         selfieUrl: selfie,
         deleteUrls: {
           idFront: idFrontDeleteUrl || undefined,
+          idFace: idFaceDeleteUrl || undefined,
           idBack: idBackDeleteUrl || undefined,
           selfie: selfieDeleteUrl || undefined,
         },
@@ -159,9 +197,11 @@ export default function VerificationScreen() {
   const resetAll = () => {
     setStep('cinFront');
     setIdFrontUrl('');
+    setIdFaceUrl('');
     setIdBackUrl('');
     setSelfieUrl('');
     setIdFrontDeleteUrl('');
+    setIdFaceDeleteUrl('');
     setIdBackDeleteUrl('');
     setSelfieDeleteUrl('');
     setRejectedReasons(null);

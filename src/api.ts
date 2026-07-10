@@ -470,9 +470,10 @@ export const uploadImage = async (uri: string): Promise<{ url: string; deleteUrl
 // Verification
 export const submitVerification = (data: {
   idFrontUrl: string;
+  idFaceUrl?: string;
   idBackUrl: string;
   selfieUrl: string;
-  deleteUrls?: { idFront?: string; idBack?: string; selfie?: string };
+  deleteUrls?: { idFront?: string; idFace?: string; idBack?: string; selfie?: string };
 }) => request('/verification/submit', { method: 'POST', body: JSON.stringify(data) });
 
 // Subscriptions

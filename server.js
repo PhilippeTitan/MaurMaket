@@ -4433,9 +4433,9 @@ async function tareefCompare(imageUrl1, imageUrl2) {
 }
 
 app.post('/api/verification/submit', authRequired, sellerRequired, async (req, res) => {
-  const { idFrontUrl, idBackUrl, selfieUrl, deleteUrls } = req.body;
+  const { idFrontUrl, idFaceUrl, idBackUrl, selfieUrl, deleteUrls } = req.body;
   console.log(`🔍 [VERIFY] Submission started for user ${req.user.id}`);
-  console.log(`🔍 [VERIFY] Front: ${idFrontUrl ? '✅' : '❌'} | Back: ${idBackUrl ? '✅' : '❌'} | Selfie: ${selfieUrl ? '✅' : '❌'}`);
+  console.log(`🔍 [VERIFY] Front: ${idFrontUrl ? '✅' : '❌'} | Face: ${idFaceUrl ? '✅' : '❌'} | Back: ${idBackUrl ? '✅' : '❌'} | Selfie: ${selfieUrl ? '✅' : '❌'}`);
   if (!idFrontUrl || !idBackUrl || !selfieUrl) {
     console.log(`❌ [VERIFY] Missing required images`);
     return res.status(400).json({ error: 'CIN front, back, and selfie are required' });
@@ -4519,9 +4519,11 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
           console.log(`❌ [VERIFY] TAREEF_API_KEY not configured — rejecting (fail-closed)`);
           issues.push('Face verification service unavailable');
         } else {
-          console.log(`🔍 [VERIFY] Calling Tareef face comparison (CIN front vs selfie)...`);
+          console.log(`🔍 [VERIFY] Calling Tareef face comparison (CIN face crop vs selfie)...`);
           try {
-            const { score, similar } = await tareefCompare(idFrontUrl, selfieUrl);
+            const faceImageUrl = idFaceUrl || idFrontUrl;
+            console.log(`🔍 [VERIFY] Using ${idFaceUrl ? 'cropped CIN face' : 'full CIN front'} for face comparison`);
+            const { score, similar } = await tareefCompare(faceImageUrl, selfieUrl);
             ocrResult.faceScore = score;
             console.log(`✅ [VERIFY] Tareef result: score=${score} similar=${similar} → ${score >= 0.15 ? '✅ PASS' : '❌ FAIL'}`);
             if (score < 0.15) {
@@ -4561,6 +4563,7 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
 
       await Promise.all([
         deleteImgbbImage(deleteUrls?.idFront),
+        deleteImgbbImage(deleteUrls?.idFace),
         deleteImgbbImage(deleteUrls?.idBack),
         deleteImgbbImage(deleteUrls?.selfie),
       ]);
