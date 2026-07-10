@@ -4384,16 +4384,44 @@ function extractCinFields(text) {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const fullText = lines.join(' ');
 
-  const cinMatch = fullText.match(/\b(\d{8,12})\b/);
-  if (cinMatch) fields.cinNumber = cinMatch[1];
+  // CIN number: H002QQF68 format (letter + digits) or 8-12 digit unique ID
+  const cinCardMatch = fullText.match(/\b([A-Z]\d{3,10})\b/);
+  const cinUniqueMatch = fullText.match(/\b(\d{8,12})\b/);
+  fields.cinNumber = cinCardMatch ? cinCardMatch[1] : (cinUniqueMatch ? cinUniqueMatch[1] : null);
 
-  const dobMatch = fullText.match(/(\d{2}[\/\-]\d{2}[\/\-]\d{4})/);
-  if (dobMatch) fields.dateOfBirth = dobMatch[1];
+  // Date of Birth: look for "Date de Naissance" / "Dat ou fét" label, then grab the date
+  const dobLabelMatch = fullText.match(/(?:Date de Naissance|Dat ou f[eé]t)\s*[\/\n]?\s*(?:Dat ou f[eé]t)?\s*[\/\n]?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4})/i);
+  if (dobLabelMatch) {
+    fields.dateOfBirth = dobLabelMatch[1];
+  } else {
+    // Fallback: last date on the card (DOB is after issue date)
+    const allDates = [...fullText.matchAll(/(\d{2}[\/\-]\d{2}[\/\-]\d{4})/g)];
+    if (allDates.length >= 2) fields.dateOfBirth = allDates[1][1]; // second date is DOB
+    else if (allDates.length === 1) fields.dateOfBirth = allDates[0][1];
+  }
 
-  if (lines.length > 0) fields.fullName = lines[0];
+  // Full name: look for lines after "Prénom / Non" and "Nom / Siyati"
+  const prenomIdx = lines.findIndex(l => /Pr[eé]nom\s*\/\s*Non/i.test(l));
+  const nomIdx = lines.findIndex(l => /^Nom\s*\/\s*Siyati/i.test(l));
+  if (prenomIdx >= 0 && nomIdx >= 0) {
+    const firstNames = lines.slice(prenomIdx + 1, nomIdx).filter(l => !/^\//.test(l)).join(' ');
+    const lastName = lines[nomIdx + 1] || '';
+    fields.fullName = [lastName, firstNames].filter(Boolean).join(' ').trim();
+  } else if (prenomIdx >= 0) {
+    fields.fullName = lines.slice(prenomIdx + 1, prenomIdx + 3).join(' ').trim();
+  } else {
+    fields.fullName = lines[0] || null;
+  }
 
-  const pobMatch = fullText.match(/(?:N[eé]\(e\)?\s+(?:[àa]\s+))([\w\s]+?)(?:\s+le|\s+\d)/i);
-  if (pobMatch) fields.placeOfBirth = pobMatch[1].trim();
+  // Place of birth: look for "Lieu de Naissance" / "Kote ou fét" label
+  const pobLabelMatch = fullText.match(/(?:Lieu de Naissance|Kote ou f[eé]t)\s*[\/\n]?\s*(?:Kote ou f[eé]t)?\s*[\/\n]?\s*(.+?)(?:\s+Date\s|$)/i);
+  if (pobLabelMatch) {
+    fields.placeOfBirth = pobLabelMatch[1].trim();
+  } else {
+    // Fallback: look for known Haitian departments/cities
+    const pobFallback = fullText.match(/(OUEST[\s\-]+PORT[\s\-]*AU[\s\-]*PRINCE|ARTIBONITE|NORD|SUD|NORD[\s\-]*OUEST|SUD[\s\-]*EST|NORD[\s\-]*EST|GRANDE[\s\-]*ANSE|NIPPES|SUD[\s\-]*OUEST|CENTER)/i);
+    if (pobFallback) fields.placeOfBirth = pobFallback[1].trim();
+  }
 
   return fields;
 }
