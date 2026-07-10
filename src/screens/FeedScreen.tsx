@@ -419,7 +419,7 @@ export default function FeedScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.newTab')}
           >
-            <Text style={[styles.feedTabText, feedTab === 'new' && styles.feedTabTextActive]}>New</Text>
+            <Text style={[styles.feedTabText, feedTab === 'new' && styles.feedTabTextActive]}>{t('feed.newTab')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.feedTab, feedTab === 'forYou' && styles.feedTabActive]}
@@ -427,7 +427,7 @@ export default function FeedScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.forYouTab')}
           >
-            <Text style={[styles.feedTabText, feedTab === 'forYou' && styles.feedTabTextActive]}>For You</Text>
+            <Text style={[styles.feedTabText, feedTab === 'forYou' && styles.feedTabTextActive]}>{t('feed.forYouTab')}</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.utilityRow}>

@@ -327,6 +327,9 @@ export default function ExploreScreen({ navigation }: Props) {
           style={{ flex: 1 }}
           data={[{ id: '__cols__' }]}
           keyExtractor={() => '__cols__'}
+          maxToRenderPerBatch={1}
+          windowSize={2}
+          removeClippedSubviews={true}
           renderItem={() => (
             <View style={styles.grid}>
               <View style={styles.column}>

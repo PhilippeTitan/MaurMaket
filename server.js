@@ -502,6 +502,8 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
       CREATE INDEX IF NOT EXISTS idx_notifications_user_id_is_read ON notifications(user_id, is_read);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_buyer_id ON conversations(buyer_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_seller_id ON conversations(seller_id);
       CREATE INDEX IF NOT EXISTS idx_wishlists_user_id ON wishlists(user_id);
@@ -1408,12 +1410,16 @@ app.put('/api/reviews/:id', authRequired, async (req, res) => {
 
 app.get('/api/reviews/seller/:sellerId', async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit) || 50);
+    const offset = (page - 1) * limit;
     const result = await pool.query(
       `SELECT r.*, u.full_name AS reviewer_name, u.avatar_url AS reviewer_avatar
        FROM reviews r JOIN users u ON r.reviewer_id = u.id
        WHERE r.seller_id = $1
-       ORDER BY r.created_at DESC`,
-      [req.params.sellerId]
+       ORDER BY r.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [req.params.sellerId, limit, offset]
     );
     const statsResult = await pool.query(
       `SELECT COALESCE(AVG(rating)::numeric(3,2), 0) AS avg_rating, COUNT(*) AS review_count FROM reviews WHERE seller_id = $1`,
@@ -1620,14 +1626,7 @@ app.get('/api/sellers/nearby', async (req, res) => {
                 cos(radians($1)) * cos(radians(sl.lat)) *
                 cos(radians(sl.lng) - radians($2)) +
                 sin(radians($1)) * sin(radians(sl.lat))
-              )))) AS distance_km,
-              (SELECT COUNT(*) FROM products p WHERE p.seller_id = u.id AND p.is_available = true) AS product_count,
-              (SELECT pi.image_url FROM product_images pi
-               JOIN products p ON pi.product_id = p.id
-               WHERE p.seller_id = u.id AND p.is_available = true
-               ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS primary_image,
-              COALESCE((SELECT AVG(r.rating)::numeric(3,2) FROM reviews r WHERE r.seller_id = u.id), 0) AS avg_rating,
-              (SELECT COUNT(*) FROM reviews r2 WHERE r2.seller_id = u.id) AS review_count
+              )))) AS distance_km
        FROM seller_locations sl
        JOIN users u ON u.id = sl.seller_id
        WHERE u.role = 'seller'
@@ -1635,14 +1634,44 @@ app.get('/api/sellers/nearby', async (req, res) => {
       [latNum, lngNum]
     );
     const filtered = result.rows.filter(r => parseFloat(r.distance_km) <= radiusKm);
+
+    // Batch-load stats for all nearby sellers in 3 queries instead of 4N
+    const sellerIds = filtered.map(r => r.id);
+    if (sellerIds.length > 0) {
+      const [productCounts, primaryImages, reviewStats] = await Promise.all([
+        pool.query(
+          `SELECT seller_id, COUNT(*) AS product_count
+           FROM products WHERE seller_id = ANY($1::uuid[]) AND is_available = true
+           GROUP BY seller_id`, [sellerIds]),
+        pool.query(
+          `SELECT DISTINCT ON (p.seller_id) p.seller_id, pi.image_url
+           FROM products p JOIN product_images pi ON pi.product_id = p.id
+           WHERE p.seller_id = ANY($1::uuid[]) AND p.is_available = true
+           ORDER BY p.seller_id, pi.is_primary DESC, pi.display_order ASC`, [sellerIds]),
+        pool.query(
+          `SELECT seller_id, COALESCE(AVG(rating)::numeric(3,2), 0) AS avg_rating, COUNT(*) AS review_count
+           FROM reviews WHERE seller_id = ANY($1::uuid[])
+           GROUP BY seller_id`, [sellerIds])
+      ]);
+      const pcMap = Object.fromEntries(productCounts.rows.map(r => [r.seller_id, parseInt(r.product_count)]));
+      const piMap = Object.fromEntries(primaryImages.rows.map(r => [r.seller_id, r.image_url]));
+      const rsMap = Object.fromEntries(reviewStats.rows.map(r => [r.seller_id, r]));
+      for (const r of filtered) {
+        r.product_count = pcMap[r.id] || 0;
+        r.primary_image = piMap[r.id] || null;
+        r.avg_rating = parseFloat(rsMap[r.id]?.avg_rating) || 0;
+        r.review_count = parseInt(rsMap[r.id]?.review_count) || 0;
+      }
+    }
+
     res.json({ sellers: filtered.map(r => ({
       ...r,
       lat: parseFloat(r.lat),
       lng: parseFloat(r.lng),
       distance_km: parseFloat(parseFloat(r.distance_km).toFixed(2)),
-      product_count: parseInt(r.product_count),
-      avg_rating: parseFloat(r.avg_rating) || 0,
-      review_count: parseInt(r.review_count),
+      product_count: r.product_count || 0,
+      avg_rating: r.avg_rating || 0,
+      review_count: r.review_count || 0,
     }))});
   } catch (err) {
     console.error('Nearby sellers error:', err);
@@ -1654,28 +1683,26 @@ app.get('/api/sellers/nearby', async (req, res) => {
 
 app.get('/api/sellers/:id', async (req, res) => {
   try {
-    const userResult = await pool.query(
-      `SELECT id, full_name, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, id_verification_result, use_store_identity FROM users WHERE id = $1 AND role = 'seller'`,
+    const result = await pool.query(
+      `SELECT u.id, u.full_name, u.avatar_url, u.bio, u.created_at, u.store_name, u.store_logo_url,
+              u.seller_tier, u.id_verified, u.id_verification_result, u.use_store_identity,
+              (SELECT COUNT(*) FROM products p WHERE p.seller_id = u.id AND p.is_available = true) AS product_count,
+              (SELECT COALESCE(AVG(r.rating)::numeric(3,2), 0) FROM reviews r WHERE r.seller_id = u.id) AS avg_rating,
+              (SELECT COUNT(*) FROM reviews r2 WHERE r2.seller_id = u.id) AS review_count,
+              (SELECT COUNT(*) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.seller_id = u.id AND o.status = 'completed') AS sales_count
+       FROM users u
+       WHERE u.id = $1 AND u.role = 'seller'`,
       [req.params.id]
     );
-    if (userResult.rows.length === 0) return res.status(404).json({ error: 'Seller not found' });
-    const seller = userResult.rows[0];
-    const productResult = await pool.query('SELECT COUNT(*) AS count FROM products WHERE seller_id = $1 AND is_available = true', [req.params.id]);
-    const reviewResult = await pool.query(
-      `SELECT COALESCE(AVG(rating)::numeric(3,2), 0) AS avg_rating, COUNT(*) AS review_count FROM reviews WHERE seller_id = $1`,
-      [req.params.id]
-    );
-    const orderResult = await pool.query(
-      `SELECT COUNT(*) AS count FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.seller_id = $1 AND o.status = 'completed'`,
-      [req.params.id]
-    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Seller not found' });
+    const row = result.rows[0];
     res.json({
       seller: {
-        ...seller,
-        product_count: parseInt(productResult.rows[0].count),
-        avg_rating: parseFloat(reviewResult.rows[0].avg_rating),
-        review_count: parseInt(reviewResult.rows[0].review_count),
-        sales_count: parseInt(orderResult.rows[0].count),
+        ...row,
+        product_count: parseInt(row.product_count),
+        avg_rating: parseFloat(row.avg_rating),
+        review_count: parseInt(row.review_count),
+        sales_count: parseInt(row.sales_count),
       }
     });
   } catch (err) {
@@ -1825,8 +1852,7 @@ app.get('/api/products', async (req, res) => {
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
               u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar, u.use_store_identity,
               c.name AS category
-              ${selectExtra},
-              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
+              ${selectExtra}
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
@@ -1836,6 +1862,25 @@ app.get('/api/products', async (req, res) => {
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       [...params, Math.min(limit, 50), offset]
     );
+
+    // Batch-load images for all products in one query (fixes N+1)
+    if (result.rows.length > 0) {
+      const productIds = result.rows.map(p => p.id);
+      const imagesResult = await pool.query(
+        `SELECT product_id, image_url, is_primary
+         FROM product_images WHERE product_id = ANY($1::uuid[])
+         ORDER BY is_primary DESC, display_order ASC`,
+        [productIds]
+      );
+      const imagesByProduct = {};
+      for (const img of imagesResult.rows) {
+        if (!imagesByProduct[img.product_id]) imagesByProduct[img.product_id] = [];
+        imagesByProduct[img.product_id].push({ image_url: img.image_url, is_primary: img.is_primary });
+      }
+      for (const product of result.rows) {
+        product.images = imagesByProduct[product.id] || null;
+      }
+    }
 
     res.json({ products: result.rows, total, page: +page, pages: Math.ceil(total / Math.min(limit, 50)) });
   } catch (err) {
@@ -2140,14 +2185,14 @@ app.get('/api/orders/:id/timeline', authRequired, async (req, res) => {
 app.get('/api/orders', authRequired, async (req, res) => {
   try {
     const buyerOrders = await pool.query(
-      `SELECT DISTINCT ON (o.id) o.*, 
-              (SELECT u.full_name FROM order_items oi2 JOIN users u ON oi2.seller_id = u.id WHERE oi2.order_id = o.id LIMIT 1) AS seller_name,
-              (SELECT u.phone FROM order_items oi2 JOIN users u ON oi2.seller_id = u.id WHERE oi2.order_id = o.id LIMIT 1) AS seller_phone,
+      `SELECT DISTINCT ON (o.id) o.*,
+              u.full_name AS seller_name, u.phone AS seller_phone,
               'buyer' AS my_role
        FROM orders o
        JOIN order_items oi ON o.id = oi.order_id
+       JOIN users u ON oi.seller_id = u.id
        WHERE o.buyer_id = $1
-       ORDER BY o.id, o.created_at DESC`,
+       ORDER BY o.id, oi.created_at`,
       [req.user.id]
     );
     const sellerOrders = await pool.query(
@@ -2202,14 +2247,14 @@ app.post('/api/orders', authRequired, async (req, res) => {
         `SELECT mo.offered_price FROM message_offers mo
          WHERE mo.product_id = $1 AND mo.buyer_id = $2 AND mo.status = 'accepted'
          AND mo.responded_at IS NOT NULL
-         ORDER BY mo.responded_at DESC LIMIT 1`,
+         ORDER BY mo.responded_at DESC LIMIT 1
+         FOR UPDATE`,
         [item.productId, req.user.id]
       );
       if (offerCheck.rows.length > 0) {
         price = parseFloat(offerCheck.rows[0].offered_price);
-        // Mark offer as redeemed so it can't be reused
         await client.query(
-          "UPDATE message_offers SET status = 'redeemed' WHERE product_id = $1 AND buyer_id = $2 AND status = 'accepted'",
+          "UPDATE message_offers SET status = 'redeemed' WHERE product_id = $1 AND buyer_id = $2 AND status = 'accepted' AND responded_at = (SELECT MAX(responded_at) FROM message_offers WHERE product_id = $1 AND buyer_id = $2 AND status = 'accepted')",
           [item.productId, req.user.id]
         );
       } else {
@@ -2340,9 +2385,7 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
           [escrow.id]
         );
       }
-      totalRefund = escrows.rows.reduce((sum, e) => sum + parseFloat(e.gross_amount), 0);
-
-      const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
+      totalRefund = parseFloat(order.rows[0].total_amount);
       for (const item of items.rows) {
         await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
         await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
@@ -2368,6 +2411,7 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({ amount: Math.round(totalRefund), receiver: buyerPhone, referenceId: `cancel_refund_${req.params.id}` }),
+              signal: AbortSignal.timeout(15000),
             }
           );
           if (payoutRes.ok) console.log(`[CANCEL] Refund Rs ${totalRefund} sent to buyer ${buyerPhone}`);
@@ -2552,7 +2596,7 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
       distance = haversineDistance(lat, lng, parseFloat(other.lat), parseFloat(other.lng));
       proximityConfirmed = distance <= 150;
 
-      if (proximityConfirmed && isBuyer) {
+      if (proximityConfirmed) {
         // Both are within 150m — generate QR code for the buyer
         const nonce = crypto.randomBytes(16).toString('hex');
         const qrToken = jwt.sign(
@@ -2972,9 +3016,7 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'No held escrow found for this order (may already be released or refunded)' });
     }
 
-    const totalRefund = escrows.rows.reduce((sum, e) => sum + parseFloat(e.gross_amount), 0);
-
-    // Mark escrow as refunded
+    const totalRefund = parseFloat(o.total_amount);
     for (const escrow of escrows.rows) {
       await client.query(
         "UPDATE order_escrow SET status = 'refunded', released_at = CURRENT_TIMESTAMP WHERE id = $1",
@@ -3147,7 +3189,8 @@ app.get('/api/seller/products', authRequired, sellerRequired, async (req, res) =
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
        WHERE p.seller_id = $1
-       ORDER BY p.created_at DESC`,
+       ORDER BY p.created_at DESC
+       LIMIT 100`,
       [req.user.id]
     );
     res.json({ products: result.rows });
@@ -3166,7 +3209,8 @@ app.get('/api/seller/orders', authRequired, sellerRequired, async (req, res) => 
        JOIN users u ON o.buyer_id = u.id
        WHERE oi.seller_id = $1
        GROUP BY o.id, u.full_name, u.phone
-       ORDER BY o.created_at DESC`,
+       ORDER BY o.created_at DESC
+       LIMIT 100`,
       [req.user.id]
     );
     res.json({ orders: result.rows });
@@ -3329,12 +3373,15 @@ app.get('/api/seller/analytics', authRequired, sellerRequired, async (req, res) 
 
     const overview = await pool.query(
       `SELECT
-        (SELECT COUNT(*) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.seller_id = $1 AND o.status != 'cancelled') AS total_orders,
-        (SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.seller_id = $1 AND o.status != 'cancelled') AS total_revenue,
+        COUNT(DISTINCT CASE WHEN o.status != 'cancelled' THEN o.id END) AS total_orders,
+        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN oi.price * oi.quantity ELSE 0 END), 0) AS total_revenue,
         (SELECT COALESCE(AVG(r.rating)::numeric(3,2), 0) FROM reviews r WHERE r.seller_id = $1) AS avg_rating,
         (SELECT COUNT(*) FROM reviews WHERE seller_id = $1) AS review_count,
         (SELECT COUNT(*) FROM follows WHERE seller_id = $1) AS follower_count,
-        (SELECT COUNT(*) FROM products WHERE seller_id = $1) AS product_count`,
+        (SELECT COUNT(*) FROM products WHERE seller_id = $1) AS product_count
+       FROM order_items oi
+       JOIN orders o ON oi.order_id = o.id
+       WHERE oi.seller_id = $1`,
       [req.user.id]
     );
     let topProducts = { rows: [] };
@@ -3398,7 +3445,8 @@ app.get('/api/disputes', authRequired, async (req, res) => {
       `SELECT d.*, o.status AS order_status FROM disputes d
        JOIN orders o ON d.order_id = o.id
        WHERE d.raised_by = $1 OR o.buyer_id = $1 OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = d.order_id AND oi.seller_id = $1)
-       ORDER BY d.created_at DESC`,
+       ORDER BY d.created_at DESC
+       LIMIT 50`,
       [req.user.id]
     );
     res.json({ disputes: result.rows });
@@ -3432,7 +3480,7 @@ function adminRequired(req, res, next) {
 
 app.get('/api/admin/users', authRequired, adminRequired, async (_req, res) => {
   try {
-    const result = await pool.query('SELECT id, full_name, email, phone, role, created_at FROM users ORDER BY created_at DESC');
+    const result = await pool.query('SELECT id, full_name, email, phone, role, created_at FROM users ORDER BY created_at DESC LIMIT 100');
     res.json({ users: result.rows });
   } catch (err) {
     console.error('Admin users error:', err);
@@ -4171,7 +4219,7 @@ app.get('/api/seller/balance', authRequired, sellerRequired, async (req, res) =>
 app.get('/api/seller/payouts', authRequired, sellerRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM payouts WHERE seller_id = $1 ORDER BY created_at DESC`,
+      `SELECT * FROM payouts WHERE seller_id = $1 ORDER BY created_at DESC LIMIT 50`,
       [req.user.id]
     );
     res.json({ payouts: result.rows });
@@ -4898,7 +4946,7 @@ app.get('/api/map-config', (_req, res) => {
 
 app.get('/api/upload/config', authRequired, (_req, res) => {
   if (!process.env.IMGBB_KEY) return res.status(503).json({ error: 'Upload service not configured' });
-  res.json({ imgbbKey: process.env.IMGBB_KEY });
+  res.json({ imgbbKey: process.env.IMGBB_KEY.replace(/.(?=.{4})/g, '*') });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -4991,7 +5039,7 @@ cron.schedule('*/5 * * * *', async () => {
         // Send refund payout to buyer
         const buyerRes = await pool.query('SELECT phone FROM users WHERE id = $1', [order.buyer_id]);
         const buyerPhone = buyerRes.rows[0]?.phone;
-        const totalRefund = escrows.rows.reduce((sum, e) => sum + parseFloat(e.gross_amount), 0);
+        const totalRefund = parseFloat(order.rows[0].total_amount);
 
         if (totalRefund > 0 && buyerPhone) {
           try {
@@ -5001,6 +5049,7 @@ cron.schedule('*/5 * * * *', async () => {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ amount: Math.round(totalRefund), receiver: buyerPhone, referenceId: `refund_${orderId}` }),
+                signal: AbortSignal.timeout(15000),
               }
             );
             if (payoutRes.ok) console.log(`[CRON] Refund Rs ${totalRefund} sent to buyer ${buyerPhone}`);

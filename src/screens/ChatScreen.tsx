@@ -229,7 +229,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     return (
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}>
         {isImage ? (
-          <Image source={{ uri: getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" />
+          <Image source={{ uri: getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" onError={() => {}} />
         ) : null}
         {item.content ? (
           <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.content}</Text>
@@ -517,11 +517,11 @@ const styles = StyleSheet.create({
     fontSize: 14, maxHeight: 100,
   },
   cameraBtn: {
-    width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center',
+    width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center',
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   sendBtn: {
-    width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.coral,
+    width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.coral,
     justifyContent: 'center', alignItems: 'center',
   },
   profileOverlay: {

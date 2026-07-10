@@ -100,15 +100,16 @@ export default function InboxScreen() {
   const sortedConversations = conversations
     .slice()
     .sort((a, b) => {
-      const ta = new Date(b.last_message_at || b.created_at || 0).getTime();
-      const tb = new Date(a.last_message_at || a.created_at || 0).getTime();
-      return ta - tb;
+      const ta = new Date(a.last_message_at || a.created_at || 0).getTime();
+      const tb = new Date(b.last_message_at || b.created_at || 0).getTime();
+      return tb - ta;
     });
 
   const filteredConversations = sortedConversations
     .filter(c => {
       const otherId = (c as any).other_party_id;
       if (activeTab === 'primary') return otherId && followedIds.has(otherId);
+      if (activeTab === 'general') return otherId && !followedIds.has(otherId);
       return true;
     })
     .filter(c => {
