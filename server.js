@@ -4399,7 +4399,10 @@ function extractCinFields(text) {
 }
 
 function extractSex(text) {
-  const sexMatch = text.match(/ Sexe\s*:\s*(M|F)/i) || text.match(/\b(MASCULIN|F[ÉE]MININ|MALE|FEMALE)\b/i);
+  const sexMatch = text.match(/Sexe\s*[/:]?\s*(M|F)\b/i)
+    || text.match(/Seks\s*\n?\s*(M|F)/i)
+    || text.match(/\b(MASCULIN|F[ÉE]MININ|MALE|FEMALE)\b/i)
+    || text.match(/\d{5,7}(M|F)\d/);
   return sexMatch ? sexMatch[1].toUpperCase() : null;
 }
 
