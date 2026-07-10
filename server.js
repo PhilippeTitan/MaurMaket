@@ -4407,22 +4407,26 @@ function normalizeString(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
-async function luxandSimilarity(faceUrl1, faceUrl2) {
-  const apiKey = process.env.LUXAND_KEY;
-  if (!apiKey) throw new Error('LUXAND_KEY not configured');
+async function tareefCompare(imageUrl1, imageUrl2) {
+  const apiKey = process.env.TAREEF_API_KEY;
+  if (!apiKey) throw new Error('TAREEF_API_KEY not configured');
+  const [img1, img2] = await Promise.all([
+    fetch(imageUrl1).then(r => r.arrayBuffer()),
+    fetch(imageUrl2).then(r => r.arrayBuffer()),
+  ]);
   const form = new FormData();
-  form.append('face1', faceUrl1);
-  form.append('face2', faceUrl2);
-  const resp = await fetch('https://api.luxand.cloud/photo/similarity', {
+  form.append('file1', new Blob([img1]), 'image1.jpg');
+  form.append('file2', new Blob([img2]), 'image2.jpg');
+  const resp = await fetch('https://tareef.g4t.io/api/v1/compare', {
     method: 'POST',
-    headers: { 'token': apiKey },
+    headers: { 'Authorization': `Bearer ${apiKey}` },
     body: form,
     signal: AbortSignal.timeout(30000),
   });
-  if (!resp.ok) throw new Error(`Luxand API HTTP ${resp.status}`);
+  if (!resp.ok) throw new Error(`Tareef API HTTP ${resp.status}`);
   const data = await resp.json();
-  if (data.status === 'failure') throw new Error(data.message || 'Luxand similarity failed');
-  return { score: data.score || 0, similar: data.similar || false };
+  if (!data.success) throw new Error(data.status || 'Tareef compare failed');
+  return { score: data.similarity || 0, similar: data.match || false };
 }
 
 app.post('/api/verification/submit', authRequired, sellerRequired, async (req, res) => {
@@ -4508,25 +4512,25 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
       }
 
       if (issues.length === 0) {
-        if (!process.env.LUXAND_KEY) {
-          console.log(`❌ [VERIFY] LUXAND_KEY not configured — rejecting (fail-closed)`);
-          issues.push('Verification service unavailable. Please try again later.');
+        if (!process.env.TAREEF_API_KEY) {
+          console.log(`❌ [VERIFY] TAREEF_API_KEY not configured — rejecting (fail-closed)`);
+          issues.push('Face verification service unavailable');
         } else {
-          console.log(`🔍 [VERIFY] Calling Luxand face comparison (CIN front vs selfie)...`);
+          console.log(`🔍 [VERIFY] Calling Tareef face comparison (CIN front vs selfie)...`);
           try {
-            const { score, similar } = await luxandSimilarity(idFrontUrl, selfieUrl);
+            const { score, similar } = await tareefCompare(idFrontUrl, selfieUrl);
             ocrResult.faceScore = score;
-            console.log(`✅ [VERIFY] Luxand result: score=${score} similar=${similar} → ${score >= 0.15 ? '✅ PASS' : '❌ FAIL'}`);
+            console.log(`✅ [VERIFY] Tareef result: score=${score} similar=${similar} → ${score >= 0.15 ? '✅ PASS' : '❌ FAIL'}`);
             if (score < 0.15) {
               issues.push('Face in selfie does not match the CIN photo');
             }
           } catch (e) {
-            console.error(`❌ [VERIFY] Luxand failed:`, e.message);
+            console.error(`❌ [VERIFY] Tareef failed:`, e.message);
             issues.push('Face verification temporarily unavailable — please try again');
           }
         }
       } else {
-        console.log(`⏭️ [VERIFY] Skipping Luxand (OCR issues found)`);
+        console.log(`⏭️ [VERIFY] Skipping Tareef (OCR issues found)`);
       }
 
       if (issues.length === 0) {
