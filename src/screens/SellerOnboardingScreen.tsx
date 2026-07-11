@@ -89,11 +89,10 @@ export default function SellerOnboardingScreen() {
   };
 
   const handleChooseTier = async (tier: ChosenTier) => {
-    console.log(`[SellerOnboarding] handleChooseTier: ${tier}`);
     setChosenTier(tier);
     if (tier === 'casual') {
       const success = await handleCompleteWithTier('casual');
-      if (success) setTimeout(() => nav.goBack(), 100);
+      if (success) setTimeout(() => nav.replace('Settings'), 100);
     } else if (tier === 'verified') {
       const success = await handleCompleteWithTier('verified');
       if (success) setTimeout(() => nav.navigate('Verification'), 100);
@@ -111,15 +110,12 @@ export default function SellerOnboardingScreen() {
       const res = store.isSeller
         ? await upgradeTier(data) as { user: typeof store.user; token: string }
         : await becomeSeller(data) as { user: typeof store.user; token: string };
-      console.log(`[SellerOnboarding] API response: user=${!!res.user} token=${!!res.token} role=${res.user?.role} tier=${res.user?.seller_tier}`);
       if (res.user && res.token) {
         await store.setUser(res.user, res.token);
-        console.log(`[SellerOnboarding] store.setUser done, navigating back...`);
       }
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
-      console.error(`[SellerOnboarding] Error: ${msg}`);
       Alert.alert(t('common.error'), msg);
       return false;
     } finally {
@@ -171,7 +167,8 @@ export default function SellerOnboardingScreen() {
               const isDowngrade = tierOrder.indexOf(tier.key) <= currentIdx;
               const needsVerification = tier.key === 'verified' && !store.user?.id_verified;
               const notYetSeller = !store.isSeller && tier.key !== 'casual';
-              const locked = isDowngrade || needsVerification || notYetSeller;
+              const needsVerifiedFirst = tier.key === 'business' && currentIdx < tierOrder.indexOf('verified');
+              const locked = isDowngrade || needsVerification || notYetSeller || needsVerifiedFirst;
               const disabled = loading || locked;
               return (
                 <TouchableOpacity

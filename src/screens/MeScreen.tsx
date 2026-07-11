@@ -45,6 +45,7 @@ export default function MeScreen() {
   const nav = useNavigation<Nav>();
   const [user, setUser] = useState(store.user);
   const isSeller = user?.role === 'seller';
+  console.log(`[MeScreen RENDER] user=${user?.id?.substring(0,8)} role=${user?.role} isSeller=${isSeller} tier=${user?.seller_tier}`);
 
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('listings');
@@ -87,12 +88,12 @@ export default function MeScreen() {
     const cached = profileCache[uid];
     if (!force && cached && Date.now() - cached.timestamp < CACHE_TTL) {
       const d = cached.data;
-      setOrderCount(d.orderCount); setSellingOrderCount(d.sellingOrderCount);
-      setToPay(d.toPay); setToShip(d.toShip); setToReceive(d.toReceive); setToReview(d.toReview);
-      setHasOrders(d.hasOrders); setProducts(d.products); setProductCount(d.productCount);
-      setRating(d.rating); setReviewCount(d.reviewCount); setAnalyticsData(d.analyticsData);
-      setFollowerCount(d.followerCount); setFollowingCount(d.followingCount);
-      setWishlist(d.wishlist); setReviews(d.reviews); setLowStockProducts(d.lowStockProducts);
+      setOrderCount(d.orderCount || 0); setSellingOrderCount(d.sellingOrderCount || 0);
+      setToPay(d.toPay || 0); setToShip(d.toShip || 0); setToReceive(d.toReceive || 0); setToReview(d.toReview || 0);
+      setHasOrders(d.hasOrders || false); setProducts(d.products || []); setProductCount(d.productCount || 0);
+      setRating(d.rating || 0); setReviewCount(d.reviewCount || 0); setAnalyticsData(d.analyticsData || null);
+      setFollowerCount(d.followerCount || 0); setFollowingCount(d.followingCount || 0);
+      setWishlist(d.wishlist || []); setReviews(d.reviews || []); setLowStockProducts(d.lowStockProducts || []);
       return;
     }
 
@@ -125,6 +126,7 @@ export default function MeScreen() {
       let analyticsData: SellerAnalyticsResponse | null = null;
       let rating = 0;
       let reviewCount = 0;
+      cacheData.products = products; cacheData.productCount = 0;
       if (isSeller) {
         let sellerProds: { products: Product[] } | null = null;
         try { sellerProds = await getSellerProducts() as { products: Product[] }; } catch { /* ignore */ }
@@ -171,12 +173,14 @@ export default function MeScreen() {
       }
       cacheData.reviews = reviewsList; cacheData.lowStockProducts = lowStock;
       setReviews(reviewsList); setLowStockProducts(lowStock);
-    } catch { /* silent */ }
+    } catch (e: any) { console.error(`[MeScreen fetchData] ERROR:`, e?.message); }
 
     if (uid) profileCache[uid] = { timestamp: Date.now(), data: cacheData };
   }, [isSeller, user?.id]);
 
-  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
+  useFocusEffect(useCallback(() => {
+    fetchData();
+  }, [fetchData]));
 
   useEffect(() => {
     const unsub = store.onChange(() => {

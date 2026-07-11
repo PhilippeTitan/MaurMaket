@@ -90,6 +90,11 @@ Agent: [Fixes High items, re-runs affected agents]
 - **Production**: Backend on `maurmaket.onrender.com`. `isDev` flag in `api.ts` (line 18) gates dev vs prod URLs — never change the production URL.
 - **When user reports frontend issue**: Check both `src/api.ts` (is the URL/IP correct?) AND the backend CMD window (any crashes?). Ask which CMD windows are open.
 - **When user reports backend issue**: Check `curl localhost:3002/api/health`. If backend crashed, check the backend CMD window for error output.
+- **Reset test account drato**: When user says "reset drato", run:
+  ```
+  node -e "require('dotenv').config();const{Pool}=require('pg');const p=new Pool({connectionString:process.env.DATABASE_URL});(async()=>{const r=await p.query(\"UPDATE users SET role='buyer',seller_tier='none',store_name=NULL,store_logo_url=NULL,use_store_identity=false WHERE email='dratomicslicer@gmail.com' RETURNING id,full_name,email,role,seller_tier\");console.log('Reset to buyer:',r.rows[0].id);await p.end();})()"
+  ```
+  Account: `dratomicslicer@gmail.com` / `Melmil12345`
 
 ## Overview
 Haitian marketplace (e-commerce) app connecting buyers and sellers. React Native/Expo mobile app (TikTok-style vertical swipe feed) + Express.js backend. MonCash payments, seller dashboard, commission system.
