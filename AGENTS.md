@@ -729,8 +729,16 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 - **Production**: Backend on `maurmaket.onrender.com`. `isDev` flag in `api.ts` (line 18) gates dev vs prod URLs — never change the production URL.
 - **When user reports frontend issue**: Check both `src/api.ts` (is the URL/IP correct?) AND the backend CMD window (any crashes?). Ask which CMD windows are open.
 - **When user reports backend issue**: Check `curl localhost:3001/api/health`. If backend crashed, check the backend CMD window for error output.
-- **Local APK build**: JDK 17 at `C:\tools\jdk-17.0.13+11`, Android SDK at `C:\Users\drato\AppData\Local\Android\Sdk`. Run `.\gradlew.bat assembleRelease --no-daemon` in `android/` directory. APK output: `android/app/build/outputs/apk/release/app-release.apk`. **First build takes 20-30 min** (downloads Gradle, NDK, CMake). Subsequent builds ~5-10 min.
-- **`eas build --local`**: Does NOT work on Windows (requires macOS/Linux). Use `gradlew` directly or EAS cloud build.
+- **Local APK build**: JDK 17 at `C:\tools\jdk-17.0.13+11`, Android SDK at `C:\Users\drato\AppData\Local\Android\Sdk`. Run from `android/` directory. APK output: `android/app/build/outputs/apk/release/app-release.apk`.
+  - **Working command** (tested 2026-07-11): `.\gradlew.bat assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a -x lintVitalRelease -x lintRelease`
+  - `-PreactNativeArchitectures=arm64-v8a`: Build for arm64 only (most modern devices). Skips armeabi-v7a and x86_64 — huge speed + memory savings.
+  - `-x lintVitalRelease -x lintRelease`: Skip lint analysis. The AAPT2 daemon OOMs during lint on this machine. Lint is not needed for a working APK.
+  - `--no-daemon`: Fresh JVM, avoids stale daemon OOM.
+  - **First build takes 20-30 min** (downloads Gradle, NDK, CMake). Subsequent builds ~5-10 min (deps cached).
+  - **After build, copy APK**: `Copy-Item 'android\app\build\outputs\apk\release\app-release.apk' 'C:\Users\drato\Downloads\MaurMaket.apk'`
+  - **DO NOT use** `android.enableAapt2=false` — removed from modern AGP, causes build failure.
+  - **DO NOT use** `eas build --local` — does NOT work on Windows (requires macOS/Linux).
+  - **gradle.properties**: JVM args `-Xmx4096m`, `org.gradle.workers.max=2`, `org.gradle.parallel=false` (prevent reanimated CMake OOM).
 
 ## Session 6 — 2026-06-28 (ID Verification + Subscription + Inbox Redesign)
 
