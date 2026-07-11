@@ -91,7 +91,8 @@ export default function SellerOnboardingScreen() {
   const handleChooseTier = async (tier: ChosenTier) => {
     setChosenTier(tier);
     if (tier === 'casual') {
-      await handleCompleteWithTier('casual');
+      const success = await handleCompleteWithTier('casual');
+      if (success) nav.goBack();
     } else if (tier === 'verified') {
       const success = await handleCompleteWithTier('verified');
       if (success) nav.navigate('Verification');
