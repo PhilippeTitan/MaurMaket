@@ -10,6 +10,7 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { useTranslation } from '../i18n';
 import { uploadImage, submitVerification } from '../api';
+import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
 
 let CameraView: any = null;
@@ -173,7 +174,7 @@ export default function VerificationScreen() {
           idBack: idBackDeleteUrl || undefined,
           selfie: selfieDeleteUrl || undefined,
         },
-      }) as { attempt: { status: string; rejection_reason?: string } };
+      }) as { attempt: { status: string; rejection_reason?: string }; user?: any; token?: string };
 
       clearTimeout(progressTimer);
       console.log(`📨 [VERIFY] Server response: status=${res.attempt.status}`);
@@ -181,6 +182,10 @@ export default function VerificationScreen() {
       if (res.attempt.status === 'verified') {
         console.log(`✅ [VERIFY] VERIFIED!`);
         setVerified(true);
+        // Sync store with updated user (id_verified=true, seller_tier upgraded)
+        if (res.user && res.token) {
+          await store.setUser(res.user, res.token);
+        }
       } else {
         console.log(`❌ [VERIFY] Rejected: ${res.attempt.rejection_reason}`);
         setRejectedReasons(res.attempt.rejection_reason || 'Verification failed. Please try again.');

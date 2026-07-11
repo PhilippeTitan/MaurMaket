@@ -94,8 +94,12 @@ export default function SellerOnboardingScreen() {
       const success = await handleCompleteWithTier('casual');
       if (success) setTimeout(() => nav.replace('Settings'), 100);
     } else if (tier === 'verified') {
-      const success = await handleCompleteWithTier('verified');
-      if (success) setTimeout(() => nav.navigate('Verification'), 100);
+      // First become a casual seller (if not already), then verify to auto-upgrade
+      if (!store.isSeller) {
+        const success = await handleCompleteWithTier('casual');
+        if (!success) return;
+      }
+      setTimeout(() => nav.navigate('Verification'), 100);
     } else if (tier === 'business') {
       setStep('store');
     }

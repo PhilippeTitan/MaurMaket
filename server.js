@@ -4659,6 +4659,16 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
       );
       createNotification(req.user.id, 'verification_approved', 'Identity Verified', 'Your identity has been verified! You are now a Verified Seller.', {});
 
+      // Auto-upgrade seller tier from casual → verified
+      const userCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+      const currentTier = userCheck.rows[0]?.seller_tier;
+      if (currentTier === 'casual') {
+        await pool.query(
+          `UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [req.user.id]
+        );
+      }
+
       await Promise.all([
         deleteImgbbImage(deleteUrls?.idFront),
         deleteImgbbImage(deleteUrls?.idFace),
@@ -4669,6 +4679,14 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         `UPDATE verification_attempts SET id_front_url = NULL, id_back_url = NULL, selfie_url = NULL WHERE id = $1`,
         [result.rows[0].id]
       );
+
+      // Return updated user for frontend store sync
+      const updatedUser = await pool.query(
+        `SELECT id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng FROM users WHERE id = $1`,
+        [req.user.id]
+      );
+      const newToken = jwt.sign({ id: updatedUser.rows[0].id, email: updatedUser.rows[0].email, role: updatedUser.rows[0].role }, JWT_SECRET, { expiresIn: '7d' });
+      res.json({ attempt: result.rows[0], user: updatedUser.rows[0], token: newToken });
     } else {
       await pool.query(
         `UPDATE users SET id_submitted_at = CURRENT_TIMESTAMP, id_verification_result = 'rejected' WHERE id = $1`,
@@ -4676,9 +4694,8 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
       );
       createNotification(req.user.id, 'verification_rejected', 'Verification Not Approved',
         rejectionReason || 'Your identity verification was not approved. Please try again.', { attemptId: result.rows[0].id });
+      res.json({ attempt: result.rows[0] });
     }
-
-    res.json({ attempt: result.rows[0] });
   } catch (err) {
     console.error('Verification submit error:', err);
     res.status(500).json({ error: 'Server error' });
