@@ -1300,9 +1300,17 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] Built APK with Phase 2 changes (11m 49s, deps cached)
 - [x] Copied APK to `C:\Users\drato\Downloads\MaurMaket.apk`
 
+### ✅ Session 17: CIN Name Fix + Signup Fields + Bug Fixes
+- [x] Fixed CIN name comparison: changed strict string equality (`normalizeString(CIN) === profile`) to sorted word sets comparison (handles "Jean Pierre" vs "Pierre Jean")
+- [x] Fixed signup name format: split single "Full Name" field into first/middle/last matching SettingsEditScreen
+- [x] Added i18n keys reuse: signup uses `settingsEdit.firstName/middleNameOptional/lastName` (EN/HT/FR)
+- [x] All 5 files committed + pushed: `aa493ba`
+- [ ] APK build blocked: AAPT2 daemon OOM on Windows — needs clean machine with free RAM
+
 ### 🔲 Remaining Features (deferred)
 - [ ] Add SMTP env vars to Render (need Gmail address + app password)
 - [ ] Add GOOGLE_OAUTH_CLIENT_ID to Render env vars
 - [ ] Phase 10: Dispute resolution (hybrid auto-resolve + admin)
 - [ ] Delivery estimate on orders
 - [ ] Phase 6: Multi-seller meetups (per-seller escrow UI)
+- [ ] APK rebuild (close other programs to free RAM for AAPT2)
