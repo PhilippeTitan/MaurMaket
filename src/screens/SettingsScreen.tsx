@@ -55,13 +55,18 @@ const SettingRow = ({
 export default function SettingsScreen({ navigation }: Props) {
   const { t, language } = useTranslation();
 
-  const user = store.user;
-  const isSeller = store.isSeller;
+  const [user, setUser] = useState(store.user);
+  const isSeller = user?.role === 'seller';
   const [loading, setLoading] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [storeLogoUploading, setStoreLogoUploading] = useState(false);
 
   const avatarUrl = getImageUrl(user?.avatar_url);
+
+  useEffect(() => {
+    const unsub = store.onChange(() => setUser(store.user));
+    return unsub;
+  }, []);
 
   const [locationStatus, setLocationStatus] = useState<string | null>(null);
   const [locAddress, setLocAddress] = useState(user?.location_address || '');
