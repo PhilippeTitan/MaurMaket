@@ -4493,10 +4493,18 @@ function normalizeString(str) {
 async function tareefCompare(imageUrl1, imageUrl2) {
   const apiKey = process.env.TAREEF_API_KEY;
   if (!apiKey) throw new Error('TAREEF_API_KEY not configured');
+  const fetchImage = async (url, label) => {
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`Failed to fetch ${label}: HTTP ${r.status} from ${url.substring(0, 80)}`);
+    const buf = await r.arrayBuffer();
+    if (buf.byteLength < 100) throw new Error(`${label} image too small (${buf.byteLength} bytes) — likely a broken URL`);
+    return buf;
+  };
   const [img1, img2] = await Promise.all([
-    fetch(imageUrl1).then(r => r.arrayBuffer()),
-    fetch(imageUrl2).then(r => r.arrayBuffer()),
+    fetchImage(imageUrl1, 'CIN face'),
+    fetchImage(imageUrl2, 'selfie'),
   ]);
+  console.log(`🔍 [VERIFY] Tareef images fetched: CIN=${img1.byteLength} bytes, selfie=${img2.byteLength} bytes`);
   const form = new FormData();
   form.append('file1', new Blob([img1]), 'image1.jpg');
   form.append('file2', new Blob([img2]), 'image2.jpg');
@@ -4506,7 +4514,10 @@ async function tareefCompare(imageUrl1, imageUrl2) {
     body: form,
     signal: AbortSignal.timeout(30000),
   });
-  if (!resp.ok) throw new Error(`Tareef API HTTP ${resp.status}`);
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`Tareef API HTTP ${resp.status}: ${body.substring(0, 200)}`);
+  }
   const data = await resp.json();
   if (!data.success) throw new Error(data.status || 'Tareef compare failed');
   return { score: data.similarity || 0, similar: data.match || false };
@@ -4612,8 +4623,9 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
               issues.push('Face in selfie does not match the CIN photo');
             }
           } catch (e) {
-            console.error(`❌ [VERIFY] Tareef failed:`, e.message);
-            issues.push('Face verification temporarily unavailable — please try again');
+            console.error(`❌ [VERIFY] Tareef failed: ${e.message}`);
+            console.error(`❌ [VERIFY] Stack: ${e.stack?.split('\n').slice(0, 3).join(' | ')}`);
+            issues.push(`Face verification failed: ${e.message}`);
           }
         }
       } else {
