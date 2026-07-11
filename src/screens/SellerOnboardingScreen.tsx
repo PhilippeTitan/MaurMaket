@@ -77,7 +77,7 @@ export default function SellerOnboardingScreen() {
       if (res.user && res.token) {
         await store.setUser(res.user, res.token);
       }
-      if (navigateBack) nav.goBack();
+      if (navigateBack) setTimeout(() => nav.goBack(), 100);
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
@@ -92,10 +92,10 @@ export default function SellerOnboardingScreen() {
     setChosenTier(tier);
     if (tier === 'casual') {
       const success = await handleCompleteWithTier('casual');
-      if (success) nav.goBack();
+      if (success) setTimeout(() => nav.goBack(), 100);
     } else if (tier === 'verified') {
       const success = await handleCompleteWithTier('verified');
-      if (success) nav.navigate('Verification');
+      if (success) setTimeout(() => nav.navigate('Verification'), 100);
     } else if (tier === 'business') {
       setStep('store');
     }
@@ -249,7 +249,7 @@ export default function SellerOnboardingScreen() {
               style={[styles.primaryBtn, !storeName.trim() && styles.primaryBtnDisabled]}
               onPress={async () => {
                 const success = await handleComplete(false);
-                if (success !== false) nav.navigate('BusinessSubscription');
+                if (success !== false) setTimeout(() => nav.navigate('BusinessSubscription'), 100);
               }}
               disabled={!storeName.trim() || loading}
               accessibilityLabel="continue"
