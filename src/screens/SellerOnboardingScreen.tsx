@@ -89,6 +89,7 @@ export default function SellerOnboardingScreen() {
   };
 
   const handleChooseTier = async (tier: ChosenTier) => {
+    console.log(`[SellerOnboarding] handleChooseTier: ${tier}`);
     setChosenTier(tier);
     if (tier === 'casual') {
       const success = await handleCompleteWithTier('casual');
@@ -103,18 +104,22 @@ export default function SellerOnboardingScreen() {
 
   const handleCompleteWithTier = async (tier: ChosenTier): Promise<boolean> => {
     if (!tier) return false;
+    console.log(`[SellerOnboarding] handleCompleteWithTier: tier=${tier} isSeller=${store.isSeller}`);
     setLoading(true);
     try {
       const data: { tier: string } = { tier };
       const res = store.isSeller
         ? await upgradeTier(data) as { user: typeof store.user; token: string }
         : await becomeSeller(data) as { user: typeof store.user; token: string };
+      console.log(`[SellerOnboarding] API response: user=${!!res.user} token=${!!res.token} role=${res.user?.role} tier=${res.user?.seller_tier}`);
       if (res.user && res.token) {
         await store.setUser(res.user, res.token);
+        console.log(`[SellerOnboarding] store.setUser done, navigating back...`);
       }
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
+      console.error(`[SellerOnboarding] Error: ${msg}`);
       Alert.alert(t('common.error'), msg);
       return false;
     } finally {

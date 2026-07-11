@@ -2196,7 +2196,7 @@ app.get('/api/orders', authRequired, async (req, res) => {
        JOIN order_items oi ON o.id = oi.order_id
        JOIN users u ON oi.seller_id = u.id
        WHERE o.buyer_id = $1
-       ORDER BY o.id, oi.created_at`,
+       ORDER BY o.id, oi.id`,
       [req.user.id]
     );
     const sellerOrders = await pool.query(

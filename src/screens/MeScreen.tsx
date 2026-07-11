@@ -43,8 +43,8 @@ export default function MeScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
-  const user = store.user;
-  const isSeller = store.isSeller;
+  const [user, setUser] = useState(store.user);
+  const isSeller = user?.role === 'seller';
 
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('listings');
@@ -80,6 +80,7 @@ export default function MeScreen() {
     : '';
 
   const avatarUrl = getImageUrl(user?.avatar_url);
+
 
   const fetchData = useCallback(async (force = false) => {
     const uid = user?.id || '';
@@ -179,6 +180,7 @@ export default function MeScreen() {
 
   useEffect(() => {
     const unsub = store.onChange(() => {
+      setUser(store.user);
       fetchData();
     });
     return unsub;
