@@ -128,10 +128,10 @@ export default function VerificationScreen() {
         return;
       }
     }
-    setLoading(true);
     try {
       console.log(`⏳ [VERIFY] Waiting 500ms for camera switch...`);
       await new Promise(r => setTimeout(r, 500));
+      setLoading(true);
       console.log(`📷 [VERIFY] Selfie camera ref: ${cameraRef.current ? '✅ ready' : '❌ null'}`);
       if (cameraRef.current) {
         const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, skipProcessing: true });
@@ -210,7 +210,7 @@ export default function VerificationScreen() {
   };
 
   const stepLabel = (n: number) => {
-    const current = step === 'info' ? 1 : step === 'cinFront' ? 2 : step === 'cinBack' ? 3 : step === 'selfie' ? 4 : 5;
+    const current = step === 'cinFront' ? 1 : step === 'cinBack' ? 2 : step === 'selfie' ? 3 : step === 'processing' ? 4 : 5;
     if (n < current) return 'done';
     if (n === current) return 'current';
     return 'pending';
