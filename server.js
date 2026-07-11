@@ -4946,7 +4946,7 @@ app.get('/api/map-config', (_req, res) => {
 
 app.get('/api/upload/config', authRequired, (_req, res) => {
   if (!process.env.IMGBB_KEY) return res.status(503).json({ error: 'Upload service not configured' });
-  res.json({ imgbbKey: process.env.IMGBB_KEY.replace(/.(?=.{4})/g, '*') });
+  res.json({ imgbbKey: process.env.IMGBB_KEY });
 });
 
 app.get('/api/health', async (_req, res) => {
