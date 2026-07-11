@@ -4625,7 +4625,11 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
           } catch (e) {
             console.error(`❌ [VERIFY] Tareef failed: ${e.message}`);
             console.error(`❌ [VERIFY] Stack: ${e.stack?.split('\n').slice(0, 3).join(' | ')}`);
-            issues.push(`Face verification failed: ${e.message}`);
+            if (e.message.includes('no_face')) {
+              issues.push('No face detected — make sure your face is clearly visible in the selfie with good lighting');
+            } else {
+              issues.push(`Face verification failed: ${e.message}`);
+            }
           }
         }
       } else {

@@ -258,6 +258,7 @@ export default function VerificationScreen() {
           <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]}>
             <View style={facing === 'back' ? styles.idFrameRect : styles.idFrameCircle} />
           </View>
+          {facing === 'front' && <Text style={styles.faceHint}>Center your face in the circle</Text>}
         </>
       )}
       <View style={styles.cameraActions}>
@@ -401,7 +402,8 @@ const styles = StyleSheet.create({
   cameraWrap: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
   idFrameRect: { width: 300, height: 200, borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)', borderRadius: RADIUS.card, borderStyle: 'dashed' },
-  idFrameCircle: { width: 220, height: 220, borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)', borderRadius: 110, borderStyle: 'dashed' },
+  idFrameCircle: { width: 240, height: 240, borderWidth: 3, borderColor: 'rgba(255,255,255,0.8)', borderRadius: 120, borderStyle: 'solid', backgroundColor: 'rgba(255,255,255,0.05)' },
+  faceHint: { position: 'absolute', bottom: 100, left: 0, right: 0, textAlign: 'center', color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '500' },
   cameraActions: { position: 'absolute', bottom: 60, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   captureBtn: { width: 72, height: 72, borderRadius: 36, borderWidth: 4, borderColor: COLORS.white, alignItems: 'center', justifyContent: 'center' },
   captureBtnInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: COLORS.white },
