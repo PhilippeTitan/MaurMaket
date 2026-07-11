@@ -18,7 +18,9 @@ const GOOGLE_REDIRECT_URI = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
 
 export default function SignupScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [middleName, setMiddleName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
@@ -65,13 +67,14 @@ export default function SignupScreen({ navigation }: Props) {
   };
 
   const handleSignup = async () => {
-    if (!fullName.trim() || !email.trim() || !password.trim() || !phone.trim()) {
+    const combined = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
+    if (!combined || !email.trim() || !password.trim() || !phone.trim()) {
       Alert.alert(t('common.error'), 'Please fill in all fields');
       return;
     }
     setLoading(true);
     try {
-      const res = await apiSignup(fullName.trim(), email.trim(), password, phone.trim()) as { user: User; token: string };
+      const res = await apiSignup(combined, email.trim(), password, phone.trim()) as { user: User; token: string };
       await store.setUser(res.user, res.token);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Signup failed';
@@ -92,13 +95,30 @@ export default function SignupScreen({ navigation }: Props) {
 
         <TextInput
           style={styles.input}
-          placeholder={t('auth.fullNamePlaceholder')}
+          placeholder={t('settingsEdit.firstName')}
           placeholderTextColor={COLORS.text2}
-          value={fullName}
-          onChangeText={setFullName}
+          value={firstName}
+          onChangeText={setFirstName}
           returnKeyType="next"
-         
-          accessibilityLabel={t('accessibility.fullName')}
+          accessibilityLabel={t('settingsEdit.firstName')}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder={t('settingsEdit.middleNameOptional')}
+          placeholderTextColor={COLORS.text2}
+          value={middleName}
+          onChangeText={setMiddleName}
+          returnKeyType="next"
+          accessibilityLabel={t('settingsEdit.middleNameOptional')}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder={t('settingsEdit.lastName')}
+          placeholderTextColor={COLORS.text2}
+          value={lastName}
+          onChangeText={setLastName}
+          returnKeyType="next"
+          accessibilityLabel={t('settingsEdit.lastName')}
         />
         <TextInput
           style={styles.input}
@@ -109,7 +129,6 @@ export default function SignupScreen({ navigation }: Props) {
           autoCapitalize="none"
           keyboardType="email-address"
           returnKeyType="next"
-         
           accessibilityLabel={t('accessibility.email')}
         />
         <TextInput
@@ -120,7 +139,6 @@ export default function SignupScreen({ navigation }: Props) {
           onChangeText={setPhone}
           keyboardType="phone-pad"
           returnKeyType="next"
-         
           accessibilityLabel={t('accessibility.phone')}
         />
         <TextInput
@@ -132,7 +150,6 @@ export default function SignupScreen({ navigation }: Props) {
           secureTextEntry
           returnKeyType="done"
           onSubmitEditing={handleSignup}
-         
           accessibilityLabel={t('accessibility.password')}
         />
 

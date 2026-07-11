@@ -88,20 +88,20 @@ export default function SellerOnboardingScreen() {
     }
   };
 
-  const handleChooseTier = (tier: ChosenTier) => {
+  const handleChooseTier = async (tier: ChosenTier) => {
     setChosenTier(tier);
     if (tier === 'casual') {
-      handleCompleteWithTier('casual');
+      await handleCompleteWithTier('casual');
     } else if (tier === 'verified') {
-      handleCompleteWithTier('verified');
-      nav.navigate('Verification');
+      const success = await handleCompleteWithTier('verified');
+      if (success) nav.navigate('Verification');
     } else if (tier === 'business') {
       setStep('store');
     }
   };
 
-  const handleCompleteWithTier = async (tier: ChosenTier) => {
-    if (!tier) return;
+  const handleCompleteWithTier = async (tier: ChosenTier): Promise<boolean> => {
+    if (!tier) return false;
     setLoading(true);
     try {
       const data: { tier: string } = { tier };
@@ -111,12 +111,14 @@ export default function SellerOnboardingScreen() {
       if (res.user && res.token) {
         await store.setUser(res.user, res.token);
       }
-      nav.goBack();
+      return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
       Alert.alert(t('common.error'), msg);
+      return false;
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const renderStep = () => {
@@ -161,7 +163,10 @@ export default function SellerOnboardingScreen() {
             {tiers.map((tier) => {
               const isCurrent = tier.key === currentTier;
               const isDowngrade = tierOrder.indexOf(tier.key) <= currentIdx;
-              const disabled = loading || isDowngrade;
+              const needsVerification = tier.key === 'verified' && !store.user?.id_verified;
+              const notYetSeller = !store.isSeller && tier.key !== 'casual';
+              const locked = isDowngrade || needsVerification || notYetSeller;
+              const disabled = loading || locked;
               return (
                 <TouchableOpacity
                   key={tier.key}

@@ -133,6 +133,8 @@ export default function MapScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const webViewRef = useRef<WebView>(null);
   const sheetAnim = useRef(new Animated.Value(0)).current;
+  const webviewReady = useRef(false);
+  const pendingInjection = useRef<string | null>(null);
 
   const [sellers, setSellers] = useState<NearbySeller[]>([]);
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -150,7 +152,7 @@ export default function MapScreen() {
   const dbg = useCallback((_msg: string) => {}, []);
 
   const injectMarkers = useCallback((list: NearbySeller[]) => {
-    if (!webViewRef.current) return;
+    if (!webViewRef.current || !webviewReady.current) return;
     const data = list.map(s => {
       const raw = s.use_store_identity ? s.store_logo_url : s.avatar_url;
       return {
@@ -163,7 +165,7 @@ export default function MapScreen() {
   }, []);
 
   const injectUserMarker = useCallback((lat: number, lng: number) => {
-    if (!webViewRef.current) return;
+    if (!webViewRef.current || !webviewReady.current) return;
     webViewRef.current.injectJavaScript(`setUserMarker(${lat},${lng});`);
   }, []);
 
@@ -268,7 +270,11 @@ export default function MapScreen() {
 
         if (cachedLoc) {
           setMyLocation(cachedLoc);
-          injectUserMarker(cachedLoc.lat, cachedLoc.lng);
+          if (webviewReady.current) {
+            injectUserMarker(cachedLoc.lat, cachedLoc.lng);
+          } else {
+            pendingInjection.current = `setUserMarker(${cachedLoc.lat},${cachedLoc.lng});`;
+          }
           await loadCachedSellers();
         }
 
@@ -281,7 +287,11 @@ export default function MapScreen() {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         setMyLocation({ lat, lng });
-        injectUserMarker(lat, lng);
+        if (webviewReady.current) {
+          injectUserMarker(lat, lng);
+        } else {
+          pendingInjection.current = `setUserMarker(${lat},${lng});`;
+        }
         AsyncStorage.setItem(CACHE_KEY_LOCATION, JSON.stringify({ lat, lng })).catch(() => {});
         setSellerLocation(lat, lng).catch(() => {});
         fetchSellers(lat, lng);
@@ -322,6 +332,13 @@ export default function MapScreen() {
         source={{ html: buildMapHtml() }}
         style={styles.map}
         onMessage={handleWebViewMessage}
+        onLoadEnd={() => {
+          webviewReady.current = true;
+          if (pendingInjection.current) {
+            webViewRef.current?.injectJavaScript(pendingInjection.current);
+            pendingInjection.current = null;
+          }
+        }}
         javaScriptEnabled
         domStorageEnabled
         originWhitelist={['*']}

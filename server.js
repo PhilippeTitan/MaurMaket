@@ -693,7 +693,7 @@ app.post('/api/auth/signup', async (req, res) => {
   if (password.length < 6 || password.length > 128) return res.status(400).json({ error: 'Password must be 6-128 characters' });
   try {
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    const cleanPhone = phone ? phone.replace(/^\+/, '') : null;
+    const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
     const result = await pool.query(
       `INSERT INTO users (full_name, email, password_hash, phone, role)
        VALUES ($1, $2, $3, $4, 'buyer')
@@ -776,7 +776,7 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
 
 app.put('/api/auth/profile', authRequired, async (req, res) => {
   let { fullName, email, phone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng } = req.body;
-  if (phone) phone = phone.replace(/^\+/, '');
+  if (phone) phone = phone.replace(/^\+?509/, '').replace(/^\+/, '');
   if (fullName && fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
   if (bio && bio.length > 500) return res.status(400).json({ error: 'Bio too long (max 500 characters)' });
   if (locationAddress && locationAddress.length > 200) return res.status(400).json({ error: 'Address too long (max 200 characters)' });
@@ -1176,7 +1176,7 @@ app.put('/api/auth/become-seller', authRequired, async (req, res) => {
         use_store_identity = $6,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity, created_at, location_address, location_city, location_lat, location_lng`,
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng`,
       [req.user.id, sellerTier, storeName || null, storeLogoUrl || null, idDocumentUrl || null, useStoreIdentity]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -1197,12 +1197,16 @@ app.put('/api/auth/upgrade-tier', authRequired, sellerRequired, async (req, res)
       return res.status(400).json({ error: 'Invalid tier. Must be verified or business.' });
     }
 
-    const current = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+    const current = await pool.query('SELECT seller_tier, id_verified FROM users WHERE id = $1', [req.user.id]);
     const currentTier = current.rows[0]?.seller_tier || 'none';
 
     const tierOrder = { none: 0, casual: 1, verified: 2, business: 3 };
     if ((tierOrder[currentTier] || 0) >= (tierOrder[tier] || 0)) {
       return res.status(400).json({ error: `You are already at ${currentTier} tier or higher.` });
+    }
+
+    if (tier === 'verified' && !current.rows[0]?.id_verified) {
+      return res.status(400).json({ error: 'You must complete ID verification before upgrading to Verified.' });
     }
 
     const updates = ['seller_tier = $2', 'updated_at = CURRENT_TIMESTAMP'];
@@ -1224,7 +1228,7 @@ app.put('/api/auth/upgrade-tier', authRequired, sellerRequired, async (req, res)
     const result = await pool.query(
       `UPDATE users SET ${updates.join(', ')}
        WHERE id = $1
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity, created_at, location_address, location_city, location_lat, location_lng`,
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng`,
       values
     );
 
@@ -1264,7 +1268,7 @@ app.put('/api/auth/seller-profile', authRequired, sellerRequired, async (req, re
     values.push(req.user.id);
     const result = await pool.query(
       `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${idx}
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, use_store_identity, created_at, location_address, location_city, location_lat, location_lng`,
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng`,
       values
     );
     res.json({ user: result.rows[0] });
@@ -4567,9 +4571,11 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         const userRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
         const userName = normalizeString(userRes.rows[0]?.full_name || '');
 
+        const cinNameWords = normalizeString(frontFields.fullName).split(/\s+/).filter(Boolean).sort().join(' ');
+        const profileNameWords = userName.split(/\s+/).filter(Boolean).sort().join(' ');
         const nameMatch = frontFields.fullName && frontFields.fullName.trim().length >= 3
           && !/^\d+$/.test(frontFields.fullName.trim())
-          && normalizeString(frontFields.fullName) === userName;
+          && cinNameWords === profileNameWords;
         const hasCinNumber = frontFields.cinNumber && /^\d{8,12}$/.test(frontFields.cinNumber);
         const hasDob = frontFields.dateOfBirth && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(frontFields.dateOfBirth);
         const hasPlaceOfBirth = frontFields.placeOfBirth && frontFields.placeOfBirth.trim().length >= 3 && !/^\d+$/.test(frontFields.placeOfBirth.trim());

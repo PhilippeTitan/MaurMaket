@@ -137,7 +137,7 @@ export default function SettingsScreen({ navigation }: Props) {
         if (res.user) await store.setUser(res.user, store.token);
         Alert.alert(t('settings.locationSaved'), t('settings.locationEditHint'));
       } catch {
-        Alert.alert(t('settings.locationSaved'), t('settings.locationEditHint'));
+        Alert.alert(t('settings.error'), t('settings.locationSaveFailed'));
       }
     } catch (err: any) {
       if (err?.code === 'E_LOCATION_SERVICES_DISABLED') {
