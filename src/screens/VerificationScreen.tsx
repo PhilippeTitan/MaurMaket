@@ -43,6 +43,7 @@ export default function VerificationScreen() {
   const [idBackDeleteUrl, setIdBackDeleteUrl] = useState('');
   const [selfieDeleteUrl, setSelfieDeleteUrl] = useState('');
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
+  const [cameraReady, setCameraReady] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [rejectedReasons, setRejectedReasons] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
@@ -107,6 +108,7 @@ export default function VerificationScreen() {
           } else {
             setIdBackUrl(uploadRes.url);
             if (uploadRes.deleteUrl) setIdBackDeleteUrl(uploadRes.deleteUrl);
+            setCameraReady(false);
             setCameraFacing('front');
             setStep('selfie');
           }
@@ -121,7 +123,7 @@ export default function VerificationScreen() {
   };
 
   const captureSelfie = async () => {
-    console.log(`📷 [VERIFY] Selfie requested — switching to front camera`);
+    console.log(`📷 [VERIFY] Selfie requested — cameraReady: ${cameraReady}`);
     if (!permission?.granted) {
       const p = await requestPermission();
       if (!p.granted) {
@@ -129,9 +131,13 @@ export default function VerificationScreen() {
         return;
       }
     }
+    if (!cameraReady) {
+      Alert.alert('Camera not ready', 'Please wait for the camera to initialize.');
+      return;
+    }
     try {
-      console.log(`⏳ [VERIFY] Waiting 500ms for camera switch...`);
-      await new Promise(r => setTimeout(r, 500));
+      console.log(`⏳ [VERIFY] Waiting 1000ms for camera to stabilize...`);
+      await new Promise(r => setTimeout(r, 1000));
       setLoading(true);
       console.log(`📷 [VERIFY] Selfie camera ref: ${cameraRef.current ? '✅ ready' : '❌ null'}`);
       if (cameraRef.current) {
@@ -212,6 +218,7 @@ export default function VerificationScreen() {
     setRejectedReasons(null);
     setVerified(false);
     setCameraFacing('back');
+    setCameraReady(false);
   };
 
   const stepLabel = (n: number) => {
@@ -256,18 +263,35 @@ export default function VerificationScreen() {
       ) : (
         <>
           <CameraView
+            key={facing}
             ref={cameraRef}
             style={styles.camera}
             facing={facing}
+            onCameraReady={() => {
+              console.log(`📷 [VERIFY] Camera ready (${facing})`);
+              setCameraReady(true);
+            }}
           />
           <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]}>
             <View style={facing === 'back' ? styles.idFrameRect : styles.idFrameCircle} />
           </View>
           {facing === 'front' && <Text style={styles.faceHint}>Center your face in the circle</Text>}
+          {!cameraReady && (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
+              <ActivityIndicator size="large" color={COLORS.coral} />
+              <Text style={{ color: COLORS.white, marginTop: 12, fontSize: 14 }}>Initializing camera...</Text>
+            </View>
+          )}
         </>
       )}
       <View style={styles.cameraActions}>
-        <TouchableOpacity style={styles.captureBtn} onPress={onCapture} disabled={loading} accessibilityLabel="capture photo" accessibilityRole="button">
+        <TouchableOpacity
+          style={[styles.captureBtn, !cameraReady && { opacity: 0.4 }]}
+          onPress={onCapture}
+          disabled={loading || !cameraReady}
+          accessibilityLabel="capture photo"
+          accessibilityRole="button"
+        >
           {loading ? (
             <ActivityIndicator size="small" color={COLORS.white} />
           ) : (
