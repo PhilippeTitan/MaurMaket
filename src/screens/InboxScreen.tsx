@@ -12,6 +12,7 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
+import { RowListSkeleton } from '../components/Skeleton';
 import { getConversations, getNotifications, getFollowing, getImageUrl, createConversation } from '../api';
 import type { Conversation } from '../types';
 import type { RootStackParamList } from '../navigation';
@@ -306,7 +307,7 @@ export default function InboxScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         ListEmptyComponent={
           loading ? (
-            <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
+            <RowListSkeleton count={6} thumbSize={48} />
           ) : (
             <EmptyState
               icon="message-outline"

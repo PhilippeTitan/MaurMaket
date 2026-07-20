@@ -833,8 +833,14 @@ app.put('/api/auth/password', authRequired, async (req, res) => {
     let valid = false;
     try { valid = await bcrypt.compare(currentPassword, result.rows[0].password_hash); } catch {}
     if (!valid) {
+      // Legacy SHA-256 fallback — upgrade to bcrypt on next password change
       const shaHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
-      if (shaHash === result.rows[0].password_hash) valid = true;
+      const storedHash = result.rows[0].password_hash;
+      if (storedHash && shaHash.length === storedHash.length) {
+        const a = Buffer.from(shaHash, 'hex');
+        const b = Buffer.from(storedHash, 'hex');
+        if (crypto.timingSafeEqual(a, b)) valid = true;
+      }
     }
     if (!valid) {
       return res.status(400).json({ error: 'Current password is incorrect' });
@@ -2389,6 +2395,7 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
           [escrow.id]
         );
       }
+      const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
       totalRefund = parseFloat(order.rows[0].total_amount);
       for (const item of items.rows) {
         await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
@@ -4013,10 +4020,14 @@ app.post('/api/payments/webhook', async (req, res) => {
         if (eventId) {
           await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
         }
-        await client.query(
+        const updateResult = await client.query(
           `UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'`,
           [reference]
         );
+        if (updateResult.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return res.json({ received: true, already_processed: true });
+        }
         await logOrderEvent(reference, 'payment_received', null, 'pending', 'paid', 'Payment completed via MonCash', client);
 
         // Decrement stock at payment time (not order creation) to prevent ghost inventory
@@ -4154,7 +4165,7 @@ app.post('/api/payments/webhook', async (req, res) => {
       }
     } else if (event === 'payout.completed') {
       await pool.query(
-        `UPDATE payouts SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        `UPDATE payouts SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE moncash_reference = $1`,
         [reference]
       );
       console.log(`Payout ${reference} completed via webhook`);
@@ -4978,14 +4989,9 @@ app.post('/api/debug/map-report', authRequired, express.json({ limit: '50kb' }),
   res.json({ ok: true });
 });
 
-// ───── Map Config (MapTiler key for client) ─────
-app.get('/api/map-config', (_req, res) => {
+// ───── Map Config (MapTiler key for client, requires auth) ─────
+app.get('/api/map-config', authRequired, (_req, res) => {
   res.json({ maptilerKey: process.env.MAPTILER_KEY || null });
-});
-
-app.get('/api/upload/config', authRequired, (_req, res) => {
-  if (!process.env.IMGBB_KEY) return res.status(503).json({ error: 'Upload service not configured' });
-  res.json({ imgbbKey: process.env.IMGBB_KEY });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -5078,7 +5084,7 @@ cron.schedule('*/5 * * * *', async () => {
         // Send refund payout to buyer
         const buyerRes = await pool.query('SELECT phone FROM users WHERE id = $1', [order.buyer_id]);
         const buyerPhone = buyerRes.rows[0]?.phone;
-        const totalRefund = parseFloat(order.rows[0].total_amount);
+        const totalRefund = parseFloat(order.total_amount);
 
         if (totalRefund > 0 && buyerPhone) {
           try {

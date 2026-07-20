@@ -9,6 +9,7 @@ import { useTranslation } from '../i18n';
 import type { Product } from '../types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
+import { tapLight, tapMedium } from '../haptics';
 
 interface BuyRowProps {
   product: Product;
@@ -31,6 +32,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
   }, [product.id]);
 
   const handleMakeOffer = async () => {
+    tapLight();
     if (!product.seller) return;
     try {
       const res = await createConversation({
@@ -72,6 +74,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
   };
 
   const handleBuy = async () => {
+    tapMedium();
     const result = await addToCart();
     if (!result.added) {
       navigation.navigate('Cart');
@@ -81,6 +84,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
   };
 
   const handleAddCart = async () => {
+    tapMedium();
     const result = await addToCart();
     if (!result.added) {
       Alert.alert('Stock limit', result.reason === 'out-of-stock' ? 'This item is sold out.' : `Only ${result.stock} available.`);
@@ -92,6 +96,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
       await handleAddCart();
       return;
     }
+    tapLight();
     if (cartQty >= product.stock) {
       Alert.alert('Stock limit', `Only ${product.stock} available.`);
       return;
@@ -100,6 +105,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
   };
 
   const handleDecrementCart = async () => {
+    tapLight();
     if (cartQty <= 1) {
       await store.removeFromCart(product.id);
       return;

@@ -19,6 +19,7 @@ import SalePriceTag from '../components/SalePriceTag';
 import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
+import { ProductGridSkeleton } from '../components/Skeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -60,6 +61,7 @@ export default function ExploreScreen({ navigation }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCat, setSelectedCat] = useState<string>('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [catModal, setCatModal] = useState(false);
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
@@ -85,6 +87,16 @@ export default function ExploreScreen({ navigation }: Props) {
     }).catch(() => {});
   }, []);
 
+  // Debounce the raw `search` value so the TextInput stays instantly
+  // responsive while network requests only fire ~350ms after the user
+  // stops typing, instead of on every keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [search]);
+
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setImageSizes({});
@@ -93,7 +105,7 @@ export default function ExploreScreen({ navigation }: Props) {
       const params: Record<string, string> = { limit: '50' };
       if (store.isLoggedIn) params.personalized = 'true';
       if (selectedCat) params.category = selectedCat;
-      if (search.trim()) params.search = search.trim();
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
       if (sortBy) params.sort = sortBy;
       if (minPrice.trim()) params.minPrice = minPrice.trim();
       if (maxPrice.trim()) params.maxPrice = maxPrice.trim();
@@ -111,7 +123,7 @@ export default function ExploreScreen({ navigation }: Props) {
       });
     } catch { Alert.alert(t('common.error'), 'Could not load products.'); }
     setLoading(false);
-  }, [selectedCat, search, sortBy, minPrice, maxPrice]);
+  }, [selectedCat, debouncedSearch, sortBy, minPrice, maxPrice]);
 
   useFocusEffect(useCallback(() => { fetchProducts(); }, [fetchProducts]));
 
@@ -315,7 +327,9 @@ export default function ExploreScreen({ navigation }: Props) {
         </View>
 
       {loading ? (
-        <ActivityIndicator size="small" color={COLORS.coral} style={{ marginTop: 40 }} />
+        <View style={{ marginTop: 12 }}>
+          <ProductGridSkeleton count={6} />
+        </View>
       ) : products.length === 0 ? (
         <EmptyState
           icon="magnify-close"

@@ -9,6 +9,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
+import { RowListSkeleton } from '../components/Skeleton';
 import { getNotifications, markNotificationRead, markAllNotificationsRead, getImageUrl } from '../api';
 import { routeNotification } from '../notificationRouting';
 import type { Notification } from '../types';
@@ -166,7 +167,7 @@ export default function NotificationScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
+        <RowListSkeleton count={7} thumbSize={40} />
       ) : notifications.length === 0 ? (
         <EmptyState icon="bell-outline" title="No notifications yet" size={56} />
       ) : (

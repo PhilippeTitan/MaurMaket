@@ -13,6 +13,7 @@ import type { Product } from '../types';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
+import { RowListSkeleton } from '../components/Skeleton';
 import SalePriceTag from '../components/SalePriceTag';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -100,7 +101,7 @@ export default function WishlistScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         ListEmptyComponent={
           loading ? (
-            <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 60 }} />
+            <RowListSkeleton count={6} thumbSize={56} />
           ) : !refreshing ? (
             <EmptyState icon="heart-outline" title={t('wishlist.empty')} size={56} />
           ) : null

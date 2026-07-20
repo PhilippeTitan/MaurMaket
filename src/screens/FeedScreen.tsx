@@ -23,6 +23,7 @@ import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
+import { tapLight } from '../haptics';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -175,6 +176,7 @@ export default function FeedScreen() {
   }, [screenHeight]);
 
   const handleBookmark = async (product: Product) => {
+    tapLight();
     const wasWishlisted = wishlistedIds.has(product.id);
     setWishlistedIds(prev => {
       const next = new Set(prev);
@@ -194,6 +196,7 @@ export default function FeedScreen() {
   };
 
   const handleLike = async (product: Product) => {
+    tapLight();
     const wasLiked = likedIds.has(product.id);
     setLikedIds(prev => {
       const next = new Set(prev);
@@ -245,6 +248,7 @@ export default function FeedScreen() {
   };
 
   const handleFollow = async (sellerId: string) => {
+    tapLight();
     const wasFollowing = followedSellerIds.has(sellerId);
     setFollowedSellerIds(prev => {
       const next = new Set(prev);

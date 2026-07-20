@@ -13,6 +13,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Order } from '../types';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
+import { RowListSkeleton } from '../components/Skeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Orders'>;
 
@@ -163,7 +164,7 @@ export default function OrdersScreen({ navigation }: Props) {
       )}
 
       {loading ? (
-        <ActivityIndicator size="large" color={COLORS.coral} style={{ marginTop: 40 }} />
+        <RowListSkeleton count={5} />
       ) : (
         <FlatList
           data={orders}

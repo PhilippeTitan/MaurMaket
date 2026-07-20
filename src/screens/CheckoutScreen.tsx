@@ -16,6 +16,7 @@ import { createOrder, createPayment, getAddresses, getImageUrl } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Address } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
+import { notifySuccess, notifyError } from '../haptics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 
@@ -127,20 +128,23 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       }
 
       const orderRes = await createOrder(orderData) as { order: { id: string } };
+      await store.clearCart();
 
       try {
         const payRes = await createPayment(orderRes.order.id, `maurmaket://payment-return?orderId=${orderRes.order.id}`) as { paymentUrl: string };
         if (payRes.paymentUrl) {
           await Linking.openURL(payRes.paymentUrl);
-          await store.clearCart();
         }
+        notifySuccess();
         navigation.navigate('Orders');
       } catch (paymentErr: unknown) {
+        notifyError();
         navigation.navigate('Orders');
         const msg = paymentErr instanceof Error ? paymentErr.message : 'Payment could not start.';
         Alert.alert(t('checkout.orderCreated'), `${msg}${t('checkout.retryPayment')}`);
       }
     } catch (e: unknown) {
+      notifyError();
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('checkout.checkoutFailed'));
     } finally {
       setLoading(false);
