@@ -206,7 +206,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 <Text style={styles.orderItemSeller} numberOfLines={1}>{sellerName}</Text>
               </View>
               <Text style={styles.orderItemQty}>x{item.quantity}</Text>
-              <Text style={styles.orderItemPrice}>Rs {formatPrice(item.price * item.quantity)}</Text>
+              <Text style={styles.orderItemPrice}>Rs {formatPrice((item.effective_price ?? item.price) * item.quantity)}</Text>
             </View>
           );
         })}

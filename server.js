@@ -42,6 +42,8 @@ const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeader
 const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts, try again later' } });
 const paymentLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many payment requests, try again later' } });
 const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many uploads, try again later' } });
+const msgLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many messages, try again later' } });
+const convLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many conversations, try again later' } });
 
 // ───── Email Transporter (nodemailer) ─────
 const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
@@ -560,6 +562,7 @@ app.use('/api/payments', paymentLimiter);
 app.use('/api/upload', uploadLimiter);
 app.use('/api', generalLimiter);
 app.use(express.json({
+  limit: '1mb',
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
 
@@ -2417,7 +2420,7 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
       if (buyerPhone) {
         try {
           const payoutRes = await fetch(
-            process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+            process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
             {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
@@ -2933,7 +2936,7 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
 
       if (commissionAmount > 0 && process.env.PLATFORM_PHONE) {
         const payoutRes = await fetch(
-          process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+          process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
           {
             method: 'POST',
             headers: {
@@ -3055,7 +3058,7 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
     try {
       if (totalRefund > 0 && buyerPhone) {
         const payoutRes = await fetch(
-          process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+          process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
           {
             method: 'POST',
             headers: {
@@ -3256,7 +3259,7 @@ app.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async (re
         return res.status(400).json({ error: 'Meetup orders are completed via the QR exchange flow, not status updates' });
       }
 
-      const transitions = { pending: 'processing', paid: 'processing', processing: 'shipped', shipped: 'delivered' };
+      const transitions = { paid: 'processing', processing: 'shipped', shipped: 'delivered' };
       if (transitions[current] !== status) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: `Cannot transition from ${current} to ${status}` });
@@ -3293,7 +3296,7 @@ app.post('/api/promos/validate', authRequired, async (req, res) => {
   if (!code) return res.status(400).json({ error: 'Code required' });
   try {
     const result = await pool.query(
-      `SELECT * FROM promo_codes WHERE code = $1 AND is_active = true AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP) FOR UPDATE`,
+      `SELECT * FROM promo_codes WHERE code = $1 AND is_active = true AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)`,
       [code.toUpperCase()]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Invalid or expired promo code' });
@@ -3592,7 +3595,7 @@ app.get('/api/conversations', authRequired, async (req, res) => {
   }
 });
 
-app.post('/api/conversations', authRequired, async (req, res) => {
+app.post('/api/conversations', authRequired, convLimiter, async (req, res) => {
   const { productId, orderId, sellerId: directSellerId } = req.body;
   if (!productId && !orderId && !directSellerId) return res.status(400).json({ error: 'productId, orderId, or sellerId required' });
   try {
@@ -3667,9 +3670,10 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
   }
 });
 
-app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
+app.post('/api/conversations/:id/messages', authRequired, msgLimiter, async (req, res) => {
   const { content, imageUrl, messageType } = req.body;
   const msgType = messageType || 'text';
+  if (!['text', 'image', 'offer'].includes(msgType)) return res.status(400).json({ error: 'Invalid message type' });
   if (msgType === 'image' && !imageUrl) return res.status(400).json({ error: 'Image URL required for image messages' });
   if (msgType === 'text' && (!content || !content.trim())) return res.status(400).json({ error: 'Message content required' });
   if (content && content.length > 5000) return res.status(400).json({ error: 'Message too long (max 5000 characters)' });
@@ -3693,7 +3697,7 @@ app.post('/api/conversations/:id/messages', authRequired, async (req, res) => {
     const senderInfo = (await pool.query('SELECT full_name, avatar_url FROM users WHERE id = $1', [req.user.id])).rows[0];
     const senderName = senderInfo?.full_name || 'Someone';
     const preview = content?.trim() ? (content.trim().length > 80 ? content.trim().substring(0, 80) + '...' : content.trim()) : '\ud83d\udcf7 Photo';
-    const notifData = { conversationId: req.params.id, senderId: req.user.id, senderName };
+    const notifData = { type: 'new_message', conversationId: req.params.id, senderId: req.user.id, senderName };
     if (senderInfo?.avatar_url) notifData.image = senderInfo.avatar_url;
     createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, notifData);
     res.status(201).json({ message: result.rows[0] });
@@ -4049,17 +4053,12 @@ app.post('/api/payments/webhook', async (req, res) => {
             if (buyerId) {
               const buyerPhoneRes = await pool.query('SELECT phone FROM users WHERE id = $1', [buyerId]);
               const buyerPhone = buyerPhoneRes.rows[0]?.phone;
-              const grossTotal = orderItems.rows.reduce((sum, oi2) => {
-                const prodRow = orderItems.rows.find(r => r.product_id === oi2.product_id);
-                return sum + (prodRow ? parseFloat(prodRow.quantity) * 0 : 0);
-              }, 0);
-              // Calculate total from order items
               const totalRes = await pool.query('SELECT total_amount FROM orders WHERE id = $1', [reference]);
               const refundAmount = parseFloat(totalRes.rows[0]?.total_amount || 0);
               if (refundAmount > 0 && buyerPhone) {
                 try {
                   const payoutRes = await fetch(
-                    process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+                    process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
                     {
                       method: 'POST',
                       headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
@@ -4330,7 +4329,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
     // Call MonCashConnect payout API
     try {
       const mccRes = await fetch(
-        process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+        process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
         {
           method: 'POST',
           headers: {
@@ -5089,7 +5088,7 @@ cron.schedule('*/5 * * * *', async () => {
         if (totalRefund > 0 && buyerPhone) {
           try {
             const payoutRes = await fetch(
-              process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/external-payout-create',
+              process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
               {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
