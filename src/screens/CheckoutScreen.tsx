@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator, Linking,
+  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Linking,
   KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Address } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
 import { notifySuccess, notifyError } from '../haptics';
+import { useToast } from '../components/Toast';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 
@@ -24,6 +25,7 @@ type DeliveryMethod = 'delivery' | 'meetup';
 
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const toast = useToast();
 
   const cart = store.cart;
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
@@ -102,13 +104,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   const handleCheckout = async () => {
     if (cart.length === 0) {
-      Alert.alert(t('checkout.cartEmpty'), t('checkout.addBeforeCheckout'));
+      toast.info(t('checkout.cartEmpty'), t('checkout.addBeforeCheckout'));
       navigation.goBack();
       return;
     }
 
     if (method === 'delivery' && (!name || !phone || !address || !city)) {
-      Alert.alert(t('checkout.missingInfo'), t('checkout.fillRequired'));
+      toast.error(t('checkout.missingInfo'), t('checkout.fillRequired'));
       return;
     }
 
@@ -136,16 +138,17 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           await Linking.openURL(payRes.paymentUrl);
         }
         notifySuccess();
+        toast.success('Order created', 'Opening MonCash to complete your payment.');
         navigation.navigate('Orders');
       } catch (paymentErr: unknown) {
         notifyError();
         navigation.navigate('Orders');
         const msg = paymentErr instanceof Error ? paymentErr.message : 'Payment could not start.';
-        Alert.alert(t('checkout.orderCreated'), `${msg}${t('checkout.retryPayment')}`);
+        toast.error(t('checkout.orderCreated'), `${msg} ${t('checkout.retryPayment')}`);
       }
     } catch (e: unknown) {
       notifyError();
-      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('checkout.checkoutFailed'));
+      toast.error('Checkout could not finish', e instanceof Error ? e.message : t('checkout.checkoutFailed'), handleCheckout);
     } finally {
       setLoading(false);
     }

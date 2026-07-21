@@ -343,8 +343,8 @@ export const getConversations = async () => {
 };
 export const createConversation = (data: Record<string, string>) =>
   request('/conversations', { method: 'POST', body: JSON.stringify(data) });
-export const getMessages = (conversationId: string, params?: { limit?: number; offset?: number; since?: string }) => {
-  const qs = params ? `?${new URLSearchParams({ ...(params.limit != null && { limit: String(params.limit) }), ...(params.offset != null && { offset: String(params.offset) }), ...(params.since && { since: params.since }) }).toString()}` : '';
+export const getMessages = (conversationId: string, params?: { limit?: number; offset?: number; since?: string; sinceId?: string }) => {
+  const qs = params ? `?${new URLSearchParams({ ...(params.limit != null && { limit: String(params.limit) }), ...(params.offset != null && { offset: String(params.offset) }), ...(params.since && { since: params.since }), ...(params.sinceId && { sinceId: params.sinceId }) }).toString()}` : '';
   return request(`/conversations/${conversationId}/messages${qs}`);
 };
 export const sendMessage = (conversationId: string, content: string, imageUrl?: string) =>
@@ -356,6 +356,8 @@ export const sendOffer = (conversationId: string, data: { productId: string; pro
   request(`/conversations/${conversationId}/offer`, { method: 'POST', body: JSON.stringify(data) });
 export const respondToOffer = (messageId: string, action: 'accepted' | 'declined') =>
   request(`/offers/${messageId}/respond`, { method: 'POST', body: JSON.stringify({ action }) });
+export const counterOffer = (messageId: string, offeredPrice: number) =>
+  request(`/offers/${messageId}/counter`, { method: 'POST', body: JSON.stringify({ offeredPrice }) });
 
 // Promos
 export const validatePromo = (code: string, orderTotal: number) =>

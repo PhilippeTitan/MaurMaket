@@ -505,6 +505,7 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_notifications_user_id_is_read ON notifications(user_id, is_read);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_unread ON messages(conversation_id, is_read, sender_id);
       CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_buyer_id ON conversations(buyer_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_seller_id ON conversations(seller_id);
@@ -3594,11 +3595,19 @@ app.get('/api/conversations', authRequired, async (req, res) => {
       `SELECT c.*, 
               CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
               u.full_name AS other_party_name, u.avatar_url AS other_party_avatar,
-              (SELECT CASE WHEN message_type = 'image' THEN '📷 Photo' ELSE content END FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message,
-              (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_id != $1 AND is_read = false) AS unread_count
+              latest.last_message,
+              COUNT(unread.id)::INTEGER AS unread_count
        FROM conversations c
        JOIN users u ON u.id = CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END
+       LEFT JOIN LATERAL (
+         SELECT CASE WHEN message_type = 'image' THEN '📷 Photo' ELSE content END AS last_message
+         FROM messages WHERE conversation_id = c.id
+         ORDER BY created_at DESC, id DESC LIMIT 1
+       ) latest ON true
+       LEFT JOIN messages unread ON unread.conversation_id = c.id
+         AND unread.sender_id != $1 AND unread.is_read = false
        WHERE c.buyer_id = $1 OR c.seller_id = $1
+       GROUP BY c.id, u.id, latest.last_message
        ORDER BY c.last_message_at DESC`,
       [req.user.id]
     );
@@ -3672,18 +3681,39 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const offset = parseInt(req.query.offset) || 0;
     const since = req.query.since;
+    const sinceId = req.query.sinceId;
     let query = `SELECT m.*, u.full_name AS sender_name
        FROM messages m JOIN users u ON m.sender_id = u.id
        WHERE m.conversation_id = $1`;
     const params = [req.params.id];
     if (since) {
       params.push(since);
-      query += ` AND m.created_at > $${params.length}`;
+      if (sinceId) {
+        params.push(sinceId);
+        query += ` AND (m.created_at > $${params.length - 1} OR (m.created_at = $${params.length - 1} AND m.id > $${params.length}))`;
+      } else {
+        query += ` AND m.created_at > $${params.length}`;
+      }
+      query += ` ORDER BY m.created_at ASC, m.id ASC LIMIT $${params.length + 1}`;
+      params.push(limit);
+    } else {
+      // Start a conversation at its newest messages; older pages are requested with offset.
+      // The outer query restores chronological display order for the mobile list.
+      query = `SELECT * FROM (${query} ORDER BY m.created_at DESC, m.id DESC LIMIT $2 OFFSET $3) recent ORDER BY created_at ASC, id ASC`;
+      params.push(limit, offset);
     }
-    query += ` ORDER BY m.created_at ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(limit, offset);
     const result = await pool.query(query, params);
-    res.json({ messages: result.rows });
+    let product = null;
+    if (conv.rows[0].product_id) {
+      const productResult = await pool.query(
+        `SELECT p.id, p.name, p.price, p.stock,
+                (SELECT image_url FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, display_order ASC LIMIT 1) AS image_url
+         FROM products p WHERE p.id = $1`,
+        [conv.rows[0].product_id]
+      );
+      product = productResult.rows[0] || null;
+    }
+    res.json({ messages: result.rows, context: { product } });
   } catch (err) {
     console.error('Messages fetch error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -3855,17 +3885,13 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
     );
     if (convCheck.rows.length === 0) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Not a member of this conversation' }); }
 
-    // Only the seller can respond
-    if (req.user.id !== offer.seller_id) {
+    const sellerResponding = req.user.id === offer.seller_id && offer.status === 'pending';
+    const buyerRespondingToCounter = req.user.id === offer.buyer_id && offer.status === 'countered';
+    if (!sellerResponding && !buyerRespondingToCounter) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Only the seller can respond to offers' });
+      return res.status(403).json({ error: 'Only the recipient can respond to this offer' });
     }
 
-    // Must be pending and not expired
-    if (offer.status !== 'pending') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: `Offer is already ${offer.status}` });
-    }
     if (offer.expires_at && new Date(offer.expires_at) < new Date()) {
       await client.query("UPDATE message_offers SET status = 'expired' WHERE message_id = $1", [req.params.messageId]);
       await client.query('COMMIT');
@@ -3879,8 +3905,8 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
     );
 
     // Send a system message in the conversation
-    const sellerInfo = await client.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
-    const sellerName = sellerInfo.rows[0]?.full_name || 'Seller';
+    const responderInfo = await client.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+    const responderName = responderInfo.rows[0]?.full_name || 'Seller';
     const productInfo = await client.query('SELECT name FROM products WHERE id = $1', [offer.product_id]);
     const productName = productInfo.rows[0]?.name || 'the item';
     const systemContent = action === 'accepted'
@@ -3894,19 +3920,51 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
     await client.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [offer.conversation_id]);
     await client.query('COMMIT');
 
-    // Notify buyer
+    // Notify the other participant.
+    const recipientId = req.user.id === offer.buyer_id ? offer.seller_id : offer.buyer_id;
     const buyerNotifMsg = action === 'accepted'
       ? `Your offer of Rs ${offer.offered_price} for "${productName}" was accepted! You can now check out at the agreed price.`
       : `Your offer of Rs ${offer.offered_price} for "${productName}" was declined.`;
-    createNotification(offer.buyer_id, 'new_message',
+    createNotification(recipientId, 'new_message',
       action === 'accepted' ? 'Offer Accepted' : 'Offer Declined',
       buyerNotifMsg,
-      { conversationId: offer.conversation_id, senderId: req.user.id, senderName: sellerName });
+      { conversationId: offer.conversation_id, senderId: req.user.id, senderName: responderName });
 
     res.json({ success: true, status: action });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Respond to offer error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// A seller can counter directly on the structured offer card. The buyer can then
+// accept or decline the revised price with the existing response endpoint.
+app.post('/api/offers/:messageId/counter', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const offeredPrice = Number(req.body.offeredPrice);
+    if (!Number.isFinite(offeredPrice) || offeredPrice <= 0) return res.status(400).json({ error: 'A valid counter price is required' });
+    await client.query('BEGIN');
+    const result = await client.query(
+      'SELECT mo.*, m.conversation_id FROM message_offers mo JOIN messages m ON m.id = mo.message_id WHERE mo.message_id = $1 FOR UPDATE',
+      [req.params.messageId]
+    );
+    const offer = result.rows[0];
+    if (!offer) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Offer not found' }); }
+    if (offer.seller_id !== req.user.id || offer.status !== 'pending') { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This offer cannot be countered' }); }
+    if (offer.expires_at && new Date(offer.expires_at) < new Date()) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Offer has expired' }); }
+    await client.query("UPDATE message_offers SET offered_price = $1, status = 'countered', responded_at = CURRENT_TIMESTAMP WHERE message_id = $2", [offeredPrice, req.params.messageId]);
+    await client.query("INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, $3, 'text')", [offer.conversation_id, req.user.id, `Seller countered with Rs ${offeredPrice}`]);
+    await client.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [offer.conversation_id]);
+    await client.query('COMMIT');
+    createNotification(offer.buyer_id, 'new_message', 'Counter offer', `The seller countered your offer with Rs ${offeredPrice}.`, { conversationId: offer.conversation_id, senderId: req.user.id });
+    res.json({ success: true, status: 'countered', offeredPrice });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Counter offer error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
     client.release();

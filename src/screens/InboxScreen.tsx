@@ -14,11 +14,12 @@ import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
 import { getConversations, getNotifications, getFollowing, getImageUrl, createConversation } from '../api';
+import { useToast } from '../components/Toast';
 import type { Conversation } from '../types';
 import type { RootStackParamList } from '../navigation';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type InboxTab = 'primary' | 'general';
+type InboxTab = 'all' | 'primary' | 'general';
 
 const INBOX_CACHE_TTL = 15_000;
 let _inboxCache: { data: any; timestamp: number } | null = null;
@@ -40,7 +41,8 @@ export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'Inbox'>>();
-  const [activeTab, setActiveTab] = useState<InboxTab>('primary');
+  const toast = useToast();
+  const [activeTab, setActiveTab] = useState<InboxTab>('all');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -60,19 +62,22 @@ export default function InboxScreen() {
       return;
     }
     try {
-      const [convos, notifs, followingRes] = await Promise.all([
+      const [convoResult, notifResult, followingResult] = await Promise.allSettled([
         getConversations() as Promise<{ conversations: Conversation[] }>,
         getNotifications() as Promise<{ notifications: any[] }>,
         getFollowing() as Promise<{ following: any[] }>,
       ]);
-      const conversations = convos.conversations || [];
-      const notifications = notifs.notifications || [];
-      const followedSellers = followingRes.following || [];
+      if (convoResult.status !== 'fulfilled') throw convoResult.reason;
+      const conversations = convoResult.value.conversations || [];
+      const notifications = notifResult.status === 'fulfilled' ? notifResult.value.notifications || [] : [];
+      const followedSellers = followingResult.status === 'fulfilled' ? followingResult.value.following || [] : [];
       setConversations(conversations);
       setNotifications(notifications);
       setFollowedSellers(followedSellers);
       _inboxCache = { timestamp: Date.now(), data: { conversations, notifications, followedSellers } };
-    } catch { Alert.alert(t('common.error'), 'Could not load data.'); }
+    } catch {
+      toast.error('Inbox could not refresh', 'Your conversations are still available when the connection returns.', () => fetchData(true));
+    }
     setLoading(false);
   }, []);
 
@@ -109,6 +114,7 @@ export default function InboxScreen() {
   const filteredConversations = sortedConversations
     .filter(c => {
       const otherId = (c as any).other_party_id;
+      if (activeTab === 'all') return true;
       if (activeTab === 'primary') return otherId && followedIds.has(otherId);
       if (activeTab === 'general') return otherId && !followedIds.has(otherId);
       return true;
@@ -193,7 +199,7 @@ export default function InboxScreen() {
           nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: seller.full_name, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url });
         }
       } catch {
-        Alert.alert('Error', 'Could not start conversation.');
+        toast.error('Could not start a conversation', 'Please check your connection and try again.', handlePress);
       }
     };
     return (
@@ -236,9 +242,17 @@ export default function InboxScreen() {
         </View>
       </View>
 
-      {/* Filter row: Primary | General ... Mark all read */}
+      {/* Filter row: All | Primary | General */}
       <View style={styles.filterRow}>
         <View style={styles.filterTabs}>
+          <TouchableOpacity
+            style={[styles.filterTab, activeTab === 'all' && styles.filterTabActive]}
+            onPress={() => setActiveTab('all')}
+            accessibilityLabel="all conversations"
+            accessibilityRole="button"
+          >
+            <Text style={[styles.filterTabText, activeTab === 'all' && styles.filterTabTextActive]}>All</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.filterTab, activeTab === 'primary' && styles.filterTabActive]}
             onPress={() => setActiveTab('primary')}
@@ -256,15 +270,7 @@ export default function InboxScreen() {
             <Text style={[styles.filterTabText, activeTab === 'general' && styles.filterTabTextActive]}>General</Text>
           </TouchableOpacity>
         </View>
-        {unreadNotifCount > 0 && (
-          <TouchableOpacity onPress={async () => {
-            const { markAllNotificationsRead } = await import('../api');
-            try { await markAllNotificationsRead(); } catch { /* silent */ }
-            setNotifications((prev: any[]) => prev.map(n => ({ ...n, is_read: true })));
-          }} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
-            <Text style={styles.markAllText}>Mark all read</Text>
-          </TouchableOpacity>
-        )}
+        {unreadNotifCount > 0 && <Text style={styles.notificationHint}>{unreadNotifCount} notification{unreadNotifCount === 1 ? '' : 's'} unread</Text>}
       </View>
 
       {/* Bubbles (Primary only) */}
@@ -311,7 +317,7 @@ export default function InboxScreen() {
           ) : (
             <EmptyState
               icon="message-outline"
-              title={activeTab === 'primary' ? 'No conversations with followed sellers' : t('inbox.noMessages')}
+              title={activeTab === 'primary' ? 'No conversations with followed sellers' : activeTab === 'general' ? 'No general conversations' : t('inbox.noMessages')}
               size={56}
             />
           )
@@ -348,8 +354,7 @@ const styles = StyleSheet.create({
   filterTabActive: { borderBottomWidth: 2, borderBottomColor: COLORS.coral },
   filterTabText: { fontSize: 14, color: COLORS.text2, fontWeight: '500' },
   filterTabTextActive: { color: COLORS.text, fontWeight: '700' },
-  markAllBtn: { paddingVertical: 4 },
-  markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '500' },
+  notificationHint: { color: COLORS.text2, fontSize: 11 },
   bubblesSection: { paddingTop: SPACING.xs, paddingBottom: 4 },
   bubblesRow: { paddingHorizontal: SPACING.md, gap: 14 },
   sellerBubble: { alignItems: 'center', width: 64 },

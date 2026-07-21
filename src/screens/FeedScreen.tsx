@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
-  RefreshControl, ActivityIndicator, LayoutChangeEvent, Image, Alert, Modal, Pressable, Platform,
+  RefreshControl, ActivityIndicator, LayoutChangeEvent, Image, Modal, Pressable, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -24,11 +24,13 @@ import BuyRow from '../components/BuyRow';
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { tapLight } from '../haptics';
+import { useToast } from '../components/Toast';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function FeedScreen() {
   const { t } = useTranslation();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const [products, setProducts] = useState<Product[]>([]);
@@ -73,7 +75,9 @@ export default function FeedScreen() {
         setProducts(prev => [...prev, ...res.products]);
       }
       setHasMore(p < res.pages);
-    } catch { /* silent */ }
+    } catch {
+      if (replace) toast.error('Feed could not refresh', 'Check your connection and try again.', () => fetchProducts(p, replace));
+    }
   }, [feedTab]);
 
   useFocusEffect(useCallback(() => { fetchProducts(1, true); }, [feedTab]));
@@ -114,7 +118,7 @@ export default function FeedScreen() {
           else next.delete(p.id);
           return next;
         });
-    } catch { Alert.alert(t('common.error'), 'Could not load products.'); }
+    } catch { /* Product cards remain usable even if wishlist state is unavailable. */ }
     });
   }, [products]);
 
@@ -243,7 +247,7 @@ export default function FeedScreen() {
         otherUserAvatar: product.seller.avatar_url,
       });
     } catch {
-      Alert.alert('Message unavailable', 'Could not open this seller chat right now.');
+      toast.error('Could not open messages', 'Please check your connection and try again.', () => handleChat(product));
     }
   };
 
@@ -273,6 +277,7 @@ export default function FeedScreen() {
         else next.delete(sellerId);
         return next;
       });
+      toast.error('Follow could not update', 'Your follow status was restored. Please try again.', () => handleFollow(sellerId));
     }
   };
 

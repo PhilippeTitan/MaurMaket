@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, TextInput,
+  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -14,6 +14,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { CartItem } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
+import { useToast } from '../components/Toast';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Cart'>;
 
@@ -23,6 +24,7 @@ type SectionItem =
 
 export default function CartScreen({ navigation }: Props) {
   const { t } = useTranslation();
+  const toast = useToast();
   const [cart, setCart] = useState<CartItem[]>(store.cart);
   const [promoCode, setPromoCode] = useState('');
   const [discount, setDiscount] = useState(0);
@@ -81,7 +83,7 @@ export default function CartScreen({ navigation }: Props) {
         await store.updateQuantity(id, newQty);
         const stock = Math.max(0, Number(item.stock) || 0);
         if (stock > 0 && newQty > stock) {
-          Alert.alert(t('cart.stockLimit'), t('cart.onlyAvailable', { count: String(stock) }));
+          toast.info(t('cart.stockLimit'), t('cart.onlyAvailable', { count: String(stock) }));
         }
       }
     }
@@ -99,7 +101,7 @@ export default function CartScreen({ navigation }: Props) {
       setDiscount(res.discount);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Invalid promo';
-      Alert.alert(t('common.error'), msg);
+      toast.error('Promo code could not apply', msg, handleApplyPromo);
       setDiscount(0);
     }
     setPromoLoading(false);

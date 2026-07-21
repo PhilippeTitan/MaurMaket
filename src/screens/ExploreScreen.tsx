@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, Image, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Modal, Pressable, FlatList, Dimensions, Alert, RefreshControl,
+  ActivityIndicator, Modal, Pressable, FlatList, Dimensions, RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -20,6 +20,7 @@ import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
+import { useToast } from '../components/Toast';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -56,6 +57,7 @@ const MAX_H = SCREEN_H * 0.52;
 
 export default function ExploreScreen({ navigation }: Props) {
   const { t } = useTranslation();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -121,7 +123,7 @@ export default function ExploreScreen({ navigation }: Props) {
           }
         }, () => {});
       });
-    } catch { Alert.alert(t('common.error'), 'Could not load products.'); }
+    } catch { toast.error('Products could not load', 'Check your connection and try again.', fetchProducts); }
     setLoading(false);
   }, [selectedCat, debouncedSearch, sortBy, minPrice, maxPrice]);
 

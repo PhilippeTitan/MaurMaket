@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl, useWindowDimensions,
+  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, useWindowDimensions,
 } from 'react-native';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, isVerifiedSeller, getDisplayName, getSellerAvatar } from '../theme';
@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Review, SellerProfile } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
+import { useToast } from '../components/Toast';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
 
@@ -22,6 +23,7 @@ let _storefrontCache: Record<string, { data: any; timestamp: number }> = {};
 
 export default function StorefrontScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const toast = useToast();
 
   const { sellerId } = route.params;
   const [seller, setSeller] = useState<SellerProfile | null>(null);
@@ -86,7 +88,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       const followerCount = countRes.count || 0;
       setFollowerCount(followerCount);
       _storefrontCache[sellerId] = { timestamp: Date.now(), data: { seller, products, reviews, following: isFollowing, followerCount } };
-    } catch { Alert.alert(t('common.error'), 'Could not load seller profile.'); }
+    } catch { toast.error('Seller profile could not load', 'Check your connection and try again.', () => fetchSellerData(true)); }
     setLoading(false);
   }, [sellerId]);
 
@@ -106,7 +108,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
     } catch {
       setFollowing(wasFollowing);
       setFollowerCount(previousCount);
-      Alert.alert(t('storefront.followUnavailable'), t('storefront.followUnavailable'));
+      toast.error('Could not update follow', 'Your follow status was not changed.', handleFollow);
     }
     setFollowLoading(false);
   };
@@ -137,7 +139,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed';
-      Alert.alert(t('common.error'), msg);
+      toast.error('Could not open messages', msg, handleMessage);
     }
     setMessageLoading(false);
   };

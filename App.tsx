@@ -10,6 +10,7 @@ import { store } from './src/store';
 import { COLORS, SPACING } from './src/theme';
 import { i18n } from './src/i18n';
 import { getMe } from './src/api';
+import { ToastProvider } from './src/components/Toast';
 import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/notifications';
 import type { User } from './src/types';
 import type { RootStackParamList, AuthStackParamList, TabParamList } from './src/navigation';
@@ -368,7 +369,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <SafeAreaProvider><ErrorBoundary>{appContent}</ErrorBoundary></SafeAreaProvider>;
+  return <SafeAreaProvider><ToastProvider><ErrorBoundary>{appContent}</ErrorBoundary></ToastProvider></SafeAreaProvider>;
 }
 
 const styles = StyleSheet.create({

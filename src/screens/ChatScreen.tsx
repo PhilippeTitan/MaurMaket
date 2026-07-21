@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
-  KeyboardAvoidingView, Platform, Alert, Image, Pressable, AppState, AppStateStatus,
+  KeyboardAvoidingView, Platform, Image, Pressable, AppState, AppStateStatus, Modal,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -15,14 +15,18 @@ import type { RootStackParamList } from '../navigation';
 import type { Message } from '../types';
 import { store } from '../store';
 import * as ImagePicker from 'expo-image-picker';
+import { useToast } from '../components/Toast';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
+type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string };
+type ConversationProduct = { id: string; name: string; price: number; stock: number; image_url?: string | null };
 
 export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
+  const toast = useToast();
   const { conversationId, otherUserName, otherUserId, otherUserAvatar, draftOffer } = route.params;
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -31,24 +35,33 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [headerHeight, setHeaderHeight] = useState(0);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [productContext, setProductContext] = useState<ConversationProduct | null>(null);
+  const [counteringMessageId, setCounteringMessageId] = useState<string | null>(null);
+  const [counterPrice, setCounterPrice] = useState('');
   const listRef = useRef<FlatList>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appState = useRef(AppState.currentState);
 
-  const lastMessageTime = useRef<string | null>(null);
+  const lastMessageCursor = useRef<{ time: string; id: string } | null>(null);
   const sendingRef = useRef(false);
+  const stickToLatest = useRef(true);
 
-  const fetchMessages = async (pageNum = 0, append = false) => {
+  const fetchMessages = async (pageNum = 0, older = false, quiet = false) => {
+    if (older) setLoadingOlder(true);
     try {
       const params: Record<string, string | number> = { limit: 50, offset: pageNum * 50 };
-      if (!append && lastMessageTime.current) {
-        (params as Record<string, string>).since = lastMessageTime.current;
+      if (!older && lastMessageCursor.current) {
+        (params as Record<string, string>).since = lastMessageCursor.current.time;
+        (params as Record<string, string>).sinceId = lastMessageCursor.current.id;
       }
-      const res = await getMessages(conversationId, params) as { messages: Message[] };
+      const res = await getMessages(conversationId, params) as { messages: Message[]; context?: { product?: ConversationProduct | null } };
       const msgs = res.messages || [];
-      if (append) {
+      if (res.context?.product) setProductContext(res.context.product);
+      if (older) {
         setMessages(prev => [...msgs, ...prev]);
-      } else if (lastMessageTime.current && msgs.length > 0) {
+      } else if (lastMessageCursor.current && msgs.length > 0) {
         setMessages(prev => {
           const existingIds = new Set(prev.map(m => m.id));
           const newMsgs = msgs.filter(m => !existingIds.has(m.id));
@@ -58,21 +71,26 @@ export default function ChatScreen({ route, navigation }: Props) {
         setMessages(msgs);
       }
       if (msgs.length > 0) {
-        lastMessageTime.current = msgs[msgs.length - 1].created_at;
+        const latest = msgs[msgs.length - 1];
+        lastMessageCursor.current = { time: latest.created_at, id: latest.id };
       }
-      setHasMore(msgs.length === 50);
-    } catch { /* ignore */ }
+      if (older || !lastMessageCursor.current || pageNum === 0) setHasMore(msgs.length === 50);
+    } catch {
+      if (!quiet) toast.error('Messages could not load', 'Check your connection and try again.', () => fetchMessages(pageNum, older));
+    } finally {
+      if (older) setLoadingOlder(false);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
-    lastMessageTime.current = null;
+    lastMessageCursor.current = null;
     fetchMessages(0, false);
     setPage(0);
 
     const startPolling = () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(() => fetchMessages(0, false), 5000);
+      intervalRef.current = setInterval(() => fetchMessages(0, false, true), 5000);
     };
     const stopPolling = () => {
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
@@ -84,7 +102,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       if (appState.current.match(/active/) && next.match(/inactive|background/)) {
         stopPolling();
       } else if (appState.current.match(/inactive|background/) && next === 'active') {
-        fetchMessages(0, false);
+        fetchMessages(0, false, true);
         startPolling();
       }
       appState.current = next;
@@ -107,17 +125,34 @@ export default function ChatScreen({ route, navigation }: Props) {
     sendingRef.current = true;
     setSending(true);
     const msg = text.trim();
+    const tempId = `local-${Date.now()}`;
+    const optimistic: LocalMessage = { id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '', content: msg, message_type: 'text', is_read: true, created_at: new Date().toISOString(), pending: true };
     setText('');
+    stickToLatest.current = true;
+    setMessages(prev => [...prev, optimistic]);
     try {
-      await apiSendMessage(conversationId, msg);
-      lastMessageTime.current = null;
-      await fetchMessages();
+      const result = await apiSendMessage(conversationId, msg) as { message: Message };
+      setMessages(prev => prev.map(m => m.id === tempId ? result.message : m));
+      lastMessageCursor.current = { time: result.message.created_at, id: result.message.id };
     } catch {
-      Alert.alert(t('common.error'), t('chat.sendFailed'));
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, pending: false, failed: true } : m));
+      toast.error('Message not sent', t('chat.sendFailed'), () => handleSend());
       setText(msg);
     } finally {
       setSending(false);
       sendingRef.current = false;
+    }
+  };
+
+  const sendImage = async (uri: string, tempId: string) => {
+    try {
+      const r = await uploadImage(uri);
+      const result = await apiSendMessage(conversationId, '', r.url) as { message: Message };
+      setMessages(prev => prev.map(m => m.id === tempId ? result.message : m));
+      lastMessageCursor.current = { time: result.message.created_at, id: result.message.id };
+    } catch {
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, pending: false, failed: true } : m));
+      toast.error('Photo not sent', 'Your photo is still here. Try sending it again.', () => sendImage(uri, tempId));
     }
   };
 
@@ -131,12 +166,12 @@ export default function ChatScreen({ route, navigation }: Props) {
       if (result.canceled || !result.assets?.[0]) return;
       sendingRef.current = true;
       setSending(true);
-      const r = await uploadImage(result.assets[0].uri);
-      await apiSendMessage(conversationId, '', r.url);
-      lastMessageTime.current = null;
-      await fetchMessages();
+      const tempId = `local-image-${Date.now()}`;
+      stickToLatest.current = true;
+      setMessages(prev => [...prev, { id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '', content: '', message_type: 'image', image_url: result.assets![0].uri, localImageUri: result.assets![0].uri, is_read: true, created_at: new Date().toISOString(), pending: true }]);
+      await sendImage(result.assets[0].uri, tempId);
     } catch {
-      Alert.alert(t('common.error'), t('chat.sendFailed'));
+      toast.error('Photo picker failed', 'Please try selecting the photo again.');
     } finally {
       setSending(false);
       sendingRef.current = false;
@@ -155,11 +190,11 @@ export default function ChatScreen({ route, navigation }: Props) {
         offeredPrice: price,
         listPrice: draftOffer.listPrice,
       });
-      lastMessageTime.current = null;
+      lastMessageCursor.current = null;
       await fetchMessages();
       setOfferDraftVisible(false);
     } catch {
-      Alert.alert(t('common.error'), t('chat.sendFailed'));
+      toast.error('Offer not sent', t('chat.sendFailed'));
     } finally {
       setSending(false);
       sendingRef.current = false;
@@ -170,13 +205,32 @@ export default function ChatScreen({ route, navigation }: Props) {
     try {
       const { respondToOffer } = await import('../api');
       await respondToOffer(messageId, action);
-      lastMessageTime.current = null;
+      lastMessageCursor.current = null;
       await fetchMessages();
       if (action === 'accepted') {
-        Alert.alert('Offer accepted', 'The buyer can now check out at the agreed price.');
+        toast.success('Offer accepted', 'The buyer can now check out at the agreed price.');
       }
     } catch {
-      Alert.alert(t('common.error'), 'Could not respond to offer.');
+      toast.error('Offer could not be updated', 'Please try again.');
+    }
+  };
+
+  const handleCounterOffer = async (messageId: string) => {
+    const price = Number(counterPrice.replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(price) || price <= 0) {
+      toast.error('Enter a valid counter price');
+      return;
+    }
+    try {
+      const { counterOffer } = await import('../api');
+      await counterOffer(messageId, price);
+      setCounteringMessageId(null);
+      setCounterPrice('');
+      lastMessageCursor.current = null;
+      await fetchMessages();
+      toast.success('Counter offer sent', 'The buyer can accept or decline the new price.');
+    } catch {
+      toast.error('Counter offer not sent', 'Please try again.');
     }
   };
 
@@ -189,7 +243,9 @@ export default function ChatScreen({ route, navigation }: Props) {
       const offerData = item.offer_data as { productId: string; productName: string; offeredPrice: number; listPrice: number; status: 'pending' | 'accepted' | 'declined' | 'countered' } | undefined;
       if (!offerData) return null;
       const isPending = offerData.status === 'pending';
-      const canRespond = isPending && !isMe;
+      const isCountered = offerData.status === 'countered';
+      const sellerCanRespond = isPending && !isMe;
+      const buyerCanRespond = isCountered && isMe;
       return (
         <View style={[styles.offerMsgWrap, isMe ? styles.offerMsgWrapMe : styles.offerMsgWrapThem]}>
           <View style={styles.offerMsgCard}>
@@ -212,7 +268,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               </Text>
             </View>
           </View>
-          {canRespond && (
+          {sellerCanRespond && (
             <View style={styles.offerMsgActions}>
               <TouchableOpacity style={styles.offerMsgDecline} onPress={() => handleOfferRespond(item.id, 'declined')} accessibilityLabel="decline offer" accessibilityRole="button">
                 <Text style={styles.offerMsgDeclineText}>Decline</Text>
@@ -220,6 +276,21 @@ export default function ChatScreen({ route, navigation }: Props) {
               <TouchableOpacity style={styles.offerMsgAccept} onPress={() => handleOfferRespond(item.id, 'accepted')} accessibilityLabel="accept offer" accessibilityRole="button">
                 <Text style={styles.offerMsgAcceptText}>Accept</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={styles.offerMsgCounter} onPress={() => { setCounteringMessageId(item.id); setCounterPrice(String(offerData.listPrice)); }} accessibilityLabel="counter offer" accessibilityRole="button">
+                <Text style={styles.offerMsgCounterText}>Counter</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {counteringMessageId === item.id && (
+            <View style={styles.counterEntry}>
+              <TextInput value={counterPrice} onChangeText={setCounterPrice} keyboardType="decimal-pad" style={styles.counterInput} placeholder="Counter price" placeholderTextColor={COLORS.text2} accessibilityLabel="counter offer price" />
+              <TouchableOpacity style={styles.offerMsgAccept} onPress={() => handleCounterOffer(item.id)} accessibilityRole="button" accessibilityLabel="send counter offer"><Text style={styles.offerMsgAcceptText}>Send</Text></TouchableOpacity>
+            </View>
+          )}
+          {buyerCanRespond && (
+            <View style={styles.offerMsgActions}>
+              <TouchableOpacity style={styles.offerMsgDecline} onPress={() => handleOfferRespond(item.id, 'declined')} accessibilityLabel="decline counter offer" accessibilityRole="button"><Text style={styles.offerMsgDeclineText}>Decline</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.offerMsgAccept} onPress={() => handleOfferRespond(item.id, 'accepted')} accessibilityLabel="accept counter offer" accessibilityRole="button"><Text style={styles.offerMsgAcceptText}>Accept counter</Text></TouchableOpacity>
             </View>
           )}
         </View>
@@ -229,12 +300,16 @@ export default function ChatScreen({ route, navigation }: Props) {
     return (
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}>
         {isImage ? (
-          <Image source={{ uri: getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" onError={() => {}} />
+          <TouchableOpacity onPress={() => setPreviewImage(item.localImageUri || getImageUrl(item.image_url!) || item.image_url!)} accessibilityRole="imagebutton" accessibilityLabel="open photo">
+            <Image source={{ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" />
+          </TouchableOpacity>
         ) : null}
         {item.content ? (
           <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.content}</Text>
         ) : null}
         <Text style={[styles.bubbleTime, isImage && styles.bubbleTimeImage]}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+        {item.pending && <Text style={styles.messageState}>Sending…</Text>}
+        {item.failed && <Text style={styles.messageFailed}>Not sent</Text>}
       </View>
     );
   };
@@ -289,6 +364,23 @@ export default function ChatScreen({ route, navigation }: Props) {
         </Pressable>
       )}
 
+      {productContext && (
+        <TouchableOpacity
+          style={styles.productContext}
+          onPress={() => navigation.navigate('ProductDetail', { productId: productContext.id })}
+          accessibilityRole="button"
+          accessibilityLabel={`view ${productContext.name}`}
+        >
+          {productContext.image_url ? <Image source={{ uri: getImageUrl(productContext.image_url) || productContext.image_url }} style={styles.productContextImage} /> : <View style={styles.productContextImageFallback}><Icon name="storefront" size={18} color={COLORS.text2} /></View>}
+          <View style={styles.productContextCopy}>
+            <Text style={styles.productContextLabel}>Discussing</Text>
+            <Text style={styles.productContextName} numberOfLines={1}>{productContext.name}</Text>
+            <Text style={styles.productContextPrice}>Rs {formatPrice(Number(productContext.price))}</Text>
+          </View>
+          <Icon name="chevron-right" size={20} color={COLORS.text2} />
+        </TouchableOpacity>
+      )}
+
       {loading ? (
         <ActivityIndicator size="large" color={COLORS.coral} style={{ flex: 1 }} />
       ) : (
@@ -298,15 +390,18 @@ export default function ChatScreen({ route, navigation }: Props) {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.messageList}
           ref={listRef}
-          onEndReached={() => {
-            if (hasMore && !loading) {
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          onScroll={({ nativeEvent }) => {
+            const distanceFromBottom = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y;
+            stickToLatest.current = distanceFromBottom < 96;
+            if (nativeEvent.contentOffset.y < 72 && hasMore && !loadingOlder) {
               const nextPage = page + 1;
               setPage(nextPage);
               fetchMessages(nextPage, true);
             }
           }}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={hasMore && messages.length > 0 ? <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} /> : null}
+          scrollEventThrottle={16}
+          ListHeaderComponent={loadingOlder ? <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} /> : null}
           ListHeaderComponent={
             <View style={styles.introHeader}>
               {getImageUrl(otherUserAvatar) ? (
@@ -330,7 +425,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             </View>
           }
           onContentSizeChange={() => {
-            if (listRef.current) {
+            if (listRef.current && stickToLatest.current) {
               listRef.current.scrollToEnd({ animated: false });
             }
           }}
@@ -387,6 +482,11 @@ export default function ChatScreen({ route, navigation }: Props) {
           <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
         </TouchableOpacity>
       </View>
+      <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
+        <Pressable style={styles.imagePreview} onPress={() => setPreviewImage(null)} accessibilityLabel="close photo" accessibilityRole="button">
+          {previewImage && <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="contain" />}
+        </Pressable>
+      </Modal>
     </View>
     </KeyboardAvoidingView>
   );
@@ -404,6 +504,13 @@ const styles = StyleSheet.create({
   headerAvatarImg: { width: 32, height: 32, borderRadius: 16 },
   headerAvatarText: { fontSize: 14, color: COLORS.text2, fontWeight: '700' },
   headerName: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
+  productContext: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, paddingVertical: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  productContextImage: { width: 42, height: 42, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
+  productContextImageFallback: { width: 42, height: 42, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  productContextCopy: { flex: 1, minWidth: 0 },
+  productContextLabel: { fontSize: 10, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase' },
+  productContextName: { fontSize: 13, color: COLORS.text, fontWeight: '700', marginTop: 1 },
+  productContextPrice: { fontSize: 12, color: COLORS.coral, fontWeight: '700', marginTop: 2 },
   messageList: { padding: SPACING.md, paddingBottom: 8 },
   introHeader: {
     alignItems: 'center',
@@ -441,6 +548,8 @@ const styles = StyleSheet.create({
   chatImage: { width: 200, height: 200, borderRadius: RADIUS.media },
   bubbleTime: { fontSize: 10, color: COLORS.text2, marginTop: 2, alignSelf: 'flex-end' },
   bubbleTimeImage: { marginTop: 4 },
+  messageState: { fontSize: 10, color: COLORS.text2, marginTop: 3, alignSelf: 'flex-end' },
+  messageFailed: { fontSize: 10, color: COLORS.coral, marginTop: 3, alignSelf: 'flex-end', fontWeight: '700' },
   offerMsgWrap: { maxWidth: '78%', marginBottom: 8 },
   offerMsgWrapMe: { alignSelf: 'flex-end' },
   offerMsgWrapThem: { alignSelf: 'flex-start' },
@@ -472,6 +581,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.coral,
   },
   offerMsgAcceptText: { fontSize: 12, color: COLORS.white, fontWeight: '700' },
+  offerMsgCounter: { flex: 1, paddingVertical: 8, borderRadius: RADIUS.pill, alignItems: 'center', backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.blue },
+  offerMsgCounterText: { fontSize: 12, color: COLORS.blue, fontWeight: '700' },
+  counterEntry: { flexDirection: 'row', gap: 8, marginTop: 6, alignItems: 'center' },
+  counterInput: { flex: 1, minWidth: 0, color: COLORS.text, backgroundColor: COLORS.surface, borderColor: COLORS.border, borderWidth: 1, borderRadius: RADIUS.pill, paddingHorizontal: 10, paddingVertical: 7, fontSize: 13 },
   offerDock: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -529,6 +642,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     zIndex: 20,
   },
+  imagePreview: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: SPACING.md },
+  previewImage: { width: '100%', height: '100%' },
   profileDropdown: {
     position: 'absolute',
     top: 110,
