@@ -535,10 +535,10 @@ async function runMigrations() {
 
 async function cleanupOldNotifications() {
   try {
-    const result = await pool.query("DELETE FROM notifications WHERE type = 'new_message' AND is_read = true AND created_at < NOW() - INTERVAL '7 days'");
-    if (result.rowCount > 0) console.log(`Cleaned up ${result.rowCount} old read message notifications`);
+    const result = await pool.query("DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '7 days'");
+    if (result.rowCount > 0) console.log(`[CRON] Cleaned up ${result.rowCount} old read notifications`);
   } catch (err) {
-    console.error('Notification cleanup error:', err);
+    console.error('[CRON] Notification cleanup error:', err.message);
   }
 }
 
@@ -2300,6 +2300,17 @@ app.post('/api/orders', authRequired, async (req, res) => {
     }
 
     const method = deliveryMethod === 'delivery' ? 'delivery' : 'meetup';
+    // Validate delivery fields when delivery method is selected
+    if (method === 'delivery') {
+      if (!deliveryName || !deliveryName.trim()) return res.status(400).json({ error: 'Delivery name is required' });
+      if (!deliveryPhone || !deliveryPhone.trim()) return res.status(400).json({ error: 'Delivery phone is required' });
+      if (!deliveryAddress || !deliveryAddress.trim()) return res.status(400).json({ error: 'Delivery address is required' });
+      if (!deliveryCity || !deliveryCity.trim()) return res.status(400).json({ error: 'Delivery city is required' });
+      if (deliveryName.length > 100) return res.status(400).json({ error: 'Name too long' });
+      if (deliveryPhone.length > 20) return res.status(400).json({ error: 'Phone too long' });
+      if (deliveryAddress.length > 200) return res.status(400).json({ error: 'Address too long' });
+      if (deliveryCity.length > 100) return res.status(400).json({ error: 'City too long' });
+    }
     // Apply promo discount to the order total so buyer is charged the discounted amount
     const finalTotal = discountAmount > 0 ? Math.round((total - discountAmount) * 100) / 100 : total;
     const orderResult = await client.query(
@@ -2543,7 +2554,10 @@ app.put('/api/orders/:id/meetup/confirm', authRequired, async (req, res) => {
 
 // ───── Meetup Check-in + QR ─────
 
-const QR_SECRET = process.env.QR_SECRET || process.env.JWT_SECRET + '_qr';
+const QR_SECRET = process.env.QR_SECRET || (() => {
+  console.error('WARNING: QR_SECRET not set — falling back to JWT_SECRET + "_qr". Set QR_SECRET in production.');
+  return process.env.JWT_SECRET + '_qr';
+})();
 
 function haversineDistance(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -3598,36 +3612,42 @@ app.get('/api/conversations', authRequired, async (req, res) => {
 app.post('/api/conversations', authRequired, convLimiter, async (req, res) => {
   const { productId, orderId, sellerId: directSellerId } = req.body;
   if (!productId && !orderId && !directSellerId) return res.status(400).json({ error: 'productId, orderId, or sellerId required' });
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     let sellerId;
     if (directSellerId) {
       sellerId = directSellerId;
     } else if (orderId) {
-      const o = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [orderId]);
-      if (o.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-      const items = await pool.query('SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1', [orderId]);
+      const o = await client.query('SELECT buyer_id FROM orders WHERE id = $1', [orderId]);
+      if (o.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
+      const items = await client.query('SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1', [orderId]);
       sellerId = items.rows[0]?.seller_id;
       if (req.user.id === sellerId) sellerId = o.rows[0].buyer_id;
     } else {
-      const p = await pool.query('SELECT seller_id FROM products WHERE id = $1', [productId]);
-      if (p.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+      const p = await client.query('SELECT seller_id FROM products WHERE id = $1', [productId]);
+      if (p.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Product not found' }); }
       sellerId = p.rows[0].seller_id;
     }
-    if (req.user.id === sellerId) return res.status(400).json({ error: 'Cannot message yourself' });
-    const existing = await pool.query(
-      `SELECT id FROM conversations WHERE ((buyer_id = $1 AND seller_id = $2) OR (buyer_id = $2 AND seller_id = $1)) AND ($3::uuid IS NULL OR order_id = $3)`,
+    if (req.user.id === sellerId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Cannot message yourself' }); }
+    const existing = await client.query(
+      `SELECT id FROM conversations WHERE ((buyer_id = $1 AND seller_id = $2) OR (buyer_id = $2 AND seller_id = $1)) AND ($3::uuid IS NULL OR order_id = $3) FOR SHARE`,
       [req.user.id, sellerId, orderId || null]
     );
-    if (existing.rows.length > 0) return res.json({ conversationId: existing.rows[0].id });
+    if (existing.rows.length > 0) { await client.query('COMMIT'); return res.json({ conversationId: existing.rows[0].id }); }
     const buyerId = req.user.id;
-    const result = await pool.query(
+    const result = await client.query(
       `INSERT INTO conversations (order_id, product_id, buyer_id, seller_id) VALUES ($1, $2, $3, $4) RETURNING id`,
       [orderId || null, productId || null, buyerId, sellerId]
     );
+    await client.query('COMMIT');
     res.status(201).json({ conversationId: result.rows[0].id });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Conversation create error:', err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -3811,54 +3831,68 @@ app.post('/api/conversations/:id/offer', authRequired, async (req, res) => {
 
 // Respond to an offer (accept/decline)
 app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const { action } = req.body;
     if (!action || !['accepted', 'declined'].includes(action)) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Action must be "accepted" or "declined"' });
     }
 
-    const offerRes = await pool.query(
-      'SELECT mo.*, m.conversation_id FROM message_offers mo JOIN messages m ON mo.message_id = m.id WHERE mo.message_id = $1',
+    const offerRes = await client.query(
+      'SELECT mo.*, m.conversation_id FROM message_offers mo JOIN messages m ON mo.message_id = m.id WHERE mo.message_id = $1 FOR UPDATE',
       [req.params.messageId]
     );
-    if (offerRes.rows.length === 0) return res.status(404).json({ error: 'Offer not found' });
+    if (offerRes.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Offer not found' }); }
 
     const offer = offerRes.rows[0];
 
+    // Verify conversation membership
+    const convCheck = await client.query(
+      'SELECT 1 FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [offer.conversation_id, req.user.id]
+    );
+    if (convCheck.rows.length === 0) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Not a member of this conversation' }); }
+
     // Only the seller can respond
     if (req.user.id !== offer.seller_id) {
+      await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Only the seller can respond to offers' });
     }
 
     // Must be pending and not expired
     if (offer.status !== 'pending') {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: `Offer is already ${offer.status}` });
     }
     if (offer.expires_at && new Date(offer.expires_at) < new Date()) {
-      await pool.query("UPDATE message_offers SET status = 'expired' WHERE message_id = $1", [req.params.messageId]);
+      await client.query("UPDATE message_offers SET status = 'expired' WHERE message_id = $1", [req.params.messageId]);
+      await client.query('COMMIT');
       return res.status(400).json({ error: 'Offer has expired' });
     }
 
     // Update offer status
-    await pool.query(
+    await client.query(
       'UPDATE message_offers SET status = $1, responded_at = CURRENT_TIMESTAMP WHERE message_id = $2',
       [action, req.params.messageId]
     );
 
     // Send a system message in the conversation
-    const sellerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+    const sellerInfo = await client.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
     const sellerName = sellerInfo.rows[0]?.full_name || 'Seller';
-    const productInfo = await pool.query('SELECT name FROM products WHERE id = $1', [offer.product_id]);
+    const productInfo = await client.query('SELECT name FROM products WHERE id = $1', [offer.product_id]);
     const productName = productInfo.rows[0]?.name || 'the item';
     const systemContent = action === 'accepted'
       ? `Offer accepted — you can now check out "${productName}" at Rs ${offer.offered_price}`
       : `Offer declined for "${productName}"`;
 
-    await pool.query(
+    await client.query(
       `INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, $3, 'text')`,
       [offer.conversation_id, req.user.id, systemContent]
     );
-    await pool.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [offer.conversation_id]);
+    await client.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [offer.conversation_id]);
+    await client.query('COMMIT');
 
     // Notify buyer
     const buyerNotifMsg = action === 'accepted'
@@ -3871,8 +3905,11 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
 
     res.json({ success: true, status: action });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Respond to offer error:', err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -4163,11 +4200,29 @@ app.post('/api/payments/webhook', async (req, res) => {
           'Your payment could not be processed. The order has been cancelled. Please try again.', { orderId: reference });
       }
     } else if (event === 'payout.completed') {
-      await pool.query(
-        `UPDATE payouts SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE moncash_reference = $1`,
-        [reference]
-      );
-      console.log(`Payout ${reference} completed via webhook`);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        if (eventId) {
+          const already = await client.query('SELECT 1 FROM processed_events WHERE id = $1', [eventId]);
+          if (already.rows.length > 0) { await client.query('ROLLBACK'); return res.json({ received: true, idempotent: true }); }
+          await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+        }
+        const payout = await client.query('SELECT status FROM payouts WHERE moncash_reference = $1 FOR UPDATE', [reference]);
+        if (payout.rows.length > 0 && payout.rows[0].status !== 'completed') {
+          await client.query(
+            `UPDATE payouts SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE moncash_reference = $1`,
+            [reference]
+          );
+        }
+        await client.query('COMMIT');
+        console.log(`Payout ${reference} completed via webhook`);
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
     } else if (event === 'payout.failed') {
       const client = await pool.connect();
       try {
@@ -4177,7 +4232,7 @@ app.post('/api/payments/webhook', async (req, res) => {
           if (already.rows.length > 0) { await client.query('ROLLBACK'); return res.json({ received: true, idempotent: true }); }
           await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
         }
-        const payout = await client.query('SELECT seller_id, amount, status FROM payouts WHERE id = $1 FOR UPDATE', [reference]);
+        const payout = await client.query('SELECT seller_id, amount, status FROM payouts WHERE moncash_reference = $1 FOR UPDATE', [reference]);
         if (payout.rows.length > 0 && payout.rows[0].status !== 'failed') {
           const { seller_id, amount } = payout.rows[0];
           await client.query(
@@ -4186,7 +4241,7 @@ app.post('/api/payments/webhook', async (req, res) => {
           );
         }
         await client.query(
-          `UPDATE payouts SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          `UPDATE payouts SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE moncash_reference = $1`,
           [reference]
         );
         await client.query('COMMIT');
@@ -5141,6 +5196,11 @@ cron.schedule('*/15 * * * *', async () => {
   } catch (err) {
     console.error('[CRON] Offer expiry error:', err.message);
   }
+});
+
+// ───── Cron: Clean up old read notifications (daily at 3 AM) ─────
+cron.schedule('0 3 * * *', async () => {
+  await cleanupOldNotifications();
 });
 
 // ───── Global Error Handler ─────
