@@ -3942,7 +3942,7 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
 
 // A seller can counter directly on the structured offer card. The buyer can then
 // accept or decline the revised price with the existing response endpoint.
-app.post('/api/offers/:messageId/counter', authRequired, async (req, res) => {
+app.post('/api/offers/:messageId/counter', authRequired, msgLimiter, async (req, res) => {
   const client = await pool.connect();
   try {
     const offeredPrice = Number(req.body.offeredPrice);

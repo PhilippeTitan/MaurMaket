@@ -401,28 +401,30 @@ export default function ChatScreen({ route, navigation }: Props) {
             }
           }}
           scrollEventThrottle={16}
-          ListHeaderComponent={loadingOlder ? <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} /> : null}
           ListHeaderComponent={
-            <View style={styles.introHeader}>
-              {getImageUrl(otherUserAvatar) ? (
-                <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.introAvatar} />
-              ) : (
-                <View style={styles.introAvatarFallback}>
-                  <Text style={styles.introAvatarText}>{(otherUserName || '?')[0]}</Text>
-                </View>
-              )}
-              <Text style={styles.introName} numberOfLines={1}>{otherUserName}</Text>
-              <TouchableOpacity
-                style={styles.introViewProfileBtn}
-                onPress={() => {
-                  if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId });
-                }}
-                accessibilityLabel="view profile"
-                accessibilityRole="button"
-              >
-                <Text style={styles.introViewProfileText}>View profile</Text>
-              </TouchableOpacity>
-            </View>
+            <>
+              {loadingOlder && <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} />}
+              <View style={styles.introHeader}>
+                {getImageUrl(otherUserAvatar) ? (
+                  <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.introAvatar} />
+                ) : (
+                  <View style={styles.introAvatarFallback}>
+                    <Text style={styles.introAvatarText}>{(otherUserName || '?')[0]}</Text>
+                  </View>
+                )}
+                <Text style={styles.introName} numberOfLines={1}>{otherUserName}</Text>
+                <TouchableOpacity
+                  style={styles.introViewProfileBtn}
+                  onPress={() => {
+                    if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId });
+                  }}
+                  accessibilityLabel="view profile"
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.introViewProfileText}>View profile</Text>
+                </TouchableOpacity>
+              </View>
+            </>
           }
           onContentSizeChange={() => {
             if (listRef.current && stickToLatest.current) {
