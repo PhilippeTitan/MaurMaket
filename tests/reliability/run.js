@@ -7,7 +7,7 @@
 
 import {
   startTestServer, stopTestServer,
-  createUser, becomeSeller, createProduct,
+  createUser, becomeSeller, createProduct, verifyUserEmail,
   apiGet, apiPost, apiPut, apiDelete,
   runTest, printResults, assert, assertStatus,
 } from '../setup.js';
@@ -27,6 +27,7 @@ async function setup() {
   sellerToken = seller.token;
   await becomeSeller(sellerToken);
   sellerId = seller.user.id;
+  await verifyUserEmail(sellerId);
   
   // Create product
   const product = await createProduct(sellerToken);

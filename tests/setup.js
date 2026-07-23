@@ -5,9 +5,8 @@
  * Run: node tests/setup.js
  */
 
-import { createServer } from 'http';
 import { execSync } from 'child_process';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const TEST_PORT = 3099;
@@ -15,6 +14,23 @@ const SERVER_PATH = join(process.cwd(), 'server.js');
 
 let serverProcess = null;
 let serverUrl = `http://localhost:${TEST_PORT}`;
+let pgPool = null;
+
+// ─── DB Helpers (direct connection for test setup) ───
+
+async function getPool() {
+  if (pgPool) return pgPool;
+  const { Pool } = await import('pg');
+  const dbUrl = process.env.DATABASE_URL || process.env.TEST_DATABASE_URL ||
+    'postgresql://postgres:postgres@localhost:5432/maurmaket_test';
+  pgPool = new Pool({ connectionString: dbUrl });
+  return pgPool;
+}
+
+export async function directQuery(sql, params = []) {
+  const pool = await getPool();
+  return pool.query(sql, params);
+}
 
 // ─── Server Management ───
 
@@ -75,7 +91,7 @@ async function waitForServer(url, timeoutMs) {
 export async function createUser(userData = {}) {
   const timestamp = Date.now();
   const defaultData = {
-    name: `Test User ${timestamp}`,
+    fullName: `Test User ${timestamp}`,
     email: `test${timestamp}@maurmaket.test`,
     password: 'TestPass123!',
     phone: `+509555${String(timestamp).slice(-6)}`,
@@ -123,6 +139,10 @@ export async function becomeSeller(token, sellerData = {}) {
 
   if (!res.ok) throw new Error('Failed to become seller');
   return res.json();
+}
+
+export async function verifyUserEmail(userId) {
+  await directQuery('UPDATE users SET email_verified = true WHERE id = $1', [userId]);
 }
 
 // ─── API Helpers ───
@@ -178,13 +198,14 @@ export async function createProduct(token, productData = {}) {
     name: `Test Product ${timestamp}`,
     description: `Test description ${timestamp}`,
     price: 1000,
-    category: 'Electronics',
+    categoryId: 'cat-electronics',
     stock: 10,
+    images: [{ image_url: 'https://placehold.co/400x400', is_primary: true }],
   };
   const data = { ...defaultData, ...productData };
 
   const res = await apiPost('/api/products', data, token);
-  if (res.status !== 201) throw new Error(`Failed to create product: ${JSON.stringify(res.data)}`);
+  if (res.status !== 201) throw new Error(`Failed to create product (${res.status}): ${JSON.stringify(res.data)}`);
   return res.data;
 }
 

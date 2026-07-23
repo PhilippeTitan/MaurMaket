@@ -7,13 +7,14 @@
 
 import {
   startTestServer, stopTestServer,
-  createUser, becomeSeller, createProduct,
+  createUser, becomeSeller, createProduct, verifyUserEmail,
   apiGet, apiPost, apiPut,
   runTest, printResults, assert, assertStatus,
 } from '../setup.js';
 
 const results = [];
 let buyerToken, sellerToken, sellerId, productId;
+let createdOrderId = null;
 
 // ─── Setup ───
 
@@ -25,6 +26,7 @@ async function setup() {
   sellerToken = seller.token;
   await becomeSeller(sellerToken);
   sellerId = seller.user.id;
+  await verifyUserEmail(sellerId);
   
   const product = await createProduct(sellerToken, { price: 2500, stock: 5 });
   productId = product.product?.id || product.id;
@@ -45,7 +47,7 @@ async function testCreateOrderFromCart() {
   
   assertStatus(status, 201, 'Create order');
   assert(data.order?.id, 'Missing order ID');
-  return data.order.id;
+  createdOrderId = data.order.id;
 }
 
 // ─── Tests: Order Lifecycle ───
@@ -184,11 +186,11 @@ async function main() {
     await setup();
     
     console.log('Cart → Checkout:');
-    const orderId = await runTest('Create order from cart', testCreateOrderFromCart);
+    results.push(await runTest('Create order from cart', testCreateOrderFromCart));
     
     console.log('\nOrder Lifecycle:');
-    if (orderId) {
-      await runTest('Order lifecycle: pending → cancel', () => testOrderLifecycle(orderId));
+    if (createdOrderId) {
+      await runTest('Order lifecycle: pending → cancel', () => testOrderLifecycle(createdOrderId));
     }
     
     console.log('\nSeller View:');
