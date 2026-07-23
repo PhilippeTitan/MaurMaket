@@ -98,10 +98,41 @@ export default function VerificationScreen() {
                   if (faceUpload.deleteUrl) setIdFaceDeleteUrl(faceUpload.deleteUrl);
                   console.log(`✅ [VERIFY] Cropped face uploaded: ${faceUpload.url}`);
                 } else {
-                  console.log(`⚠️ [VERIFY] No face detected in CIN front — will use full image`);
+                  console.log(`⚠️ [VERIFY] No face detected by ML Kit — trying heuristic crop of CIN face region`);
+                  const imgW = photo.width || 1080;
+                  const imgH = photo.height || 1920;
+                  const cropW = Math.round(imgW * 0.45);
+                  const cropH = Math.round(imgH * 0.35);
+                  const cropX = 0;
+                  const cropY = imgH - cropH;
+                  console.log(`🔍 [VERIFY] Heuristic crop: x=${cropX} y=${cropY} w=${cropW} h=${cropH}`);
+                  const manipulated = await ImageManipulator.manipulateAsync(
+                    photo.uri,
+                    [{ crop: { originX: cropX, originY: cropY, width: cropW, height: cropH } }],
+                    { compress: 0.85, format: 'jpeg' }
+                  );
+                  const faceUpload = await uploadImage(manipulated.uri);
+                  setIdFaceUrl(faceUpload.url);
+                  if (faceUpload.deleteUrl) setIdFaceDeleteUrl(faceUpload.deleteUrl);
+                  console.log(`✅ [VERIFY] Heuristic face crop uploaded: ${faceUpload.url}`);
                 }
               } catch (e: any) {
-                console.log(`⚠️ [VERIFY] Face crop failed: ${e?.message} — will use full image`);
+                console.log(`⚠️ [VERIFY] Face detection failed: ${e?.message} — trying heuristic crop`);
+                const imgW = photo.width || 1080;
+                const imgH = photo.height || 1920;
+                const cropW = Math.round(imgW * 0.45);
+                const cropH = Math.round(imgH * 0.35);
+                const cropX = 0;
+                const cropY = imgH - cropH;
+                const manipulated = await ImageManipulator.manipulateAsync(
+                  photo.uri,
+                  [{ crop: { originX: cropX, originY: cropY, width: cropW, height: cropH } }],
+                  { compress: 0.85, format: 'jpeg' }
+                );
+                const faceUpload = await uploadImage(manipulated.uri);
+                setIdFaceUrl(faceUpload.url);
+                if (faceUpload.deleteUrl) setIdFaceDeleteUrl(faceUpload.deleteUrl);
+                console.log(`✅ [VERIFY] Heuristic face crop uploaded after error: ${faceUpload.url}`);
               }
             }
             setStep('cinBack');

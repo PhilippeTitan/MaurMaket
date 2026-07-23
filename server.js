@@ -5069,7 +5069,7 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
             console.error(`❌ [VERIFY] Stack: ${e.stack?.split('\n').slice(0, 3).join(' | ')}`);
             const msg = e.message || '';
             if (msg.includes('no_face') || msg.includes('No face')) {
-              issues.push('No face detected — make sure your face is clearly visible in the selfie with good lighting');
+              issues.push('No face detected in ID card — please retake the CIN photo with the card flat, well-lit, and the face photo clearly visible');
             } else if (msg.includes('low_quality') || msg.includes('blurry')) {
               issues.push('Image too blurry — please retake with better lighting and focus');
             } else {
