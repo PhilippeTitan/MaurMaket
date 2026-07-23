@@ -1332,6 +1332,22 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] Fixed graceful shutdown (drains in-flight requests)
 - [x] Fixed unhandledRejection handler (crashes process instead of swallowing)
 
+### ✅ Session 19: Neon Quota Exhaustion → Supabase RAID 1 + MCP Setup + Startup Fix
+- [x] Diagnosed Neon free tier compute hours exhausted — database completely inaccessible
+- [x] Set up Supabase as RAID 1 fallback (project: `bnnluaqrktnrnnfvmqbt`)
+- [x] Fixed Supabase pooler region (was us-east-1, corrected to ca-central-1)
+- [x] Generated + ran `migrate-supabase.sql` — 22 tables + indexes + 9 categories seeded
+- [x] Implemented dual-database pool: `neonPool` (primary) + `supabasePool` (fallback) with auto-switch
+- [x] Built auto-migration cron: checks hourly if Neon is awake, migrates all data → Supabase
+- [x] Set up Neon MCP: `npx -y mcp-remote@latest https://mcp.neon.tech/mcp`
+- [x] Set up Supabase MCP: `https://mcp.supabase.com/mcp?project_ref=bnnluaqrktnrnnfvmqbt`
+- [x] Set up Render MCP: `npx -y mcp-remote@latest https://mcp.render.com/mcp --header "Authorization: Bearer rnd_..."` (full deploy management)
+- [x] Fixed Render deploy hang: `cleanupOldNotifications()` was blocking startup (Supabase pooler query hung)
+- [x] Startup chain restructured: `startServer()` runs immediately after `runMigrations()`, cleanup deferred 5s with 10s timeout
+- [x] `cleanupOldNotifications()` wrapped in 15s `Promise.race` to prevent future hangs
+- [x] Committed + pushed: `c05c3f1` — deploy went live in ~1 min
+- [x] Health endpoint verified: `{"status":"ok","primary":"down","fallback":"connected","active":"supabase"}`
+
 ### 🔲 Remaining Features (deferred)
 - [ ] Add SMTP env vars to Render (need Gmail address + app password)
 - [ ] Add GOOGLE_OAUTH_CLIENT_ID to Render env vars
@@ -1339,3 +1355,4 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [ ] Delivery estimate on orders
 - [ ] Phase 6: Multi-seller meetups (per-seller escrow UI)
 - [ ] APK rebuild (close other programs to free RAM for AAPT2)
+- [ ] Populate Supabase with data (auto-migration cron runs when Neon wakes on 1st of month)
