@@ -1257,7 +1257,7 @@ app.post('/api/auth/verify/check', authRequired, async (req, res) => {
     }
 
     await pool.query('UPDATE users SET email_verified = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [req.user.id]);
-    await pool.query('DELETE FROM otp_codes WHERE email = $1 AND purpose = $2', [user.email]);
+    await pool.query('DELETE FROM otp_codes WHERE email = $1 AND purpose = $2', [user.email, 'verify']);
 
     const updated = await pool.query(
       `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng FROM users WHERE id = $1`,
