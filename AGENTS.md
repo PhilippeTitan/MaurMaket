@@ -6,6 +6,23 @@
 ## Safety Rules
 - **NEVER kill node.exe processes**: OpenCode runs on Node.js. Killing random `node.exe` processes can kill OpenCode itself. Never use `taskkill`, `kill`, or any command that terminates node processes unless explicitly told to kill a specific process you started.
 
+## Obsidian Vault (Deep Context)
+This project has a persistent knowledge base at `C:\MAURINEX\MAURINEX NOTES\MaurMaket\`. Use it:
+
+| File | Purpose | When to Read |
+|------|---------|--------------|
+| `context.md` | Lean active state (<5000 tokens) | **Every session start** |
+| `design-principles.md` | UX rules, self-check, patterns | **Before ANY UI work** |
+| `sessions/source-of-truth.md` | Immutable session log (append-only) | When you need full history |
+| `decisions/` | Architecture Decision Records | When making design choices |
+| `sessions/archive/` | Full session transcripts (233 sessions) | When researching past work |
+
+**Rules:**
+- `source-of-truth.md` is **NEVER rewritten** — only appended to at the bottom
+- `context.md` is **rewritten each session** — keep lean, current state only
+- When a milestone completes, **archive it** and remove from `context.md`
+- **After every session compaction**, run `node archive-sessions.cjs` to archive the compacted session to Obsidian
+
 ## Post-Deploy Audit Protocol
 
 After every major feature, refactor, or batch of fixes, re-run the full audit suite before declaring "done." This catches regressions and new issues introduced by the changes.
