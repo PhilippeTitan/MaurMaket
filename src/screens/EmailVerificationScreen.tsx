@@ -60,8 +60,11 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
     }
     setLoading(true);
     try {
-      const res = await checkVerifyCode(c) as { user: typeof store.user };
-      await store.setUser(res.user, store.token);
+      const res = await checkVerifyCode(c) as { success?: boolean; alreadyVerified?: boolean; user?: typeof store.user };
+      // Sync store with updated user (email_verified=true) — even if already verified
+      if (res.user) {
+        await store.setUser(res.user, store.token || null);
+      }
       setVerified(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t('verify.invalidCode');
