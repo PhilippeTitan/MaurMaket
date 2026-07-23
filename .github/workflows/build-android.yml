@@ -20,6 +20,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Design guardrails
+        run: node scripts/design-guardrails.js
+
+      - name: Type check
+        run: npx tsc --noEmit
+
       - name: Generate native Android project
         run: npx expo prebuild --platform android --clean --no-install
 
