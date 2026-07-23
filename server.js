@@ -797,6 +797,7 @@ app.put('/api/auth/profile', authRequired, async (req, res) => {
         location_city = COALESCE($8, location_city),
         location_lat = COALESCE($9, location_lat),
         location_lng = COALESCE($10, location_lng),
+        email_verified = CASE WHEN $2 IS NOT NULL AND $2 != email THEN false ELSE email_verified END,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $6
        RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,
@@ -2199,24 +2200,28 @@ app.get('/api/orders/:id/timeline', authRequired, async (req, res) => {
 app.get('/api/orders', authRequired, async (req, res) => {
   try {
     const buyerOrders = await pool.query(
-      `SELECT DISTINCT ON (o.id) o.*,
-              u.full_name AS seller_name, u.phone AS seller_phone,
-              'buyer' AS my_role
-       FROM orders o
-       JOIN order_items oi ON o.id = oi.order_id
-       JOIN users u ON oi.seller_id = u.id
-       WHERE o.buyer_id = $1
-       ORDER BY o.id, oi.id`,
+      `SELECT * FROM (
+        SELECT DISTINCT ON (o.id) o.*,
+                u.full_name AS seller_name, u.phone AS seller_phone,
+                'buyer' AS my_role
+         FROM orders o
+         JOIN order_items oi ON o.id = oi.order_id
+         JOIN users u ON oi.seller_id = u.id
+         WHERE o.buyer_id = $1
+         ORDER BY o.id, o.created_at DESC
+       ) sub ORDER BY sub.created_at DESC`,
       [req.user.id]
     );
     const sellerOrders = await pool.query(
-      `SELECT DISTINCT ON (o.id) o.*, u.full_name AS buyer_name, u.phone AS buyer_phone,
-              'seller' AS my_role
-       FROM orders o
-       JOIN order_items oi ON o.id = oi.order_id
-       JOIN users u ON o.buyer_id = u.id
-       WHERE oi.seller_id = $1
-       ORDER BY o.id, o.created_at DESC`,
+      `SELECT * FROM (
+        SELECT DISTINCT ON (o.id) o.*, u.full_name AS buyer_name, u.phone AS buyer_phone,
+                'seller' AS my_role
+         FROM orders o
+         JOIN order_items oi ON o.id = oi.order_id
+         JOIN users u ON o.buyer_id = u.id
+         WHERE oi.seller_id = $1
+         ORDER BY o.id, o.created_at DESC
+       ) sub ORDER BY sub.created_at DESC`,
       [req.user.id]
     );
     res.json({ buyerOrders: buyerOrders.rows, sellerOrders: sellerOrders.rows });
@@ -2362,7 +2367,8 @@ app.post('/api/orders', authRequired, async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Order create error:', err);
-    res.status(400).json({ error: err.message });
+    const safeMessage = err.message?.startsWith('Product') || err.message?.startsWith('You cannot') || err.message?.startsWith('Insufficient') || err.message?.startsWith('Cart') ? err.message : 'Invalid order data';
+    res.status(400).json({ error: safeMessage });
   } finally {
     client.release();
   }
@@ -2504,13 +2510,17 @@ async function canAccessOrder(userId, orderId) {
 app.put('/api/orders/:id/meetup', authRequired, async (req, res) => {
   const { lat, lng, address, note } = req.body;
   if (!lat || !lng) return res.status(400).json({ error: 'Latitude and longitude required' });
+  const latNum = parseFloat(lat);
+  const lngNum = parseFloat(lng);
+  if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90) return res.status(400).json({ error: 'Invalid latitude' });
+  if (!Number.isFinite(lngNum) || lngNum < -180 || lngNum > 180) return res.status(400).json({ error: 'Invalid longitude' });
   try {
     const order = await canAccessOrder(req.user.id, req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (order.status !== 'paid' && order.status !== 'pending') return res.status(400).json({ error: 'Order must be paid or pending' });
     await pool.query(
       `UPDATE orders SET meetup_lat = $1, meetup_lng = $2, meetup_address = $3, meetup_note = $4, meetup_confirmed = false, meetup_proposed_by = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6`,
-      [lat, lng, address || null, note || null, req.user.id, req.params.id]
+      [latNum, lngNum, address || null, note || null, req.user.id, req.params.id]
     );
     logOrderEvent(req.params.id, 'meetup_proposed', req.user.id, null, null, `Meetup proposed at ${address || `${lat}, ${lng}`}`);
     const oData = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [req.params.id]);
@@ -3346,6 +3356,7 @@ app.post('/api/promos', authRequired, sellerRequired, async (req, res) => {
   if (!code || !discountType || !discountValue) return res.status(400).json({ error: 'code, discountType, discountValue required' });
   if (!['percentage', 'fixed'].includes(discountType)) return res.status(400).json({ error: 'discountType must be percentage or fixed' });
   if (discountValue <= 0) return res.status(400).json({ error: 'discountValue must be positive' });
+  if (discountType === 'percentage' && discountValue > 100) return res.status(400).json({ error: 'Percentage discount cannot exceed 100%' });
   try {
     const result = await pool.query(
       `INSERT INTO promo_codes (code, seller_id, discount_type, discount_value, min_order_amount, max_uses, valid_until)
@@ -3447,6 +3458,13 @@ app.post('/api/disputes', authRequired, async (req, res) => {
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (order.status !== 'completed' && order.status !== 'paid' && order.status !== 'processing') {
       return res.status(400).json({ error: 'Can only dispute active or completed orders' });
+    }
+    const existingDispute = await pool.query(
+      "SELECT 1 FROM disputes WHERE order_id = $1 AND status IN ('open', 'under_review') LIMIT 1",
+      [orderId]
+    );
+    if (existingDispute.rows.length > 0) {
+      return res.status(400).json({ error: 'An open dispute already exists for this order' });
     }
     const result = await pool.query(
       `INSERT INTO disputes (order_id, raised_by, reason, description) VALUES ($1, $2, $3, $4) RETURNING *`,
@@ -3600,7 +3618,7 @@ app.get('/api/conversations', authRequired, async (req, res) => {
        FROM conversations c
        JOIN users u ON u.id = CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END
        LEFT JOIN LATERAL (
-         SELECT CASE WHEN message_type = 'image' THEN '📷 Photo' ELSE content END AS last_message
+         SELECT CASE WHEN message_type = 'image' THEN '📷 Photo' WHEN message_type = 'offer' THEN '💰 Offer' ELSE content END AS last_message
          FROM messages WHERE conversation_id = c.id
          ORDER BY created_at DESC, id DESC LIMIT 1
        ) latest ON true
@@ -3760,9 +3778,10 @@ app.post('/api/conversations/:id/messages', authRequired, msgLimiter, async (req
 app.get('/api/conversations/unread-count', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT COALESCE(SUM(
-        (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_id != $1 AND is_read = false)
-      ), 0) AS count FROM conversations c WHERE c.buyer_id = $1 OR c.seller_id = $1`,
+      `SELECT COUNT(*) AS count FROM messages m
+       JOIN conversations c ON m.conversation_id = c.id
+       WHERE (c.buyer_id = $1 OR c.seller_id = $1)
+         AND m.sender_id != $1 AND m.is_read = false`,
       [req.user.id]
     );
     res.json({ count: parseInt(result.rows[0].count) });
@@ -3775,18 +3794,20 @@ app.get('/api/conversations/unread-count', authRequired, async (req, res) => {
 // ───── Structured Offer Routes ─────
 
 // Send an offer in a conversation
-app.post('/api/conversations/:id/offer', authRequired, async (req, res) => {
+app.post('/api/conversations/:id/offer', authRequired, msgLimiter, async (req, res) => {
+  const client = await pool.connect();
   try {
     const { productId, productName, offeredPrice, listPrice } = req.body;
     if (!productId || !offeredPrice || offeredPrice <= 0) {
       return res.status(400).json({ error: 'Valid productId and offeredPrice required' });
     }
 
-    const conv = await pool.query(
-      'SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+    await client.query('BEGIN');
+    const conv = await client.query(
+      'SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2) FOR UPDATE',
       [req.params.id, req.user.id]
     );
-    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    if (conv.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Conversation not found' }); }
 
     const conversation = conv.rows[0];
     const buyerId = conversation.buyer_id;
@@ -3794,40 +3815,44 @@ app.post('/api/conversations/:id/offer', authRequired, async (req, res) => {
 
     // Only the buyer can send offers
     if (req.user.id !== buyerId) {
+      await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Only the buyer can send offers' });
     }
 
     // Validate product belongs to this conversation's seller
-    const product = await pool.query(
+    const product = await client.query(
       'SELECT id, price, stock, seller_id, name FROM products WHERE id = $1 AND is_available = true',
       [productId]
     );
-    if (product.rows.length === 0) return res.status(404).json({ error: 'Product not found or unavailable' });
+    if (product.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Product not found or unavailable' }); }
     if (product.rows[0].seller_id !== sellerId) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Product does not belong to this seller' });
     }
     if (product.rows[0].stock <= 0) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Product is out of stock' });
     }
 
     // Check for existing pending offer on this product from this buyer in this conversation
-    const existingOffer = await pool.query(
+    const existingOffer = await client.query(
       "SELECT id FROM message_offers WHERE product_id = $1 AND buyer_id = $2 AND conversation_id = $3 AND status = 'pending'",
       [productId, buyerId, req.params.id]
     );
     if (existingOffer.rows.length > 0) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'You already have a pending offer for this product' });
     }
 
     // Create the message
-    const msgResult = await pool.query(
+    const msgResult = await client.query(
       `INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, NULL, 'offer') RETURNING *`,
       [req.params.id, req.user.id]
     );
     const message = msgResult.rows[0];
 
     // Create the offer record
-    const offerResult = await pool.query(
+    const offerResult = await client.query(
       `INSERT INTO message_offers (message_id, conversation_id, product_id, buyer_id, seller_id, offered_price, list_price)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [message.id, req.params.id, productId, buyerId, sellerId, offeredPrice, listPrice]
@@ -3835,7 +3860,8 @@ app.post('/api/conversations/:id/offer', authRequired, async (req, res) => {
     const offer = offerResult.rows[0];
 
     // Update conversation last_message_at
-    await pool.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
+    await client.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
+    await client.query('COMMIT');
 
     // Notify seller
     const buyerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [buyerId]);
@@ -3854,8 +3880,11 @@ app.post('/api/conversations/:id/offer', authRequired, async (req, res) => {
       }}
     });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Send offer error:', err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -4142,7 +4171,11 @@ app.post('/api/payments/webhook', async (req, res) => {
           if (stockCheck.rows.length === 0 || stockCheck.rows[0].stock < oi.quantity) {
             // Insufficient stock — rollback payment and refund buyer
             await client.query('ROLLBACK');
+            if (eventId) {
+              await pool.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+            }
             console.error(`Order ${reference}: insufficient stock for product ${oi.product_id}, processing refund`);
+            await pool.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [reference]);
             const orderFull = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [reference]);
             const buyerId = orderFull.rows[0]?.buyer_id;
             if (buyerId) {
@@ -4158,6 +4191,7 @@ app.post('/api/payments/webhook', async (req, res) => {
                       method: 'POST',
                       headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
                       body: JSON.stringify({ amount: Math.round(refundAmount), receiver: buyerPhone, referenceId: `stock_refund_${reference}` }),
+                      signal: AbortSignal.timeout(15000),
                     }
                   );
                   if (payoutRes.ok) console.log(`[WEBHOOK] Stock refund Rs ${refundAmount} sent to buyer ${buyerPhone}`);
@@ -4544,6 +4578,7 @@ app.post('/api/products/:id/sale', authRequired, sellerRequired, async (req, res
 async function ocrSpaceParse(imageUrl) {
   const apiKey = process.env.OCR_SPACE_KEY;
   if (!apiKey) throw new Error('OCR_SPACE_KEY not configured');
+  if (!isAllowedImageUrl(imageUrl)) throw new Error('Image URL not from allowed host');
   const resp = await fetch(
     `https://api.ocr.space/parse/imageurl?apikey=${encodeURIComponent(apiKey)}&url=${encodeURIComponent(imageUrl)}&language=eng&OCREngine=2`,
     { signal: AbortSignal.timeout(30000) }
@@ -4609,6 +4644,16 @@ function extractSex(text) {
   return sexMatch ? sexMatch[1].toUpperCase() : null;
 }
 
+const ALLOWED_IMAGE_DOMAINS = ['i.ibb.co', 'ibb.co', 'i.imgur.com', 'imgur.com'];
+
+function isAllowedImageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    return ALLOWED_IMAGE_DOMAINS.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d));
+  } catch { return false; }
+}
+
 function normalizeString(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
@@ -4616,6 +4661,7 @@ function normalizeString(str) {
 async function tareefCompare(imageUrl1, imageUrl2) {
   const apiKey = process.env.TAREEF_API_KEY;
   if (!apiKey) throw new Error('TAREEF_API_KEY not configured');
+  if (!isAllowedImageUrl(imageUrl1) || !isAllowedImageUrl(imageUrl2)) throw new Error('Image URL not from allowed host');
   const fetchImage = async (url, label) => {
     const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!r.ok) throw new Error(`Failed to fetch ${label}: HTTP ${r.status} from ${url.substring(0, 80)}`);
@@ -5109,12 +5155,9 @@ app.get('/api/map-config', authRequired, (_req, res) => {
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    const revRes = await pool.query('SELECT COALESCE(SUM(commission_amount), 0) AS total_commission FROM platform_revenue');
     res.json({
       status: 'ok',
       database: 'connected',
-      hasMccKey: !!process.env.MCC_KEY,
-      totalCommission: parseFloat(revRes.rows[0].total_commission),
     });
   } catch {
     res.status(503).json({ status: 'error', database: 'disconnected' });

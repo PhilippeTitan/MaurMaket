@@ -125,7 +125,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     sendingRef.current = true;
     setSending(true);
     const msg = text.trim();
-    const tempId = `local-${Date.now()}`;
+    const tempId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimistic: LocalMessage = { id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '', content: msg, message_type: 'text', is_read: true, created_at: new Date().toISOString(), pending: true };
     setText('');
     stickToLatest.current = true;
@@ -136,7 +136,11 @@ export default function ChatScreen({ route, navigation }: Props) {
       lastMessageCursor.current = { time: result.message.created_at, id: result.message.id };
     } catch {
       setMessages(prev => prev.map(m => m.id === tempId ? { ...m, pending: false, failed: true } : m));
-      toast.error('Message not sent', t('chat.sendFailed'), () => handleSend());
+      toast.error('Message not sent', t('chat.sendFailed'), () => {
+        setText(msg);
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        handleSend();
+      });
       setText(msg);
     } finally {
       setSending(false);
