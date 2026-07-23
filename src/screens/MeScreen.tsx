@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, useWindowDimensions, FlatList,
 } from 'react-native';
@@ -10,7 +10,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
-import { store } from '../store';
+import { useUser } from '../hooks';
 import {
   getOrders, getSellerOrders, getSellerAnalytics, getWishlist,
   getSellerProducts, getFollowerCount, getFollowing, getImageUrl, getSellerReviews, getLowStockProducts,
@@ -43,7 +43,7 @@ export default function MeScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
-  const [user, setUser] = useState(store.user);
+  const { user } = useUser();
   const isSeller = user?.role === 'seller';
   console.log(`[MeScreen RENDER] user=${user?.id?.substring(0,8)} role=${user?.role} isSeller=${isSeller} tier=${user?.seller_tier}`);
 
@@ -180,17 +180,8 @@ export default function MeScreen() {
   }, [isSeller, user?.id]);
 
   useFocusEffect(useCallback(() => {
-    store.refreshUser();
     fetchData(true);
   }, [fetchData]));
-
-  useEffect(() => {
-    const unsub = store.onChange(() => {
-      setUser(store.user);
-      fetchData();
-    });
-    return unsub;
-  }, [fetchData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

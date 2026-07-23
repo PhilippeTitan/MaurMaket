@@ -10,6 +10,8 @@ import { store } from './src/store';
 import { COLORS, SPACING } from './src/theme';
 import { i18n } from './src/i18n';
 import { getMe } from './src/api';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient, invalidateUser } from './src/hooks';
 import { ToastProvider } from './src/components/Toast';
 import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/notifications';
 import type { User } from './src/types';
@@ -311,7 +313,7 @@ export default function App() {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (status) => {
       if (status === 'active' && store.isLoggedIn) {
-        store.refreshUser();
+        invalidateUser();
       }
     });
     return () => sub.remove();
@@ -378,7 +380,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <SafeAreaProvider><ToastProvider><ErrorBoundary>{appContent}</ErrorBoundary></ToastProvider></SafeAreaProvider>;
+  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary>{appContent}</ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
 }
 
 const styles = StyleSheet.create({

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Platform, TextInput,
 } from 'react-native';
@@ -7,12 +7,12 @@ import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, getDisplayName } from '../theme';
 import { store } from '../store';
+import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
 import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '../api';
 import { i18n, useTranslation, type Language } from '../i18n';
 import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -58,22 +58,13 @@ export default function SettingsScreen({ navigation }: Props) {
   const { t, language } = useTranslation();
   const toast = useToast();
 
-  const [user, setUser] = useState(store.user);
+  const { user } = useUser();
   const isSeller = user?.role === 'seller';
   const [loading, setLoading] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [storeLogoUploading, setStoreLogoUploading] = useState(false);
 
   const avatarUrl = getImageUrl(user?.avatar_url);
-
-  useEffect(() => {
-    const unsub = store.onChange(() => setUser(store.user));
-    return unsub;
-  }, []);
-
-  useFocusEffect(useCallback(() => {
-    store.refreshUser();
-  }, []));
 
   const [locationStatus, setLocationStatus] = useState<string | null>(null);
   const [locAddress, setLocAddress] = useState(user?.location_address || '');
