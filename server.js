@@ -633,7 +633,10 @@ async function runMigrations() {
 
 async function cleanupOldNotifications() {
   try {
-    const result = await pool.query("DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '7 days'");
+    const result = await Promise.race([
+      pool.query("DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '7 days'"),
+      new Promise((_, re) => setTimeout(() => re(new Error('Notification cleanup timeout')), 15000))
+    ]);
     if (result.rowCount > 0) console.log(`[CRON] Cleaned up ${result.rowCount} old read notifications`);
   } catch (err) {
     console.error('[CRON] Notification cleanup error:', err.message);
@@ -5519,12 +5522,23 @@ if (isMain) {
     });
   };
   runMigrations()
-    .then(() => cleanupOldNotifications().catch(e => console.error('Cleanup error:', e.message)))
     .then(startServer)
     .catch(err => {
       console.error('Startup error, starting server anyway:', err.message);
       startServer();
     });
+
+  // Non-blocking cleanup with timeout — never blocks server startup
+  setTimeout(async () => {
+    try {
+      await Promise.race([
+        cleanupOldNotifications(),
+        new Promise((_, re) => setTimeout(() => re(new Error('cleanup timeout')), 10000))
+      ]);
+    } catch (e) {
+      console.error('[STARTUP] Cleanup skipped:', e.message);
+    }
+  }, 5000);
 }
 
 export default app;
