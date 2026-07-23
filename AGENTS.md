@@ -1365,6 +1365,33 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [x] Committed + pushed: `c05c3f1` — deploy went live in ~1 min
 - [x] Health endpoint verified: `{"status":"ok","primary":"down","fallback":"connected","active":"supabase"}`
 
+### ✅ Session 20: Phase 2 State Awareness — TanStack React Query
+- [x] Installed `@tanstack/react-query@5.101.4`
+- [x] Created `src/hooks/queryClient.ts` — QueryClient singleton (30s staleTime, 5m gcTime)
+- [x] Created `src/hooks/useUser.ts` — `useUser()` hook with automatic cache sync to store, `invalidateUser()` for AppState/focus
+- [x] Created `src/hooks/useProducts.ts` — `useProducts()` and `useSellerProducts()` hooks
+- [x] Created `src/hooks/index.ts` — barrel export
+- [x] Wrapped app with `QueryClientProvider` in `App.tsx`
+- [x] Replaced `store.refreshUser()` with `invalidateUser()` in AppState listener
+- [x] Wired `useUser()` in MeScreen — removed manual `store.onChange` subscription + `useFocusEffect`
+- [x] Wired `useUser()` in SettingsScreen — removed manual `store.onChange` subscription + `useFocusEffect`
+- [x] Query cache auto-clears on logout via `store.onChange` listener
+- [x] TypeScript check passed (0 new errors)
+- [x] Committed: `5a443e7`
+
+### ✅ Session 21: Project Cleanup — Remove Junk, Dead Code, Fix Config
+- [x] Deleted 5 junk files: `nul`, `expo.log`, `expo_output.log`, `server.log`, `server_output.log`
+- [x] Deleted `Some claude changes/` directory (22 duplicate files)
+- [x] Deleted dead component: `FloatingBackButton.tsx` (never imported, overlaps with BackButton)
+- [x] Deleted dead icons: `icons/feed.tsx`, `icons/me.tsx` (never rendered)
+- [x] Removed dead exports: `FeedCardSkeleton` from Skeleton.tsx, `getIconName()`/`MCI_MAP` from Icon.tsx
+- [x] Removed 30 files from git tracking (git rm --cached)
+- [x] Updated `.gitignore` — added `*.bat`, `Some claude changes/`, `for claude.txt`, `.agents/`
+- [x] Created `.env.example` template for new developers
+- [x] Fixed `.dockerignore` — removed stale `MonCashConnect KEYS.txt` and `netlify` refs
+- [x] TypeScript check passed (4 pre-existing ChatScreen errors, 0 new)
+- [x] Committed: `18efe90`
+
 ### 🔲 Remaining Features (deferred)
 - [ ] Add SMTP env vars to Render (need Gmail address + app password)
 - [ ] Add GOOGLE_OAUTH_CLIENT_ID to Render env vars
