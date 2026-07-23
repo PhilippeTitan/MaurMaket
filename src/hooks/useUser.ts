@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { store } from '../store';
 import { getMe } from '../api';
@@ -17,6 +17,7 @@ async function fetchUser(): Promise<User> {
 
 export function useUser() {
   const qc = useQueryClient();
+  const [storeUser, setStoreUser] = useState(store.user);
 
   const query = useQuery<User>({
     queryKey: USER_QUERY_KEY,
@@ -34,6 +35,7 @@ export function useUser() {
 
   useEffect(() => {
     const unsub = store.onChange(() => {
+      setStoreUser(store.user);
       if (!store.token) {
         qc.clear();
       }
@@ -42,7 +44,7 @@ export function useUser() {
   }, [qc]);
 
   return {
-    user: query.data ?? store.user,
+    user: storeUser ?? query.data ?? store.user,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     error: query.error,

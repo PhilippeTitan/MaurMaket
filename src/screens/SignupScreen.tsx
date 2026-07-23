@@ -117,12 +117,12 @@ export default function SignupScreen({ navigation }: Props) {
 
         <TextInput
           style={[styles.input, nameError && styles.inputError]}
-          placeholder={t('settingsEdit.fullName') || 'Full name'}
+          placeholder={t('auth.fullNamePlaceholder') || 'Full name'}
           placeholderTextColor={COLORS.text2}
           value={fullName}
           onChangeText={(v) => { setFullName(v); setNameError(''); }}
           returnKeyType="next"
-          accessibilityLabel={t('settingsEdit.fullName') || 'Full name'}
+          accessibilityLabel={t('auth.fullNamePlaceholder') || 'Full name'}
         />
         {nameError ? <Text style={styles.error}>{nameError}</Text> : null}
         <TextInput
