@@ -175,7 +175,39 @@ jobs:
       - name: Run design domain tests
         run: node tests/design/run.js
 
-  # ─── 6. Type Check (deterministic gate) ───
+  # ─── 6. Reactivity: Backend→Frontend data flow (deterministic gate) ───
+  reactivity:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: maurmaket_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run reactivity tests
+        run: node tests/reactivity/run.js
+
+  # ─── 7. Type Check (deterministic gate) ───
   typecheck:
     needs: setup
     runs-on: ubuntu-latest
@@ -190,10 +222,10 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
 
-  # ─── 7. Performance (advisory, scheduled only) ───
+  # ─── 8. Performance (advisory, scheduled only) ───
   performance:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    needs: [security, reliability, checkout, chat, design, typecheck]
+    needs: [security, reliability, checkout, chat, design, reactivity, typecheck]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -212,7 +244,7 @@ jobs:
   # ─── Summary ───
   ci-result:
     if: always()
-    needs: [security, reliability, checkout, chat, design, typecheck]
+    needs: [security, reliability, checkout, chat, design, reactivity, typecheck]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
@@ -222,6 +254,7 @@ jobs:
              [ "${{ needs.checkout.result }}" != "success" ] || \
              [ "${{ needs.chat.result }}" != "success" ] || \
              [ "${{ needs.design.result }}" != "success" ] || \
+             [ "${{ needs.reactivity.result }}" != "success" ] || \
              [ "${{ needs.typecheck.result }}" != "success" ]; then
             echo "❌ One or more CI jobs failed"
             exit 1
