@@ -298,20 +298,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      <Text style={styles.sectionLabel}>{t('checkout.promoCode')}</Text>
-      <View style={{ paddingHorizontal: SPACING.md }}>
-        <TextInput
-          style={styles.input}
-          placeholder={t('checkout.enterPromo')}
-          placeholderTextColor={COLORS.text2}
-          value={promoCode}
-          onChangeText={setPromoCode}
-          autoCapitalize="characters"
-          accessibilityLabel="promo code"
-         
-        />
-      </View>
-
       <Text style={styles.sectionLabel}>{t('checkout.payment')}</Text>
       <View style={styles.moncashBadge}>
         <MaterialCommunityIcons name="cellphone" size={18} color={COLORS.blue} />

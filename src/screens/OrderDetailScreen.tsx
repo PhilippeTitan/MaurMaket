@@ -333,29 +333,35 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           </>
         )}
         {store.user?.id === order.buyer_id && order.status === 'delivered' && (
-          <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={actionLoading} accessibilityLabel="confirm received" accessibilityRole="button">
-            {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-              <Text style={styles.completeBtnText}>{t('orderDetail.completed')}</Text>
-            )}
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={actionLoading} accessibilityLabel="confirm received" accessibilityRole="button">
+              {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
+                <Text style={styles.completeBtnText}>{t('orderDetail.completed')}</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryLink} onPress={() => setDisputeModalVisible(true)} accessibilityLabel="open dispute" accessibilityRole="button">
+              <MaterialCommunityIcons name="flag-outline" size={14} color={COLORS.text2} />
+              <Text style={styles.secondaryLinkText}>{t('orderDetail.openDispute')}</Text>
+            </TouchableOpacity>
+          </>
         )}
         {order.status === 'completed' && store.user?.id === order.buyer_id && (
-          <TouchableOpacity style={styles.reviewBtn} onPress={() => setReviewModalVisible(true)} accessibilityLabel="review order" accessibilityRole="button">
-            <Icon name="rate-this" size={16} color={COLORS.yellow} />
-            <Text style={styles.reviewBtnText}>{t('orderDetail.reviewOrder')}</Text>
-          </TouchableOpacity>
-        )}
-        {(order.status === 'completed' || order.status === 'delivered') && (
-          <TouchableOpacity style={styles.reorderBtn} onPress={handleReorder} disabled={actionLoading} accessibilityLabel="reorder" accessibilityRole="button">
-            <MaterialCommunityIcons name="replay" size={16} color={COLORS.coral} />
-            <Text style={styles.reorderBtnText}>{t('orderDetail.reorder')}</Text>
-          </TouchableOpacity>
-        )}
-        {['delivered', 'shipped', 'completed'].includes(order.status) && store.user?.id === order.buyer_id && (
-          <TouchableOpacity style={styles.disputeBtn} onPress={() => setDisputeModalVisible(true)} accessibilityLabel="open dispute" accessibilityRole="button">
-            <MaterialCommunityIcons name="flag-outline" size={16} color={COLORS.text2} />
-            <Text style={styles.disputeBtnText}>{t('orderDetail.openDispute')}</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.reviewBtn} onPress={() => setReviewModalVisible(true)} accessibilityLabel="review order" accessibilityRole="button">
+              <Icon name="rate-this" size={16} color={COLORS.yellow} />
+              <Text style={styles.reviewBtnText}>{t('orderDetail.reviewOrder')}</Text>
+            </TouchableOpacity>
+            <View style={styles.secondaryRow}>
+              <TouchableOpacity style={styles.secondaryLink} onPress={handleReorder} disabled={actionLoading} accessibilityLabel="reorder" accessibilityRole="button">
+                <MaterialCommunityIcons name="replay" size={14} color={COLORS.coral} />
+                <Text style={styles.secondaryLinkText}>{t('orderDetail.reorder')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.secondaryLink} onPress={() => setDisputeModalVisible(true)} accessibilityLabel="open dispute" accessibilityRole="button">
+                <MaterialCommunityIcons name="flag-outline" size={14} color={COLORS.text2} />
+                <Text style={styles.secondaryLinkText}>{t('orderDetail.openDispute')}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
         )}
       </View>
 
@@ -517,8 +523,9 @@ const styles = StyleSheet.create({
   completeBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
   retryBtn: { padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.blue, alignItems: 'center' },
   retryBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
-  reorderBtn: { flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: RADIUS.pill, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
-  reorderBtnText: { color: COLORS.coral, fontWeight: '600', fontSize: 15 },
+  secondaryRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 4 },
+  secondaryLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 8 },
+  secondaryLinkText: { fontSize: 13, color: COLORS.text2, fontWeight: '500' },
   reviewBtn: {
     flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: RADIUS.pill,
     borderWidth: 1.5, borderColor: COLORS.yellow, alignItems: 'center',
@@ -559,11 +566,6 @@ const styles = StyleSheet.create({
     padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.yellow, alignItems: 'center',
   },
   submitReviewBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
-  disputeBtn: {
-    flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 12, borderRadius: RADIUS.card,
-    borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',
-  },
-  disputeBtnText: { color: COLORS.text2, fontWeight: '600', fontSize: 13 },
   disputeLabel: { fontSize: 12, fontWeight: '700', color: COLORS.text2, marginBottom: 8 },
   disputeReasonBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10,
