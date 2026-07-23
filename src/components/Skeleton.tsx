@@ -85,22 +85,6 @@ export function ProductGridSkeleton({ count = 6, columns = 2 }: { count?: number
   );
 }
 
-/**
- * Skeleton for a single full-bleed feed card (Feed screen's vertical
- * swipe feed) — mirrors the media + caption layout of a real feed item.
- */
-export function FeedCardSkeleton() {
-  return (
-    <View style={styles.feedCard}>
-      <SkeletonBlock width="100%" height="100%" radius={0} style={StyleSheet.absoluteFill as ViewStyle} />
-      <View style={styles.feedCaption}>
-        <SkeletonBlock width={140} height={14} />
-        <SkeletonBlock width={90} height={12} style={{ marginTop: 8 }} />
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
@@ -116,14 +100,5 @@ const styles = StyleSheet.create({
   },
   card: {
     marginBottom: 12,
-  },
-  feedCard: {
-    width: SCREEN_W,
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    justifyContent: 'flex-end',
-  },
-  feedCaption: {
-    padding: 16,
   },
 });

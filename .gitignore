@@ -60,3 +60,9 @@ expo-env.d.ts
 # Generated native folders
 /ios
 /android
+
+# Dev tooling / scratch
+*.bat
+Some claude changes/
+for claude.txt
+.agents/

@@ -6,6 +6,3 @@ dist
 *.log
 .DS_Store
 nul
-test-bundle.js
-"MonCashConnect KEYS.txt"
-netlify
