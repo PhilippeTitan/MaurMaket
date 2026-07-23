@@ -5335,15 +5335,19 @@ const __execPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 const __thisFile = fileURLToPath(import.meta.url);
 const isMain = __execPath === __thisFile || __execPath === path.resolve(__thisFile);
 if (isMain) {
-  runMigrations().then(async () => {
-    await cleanupOldNotifications();
-    // cleanupLegacyData() REMOVED — was wiping ALL products/orders/reviews on every restart
-    // Legacy /uploads/ URL cleanup is now handled by the imgbb migration (images are hosted on imgbb)
+  const startServer = () => {
     server = app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
       console.log('Cron jobs active: meetup timeout auto-refund (every 5 min), offer expiry (every 15 min)');
     });
-  });
+  };
+  runMigrations()
+    .then(() => cleanupOldNotifications().catch(e => console.error('Cleanup error:', e.message)))
+    .then(startServer)
+    .catch(err => {
+      console.error('Startup error, starting server anyway:', err.message);
+      startServer();
+    });
 }
 
 export default app;
