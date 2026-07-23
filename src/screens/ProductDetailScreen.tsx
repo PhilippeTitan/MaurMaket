@@ -469,13 +469,13 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 44, left: 10,
   },
   wishlistBtn: {
-    position: 'absolute', top: 44, right: 48,
-    width: 32, height: 32, borderRadius: 16,
+    position: 'absolute', top: 44, right: 50,
+    width: 44, height: 44, borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
   },
   shareBtn: {
     position: 'absolute', top: 44, right: 10,
-    width: 32, height: 32, borderRadius: 16,
+    width: 44, height: 44, borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
   },
   priceOverlay: {

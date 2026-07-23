@@ -254,13 +254,13 @@ const styles = StyleSheet.create({
   itemPrice: { fontSize: 12, color: COLORS.coral, fontWeight: '700', marginTop: 2 },
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   qtyBtn: {
-    width: 24, height: 24, borderRadius: RADIUS.card, backgroundColor: COLORS.surface2,
+    width: 44, height: 44, borderRadius: RADIUS.card, backgroundColor: COLORS.surface2,
     borderWidth: 1, borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center',
   },
   qtyBtnDisabled: { opacity: 0.45 },
   qtyVal: { fontSize: 13, fontWeight: '600', color: COLORS.text, minWidth: 16, textAlign: 'center' },
   stockLimit: { fontSize: 11, color: COLORS.yellow, marginTop: 3 },
-  removeBtn: { padding: 4 },
+  removeBtn: { padding: 10 },
   sellerSectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingVertical: 8, paddingHorizontal: 4, marginTop: 4, marginBottom: 2,

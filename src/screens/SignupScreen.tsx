@@ -18,14 +18,16 @@ const GOOGLE_REDIRECT_URI = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
 
 export default function SignupScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const [firstName, setFirstName] = useState('');
-  const [middleName, setMiddleName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [nameError, setNameError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   const handleGoogleSignIn = async () => {
     try {
@@ -67,14 +69,34 @@ export default function SignupScreen({ navigation }: Props) {
   };
 
   const handleSignup = async () => {
-    const combined = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
-    if (!combined || !email.trim() || !password.trim() || !phone.trim()) {
-      Alert.alert(t('common.error'), 'Please fill in all fields');
-      return;
+    setNameError('');
+    setEmailError('');
+    setPhoneError('');
+    setPasswordError('');
+    let hasError = false;
+    if (!fullName.trim()) {
+      setNameError('Full name is required');
+      hasError = true;
     }
+    if (!email.trim()) {
+      setEmailError('Email is required');
+      hasError = true;
+    }
+    if (!phone.trim()) {
+      setPhoneError('Phone number is required');
+      hasError = true;
+    }
+    if (!password.trim()) {
+      setPasswordError('Password is required');
+      hasError = true;
+    } else if (password.trim().length < 6) {
+      setPasswordError('Password must be at least 6 characters');
+      hasError = true;
+    }
+    if (hasError) return;
     setLoading(true);
     try {
-      const res = await apiSignup(combined, email.trim(), password, phone.trim()) as { user: User; token: string };
+      const res = await apiSignup(fullName.trim(), email.trim(), password, phone.trim()) as { user: User; token: string };
       await store.setUser(res.user, res.token);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Signup failed';
@@ -94,64 +116,50 @@ export default function SignupScreen({ navigation }: Props) {
         <Text style={styles.subtitle}>{t('auth.createAccount')}</Text>
 
         <TextInput
-          style={styles.input}
-          placeholder={t('settingsEdit.firstName')}
+          style={[styles.input, nameError && styles.inputError]}
+          placeholder={t('settingsEdit.fullName') || 'Full name'}
           placeholderTextColor={COLORS.text2}
-          value={firstName}
-          onChangeText={setFirstName}
+          value={fullName}
+          onChangeText={(v) => { setFullName(v); setNameError(''); }}
           returnKeyType="next"
-          accessibilityLabel={t('settingsEdit.firstName')}
+          accessibilityLabel={t('settingsEdit.fullName') || 'Full name'}
         />
+        {nameError ? <Text style={styles.error}>{nameError}</Text> : null}
         <TextInput
-          style={styles.input}
-          placeholder={t('settingsEdit.middleNameOptional')}
-          placeholderTextColor={COLORS.text2}
-          value={middleName}
-          onChangeText={setMiddleName}
-          returnKeyType="next"
-          accessibilityLabel={t('settingsEdit.middleNameOptional')}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder={t('settingsEdit.lastName')}
-          placeholderTextColor={COLORS.text2}
-          value={lastName}
-          onChangeText={setLastName}
-          returnKeyType="next"
-          accessibilityLabel={t('settingsEdit.lastName')}
-        />
-        <TextInput
-          style={styles.input}
+          style={[styles.input, emailError && styles.inputError]}
           placeholder={t('auth.emailPlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(v) => { setEmail(v); setEmailError(''); }}
           autoCapitalize="none"
           keyboardType="email-address"
           returnKeyType="next"
           accessibilityLabel={t('accessibility.email')}
         />
+        {emailError ? <Text style={styles.error}>{emailError}</Text> : null}
         <TextInput
-          style={styles.input}
+          style={[styles.input, phoneError && styles.inputError]}
           placeholder={t('auth.phonePlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={(v) => { setPhone(v); setPhoneError(''); }}
           keyboardType="phone-pad"
           returnKeyType="next"
           accessibilityLabel={t('accessibility.phone')}
         />
+        {phoneError ? <Text style={styles.error}>{phoneError}</Text> : null}
         <TextInput
-          style={styles.input}
+          style={[styles.input, passwordError && styles.inputError]}
           placeholder={t('auth.passwordPlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(v) => { setPassword(v); setPasswordError(''); }}
           secureTextEntry
           returnKeyType="done"
           onSubmitEditing={handleSignup}
           accessibilityLabel={t('accessibility.password')}
         />
+        {passwordError ? <Text style={styles.error}>{passwordError}</Text> : null}
 
         <TouchableOpacity
           style={[styles.btn, loading && styles.btnDisabled]}
@@ -201,8 +209,10 @@ const styles = StyleSheet.create({
   input: {
     width: '100%', padding: 14, backgroundColor: COLORS.surface,
     borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card,
-    color: COLORS.text, fontSize: 16, marginBottom: 14,
+    color: COLORS.text, fontSize: 16, marginBottom: 4,
   },
+  inputError: { borderColor: COLORS.coral },
+  error: { color: COLORS.coral, fontSize: 12, marginBottom: 10, marginLeft: 4 },
   btn: {
     backgroundColor: COLORS.coral, padding: 14, borderRadius: RADIUS.pill,
     alignItems: 'center', marginBottom: 12,

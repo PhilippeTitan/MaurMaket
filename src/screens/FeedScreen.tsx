@@ -943,9 +943,9 @@ const styles = StyleSheet.create({
   commentTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
   commentSubtitle: { color: COLORS.text2, fontSize: 12, marginTop: 2 },
   sheetIconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.surface,

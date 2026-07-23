@@ -22,6 +22,8 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   const handleGoogleSignIn = async () => {
     try {
@@ -68,10 +70,18 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert(t('common.error'), 'Please fill in all fields');
-      return;
+    setEmailError('');
+    setPasswordError('');
+    let hasError = false;
+    if (!email.trim()) {
+      setEmailError('Email is required');
+      hasError = true;
     }
+    if (!password.trim()) {
+      setPasswordError('Password is required');
+      hasError = true;
+    }
+    if (hasError) return;
     setLoading(true);
     try {
       const res = await apiLogin(email.trim(), password) as { user: User; token: string };
@@ -94,29 +104,29 @@ export default function LoginScreen({ navigation }: Props) {
         <Text style={styles.subtitle}>{t('auth.signInToAccount')}</Text>
 
         <TextInput
-          style={styles.input}
+          style={[styles.input, emailError && styles.inputError]}
           placeholder={t('auth.emailPlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(v) => { setEmail(v); setEmailError(''); }}
           autoCapitalize="none"
           keyboardType="email-address"
           returnKeyType="next"
-         
           accessibilityLabel={t('accessibility.email')}
         />
+        {emailError ? <Text style={styles.error}>{emailError}</Text> : null}
         <TextInput
-          style={styles.input}
+          style={[styles.input, passwordError && styles.inputError]}
           placeholder={t('auth.passwordPlaceholder')}
           placeholderTextColor={COLORS.text2}
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(v) => { setPassword(v); setPasswordError(''); }}
           secureTextEntry
           returnKeyType="done"
           onSubmitEditing={handleLogin}
-         
           accessibilityLabel={t('accessibility.password')}
         />
+        {passwordError ? <Text style={styles.error}>{passwordError}</Text> : null}
 
         <TouchableOpacity
           style={[styles.btn, loading && styles.btnDisabled]}
@@ -175,8 +185,10 @@ const styles = StyleSheet.create({
   input: {
     width: '100%', padding: 14, backgroundColor: COLORS.surface,
     borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card,
-    color: COLORS.text, fontSize: 16, marginBottom: 14,
+    color: COLORS.text, fontSize: 16, marginBottom: 4,
   },
+  inputError: { borderColor: COLORS.coral },
+  error: { color: COLORS.coral, fontSize: 12, marginBottom: 10, marginLeft: 4 },
   btn: {
     backgroundColor: COLORS.coral, padding: 14, borderRadius: RADIUS.pill,
     alignItems: 'center', marginBottom: 12,

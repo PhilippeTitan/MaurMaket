@@ -208,12 +208,12 @@ const styles = StyleSheet.create({
   date: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
   actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   actionBtn: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.row,
+    paddingHorizontal: 14, paddingVertical: 12, borderRadius: RADIUS.row,
     backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
   },
   actionBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.text },
   detailBtn: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.row,
+    paddingHorizontal: 14, paddingVertical: 12, borderRadius: RADIUS.row,
     borderWidth: 1, borderColor: COLORS.blue,
   },
   detailBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.blue },
