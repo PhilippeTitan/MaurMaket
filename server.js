@@ -4929,18 +4929,26 @@ async function tareefCompare(imageUrl1, imageUrl2) {
   const fetchImage = async (url, label) => {
     const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!r.ok) throw new Error(`Failed to fetch ${label}: HTTP ${r.status} from ${url.substring(0, 80)}`);
+    const contentType = r.headers.get('content-type') || '';
     const buf = await r.arrayBuffer();
     if (buf.byteLength < 100) throw new Error(`${label} image too small (${buf.byteLength} bytes) — likely a broken URL`);
-    return buf;
+    return { buf, contentType };
   };
   const [img1, img2] = await Promise.all([
     fetchImage(imageUrl1, 'CIN face'),
     fetchImage(imageUrl2, 'selfie'),
   ]);
-  console.log(`🔍 [VERIFY] Tareef images fetched: CIN=${img1.byteLength} bytes, selfie=${img2.byteLength} bytes`);
+  console.log(`🔍 [VERIFY] Tareef images fetched: CIN=${img1.buf.byteLength} bytes (${img1.contentType}), selfie=${img2.buf.byteLength} bytes (${img2.contentType})`);
+
+  const getExt = (ct) => {
+    if (ct.includes('webp')) return 'image.webp';
+    if (ct.includes('png')) return 'image.png';
+    return 'image.jpg';
+  };
+
   const form = new FormData();
-  form.append('file1', new Blob([img1]), 'image1.jpg');
-  form.append('file2', new Blob([img2]), 'image2.jpg');
+  form.append('file1', new Blob([img1.buf], { type: img1.contentType || 'image/jpeg' }), getExt(img1.contentType));
+  form.append('file2', new Blob([img2.buf], { type: img2.contentType || 'image/jpeg' }), getExt(img2.contentType));
   const resp = await fetch('https://tareef.g4t.io/api/v1/compare', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}` },
@@ -4952,6 +4960,7 @@ async function tareefCompare(imageUrl1, imageUrl2) {
     throw new Error(`Tareef API HTTP ${resp.status}: ${body.substring(0, 200)}`);
   }
   const data = await resp.json();
+  console.log(`🔍 [VERIFY] Tareef response:`, JSON.stringify(data).substring(0, 300));
   if (!data.success) throw new Error(data.status || 'Tareef compare failed');
   return { score: data.similarity || 0, similar: data.match || false };
 }
@@ -5058,10 +5067,13 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
           } catch (e) {
             console.error(`❌ [VERIFY] Tareef failed: ${e.message}`);
             console.error(`❌ [VERIFY] Stack: ${e.stack?.split('\n').slice(0, 3).join(' | ')}`);
-            if (e.message.includes('no_face')) {
+            const msg = e.message || '';
+            if (msg.includes('no_face') || msg.includes('No face')) {
               issues.push('No face detected — make sure your face is clearly visible in the selfie with good lighting');
+            } else if (msg.includes('low_quality') || msg.includes('blurry')) {
+              issues.push('Image too blurry — please retake with better lighting and focus');
             } else {
-              issues.push(`Face verification failed: ${e.message}`);
+              issues.push(`Face verification failed: ${msg}`);
             }
           }
         }
