@@ -1,0 +1,212 @@
+name: CI — Domain Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ─── Shared Setup ───
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      server-ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify server starts
+        id: check
+        run: |
+          timeout 10 node server.js &
+          sleep 3
+          curl -f http://localhost:3000/api/health && echo "ready=true" >> $GITHUB_OUTPUT || echo "ready=false" >> $GITHUB_OUTPUT
+          kill %1 2>/dev/null || true
+
+  # ─── 1. Backend Security (deterministic gate) ───
+  security:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run security tests
+        run: node tests/security/run.js
+
+  # ─── 2. Backend Reliability (deterministic gate) ───
+  reliability:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: maurmaket_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run reliability tests
+        run: node tests/reliability/run.js
+
+  # ─── 3. Order/Checkout/Payment (deterministic gate) ───
+  checkout:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: maurmaket_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run checkout tests
+        run: node tests/checkout/run.js
+
+  # ─── 4. Chat/Messaging (deterministic gate) ───
+  chat:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: maurmaket_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run chat tests
+        run: node tests/chat/run.js
+
+  # ─── 5. Design/UI (deterministic gate) ───
+  design:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run design guardrails
+        run: node scripts/design-guardrails.js
+      - name: Run design domain tests
+        run: node tests/design/run.js
+
+  # ─── 6. Type Check (deterministic gate) ───
+  typecheck:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+  # ─── 7. Performance (advisory, scheduled only) ───
+  performance:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: [security, reliability, checkout, chat, design, typecheck]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run performance baseline
+        run: |
+          echo "⚡ Performance tests — advisory only"
+          echo "Bundle size: $(du -sh android/app/build/outputs/apk/release/app-release.apk 2>/dev/null || echo 'N/A')"
+          echo "TODO: Add k6/Artillery load tests for checkout flow"
+
+  # ─── Summary ───
+  ci-result:
+    if: always()
+    needs: [security, reliability, checkout, chat, design, typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs
+        run: |
+          if [ "${{ needs.security.result }}" != "success" ] || \
+             [ "${{ needs.reliability.result }}" != "success" ] || \
+             [ "${{ needs.checkout.result }}" != "success" ] || \
+             [ "${{ needs.chat.result }}" != "success" ] || \
+             [ "${{ needs.design.result }}" != "success" ] || \
+             [ "${{ needs.typecheck.result }}" != "success" ]; then
+            echo "❌ One or more CI jobs failed"
+            exit 1
+          fi
+          echo "✅ All CI jobs passed"
