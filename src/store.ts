@@ -66,6 +66,18 @@ export const store = {
     notify();
   },
 
+  async refreshUser() {
+    if (!state.token) return;
+    try {
+      const { getMe } = require('./api');
+      const res = await getMe() as { user: any };
+      if (res.user) {
+        state.user = res.user;
+        notify();
+      }
+    } catch { /* token expired or network error — keep current state */ }
+  },
+
   async logout() {
     state.user = null;
     state.token = null;

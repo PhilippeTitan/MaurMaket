@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, Component, Suspense } from 'react';
-import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text, AppState } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -306,6 +306,15 @@ export default function App() {
 
   useEffect(() => {
     setupNotificationListeners(navigationRef);
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (status) => {
+      if (status === 'active' && store.isLoggedIn) {
+        store.refreshUser();
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   if (isLoggedIn === null) {

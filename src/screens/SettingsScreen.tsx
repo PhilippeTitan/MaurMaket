@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Platform, TextInput,
 } from 'react-native';
@@ -12,6 +12,7 @@ import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '..
 import { i18n, useTranslation, type Language } from '../i18n';
 import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -69,6 +70,10 @@ export default function SettingsScreen({ navigation }: Props) {
     const unsub = store.onChange(() => setUser(store.user));
     return unsub;
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    store.refreshUser();
+  }, []));
 
   const [locationStatus, setLocationStatus] = useState<string | null>(null);
   const [locAddress, setLocAddress] = useState(user?.location_address || '');

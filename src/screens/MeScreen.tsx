@@ -179,6 +179,7 @@ export default function MeScreen() {
   }, [isSeller, user?.id]);
 
   useFocusEffect(useCallback(() => {
+    store.refreshUser();
     fetchData(true);
   }, [fetchData]));
 
