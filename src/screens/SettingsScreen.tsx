@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Image, Platform, TextInput,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Platform, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -10,6 +10,7 @@ import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
 import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '../api';
 import { i18n, useTranslation, type Language } from '../i18n';
+import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -54,6 +55,7 @@ const SettingRow = ({
 
 export default function SettingsScreen({ navigation }: Props) {
   const { t, language } = useTranslation();
+  const toast = useToast();
 
   const [user, setUser] = useState(store.user);
   const isSeller = user?.role === 'seller';
@@ -91,7 +93,7 @@ export default function SettingsScreen({ navigation }: Props) {
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationStatus(status);
       if (status !== 'granted') {
-        Alert.alert(
+        toast.warning(
           t('settings.locationDeniedTitle'),
           t('settings.locationDeniedMessage')
         );
@@ -106,7 +108,7 @@ export default function SettingsScreen({ navigation }: Props) {
       const Location = await import('expo-location');
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(t('settings.locationDeniedTitle'), t('settings.locationDeniedMessage'));
+        toast.warning(t('settings.locationDeniedTitle'), t('settings.locationDeniedMessage'));
         setLocDetecting(false);
         return;
       }
@@ -140,15 +142,15 @@ export default function SettingsScreen({ navigation }: Props) {
           locationLng: String(lng),
         }) as { user: typeof user };
         if (res.user) await store.setUser(res.user, store.token);
-        Alert.alert(t('settings.locationSaved'), t('settings.locationEditHint'));
+        toast.success(t('settings.locationSaved'), t('settings.locationEditHint'));
       } catch {
-        Alert.alert(t('settings.error'), t('settings.locationSaveFailed'));
+        toast.error(t('settings.error'), t('settings.locationSaveFailed'));
       }
     } catch (err: any) {
       if (err?.code === 'E_LOCATION_SERVICES_DISABLED') {
-        Alert.alert(t('settings.error'), 'GPS is turned off. Please enable Location Services in your phone settings.');
+        toast.error(t('settings.error'), 'GPS is turned off. Please enable Location Services in your phone settings.');
       } else {
-        Alert.alert(t('settings.error'), 'Could not detect location. Make sure you are outdoors or near a window.');
+        toast.error(t('settings.error'), 'Could not detect location. Make sure you are outdoors or near a window.');
       }
     }
     setLocDetecting(false);
@@ -162,9 +164,9 @@ export default function SettingsScreen({ navigation }: Props) {
         locationCity: locCity,
       }) as { user: typeof user };
       if (res.user) await store.setUser(res.user, store.token);
-      Alert.alert(t('settings.locationSaved'));
+      toast.success(t('settings.locationSaved'));
     } catch {
-      Alert.alert(t('settings.locationSaveFailed'));
+      toast.error(t('settings.locationSaveFailed'));
     }
     setLocSaving(false);
   };
@@ -176,10 +178,13 @@ export default function SettingsScreen({ navigation }: Props) {
       }
       return;
     }
-    Alert.alert(t('settings.logout'), t('settings.logoutConfirm'), [
-      { text: t('settings.cancel'), style: 'cancel' },
-      { text: t('settings.logout'), style: 'destructive', onPress: () => store.logout() },
-    ]);
+    toast.show({
+      kind: 'warning',
+      title: t('settings.logout'),
+      message: t('settings.logoutConfirm'),
+      actionLabel: t('settings.logout'),
+      onAction: () => store.logout(),
+    });
   };
 
   const handlePickAvatar = async () => {
@@ -196,7 +201,7 @@ export default function SettingsScreen({ navigation }: Props) {
         const res = await updateProfile({ avatarUrl: uploadRes.url }) as { user: typeof user };
         if (res.user) await store.setUser(res.user, store.token);
       } catch (err: unknown) {
-        Alert.alert(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
+        toast.error(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
       }
       setAvatarUploading(false);
     }
@@ -208,7 +213,7 @@ export default function SettingsScreen({ navigation }: Props) {
       const res = await updateSellerProfile({ useStoreIdentity: value }) as { user: typeof user };
       if (res.user) await store.setUser(res.user, store.token);
     } catch (err: unknown) {
-      Alert.alert(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
+      toast.error(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
     }
     setLoading(false);
   };
@@ -227,7 +232,7 @@ export default function SettingsScreen({ navigation }: Props) {
         const res = await updateSellerProfile({ storeLogoUrl: uploadRes.url }) as { user: typeof user };
         if (res.user) await store.setUser(res.user, store.token);
       } catch (err: unknown) {
-        Alert.alert(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
+        toast.error(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
       }
       setStoreLogoUploading(false);
     }

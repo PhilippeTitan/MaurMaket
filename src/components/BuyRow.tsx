@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from './icons/Icon';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
 import { store } from '../store';
 import { createConversation } from '../api';
 import { useTranslation } from '../i18n';
+import { useToast } from './Toast';
 import type { Product } from '../types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -18,6 +19,7 @@ interface BuyRowProps {
 
 export default function BuyRow({ product, navigation }: BuyRowProps) {
   const { t } = useTranslation();
+  const toast = useToast();
   const [cartQty, setCartQty] = useState(store.cart.find(c => c.id === product.id)?.quantity || 0);
   const [cartCount, setCartCount] = useState(store.cartCount);
   const isOwnProduct = store.user?.id === product.seller_id;
@@ -51,7 +53,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
         },
       });
     } catch {
-      Alert.alert('Offer unavailable', 'Could not start this negotiation right now.');
+      toast.error('Offer unavailable', 'Could not start this negotiation right now.');
     }
   };
 
@@ -87,7 +89,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
     tapMedium();
     const result = await addToCart();
     if (!result.added) {
-      Alert.alert('Stock limit', result.reason === 'out-of-stock' ? 'This item is sold out.' : `Only ${result.stock} available.`);
+      toast.warning('Stock limit', result.reason === 'out-of-stock' ? 'This item is sold out.' : `Only ${result.stock} available.`);
     }
   };
 
@@ -98,7 +100,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
     }
     tapLight();
     if (cartQty >= product.stock) {
-      Alert.alert('Stock limit', `Only ${product.stock} available.`);
+      toast.warning('Stock limit', `Only ${product.stock} available.`);
       return;
     }
     await store.updateQuantity(product.id, cartQty + 1);

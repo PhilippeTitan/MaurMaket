@@ -4,7 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SPACING } from '../theme';
 
-type ToastKind = 'success' | 'error' | 'info';
+type ToastKind = 'success' | 'error' | 'info' | 'warning';
 type ToastOptions = {
   title: string;
   message?: string;
@@ -18,6 +18,7 @@ type ToastApi = {
   success: (title: string, message?: string) => void;
   error: (title: string, message?: string, retry?: () => void) => void;
   info: (title: string, message?: string) => void;
+  warning: (title: string, message?: string) => void;
 };
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -45,10 +46,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     success: (title, message) => show({ kind: 'success', title, message }),
     error: (title, message, retry) => show({ kind: 'error', title, message, actionLabel: retry ? 'Try again' : undefined, onAction: retry }),
     info: (title, message) => show({ kind: 'info', title, message }),
+    warning: (title, message) => show({ kind: 'warning', title, message }),
   };
 
-  const icon = toast?.kind === 'success' ? 'check-circle' : toast?.kind === 'error' ? 'alert-circle' : 'information';
-  const accent = toast?.kind === 'success' ? COLORS.green : toast?.kind === 'error' ? COLORS.coral : COLORS.blue;
+  const icon = toast?.kind === 'success' ? 'check-circle' : toast?.kind === 'error' ? 'alert-circle' : toast?.kind === 'warning' ? 'alert' : 'information';
+  const accent = toast?.kind === 'success' ? COLORS.green : toast?.kind === 'error' ? COLORS.coral : toast?.kind === 'warning' ? COLORS.yellow : COLORS.blue;
 
   return (
     <ToastContext.Provider value={api}>
@@ -65,7 +67,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={toast.actionLabel}
-                onPress={() => { const action = toast.onAction; dismiss(); action(); }}
+                onPress={() => { const action = toast.onAction!; dismiss(); action(); }}
                 hitSlop={8}
               >
                 <Text style={[styles.action, { color: accent }]}>{toast.actionLabel}</Text>

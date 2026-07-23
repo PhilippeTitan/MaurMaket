@@ -13,6 +13,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Review } from '../types';
 import { useTranslation } from '../i18n';
+import { useToast } from '../components/Toast';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
 import UserAvatar from '../components/UserAvatar';
@@ -35,6 +36,7 @@ const GRID_MAX_H = SCREEN_H * 0.3;
 
 export default function ProductDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const { productId } = route.params;
   const [product, setProduct] = useState<Product | null>(null);
@@ -117,7 +119,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         } catch { /* silent */ }
         setLoadingRelated(false);
       } catch {
-        Alert.alert(t('common.error'), 'Product not found');
+        toast.error(t('common.error'), 'Product not found');
         navigation.goBack();
       }
       setLoading(false);

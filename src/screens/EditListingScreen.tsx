@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Dimensions,
+  ActivityIndicator, Image, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
+import { useToast } from '../components/Toast';
 import { getProduct, updateProduct, deleteProduct, getCategories, uploadImage, getImageUrl } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -22,6 +23,7 @@ const THUMB_SIZE = 80;
 
 export default function EditListingScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const toast = useToast();
   const { productId } = route.params;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -67,7 +69,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
           setSaleEndDate(p.sale_ends_at.split('T')[0]);
         }
       } catch {
-        Alert.alert(t('common.error'), t('editListing.loadError'));
+        toast.error(t('common.error'), t('editListing.loadError'));
         navigation.goBack();
       }
       setLoading(false);
@@ -79,12 +81,12 @@ export default function EditListingScreen({ route, navigation }: Props) {
   const pickImages = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert(t('editListing.permission'), t('editListing.allowPhotos'));
+      toast.warning(t('editListing.permission'), t('editListing.allowPhotos'));
       return;
     }
     const remaining = MAX_IMAGES - totalImages;
     if (remaining <= 0) {
-      Alert.alert('', `Maximum ${MAX_IMAGES} images allowed`);
+      toast.warning('Max images', `Maximum ${MAX_IMAGES} images allowed`);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -109,11 +111,11 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
   const handleSave = async () => {
     if (!name || !price) {
-      Alert.alert(t('editListing.missingInfo'), t('editListing.fillFields'));
+      toast.error(t('editListing.missingInfo'), t('editListing.fillFields'));
       return;
     }
     if (parseInt(stock, 10) < 1) {
-      Alert.alert(t('editListing.missingInfo'), 'Stock must be at least 1');
+      toast.error(t('editListing.missingInfo'), 'Stock must be at least 1');
       return;
     }
     setSaving(true);
@@ -126,7 +128,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
             const r = await uploadImage(newImageUris[i]);
             if (r.url) uploadedUrls.push(r.url);
           } catch (e: any) {
-            Alert.alert(t('common.error'), `Image ${i + 1} failed: ${e.message}`);
+            toast.error(t('common.error'), `Image ${i + 1} failed: ${e.message}`);
             setSaving(false);
             setUploading(false);
             return;
@@ -152,12 +154,12 @@ export default function EditListingScreen({ route, navigation }: Props) {
         const origP = parseFloat(price);
         const saleP = parseFloat(salePrice);
         if (saleP >= origP) {
-          Alert.alert(t('common.error'), 'Sale price must be lower than the original price');
+          toast.error(t('common.error'), 'Sale price must be lower than the original price');
           setSaving(false); setUploading(false); return;
         }
         const discountPct = Math.round((1 - saleP / origP) * 100);
         if (discountPct > 25) {
-          Alert.alert(t('common.error'), 'Maximum discount is 25%');
+          toast.error(t('common.error'), 'Maximum discount is 25%');
           setSaving(false); setUploading(false); return;
         }
         data.sale_price = saleP;
@@ -167,10 +169,10 @@ export default function EditListingScreen({ route, navigation }: Props) {
       }
 
       await updateProduct(productId, data);
-      Alert.alert(t('editListing.saved'), t('editListing.productUpdated'));
+      toast.success(t('editListing.saved'), t('editListing.productUpdated'));
       navigation.goBack();
     } catch (e: any) {
-            Alert.alert(t('common.error'), e.message);
+            toast.error(t('common.error'), e.message);
     }
     setSaving(false);
   };
@@ -180,20 +182,23 @@ export default function EditListingScreen({ route, navigation }: Props) {
       setDeleting(true);
       try {
         await deleteProduct(productId);
-        Alert.alert(t('editListing.deleted'), t('editListing.productRemoved'));
+        toast.success(t('editListing.deleted'), t('editListing.productRemoved'));
         navigation.goBack();
       } catch (e: any) {
-        Alert.alert(t('common.error'), e.message);
+        toast.error(t('common.error'), e.message);
       }
       setDeleting(false);
     };
     if (Platform.OS === 'web') {
       if (window.confirm(t('editListing.deleteConfirm'))) doDelete();
     } else {
-      Alert.alert(t('editListing.deleteTitle'), t('editListing.deleteConfirm'), [
-        { text: t('common.cancel'), style: 'cancel' },
-        { text: t('common.delete'), style: 'destructive', onPress: doDelete },
-      ]);
+      toast.show({
+        kind: 'warning',
+        title: t('editListing.deleteTitle'),
+        message: t('editListing.deleteConfirm'),
+        actionLabel: t('common.delete'),
+        onAction: doDelete,
+      });
     }
   };
 

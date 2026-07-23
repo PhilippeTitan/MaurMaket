@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Dimensions,
+  ActivityIndicator, Image, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -10,6 +10,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
+import { useToast } from '../components/Toast';
 import { createProduct, getCategories, uploadImage, getSellerProducts } from '../api';
 import { store } from '../store';
 import type { Category } from '../types';
@@ -60,15 +61,17 @@ export default function AddListingScreen() {
     })();
   }, []);
 
+  const toast = useToast();
+
   const pickImages = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert(t('addListing.permission'), t('addListing.allowPhotos'));
+      toast.warning(t('addListing.permission'), t('addListing.allowPhotos'));
       return;
     }
     const remaining = MAX_IMAGES - imageUris.length;
     if (remaining <= 0) {
-      Alert.alert('', `Maximum ${MAX_IMAGES} images allowed`);
+      toast.warning('Max images', `Maximum ${MAX_IMAGES} images allowed`);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -89,11 +92,11 @@ export default function AddListingScreen() {
 
   const handleSubmit = async () => {
     if (!name || !price) {
-      Alert.alert(t('addListing.missingInfo'), t('addListing.fillFields'));
+      toast.error(t('addListing.missingInfo'), t('addListing.fillFields'));
       return;
     }
     if (parseInt(stock, 10) < 1) {
-      Alert.alert(t('addListing.missingInfo'), 'Stock must be at least 1');
+      toast.error(t('addListing.missingInfo'), 'Stock must be at least 1');
       return;
     }
 
@@ -107,7 +110,7 @@ export default function AddListingScreen() {
             const r = await uploadImage(imageUris[i]);
             if (r.url) uploadedUrls.push(r.url);
           } catch (e: any) {
-            Alert.alert(t('common.error'), `Image ${i + 1} failed: ${e.message}`);
+            toast.error(t('common.error'), `Image ${i + 1} failed: ${e.message}`);
             setLoading(false);
             setUploading(false);
             return;
@@ -129,12 +132,12 @@ export default function AddListingScreen() {
         const origP = parseFloat(price);
         const saleP = parseFloat(salePrice);
         if (saleP >= origP) {
-          Alert.alert(t('common.error'), 'Sale price must be lower than the original price');
+          toast.error(t('common.error'), 'Sale price must be lower than the original price');
           setLoading(false); setUploading(false); return;
         }
         const discountPct = Math.round((1 - saleP / origP) * 100);
         if (discountPct > 25) {
-          Alert.alert(t('common.error'), 'Maximum discount is 25%');
+          toast.error(t('common.error'), 'Maximum discount is 25%');
           setLoading(false); setUploading(false); return;
         }
         productData.sale_price = saleP;
@@ -142,10 +145,10 @@ export default function AddListingScreen() {
       }
 
       await createProduct(productData);
-      Alert.alert(t('addListing.success'), t('addListing.created'));
+      toast.success(t('addListing.success'), t('addListing.created'));
       nav.goBack();
     } catch (e: any) {
-      Alert.alert(t('common.error'), e.message);
+      toast.error(t('common.error'), e.message);
     } finally {
       setLoading(false);
       setUploading(false);

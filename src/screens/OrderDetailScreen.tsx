@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Linking,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Linking,
   Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
+import { useToast } from '../components/Toast';
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -31,6 +32,7 @@ const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error
 
 export default function OrderDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const toast = useToast();
 
   const { orderId } = route.params;
   const [order, setOrder] = useState<Order | null>(null);
@@ -55,7 +57,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       setOrder(orderRes.order);
       setEvents(timelineRes.events || []);
     } catch (err: unknown) {
-      Alert.alert(t('common.error'), errorMessage(err, 'Order not found'));
+      toast.error(t('common.error'), errorMessage(err, 'Order not found'));
       navigation.goBack();
     }
     setLoading(false);
@@ -64,19 +66,22 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   useEffect(() => { fetchData(); }, [orderId]);
 
   const handleCancel = () => {
-    Alert.alert(t('orderDetail.cancelOrder'), t('orderDetail.cancelConfirm'), [
-      { text: t('orderDetail.cancel'), style: 'cancel' },
-      { text: 'Yes', style: 'destructive', onPress: async () => {
+    toast.show({
+      kind: 'warning',
+      title: t('orderDetail.cancelOrder'),
+      message: t('orderDetail.cancelConfirm'),
+      actionLabel: 'Yes, cancel',
+      onAction: async () => {
         try { await cancelOrder(orderId); fetchData(); }
-        catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
-      }},
-    ]);
+        catch (err: unknown) { toast.error(t('common.error'), errorMessage(err)); }
+      },
+    });
   };
 
   const handleComplete = async () => {
     setActionLoading(true);
     try { await completeOrder(orderId); fetchData(); }
-    catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
+    catch (err: unknown) { toast.error(t('common.error'), errorMessage(err)); }
     setActionLoading(false);
   };
 
@@ -86,7 +91,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       const res = await retryPayment(orderId) as { paymentUrl: string };
       if (res.paymentUrl) await Linking.openURL(res.paymentUrl);
     } catch (err: unknown) {
-      Alert.alert(t('common.error'), errorMessage(err, 'Could not open payment'));
+      toast.error(t('common.error'), errorMessage(err, 'Could not open payment'));
     }
     setActionLoading(false);
   };
@@ -111,22 +116,25 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         if (result.added) addedCount++;
       }
       if (addedCount > 0) {
-        Alert.alert('Added', `${addedCount} item${addedCount > 1 ? 's' : ''} added to your cart.`, [
-          { text: 'View Cart', onPress: () => navigation.navigate('Cart' as any) },
-          { text: 'Continue Shopping', style: 'cancel' },
-        ]);
+        toast.show({
+          kind: 'success',
+          title: 'Added',
+          message: `${addedCount} item${addedCount > 1 ? 's' : ''} added to your cart.`,
+          actionLabel: 'View Cart',
+          onAction: () => navigation.navigate('Cart' as any),
+        });
       } else {
-        Alert.alert('Unavailable', 'Items from this order are no longer available.');
+        toast.warning('Unavailable', 'Items from this order are no longer available.');
       }
     } catch (err: unknown) {
-      Alert.alert(t('common.error'), errorMessage(err, 'Could not reorder'));
+      toast.error(t('common.error'), errorMessage(err, 'Could not reorder'));
     }
     setActionLoading(false);
   };
 
   const handleSubmitReview = async () => {
     if (reviewRating === 0) {
-      Alert.alert(t('orderDetail.rating'), 'Please select a star rating.');
+      toast.warning(t('orderDetail.rating'), 'Please select a star rating.');
       return;
     }
     setReviewSubmitting(true);
@@ -135,17 +143,17 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       setReviewModalVisible(false);
       setReviewRating(0);
       setReviewComment('');
-      Alert.alert('Thanks!', t('orderDetail.reviewSubmitted'));
+      toast.success('Thanks!', t('orderDetail.reviewSubmitted'));
       fetchData();
     } catch (err: unknown) {
-      Alert.alert(t('common.error'), errorMessage(err, 'Could not submit review'));
+      toast.error(t('common.error'), errorMessage(err, 'Could not submit review'));
     }
     setReviewSubmitting(false);
   };
 
   const handleSubmitDispute = async () => {
     if (!disputeReason) {
-      Alert.alert(t('orderDetail.disputeReason'), 'Please select a reason for the dispute.');
+      toast.warning(t('orderDetail.disputeReason'), 'Please select a reason for the dispute.');
       return;
     }
     setDisputeSubmitting(true);
@@ -158,10 +166,10 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       setDisputeModalVisible(false);
       setDisputeReason('');
       setDisputeDescription('');
-      Alert.alert('Report submitted', 'We will review your case and get back to you.');
+      toast.success('Report submitted', 'We will review your case and get back to you.');
       fetchData();
     } catch (err: unknown) {
-      Alert.alert(t('common.error'), errorMessage(err, 'Could not submit report'));
+      toast.error(t('common.error'), errorMessage(err, 'Could not submit report'));
     }
     setDisputeSubmitting(false);
   };
@@ -172,7 +180,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       await updateOrderStatus(orderId, nextStatus);
       fetchData();
     } catch (err: unknown) {
-      Alert.alert(t('common.error'), errorMessage(err, 'Could not update status'));
+      toast.error(t('common.error'), errorMessage(err, 'Could not update status'));
     }
     setActionLoading(false);
   };
