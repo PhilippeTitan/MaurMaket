@@ -15,6 +15,7 @@ import { store } from '../store';
 import type { Category } from '../types';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
+import SaleSection from '../components/SaleSection';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -217,15 +218,13 @@ export default function AddListingScreen() {
           </TouchableOpacity>
 
           {showSale && (
-            <View style={styles.saleSection}>
-              <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" accessibilityLabel="sale price" />
-              <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} accessibilityLabel="sale end date" />
-              {price && salePrice && parseFloat(salePrice) < parseFloat(price) && (
-                <Text style={styles.saleHint}>
-                  -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {formatPrice(parseFloat(price) - parseFloat(salePrice))} saved
-                </Text>
-              )}
-            </View>
+            <SaleSection
+              originalPrice={price}
+              salePrice={salePrice}
+              saleEndDate={saleEndDate}
+              onSalePriceChange={setSalePrice}
+              onSaleEndDateChange={setSaleEndDate}
+            />
           )}
 
           <TextInput style={styles.input} placeholder={t('addListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" accessibilityLabel="quantity" />

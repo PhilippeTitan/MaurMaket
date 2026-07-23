@@ -661,6 +661,9 @@ app.use(morgan('combined'));
 app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
 app.use('/api/upload', uploadLimiter);
+app.get('/api/upload/config', (req, res) => {
+  res.json({ imgbbKey: process.env.IMGBB_KEY || null });
+});
 app.use('/api', generalLimiter);
 app.use(express.json({
   limit: '1mb',

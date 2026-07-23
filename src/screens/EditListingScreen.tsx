@@ -13,6 +13,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Category, ProductImage } from '../types';
 import ScreenHeader from '../components/ScreenHeader';
+import SaleSection from '../components/SaleSection';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditListing'>;
 
@@ -243,15 +244,13 @@ export default function EditListingScreen({ route, navigation }: Props) {
       </TouchableOpacity>
 
       {showSale && (
-        <View style={styles.saleSection}>
-          <TextInput style={styles.input} placeholder="Sale price (Rs)" placeholderTextColor={COLORS.text2} value={salePrice} onChangeText={setSalePrice} keyboardType="numeric" accessibilityLabel="sale price" />
-          <TextInput style={styles.input} placeholder="Sale end date (YYYY-MM-DD)" placeholderTextColor={COLORS.text2} value={saleEndDate} onChangeText={setSaleEndDate} accessibilityLabel="sale end date" />
-          {price && salePrice && parseFloat(salePrice) < parseFloat(price) && (
-            <Text style={styles.saleHint}>
-              -{Math.round((1 - parseFloat(salePrice) / parseFloat(price)) * 100)}% off · Rs {formatPrice(parseFloat(price) - parseFloat(salePrice))} saved
-            </Text>
-          )}
-        </View>
+        <SaleSection
+          originalPrice={price}
+          salePrice={salePrice}
+          saleEndDate={saleEndDate}
+          onSalePriceChange={setSalePrice}
+          onSaleEndDateChange={setSaleEndDate}
+        />
       )}
 
       <TextInput style={styles.input} placeholder={t('editListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" accessibilityLabel="quantity" />
