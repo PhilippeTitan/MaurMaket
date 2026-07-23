@@ -142,8 +142,25 @@ const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders:
 const msgLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many messages, try again later' } });
 const convLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many conversations, try again later' } });
 
-// ───── Email Transporter (nodemailer) ─────
-const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
+// ───── Email Transporter (Gmail API over HTTPS — works on Render free tier) ─────
+const { google } = await import('googleapis').then(m => m.default || m);
+
+const gmailClientId = process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID;
+const gmailClientSecret = process.env.GMAIL_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+const gmailRefreshToken = process.env.GMAIL_REFRESH_TOKEN;
+const gmailSenderEmail = process.env.SMTP_USER || 'maurinexus.contact@gmail.com';
+
+let gmailOAuth2Client = null;
+if (gmailClientId && gmailClientSecret && gmailRefreshToken) {
+  gmailOAuth2Client = new google.auth.OAuth2(gmailClientId, gmailClientSecret);
+  gmailOAuth2Client.setCredentials({ refresh_token: gmailRefreshToken });
+  console.log('[Email] Gmail API (HTTPS) configured');
+} else {
+  console.warn('[Email] Gmail API not configured — set GOOGLE_CLIENT_SECRET + GMAIL_REFRESH_TOKEN');
+}
+
+// Fallback: nodemailer SMTP (for local dev only — blocked on Render free tier)
+const emailTransporter = process.env.SMTP_HOST && gmailOAuth2Client === null ? nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || '587', 10),
   secure: parseInt(process.env.SMTP_PORT || '587', 10) === 465,
@@ -1072,27 +1089,63 @@ function buildVerificationEmail(code, purpose, lang = 'en') {
 }
 
 async function sendOtpEmail(email, code, purpose, lang) {
-  if (!emailTransporter) {
-    console.error('SMTP not configured — cannot send email');
-    return false;
-  }
   const { html, plainText, subject } = buildVerificationEmail(code, purpose, lang);
-  try {
-    await Promise.race([
-      emailTransporter.sendMail({
-        from: `"MaurMaket" <${process.env.SMTP_USER}>`,
-        to: email,
-        subject,
-        text: plainText,
+
+  // Primary: Gmail API over HTTPS (works on Render free tier)
+  if (gmailOAuth2Client) {
+    try {
+      const gmail = google.gmail({ version: 'v1', auth: gmailOAuth2Client });
+      const rawMessage = [
+        `To: ${email}`,
+        `From: "MaurMaket" <${gmailSenderEmail}>`,
+        `Subject: ${subject}`,
+        'Content-Type: text/html; charset=utf-8',
+        '',
         html,
-      }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP timeout')), 20000)),
-    ]);
-    return true;
-  } catch (err) {
-    console.error('Email send error:', err.message);
-    return false;
+      ].join('\r\n');
+
+      const encodedMessage = Buffer.from(rawMessage)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+
+      await Promise.race([
+        gmail.users.messages.send({
+          userId: 'me',
+          requestBody: { raw: encodedMessage },
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Gmail API timeout')), 20000)),
+      ]);
+      return true;
+    } catch (err) {
+      console.error('Gmail API send error:', err.message);
+      // Fall through to nodemailer if available
+    }
   }
+
+  // Fallback: nodemailer SMTP (local dev only)
+  if (emailTransporter) {
+    try {
+      await Promise.race([
+        emailTransporter.sendMail({
+          from: `"MaurMaket" <${gmailSenderEmail}>`,
+          to: email,
+          subject,
+          text: plainText,
+          html,
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP timeout')), 20000)),
+      ]);
+      return true;
+    } catch (err) {
+      console.error('SMTP send error:', err.message);
+      return false;
+    }
+  }
+
+  console.error('No email transport configured — cannot send email');
+  return false;
 }
 
 app.post('/api/auth/verify/send', authRequired, async (req, res) => {
