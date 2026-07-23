@@ -5317,7 +5317,6 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-let server;
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received. Shutting down gracefully...');
   if (server) server.close();
