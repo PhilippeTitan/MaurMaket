@@ -5040,19 +5040,19 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         console.log(`📋 [VERIFY] POB: ${hasPlaceOfBirth ? '✅' : '❌'} ${frontFields.placeOfBirth || 'N/A'}`);
         console.log(`📋 [VERIFY] Sex: ${hasSex ? '✅' : '❌'} ${sex || 'N/A'}`);
 
-        if (!nameMatch) issues.push('Name on CIN does not match your profile name');
-        if (!hasCinNumber) issues.push('CIN number not recognized');
-        if (!hasDob) issues.push('Date of birth not found on card');
-        if (!hasPlaceOfBirth) issues.push('Place of birth not found on card');
-        if (!hasSex) issues.push('Sex not found on CIN back');
+        if (!nameMatch) issues.push({ stage: 'details', message: 'Name on CIN does not match your profile name' });
+        if (!hasCinNumber) issues.push({ stage: 'details', message: 'CIN number not recognized' });
+        if (!hasDob) issues.push({ stage: 'details', message: 'Date of birth not found on card' });
+        if (!hasPlaceOfBirth) issues.push({ stage: 'details', message: 'Place of birth not found on card' });
+        if (!hasSex) issues.push({ stage: 'details', message: 'Sex not found on CIN back' });
       } else {
-        issues.push('Could not read any text from ID card — please retake with better lighting');
+        issues.push({ stage: 'card', message: 'Could not read any text from ID card — please retake with better lighting' });
       }
 
       if (issues.length === 0) {
         if (!process.env.TAREEF_API_KEY) {
           console.log(`❌ [VERIFY] TAREEF_API_KEY not configured — rejecting (fail-closed)`);
-          issues.push('Face verification service unavailable');
+          issues.push({ stage: 'face', message: 'Face verification service unavailable' });
         } else {
           console.log(`🔍 [VERIFY] Calling Tareef face comparison (CIN face crop vs selfie)...`);
           try {
@@ -5062,18 +5062,18 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
             ocrResult.faceScore = score;
             console.log(`✅ [VERIFY] Tareef result: score=${score} similar=${similar} → ${score >= 0.15 ? '✅ PASS' : '❌ FAIL'}`);
             if (score < 0.15) {
-              issues.push('Face in selfie does not match the CIN photo');
+              issues.push({ stage: 'face', message: 'Face in selfie does not match the CIN photo' });
             }
           } catch (e) {
             console.error(`❌ [VERIFY] Tareef failed: ${e.message}`);
             console.error(`❌ [VERIFY] Stack: ${e.stack?.split('\n').slice(0, 3).join(' | ')}`);
             const msg = e.message || '';
             if (msg.includes('no_face') || msg.includes('No face')) {
-              issues.push('No face detected in ID card — please retake the CIN photo with the card flat, well-lit, and the face photo clearly visible');
+              issues.push({ stage: 'face', message: 'No face detected in ID card — please retake the CIN photo with the card flat, well-lit, and the face photo clearly visible' });
             } else if (msg.includes('low_quality') || msg.includes('blurry')) {
-              issues.push('Image too blurry — please retake with better lighting and focus');
+              issues.push({ stage: 'face', message: 'Image too blurry — please retake with better lighting and focus' });
             } else {
-              issues.push(`Face verification failed: ${msg}`);
+              issues.push({ stage: 'face', message: `Face verification failed: ${msg}` });
             }
           }
         }
@@ -5085,8 +5085,10 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
         console.log(`✅ [VERIFY] All checks passed → auto-verifying`);
         autoStatus = 'verified';
       } else {
-        console.log(`❌ [VERIFY] Rejection reasons: ${issues.join(' | ')}`);
-        rejectionReason = issues.join('. ');
+        const failedStage = issues[0].stage;
+        const reasons = issues.map(i => i.message);
+        console.log(`❌ [VERIFY] Rejection: stage=${failedStage} reasons=${reasons.join(' | ')}`);
+        rejectionReason = reasons.join('. ');
       }
     }
 
@@ -5139,7 +5141,9 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
       );
       createNotification(req.user.id, 'verification_rejected', 'Verification Not Approved',
         rejectionReason || 'Your identity verification was not approved. Please try again.', { attemptId: result.rows[0].id });
-      res.json({ attempt: result.rows[0] });
+      const failedStage = issues.length > 0 ? issues[0].stage : null;
+      const reasons = issues.map(i => i.message);
+      res.json({ attempt: { ...result.rows[0], failed_stage: failedStage, reasons } });
     }
   } catch (err) {
     console.error('Verification submit error:', err);
