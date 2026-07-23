@@ -147,9 +147,12 @@ const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || '587', 10),
   secure: parseInt(process.env.SMTP_PORT || '587', 10) === 465,
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
   auth: {
     user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    pass: process.env.SMTP_PASS?.replace(/\s/g, ''),
   },
 }) : null;
 
@@ -1075,16 +1078,19 @@ async function sendOtpEmail(email, code, purpose, lang) {
   }
   const { html, plainText, subject } = buildVerificationEmail(code, purpose, lang);
   try {
-    await emailTransporter.sendMail({
-      from: `"MaurMaket" <${process.env.SMTP_USER}>`,
-      to: email,
-      subject,
-      text: plainText,
-      html,
-    });
+    await Promise.race([
+      emailTransporter.sendMail({
+        from: `"MaurMaket" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject,
+        text: plainText,
+        html,
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('SMTP timeout')), 20000)),
+    ]);
     return true;
   } catch (err) {
-    console.error('Email send error:', err);
+    console.error('Email send error:', err.message);
     return false;
   }
 }
@@ -1107,7 +1113,10 @@ app.post('/api/auth/verify/send', authRequired, async (req, res) => {
     );
 
     const sent = await sendOtpEmail(user.email, code, 'verify', language || 'en');
-    if (!sent) return res.status(500).json({ error: 'Failed to send email. Please try again.' });
+    if (!sent) {
+      console.error(`verify/send: SMTP failed for ${user.email} — check SMTP_HOST/USER/PASS env vars`);
+      return res.status(500).json({ error: 'Failed to send email. Please try again.' });
+    }
 
     res.json({ success: true, email: user.email });
   } catch (err) {
