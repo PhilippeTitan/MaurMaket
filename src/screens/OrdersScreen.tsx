@@ -65,7 +65,7 @@ export default function OrdersScreen({ navigation }: Props) {
     setLoading(false);
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchOrders(); }, [fetchOrders]));
+  useFocusEffect(useCallback(() => { fetchOrders(true); }, [fetchOrders]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage, getImageUrl, uploadImage } from '../api';
+import { getMessages, sendMessage as apiSendMessage, getImageUrl, uploadImage, sendTyping, getTypingStatus } from '../api';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -40,9 +40,11 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [productContext, setProductContext] = useState<ConversationProduct | null>(null);
   const [counteringMessageId, setCounteringMessageId] = useState<string | null>(null);
   const [counterPrice, setCounterPrice] = useState('');
+  const [otherTyping, setOtherTyping] = useState(false);
   const listRef = useRef<FlatList>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appState = useRef(AppState.currentState);
+  const typingCooldownRef = useRef(false);
 
   const lastMessageCursor = useRef<{ time: string; id: string } | null>(null);
   const sendingRef = useRef(false);
@@ -87,10 +89,21 @@ export default function ChatScreen({ route, navigation }: Props) {
     lastMessageCursor.current = null;
     fetchMessages(0, false);
     setPage(0);
+    setOtherTyping(false);
+
+    const checkTyping = async () => {
+      try {
+        const res = await getTypingStatus(conversationId) as { typing?: boolean };
+        setOtherTyping(!!res.typing);
+      } catch { /* silent */ }
+    };
 
     const startPolling = () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(() => fetchMessages(0, false, true), 5000);
+      intervalRef.current = setInterval(() => {
+        fetchMessages(0, false, true);
+        checkTyping();
+      }, 5000);
     };
     const stopPolling = () => {
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
@@ -103,6 +116,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         stopPolling();
       } else if (appState.current.match(/inactive|background/) && next === 'active') {
         fetchMessages(0, false, true);
+        checkTyping();
         startPolling();
       }
       appState.current = next;
@@ -470,6 +484,13 @@ export default function ChatScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {otherTyping && (
+        <View style={styles.typingRow}>
+          <ActivityIndicator size="small" color={COLORS.text2} style={{ marginRight: 6 }} />
+          <Text style={styles.typingText}>{otherUserName || 'They'} typing...</Text>
+        </View>
+      )}
+
       <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
         <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending} accessibilityLabel="attach photo" accessibilityRole="button">
           <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.text2} />
@@ -477,7 +498,14 @@ export default function ChatScreen({ route, navigation }: Props) {
         <TextInput
           style={styles.input}
           value={text}
-          onChangeText={setText}
+          onChangeText={(t) => {
+            setText(t);
+            if (t.trim() && !typingCooldownRef.current) {
+              typingCooldownRef.current = true;
+              sendTyping(conversationId).catch(() => {});
+              setTimeout(() => { typingCooldownRef.current = false; }, 3000);
+            }
+          }}
           placeholder={t('chat.placeholder')}
           placeholderTextColor={COLORS.text2}
           multiline
@@ -625,6 +653,11 @@ const styles = StyleSheet.create({
   },
   offerChipText: { fontSize: 11, color: COLORS.text, fontWeight: '700' },
   offerClose: { padding: 2 },
+  typingRow: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md,
+    paddingBottom: 4, paddingTop: 2,
+  },
+  typingText: { fontSize: 12, color: COLORS.text2, fontStyle: 'italic' },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md,
     paddingBottom: SPACING.xxl + 16, borderTopWidth: 1, borderTopColor: COLORS.border,

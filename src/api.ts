@@ -350,6 +350,10 @@ export const getMessages = (conversationId: string, params?: { limit?: number; o
 export const sendMessage = (conversationId: string, content: string, imageUrl?: string) =>
   request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text' }) });
 export const getConversationUnreadCount = () => request('/conversations/unread-count');
+export const sendTyping = (conversationId: string) =>
+  request(`/conversations/${conversationId}/typing`, { method: 'POST' });
+export const getTypingStatus = (conversationId: string) =>
+  request(`/conversations/${conversationId}/typing`);
 
 // Offers
 export const sendOffer = (conversationId: string, data: { productId: string; productName: string; offeredPrice: number; listPrice: number }) =>

@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   rowUnread: { backgroundColor: COLORS.surface },
   iconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  rowBody: { flex: 1 },
+  rowBody: { flex: 1, fontSize: 13, color: COLORS.text2 },
   rowTitle: { fontSize: 14, fontWeight: '500', color: COLORS.text },
   rowTitleUnread: { fontWeight: '700' },
   rowTime: { fontSize: 11, color: COLORS.text2, marginTop: 4 },

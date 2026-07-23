@@ -4025,6 +4025,36 @@ app.get('/api/conversations/unread-count', authRequired, async (req, res) => {
   }
 });
 
+// ───── Typing Indicator (in-memory, 5s TTL) ─────
+const typingUsers = new Map();
+function getTypingKey(convId, userId) { return `${convId}:${userId}`; }
+
+app.post('/api/conversations/:id/typing', authRequired, async (req, res) => {
+  const key = getTypingKey(req.params.id, req.user.id);
+  typingUsers.set(key, Date.now());
+  setTimeout(() => { typingUsers.delete(key); }, 5000);
+  res.json({ ok: true });
+});
+
+app.get('/api/conversations/:id/typing', authRequired, async (req, res) => {
+  try {
+    const convResult = await pool.query(
+      'SELECT buyer_id, seller_id FROM conversations WHERE id = $1', [req.params.id]
+    );
+    if (!convResult.rows.length) return res.json({ typing: false });
+    const { buyer_id, seller_id } = convResult.rows[0];
+    if (req.user.id !== buyer_id && req.user.id !== seller_id) return res.json({ typing: false });
+    const otherUserId = req.user.id === buyer_id ? seller_id : buyer_id;
+    const key = getTypingKey(req.params.id, otherUserId);
+    const lastTyped = typingUsers.get(key);
+    const typing = lastTyped && (Date.now() - lastTyped < 5000);
+    res.json({ typing: !!typing });
+  } catch (err) {
+    console.error('Typing status error:', err);
+    res.json({ typing: false });
+  }
+});
+
 // ───── Structured Offer Routes ─────
 
 // Send an offer in a conversation

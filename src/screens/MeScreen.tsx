@@ -108,10 +108,11 @@ export default function MeScreen() {
 
       const allBuyerOrders = buyerOrdersRes.buyerOrders || [];
       const sellingOrders = (ordersRes as { orders?: Order[] }).orders || [];
+      const completedSellingOrders = sellingOrders.filter((o: Order) => o.status === 'completed');
       cacheData.orderCount = allBuyerOrders.length;
-      cacheData.sellingOrderCount = sellingOrders.length;
+      cacheData.sellingOrderCount = completedSellingOrders.length;
       setOrderCount(allBuyerOrders.length);
-      setSellingOrderCount(sellingOrders.length);
+      setSellingOrderCount(completedSellingOrders.length);
 
       const pending = allBuyerOrders.filter((o: Order) => o.status === 'pending').length;
       const paid = allBuyerOrders.filter((o: Order) => o.status === 'paid').length;
