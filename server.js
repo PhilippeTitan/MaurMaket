@@ -29,6 +29,7 @@ pool.on('error', (err) => {
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
+let server;
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   console.error('FATAL: JWT_SECRET environment variable is required');
@@ -3183,7 +3184,7 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
 
     if (!moncashRes.ok) {
       const errorText = await moncashRes.text();
-      return res.status(502).json({ error: `MonCashConnect returned ${moncashRes.status}`, details: errorText });
+      return res.status(502).json({ error: 'Payment provider error' });
     }
     const data = await moncashRes.json();
     if (!data.paymentUrl) return res.status(502).json({ error: 'Payment provider error' });
@@ -4035,12 +4036,12 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
     if (!moncashRes.ok) {
       const errorText = await moncashRes.text();
       console.error(`MonCashConnect HTTP ${moncashRes.status}:`, errorText);
-      return res.status(502).json({ error: `MonCashConnect returned ${moncashRes.status}`, details: errorText });
+      return res.status(502).json({ error: 'Payment provider error' });
     }
     const data = await moncashRes.json();
     if (!data.paymentUrl) {
       console.error('MonCashConnect missing paymentUrl:', data);
-      return res.status(502).json({ error: 'Payment provider error', details: data });
+      return res.status(502).json({ error: 'Payment provider error' });
     }
 
     await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [orderId, orderId]);
@@ -4505,7 +4506,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
       } finally {
         refundC.release();
       }
-      return res.status(502).json({ error: 'Payout failed', details: errorText });
+      return res.status(502).json({ error: 'Payout failed' });
     } catch (fetchErr) {
       console.error('Payout network error:', fetchErr);
       const refundC = await pool.connect();
@@ -4514,7 +4515,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
       } finally {
         refundC.release();
       }
-      return res.status(502).json({ error: 'Payout network error', details: fetchErr.message });
+      return res.status(502).json({ error: 'Payout network error' });
     }
   } catch (err) {
     await c.query('ROLLBACK');
@@ -4937,7 +4938,7 @@ app.post('/api/subscriptions/create', authRequired, sellerRequired, async (req, 
     });
     const payData = await mccRes.json();
     if (!mccRes.ok || !payData.paymentUrl) {
-      return res.status(500).json({ error: 'Payment creation failed', details: payData });
+      return res.status(500).json({ error: 'Payment creation failed' });
     }
     res.json({ paymentUrl: payData.paymentUrl, orderId });
   } catch (err) {
@@ -4984,7 +4985,7 @@ app.post('/api/subscriptions/renew', authRequired, sellerRequired, async (req, r
     });
     const payData = await mccRes.json();
     if (!mccRes.ok || !payData.paymentUrl) {
-      return res.status(500).json({ error: 'Payment creation failed', details: payData });
+      return res.status(500).json({ error: 'Payment creation failed' });
     }
     res.json({ paymentUrl: payData.paymentUrl, orderId });
   } catch (err) {
@@ -5313,15 +5314,19 @@ app.use((err, req, res, next) => {
 // ───── Graceful Shutdown ─────
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection:', reason);
+  process.exit(1);
 });
 
+let server;
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received. Shutting down gracefully...');
+  if (server) server.close();
   try { await pool.end(); } catch {}
   process.exit(0);
 });
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  if (server) server.close();
   try { await pool.end(); } catch {}
   process.exit(0);
 });
@@ -5334,7 +5339,7 @@ if (isMain) {
     await cleanupOldNotifications();
     // cleanupLegacyData() REMOVED — was wiping ALL products/orders/reviews on every restart
     // Legacy /uploads/ URL cleanup is now handled by the imgbb migration (images are hosted on imgbb)
-    app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
       console.log('Cron jobs active: meetup timeout auto-refund (every 5 min), offer expiry (every 15 min)');
     });

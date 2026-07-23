@@ -503,5 +503,41 @@ PHASE 4 — LOW + i18n (ongoing):
 38. Clean up OTP codes table
 
 ================================================================================
+SESSION 18 AUDIT — NEW FINDINGS (2026-07-11)
+================================================================================
+
+Fixed in this session:
+- C17. SSRF via tareefCompare/ocrSpaceParse — user-supplied image URLs fetched directly → FIXED with isAllowedImageUrl() allowlist
+- C18. Idempotency key lost on stock-failure rollback — re-register eventId outside transaction after rollback
+- H44. Email change bypasses re-verification — email_verified reset to false on email change
+- H45. Raw DB error messages leaked on order creation — safe message filter added
+- H46. Stock-failure refund leaves order as 'pending' — order set to 'cancelled' + AbortSignal.timeout on refund fetch
+- H47. Buyer order list sorts by UUID (random order) — wrapped in subquery with ORDER BY created_at DESC
+- H48. Offer creation not in transaction — wrapped in pool.connect() + BEGIN/COMMIT/ROLLBACK
+- H49. No duplicate dispute prevention — check for existing open disputes before INSERT
+- H50. Unread count endpoint uses N+1 correlated subqueries — rewritten as JOIN
+- M58. Offer message preview NULL for offer-type messages — added '💰 Offer' CASE
+- M59. Health check leaks business data (totalCommission, hasMccKey) — removed from response
+- M60. Missing lat/lng validation on meetup endpoints — parseFloat + range check
+- M61. Promo percentage >100 not blocked — validation added
+- M62. Payment provider error leaks (5 locations) — removed details from all error responses
+- M63. unhandledRejection handler swallows errors — now crashes process
+- M64. Graceful shutdown doesn't drain in-flight requests — now uses server.close()
+
+Remaining Medium items:
+- M65. No max items limit on order creation
+- M66. Product image URLs not validated (partially fixed via SSRF allowlist)
+- M67. become-seller allows pre-setting idDocumentUrl
+- M68. Seller exact locations exposed to unauthenticated users
+- M69. Offer endpoints missing dedicated rate limiters (counter fixed, creation fixed)
+- M70. Offer actions reset message cursor
+- M71. Wishlist/follow toggle TOCTOU race
+- M72. Casual seller product limit race condition
+- M73. Missing wishlists(product_id) index
+- M74. Missing notifications(user_id, type, is_read) composite index
+- M75. Buyer order list has no pagination
+- M76. Webhook stock processing holds locks during per-item loop
+
+================================================================================
 END OF AUDIT
 ================================================================================
