@@ -16,13 +16,109 @@ import morgan from 'morgan';
 dotenv.config();
 
 const { Pool } = pg;
-const pool = new Pool({
+
+// ───── Dual Database: Neon (primary) + Supabase (fallback) ─────
+const neonPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 15,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 8000,
   ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
 });
+
+const supabasePool = process.env.SUPABASE_DATABASE_URL ? new Pool({
+  connectionString: process.env.SUPABASE_DATABASE_URL,
+  max: 15,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 8000,
+  ssl: { rejectUnauthorized: false },
+}) : null;
+
+let usingSupabase = false;
+
+function isConnectionError(err) {
+  if (!err) return false;
+  const code = err.code || '';
+  const msg = (err.message || '').toLowerCase();
+  return code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ECONNRESET' ||
+         code === 'ENOTFOUND' || code === 'EPIPE' || code === '57P01' || code === '57P03' ||
+         msg.includes('compute time quota') || msg.includes('timeout') ||
+         msg.includes('connection') || msg.includes('terminated') ||
+         msg.includes('pool is shutting down') || msg.includes('connecting pool');
+}
+
+function wrapClient(client) {
+  const origQuery = client.query.bind(client);
+  const origRelease = client.release.bind(client);
+  let released = false;
+
+  client.query = async (text, params) => {
+    if (released) throw new Error('Client already released');
+    try {
+      return await origQuery(text, params);
+    } catch (err) {
+      if (isConnectionError(err) && !usingSupabase && supabasePool) {
+        console.warn('[DB] Neon client failed mid-transaction, falling back to Supabase');
+        usingSupabase = true;
+        try { origRelease(); } catch {}
+        released = true;
+        const newClient = await supabasePool.connect();
+        return wrapClient(newClient).query(text, params);
+      }
+      throw err;
+    }
+  };
+
+  client.release = () => { if (!released) origRelease(); };
+  return client;
+}
+
+const pool = {
+  async query(text, params) {
+    if (usingSupabase && supabasePool) return supabasePool.query(text, params);
+    try {
+      return await neonPool.query(text, params);
+    } catch (err) {
+      if (isConnectionError(err) && supabasePool) {
+        console.warn('[DB] Neon unavailable, falling back to Supabase. Error:', err.message);
+        usingSupabase = true;
+        return await supabasePool.query(text, params);
+      }
+      throw err;
+    }
+  },
+
+  async connect() {
+    if (usingSupabase && supabasePool) return wrapClient(await supabasePool.connect());
+    try {
+      return wrapClient(await neonPool.connect());
+    } catch (err) {
+      if (isConnectionError(err) && supabasePool) {
+        console.warn('[DB] Neon connect failed, falling back to Supabase. Error:', err.message);
+        usingSupabase = true;
+        return wrapClient(await supabasePool.connect());
+      }
+      throw err;
+    }
+  },
+
+  on(event, handler) {
+    if (event === 'error') {
+      neonPool.on('error', handler);
+      if (supabasePool) supabasePool.on('error', handler);
+    }
+  },
+
+  async end() {
+    await neonPool.end().catch(() => {});
+    if (supabasePool) await supabasePool.end().catch(() => {});
+  },
+
+  get _neon() { return neonPool; },
+  get _supabase() { return supabasePool; },
+  get _usingFallback() { return usingSupabase; },
+};
+
 pool.on('error', (err) => {
   console.error('Unexpected pool error:', err);
 });
@@ -5154,15 +5250,28 @@ app.get('/api/map-config', authRequired, (_req, res) => {
 });
 
 app.get('/api/health', async (_req, res) => {
+  const result = { status: 'ok', primary: 'unknown', fallback: 'unknown', active: 'neon' };
   try {
-    await pool.query('SELECT 1');
-    res.json({
-      status: 'ok',
-      database: 'connected',
-    });
-  } catch {
-    res.status(503).json({ status: 'error', database: 'disconnected' });
+    if (!usingSupabase) {
+      await neonPool.query('SELECT 1');
+      result.primary = 'connected';
+    } else {
+      result.primary = 'down';
+    }
+  } catch { result.primary = 'down'; }
+
+  if (supabasePool) {
+    try {
+      await supabasePool.query('SELECT 1');
+      result.fallback = 'connected';
+    } catch { result.fallback = 'down'; }
+  } else {
+    result.fallback = 'not configured';
   }
+
+  if (usingSupabase) result.active = 'supabase';
+  result.status = (result.primary === 'connected' || result.fallback === 'connected') ? 'ok' : 'error';
+  res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
 
 app.get('/api/debug', authRequired, adminRequired, async (_req, res) => {
