@@ -309,7 +309,7 @@ export default function InboxScreen() {
         renderItem={renderConversation as any}
         keyExtractor={(item: any) => item.id}
         ListHeaderComponent={listHeader}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         ListEmptyComponent={
           loading ? (

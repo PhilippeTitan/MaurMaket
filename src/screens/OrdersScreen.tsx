@@ -7,6 +7,7 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { getOrders, cancelOrder, completeOrder, getSellerOrders, updateOrderStatus } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -34,6 +35,7 @@ const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error
 
 export default function OrdersScreen({ navigation }: Props) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'buying' | 'selling'>('buying');
   const [buyOrders, setBuyOrders] = useState<Order[]>([]);
   const [sellOrders, setSellOrders] = useState<Order[]>([]);
@@ -170,7 +172,7 @@ export default function OrdersScreen({ navigation }: Props) {
           data={orders}
           renderItem={renderItem}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 80 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
           ListEmptyComponent={
             <EmptyState

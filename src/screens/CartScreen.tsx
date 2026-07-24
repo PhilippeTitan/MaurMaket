@@ -10,6 +10,7 @@ import EmptyState from '../components/EmptyState';
 import { store } from '../store';
 import { validatePromo, getImageUrl } from '../api';
 import { useTranslation } from '../i18n';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { CartItem } from '../types';
@@ -25,6 +26,7 @@ type SectionItem =
 export default function CartScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
+  const insets = useSafeAreaInsets();
   const [cart, setCart] = useState<CartItem[]>(store.cart);
   const [promoCode, setPromoCode] = useState('');
   const [discount, setDiscount] = useState(0);
@@ -188,7 +190,7 @@ export default function CartScreen({ navigation }: Props) {
             keyExtractor={item => item.key}
             contentContainerStyle={styles.list}
           />
-          <View style={styles.footer}>
+          <View style={[styles.footer, { paddingBottom: insets.bottom + SPACING.md }]}>
             <View style={styles.promoRow}>
               <TextInput
                 style={styles.promoInput}
@@ -269,7 +271,7 @@ const styles = StyleSheet.create({
   sellerSectionMeta: { fontSize: 11, color: COLORS.text2 },
   footer: {
     position: 'absolute', bottom: 0, left: 0, right: 0, padding: SPACING.md,
-    paddingBottom: SPACING.xxl + 20, borderTopWidth: 1, borderTopColor: COLORS.border, backgroundColor: COLORS.bg,
+    borderTopWidth: 1, borderTopColor: COLORS.border, backgroundColor: COLORS.bg,
   },
   promoRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 },
   promoInput: {

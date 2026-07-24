@@ -186,7 +186,7 @@ export default function NotificationScreen() {
             return renderItem({ item: item.notif });
           }}
           keyExtractor={(item, i) => item.isHeader ? `header-${item.label}` : item.notif.id || `${i}`}
-          contentContainerStyle={{ paddingBottom: 100 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         />
       )}

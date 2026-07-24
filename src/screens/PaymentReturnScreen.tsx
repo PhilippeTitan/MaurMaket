@@ -6,6 +6,7 @@ import { Icon } from '../components/icons/Icon';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { checkPaymentStatus } from '../api';
@@ -15,6 +16,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function PaymentReturnScreen() {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'PaymentReturn'>>();
   const orderId = route.params?.orderId;
@@ -67,7 +69,7 @@ export default function PaymentReturnScreen() {
 
   if (status === 'confirmed') {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.iconCircle}>
           <Icon name="check-circle" size={64} color={COLORS.green} />
         </View>
@@ -80,7 +82,7 @@ export default function PaymentReturnScreen() {
 
   if (status === 'timeout' || !orderId) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={[styles.iconCircle, { borderColor: COLORS.yellow }]}>
           <Icon name="time" size={56} color={COLORS.yellow} />
         </View>
@@ -115,7 +117,7 @@ export default function PaymentReturnScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.iconCircle}>
         <ActivityIndicator size="large" color={COLORS.coral} />
       </View>

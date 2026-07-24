@@ -7,6 +7,7 @@ import { COLORS, SPACING, RADIUS, isVerifiedSeller, getDisplayName, getSellerAva
 import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation, getConversations } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -24,6 +25,7 @@ let _storefrontCache: Record<string, { data: any; timestamp: number }> = {};
 export default function StorefrontScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
+  const insets = useSafeAreaInsets();
 
   const { sellerId } = route.params;
   const [seller, setSeller] = useState<SellerProfile | null>(null);
@@ -156,7 +158,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
         data={products}
         numColumns={2}
         columnWrapperStyle={styles.row}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 80 }]}
         keyExtractor={item => item.id}
         ListHeaderComponent={
           <View>

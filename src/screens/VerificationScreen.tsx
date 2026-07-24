@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Platform,
-  Animated, Dimensions, ScrollView,
+  Animated, Dimensions, ScrollView, Image, PanResponder,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import Svg, { Rect, Path, Circle as SvgCircle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { useTranslation } from '../i18n';
@@ -79,11 +80,61 @@ export default function VerificationScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [failedStage, setFailedStage] = useState<FailedStage>(null);
   const [rejectionReasons, setRejectionReasons] = useState<string[]>([]);
+  const insets = useSafeAreaInsets();
+  const contentStyle = { flexGrow: 1 as const, padding: SPACING.lg, paddingBottom: SPACING.lg + insets.bottom + 8 };
   const [verified, setVerified] = useState(false);
-  const [cropMode, setCropMode] = useState<'auto' | 'manual'>('auto');
-  const [cropOrigin, setCropOrigin] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [cropSourceSize, setCropSourceSize] = useState({ w: 1080, h: 1920 });
   const [frontPhotoUri, setFrontPhotoUri] = useState('');
+  const [croppedFaceUri, setCroppedFaceUri] = useState('');
+  const [cropSourceSize, setCropSourceSize] = useState({ w: 1080, h: 1920 });
+  const [cropBox, setCropBox] = useState({ x: 0, y: 0, size: 200 });
+  const cropDragRef = useRef<any>(null);
+  const containerDimRef = useRef({ w: 0, h: 0 });
+  const cropBoxRef = useRef(cropBox);
+  cropBoxRef.current = cropBox;
+
+  useEffect(() => {
+    if (step === 'cropConfirm' && cropSourceSize.w > 0) {
+      const dw = SCREEN_W - SPACING.lg * 2;
+      const maxH = Dimensions.get('window').height * 0.55;
+      const dh = Math.min(maxH, dw * 1.3);
+      containerDimRef.current = { w: dw, h: dh };
+      const size = Math.min(dw, dh) * 0.5;
+      setCropBox({ x: (dw - size) / 2, y: (dh - size) / 2, size });
+    }
+  }, [step]);
+
+  const moveResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponderCapture: () => true,
+    onPanResponderGrant: () => {
+      cropDragRef.current = { mode: 'move', startCrop: { ...cropBoxRef.current } };
+    },
+    onPanResponderMove: (_, gs) => {
+      if (!cropDragRef.current || cropDragRef.current.mode !== 'move') return;
+      const s = cropDragRef.current.startCrop;
+      const { w, h } = containerDimRef.current;
+      setCropBox(prev => ({
+        ...prev,
+        x: Math.max(0, Math.min(w - prev.size, s.x + gs.dx)),
+        y: Math.max(0, Math.min(h - prev.size, s.y + gs.dy)),
+      }));
+    },
+  })).current;
+
+  const resizeResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponderCapture: () => true,
+    onPanResponderGrant: () => {
+      cropDragRef.current = { mode: 'resize', startCrop: { ...cropBoxRef.current } };
+    },
+    onPanResponderMove: (_, gs) => {
+      if (!cropDragRef.current || cropDragRef.current.mode !== 'resize') return;
+      const s = cropDragRef.current.startCrop;
+      const { w, h } = containerDimRef.current;
+      setCropBox(prev => {
+        const ns = Math.max(60, Math.min(s.size + Math.max(gs.dx, gs.dy), Math.min(w - s.x, h - s.y)));
+        return { ...prev, size: ns };
+      });
+    },
+  })).current;
   const [stages, setStages] = useState<Record<string, 'pending' | 'active' | 'done' | 'failed'>>({});
   const cameraRef = useRef<any>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -96,106 +147,57 @@ export default function VerificationScreen() {
   const photoKeys = ['cinFront', 'cinBack', 'selfie'] as const;
   const getKept = (currentPhoto: string) => photoKeys.filter(k => k !== currentPhoto && photos[k]);
 
-  const doHeuristicCrop = async (photoUri: string, imgW: number, imgH: number) => {
-    const cropW = Math.round(imgW * 0.45);
-    const cropH = Math.round(imgH * 0.35);
-    const cropX = 0;
-    const cropY = imgH - cropH;
-    setCropOrigin({ x: cropX, y: cropY, w: cropW, h: cropH });
-    setCropSourceSize({ w: imgW, h: imgH });
-    if (ImageManipulator) {
-      const manipulated = await ImageManipulator.manipulateAsync(
-        photoUri,
-        [{ crop: { originX: cropX, originY: cropY, width: cropW, height: cropH } }],
-        { compress: 0.85, format: 'jpeg' }
-      );
-      return manipulated.uri;
-    }
-    return null;
-  };
-
-  const doMlKitCrop = async (photoUri: string, imgW: number, imgH: number) => {
-    if (!FaceDetection) return null;
-    try {
-      const faces = await FaceDetection.detect(photoUri, { detectionMode: 0 });
-      if (faces && faces.length > 0) {
-        const face = faces[0].bounds;
-        const pad = 0.4;
-        const x = Math.max(0, Math.round(face.x - face.width * pad));
-        const y = Math.max(0, Math.round(face.y - face.height * pad));
-        const w = Math.min(imgW - x, Math.round(face.width * (1 + pad * 2)));
-        const h = Math.min(imgH - y, Math.round(face.height * (1 + pad * 2)));
-        setCropOrigin({ x, y, w, h });
-        setCropSourceSize({ w: imgW, h: imgH });
-        if (ImageManipulator) {
-          const manipulated = await ImageManipulator.manipulateAsync(
-            photoUri,
-            [{ crop: { originX: x, originY: y, width: w, height: h } }],
-            { compress: 0.85, format: 'jpeg' }
-          );
-          return manipulated.uri;
-        }
-      }
-    } catch {}
-    return null;
-  };
-
-  const doManualCrop = async (photoUri: string) => {
-    if (!cropOrigin || !ImageManipulator) return null;
-    const manipulated = await ImageManipulator.manipulateAsync(
-      photoUri,
-      [{ crop: { originX: cropOrigin.x, originY: cropOrigin.y, width: cropOrigin.w, height: cropOrigin.h } }],
-      { compress: 0.85, format: 'jpeg' }
-    );
-    return manipulated.uri;
-  };
-
   const captureImage = async (facing: 'front' | 'back') => {
+    console.log(`[VERIFY-DEBUG] captureImage called, facing=${facing}, cameraReady=${cameraReady}, cameraRef=${!!cameraRef.current}`);
     if (!permission?.granted) {
       const p = await requestPermission();
       if (!p.granted) { Alert.alert(t('common.error'), 'Camera permission is required'); return; }
     }
     try {
-      if (cameraRef.current) {
-        const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, skipProcessing: true });
-        if (!photo?.uri) return;
-        setLoading(true);
-        const uploadRes = await uploadImage(photo.uri);
+      if (!cameraRef.current) {
+        console.log(`[VERIFY-DEBUG] ❌ cameraRef.current is null`);
+        Alert.alert('Camera not ready', 'Camera reference is null. Please go back and try again.');
+        return;
+      }
+      console.log(`[VERIFY-DEBUG] Calling takePictureAsync...`);
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      console.log(`[VERIFY-DEBUG] takePictureAsync returned: ${JSON.stringify(photo ? { uri: photo.uri?.substring(0, 80), width: photo.width, height: photo.height, type: photo.type } : 'null')}`);
+      if (!photo?.uri) {
+        console.log(`[VERIFY-DEBUG] ❌ No photo URI returned`);
+        Alert.alert('Capture failed', 'Camera did not return a photo. Please try again.');
+        setLoading(false);
+        return;
+      }
+      console.log(`[VERIFY-CROP] Photo captured: ${photo.width}x${photo.height} uri=${photo.uri.substring(0, 60)}`);
+      setLoading(true);
+      console.log(`[VERIFY-DEBUG] Uploading full image to imgbb...`);
+      const uploadRes = await uploadImage(photo.uri, 3600);
+      console.log(`[VERIFY-DEBUG] ✅ Full image uploaded: ${uploadRes.url?.substring(0, 60)}`);
 
         if (facing === 'front') {
           setIdFrontUrl(uploadRes.url);
           if (uploadRes.deleteUrl) setIdFrontDeleteUrl(uploadRes.deleteUrl);
           setFrontPhotoUri(photo.uri);
-          let croppedUri = await doMlKitCrop(photo.uri, photo.width || 1080, photo.height || 1920);
-          if (!croppedUri) {
-            croppedUri = await doHeuristicCrop(photo.uri, photo.width || 1080, photo.height || 1920);
-            setCropMode('auto');
-          } else {
-            setCropMode('auto');
-          }
-          if (croppedUri) {
-            const faceUpload = await uploadImage(croppedUri);
-            setIdFaceUrl(faceUpload.url);
-            if (faceUpload.deleteUrl) setIdFaceDeleteUrl(faceUpload.deleteUrl);
-          }
+          setCropSourceSize({ w: photo.width || 1080, h: photo.height || 1920 });
           setLoading(false);
           setStep('cropConfirm');
-        } else {
-          setIdBackUrl(uploadRes.url);
-          if (uploadRes.deleteUrl) setIdBackDeleteUrl(uploadRes.deleteUrl);
-          setCameraReady(false);
-          setCameraFacing('front');
-          setLoading(false);
-          setStep('selfieTip');
-        }
+      } else {
+        setIdBackUrl(uploadRes.url);
+        if (uploadRes.deleteUrl) setIdBackDeleteUrl(uploadRes.deleteUrl);
+        setCameraReady(false);
+        setCameraFacing('front');
+        setLoading(false);
+        setStep('selfieTip');
       }
     } catch (e: any) {
+      console.log(`[VERIFY-DEBUG] ❌ captureImage error: ${e?.message}`, e?.stack?.split('\n').slice(0, 3).join(' | '));
       setLoading(false);
       Alert.alert(t('common.error'), e?.message || 'Failed to capture image');
     }
   };
 
   const captureSelfie = async () => {
+    console.log(`[VERIFY-DEBUG] captureSelfie called, cameraReady=${cameraReady}, cameraRef=${!!cameraRef.current}`);
     if (!permission?.granted) {
       const p = await requestPermission();
       if (!p.granted) { Alert.alert(t('common.error'), 'Camera permission is required'); return; }
@@ -204,19 +206,30 @@ export default function VerificationScreen() {
     try {
       await new Promise(r => setTimeout(r, 1000));
       setLoading(true);
-      if (cameraRef.current) {
-        const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, skipProcessing: true });
-        if (photo?.uri) {
-          const uploadRes = await uploadImage(photo.uri);
-          setSelfieUrl(uploadRes.url);
-          if (uploadRes.deleteUrl) setSelfieDeleteUrl(uploadRes.deleteUrl);
-          setLoading(false);
-          setStep('reviewAll');
-          return;
-        }
+      if (!cameraRef.current) {
+        console.log(`[VERIFY-DEBUG] ❌ selfie cameraRef.current is null after 1s delay`);
+        Alert.alert('Camera not ready', 'Camera reference is null. Please go back and try again.');
+        setLoading(false);
+        return;
+      }
+      console.log(`[VERIFY-DEBUG] Calling takePictureAsync for selfie...`);
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      console.log(`[VERIFY-DEBUG] Selfie takePictureAsync returned: ${JSON.stringify(photo ? { uri: photo.uri?.substring(0, 80), width: photo.width, height: photo.height } : 'null')}`);
+      if (photo?.uri) {
+        console.log(`[VERIFY-DEBUG] Uploading selfie to imgbb...`);
+        const uploadRes = await uploadImage(photo.uri, 3600);
+        console.log(`[VERIFY-DEBUG] ✅ Selfie uploaded: ${uploadRes.url?.substring(0, 60)}`);
+        setSelfieUrl(uploadRes.url);
+        if (uploadRes.deleteUrl) setSelfieDeleteUrl(uploadRes.deleteUrl);
+        setLoading(false);
+        setStep('reviewAll');
+        return;
+      } else {
+        console.log(`[VERIFY-DEBUG] ❌ Selfie: no photo URI`);
       }
       setLoading(false);
     } catch (e: any) {
+      console.log(`[VERIFY-DEBUG] ❌ captureSelfie error: ${e?.message}`, e?.stack?.split('\n').slice(0, 3).join(' | '));
       setLoading(false);
       Alert.alert(t('common.error'), e?.message || 'Failed to capture selfie');
     }
@@ -283,7 +296,8 @@ export default function VerificationScreen() {
     setIdFrontDeleteUrl(''); setIdFaceDeleteUrl(''); setIdBackDeleteUrl(''); setSelfieDeleteUrl('');
     setFailedStage(null); setRejectionReasons([]); setVerified(false);
     setCameraFacing('back'); setCameraReady(false);
-    setCropMode('auto'); setCropOrigin(null); setFrontPhotoUri('');
+    setCameraFacing('back'); setCameraReady(false);
+    setCropSourceSize({ w: 1080, h: 1920 }); setFrontPhotoUri(''); setCroppedFaceUri('');
     setStages({});
   };
 
@@ -382,18 +396,18 @@ export default function VerificationScreen() {
           )}
         </>
       )}
-      <View style={styles.cameraActions}>
+      <View style={[styles.cameraActions, { bottom: 60 + insets.bottom }]}>
         <TouchableOpacity style={[styles.captureBtn, !cameraReady && { opacity: 0.4 }]}
           onPress={onCapture} disabled={loading || !cameraReady}>
           {loading ? <ActivityIndicator size="small" color={COLORS.white} /> : <View style={styles.captureBtnInner} />}
         </TouchableOpacity>
       </View>
-      <Text style={styles.cameraLabel}>{label}</Text>
+      <Text style={[styles.cameraLabel, { bottom: 30 + insets.bottom }]}>{label}</Text>
     </View>
   );
 
   const renderInfo = () => (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={contentStyle}>
       <View style={styles.infoIcon}>
         <Icon name="secure-account" size={48} color={COLORS.coral} />
       </View>
@@ -421,108 +435,97 @@ export default function VerificationScreen() {
   );
 
   const renderCropConfirm = () => {
-    const previewScale = Math.min((SCREEN_W - 64) / cropSourceSize.w, 0.4);
+    const dw = containerDimRef.current.w || SCREEN_W - SPACING.lg * 2;
+    const dh = containerDimRef.current.h || 300;
+    const imgW = cropSourceSize.w || 1;
+    const imgH = cropSourceSize.h || 1;
+    const containScale = Math.min(dw / imgW, dh / imgH);
+    const offsetX = (dw - imgW * containScale) / 2;
+    const offsetY = (dh - imgH * containScale) / 2;
+
     return (
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.eyebrow}>Quick check</Text>
-        <Text style={styles.infoTitle}>Is this your photo?</Text>
-        <Text style={styles.infoDesc}>
-          {cropMode === 'auto'
-            ? "We cropped your photo from the card automatically. If it caught the wrong spot, you can adjust it."
-            : 'Drag to reposition the crop box, then confirm.'}
-        </Text>
-        {renderKeptBanner('cinFront')}
+      <View style={{ flex: 1, paddingHorizontal: SPACING.lg }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: SPACING.lg + insets.bottom + 8 }}>
+          <Text style={styles.eyebrow}>Quick check</Text>
+          <Text style={styles.infoTitle}>Is this your face?</Text>
+          <Text style={styles.infoDesc}>
+            Drag the box to move it, drag the corner handle to resize. Center it on your photo on the card.
+          </Text>
+          {renderKeptBanner('cinFront')}
 
-        <View style={styles.cropToggleRow}>
-          {([['auto', 'Auto-detected'], ['manual', 'Adjust manually']] as const).map(([val, label]) => (
-            <TouchableOpacity key={val} onPress={() => setCropMode(val)}
-              style={[styles.cropToggle, cropMode === val && styles.cropToggleActive]}>
-              <Text style={[styles.cropToggleText, cropMode === val && styles.cropToggleTextActive]}>{label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+          <View style={{ width: dw, height: dh, borderRadius: 16, overflow: 'hidden', backgroundColor: '#000', marginBottom: 12 }}>
+            {frontPhotoUri ? (
+              <Image source={{ uri: frontPhotoUri }} style={{ width: dw, height: dh }} resizeMode="contain" />
+            ) : null}
 
-        <View style={styles.cropPreviewRow}>
-          <View style={styles.cropPreviewItem}>
-            <View style={[styles.cropPreviewThumb, { width: 90, height: 60, borderRadius: 8, overflow: 'hidden', backgroundColor: COLORS.surface2 }]}>
-              <Text style={{ color: COLORS.text2, fontSize: 11, textAlign: 'center', marginTop: 24 }}>Full card</Text>
-            </View>
-            <Text style={styles.cropPreviewLabel}>Full card</Text>
-          </View>
-          <MaterialCommunityIcons name="arrow-right" size={20} color={COLORS.text2} />
-          <View style={styles.cropPreviewItem}>
-            {cropOrigin && frontPhotoUri ? (
-              <View style={[styles.cropPreviewThumb, { width: 60, height: 60, borderRadius: 30, overflow: 'hidden', backgroundColor: COLORS.surface2, borderWidth: 2, borderColor: COLORS.coral }]}>
-                <Text style={{ color: COLORS.coral, fontSize: 10, textAlign: 'center', marginTop: 22 }}>Face</Text>
+            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: cropBox.y, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+            <View style={{ position: 'absolute', top: cropBox.y + cropBox.size, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+            <View style={{ position: 'absolute', top: cropBox.y, left: 0, width: cropBox.x, height: cropBox.size, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+            <View style={{ position: 'absolute', top: cropBox.y, left: cropBox.x + cropBox.size, right: 0, height: cropBox.size, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+
+            <View
+              style={{ position: 'absolute', top: cropBox.y, left: cropBox.x, width: cropBox.size, height: cropBox.size, borderWidth: 2, borderColor: COLORS.coral, borderRadius: 12 }}
+              {...moveResponder.panHandlers}
+            >
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                <MaterialCommunityIcons name="account-outline" size={cropBox.size * 0.36} color={COLORS.coral} style={{ opacity: 0.7 }} />
               </View>
-            ) : (
-              <View style={[styles.cropPreviewThumb, { width: 60, height: 60, borderRadius: 30, backgroundColor: COLORS.surface2 }]} />
-            )}
-            <Text style={styles.cropPreviewLabel}>{cropMode === 'auto' ? 'Auto-cropped' : 'Your crop'}</Text>
-          </View>
-        </View>
-
-        {cropMode === 'manual' && cropOrigin && (
-          <View style={styles.manualCropInfo}>
-            <View style={styles.cropBox}>
-              <Text style={{ color: COLORS.text, fontSize: 13, textAlign: 'center' }}>
-                Crop area: {cropOrigin.w}×{cropOrigin.h}px at ({cropOrigin.x}, {cropOrigin.y})
-              </Text>
-              <View style={styles.cropAdjustRow}>
-                {(['x', 'y', 'w', 'h'] as const).map(axis => (
-                  <TouchableOpacity key={axis} style={styles.cropAdjBtn}
-                    onPress={() => setCropOrigin(prev => {
-                      if (!prev) return prev;
-                      const step = axis === 'x' || axis === 'y' ? 20 : 10;
-                      return { ...prev, [axis]: Math.max(0, prev[axis] + step) };
-                    })}>
-                    <Text style={styles.cropAdjBtnText}>{axis.toUpperCase()}+</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <View
+                style={{ position: 'absolute', right: -10, bottom: -10, width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.coral, borderWidth: 2.5, borderColor: COLORS.bg }}
+                {...resizeResponder.panHandlers}
+              />
             </View>
           </View>
-        )}
 
-        <View style={{ flex: 1, minHeight: 20 }} />
-        {cropMode === 'auto' ? (
-          <>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('cinBack')}>
-              <Icon name="check" size={16} color={COLORS.white} />
-              <Text style={styles.primaryBtnText}>Yes, that's clearly me</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.outlineBtn} onPress={() => setCropMode('manual')}>
-              <Text style={styles.outlineBtnText}>Crop looks wrong — adjust it myself</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TouchableOpacity style={styles.primaryBtn} onPress={async () => {
-              if (frontPhotoUri) {
-                const croppedUri = await doManualCrop(frontPhotoUri);
-                if (croppedUri) {
-                  const faceUpload = await uploadImage(croppedUri);
-                  setIdFaceUrl(faceUpload.url);
-                  if (faceUpload.deleteUrl) setIdFaceDeleteUrl(faceUpload.deleteUrl);
-                }
+          <Text style={{ fontSize: 12, color: COLORS.text2, textAlign: 'center', marginBottom: 16 }}>
+            Drag box to move · drag corner dot to resize
+          </Text>
+
+          <View style={{ flex: 1, minHeight: 20 }} />
+          <TouchableOpacity style={styles.primaryBtn} onPress={async () => {
+              setLoading(true);
+            try {
+              const actualX = Math.max(0, Math.round((cropBox.x - offsetX) / containScale));
+              const actualY = Math.max(0, Math.round((cropBox.y - offsetY) / containScale));
+              const actualSize = Math.round(cropBox.size / containScale);
+              console.log(`[VERIFY-CROP] Manual crop: ${actualSize}x${actualSize} at (${actualX},${actualY}), containScale=${containScale}`);
+              if (ImageManipulator && frontPhotoUri) {
+                const manipulated = await ImageManipulator.manipulateAsync(
+                  frontPhotoUri,
+                  [{ crop: { originX: actualX, originY: actualY, width: actualSize, height: actualSize } }],
+                  { compress: 0.85, format: 'jpeg' }
+                );
+                console.log(`[VERIFY-CROP] Manual crop result: ${manipulated.uri.substring(0, 60)}`);
+                setCroppedFaceUri(manipulated.uri);
+                const faceUpload = await uploadImage(manipulated.uri, 3600);
+                setIdFaceUrl(faceUpload.url);
+                if (faceUpload.deleteUrl) setIdFaceDeleteUrl(faceUpload.deleteUrl);
+                console.log(`[VERIFY-CROP] Face URL set: ${faceUpload.url.substring(0, 60)}`);
               }
-              setStep('cinBack');
-            }}>
-              <Icon name="check" size={16} color={COLORS.white} />
-              <Text style={styles.primaryBtnText}>Use this crop</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.outlineBtn} onPress={() => setStep('cinFront')}>
-              <Icon name="back" size={15} color={COLORS.text} />
-              <Text style={styles.outlineBtnText}>Retake the whole photo instead</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </ScrollView>
+            } catch (e: any) {
+              console.log(`[VERIFY-CROP] Manual crop error: ${e?.message}`);
+            }
+            setLoading(false);
+            setStep('cinBack');
+          }} disabled={loading}>
+            {loading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
+              <>
+                <Icon name="check" size={16} color={COLORS.white} />
+                <Text style={styles.primaryBtnText}>Use this crop</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.outlineBtn} onPress={() => setStep('cinFront')}>
+            <Icon name="back" size={15} color={COLORS.text} />
+            <Text style={styles.outlineBtnText}>Retake the whole photo instead</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
     );
   };
 
   const renderSelfieTip = () => (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={contentStyle}>
       <View style={[styles.infoIcon, { backgroundColor: `${COLORS.blue}1f` }]}>
         <MaterialCommunityIcons name="lightbulb-outline" size={36} color={COLORS.blue} />
       </View>
@@ -549,25 +552,26 @@ export default function VerificationScreen() {
   );
 
   const renderReviewAll = () => (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={contentStyle}>
       <Text style={styles.infoTitle}>Review before submitting</Text>
       <Text style={styles.infoDesc}>Anything look off? Retake just that one — you don't need to redo the rest.</Text>
 
       <View style={styles.reviewGrid}>
         {[
-          { key: 'cinFront', label: 'ID front', goto: 'cinFront' as Step, icon: 'card-account-details-outline' },
-          { key: 'cinBack', label: 'ID back', goto: 'cinBack' as Step, icon: 'card-account-details-outline' },
-          { key: 'face', label: 'Cropped face', goto: 'cropConfirm' as Step, icon: 'scan-face', tag: cropMode === 'manual' ? 'Manual' : 'Auto' },
-          { key: 'selfie', label: 'Selfie', goto: 'selfieTip' as Step, icon: 'camera-account' },
+          { key: 'cinFront', label: 'ID front', goto: 'cinFront' as Step, uri: frontPhotoUri },
+          { key: 'cinBack', label: 'ID back', goto: 'cinBack' as Step, uri: idBackUrl },
+          { key: 'face', label: 'Cropped face', goto: 'cropConfirm' as Step, uri: croppedFaceUri },
+          { key: 'selfie', label: 'Selfie', goto: 'selfieTip' as Step, uri: selfieUrl },
         ].map((item) => (
           <View key={item.key} style={styles.reviewCard}>
             <View style={[styles.reviewThumb, item.key === 'face' && { borderRadius: 32 }]}>
-              <MaterialCommunityIcons name={item.icon as any} size={24} color={item.key === 'face' ? COLORS.coral : COLORS.text2} />
+              {item.uri ? (
+                <Image source={{ uri: item.uri }} style={[styles.reviewThumb, item.key === 'face' && { borderRadius: 32 }]} resizeMode="cover" />
+              ) : (
+                <MaterialCommunityIcons name="camera-off-outline" size={24} color={COLORS.text2} />
+              )}
             </View>
             <Text style={styles.reviewLabel}>{item.label}</Text>
-            {item.tag && (
-              <Text style={[styles.reviewTag, item.tag === 'Manual' && { color: COLORS.blue }]}>{item.tag}</Text>
-            )}
             <TouchableOpacity onPress={() => setStep(item.goto)}>
               <Text style={styles.retakeBtn}>Retake</Text>
             </TouchableOpacity>
@@ -616,7 +620,7 @@ export default function VerificationScreen() {
   const renderResult = () => {
     if (verified) {
       return (
-        <View style={styles.content}>
+        <View style={contentStyle}>
           <View style={[styles.resultIcon, { backgroundColor: COLORS.green }]}>
             <Icon name="check-circle" size={40} color="#06231A" />
           </View>
@@ -633,7 +637,7 @@ export default function VerificationScreen() {
 
     const info = failedStage ? FAILURE_COPY[failedStage] : FAILURE_COPY.face;
     return (
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={contentStyle}>
         <View style={[styles.resultIcon, { borderWidth: 1.5, borderColor: COLORS.coral, backgroundColor: COLORS.surface2 }]}>
           <MaterialCommunityIcons name="alert-circle-outline" size={32} color={COLORS.coral} />
         </View>
@@ -687,9 +691,9 @@ export default function VerificationScreen() {
       )}
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         {step === 'info' && renderInfo()}
-        {step === 'cinFront' && renderCamera('back', () => captureImage('front'), 'Capture the front of your CIN', 'Fill the frame, avoid glare')}
+        {step === 'cinFront' && renderCamera('back', () => captureImage('front'), 'Capture the front of your CIN', 'Align card inside the frame, avoid glare')}
         {step === 'cropConfirm' && renderCropConfirm()}
-        {step === 'cinBack' && renderCamera('back', () => captureImage('back'), 'Capture the back of your CIN', 'Make sure text is in focus')}
+        {step === 'cinBack' && renderCamera('back', () => captureImage('back'), 'Capture the back of your CIN', 'Align card inside the frame, text in focus')}
         {step === 'selfieTip' && renderSelfieTip()}
         {step === 'selfie' && renderCamera('front', captureSelfie, 'Take your selfie', 'Center your face in the guide')}
         {step === 'reviewAll' && renderReviewAll()}

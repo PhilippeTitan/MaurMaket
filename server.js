@@ -4855,48 +4855,56 @@ async function ocrSpaceParse(imageUrl) {
 
 function extractCinFields(text) {
   const fields = {};
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const fullText = lines.join(' ');
+  // Split by newlines AND pipe separators to get individual tokens
+  const rawTokens = text.split(/\r?\n|(?=\|)/).map(l => l.replace(/^\|\s*/, '').trim()).filter(Boolean);
+  const fullText = rawTokens.join(' ');
 
-  // CIN number: H002QQF68 format (letter + digits) or 8-12 digit unique ID
-  const cinCardMatch = fullText.match(/\b([A-Z]\d{3,10})\b/);
-  const cinUniqueMatch = fullText.match(/\b(\d{8,12})\b/);
-  fields.cinNumber = cinCardMatch ? cinCardMatch[1] : (cinUniqueMatch ? cinUniqueMatch[1] : null);
+  // CIN number: look for 8-12 digit number
+  const cinMatch = fullText.match(/\b(\d{8,12})\b/);
+  fields.cinNumber = cinMatch ? cinMatch[1] : null;
 
-  // Date of Birth: look for "Date de Naissance" / "Dat ou fét" label, then grab the date
-  const dobLabelMatch = fullText.match(/(?:Date de Naissance|Dat ou f[eé]t)\s*[\/\n]?\s*(?:Dat ou f[eé]t)?\s*[\/\n]?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4})/i);
-  if (dobLabelMatch) {
-    fields.dateOfBirth = dobLabelMatch[1];
-  } else {
-    // Fallback: last date on the card (DOB is after issue date)
-    const allDates = [...fullText.matchAll(/(\d{2}[\/\-]\d{2}[\/\-]\d{4})/g)];
-    if (allDates.length >= 2) fields.dateOfBirth = allDates[1][1]; // second date is DOB
-    else if (allDates.length === 1) fields.dateOfBirth = allDates[0][1];
-  }
+  // Date of Birth — grab the first date on the card
+  const dobMatch = fullText.match(/(\d{2}[\/\-]\d{2}[\/\-]\d{4})/);
+  fields.dateOfBirth = dobMatch ? dobMatch[1] : null;
 
-  // Full name: look for lines after "Prénom / Non" and "Nom / Siyati"
-  const prenomIdx = lines.findIndex(l => /Pr[eé]nom\s*\/\s*Non/i.test(l));
-  const nomIdx = lines.findIndex(l => /^Nom\s*\/\s*Siyati/i.test(l));
-  if (prenomIdx >= 0 && nomIdx >= 0) {
-    const firstNames = lines.slice(prenomIdx + 1, nomIdx).filter(l => !/^\//.test(l)).join(' ');
-    const lastName = lines[nomIdx + 1] || '';
+  // Name extraction — look for label variations
+  // Haitian CIN uses labels like: "Nom / Siyal", "Nom / Siyati", "Nom / Sies", "Prénoms / Mon", "Prénom / Non"
+  const nameIdx = rawTokens.findIndex(t => /^Nom\s*[\/|]/i.test(t));
+  const prenomIdx = rawTokens.findIndex(t => /^Pr[eé]n[oa]ms?\s*[\/|]/i.test(t));
+
+  if (nameIdx >= 0) {
+    const lastName = rawTokens[nameIdx + 1] || '';
+    const skipWords = /R[ÉE]PUBLIQUE|HAITI|REPIBLIK|DAVITI|DAYITI|CARTE|IDENTIFICATION|NATIONALE|KAT|IDANTIFIKASYON|NAS.*AL|Nom|Pr[eé]n|Pana[mn]\s*\/|S[yi]n[tq]|Synt/i;
+    const isLabelArtifact = (t) => / \/\ /.test(t) || /^[A-Z]{2,}\s*\/\s*[A-Z]{2,}$/i.test(t);
+    let firstNames = '';
+    if (prenomIdx >= 0 && prenomIdx < nameIdx) {
+      firstNames = rawTokens.slice(prenomIdx + 1, nameIdx).filter(t => !skipWords.test(t) && !isLabelArtifact(t) && t.length >= 2).join(' ');
+    } else {
+      const beforeName = rawTokens.slice(0, nameIdx);
+      firstNames = beforeName.filter(t => t.length >= 2 && !skipWords.test(t) && !isLabelArtifact(t) && !/^[\/|]/.test(t) && !/^\d/.test(t)).join(' ');
+    }
     fields.fullName = [lastName, firstNames].filter(Boolean).join(' ').trim();
-  } else if (prenomIdx >= 0) {
-    fields.fullName = lines.slice(prenomIdx + 1, prenomIdx + 3).join(' ').trim();
   } else {
-    fields.fullName = lines[0] || null;
+    const skipWords = /R[ÉE]PUBLIQUE|HAITI|REPIBLIK|DAVITI|DAYITI|CARTE|IDENTIFICATION|NATIONALE|KAT|IDANTIFIKASYON|NAS/i;
+    const nameTokens = rawTokens.filter(t => t.length >= 2 && !skipWords.test(t) && !/^\d+$/.test(t) && !/[\/|]/.test(t));
+    fields.fullName = nameTokens.slice(0, 3).join(' ').trim() || null;
   }
 
-  // Place of birth: look for "Lieu de Naissance" / "Kote ou fét" label
-  const pobLabelMatch = fullText.match(/(?:Lieu de Naissance|Kote ou f[eé]t)\s*[\/\n]?\s*(?:Kote ou f[eé]t)?\s*[\/\n]?\s*(.+?)(?:\s+Date\s|$)/i);
-  if (pobLabelMatch) {
-    fields.placeOfBirth = pobLabelMatch[1].trim();
+  // Place of birth
+  const pobIdx = rawTokens.findIndex(t => /Lieu\s+de\s+(Naissance|Namsance|Nasance)/i.test(t) || /Kote\s+ou\s+f[eé]t/i.test(t) || /Kole\s+ou\s+des/i.test(t) || /es\s+cal\s+for/i.test(t));
+  if (pobIdx >= 0) {
+    const pob = rawTokens[pobIdx + 1] || '';
+    fields.placeOfBirth = pob.replace(/Diet\s+kat\s+la/i, '').trim() || null;
   } else {
-    // Fallback: look for known Haitian departments/cities
-    const pobFallback = fullText.match(/(OUEST[\s\-]+PORT[\s\-]*AU[\s\-]*PRINCE|ARTIBONITE|NORD|SUD|NORD[\s\-]*OUEST|SUD[\s\-]*EST|NORD[\s\-]*EST|GRANDE[\s\-]*ANSE|NIPPES|SUD[\s\-]*OUEST|CENTER)/i);
-    if (pobFallback) fields.placeOfBirth = pobFallback[1].trim();
+    const pobFallback = fullText.match(/(OUEST[\s\-]+PORT[\s\-]*AU[\s\-]*PRINCE|DUEST[\s\-]+PORT[\s\-]*AU[\s\-]*PRINCE|PORT[\s\-]*AU[\s\-]*PRINCE|ARTIBONITE|NORD|SUD|GRANDE[\s\-]*ANSE|NIPPES|CENTER)/i);
+    if (pobFallback) {
+      fields.placeOfBirth = pobFallback[1].replace(/^DUEST/, 'OUEST').trim();
+    } else {
+      fields.placeOfBirth = null;
+    }
   }
 
+  console.log(`🔍 [OCR-PARSE] fullName="${fields.fullName}" dob="${fields.dateOfBirth}" pob="${fields.placeOfBirth}" cin="${fields.cinNumber}"`);
   return fields;
 }
 
@@ -4978,7 +4986,7 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
     if (!deleteUrl || !process.env.IMGBB_KEY) return;
     try {
       await fetch(deleteUrl, { method: 'DELETE', signal: AbortSignal.timeout(5000) });
-    } catch { /* best effort — imgbb 24h expiry is fallback */ }
+    } catch { /* best effort — uploads have 1h auto-expiration as fallback */ }
   }
   try {
     const existing = await pool.query(
@@ -4992,12 +5000,12 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
     let autoStatus = 'rejected';
     let rejectionReason = null;
     let ocrResult = null;
+    const issues = [];
 
     if (!process.env.OCR_SPACE_KEY) {
       console.log(`❌ [VERIFY] OCR_SPACE_KEY not configured`);
       rejectionReason = 'Verification service not configured. Please try again later.';
     } else {
-      const issues = [];
       let frontText = '';
       let backText = '';
 

@@ -1400,3 +1400,17 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 - [ ] Phase 6: Multi-seller meetups (per-seller escrow UI)
 - [ ] APK rebuild (close other programs to free RAM for AAPT2)
 - [ ] Populate Supabase with data (auto-migration cron runs when Neon wakes on 1st of month)
+
+### ✅ Session 22: Verification OCR Fix + Crop Confirm Portrait Fix
+- [x] **OCR parser fix** (`extractCinFields` in server.js):
+  - Added `isLabelArtifact()` filter — strips any token containing ` / ` from name extraction (catches garbled OCR labels like "Panam / Nog" which is "Prénoms / Mon" misread)
+  - Added `Pana[mn]`, `Synt`, `Sien` etc. to `skipWords` regex for broader OCR artifact matching
+  - Added pipe-separated splitting (`|`) alongside newline splitting for OCR text parsing
+  - Result: `MELCHISEDEK PHILIPPE MAURICE` now correctly extracted (was `MAURICE Panam / Nog MELCHISEDEK PHILIPPE`)
+- [x] **Crop confirm screen** — forced portrait container (was landscape for landscape photos):
+  - Container always `dw × (dw * 1.3)` regardless of photo aspect ratio
+  - Switched from `resizeMode="cover"` to `resizeMode="contain"` so landscape photos fit inside portrait container
+  - Fixed crop coordinate calculation to use contain scaling + offset (was using cover scaling which broke coordinates)
+  - Tareef face comparison now receives correct face crop → score 0.7978 → verified ✅
+- [x] **`issues` scoping fix** — moved `const issues = []` to outer scope so rejection path can access it
+- [x] **Successful verification test** — all OCR fields matched, Tareef passed, user auto-verified

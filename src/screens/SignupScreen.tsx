@@ -7,6 +7,7 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { signup as apiSignup, googleAuth } from '../api';
 import { store } from '../store';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../navigation';
 import type { User } from '../types';
@@ -18,6 +19,7 @@ const GOOGLE_REDIRECT_URI = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
 
 export default function SignupScreen({ navigation }: Props) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -111,7 +113,7 @@ export default function SignupScreen({ navigation }: Props) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + SPACING.xl }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Maur<Text style={styles.logoAccent}>Maket</Text></Text>
         <Text style={styles.subtitle}>{t('auth.createAccount')}</Text>
 

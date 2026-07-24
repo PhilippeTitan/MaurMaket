@@ -30,13 +30,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.253.81.105:3001/api'
+    ? 'http://10.40.198.105:3001/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.253.81.105:3001'
+    ? 'http://10.40.198.105:3001'
     : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(
@@ -401,6 +401,7 @@ async function getImgbbKey(): Promise<string> {
 }
 
 async function resizeAndConvert(uri: string): Promise<{ base64: string; mimeType: string }> {
+  console.log(`[UPLOAD-DEBUG] resizeAndConvert called, platform=${Platform.OS}, uri=${uri?.substring(0, 80)}`);
   if (Platform.OS === 'web') {
     return new Promise((resolve, reject) => {
       const img = new (window as any).Image();
@@ -425,16 +426,24 @@ async function resizeAndConvert(uri: string): Promise<{ base64: string; mimeType
     });
   }
 
-  const Manipulator = require('expo-image-manipulator');
-  const result = await Manipulator.manipulateAsync(
-    uri,
-    [{ resize: { width: 1200 } }],
-    { compress: 0.82, format: Manipulator.SaveFormat.WEBP, base64: true }
-  );
-  return { base64: result.base64, mimeType: 'image/webp' };
+  try {
+    const Manipulator = require('expo-image-manipulator');
+    console.log(`[UPLOAD-DEBUG] ImageManipulator loaded, calling manipulateAsync...`);
+    const result = await Manipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1200 } }],
+      { compress: 0.82, format: Manipulator.SaveFormat.JPEG, base64: true }
+    );
+    console.log(`[UPLOAD-DEBUG] manipulateAsync done, base64 length=${result.base64?.length}, width=${result.width}, height=${result.height}`);
+    return { base64: result.base64, mimeType: 'image/jpeg' };
+  } catch (e: any) {
+    console.log(`[UPLOAD-DEBUG] ❌ resizeAndConvert error: ${e?.message}`);
+    throw e;
+  }
 }
 
-export const uploadImage = async (uri: string): Promise<{ url: string; deleteUrl?: string }> => {
+export const uploadImage = async (uri: string, expiration?: number): Promise<{ url: string; deleteUrl?: string }> => {
+  console.log(`[UPLOAD-DEBUG] uploadImage called, uri=${uri?.substring(0, 80)}, expiration=${expiration}`);
   let token: string | null = null;
   if (Platform.OS === 'web') {
     token = localStorage.getItem('mm_token');
@@ -442,29 +451,42 @@ export const uploadImage = async (uri: string): Promise<{ url: string; deleteUrl
     const SecureStore = require('expo-secure-store');
     token = await SecureStore.getItemAsync('mm_token');
   }
-  if (!token) throw new Error('Not authenticated');
+  if (!token) {
+    console.log(`[UPLOAD-DEBUG] ❌ No auth token found`);
+    throw new Error('Not authenticated');
+  }
 
   const imgbbKey = await getImgbbKey();
+  console.log(`[UPLOAD-DEBUG] imgbbKey=${imgbbKey ? imgbbKey.substring(0, 6) + '...' : 'null'}`);
+  console.log(`[UPLOAD-DEBUG] Calling resizeAndConvert...`);
   const { base64 } = await resizeAndConvert(uri);
+  console.log(`[UPLOAD-DEBUG] resizeAndConvert done, base64 length=${base64?.length}`);
 
   const formData = new FormData();
   formData.append('key', imgbbKey);
   formData.append('image', base64);
+  if (expiration && expiration > 0) {
+    formData.append('expiration', String(expiration));
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   try {
+    console.log(`[UPLOAD-DEBUG] Posting to imgbb...`);
     const res = await fetch('https://api.imgbb.com/1/upload', {
       method: 'POST',
       body: formData,
       signal: controller.signal,
     });
     clearTimeout(timer);
+    console.log(`[UPLOAD-DEBUG] imgbb response status: ${res.status}`);
     const data = await res.json();
+    console.log(`[UPLOAD-DEBUG] imgbb success=${data.success}, url=${data.data?.url?.substring(0, 60)}`);
     if (!data.success) throw new Error(data.error?.message || 'Upload failed');
     return { url: data.data.url, deleteUrl: data.data.delete_url };
   } catch (e: any) {
     clearTimeout(timer);
+    console.log(`[UPLOAD-DEBUG] ❌ imgbb error: ${e?.message}`);
     if (e.name === 'AbortError') throw new Error('Upload timed out. Check your connection.');
     if (e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
       throw new Error('Cannot reach upload service. Check your connection.');
