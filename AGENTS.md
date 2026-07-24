@@ -113,6 +113,29 @@ Agent: [Fixes High items, re-runs affected agents]
   ```
   Account: `dratomicslicer@gmail.com` / `Melmil12345`
 
+## MCP Integrations (OpenCode)
+Config at: `C:\Users\drato\.config\opencode\opencode.json`
+
+| MCP | Status | What It Does |
+|-----|--------|--------------|
+| **Supabase** | ✅ | Query DB directly, check tables, run SQL |
+| **Neon** | ✅ (when up) | Direct DB access (quota-dependent) |
+| **Render** | ✅ | Check deploy status, logs, service health |
+| **GitHub** | ✅ | Repo management, PRs, issues |
+| **MonCashConnect** | ✅ (sandbox) | Payment debugging, test payments, balance checks |
+
+### MonCashConnect MCP Tools
+Use these to debug payments without touching the backend:
+- `get_payment` — Check payment status by merchant reference
+- `list_transactions` — List recent transactions with filters
+- `get_balance` — Check merchant balance in HTG
+- `debug_payment` — Explain why a payment is in its current state
+- `create_test_payment` — Create sandbox test payment (returns payment URL)
+- `get_api_health` — Check MonCashConnect service status
+- `reveal_payment` — Get unmasked customer details (audited, requires reason)
+
+**Key**: `sk_ro_test_6e3ba75ad18b933690b758eeb19e7a90cd2eef4041eb8f68` (sandbox, read-only)
+
 ## Overview
 Haitian marketplace (e-commerce) app connecting buyers and sellers. React Native/Expo mobile app (TikTok-style vertical swipe feed) + Express.js backend. MonCash payments, seller dashboard, commission system.
 
