@@ -1858,13 +1858,12 @@ app.put('/api/notifications/read-all', authRequired, async (req, res) => {
 // ───── Nearby sellers (map discovery) ─────
 
 app.get('/api/sellers/nearby', async (req, res) => {
-  const { lat, lng, radius = 10 } = req.query;
+  const { lat, lng } = req.query;
   if (!lat || !lng) return res.status(400).json({ error: 'lat and lng query params required' });
   const latNum = parseFloat(lat);
   const lngNum = parseFloat(lng);
-  const radiusKm = parseFloat(radius);
-  if (isNaN(latNum) || isNaN(lngNum) || isNaN(radiusKm)) {
-    return res.status(400).json({ error: 'Invalid lat, lng, or radius' });
+  if (isNaN(latNum) || isNaN(lngNum)) {
+    return res.status(400).json({ error: 'Invalid lat, lng' });
   }
   try {
     const result = await pool.query(
@@ -1882,7 +1881,7 @@ app.get('/api/sellers/nearby', async (req, res) => {
        ORDER BY distance_km ASC`,
       [latNum, lngNum]
     );
-    const filtered = result.rows.filter(r => parseFloat(r.distance_km) <= radiusKm);
+    const filtered = result.rows;
 
     // Batch-load stats for all nearby sellers in 3 queries instead of 4N
     const sellerIds = filtered.map(r => r.id);

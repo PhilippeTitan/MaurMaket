@@ -30,13 +30,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.40.198.105:3001/api'
+    ? 'http://10.218.56.105:3001/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.40.198.105:3001'
+    ? 'http://10.218.56.105:3001'
     : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(
@@ -322,8 +322,8 @@ export const getSellerProfile = (sellerId: string) =>
   request(`/sellers/${sellerId}`);
 
 // Nearby sellers (map)
-export const getNearbySellers = (lat: number, lng: number, radius: number = 10) =>
-  request(`/sellers/nearby?lat=${lat}&lng=${lng}&radius=${radius}`);
+export const getNearbySellers = (lat: number, lng: number) =>
+  request(`/sellers/nearby?lat=${lat}&lng=${lng}`);
 
 export const setSellerLocation = (lat: number, lng: number) =>
   request('/seller/location', { method: 'PUT', body: JSON.stringify({ lat, lng }) });

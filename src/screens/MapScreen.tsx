@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product } from '../types';
+import * as Location from 'expo-location';
 
 const TIER_COLORS: Record<string, string> = {
   casual: '#F5A623', verified: '#1D9E75', business: '#E04050',
@@ -61,7 +62,7 @@ html,body,#map{width:100%;height:100%;background:#F2F1ED;overflow:hidden}
 <body>
 <div id="map"></div>
 <script>
-var map = L.map("map",{zoomControl:false,attributionControl:true}).setView([18.5944,-72.3074],12);
+var map = L.map("map",{zoomControl:false,attributionControl:true,maxBounds:[[-85,-220],[85,220]],maxBoundsViscosity:0.8,minZoom:3,maxZoom:20}).setView([18.5944,-72.3074],12);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{
   attribution:"&copy;CARTO&copy;OSM",maxZoom:20,subdomains:"abcd",crossOrigin:true
 }).addTo(map);
@@ -72,35 +73,52 @@ window.addEventListener("load",function(){map.invalidateSize()});
 var sellerLayer = L.layerGroup().addTo(map);
 var userMarker = null;
 var highlightedId = null;
+var knownSellers = {};
+
+function buildSellerIcon(s) {
+  var isBiz = s.tier==='business';
+  var isVer = s.tier==='verified';
+  var color = isBiz?'#E04050':isVer?'#1D9E75':'#F5A623';
+  var size = isVer?50:isBiz?56:44;
+  var shape = isBiz?'14px':'50%';
+  var badge = isVer?'<div style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:'+color+';border:2px solid #fff;display:flex;align-items:center;justify-content:center"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>':'';
+  var inner = s.avatar
+    ? '<img src="'+s.avatar+'" style="width:'+(size-6)+'px;height:'+(size-6)+'px;border-radius:'+shape+';object-fit:cover"/>'
+    : (isBiz
+      ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v11h16V9M4 9h16M9 21v-6h6v6"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/></svg>');
+  return L.divIcon({
+    className:'',
+    iconSize:[64,size+16],iconAnchor:[32,size+16],
+    html:'<div style="display:flex;flex-direction:column;align-items:center;position:relative">' +
+      '<div style="position:relative;width:'+size+'px;height:'+size+'px;border-radius:'+shape+';background:'+color+';border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3);overflow:hidden">'+inner+badge+'</div>' +
+      '<div class="seller-tail" style="border-top:9px solid '+color+'"></div></div>'
+  });
+}
 
 function setSellerMarkers(sellers) {
-  sellerLayer.clearLayers();
   sellers.forEach(function(s) {
-    var isBiz = s.tier==='business';
-    var isVer = s.tier==='verified';
-    var color = isBiz?'#E04050':isVer?'#1D9E75':'#F5A623';
-    var size = isVer?50:isBiz?56:44;
-    var shape = isBiz?'14px':'50%';
-    var badge = isVer?'<div style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:'+color+';border:2px solid #fff;display:flex;align-items:center;justify-content:center"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>':'';
-    var inner = s.avatar
-      ? '<img src="'+s.avatar+'" style="width:'+(size-6)+'px;height:'+(size-6)+'px;border-radius:'+shape+';object-fit:cover"/>'
-      : (isBiz
-        ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v11h16V9M4 9h16M9 21v-6h6v6"/></svg>'
-        : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/></svg>');
-    var icon = L.divIcon({
-      className:'',
-      iconSize:[64,size+16],iconAnchor:[32,size+16],
-      html:'<div style="display:flex;flex-direction:column;align-items:center;position:relative">' +
-        '<div style="position:relative;width:'+size+'px;height:'+size+'px;border-radius:'+shape+';background:'+color+';border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3);overflow:hidden">'+inner+badge+'</div>' +
-        '<div class="seller-tail" style="border-top:9px solid '+color+'"></div></div>'
-    });
-    var marker = L.marker([s.lat,s.lng],{icon:icon});
-    marker.on('click',function(){
-      highlightedId = s.id;
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'tap',id:s.id}));
-    });
-    marker.addTo(sellerLayer);
+    if(knownSellers[s.id]) {
+      knownSellers[s.id].setLatLng([s.lat,s.lng]);
+    } else {
+      var icon = buildSellerIcon(s);
+      var marker = L.marker([s.lat,s.lng],{icon:icon});
+      marker._sellerId = s.id;
+      marker.on('click',function(){
+        highlightedId = s.id;
+        window.ReactNativeWebView.postMessage(JSON.stringify({type:'tap',id:s.id}));
+      });
+      marker.addTo(sellerLayer);
+      knownSellers[s.id] = marker;
+    }
   });
+}
+
+function removeSeller(id) {
+  if(knownSellers[id]) {
+    sellerLayer.removeLayer(knownSellers[id]);
+    delete knownSellers[id];
+  }
 }
 
 function setUserMarker(lat,lng) {
@@ -110,15 +128,10 @@ function setUserMarker(lat,lng) {
     html:'<div style="display:flex;flex-direction:column;align-items:center"><div class="user-dot"></div><div class="user-tail"></div></div>'
   });
   userMarker = L.marker([lat,lng],{icon:icon,zIndexOffset:1000}).addTo(map);
-  map.setView([lat,lng],14);
+  if(!map._userLocated){map.setView([lat,lng],11);map._userLocated=true;}
 }
 
-function centerOn(lat,lng){ map.setView([lat,lng],14); }
-
-map.on("moveend",function(){
-  var c=map.getCenter();
-  try{window.ReactNativeWebView.postMessage(JSON.stringify({type:"move",lat:c.lat,lng:c.lng}))}catch(e){}
-});
+function centerOn(lat,lng){ map.setView([lat,lng],13); }
 </script>
 </body>
 </html>`;
@@ -145,6 +158,7 @@ export default function MapScreen() {
   const [followerCount, setFollowerCount] = useState<number | null>(null);
   const [latestItems, setLatestItems] = useState<Product[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchIdRef = useRef(0);
   const detailFetchIdRef = useRef(0);
@@ -224,13 +238,17 @@ export default function MapScreen() {
     setFollowBusy(false);
   }, [selectedSeller, isFollowing, followBusy]);
 
-  const fetchSellers = useCallback(async (lat: number, lng: number, radius = 20) => {
+  const fetchSellers = useCallback(async (lat: number, lng: number) => {
     const thisFetch = ++fetchIdRef.current;
     try {
-      const res = await getNearbySellers(lat, lng, radius) as { sellers: NearbySeller[] };
+      const res = await getNearbySellers(lat, lng) as { sellers: NearbySeller[] };
       if (thisFetch !== fetchIdRef.current) return;
       const list = res.sellers || [];
-      setSellers(list);
+      setSellers(prev => {
+        const merged = new Map(prev.map(s => [s.id, s]));
+        list.forEach(s => merged.set(s.id, s));
+        return Array.from(merged.values());
+      });
       injectMarkers(list);
       try {
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
@@ -246,7 +264,11 @@ export default function MapScreen() {
       if (!raw) return false;
       const { ts, sellers: cached } = JSON.parse(raw);
       if (Date.now() - ts > CACHE_TTL) return false;
-      setSellers(cached);
+      setSellers(prev => {
+        const merged = new Map(prev.map(s => [s.id, s]));
+        cached.forEach((s: NearbySeller) => merged.set(s.id, s));
+        return Array.from(merged.values());
+      });
       injectMarkers(cached);
       return true;
     } catch { return false; }
@@ -304,13 +326,33 @@ export default function MapScreen() {
   const handleWebViewMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'move') fetchSellers(data.lat, data.lng);
       if (data.type === 'tap') {
         const seller = sellers.find(s => s.id === data.id);
         if (seller) openSheet(seller);
       }
     } catch {}
-  }, [sellers, fetchSellers, openSheet]);
+  }, [sellers, openSheet]);
+
+  const handleRefreshLocation = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') { setRefreshing(false); return; }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      setMyLocation({ lat, lng });
+      setSellerLocation(lat, lng).catch(() => {});
+      injectUserMarker(lat, lng);
+      fetchSellers(lat, lng);
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        await AsyncStorage.setItem(CACHE_KEY_LOCATION, JSON.stringify({ lat, lng }));
+      } catch {}
+    } catch {}
+    setRefreshing(false);
+  }, [refreshing, injectUserMarker, fetchSellers]);
 
   const sheetOpacity = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
@@ -349,6 +391,20 @@ export default function MapScreen() {
         scrollEnabled={false}
         bounces={false}
       />
+
+      <TouchableOpacity
+        onPress={handleRefreshLocation}
+        disabled={refreshing}
+        style={[styles.refreshBtn, { top: insets.top + SPACING.md }]}
+        accessibilityLabel="refresh location"
+        accessibilityRole="button"
+      >
+        <MaterialCommunityIcons
+          name={refreshing ? 'loading' : 'crosshairs-gps'}
+          size={22}
+          color={COLORS.text}
+        />
+      </TouchableOpacity>
 
       {selectedSeller && (
         <>
@@ -427,6 +483,16 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   map: { flex: 1 },
   mapOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+
+  refreshBtn: {
+    position: 'absolute', right: SPACING.md,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: COLORS.surface || '#161B22',
+    borderWidth: 1, borderColor: COLORS.border || '#30363D',
+    alignItems: 'center', justifyContent: 'center',
+    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25, shadowRadius: 4,
+  },
 
   sheet: {
     position: 'absolute', left: 12, right: 12,
