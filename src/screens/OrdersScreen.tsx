@@ -104,7 +104,7 @@ export default function OrdersScreen({ navigation }: Props) {
           <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
         </View>
       </View>
-      <Text style={styles.amount}>Rs {formatPrice(Number(item.total_amount))}</Text>
+      <Text style={styles.amount}>{formatPrice(Number(item.total_amount))} G</Text>
       <Text style={styles.date}>{new Date(item.created_at).toLocaleDateString()}</Text>
 
       <View style={styles.actions}>

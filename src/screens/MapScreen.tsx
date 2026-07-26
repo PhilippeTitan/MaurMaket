@@ -4,11 +4,13 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice } from '../theme';
 import { store } from '../store';
+import { useTranslation } from '../i18n';
 import {
   API_BASE, getNearbySellers, setSellerLocation, getImageUrl,
   getProducts, toggleFollow, getFollowing, getFollowerCount,
+  getSellerLocation, toggleSellerVisibility,
 } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -81,7 +83,7 @@ function buildSellerIcon(s) {
   var color = isBiz?'#E04050':isVer?'#1D9E75':'#F5A623';
   var size = isVer?50:isBiz?56:44;
   var shape = isBiz?'14px':'50%';
-  var badge = isVer?'<div style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:'+color+';border:2px solid #fff;display:flex;align-items:center;justify-content:center"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>':'';
+  var badge = isVer?'<div style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:'+color+';border:2px solid #fff;display:flex;align-items:center;justify-content:center;z-index:10"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>':'';
   var inner = s.avatar
     ? '<img src="'+s.avatar+'" style="width:'+(size-6)+'px;height:'+(size-6)+'px;border-radius:'+shape+';object-fit:cover"/>'
     : (isBiz
@@ -91,7 +93,7 @@ function buildSellerIcon(s) {
     className:'',
     iconSize:[64,size+16],iconAnchor:[32,size+16],
     html:'<div style="display:flex;flex-direction:column;align-items:center;position:relative">' +
-      '<div style="position:relative;width:'+size+'px;height:'+size+'px;border-radius:'+shape+';background:'+color+';border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3);overflow:hidden">'+inner+badge+'</div>' +
+      '<div style="position:relative;width:'+size+'px;height:'+size+'px">'+badge+'<div style="position:relative;width:'+size+'px;height:'+size+'px;border-radius:'+shape+';background:'+color+';border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.3);overflow:hidden">'+inner+'</div></div>' +
       '<div class="seller-tail" style="border-top:9px solid '+color+'"></div></div>'
   });
 }
@@ -142,6 +144,7 @@ const CACHE_KEY_SELLERS = 'mm_map_last_sellers';
 const CACHE_TTL = 5 * 60 * 1000;
 
 export default function MapScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const webViewRef = useRef<WebView>(null);
@@ -159,6 +162,8 @@ export default function MapScreen() {
   const [latestItems, setLatestItems] = useState<Product[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [sellerVisible, setSellerVisible] = useState(true);
+  const [visibilityLoading, setVisibilityLoading] = useState(false);
 
   const fetchIdRef = useRef(0);
   const detailFetchIdRef = useRef(0);
@@ -323,6 +328,16 @@ export default function MapScreen() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!store.user || store.user.role !== 'seller') return;
+    (async () => {
+      try {
+        const res = await getSellerLocation() as { lat: number | null; lng: number | null; isVisible: boolean };
+        setSellerVisible(res.isVisible);
+      } catch {}
+    })();
+  }, []);
+
   const handleWebViewMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
@@ -353,6 +368,17 @@ export default function MapScreen() {
     } catch {}
     setRefreshing(false);
   }, [refreshing, injectUserMarker, fetchSellers]);
+
+  const handleToggleVisibility = useCallback(async () => {
+    if (visibilityLoading) return;
+    setVisibilityLoading(true);
+    const newVisible = !sellerVisible;
+    try {
+      await toggleSellerVisibility(newVisible);
+      setSellerVisible(newVisible);
+    } catch {}
+    setVisibilityLoading(false);
+  }, [sellerVisible, visibilityLoading]);
 
   const sheetOpacity = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
@@ -405,6 +431,22 @@ export default function MapScreen() {
           color={COLORS.text}
         />
       </TouchableOpacity>
+
+      {store.user?.role === 'seller' && (
+        <TouchableOpacity
+          onPress={handleToggleVisibility}
+          disabled={visibilityLoading}
+          style={[styles.refreshBtn, { top: insets.top + SPACING.md + 56 }]}
+          accessibilityLabel={sellerVisible ? t('map.sellerHidden') : t('map.sellerVisible')}
+          accessibilityRole="button"
+        >
+          <MaterialCommunityIcons
+            name={visibilityLoading ? 'loading' : sellerVisible ? 'eye' : 'eye-off'}
+            size={22}
+            color={sellerVisible ? COLORS.green : COLORS.coral}
+          />
+        </TouchableOpacity>
+      )}
 
       {selectedSeller && (
         <>
@@ -460,7 +502,7 @@ export default function MapScreen() {
                               <MaterialCommunityIcons name="image-outline" size={20} color={COLORS.text2} />
                             </View>
                           )}
-                          <Text style={styles.itemPrice} numberOfLines={1}>Rs {(item.sale_price ?? item.price)?.toLocaleString?.() ?? item.price}</Text>
+                          <Text style={styles.itemPrice} numberOfLines={1}>{formatPrice(item.sale_price ?? item.price ?? 0)} G</Text>
                           <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
                         </TouchableOpacity>
                       );

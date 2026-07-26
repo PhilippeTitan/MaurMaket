@@ -211,7 +211,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         <View style={styles.row}>
           <Text style={styles.label}>{t('orderDetail.total')}</Text>
           <Text style={[styles.value, { color: COLORS.coral, fontWeight: '700' }]}>
-            Rs {formatPrice(Number(order.total_amount))}
+            {formatPrice(Number(order.total_amount))} G
           </Text>
         </View>
         <View style={styles.row}>
@@ -233,7 +233,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               <Text style={styles.eventType}>{item.product_name || `Product #${item.product_id?.slice(0, 8)}`}</Text>
               <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 4 }}>
                 <Text style={styles.label}>x{item.quantity}</Text>
-                <Text style={[styles.value, { color: COLORS.coral }]}>Rs {formatPrice(Number(item.price))}</Text>
+                <Text style={[styles.value, { color: COLORS.coral }]}>{formatPrice(Number(item.price))} G</Text>
               </View>
             </View>
           ))}

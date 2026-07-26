@@ -408,7 +408,7 @@ export default function MeScreen() {
           <View style={styles.analyticsGrid}>
             <View style={styles.analyticsStat}>
               <Text style={styles.analyticsStatValue}>
-                Rs {formatPrice(Number(analyticsData.overview?.total_revenue || 0))}
+                {formatPrice(Number(analyticsData.overview?.total_revenue || 0))} G
               </Text>
               <Text style={styles.analyticsStatLabel}>{t('me.totalRevenue')}</Text>
             </View>
@@ -437,7 +437,7 @@ export default function MeScreen() {
                 >
                   <View style={styles.topProductInfo}>
                     <Text style={styles.topProductName} numberOfLines={1}>{tp.name}</Text>
-                    <Text style={styles.topProductMeta}>{tp.units_sold} sold · Rs {formatPrice(tp.revenue)}</Text>
+                    <Text style={styles.topProductMeta}>{tp.units_sold} sold · {formatPrice(tp.revenue)} G</Text>
                   </View>
                   <Icon name="chevron-right" size={16} color={COLORS.text2} />
                 </TouchableOpacity>

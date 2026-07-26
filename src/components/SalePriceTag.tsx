@@ -24,8 +24,8 @@ export default function SalePriceTag({ price, effectivePrice, isOnSale, discount
   if (!isOnSale) {
     return (
       <View style={styles.row}>
-        <Text style={[styles.salePrice, { fontSize: s.saleFontSize }]} accessibilityLabel={`Price: Rs ${formatPrice(price)}`}>
-          Rs {formatPrice(price)}
+        <Text style={[styles.salePrice, { fontSize: s.saleFontSize }]} accessibilityLabel={`Price: ${formatPrice(price)} G`}>
+          {formatPrice(price)} G
         </Text>
       </View>
     );
@@ -33,11 +33,11 @@ export default function SalePriceTag({ price, effectivePrice, isOnSale, discount
 
   return (
     <View style={styles.row}>
-      <Text style={[styles.salePrice, { fontSize: s.saleFontSize }]} accessibilityLabel={`Sale price: Rs ${formatPrice(effectivePrice)}`}>
-        Rs {formatPrice(effectivePrice)}
+      <Text style={[styles.salePrice, { fontSize: s.saleFontSize }]} accessibilityLabel={`Sale price: ${formatPrice(effectivePrice)} G`}>
+        {formatPrice(effectivePrice)} G
       </Text>
       <Text style={[styles.originalPrice, { fontSize: s.origFontSize }]}>
-        Rs {formatPrice(price)}
+        {formatPrice(price)} G
       </Text>
       {discountPct > 0 && (
         <View style={[styles.badge, { paddingHorizontal: s.badgePadH, paddingVertical: s.badgePadV, borderRadius: s.badgeRadius }]}>

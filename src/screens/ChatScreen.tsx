@@ -274,8 +274,8 @@ export default function ChatScreen({ route, navigation }: Props) {
               <Text style={styles.offerMsgEyebrow}>{isMe ? 'Your offer' : 'Offer received'}</Text>
               <Text style={styles.offerMsgProduct} numberOfLines={1}>{offerData.productName}</Text>
               <View style={styles.offerMsgPriceRow}>
-                <Text style={styles.offerMsgPrice}>Rs {formatPrice(offerData.offeredPrice)}</Text>
-                <Text style={styles.offerMsgListPrice}>Rs {formatPrice(offerData.listPrice)}</Text>
+                <Text style={styles.offerMsgPrice}>{formatPrice(offerData.offeredPrice)} G</Text>
+                <Text style={styles.offerMsgListPrice}>{formatPrice(offerData.listPrice)} G</Text>
               </View>
               <Text style={[
                 styles.offerMsgStatus,
@@ -393,7 +393,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           <View style={styles.productContextCopy}>
             <Text style={styles.productContextLabel}>Discussing</Text>
             <Text style={styles.productContextName} numberOfLines={1}>{productContext.name}</Text>
-            <Text style={styles.productContextPrice}>Rs {formatPrice(Number(productContext.price))}</Text>
+            <Text style={styles.productContextPrice}>{formatPrice(Number(productContext.price))} G</Text>
           </View>
           <Icon name="chevron-right" size={20} color={COLORS.text2} />
         </TouchableOpacity>
@@ -472,7 +472,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                     accessibilityLabel={`send offer rs ${price}`}
                     accessibilityRole="button"
                   >
-                    <Text style={styles.offerChipText}>Rs {formatPrice(price)}</Text>
+                    <Text style={styles.offerChipText}>{formatPrice(price)} G</Text>
                   </TouchableOpacity>
                 );
               })}

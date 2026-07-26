@@ -183,7 +183,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <View key={group.sellerId} style={styles.sellerGroupRow}>
             <Text style={styles.sellerGroupName} numberOfLines={1}>{group.sellerName}</Text>
             <Text style={styles.sellerGroupMeta}>
-              {group.itemCount} {group.itemCount === 1 ? t('checkout.item') : t('checkout.items')} - Rs {formatPrice(group.total)}
+              {group.itemCount} {group.itemCount === 1 ? t('checkout.item') : t('checkout.items')} - {formatPrice(group.total)} G
             </Text>
           </View>
         ))}
@@ -209,7 +209,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 <Text style={styles.orderItemSeller} numberOfLines={1}>{sellerName}</Text>
               </View>
               <Text style={styles.orderItemQty}>x{item.quantity}</Text>
-              <Text style={styles.orderItemPrice}>Rs {formatPrice((item.effective_price ?? item.price) * item.quantity)}</Text>
+              <Text style={styles.orderItemPrice}>{formatPrice((item.effective_price ?? item.price) * item.quantity)} G</Text>
             </View>
           );
         })}
@@ -307,18 +307,18 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       {discount > 0 && (
         <View style={styles.totalRow}>
           <Text style={[styles.totalLabel, { color: COLORS.text2 }]}>{t('cart.subtotal')}</Text>
-          <Text style={[styles.totalValue, { color: COLORS.text2, textDecorationLine: 'line-through' }]}>Rs {formatPrice(subtotal)}</Text>
+          <Text style={[styles.totalValue, { color: COLORS.text2, textDecorationLine: 'line-through' }]}>{formatPrice(subtotal)} G</Text>
         </View>
       )}
       {discount > 0 && (
         <View style={styles.totalRow}>
           <Text style={[styles.totalLabel, { color: COLORS.green }]}>Discount</Text>
-          <Text style={[styles.totalValue, { color: COLORS.green }]}>-Rs {formatPrice(discount)}</Text>
+          <Text style={[styles.totalValue, { color: COLORS.green }]}>-{formatPrice(discount)} G</Text>
         </View>
       )}
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>{t('common.total')}</Text>
-        <Text style={styles.totalValue}>Rs {formatPrice(finalTotal)}</Text>
+        <Text style={styles.totalValue}>{formatPrice(finalTotal)} G</Text>
       </View>
 
       <TouchableOpacity

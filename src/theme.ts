@@ -80,9 +80,7 @@ export function getSellerAvatar(seller: { avatar_url?: string | null; store_logo
   return seller.avatar_url || null;
 }
 
-export function formatPrice(n: number): string {
-  if (n >= 1000 && n % 1000 === 0) {
-    return `${n / 1000}K`;
-  }
+export function formatPrice(n: number | undefined | null): string {
+  if (n == null || isNaN(n)) return '0';
   return n.toLocaleString();
 }

@@ -325,8 +325,13 @@ export const getSellerProfile = (sellerId: string) =>
 export const getNearbySellers = (lat: number, lng: number) =>
   request(`/sellers/nearby?lat=${lat}&lng=${lng}`);
 
-export const setSellerLocation = (lat: number, lng: number) =>
-  request('/seller/location', { method: 'PUT', body: JSON.stringify({ lat, lng }) });
+export const setSellerLocation = (lat: number, lng: number, isVisible?: boolean) =>
+  request('/seller/location', { method: 'PUT', body: JSON.stringify({ lat, lng, isVisible }) });
+
+export const getSellerLocation = () => request('/seller/location');
+
+export const toggleSellerVisibility = (isVisible: boolean) =>
+  request('/seller/location', { method: 'PUT', body: JSON.stringify({ isVisible }) });
 
 // Notifications
 export const getNotifications = () => request('/notifications');

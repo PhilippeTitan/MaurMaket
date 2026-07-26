@@ -240,7 +240,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
       <TextInput style={styles.input} placeholder={t('editListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityLabel="product name" />
       <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} accessibilityLabel="description" />
-      <TextInput style={styles.input} placeholder={t('editListing.price')} placeholderTextColor={COLORS.text2} value={price} onChangeText={setPrice} keyboardType="numeric" accessibilityLabel="price" />
+      <TextInput style={styles.input} placeholder={`${t('editListing.price')} (max 99,999 G)`} placeholderTextColor={COLORS.text2} value={price} onChangeText={(v) => { const num = v.replace(/[^0-9]/g, ''); if (!num || Number(num) <= 99999) setPrice(num); }} keyboardType="numeric" accessibilityLabel="price" maxLength={5} />
 
       <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
         <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />

@@ -543,7 +543,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
               Did you receive your item in good condition?
             </Text>
             <Text style={styles.receiptSubtext}>
-              Confirming will release Rs {formatPrice(Number(order.total_amount))} to the seller.
+              Confirming will release {formatPrice(Number(order.total_amount))} G to the seller.
             </Text>
             <TouchableOpacity
               style={[styles.receiptConfirmBtn, releaseLoading && { opacity: 0.5 }]}

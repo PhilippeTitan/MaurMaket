@@ -149,7 +149,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     if (!product) return;
     try {
       await Share.share({
-        message: `Check out "${product.name}" on MaurMaket — Rs ${formatPrice(product.effective_price ?? product.price)}`,
+        message: `Check out "${product.name}" on MaurMaket — ${formatPrice(product.effective_price ?? product.price)} G`,
       });
     } catch { /* silent */ }
   };

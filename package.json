@@ -13,7 +13,8 @@
     "dev": "node server.js",
     "typecheck": "tsc --noEmit",
     "test:design": "node scripts/design-guardrails.js",
-    "test": "node scripts/design-guardrails.js"
+    "test:i18n": "node scripts/i18n-check.js",
+    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js"
   },
   "dependencies": {
     "@expo/ngrok": "^4.1.3",

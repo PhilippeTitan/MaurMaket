@@ -151,7 +151,7 @@ export default function SaleSection({
         <View style={styles.customRow}>
           <Text style={styles.customLabel}>Enter sale price:</Text>
           <View style={styles.customInputWrap}>
-            <Text style={styles.customPrefix}>Rs</Text>
+            <Text style={styles.customPrefix}>G</Text>
             <View style={styles.customInput}>
               <TouchableOpacity onPress={() => {
                 const v = Math.max(1, saleNum - 1);
@@ -216,7 +216,7 @@ export default function SaleSection({
       {/* Live preview */}
       {isValid && (
         <Text style={styles.hint}>
-          Rs {formatPrice(saleNum)} · {currentPct}% off · Rs {formatPrice(savings)} saved
+          {formatPrice(saleNum)} G · {currentPct}% off · {formatPrice(savings)} G saved
         </Text>
       )}
 

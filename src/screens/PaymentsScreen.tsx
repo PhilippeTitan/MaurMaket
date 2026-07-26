@@ -133,14 +133,14 @@ export default function PaymentsScreen() {
           <>
             <View style={styles.balanceCard}>
               <Text style={styles.balanceLabel}>{t('payments.availableBalance')}</Text>
-              <Text style={styles.balanceValue}>Rs {formatPrice(balance)}</Text>
+              <Text style={styles.balanceValue}>{formatPrice(balance)} G</Text>
               <View style={styles.balanceStats}>
                 <View style={styles.balanceStat}>
-                  <Text style={styles.balanceStatNum}>Rs {formatPrice(totalEarned)}</Text>
+                  <Text style={styles.balanceStatNum}>{formatPrice(totalEarned)} G</Text>
                   <Text style={styles.balanceStatLabel}>{t('payments.totalEarned')}</Text>
                 </View>
                 <View style={styles.balanceStat}>
-                  <Text style={styles.balanceStatNum}>Rs {formatPrice(totalPaidOut)}</Text>
+                  <Text style={styles.balanceStatNum}>{formatPrice(totalPaidOut)} G</Text>
                   <Text style={styles.balanceStatLabel}>{t('payments.totalPaidOut')}</Text>
                 </View>
               </View>
@@ -172,7 +172,7 @@ export default function PaymentsScreen() {
         renderItem={({ item }) => (
           <View style={styles.payoutRow}>
             <View>
-              <Text style={styles.payoutAmount}>Rs {formatPrice(item.amount)}</Text>
+              <Text style={styles.payoutAmount}>{formatPrice(item.amount)} G</Text>
               <Text style={styles.payoutDate}>{new Date(item.created_at).toLocaleDateString('fr-HT')}</Text>
             </View>
             <View style={[styles.statusBadge, item.status === 'completed' && styles.statusCompleted]}>

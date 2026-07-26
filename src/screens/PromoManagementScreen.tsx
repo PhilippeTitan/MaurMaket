@@ -109,7 +109,7 @@ export default function PromoManagementScreen() {
 
   const renderPromoCard = (promo: PromoCode) => {
     const isExpired = promo.valid_until ? new Date(promo.valid_until) <= new Date() : false;
-    const discountLabel = promo.discount_type === 'percentage' ? `${promo.discount_value}% off` : `Rs ${promo.discount_value} off`;
+    const discountLabel = promo.discount_type === 'percentage' ? `${promo.discount_value}% off` : `${promo.discount_value} G off`;
 
     return (
       <View key={promo.id} style={styles.promoCard}>
@@ -122,7 +122,7 @@ export default function PromoManagementScreen() {
           </View>
         </View>
 
-        <Text style={styles.promoDiscount}>{discountLabel}{promo.min_order_amount ? ` · Min Rs ${promo.min_order_amount}` : ''}</Text>
+        <Text style={styles.promoDiscount}>{discountLabel}{promo.min_order_amount ? ` · Min ${promo.min_order_amount} G` : ''}</Text>
         <Text style={styles.promoMeta}>
           {promo.uses_count} uses{promo.max_uses ? `/${promo.max_uses}` : ''} · {formatTimeLeft(promo.valid_until)}
         </Text>
@@ -202,7 +202,7 @@ export default function PromoManagementScreen() {
               <View style={styles.typeRow}>
                 {DISCOUNT_TYPES.map(dt => (
                   <TouchableOpacity key={dt} style={[styles.typeBtn, discountType === dt && styles.typeBtnActive]} onPress={() => setDiscountType(dt)} accessibilityRole="button" accessibilityLabel={dt === 'percentage' ? 'percentage' : 'fixed amount'} accessibilityState={{ selected: discountType === dt }}>
-                    <Text style={[styles.typeBtnText, discountType === dt && styles.typeBtnTextActive]}>{dt === 'percentage' ? '%' : 'Rs'}</Text>
+                    <Text style={[styles.typeBtnText, discountType === dt && styles.typeBtnTextActive]}>{dt === 'percentage' ? '%' : 'G'}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -211,7 +211,7 @@ export default function PromoManagementScreen() {
               <TextInput style={styles.input} placeholder={discountType === 'percentage' ? '10' : '100'} placeholderTextColor={COLORS.text2} value={discountValue} onChangeText={setDiscountValue} keyboardType="numeric" accessibilityLabel="discount value" />
 
               <Text style={styles.fieldLabel}>Minimum order (optional)</Text>
-              <TextInput style={styles.input} placeholder="Rs 500" placeholderTextColor={COLORS.text2} value={minOrder} onChangeText={setMinOrder} keyboardType="numeric" accessibilityLabel="minimum order" />
+              <TextInput style={styles.input} placeholder="500 G" placeholderTextColor={COLORS.text2} value={minOrder} onChangeText={setMinOrder} keyboardType="numeric" accessibilityLabel="minimum order" />
 
               <Text style={styles.fieldLabel}>Max uses (optional)</Text>
               <TextInput style={styles.input} placeholder="100" placeholderTextColor={COLORS.text2} value={maxUses} onChangeText={setMaxUses} keyboardType="numeric" accessibilityLabel="max uses" />

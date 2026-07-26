@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Platform, TextInput,
 } from 'react-native';
@@ -66,36 +66,11 @@ export default function SettingsScreen({ navigation }: Props) {
 
   const avatarUrl = getImageUrl(user?.avatar_url);
 
-  const [locationStatus, setLocationStatus] = useState<string | null>(null);
   const [locAddress, setLocAddress] = useState(user?.location_address || '');
   const [locCity, setLocCity] = useState(user?.location_city || '');
   const [locSaving, setLocSaving] = useState(false);
   const [locDetecting, setLocDetecting] = useState(false);
-
-  useEffect(() => {
-    if (Platform.OS === 'web') return;
-    (async () => {
-      try {
-        const { status } = await (await import('expo-location')).getForegroundPermissionsAsync();
-        setLocationStatus(status);
-      } catch {}
-    })();
-  }, []);
-
-  const handleRequestLocation = async () => {
-    if (Platform.OS === 'web') return;
-    try {
-      const Location = await import('expo-location');
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      setLocationStatus(status);
-      if (status !== 'granted') {
-        toast.warning(
-          t('settings.locationDeniedTitle'),
-          t('settings.locationDeniedMessage')
-        );
-      }
-    } catch {}
-  };
+  const [editingLocation, setEditingLocation] = useState(!user?.location_address);
 
   const handleAutoDetect = async () => {
     if (Platform.OS === 'web') return;
@@ -139,6 +114,7 @@ export default function SettingsScreen({ navigation }: Props) {
         }) as { user: typeof user };
         if (res.user) await store.setUser(res.user, store.token);
         toast.success(t('settings.locationSaved'), t('settings.locationEditHint'));
+        setEditingLocation(false);
       } catch {
         toast.error(t('settings.error'), t('settings.locationSaveFailed'));
       }
@@ -161,6 +137,7 @@ export default function SettingsScreen({ navigation }: Props) {
       }) as { user: typeof user };
       if (res.user) await store.setUser(res.user, store.token);
       toast.success(t('settings.locationSaved'));
+      setEditingLocation(false);
     } catch {
       toast.error(t('settings.locationSaveFailed'));
     }
@@ -471,75 +448,90 @@ export default function SettingsScreen({ navigation }: Props) {
         ))}
       </View>
 
-      {/* ── Delivery Location ── */}
+      {/* ── Location ── */}
       <SectionHeader title={t('settings.deliveryLocation')} />
       <View style={styles.card}>
-        <TextInput
-          style={styles.locInput}
-          placeholder={t('settings.deliveryAddress')}
-          placeholderTextColor={COLORS.text2}
-          value={locAddress}
-          onChangeText={setLocAddress}
-         
-          accessibilityLabel="delivery address"
-        />
-        <TextInput
-          style={styles.locInput}
-          placeholder={t('settings.deliveryCity')}
-          placeholderTextColor={COLORS.text2}
-          value={locCity}
-          onChangeText={setLocCity}
-         
-          accessibilityLabel="delivery city"
-        />
-        {Platform.OS !== 'web' && (
-          <TouchableOpacity style={styles.autoDetectBtn} onPress={handleAutoDetect} disabled={locDetecting} accessibilityRole="button" accessibilityLabel="auto detect location">
-            {locDetecting ? (
-              <ActivityIndicator size={14} color={COLORS.blue} />
-            ) : (
-              <Icon name="my-location" size={16} color={COLORS.blue} />
-            )}
-            <Text style={styles.autoDetectText}>
-              {locDetecting ? t('settings.locationDetecting') : t('settings.autoDetect')}
-            </Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={[styles.saveLocBtn, locSaving && { opacity: 0.5 }]}
-          onPress={handleSaveLocation}
-          disabled={locSaving}
-          accessibilityRole="button"
-          accessibilityLabel="save location"
-        >
-          {locSaving ? (
-            <ActivityIndicator size={14} color={COLORS.white} />
-          ) : (
-            <Text style={styles.saveLocText}>{t('common.save')}</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Nearby Map ── */}
-      {Platform.OS !== 'web' && (
-        <>
-          <SectionHeader title={t('settings.locationMap')} />
-          <View style={styles.card}>
-            <SettingRow
-              icon="crosshairs-gps"
-              iconColor={locationStatus === 'granted' ? COLORS.green : COLORS.coral}
-              label={t('settings.locationMap')}
-              value={locationStatus === 'granted' ? t('settings.locationGranted') : t('settings.locationNotGranted')}
-              onPress={locationStatus !== 'granted' ? handleRequestLocation : undefined}
-              chevron={locationStatus !== 'granted'}
-              rightContent={
-                locationStatus === 'granted' ? (
-                  <Icon name="verified" size={18} color={COLORS.green} />
-                ) : undefined
-              }
+        {editingLocation ? (
+          <>
+            <TextInput
+              style={styles.locInput}
+              placeholder={t('settings.deliveryAddress')}
+              placeholderTextColor={COLORS.text2}
+              value={locAddress}
+              onChangeText={setLocAddress}
+              accessibilityLabel="delivery address"
             />
+            <TextInput
+              style={styles.locInput}
+              placeholder={t('settings.deliveryCity')}
+              placeholderTextColor={COLORS.text2}
+              value={locCity}
+              onChangeText={setLocCity}
+              accessibilityLabel="delivery city"
+            />
+            {Platform.OS !== 'web' && (
+              <TouchableOpacity style={styles.autoDetectBtn} onPress={handleAutoDetect} disabled={locDetecting} accessibilityRole="button" accessibilityLabel="auto detect location">
+                {locDetecting ? (
+                  <ActivityIndicator size={14} color={COLORS.blue} />
+                ) : (
+                  <Icon name="my-location" size={16} color={COLORS.blue} />
+                )}
+                <Text style={styles.autoDetectText}>
+                  {locDetecting ? t('settings.locationDetecting') : t('settings.autoDetect')}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                style={[styles.saveLocBtn, { flex: 1 }, locSaving && { opacity: 0.5 }]}
+                onPress={handleSaveLocation}
+                disabled={locSaving}
+                accessibilityRole="button"
+                accessibilityLabel="save location"
+              >
+                {locSaving ? (
+                  <ActivityIndicator size={14} color={COLORS.white} />
+                ) : (
+                  <Text style={styles.saveLocText}>{t('common.save')}</Text>
+                )}
+              </TouchableOpacity>
+              {user?.location_address && (
+                <TouchableOpacity
+                  style={[styles.saveLocBtn, { flex: 1, backgroundColor: COLORS.surface2 }]}
+                  onPress={() => {
+                    setLocAddress(user?.location_address || '');
+                    setLocCity(user?.location_city || '');
+                    setEditingLocation(false);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="cancel editing"
+                >
+                  <Text style={[styles.saveLocText, { color: COLORS.text2 }]}>{t('common.close')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </>
+        ) : (
+          <View style={styles.locDisplay}>
+            <View style={styles.locDisplayRow}>
+              <Icon name="location-pin" size={18} color={COLORS.coral} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.locDisplayAddress} numberOfLines={1}>{locAddress || t('settings.deliveryAddress')}</Text>
+                {locCity ? <Text style={styles.locDisplayCity}>{locCity}</Text> : null}
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.locEditBtn}
+              onPress={() => setEditingLocation(true)}
+              accessibilityRole="button"
+              accessibilityLabel="update location"
+            >
+              <Icon name="edit" size={14} color={COLORS.blue} />
+              <Text style={styles.locEditText}>{t('me.editProfile')}</Text>
+            </TouchableOpacity>
           </View>
-        </>
-      )}
+        )}
+      </View>
 
       {/* ── Logout ── */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} accessibilityRole="button" accessibilityLabel="logout">
@@ -689,4 +681,18 @@ const styles = StyleSheet.create({
     padding: 12, alignItems: 'center', marginTop: 4,
   },
   saveLocText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
+  locDisplay: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4,
+  },
+  locDisplayRow: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
+  locDisplayAddress: { fontSize: 14, color: COLORS.text, fontWeight: '600' },
+  locDisplayCity: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+  locEditBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: RADIUS.row, backgroundColor: COLORS.blue + '15',
+  },
+  locEditText: { fontSize: 12, color: COLORS.blue, fontWeight: '600' },
 });

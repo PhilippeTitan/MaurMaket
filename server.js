@@ -625,9 +625,11 @@ async function runMigrations() {
         seller_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         lat DECIMAL(10,7) NOT NULL,
         lng DECIMAL(10,7) NOT NULL,
+        is_visible BOOLEAN DEFAULT true,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    await c.query(`ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;`);
     // Sale price columns on products
     await c.query(`
       ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DECIMAL(10,2);
@@ -1877,7 +1879,7 @@ app.get('/api/sellers/nearby', async (req, res) => {
               )))) AS distance_km
        FROM seller_locations sl
        JOIN users u ON u.id = sl.seller_id
-       WHERE u.role = 'seller'
+       WHERE u.role = 'seller' AND sl.is_visible = true
        ORDER BY distance_km ASC`,
       [latNum, lngNum]
     );
@@ -2171,6 +2173,9 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
   if (!name || !price) {
     return res.status(400).json({ error: 'Name and price required' });
   }
+  if (Number(price) > 99999) {
+    return res.status(400).json({ error: 'Maximum price is 99,999 G (MonCash limit)' });
+  }
   if (name.length > 200) return res.status(400).json({ error: 'Product name too long (max 200 characters)' });
   if (description && description.length > 5000) return res.status(400).json({ error: 'Description too long (max 5000 characters)' });
   if (stock !== undefined && stock !== null && stock !== '' && parseInt(stock) < 1) {
@@ -2256,7 +2261,7 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
           const notifData = { productId: product.id, sellerId: req.user.id };
           if (productImage) notifData.image = productImage;
           createNotification(f.follower_id, 'new_product_from_followed', `New Listing from ${sellerName}`,
-            `${sellerName} just listed "${name}" for Rs ${price}`, notifData);
+            `${sellerName} just listed "${name}" for G ${price}`, notifData);
         }
       }
     } catch (e) { console.error('Follower notification error:', e.message); }
@@ -2302,6 +2307,10 @@ app.put('/api/products/:id', authRequired, sellerRequired, async (req, res) => {
 
     if (stock !== undefined && stock !== null && stock !== '' && parseInt(stock) < 1) {
       return res.status(400).json({ error: 'Stock must be at least 1' });
+    }
+
+    if (price !== undefined && price !== null && Number(price) > 99999) {
+      return res.status(400).json({ error: 'Maximum price is 99,999 G (MonCash limit)' });
     }
 
     // Sale price validation
@@ -2575,7 +2584,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
-    logOrderEvent(order.id, 'order_placed', req.user.id, null, 'pending', `Order placed${discountAmount > 0 ? ` (promo: -Rs ${discountAmount.toFixed(0)})` : ''}`);
+    logOrderEvent(order.id, 'order_placed', req.user.id, null, 'pending', `Order placed${discountAmount > 0 ? ` (promo: -G ${discountAmount.toFixed(0)})` : ''}`);
     const buyerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
     const buyerName = buyerInfo.rows[0]?.full_name || 'Someone';
     const sellerIds = [...new Set(orderItems.map(i => i.sellerId))];
@@ -2590,7 +2599,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
     for (const sid of sellerIds) {
       const notifData = { orderId: order.id };
       if (imageBySeller[sid]) notifData.image = imageBySeller[sid];
-      createNotification(sid, 'order_status', 'New Order', `New order from ${buyerName} — Rs ${finalTotal.toFixed(0)}`, notifData);
+      createNotification(sid, 'order_status', 'New Order', `New order from ${buyerName} — G ${finalTotal.toFixed(0)}`, notifData);
       const lowStock = await pool.query('SELECT id, name, stock FROM products WHERE seller_id = $1 AND stock <= 3 AND is_available = true', [sid]);
       for (const p of lowStock.rows) {
         createNotification(sid, 'low_stock', 'Low Stock Alert', `"${p.name}" has only ${p.stock} left`, { productId: p.id });
@@ -2679,12 +2688,12 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
               signal: AbortSignal.timeout(15000),
             }
           );
-          if (payoutRes.ok) console.log(`[CANCEL] Refund Rs ${totalRefund} sent to buyer ${buyerPhone}`);
+          if (payoutRes.ok) console.log(`[CANCEL] Refund G ${totalRefund} sent to buyer ${buyerPhone}`);
           else console.error(`[CANCEL] Refund payout failed: ${await payoutRes.text()}`);
         } catch (e) { console.error('[CANCEL] Refund payout error:', e.message); }
       }
       createNotification(order.rows[0].buyer_id, 'order_status', 'Order Refunded',
-        `Your cancelled order has been refunded Rs ${totalRefund.toFixed(0)}.`, { orderId: req.params.id });
+        `Your cancelled order has been refunded G ${totalRefund.toFixed(0)}.`, { orderId: req.params.id });
     }
 
     // Notify sellers of cancelled order
@@ -3171,7 +3180,7 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
         [escrow.id]
       );
 
-      console.log(`Escrow released: seller ${escrow.seller_id} credited Rs ${net}`);
+      console.log(`Escrow released: seller ${escrow.seller_id} credited G ${net}`);
     }
 
     // Mark order as completed if not already
@@ -3217,7 +3226,7 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
              VALUES ($1, $2, 'completed', $3)`,
             [req.params.id, commissionAmount, payoutData.reference || payoutData.transactionId || null]
           );
-          console.log(`Platform commission Rs ${commissionAmount} sent to ${process.env.PLATFORM_PHONE}`);
+          console.log(`Platform commission G ${commissionAmount} sent to ${process.env.PLATFORM_PHONE}`);
         } else {
           const errText = await payoutRes.text();
           await pool.query(
@@ -3235,7 +3244,7 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
     // Notify sellers
     for (const escrow of escrows.rows) {
       createNotification(escrow.seller_id, 'order_status', 'Payment Released',
-        `Rs ${parseFloat(escrow.net_amount).toFixed(0)} has been credited to your balance`, { orderId: req.params.id });
+        `G ${parseFloat(escrow.net_amount).toFixed(0)} has been credited to your balance`, { orderId: req.params.id });
     }
 
     res.json({ released: true, escrowCount: escrows.rows.length });
@@ -3333,7 +3342,7 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
         );
 
         if (payoutRes.ok) {
-          console.log(`Refund Rs ${totalRefund} sent to buyer ${buyerPhone}`);
+          console.log(`Refund G ${totalRefund} sent to buyer ${buyerPhone}`);
         } else {
           const errText = await payoutRes.text();
           console.error(`Refund payout failed: ${errText}`);
@@ -3344,12 +3353,12 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
     }
 
     createNotification(o.buyer_id, 'order_status', 'Order Refunded',
-      `Rs ${totalRefund.toFixed(0)} refunded for order`, { orderId: req.params.id });
+      `G ${totalRefund.toFixed(0)} refunded for order`, { orderId: req.params.id });
 
     // Notify sellers that escrow was refunded
     for (const escrow of escrows.rows) {
       createNotification(escrow.seller_id, 'escrow_refunded', 'Order Refunded',
-        `An order has been refunded. Rs ${parseFloat(escrow.gross_amount).toFixed(0)} has been returned to the buyer.`, { orderId: req.params.id });
+        `An order has been refunded. G ${parseFloat(escrow.gross_amount).toFixed(0)} has been returned to the buyer.`, { orderId: req.params.id });
     }
 
     res.json({ refunded: true, amount: totalRefund });
@@ -3430,8 +3439,43 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
 
 // ───── Seller dashboard ─────
 
+app.get('/api/seller/location', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT lat, lng, is_visible FROM seller_locations WHERE seller_id = $1',
+      [req.user.id]
+    );
+    if (result.rows.length === 0) return res.json({ lat: null, lng: null, isVisible: false });
+    const row = result.rows[0];
+    res.json({ lat: row.lat, lng: row.lng, isVisible: row.is_visible });
+  } catch (err) {
+    console.error('Seller location fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.put('/api/seller/location', authRequired, sellerRequired, async (req, res) => {
-  const { lat, lng } = req.body;
+  const { lat, lng, isVisible } = req.body;
+
+  // Toggle visibility only (no coords needed)
+  if (isVisible !== undefined && lat == null && lng == null) {
+    try {
+      const existing = await pool.query('SELECT seller_id FROM seller_locations WHERE seller_id = $1', [req.user.id]);
+      if (existing.rows.length === 0) {
+        return res.status(400).json({ error: 'No location set. Enable location first.' });
+      }
+      await pool.query(
+        'UPDATE seller_locations SET is_visible = $1, updated_at = CURRENT_TIMESTAMP WHERE seller_id = $2',
+        [Boolean(isVisible), req.user.id]
+      );
+      return res.json({ ok: true, isVisible: Boolean(isVisible) });
+    } catch (err) {
+      console.error('Seller visibility toggle error:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  }
+
+  // Full location update (coords required)
   if (lat == null || lng == null) return res.status(400).json({ error: 'lat and lng required' });
   const latNum = parseFloat(lat);
   const lngNum = parseFloat(lng);
@@ -3440,13 +3484,14 @@ app.put('/api/seller/location', authRequired, sellerRequired, async (req, res) =
     return res.status(400).json({ error: 'Coordinates out of range' });
   }
   try {
+    const visible = isVisible !== undefined ? Boolean(isVisible) : true;
     await pool.query(
-      `INSERT INTO seller_locations (seller_id, lat, lng, updated_at)
-       VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-       ON CONFLICT (seller_id) DO UPDATE SET lat = $2, lng = $3, updated_at = CURRENT_TIMESTAMP`,
-      [req.user.id, latNum, lngNum]
+      `INSERT INTO seller_locations (seller_id, lat, lng, is_visible, updated_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (seller_id) DO UPDATE SET lat = $2, lng = $3, is_visible = $4, updated_at = CURRENT_TIMESTAMP`,
+      [req.user.id, latNum, lngNum, visible]
     );
-    res.json({ ok: true, lat: latNum, lng: lngNum });
+    res.json({ ok: true, lat: latNum, lng: lngNum, isVisible: visible });
   } catch (err) {
     console.error('Seller location update error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -3563,7 +3608,7 @@ app.post('/api/promos/validate', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'Promo code has reached max uses' });
     }
     if (orderTotal && parseFloat(orderTotal) < parseFloat(promo.min_order_amount)) {
-      return res.status(400).json({ error: `Minimum order amount is Rs ${parseFloat(promo.min_order_amount).toFixed(0)}` });
+      return res.status(400).json({ error: `Minimum order amount is G ${parseFloat(promo.min_order_amount).toFixed(0)}` });
     }
     const used = await pool.query('SELECT id FROM promo_uses WHERE promo_id = $1 AND user_id = $2', [promo.id, req.user.id]);
     if (used.rows.length > 0) return res.status(400).json({ error: 'You have already used this promo code' });
@@ -4130,7 +4175,7 @@ app.post('/api/conversations/:id/offer', authRequired, msgLimiter, async (req, r
     const buyerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [buyerId]);
     const buyerName = buyerInfo.rows[0]?.full_name || 'A buyer';
     createNotification(sellerId, 'new_message', 'New Offer',
-      `${buyerName} offered Rs ${offeredPrice} for ${productName || product.rows[0].name}`,
+      `${buyerName} offered G ${offeredPrice} for ${productName || product.rows[0].name}`,
       { conversationId: req.params.id, senderId: buyerId, senderName: buyerName });
 
     res.status(201).json({
@@ -4202,7 +4247,7 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
     const productInfo = await client.query('SELECT name FROM products WHERE id = $1', [offer.product_id]);
     const productName = productInfo.rows[0]?.name || 'the item';
     const systemContent = action === 'accepted'
-      ? `Offer accepted — you can now check out "${productName}" at Rs ${offer.offered_price}`
+      ? `Offer accepted — you can now check out "${productName}" at G ${offer.offered_price}`
       : `Offer declined for "${productName}"`;
 
     await client.query(
@@ -4215,8 +4260,8 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
     // Notify the other participant.
     const recipientId = req.user.id === offer.buyer_id ? offer.seller_id : offer.buyer_id;
     const buyerNotifMsg = action === 'accepted'
-      ? `Your offer of Rs ${offer.offered_price} for "${productName}" was accepted! You can now check out at the agreed price.`
-      : `Your offer of Rs ${offer.offered_price} for "${productName}" was declined.`;
+      ? `Your offer of G ${offer.offered_price} for "${productName}" was accepted! You can now check out at the agreed price.`
+      : `Your offer of G ${offer.offered_price} for "${productName}" was declined.`;
     createNotification(recipientId, 'new_message',
       action === 'accepted' ? 'Offer Accepted' : 'Offer Declined',
       buyerNotifMsg,
@@ -4249,10 +4294,10 @@ app.post('/api/offers/:messageId/counter', authRequired, msgLimiter, async (req,
     if (offer.seller_id !== req.user.id || offer.status !== 'pending') { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This offer cannot be countered' }); }
     if (offer.expires_at && new Date(offer.expires_at) < new Date()) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Offer has expired' }); }
     await client.query("UPDATE message_offers SET offered_price = $1, status = 'countered', responded_at = CURRENT_TIMESTAMP WHERE message_id = $2", [offeredPrice, req.params.messageId]);
-    await client.query("INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, $3, 'text')", [offer.conversation_id, req.user.id, `Seller countered with Rs ${offeredPrice}`]);
+    await client.query("INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, $3, 'text')", [offer.conversation_id, req.user.id, `Seller countered with G ${offeredPrice}`]);
     await client.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [offer.conversation_id]);
     await client.query('COMMIT');
-    createNotification(offer.buyer_id, 'new_message', 'Counter offer', `The seller countered your offer with Rs ${offeredPrice}.`, { conversationId: offer.conversation_id, senderId: req.user.id });
+    createNotification(offer.buyer_id, 'new_message', 'Counter offer', `The seller countered your offer with G ${offeredPrice}.`, { conversationId: offer.conversation_id, senderId: req.user.id });
     res.json({ success: true, status: 'countered', offeredPrice });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -4457,12 +4502,12 @@ app.post('/api/payments/webhook', async (req, res) => {
                       signal: AbortSignal.timeout(15000),
                     }
                   );
-                  if (payoutRes.ok) console.log(`[WEBHOOK] Stock refund Rs ${refundAmount} sent to buyer ${buyerPhone}`);
+                  if (payoutRes.ok) console.log(`[WEBHOOK] Stock refund G ${refundAmount} sent to buyer ${buyerPhone}`);
                   else console.error(`[WEBHOOK] Stock refund payout failed: ${await payoutRes.text()}`);
                 } catch (e) { console.error('[WEBHOOK] Stock refund payout error:', e.message); }
               }
               createNotification(buyerId, 'order_status', 'Payment Refunded',
-                `Your order could not be fulfilled due to stock issues. Rs ${refundAmount.toFixed(0)} refunded.`, { orderId: reference });
+                `Your order could not be fulfilled due to stock issues. G ${refundAmount.toFixed(0)} refunded.`, { orderId: reference });
             }
             return res.status(200).json({ received: true, stock_issue: true, refunded: true });
           }
@@ -4504,7 +4549,7 @@ app.post('/api/payments/webhook', async (req, res) => {
               [reference, item.seller_id, sellerTier, grossAmount, rate, commission, commission, net]
             );
 
-            console.log(`  Escrow: seller ${item.seller_id} (${sellerTier}): gross Rs ${grossAmount}, commission ${rate * 100}% = Rs ${commission}, net Rs ${net} — HELD`);
+            console.log(`  Escrow: seller ${item.seller_id} (${sellerTier}): gross G ${grossAmount}, commission ${rate * 100}% = G ${commission}, net G ${net} — HELD`);
           }
         }
         await client.query('COMMIT');
@@ -4517,7 +4562,7 @@ app.post('/api/payments/webhook', async (req, res) => {
         if (buyerOrder.rows.length > 0) {
           const totalPaid = items.rows.reduce((sum, r) => sum + parseFloat(r.total), 0);
           createNotification(buyerOrder.rows[0].buyer_id, 'payment_confirmed', 'Payment Confirmed',
-            `Your payment of Rs ${totalPaid.toFixed(0)} was successful.`, { orderId: reference });
+            `Your payment of G ${totalPaid.toFixed(0)} was successful.`, { orderId: reference });
         }
         console.log(`Order ${reference} paid, funds held in escrow`);
       } catch (e) {
@@ -4604,7 +4649,7 @@ app.post('/api/payments/webhook', async (req, res) => {
         // Notify seller of payout failure
         if (payout.rows.length > 0) {
           createNotification(payout.rows[0].seller_id, 'payout_failed', 'Payout Failed',
-            `Your payout of Rs ${parseFloat(payout.rows[0].amount).toFixed(0)} could not be processed. The amount has been returned to your balance.`, { payoutId: reference });
+            `Your payout of G ${parseFloat(payout.rows[0].amount).toFixed(0)} could not be processed. The amount has been returned to your balance.`, { payoutId: reference });
         }
       } catch (e) {
         await client.query('ROLLBACK');
@@ -4698,7 +4743,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
 
   const MIN_PAYOUT = parseFloat(process.env.MIN_PAYOUT_AMOUNT || '50');
   if (amount < MIN_PAYOUT) {
-    return res.status(400).json({ error: `Minimum payout is Rs ${MIN_PAYOUT}` });
+    return res.status(400).json({ error: `Minimum payout is G ${MIN_PAYOUT}` });
   }
 
   const c = await pool.connect();
@@ -5552,13 +5597,13 @@ cron.schedule('*/5 * * * *', async () => {
                 signal: AbortSignal.timeout(15000),
               }
             );
-            if (payoutRes.ok) console.log(`[CRON] Refund Rs ${totalRefund} sent to buyer ${buyerPhone}`);
+            if (payoutRes.ok) console.log(`[CRON] Refund G ${totalRefund} sent to buyer ${buyerPhone}`);
             else console.error(`[CRON] Refund payout failed: ${await payoutRes.text()}`);
           } catch (e) { console.error('[CRON] Refund payout error:', e.message); }
         }
 
         createNotification(order.buyer_id, 'order_status', 'Order Refunded',
-          `Your meetup order has expired. Rs ${totalRefund.toFixed(0)} refunded.`, { orderId });
+          `Your meetup order has expired. G ${totalRefund.toFixed(0)} refunded.`, { orderId });
 
         // Notify sellers of the cancelled order
         const sellerNotify = await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [orderId]);

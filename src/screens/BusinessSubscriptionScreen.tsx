@@ -101,7 +101,7 @@ export default function BusinessSubscriptionScreen() {
               {loading ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
-                <Text style={styles.primaryBtnText}>Renew Now — Rs 2,500</Text>
+                <Text style={styles.primaryBtnText}>Renew Now — 2,500 G</Text>
               )}
             </TouchableOpacity>
           )}
@@ -127,7 +127,7 @@ export default function BusinessSubscriptionScreen() {
             {loading ? (
               <ActivityIndicator size="small" color={COLORS.white} />
             ) : (
-              <Text style={styles.primaryBtnText}>Renew — Rs 2,500/month</Text>
+              <Text style={styles.primaryBtnText}>Renew — 2,500 G/month</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -138,7 +138,7 @@ export default function BusinessSubscriptionScreen() {
               <Icon name="storefront" size={48} color={COLORS.coral} />
             </View>
             <Text style={styles.heroTitle}>Go Business</Text>
-            <Text style={styles.heroPrice}>Rs 2,500/month</Text>
+            <Text style={styles.heroPrice}>2,500 G/month</Text>
             <Text style={styles.heroDesc}>
               Unlock the full seller experience. Lower commission, store branding, promo codes, and advanced analytics.
             </Text>
@@ -157,7 +157,7 @@ export default function BusinessSubscriptionScreen() {
             {loading ? (
               <ActivityIndicator size="small" color={COLORS.white} />
             ) : (
-              <Text style={styles.primaryBtnText}>Subscribe Now — Rs 2,500</Text>
+              <Text style={styles.primaryBtnText}>Subscribe Now — 2,500 G</Text>
             )}
           </TouchableOpacity>
 

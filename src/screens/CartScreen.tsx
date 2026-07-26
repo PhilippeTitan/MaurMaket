@@ -121,7 +121,7 @@ export default function CartScreen({ navigation }: Props) {
           <Icon name="storefront" size={14} color={COLORS.coral} />
           <Text style={styles.sellerSectionName} numberOfLines={1}>{item.sellerName}</Text>
           <Text style={styles.sellerSectionMeta}>
-            {item.itemCount} {item.itemCount === 1 ? t('common.item') : t('common.items')} · Rs {formatPrice(item.total)}
+            {item.itemCount} {item.itemCount === 1 ? t('common.item') : t('common.items')} · {formatPrice(item.total)} G
           </Text>
         </View>
       );
@@ -213,14 +213,14 @@ export default function CartScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
             {discount > 0 && (
-              <Text style={styles.discountText}>-Rs {formatPrice(discount)} {t('cart.off')}</Text>
+              <Text style={styles.discountText}>-{formatPrice(discount)} G {t('cart.off')}</Text>
             )}
             {promoCode.trim() && discount === 0 && (
               <Text style={styles.discountHint}>{t('cart.promoHint')}</Text>
             )}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>{t('cart.total')}</Text>
-              <Text style={styles.totalValue}>Rs {formatPrice(finalTotal)}</Text>
+              <Text style={styles.totalValue}>{formatPrice(finalTotal)} G</Text>
             </View>
             <TouchableOpacity
               style={styles.checkoutBtn}
