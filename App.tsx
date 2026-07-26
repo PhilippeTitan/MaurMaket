@@ -125,7 +125,7 @@ function MainTabs() {
             paddingBottom: insets.bottom,
             paddingTop: 0,
             height: 56 + insets.bottom,
-            marginBottom: 12,
+            marginBottom: insets.bottom > 0 ? 12 : 16,
             marginHorizontal: 16,
             elevation: 8,
             shadowColor: '#000',
