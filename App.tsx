@@ -186,6 +186,7 @@ function MainTabs() {
           name="MapTab"
           component={LazyMapScreen}
           options={{
+            unmountOnBlur: false,
             tabBarIcon: ({ color }) => (
               <MaterialCommunityIcons name="map-marker-radius-outline" size={26} color={color} />
             ),

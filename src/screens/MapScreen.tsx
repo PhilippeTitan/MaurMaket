@@ -51,10 +51,9 @@ function buildMapHtml(): string {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body,#map{width:100%;height:100%;background:#F2F1ED;overflow:hidden}
+html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
 .leaflet-control-zoom{display:none}
-.leaflet-control-attribution{background:rgba(255,255,255,0.7)!important;color:#666!important;font-size:9px!important}
-.leaflet-control-attribution a{color:#666!important}
+.leaflet-control-attribution{display:none!important}
 .seller-ring{border-radius:50%;border:3px solid #fff;display:flex;align-items:center;justify-content:center}
 .seller-tail{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent}
 .user-dot{width:16px;height:16px;border-radius:50%;border:3px solid #4A9EFF;background:#fff;box-shadow:0 0 8px rgba(74,158,255,0.5)}
@@ -64,13 +63,19 @@ html,body,#map{width:100%;height:100%;background:#F2F1ED;overflow:hidden}
 <body>
 <div id="map"></div>
 <script>
-var map = L.map("map",{zoomControl:false,attributionControl:true,maxBounds:[[-85,-220],[85,220]],maxBoundsViscosity:0.8,minZoom:3,maxZoom:20}).setView([18.5944,-72.3074],12);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{
-  attribution:"&copy;CARTO&copy;OSM",maxZoom:20,subdomains:"abcd",crossOrigin:true
-}).addTo(map);
+var LIGHT_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+var DARK_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+var currentTile = null;
+var map = L.map("map",{zoomControl:false,attributionControl:false,maxBounds:[[-85,-220],[85,220]],maxBoundsViscosity:0.8,minZoom:3,maxZoom:20}).setView([18.5944,-72.3074],12);
+currentTile = L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
 setTimeout(function(){map.invalidateSize()},200);
 setTimeout(function(){map.invalidateSize()},1000);
 window.addEventListener("load",function(){map.invalidateSize()});
+
+function setDarkMode(isDark){
+  if(currentTile) map.removeLayer(currentTile);
+  currentTile = L.tileLayer(isDark?DARK_URL:LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
+}
 
 var sellerLayer = L.layerGroup().addTo(map);
 var userMarker = null;
@@ -164,6 +169,7 @@ export default function MapScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [sellerVisible, setSellerVisible] = useState(true);
   const [visibilityLoading, setVisibilityLoading] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
 
   const fetchIdRef = useRef(0);
   const detailFetchIdRef = useRef(0);
@@ -380,6 +386,20 @@ export default function MapScreen() {
     setVisibilityLoading(false);
   }, [sellerVisible, visibilityLoading]);
 
+  const handleToggleDarkMode = useCallback(() => {
+    const next = !darkMode;
+    setDarkMode(next);
+    if (webViewRef.current && webviewReady.current) {
+      webViewRef.current.injectJavaScript(`setDarkMode(${next});`);
+    }
+  }, [darkMode]);
+
+  const handleFindMe = useCallback(() => {
+    if (myLocation && webViewRef.current && webviewReady.current) {
+      webViewRef.current.injectJavaScript(`centerOn(${myLocation.lat},${myLocation.lng});`);
+    }
+  }, [myLocation]);
+
   const sheetOpacity = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
   const toggleSheet = () => {
@@ -421,14 +441,27 @@ export default function MapScreen() {
       <TouchableOpacity
         onPress={handleRefreshLocation}
         disabled={refreshing}
-        style={[styles.refreshBtn, { top: insets.top + SPACING.md }]}
-        accessibilityLabel="refresh location"
+        style={[styles.refreshBtn, { top: insets.top + SPACING.md, left: SPACING.md, right: 'auto' }]}
+        accessibilityLabel="refresh sellers"
         accessibilityRole="button"
       >
         <MaterialCommunityIcons
-          name={refreshing ? 'loading' : 'crosshairs-gps'}
+          name={refreshing ? 'loading' : 'refresh'}
           size={22}
           color={COLORS.text}
+        />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={handleToggleDarkMode}
+        style={[styles.refreshBtn, { top: insets.top + SPACING.md + 56, left: SPACING.md, right: 'auto' }]}
+        accessibilityLabel={darkMode ? 'light mode' : 'dark mode'}
+        accessibilityRole="button"
+      >
+        <MaterialCommunityIcons
+          name={darkMode ? 'weather-sunny' : 'weather-night'}
+          size={22}
+          color={darkMode ? COLORS.yellow : COLORS.text}
         />
       </TouchableOpacity>
 
@@ -436,7 +469,7 @@ export default function MapScreen() {
         <TouchableOpacity
           onPress={handleToggleVisibility}
           disabled={visibilityLoading}
-          style={[styles.refreshBtn, { top: insets.top + SPACING.md + 56 }]}
+          style={[styles.refreshBtn, { top: insets.top + SPACING.md, right: SPACING.md }]}
           accessibilityLabel={sellerVisible ? t('map.sellerHidden') : t('map.sellerVisible')}
           accessibilityRole="button"
         >
@@ -447,6 +480,19 @@ export default function MapScreen() {
           />
         </TouchableOpacity>
       )}
+
+      <TouchableOpacity
+        onPress={handleFindMe}
+        style={[styles.refreshBtn, { bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + 16, right: SPACING.md, top: 'auto' }]}
+        accessibilityLabel="center on my location"
+        accessibilityRole="button"
+      >
+        <MaterialCommunityIcons
+          name="crosshairs-gps"
+          size={22}
+          color={COLORS.blue}
+        />
+      </TouchableOpacity>
 
       {selectedSeller && (
         <>
