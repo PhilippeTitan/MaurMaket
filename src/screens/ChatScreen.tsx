@@ -9,7 +9,6 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMessages, sendMessage as apiSendMessage, getImageUrl, uploadImage, sendTyping, getTypingStatus } from '../api';
 import { useTranslation } from '../i18n';
-import BackButton from '../components/BackButton';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Message } from '../types';
@@ -252,7 +251,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
+  const renderMessage = ({ item }: { item: LocalMessage }) => {
     const isMe = item.sender_id === store.user?.id;
     const isImage = item.message_type === 'image' && item.image_url;
     const isOffer = item.message_type === 'offer';
@@ -335,13 +334,15 @@ export default function ChatScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + SPACING.md }]} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
-        <BackButton onPress={() => navigation.goBack()} />
+      <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBack} accessibilityLabel="go back" accessibilityRole="button">
+          <MaterialCommunityIcons name="chevron-left" size={22} color={COLORS.text} />
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerProfile}
-          onPress={() => setProfileMenuVisible(!profileMenuVisible)}
+          onPress={() => { if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId }); }}
           activeOpacity={0.7}
-          accessibilityLabel="view profile menu"
+          accessibilityLabel="view profile"
           accessibilityRole="button"
         >
           {getImageUrl(otherUserAvatar) ? (
@@ -351,36 +352,18 @@ export default function ChatScreen({ route, navigation }: Props) {
               <Text style={styles.headerAvatarText}>{(otherUserName || '?')[0]}</Text>
             </View>
           )}
-          <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
+            <View style={styles.headerOnlineRow}>
+              <View style={styles.onlineDot} />
+              <Text style={styles.onlineText}>Active now</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.headerMore} accessibilityLabel="more options" accessibilityRole="button">
+          <MaterialCommunityIcons name="dots-vertical" size={18} color={COLORS.text2} />
         </TouchableOpacity>
       </View>
-
-      {profileMenuVisible && (
-        <Pressable style={styles.profileOverlay} onPress={() => setProfileMenuVisible(false)}>
-          <View style={[styles.profileDropdown, { top: headerHeight || 110 }]}>
-            {getImageUrl(otherUserAvatar) ? (
-              <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.dropdownAvatar} />
-            ) : (
-              <View style={styles.dropdownAvatarFallback}>
-                <Text style={styles.dropdownAvatarText}>{(otherUserName || '?')[0]}</Text>
-              </View>
-            )}
-            <Text style={styles.dropdownName} numberOfLines={1}>{otherUserName}</Text>
-            <TouchableOpacity
-              style={styles.dropdownAction}
-              onPress={() => {
-                setProfileMenuVisible(false);
-                if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId });
-              }}
-              accessibilityLabel="view store"
-              accessibilityRole="button"
-            >
-              <Icon name="storefront" size={20} color={COLORS.text} />
-              <Text style={styles.dropdownActionText}>View Store</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      )}
 
       {productContext && (
         <TouchableOpacity
@@ -420,29 +403,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           }}
           scrollEventThrottle={16}
           ListHeaderComponent={
-            <>
-              {loadingOlder && <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} />}
-              <View style={styles.introHeader}>
-                {getImageUrl(otherUserAvatar) ? (
-                  <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.introAvatar} />
-                ) : (
-                  <View style={styles.introAvatarFallback}>
-                    <Text style={styles.introAvatarText}>{(otherUserName || '?')[0]}</Text>
-                  </View>
-                )}
-                <Text style={styles.introName} numberOfLines={1}>{otherUserName}</Text>
-                <TouchableOpacity
-                  style={styles.introViewProfileBtn}
-                  onPress={() => {
-                    if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId });
-                  }}
-                  accessibilityLabel="view profile"
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.introViewProfileText}>View profile</Text>
-                </TouchableOpacity>
-              </View>
-            </>
+            loadingOlder ? <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} /> : null
           }
           onContentSizeChange={() => {
             if (listRef.current && stickToLatest.current) {
@@ -486,12 +447,28 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       {otherTyping && (
         <View style={styles.typingRow}>
-          <ActivityIndicator size="small" color={COLORS.text2} style={{ marginRight: 6 }} />
-          <Text style={styles.typingText}>{otherUserName || 'They'} typing...</Text>
+          <Text style={styles.typingText}>{otherUserName || 'They'} is typing…</Text>
         </View>
       )}
 
-      <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
+      <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
+        <View style={styles.quickActions}>
+          <TouchableOpacity           style={styles.quickChip} onPress={() => {
+            if (draftOffer) {
+              setOfferDraftVisible(true);
+            } else if (productContext && otherUserId) {
+              navigation.navigate('Storefront', { sellerId: otherUserId });
+            }
+          }} accessibilityLabel="make an offer" accessibilityRole="button">
+            <Icon name="sale-tag" size={13} color={COLORS.blue} />
+            <Text style={styles.quickChipText}>Offer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickChip} accessibilityLabel="arrange meet up" accessibilityRole="button">
+            <MaterialCommunityIcons name="map-marker-outline" size={13} color={COLORS.text} />
+            <Text style={[styles.quickChipText, { color: COLORS.text }]}>Meet up</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.inputRow}>
         <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending} accessibilityLabel="attach photo" accessibilityRole="button">
           <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.text2} />
         </TouchableOpacity>
@@ -515,6 +492,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         <TouchableOpacity style={[styles.sendBtn, { opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()} accessibilityLabel="send message" accessibilityRole="button">
           <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
         </TouchableOpacity>
+        </View>
       </View>
       <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
         <Pressable style={styles.imagePreview} onPress={() => setPreviewImage(null)} accessibilityLabel="close photo" accessibilityRole="button">
@@ -529,15 +507,20 @@ export default function ChatScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: SPACING.md, paddingBottom: SPACING.md,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm,
     borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.bg,
   },
+  headerBack: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   headerProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(128,128,128,0.25)', alignItems: 'center', justifyContent: 'center' },
-  headerAvatarImg: { width: 32, height: 32, borderRadius: 16 },
+  headerAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(128,128,128,0.25)', alignItems: 'center', justifyContent: 'center' },
+  headerAvatarImg: { width: 34, height: 34, borderRadius: 17 },
   headerAvatarText: { fontSize: 14, color: COLORS.text2, fontWeight: '700' },
-  headerName: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
+  headerName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  headerOnlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.green },
+  onlineText: { fontSize: 11, color: COLORS.text2 },
+  headerMore: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   productContext: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, paddingVertical: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   productContextImage: { width: 42, height: 42, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
   productContextImageFallback: { width: 42, height: 42, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
@@ -546,31 +529,6 @@ const styles = StyleSheet.create({
   productContextName: { fontSize: 13, color: COLORS.text, fontWeight: '700', marginTop: 1 },
   productContextPrice: { fontSize: 12, color: COLORS.coral, fontWeight: '700', marginTop: 2 },
   messageList: { padding: SPACING.md, paddingBottom: 8 },
-  introHeader: {
-    alignItems: 'center',
-    paddingTop: SPACING.lg,
-    paddingBottom: SPACING.lg,
-    gap: 4,
-  },
-  introAvatar: { width: 84, height: 84, borderRadius: 42, marginBottom: 8 },
-  introAvatarFallback: {
-    width: 84, height: 84, borderRadius: 42,
-    backgroundColor: 'rgba(128,128,128,0.25)',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 8,
-  },
-  introAvatarText: { fontSize: 32, color: COLORS.text2, fontWeight: '700' },
-  introName: { fontSize: 18, fontWeight: '700', color: COLORS.text },
-  introViewProfileBtn: {
-    marginTop: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: RADIUS.pill,
-    backgroundColor: COLORS.surface2,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  introViewProfileText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   bubble: {
     maxWidth: '75%', padding: 10, borderRadius: RADIUS.media, marginBottom: 6,
   },
@@ -654,26 +612,40 @@ const styles = StyleSheet.create({
   offerChipText: { fontSize: 11, color: COLORS.text, fontWeight: '700' },
   offerClose: { padding: 2 },
   typingRow: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.md,
     paddingBottom: 4, paddingTop: 2,
   },
   typingText: { fontSize: 12, color: COLORS.text2, fontStyle: 'italic' },
+  inputArea: {
+    borderTopWidth: 1, borderTopColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  quickActions: {
+    flexDirection: 'row', gap: 8,
+    paddingHorizontal: SPACING.md, paddingTop: 8, paddingBottom: 4,
+  },
+  quickChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 14, backgroundColor: COLORS.surface2,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  quickChipText: { fontSize: 11, color: COLORS.blue, fontWeight: '600' },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md,
-    paddingBottom: SPACING.xxl + 16, borderTopWidth: 1, borderTopColor: COLORS.border,
-    backgroundColor: COLORS.bg, gap: 8,
+    gap: 8,
   },
   input: {
     flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.pill, paddingHorizontal: 14, paddingVertical: 10, color: COLORS.text,
+    borderRadius: 19, paddingHorizontal: 14, paddingVertical: 10, color: COLORS.text,
     fontSize: 14, maxHeight: 100,
   },
   cameraBtn: {
-    width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center',
+    width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center',
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   sendBtn: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.coral,
+    width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.coral,
     justifyContent: 'center', alignItems: 'center',
   },
   profileOverlay: {
@@ -683,39 +655,4 @@ const styles = StyleSheet.create({
   },
   imagePreview: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: SPACING.md },
   previewImage: { width: '100%', height: '100%' },
-  profileDropdown: {
-    position: 'absolute',
-    top: 110,
-    alignSelf: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.card,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    gap: 10,
-    minWidth: 200,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  dropdownAvatar: { width: 56, height: 56, borderRadius: 28 },
-  dropdownAvatarFallback: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(128,128,128,0.25)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  dropdownAvatarText: { fontSize: 22, color: COLORS.text2, fontWeight: '700' },
-  dropdownName: { fontSize: 16, fontWeight: '700', color: COLORS.text },
-  dropdownAction: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 10, paddingHorizontal: 16,
-    borderRadius: RADIUS.row,
-    backgroundColor: COLORS.surface2,
-    width: '100%',
-  },
-  dropdownActionText: { fontSize: 14, fontWeight: '600', color: COLORS.text },
 });

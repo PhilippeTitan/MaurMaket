@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Animated, Image, PanResponder,
+  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Image, Animated,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice } from '../theme';
@@ -401,15 +402,18 @@ export default function MapScreen() {
     }
   }, [myLocation]);
 
-  // ── Radial menu ──
+  // ── Radial FAB (Gesture Handler + RN Animated) ──
   const RADIAL_RADIUS = 82;
+  const FAB_SIZE = 52;
+  const HIT_RADIUS = 40;
   const isSeller = store.user?.role === 'seller';
-  const radialAnim = useRef(new Animated.Value(0)).current;
-  const [radialOpen, setRadialOpen] = useState(false);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const btnLayoutRef = useRef({ x: 0, y: 0, width: 44, height: 44 });
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const itemScales = useRef<Animated.Value[]>([]);
+
+  const fanProgress = useRef(new Animated.Value(0)).current;
+  const iconScales = useRef(
+    Array.from({ length: 4 }, () => new Animated.Value(0))
+  ).current;
+  const fabRotation = fanProgress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] });
+  const [hoveredIdx, setHoveredIdx] = useState<number>(-1);
 
   const menuItems = useMemo(() => {
     const items = [
@@ -433,109 +437,93 @@ export default function MapScreen() {
     return items;
   }, [isSeller, refreshing, sellerVisible, darkMode, handleFindMe, handleRefreshLocation, handleToggleVisibility, handleToggleDarkMode]);
 
-  if (itemScales.current.length !== menuItems.length) {
-    itemScales.current = menuItems.map(() => new Animated.Value(0));
-  }
-
-  // Refs so PanResponder always reads fresh values (no stale closures)
+  const totalItems = menuItems.length;
   const menuItemsRef = useRef(menuItems);
   menuItemsRef.current = menuItems;
-  const closeRadialRef = useRef<(fireAction: number | null) => void>(() => {});
-  const findHoveredItemRef = useRef<(dx: number, dy: number) => number | null>(() => null);
 
-  // Stable position calculator that doesn't depend on menuItems
-  const getMenuItemPositionForCount = (index: number, total: number) => {
+  const getArcPosition = useCallback((index: number, count: number) => {
     const spread = Math.PI * 0.8;
     const startAngle = Math.PI / 2 + spread / 2;
-    const angle = total > 1 ? startAngle - (spread / (total - 1)) * index : Math.PI / 2;
-    return {
-      x: Math.cos(angle) * RADIAL_RADIUS,
-      y: -Math.sin(angle) * RADIAL_RADIUS,
-    };
-  };
-
-  const getMenuItemPosition = (index: number) => {
-    return getMenuItemPositionForCount(index, menuItems.length);
-  };
-
-  const findHoveredItem = (dx: number, dy: number): number | null => {
-    let closest = -1;
-    let closestDist = Infinity;
-    const HIT_RADIUS = 36;
-    const items = menuItemsRef.current;
-    for (let i = 0; i < items.length; i++) {
-      const pos = getMenuItemPositionForCount(i, items.length);
-      const dist = Math.sqrt((dx - pos.x) ** 2 + (dy - pos.y) ** 2);
-      if (dist < HIT_RADIUS && dist < closestDist) {
-        closest = i;
-        closestDist = dist;
-      }
-    }
-    return closest >= 0 ? closest : null;
-  };
-
-  const openRadial = useCallback(() => {
-    setRadialOpen(true);
-    setHoveredIdx(null);
-    Animated.spring(radialAnim, { toValue: 1, useNativeDriver: false, tension: 120, friction: 14 }).start();
-  }, [radialAnim]);
-
-  const closeRadial = useCallback((fireAction: number | null) => {
-    Animated.spring(radialAnim, { toValue: 0, useNativeDriver: false, tension: 120, friction: 16 }).start(() => {
-      setRadialOpen(false);
-      setHoveredIdx(null);
-    });
-    const items = menuItemsRef.current;
-    if (fireAction !== null && fireAction >= 0 && fireAction < items.length) {
-      items[fireAction].action();
-    }
-  }, [radialAnim]);
-
-  closeRadialRef.current = closeRadial;
-  findHoveredItemRef.current = findHoveredItem;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {},
-      onPanResponderMove: (_evt, gestureState) => {
-        const idx = findHoveredItemRef.current(gestureState.dx, gestureState.dy);
-        setHoveredIdx(prev => {
-          if (prev !== idx) {
-            itemScales.current.forEach((s, i) => {
-              Animated.spring(s, { toValue: i === idx ? 1 : 0, useNativeDriver: false, tension: 200, friction: 12 }).start();
-            });
-          }
-          return idx;
-        });
-      },
-      onPanResponderRelease: (_evt, gestureState) => {
-        const idx = findHoveredItemRef.current(gestureState.dx, gestureState.dy);
-        closeRadialRef.current(idx);
-      },
-      onPanResponderTerminate: () => {
-        closeRadialRef.current(null);
-      },
-    })
-  ).current;
-
-  const handleTriggerPressIn = useCallback(() => {
-    longPressTimer.current = setTimeout(() => {
-      openRadial();
-    }, 350);
-  }, [openRadial]);
-
-  const handleTriggerPressOut = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
+    const angle = count > 1 ? startAngle - (spread / (count - 1)) * index : Math.PI / 2;
+    return { x: Math.cos(angle) * RADIAL_RADIUS, y: -Math.sin(angle) * RADIAL_RADIUS };
   }, []);
 
-  const handleTriggerTap = useCallback(() => {
-    handleFindMe();
-  }, [handleFindMe]);
+  const findNearest = useCallback((dx: number, dy: number): number => {
+    let closest = -1;
+    let closestDist = Infinity;
+    for (let i = 0; i < totalItems; i++) {
+      const pos = getArcPosition(i, totalItems);
+      const dist = Math.sqrt((dx - pos.x) ** 2 + (dy - pos.y) ** 2);
+      if (dist < HIT_RADIUS && dist < closestDist) { closest = i; closestDist = dist; }
+    }
+    return closest;
+  }, [totalItems, getArcPosition]);
+
+  const openFan = useCallback(() => {
+    Animated.spring(fanProgress, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12 }).start();
+    iconScales.forEach((s, i) => {
+      Animated.spring(s, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12 }).start();
+    });
+  }, [fanProgress, iconScales]);
+
+  const closeFan = useCallback(() => {
+    Animated.spring(fanProgress, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
+    iconScales.forEach(s => {
+      Animated.spring(s, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
+    });
+    setHoveredIdx(-1);
+  }, [fanProgress, iconScales]);
+
+  const handleFireAction = useCallback((idx: number) => {
+    const items = menuItemsRef.current;
+    if (idx >= 0 && idx < items.length) items[idx].action();
+  }, []);
+
+  const handlePanMove = useCallback((dx: number, dy: number) => {
+    const idx = findNearest(dx, dy);
+    setHoveredIdx(prev => {
+      if (prev !== idx) {
+        iconScales.forEach((s, i) => {
+          Animated.spring(s, { toValue: i === idx ? 1 : 0, useNativeDriver: false, tension: 250, friction: 12 }).start();
+        });
+      }
+      return idx;
+    });
+  }, [findNearest, iconScales]);
+
+  const handlePanEnd = useCallback((dx: number, dy: number) => {
+    const idx = findNearest(dx, dy);
+    if (idx >= 0) {
+      // Punch confirmation then fire
+      Animated.sequence([
+        Animated.spring(iconScales[idx], { toValue: 1.5, useNativeDriver: false, tension: 300, friction: 8 }),
+        Animated.parallel([
+          Animated.spring(fanProgress, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }),
+          ...iconScales.map(s => Animated.spring(s, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 })),
+        ]),
+      ]).start(() => {
+        setHoveredIdx(-1);
+        handleFireAction(idx);
+      });
+    } else {
+      closeFan();
+    }
+  }, [findNearest, iconScales, fanProgress, closeFan, handleFireAction]);
+
+  const composed = useMemo(() => {
+    const longPress = Gesture.LongPress()
+      .minDuration(350)
+      .onStart(() => { openFan(); });
+
+    const pan = Gesture.Pan()
+      .activeOffsetX([-10, 10])
+      .activeOffsetY([-10, 10])
+      .onUpdate((e) => { handlePanMove(e.translationX, e.translationY); })
+      .onEnd((e) => { handlePanEnd(e.translationX, e.translationY); })
+      .onFinalize(() => { closeFan(); });
+
+    return Gesture.Simultaneous(longPress, pan);
+  }, [openFan, handlePanMove, handlePanEnd, closeFan]);
 
   const sheetOpacity = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
@@ -575,59 +563,48 @@ export default function MapScreen() {
         bounces={false}
       />
 
-      {/* ── Radial menu ── */}
-      {radialOpen && (
-        <View style={[styles.radialContainer, { bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + 16 + 24 }]}
-          {...panResponder.panHandlers}
-        >
+      {/* ── Radial FAB (Gesture Handler + RN Animated) ── */}
+      <GestureDetector gesture={composed}>
+        <View style={[styles.fabAnchor, { bottom: (insets.bottom > 0 ? insets.bottom + 12 : 16) + 56 + insets.bottom + FAB_SIZE / 2 + 8 }]}>
+          {/* Fanned icons */}
           {menuItems.map((item, i) => {
-            const pos = getMenuItemPosition(i);
+            const pos = getArcPosition(i, totalItems);
+            const tx = fanProgress.interpolate({ inputRange: [0, 1], outputRange: [0, pos.x] });
+            const ty = fanProgress.interpolate({ inputRange: [0, 1], outputRange: [0, pos.y] });
             const isHovered = hoveredIdx === i;
             return (
               <Animated.View
                 key={item.label}
                 style={[styles.radialItem, {
-                  transform: [
-                    { translateX: radialAnim.interpolate({ inputRange: [0, 1], outputRange: [0, pos.x] }) },
-                    { translateY: radialAnim.interpolate({ inputRange: [0, 1], outputRange: [0, pos.y] }) },
-                    { scale: radialAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }) },
-                  ],
-                  opacity: radialAnim,
+                  transform: [{ translateX: tx }, { translateY: ty }, { scale: iconScales[i] }],
+                  opacity: fanProgress,
+                  zIndex: isHovered ? 20 : 10,
                 }]}
               >
-                <Animated.View style={[styles.radialItemBtn, isHovered && styles.radialItemBtnActive, {
-                  transform: [{ scale: itemScales.current[i] ? itemScales.current[i].interpolate({ inputRange: [0, 1], outputRange: [1, 1.2] }) : 1 }],
-                  backgroundColor: isHovered ? COLORS.coral : COLORS.surface + 'EE',
-                  borderColor: isHovered ? COLORS.coral : COLORS.border,
+                <View style={[styles.radialItemBtn, {
+                  backgroundColor: isHovered ? item.color + '33' : COLORS.surface + 'EE',
+                  borderColor: isHovered ? item.color : COLORS.border,
                 }]}>
-                  <MaterialCommunityIcons name={item.icon as any} size={20} color={isHovered ? '#fff' : item.color} />
-                </Animated.View>
+                  <MaterialCommunityIcons name={item.icon as any} size={20} color={item.color} />
+                </View>
               </Animated.View>
             );
           })}
-        </View>
-      )}
 
-      {/* Trigger button — bottom center */}
-      <TouchableOpacity
-        onLongPress={handleTriggerPressIn}
-        onPressOut={handleTriggerPressOut}
-        onPress={handleTriggerTap}
-        style={[styles.radialTrigger, { bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + 16 }]}
-        onLayout={(e) => { btnLayoutRef.current = e.nativeEvent.layout; }}
-        accessibilityLabel="map controls"
-        accessibilityRole="button"
-      >
-        <Animated.View style={{ transform: [{ rotate: radialAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] }) }] }}>
-          <View style={styles.triggerDot} />
-        </Animated.View>
-      </TouchableOpacity>
+          {/* FAB trigger */}
+          <Animated.View style={[styles.fab, { width: FAB_SIZE, height: FAB_SIZE, borderRadius: FAB_SIZE / 2 }, {
+            transform: [{ rotate: fabRotation }],
+          }]}>
+            <View style={styles.triggerDot} />
+          </Animated.View>
+        </View>
+      </GestureDetector>
 
       {selectedSeller && (
         <>
           <TouchableOpacity activeOpacity={1} onPress={() => { setSelectedSeller(null); setSheetExpanded(false); }} style={styles.mapOverlay} />
           <Animated.View style={[styles.sheet, {
-          bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + (insets.bottom > 0 ? 8 : 16) + 8,
+          bottom: (insets.bottom > 0 ? insets.bottom + 12 : 16) + 56 + insets.bottom + 8,
           maxHeight: '60%',
           opacity: sheetOpacity,
         }]}>
@@ -709,39 +686,30 @@ const styles = StyleSheet.create({
     elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
   },
 
-  /* Radial menu */
-  radialContainer: {
-    position: 'absolute',
-    left: 0, right: 0,
-    bottom: 56,
-    height: 0,
-    alignItems: 'center',
+  /* Radial FAB */
+  fabAnchor: {
+    position: 'absolute', alignSelf: 'center',
+    width: 0, height: 0, alignItems: 'center', justifyContent: 'center',
   },
-  radialTrigger: {
-    position: 'absolute',
-    alignSelf: 'center',
-    width: 48, height: 48, borderRadius: 24,
+  fab: {
     backgroundColor: COLORS.surface + 'EE', borderWidth: 1, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center',
     elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.35, shadowRadius: 6,
   },
   triggerDot: {
-    width: 12, height: 12, borderRadius: 6,
+    width: 14, height: 14, borderRadius: 7,
     borderWidth: 2, borderColor: COLORS.text,
   },
   radialItem: {
     position: 'absolute',
-    width: 40, height: 40,
+    width: 44, height: 44,
     alignItems: 'center', justifyContent: 'center',
   },
   radialItemBtn: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 44, height: 44, borderRadius: 22,
     borderWidth: 1.5,
     alignItems: 'center', justifyContent: 'center',
     elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
-  },
-  radialItemBtnActive: {
-    borderColor: COLORS.coral,
   },
 
   sheet: {
