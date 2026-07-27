@@ -5,7 +5,7 @@ import { getSellerAvatar, getDisplayName } from '../theme';
 import { getImageUrl } from '../api';
 
 interface UserAvatarProps {
-  seller?: { avatar_url?: string | null; store_logo_url?: string | null; use_store_identity?: boolean; full_name?: string } | null;
+  seller?: { avatar_url?: string | null; store_logo_url?: string | null; use_store_identity?: boolean; full_name?: string; username?: string | null } | null;
   name?: string;
   uri?: string;
   size?: number;

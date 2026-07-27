@@ -187,23 +187,24 @@ export default function InboxScreen() {
     const initial = (seller.full_name || '?')[0];
     const avatarUrl = getImageUrl(seller.avatar_url);
     const hasActivity = seller.has_unread_activity;
+    const displayName = seller.store_name || (seller.username ? `@${seller.username}` : seller.full_name?.split(' ')[0]);
     const handlePress = async () => {
       try {
         const existing = conversations.find(c => c.seller_id === seller.seller_id || c.buyer_id === seller.seller_id);
         if (existing) {
-          nav.navigate('Chat', { conversationId: existing.id, otherUserName: seller.full_name, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url });
+          nav.navigate('Chat', { conversationId: existing.id, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url });
           return;
         }
         const res = await createConversation({ sellerId: seller.seller_id }) as { conversationId: string };
         if (res.conversationId) {
-          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: seller.full_name, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url });
+          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url });
         }
       } catch {
         toast.error('Could not start a conversation', 'Please check your connection and try again.', handlePress);
       }
     };
     return (
-      <TouchableOpacity style={styles.sellerBubble} onPress={handlePress} accessibilityLabel={`message ${seller.full_name}`} accessibilityRole="button">
+      <TouchableOpacity style={styles.sellerBubble} onPress={handlePress} accessibilityLabel={`message ${displayName}`} accessibilityRole="button">
         <View style={[styles.sellerBubbleRing, { borderColor: hasActivity ? COLORS.coral : COLORS.border }]}>
           <View style={[styles.sellerBubbleAvatar, { backgroundColor: COLORS.coral }]}>
             {avatarUrl ? (
@@ -214,7 +215,7 @@ export default function InboxScreen() {
           </View>
         </View>
         <Text style={styles.sellerBubbleName} numberOfLines={1}>
-          {seller.store_name || seller.full_name?.split(' ')[0]}
+          {displayName}
         </Text>
       </TouchableOpacity>
     );

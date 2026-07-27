@@ -20,6 +20,8 @@ export interface User {
   location_city: string | null;
   location_lat: number | null;
   location_lng: number | null;
+  username: string | null;
+  show_real_name: boolean;
 }
 
 export interface ProductImage {
@@ -199,6 +201,9 @@ export interface SellerProfile {
   sales_count: number;
   avg_rating: number;
   review_count: number;
+  username: string | null;
+  show_real_name: boolean;
+  location_city: string | null;
 }
 
 export interface PromoCode {

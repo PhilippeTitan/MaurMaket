@@ -272,6 +272,8 @@ async function runMigrations() {
         id_submitted_at TIMESTAMP,
         id_verified_at TIMESTAMP,
         use_store_identity BOOLEAN DEFAULT false,
+        username VARCHAR(30) UNIQUE,
+        show_real_name BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -656,6 +658,35 @@ async function runMigrations() {
     `);
     // Push token
     await c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;`);
+    // Username system
+    await c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(30);`);
+    await c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS show_real_name BOOLEAN DEFAULT false;`);
+    // Backfill usernames for existing users
+    try {
+      const unamed = await c.query(`SELECT id, full_name FROM users WHERE username IS NULL`);
+      if (unamed.rows.length > 0) {
+        console.log(`[MIGRATION] Backfilling usernames for ${unamed.rows.length} users...`);
+        let filled = 0;
+        for (const row of unamed.rows) {
+          try {
+            const username = await generateUsername(row.full_name, c);
+            await c.query(`UPDATE users SET username = $1 WHERE id = $2`, [username, row.id]);
+            filled++;
+          } catch (e) {
+            console.error(`[MIGRATION] Failed to assign username to user ${row.id}:`, e.message);
+          }
+        }
+        console.log(`[MIGRATION] Backfilled ${filled}/${unamed.rows.length} usernames`);
+      }
+    } catch (e) {
+      console.error('[MIGRATION] Username backfill error:', e.message);
+    }
+    // Add unique constraint after backfill (skip if already exists)
+    try {
+      await c.query(`ALTER TABLE users ADD CONSTRAINT users_username_unique UNIQUE (username);`);
+    } catch (e) {
+      if (e.code !== '42710') console.error('[MIGRATION] UNIQUE constraint error:', e.message); // 42710 = duplicate object
+    }
     // Message media columns
     await c.query(`
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type VARCHAR(20) DEFAULT 'text';
@@ -780,6 +811,21 @@ async function logOrderEvent(orderId, eventType, actorId, oldValue, newValue, no
   }
 }
 
+// Username generation helper
+async function generateUsername(fullName, db) {
+  const exec = db || pool;
+  const base = (fullName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(\d)/, '_$1').slice(0, 20) || 'user';
+  let username = base + '_' + Math.floor(1000 + Math.random() * 9000);
+  let attempts = 0;
+  while (attempts < 20) {
+    const existing = await exec.query(`SELECT 1 FROM users WHERE username = $1`, [username]);
+    if (existing.rows.length === 0) return username;
+    username = base + '_' + Math.floor(1000 + Math.random() * 9000);
+    attempts++;
+  }
+  return username;
+}
+
 // Notification helper
 async function createNotification(userId, type, title, body, data, db) {
   const exec = db || pool;
@@ -898,11 +944,12 @@ app.post('/api/auth/signup', async (req, res) => {
   try {
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
+    const username = await generateUsername(fullName);
     const result = await pool.query(
-      `INSERT INTO users (full_name, email, password_hash, phone, role)
-       VALUES ($1, $2, $3, $4, 'buyer')
-       RETURNING id, full_name, email, phone, role, avatar_url, created_at`,
-      [fullName, email, passwordHash, cleanPhone]
+      `INSERT INTO users (full_name, email, password_hash, phone, role, username)
+       VALUES ($1, $2, $3, $4, 'buyer', $5)
+       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at`,
+      [fullName, email, passwordHash, cleanPhone, username]
     );
     const user = result.rows[0];
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
@@ -923,7 +970,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, password_hash FROM users WHERE email = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, username, show_real_name, password_hash FROM users WHERE email = $1`,
       [email]
     );
     if (result.rows.length === 0) {
@@ -979,7 +1026,7 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
 });
 
 app.put('/api/auth/profile', authRequired, async (req, res) => {
-  let { fullName, email, phone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng } = req.body;
+  let { fullName, email, phone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng, showRealName, useStoreIdentity } = req.body;
   if (phone) phone = phone.replace(/^\+?509/, '').replace(/^\+/, '');
   if (fullName && fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
   if (bio && bio.length > 500) return res.status(400).json({ error: 'Bio too long (max 500 characters)' });
@@ -997,17 +1044,41 @@ app.put('/api/auth/profile', authRequired, async (req, res) => {
         location_city = COALESCE($8, location_city),
         location_lat = COALESCE($9, location_lat),
         location_lng = COALESCE($10, location_lng),
+        show_real_name = COALESCE($11, show_real_name),
+        use_store_identity = COALESCE($12, use_store_identity),
         email_verified = CASE WHEN $2 IS NOT NULL AND $2 != email THEN false ELSE email_verified END,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $6
        RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,
-                 location_address, location_city, location_lat, location_lng`,
-      [fullName, email || null, phone, bio, avatarUrl, req.user.id, locationAddress || null, locationCity || null, locationLat || null, locationLng || null]
+                 location_address, location_city, location_lat, location_lng, username, show_real_name`,
+      [fullName, email || null, phone, bio, avatarUrl, req.user.id, locationAddress || null, locationCity || null, locationLat || null, locationLng || null,
+       showRealName !== undefined ? showRealName : null, useStoreIdentity !== undefined ? useStoreIdentity : null]
     );
     res.json({ user: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Email already in use' });
     console.error('Profile update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/auth/username', authRequired, async (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ error: 'Username required' });
+  const clean = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (clean.length < 3 || clean.length > 30) return res.status(400).json({ error: 'Username must be 3-30 characters (letters, numbers, underscore)' });
+  if (/^[0-9]/.test(clean)) return res.status(400).json({ error: 'Username cannot start with a number' });
+  try {
+    const existing = await pool.query('SELECT 1 FROM users WHERE username = $1 AND id != $2', [clean, req.user.id]);
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'Username already taken' });
+    const result = await pool.query(
+      `UPDATE users SET username = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username`,
+      [clean, req.user.id]
+    );
+    res.json({ user: result.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Username already taken' });
+    console.error('Username update error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1246,7 +1317,7 @@ app.post('/api/auth/verify/check', authRequired, async (req, res) => {
     if (user.email_verified) {
       // Already verified — still return user so frontend can sync store
       const updated = await pool.query(
-        `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name FROM users WHERE id = $1`,
         [req.user.id]
       );
       return res.json({ success: true, alreadyVerified: true, user: updated.rows[0] });
@@ -1475,7 +1546,7 @@ app.put('/api/auth/upgrade-tier', authRequired, sellerRequired, async (req, res)
     const result = await pool.query(
       `UPDATE users SET ${updates.join(', ')}
        WHERE id = $1
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng`,
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng, username, show_real_name`,
       values
     );
 
@@ -1515,7 +1586,7 @@ app.put('/api/auth/seller-profile', authRequired, sellerRequired, async (req, re
     values.push(req.user.id);
     const result = await pool.query(
       `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${idx}
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng`,
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng, username, show_real_name`,
       values
     );
     res.json({ user: result.rows[0] });
@@ -1665,7 +1736,7 @@ app.get('/api/reviews/seller/:sellerId', async (req, res) => {
     const limit = Math.min(50, parseInt(req.query.limit) || 50);
     const offset = (page - 1) * limit;
     const result = await pool.query(
-      `SELECT r.*, u.full_name AS reviewer_name, u.avatar_url AS reviewer_avatar
+      `SELECT r.*, u.full_name AS reviewer_name, u.avatar_url AS reviewer_avatar, u.username AS reviewer_username
        FROM reviews r JOIN users u ON r.reviewer_id = u.id
        WHERE r.seller_id = $1
        ORDER BY r.created_at DESC
@@ -1686,7 +1757,7 @@ app.get('/api/reviews/seller/:sellerId', async (req, res) => {
 app.get('/api/reviews/product/:productId', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT r.*, u.full_name AS reviewer_name
+      `SELECT r.*, u.full_name AS reviewer_name, u.username AS reviewer_username
        FROM reviews r
        JOIN order_items oi ON r.order_id = oi.order_id
        JOIN users u ON r.reviewer_id = u.id
@@ -1870,7 +1941,7 @@ app.get('/api/sellers/nearby', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT u.id, u.full_name, u.avatar_url, u.store_name, u.store_logo_url,
-              u.seller_tier, u.id_verified, u.use_store_identity,
+              u.seller_tier, u.id_verified, u.use_store_identity, u.username,
               sl.lat, sl.lng,
               (6371 * acos(LEAST(1, GREATEST(-1,
                 cos(radians($1)) * cos(radians(sl.lat)) *
@@ -1935,7 +2006,8 @@ app.get('/api/sellers/:id', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT u.id, u.full_name, u.avatar_url, u.bio, u.created_at, u.store_name, u.store_logo_url,
-              u.seller_tier, u.id_verified, u.id_verification_result, u.use_store_identity,
+              u.seller_tier, u.id_verified, u.id_verification_result, u.use_store_identity, u.username, u.show_real_name,
+              u.location_city,
               (SELECT COUNT(*) FROM products p WHERE p.seller_id = u.id AND p.is_available = true) AS product_count,
               (SELECT COALESCE(AVG(r.rating)::numeric(3,2), 0) FROM reviews r WHERE r.seller_id = u.id) AS avg_rating,
               (SELECT COUNT(*) FROM reviews r2 WHERE r2.seller_id = u.id) AS review_count,

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Animated, Image,
+  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Animated, Image, PanResponder,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -32,6 +32,7 @@ interface NearbySeller {
   store_logo_url: string | null;
   seller_tier: string;
   use_store_identity: boolean;
+  username: string | null;
   lat: number;
   lng: number;
   distance_km: number;
@@ -182,7 +183,7 @@ export default function MapScreen() {
       const raw = s.use_store_identity ? s.store_logo_url : s.avatar_url;
       return {
         id: s.id, lat: s.lat, lng: s.lng, tier: s.seller_tier,
-        name: s.use_store_identity ? s.store_name : s.full_name,
+        name: s.use_store_identity ? s.store_name : (s.username ? `@${s.username}` : s.full_name),
         avatar: raw ? getImageUrl(raw) : null,
       };
     });
@@ -400,6 +401,142 @@ export default function MapScreen() {
     }
   }, [myLocation]);
 
+  // ── Radial menu ──
+  const RADIAL_RADIUS = 82;
+  const isSeller = store.user?.role === 'seller';
+  const radialAnim = useRef(new Animated.Value(0)).current;
+  const [radialOpen, setRadialOpen] = useState(false);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const btnLayoutRef = useRef({ x: 0, y: 0, width: 44, height: 44 });
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const itemScales = useRef<Animated.Value[]>([]);
+
+  const menuItems = useMemo(() => {
+    const items = [
+      { icon: 'crosshairs-gps', color: COLORS.blue, action: handleFindMe, label: 'Find me' },
+      { icon: refreshing ? 'loading' : 'refresh', color: COLORS.text, action: handleRefreshLocation, label: 'Refresh' },
+    ];
+    if (isSeller) {
+      items.push({
+        icon: sellerVisible ? 'eye' : 'eye-off',
+        color: sellerVisible ? COLORS.green : COLORS.coral,
+        action: handleToggleVisibility,
+        label: 'Visibility',
+      });
+    }
+    items.push({
+      icon: darkMode ? 'weather-sunny' : 'weather-night',
+      color: COLORS.yellow,
+      action: handleToggleDarkMode,
+      label: 'Theme',
+    });
+    return items;
+  }, [isSeller, refreshing, sellerVisible, darkMode, handleFindMe, handleRefreshLocation, handleToggleVisibility, handleToggleDarkMode]);
+
+  if (itemScales.current.length !== menuItems.length) {
+    itemScales.current = menuItems.map(() => new Animated.Value(0));
+  }
+
+  // Refs so PanResponder always reads fresh values (no stale closures)
+  const menuItemsRef = useRef(menuItems);
+  menuItemsRef.current = menuItems;
+  const closeRadialRef = useRef<(fireAction: number | null) => void>(() => {});
+  const findHoveredItemRef = useRef<(dx: number, dy: number) => number | null>(() => null);
+
+  // Stable position calculator that doesn't depend on menuItems
+  const getMenuItemPositionForCount = (index: number, total: number) => {
+    const spread = Math.PI * 0.8;
+    const startAngle = Math.PI / 2 + spread / 2;
+    const angle = total > 1 ? startAngle - (spread / (total - 1)) * index : Math.PI / 2;
+    return {
+      x: Math.cos(angle) * RADIAL_RADIUS,
+      y: -Math.sin(angle) * RADIAL_RADIUS,
+    };
+  };
+
+  const getMenuItemPosition = (index: number) => {
+    return getMenuItemPositionForCount(index, menuItems.length);
+  };
+
+  const findHoveredItem = (dx: number, dy: number): number | null => {
+    let closest = -1;
+    let closestDist = Infinity;
+    const HIT_RADIUS = 36;
+    const items = menuItemsRef.current;
+    for (let i = 0; i < items.length; i++) {
+      const pos = getMenuItemPositionForCount(i, items.length);
+      const dist = Math.sqrt((dx - pos.x) ** 2 + (dy - pos.y) ** 2);
+      if (dist < HIT_RADIUS && dist < closestDist) {
+        closest = i;
+        closestDist = dist;
+      }
+    }
+    return closest >= 0 ? closest : null;
+  };
+
+  const openRadial = useCallback(() => {
+    setRadialOpen(true);
+    setHoveredIdx(null);
+    Animated.spring(radialAnim, { toValue: 1, useNativeDriver: false, tension: 120, friction: 14 }).start();
+  }, [radialAnim]);
+
+  const closeRadial = useCallback((fireAction: number | null) => {
+    Animated.spring(radialAnim, { toValue: 0, useNativeDriver: false, tension: 120, friction: 16 }).start(() => {
+      setRadialOpen(false);
+      setHoveredIdx(null);
+    });
+    const items = menuItemsRef.current;
+    if (fireAction !== null && fireAction >= 0 && fireAction < items.length) {
+      items[fireAction].action();
+    }
+  }, [radialAnim]);
+
+  closeRadialRef.current = closeRadial;
+  findHoveredItemRef.current = findHoveredItem;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {},
+      onPanResponderMove: (_evt, gestureState) => {
+        const idx = findHoveredItemRef.current(gestureState.dx, gestureState.dy);
+        setHoveredIdx(prev => {
+          if (prev !== idx) {
+            itemScales.current.forEach((s, i) => {
+              Animated.spring(s, { toValue: i === idx ? 1 : 0, useNativeDriver: false, tension: 200, friction: 12 }).start();
+            });
+          }
+          return idx;
+        });
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        const idx = findHoveredItemRef.current(gestureState.dx, gestureState.dy);
+        closeRadialRef.current(idx);
+      },
+      onPanResponderTerminate: () => {
+        closeRadialRef.current(null);
+      },
+    })
+  ).current;
+
+  const handleTriggerPressIn = useCallback(() => {
+    longPressTimer.current = setTimeout(() => {
+      openRadial();
+    }, 350);
+  }, [openRadial]);
+
+  const handleTriggerPressOut = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const handleTriggerTap = useCallback(() => {
+    handleFindMe();
+  }, [handleFindMe]);
+
   const sheetOpacity = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
   const toggleSheet = () => {
@@ -438,60 +575,52 @@ export default function MapScreen() {
         bounces={false}
       />
 
-      <TouchableOpacity
-        onPress={handleRefreshLocation}
-        disabled={refreshing}
-        style={[styles.refreshBtn, { top: insets.top + SPACING.md, left: SPACING.md, right: 'auto' }]}
-        accessibilityLabel="refresh sellers"
-        accessibilityRole="button"
-      >
-        <MaterialCommunityIcons
-          name={refreshing ? 'loading' : 'refresh'}
-          size={22}
-          color={COLORS.text}
-        />
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        onPress={handleToggleDarkMode}
-        style={[styles.refreshBtn, { top: insets.top + SPACING.md + 56, left: SPACING.md, right: 'auto' }]}
-        accessibilityLabel={darkMode ? 'light mode' : 'dark mode'}
-        accessibilityRole="button"
-      >
-        <MaterialCommunityIcons
-          name={darkMode ? 'weather-sunny' : 'weather-night'}
-          size={22}
-          color={darkMode ? COLORS.yellow : COLORS.text}
-        />
-      </TouchableOpacity>
-
-      {store.user?.role === 'seller' && (
-        <TouchableOpacity
-          onPress={handleToggleVisibility}
-          disabled={visibilityLoading}
-          style={[styles.refreshBtn, { top: insets.top + SPACING.md, right: SPACING.md }]}
-          accessibilityLabel={sellerVisible ? t('map.sellerHidden') : t('map.sellerVisible')}
-          accessibilityRole="button"
+      {/* ── Radial menu ── */}
+      {radialOpen && (
+        <View style={[styles.radialContainer, { bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + 16 + 24 }]}
+          {...panResponder.panHandlers}
         >
-          <MaterialCommunityIcons
-            name={visibilityLoading ? 'loading' : sellerVisible ? 'eye' : 'eye-off'}
-            size={22}
-            color={sellerVisible ? COLORS.green : COLORS.coral}
-          />
-        </TouchableOpacity>
+          {menuItems.map((item, i) => {
+            const pos = getMenuItemPosition(i);
+            const isHovered = hoveredIdx === i;
+            return (
+              <Animated.View
+                key={item.label}
+                style={[styles.radialItem, {
+                  transform: [
+                    { translateX: radialAnim.interpolate({ inputRange: [0, 1], outputRange: [0, pos.x] }) },
+                    { translateY: radialAnim.interpolate({ inputRange: [0, 1], outputRange: [0, pos.y] }) },
+                    { scale: radialAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }) },
+                  ],
+                  opacity: radialAnim,
+                }]}
+              >
+                <Animated.View style={[styles.radialItemBtn, isHovered && styles.radialItemBtnActive, {
+                  transform: [{ scale: itemScales.current[i] ? itemScales.current[i].interpolate({ inputRange: [0, 1], outputRange: [1, 1.2] }) : 1 }],
+                  backgroundColor: isHovered ? COLORS.coral : COLORS.surface + 'EE',
+                  borderColor: isHovered ? COLORS.coral : COLORS.border,
+                }]}>
+                  <MaterialCommunityIcons name={item.icon as any} size={20} color={isHovered ? '#fff' : item.color} />
+                </Animated.View>
+              </Animated.View>
+            );
+          })}
+        </View>
       )}
 
+      {/* Trigger button — bottom center */}
       <TouchableOpacity
-        onPress={handleFindMe}
-        style={[styles.refreshBtn, { bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + 16, right: SPACING.md, top: 'auto' }]}
-        accessibilityLabel="center on my location"
+        onLongPress={handleTriggerPressIn}
+        onPressOut={handleTriggerPressOut}
+        onPress={handleTriggerTap}
+        style={[styles.radialTrigger, { bottom: 56 + (insets.bottom > 0 ? insets.bottom : 0) + 16 }]}
+        onLayout={(e) => { btnLayoutRef.current = e.nativeEvent.layout; }}
+        accessibilityLabel="map controls"
         accessibilityRole="button"
       >
-        <MaterialCommunityIcons
-          name="crosshairs-gps"
-          size={22}
-          color={COLORS.blue}
-        />
+        <Animated.View style={{ transform: [{ rotate: radialAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] }) }] }}>
+          <View style={styles.triggerDot} />
+        </Animated.View>
       </TouchableOpacity>
 
       {selectedSeller && (
@@ -575,11 +704,44 @@ const styles = StyleSheet.create({
   refreshBtn: {
     position: 'absolute', right: SPACING.md,
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: COLORS.surface || '#161B22',
-    borderWidth: 1, borderColor: COLORS.border || '#30363D',
+    backgroundColor: COLORS.surface + 'DD', borderWidth: 1, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center',
-    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25, shadowRadius: 4,
+    elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
+  },
+
+  /* Radial menu */
+  radialContainer: {
+    position: 'absolute',
+    left: 0, right: 0,
+    bottom: 56,
+    height: 0,
+    alignItems: 'center',
+  },
+  radialTrigger: {
+    position: 'absolute',
+    alignSelf: 'center',
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: COLORS.surface + 'EE', borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.35, shadowRadius: 6,
+  },
+  triggerDot: {
+    width: 12, height: 12, borderRadius: 6,
+    borderWidth: 2, borderColor: COLORS.text,
+  },
+  radialItem: {
+    position: 'absolute',
+    width: 40, height: 40,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  radialItemBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
+    elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
+  },
+  radialItemBtnActive: {
+    borderColor: COLORS.coral,
   },
 
   sheet: {

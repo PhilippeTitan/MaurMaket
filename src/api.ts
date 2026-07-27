@@ -30,13 +30,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.218.56.105:3001/api'
+    ? 'http://10.172.46.105:3001/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.218.56.105:3001'
+    ? 'http://10.172.46.105:3001'
     : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(
@@ -133,6 +133,8 @@ const normalizeProduct = (product: Product & Record<string, unknown>): Product =
       location_city: null,
       location_lat: null,
       location_lng: null,
+      username: (withImages as any).seller_username || null,
+      show_real_name: false,
     },
   };
 };
@@ -184,6 +186,9 @@ export const becomeSeller = (data?: { storeName?: string; storeLogoUrl?: string;
 
 export const updateSellerProfile = (data: Record<string, string | boolean>) =>
   request('/auth/seller-profile', { method: 'PUT', body: JSON.stringify(data) });
+
+export const updateUsername = (username: string) =>
+  request('/auth/username', { method: 'PUT', body: JSON.stringify({ username }) });
 
 export const getVerificationStatus = () => request('/verification/status');
 

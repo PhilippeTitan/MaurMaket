@@ -84,7 +84,14 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
 
         try {
           const prodRevRes = await getProductReviews(productId) as { reviews?: Review[] };
-          setProductReviews(prodRevRes.reviews || []);
+          setProductReviews((prodRevRes.reviews || []).map((r: any) => ({
+            ...r,
+            reviewer: r.reviewer || {
+              full_name: r.reviewer_name,
+              avatar_url: r.reviewer_avatar,
+              username: r.reviewer_username,
+            },
+          })));
         } catch { /* silent */ }
 
         setLoadingRelated(true);
@@ -361,7 +368,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                       </Text>
                     </View>
                     <View>
-                      <Text style={styles.reviewerName}>{review.reviewer?.full_name || 'Anonymous'}</Text>
+                      <Text style={styles.reviewerName}>{review.reviewer?.username ? `@${review.reviewer.username}` : (review.reviewer?.full_name || 'Anonymous')}</Text>
                       <Text style={styles.reviewDate}>{new Date(review.created_at).toLocaleDateString()}</Text>
                     </View>
                   </View>

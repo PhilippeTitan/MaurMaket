@@ -261,6 +261,42 @@ export default function SettingsScreen({ navigation }: Props) {
         <SettingRow icon="phone-outline" label={t('settings.phone')} value={user?.phone ? `+509 ${user.phone}` : ''} onPress={() => goEdit('phone', t('settings.phone'))} />
         <SettingRow icon="text-short" label={t('settings.bio')} value={user?.bio || t('settings.bio')} onPress={() => goEdit('bio', t('settings.bio'))} />
         <SettingRow icon="lock-outline" label={t('settings.changePassword')} value="••••••••" onPress={() => goEdit('password', t('settings.changePassword'))} />
+        {user?.username && (
+          <View style={styles.toggleRow}>
+            <Icon name="account-outline" size={18} color={COLORS.text2} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>Username</Text>
+              <Text style={{ fontSize: 11, color: COLORS.text2 }}>@{user.username}</Text>
+            </View>
+          </View>
+        )}
+        <View style={styles.divider} />
+        <View style={styles.toggleRow}>
+          <Icon name="account-outline" size={18} color={COLORS.text2} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowLabel}>Show my real name</Text>
+            <Text style={{ fontSize: 11, color: COLORS.text2, lineHeight: 15 }}>
+              Your username is always public. Turning this on shows your real name on your profile.
+            </Text>
+          </View>
+          <View style={styles.rowRight}>
+            <TouchableOpacity
+              style={[styles.toggle, user?.show_real_name && styles.toggleActive]}
+              onPress={() => {
+                const newVal = !user?.show_real_name;
+                updateProfile({ showRealName: String(newVal) }).then(() => {
+                  store.setUser({ ...store.user!, show_real_name: newVal } as any, store.token!);
+                });
+              }}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="toggle show real name"
+              accessibilityState={{ checked: user?.show_real_name }}
+            >
+              <View style={[styles.toggleKnob, user?.show_real_name && styles.toggleKnobActive]} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
       {/* ── Seller section ── */}

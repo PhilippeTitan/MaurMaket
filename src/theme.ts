@@ -68,10 +68,10 @@ export function isVerifiedSeller(stats: { avg_rating?: number; review_count?: nu
   );
 }
 
-export function getDisplayName(seller: { full_name?: string; store_name?: string | null; use_store_identity?: boolean } | null | undefined): string {
+export function getDisplayName(seller: { full_name?: string; store_name?: string | null; use_store_identity?: boolean; username?: string | null } | null | undefined): string {
   if (!seller) return 'Seller';
   if (seller.use_store_identity && seller.store_name) return seller.store_name;
-  return seller.full_name || 'Seller';
+  return seller.username ? `@${seller.username}` : (seller.full_name || 'Seller');
 }
 
 export function getSellerAvatar(seller: { avatar_url?: string | null; store_logo_url?: string | null; use_store_identity?: boolean } | null | undefined): string | null {

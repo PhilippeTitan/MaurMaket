@@ -226,7 +226,14 @@ export default function FeedScreen() {
     setCommentsLoading(true);
     try {
       const res = await getProductReviews(product.id) as { reviews: Review[] };
-      setComments(res.reviews || []);
+      setComments((res.reviews || []).map((r: any) => ({
+        ...r,
+        reviewer: r.reviewer || {
+          full_name: r.reviewer_name,
+          avatar_url: r.reviewer_avatar,
+          username: r.reviewer_username,
+        },
+      })));
     } catch {
       setComments([]);
     }
@@ -569,7 +576,7 @@ export default function FeedScreen() {
                       <UserAvatar name={item.reviewer?.full_name || 'B'} />
                     <View style={styles.commentBody}>
                       <View style={styles.commentNameRow}>
-                        <Text style={styles.commentName}>{item.reviewer?.full_name || 'Buyer'}</Text>
+                        <Text style={styles.commentName}>{item.reviewer?.username ? `@${item.reviewer.username}` : (item.reviewer?.full_name || 'Buyer')}</Text>
                         <View style={styles.commentStars}>
                           <Icon name="rating" size={11} color={COLORS.yellow} />
                           <Text style={styles.commentRating}>{item.rating}</Text>

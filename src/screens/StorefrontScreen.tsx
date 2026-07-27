@@ -76,7 +76,14 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       ]);
       const seller = sellerRes.seller;
       const products = prodRes.products || [];
-      const reviews = revRes.reviews || [];
+      const reviews = (revRes.reviews || []).map((r: any) => ({
+        ...r,
+        reviewer: r.reviewer || {
+          full_name: r.reviewer_name,
+          avatar_url: r.reviewer_avatar,
+          username: r.reviewer_username,
+        },
+      }));
       const followIds = (followingRes.following || []).map(f => f.seller_id || f.id).filter(Boolean);
       const isFollowing = followIds.includes(sellerId);
       setSeller(seller);
@@ -158,8 +165,11 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 
   const tier = seller?.seller_tier || 'casual';
   const tierColor = TIER_COLORS[tier] || COLORS.yellow;
-  const initials = getDisplayName(seller).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
+  const isBusinessMode = tier === 'business' && seller?.use_store_identity;
+  const displayName = isBusinessMode ? seller?.store_name || getDisplayName(seller) : getDisplayName(seller);
+  const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
   const avatarUrl = getImageUrl(getSellerAvatar(seller));
+  const locationCity = (seller as any)?.location_city || '';
 
   const renderGridItem = ({ item }: { item: Product }) => {
     const imgFailed = failedImages.has(item.id);
@@ -268,21 +278,23 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                   <Icon name="back" size={22} color={COLORS.text} />
                 </TouchableOpacity>
                 <View style={styles.topBarNameWrap}>
-                  <Text style={styles.topBarName} numberOfLines={1}>{getDisplayName(seller)}</Text>
-                  {(seller?.seller_tier === 'verified' || seller?.seller_tier === 'business') && (
-                    <Icon name="verified" size={16} color={COLORS.blue} />
+                  <Text style={styles.topBarName} numberOfLines={1}>{displayName}</Text>
+                  {(tier === 'verified' || tier === 'business') && (
+                    <Icon name="verified" size={15} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
                   )}
                 </View>
               </View>
 
-              {/* Avatar + Stats row */}
+              {/* Avatar with TierRing + Stats row */}
               <View style={styles.avatarRow}>
-                <View style={styles.avatar}>
-                  {avatarUrl ? (
-                    <Image source={{ uri: avatarUrl }} style={styles.avatarImg} accessibilityLabel="seller avatar" />
-                  ) : (
-                    <Text style={styles.avatarText}>{initials}</Text>
-                  )}
+                <View style={[styles.tierRing, { borderColor: tierColor, borderWidth: tierColor === 'transparent' ? 0 : 3 }]}>
+                  <View style={[styles.avatar, { borderRadius: isBusinessMode ? 22 : 40 }]}>
+                    {avatarUrl ? (
+                      <Image source={{ uri: avatarUrl }} style={[styles.avatarImg, { borderRadius: isBusinessMode ? 20 : 40 }]} accessibilityLabel="seller avatar" />
+                    ) : (
+                      <Text style={styles.avatarText}>{initials}</Text>
+                    )}
+                  </View>
                 </View>
                 <View style={styles.statsRow}>
                   <View style={styles.stat}>
@@ -300,23 +312,47 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 </View>
               </View>
 
-              {/* Bio + tier badges */}
-              <View style={styles.nameBioBlock}>
-                <View style={styles.nameRow}>
-                  {tier === 'verified' && (
-                    <View style={styles.tierBadge}>
-                      <Text style={styles.tierBadgeText}>Verified</Text>
-                    </View>
-                  )}
-                  {tier === 'business' && (
-                    <View style={[styles.tierBadge, { backgroundColor: COLORS.coral + '20' }]}>
-                      <Text style={[styles.tierBadgeText, { color: COLORS.coral }]}>Business</Text>
-                    </View>
-                  )}
+              {/* Trust-preserving line for business mode */}
+              {isBusinessMode && seller?.username && (
+                <View style={styles.trustLine}>
+                  <Icon name="verified" size={12} color={COLORS.green} />
+                  <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: '700' }}>@{seller.username}</Text> · Verified identity on file</Text>
                 </View>
+              )}
+
+              {/* Trust chips */}
+              <View style={styles.trustChipsRow}>
+                {tier === 'verified' && (
+                  <View style={[styles.trustChip, { backgroundColor: COLORS.blue + '18', borderColor: COLORS.blue + '40' }]}>
+                    <Icon name="verified" size={12} color={COLORS.blue} />
+                    <Text style={[styles.trustChipText, { color: COLORS.blue }]}>Verified Seller</Text>
+                  </View>
+                )}
+                {tier === 'business' && (
+                  <View style={[styles.trustChip, { backgroundColor: COLORS.coral + '18', borderColor: COLORS.coral + '40' }]}>
+                    <Icon name="verified" size={12} color={COLORS.coral} />
+                    <Text style={[styles.trustChipText, { color: COLORS.coral }]}>Business</Text>
+                  </View>
+                )}
+                {locationCity ? (
+                  <View style={[styles.trustChip, { backgroundColor: COLORS.green + '18', borderColor: COLORS.green + '40' }]}>
+                    <MaterialCommunityIcons name="map-marker-outline" size={12} color={COLORS.green} />
+                    <Text style={[styles.trustChipText, { color: COLORS.green }]}>{locationCity}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Bio + member since + optional real name reveal */}
+              <View style={styles.nameBioBlock}>
                 {seller?.bio ? (
                   <Text style={styles.bio} numberOfLines={2}>{seller.bio}</Text>
                 ) : null}
+                {seller?.show_real_name && seller?.full_name && !isBusinessMode && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
+                    <Icon name="verified" size={11} color={COLORS.green} />
+                    <Text style={{ fontSize: 12, color: COLORS.text }}>{seller.full_name}</Text>
+                  </View>
+                )}
                 {memberSince ? <Text style={styles.memberSince}>{t('me.since')} {memberSince}</Text> : null}
               </View>
             </View>
@@ -394,7 +430,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 <Text style={styles.reviewAvatarText}>{(item.reviewer?.full_name || 'A').charAt(0)}</Text>
               </View>
               <View style={styles.reviewInfo}>
-                <Text style={styles.reviewName} numberOfLines={1}>{item.reviewer?.full_name || 'Anonymous'}</Text>
+                <Text style={styles.reviewName} numberOfLines={1}>{item.reviewer?.username ? `@${item.reviewer.username}` : (item.reviewer?.full_name || 'Anonymous')}</Text>
                 <View style={styles.reviewStars}>
                   {[1, 2, 3, 4, 5].map(s => (
                     <Icon key={s} name={s <= item.rating ? 'rating' : 'rate-this'} size={12} color={s <= item.rating ? COLORS.yellow : COLORS.text2} />
@@ -454,17 +490,29 @@ const styles = StyleSheet.create({
   avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 80, height: 80, borderRadius: 40 },
   avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
+  tierRing: { width: 86, height: 86, borderRadius: 43, alignItems: 'center', justifyContent: 'center' },
 
   nameBioBlock: { paddingHorizontal: SPACING.md, marginTop: 10 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   bio: { fontSize: 13, color: COLORS.text2, lineHeight: 18, marginTop: 2 },
   memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.7, marginTop: 2 },
 
-  tierBadge: {
-    backgroundColor: COLORS.green + '20',
-    borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
+  trustLine: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: SPACING.md, paddingTop: 10,
   },
-  tierBadgeText: { fontSize: 10, fontWeight: '700', color: COLORS.green },
+  trustLineText: { fontSize: 11.5, color: COLORS.text2 },
+
+  /* Trust Chips */
+  trustChipsRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+    paddingHorizontal: SPACING.md, paddingTop: 10,
+  },
+  trustChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6,
+    borderWidth: 1,
+  },
+  trustChipText: { fontSize: 12, fontWeight: '700' },
 
   /* Stats */
   statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },

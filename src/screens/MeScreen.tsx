@@ -11,9 +11,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
 import { useUser } from '../hooks';
+import { store } from '../store';
 import {
   getOrders, getSellerOrders, getSellerAnalytics, getWishlist,
-  getSellerProducts, getFollowerCount, getFollowing, getImageUrl, getSellerReviews, getLowStockProducts,
+  getSellerProducts, getFollowerCount, getFollowing, getImageUrl, getSellerReviews, getLowStockProducts, updateSellerProfile,
 } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Order, Review } from '../types';
@@ -74,11 +75,17 @@ export default function MeScreen() {
   const CARD_W = (SCREEN_W - SPACING.md * 2 - 6) / 2;
   const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
 
-  const initials = getDisplayName(user).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
+  const tier = user?.seller_tier || 'casual';
+  const tierColor = tier === 'business' ? COLORS.coral : tier === 'verified' ? COLORS.blue : 'transparent';
+  const isBusinessMode = isSeller && user?.seller_tier === 'business' && user?.use_store_identity;
+  const displayName = isBusinessMode ? (user as any)?.store_name || getDisplayName(user) : getDisplayName(user);
+  const initials = (isBusinessMode ? (user as any)?.store_name || getDisplayName(user) : getDisplayName(user)).split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
   const memberSince = user?.created_at
     ? `${t('me.since')} ${new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
     : '';
+
+  const locationCity = (user as any)?.location_city || '';
 
   const avatarUrl = getImageUrl(user?.avatar_url);
 
@@ -169,7 +176,17 @@ export default function MeScreen() {
       let reviewsList: Review[] = [];
       let lowStock: Product[] = [];
       if (isSeller && user?.id) {
-        try { const rr = await getSellerReviews(user.id) as { reviews: Review[] }; reviewsList = rr?.reviews || []; } catch { /* ignore */ }
+        try {
+          const rr = await getSellerReviews(user.id) as { reviews: Review[] };
+          reviewsList = (rr?.reviews || []).map((r: any) => ({
+            ...r,
+            reviewer: r.reviewer || {
+              full_name: r.reviewer_name,
+              avatar_url: r.reviewer_avatar,
+              username: r.reviewer_username,
+            },
+          }));
+        } catch { /* ignore */ }
         try { const ls = await getLowStockProducts() as { products?: Product[] }; lowStock = ls.products || []; } catch { /* ignore */ }
       }
       cacheData.reviews = reviewsList; cacheData.lowStockProducts = lowStock;
@@ -299,25 +316,28 @@ export default function MeScreen() {
       <View style={[styles.hero, { paddingTop: insets.top }]}>
         {/* Top bar: centered name + settings */}
         <View style={styles.topBar}>
+          <View style={{ width: 30 }} />
           <View style={styles.topBarNameWrap}>
-            <Text style={styles.topBarName} numberOfLines={1}>{getDisplayName(user)}</Text>
-            {isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business') && (
-              <Icon name="verified" size={16} color={COLORS.blue} />
+            <Text style={styles.topBarName} numberOfLines={1}>{displayName}</Text>
+            {(tier === 'verified' || tier === 'business') && (
+              <Icon name="verified" size={15} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
             )}
           </View>
           <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')} accessibilityRole="button" accessibilityLabel="settings">
-            <MaterialCommunityIcons name="cog-outline" size={30} color={COLORS.text} />
+            <MaterialCommunityIcons name="cog-outline" size={22} color={COLORS.text} />
           </TouchableOpacity>
         </View>
 
-        {/* Avatar + Stats row */}
+        {/* Avatar with TierRing + Stats row */}
         <View style={styles.avatarRow}>
-          <View style={styles.avatar}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImg} accessibilityLabel="profile avatar" />
-            ) : (
-              <Text style={styles.avatarText}>{initials}</Text>
-            )}
+          <View style={[styles.tierRing, { borderColor: tierColor, borderWidth: tierColor === 'transparent' ? 0 : 3 }]}>
+            <View style={[styles.avatar, { borderRadius: isBusinessMode ? 22 : 40 }]}>
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={[styles.avatarImg, { borderRadius: isBusinessMode ? 20 : 40 }]} accessibilityLabel="profile avatar" />
+              ) : (
+                <Text style={styles.avatarText}>{initials}</Text>
+              )}
+            </View>
           </View>
           <View style={styles.statsRow}>
             <View style={styles.stat}>
@@ -335,28 +355,105 @@ export default function MeScreen() {
           </View>
         </View>
 
-        {/* Bio + tier badges */}
+        {/* Personal / Business toggle — business-tier sellers only */}
+        {isSeller && user?.seller_tier === 'business' && (
+          <View style={styles.identityToggle}>
+            <TouchableOpacity
+              style={[styles.identityBtn, !user?.use_store_identity && styles.identityBtnActive]}
+              onPress={() => updateSellerProfile({ useStoreIdentity: false }).then(() => store.setUser({ ...store.user!, use_store_identity: false } as any, store.token!))}
+              accessibilityRole="button"
+              accessibilityLabel="personal mode"
+            >
+              <Text style={[styles.identityBtnText, !user?.use_store_identity && styles.identityBtnTextActive]}>Personal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.identityBtn, user?.use_store_identity && styles.identityBtnActive]}
+              onPress={() => updateSellerProfile({ useStoreIdentity: true }).then(() => store.setUser({ ...store.user!, use_store_identity: true } as any, store.token!))}
+              accessibilityRole="button"
+              accessibilityLabel="business mode"
+            >
+              <Text style={[styles.identityBtnText, user?.use_store_identity && styles.identityBtnTextActive]}>Business</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Trust-preserving line for business mode */}
+        {isBusinessMode && user?.username && (
+          <View style={styles.trustLine}>
+            <Icon name="verified" size={12} color={COLORS.green} />
+            <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: '700' }}>@{user.username}</Text> · Verified identity on file</Text>
+          </View>
+        )}
+
+        {/* Trust chips */}
+        {isSeller && (
+          <View style={styles.trustChipsRow}>
+            {tier === 'verified' && (
+              <View style={[styles.trustChip, { backgroundColor: COLORS.blue + '18', borderColor: COLORS.blue + '40' }]}>
+                <Icon name="verified" size={12} color={COLORS.blue} />
+                <Text style={[styles.trustChipText, { color: COLORS.blue }]}>Verified Seller</Text>
+              </View>
+            )}
+            {tier === 'business' && (
+              <View style={[styles.trustChip, { backgroundColor: COLORS.coral + '18', borderColor: COLORS.coral + '40' }]}>
+                <Icon name="verified" size={12} color={COLORS.coral} />
+                <Text style={[styles.trustChipText, { color: COLORS.coral }]}>Business</Text>
+              </View>
+            )}
+            {locationCity ? (
+              <View style={[styles.trustChip, { backgroundColor: COLORS.green + '18', borderColor: COLORS.green + '40' }]}>
+                <MaterialCommunityIcons name="map-marker-outline" size={12} color={COLORS.green} />
+                <Text style={[styles.trustChipText, { color: COLORS.green }]}>{locationCity}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+
+        {/* Bio + member since + optional real-name reveal */}
         <View style={styles.nameBioBlock}>
-          {(isSeller && (user?.seller_tier === 'verified' || user?.seller_tier === 'business')) && (
-            <View style={styles.nameRow}>
-              {isSeller && user?.seller_tier === 'verified' && (
-                <TouchableOpacity onPress={() => nav.navigate('Settings')} style={styles.tierBadge} accessibilityRole="button" accessibilityLabel="go business">
-                  <Text style={styles.tierBadgeText}>Go Business</Text>
-                </TouchableOpacity>
-              )}
-              {isSeller && user?.seller_tier === 'business' && (
-                <TouchableOpacity style={[styles.tierBadge, { backgroundColor: COLORS.coral + '20' }]} accessibilityRole="button" accessibilityLabel="business tier">
-                  <Text style={[styles.tierBadgeText, { color: COLORS.coral }]}>Business</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
           {user?.bio ? (
             <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
           ) : null}
+          {user?.show_real_name && user?.full_name && !isBusinessMode && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
+              <Icon name="verified" size={11} color={COLORS.green} />
+              <Text style={{ fontSize: 12, color: COLORS.text }}>{user.full_name}</Text>
+            </View>
+          )}
           {memberSince ? <Text style={styles.memberSince}>{memberSince}</Text> : null}
         </View>
       </View>
+
+      {/* Store Snapshot — always visible for sellers */}
+      {isSeller && (
+        <View style={styles.snapshotCard}>
+          <View style={styles.snapshotHeader}>
+            <MaterialCommunityIcons name="chart-line" size={14} color={COLORS.blue} />
+            <Text style={styles.snapshotTitle}>Store snapshot</Text>
+          </View>
+          {analyticsData && Number(analyticsData.overview?.total_revenue || 0) > 0 ? (
+            <View style={styles.snapshotGrid}>
+              <View style={styles.snapshotStat}>
+                <Text style={styles.snapshotStatValue}>{formatPrice(Number(analyticsData.overview?.total_revenue || 0))} G</Text>
+                <Text style={styles.snapshotStatLabel}>Revenue</Text>
+              </View>
+              <View style={styles.snapshotStat}>
+                <Text style={styles.snapshotStatValue}>{Number(analyticsData.overview?.total_orders || 0)}</Text>
+                <Text style={styles.snapshotStatLabel}>Orders</Text>
+              </View>
+              <View style={styles.snapshotStat}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Icon name="rating" size={12} color={COLORS.yellow} />
+                  <Text style={styles.snapshotStatValue}>{Number(analyticsData.overview?.avg_rating || 0).toFixed(1)}</Text>
+                </View>
+                <Text style={styles.snapshotStatLabel}>Rating</Text>
+              </View>
+            </View>
+          ) : (
+            <Text style={styles.snapshotEmpty}>No sales yet — this fills in automatically once your first order comes through.</Text>
+          )}
+        </View>
+      )}
 
       {/* Become a Seller CTA for buyers */}
       {!isSeller && (
@@ -375,30 +472,40 @@ export default function MeScreen() {
         </TouchableOpacity>
       )}
 
-      {isSeller && user && (
-        <View style={styles.sellerActions}>
+      {/* Action buttons */}
+      <View style={styles.sellerActions}>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() => nav.navigate('Settings')}
+          accessibilityRole="button"
+          accessibilityLabel="edit profile"
+        >
+          <Icon name="edit" size={16} color={COLORS.text} />
+          <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.editProfile')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() => {}}
+          accessibilityRole="button"
+          accessibilityLabel="share profile"
+        >
+          <MaterialCommunityIcons name="share-variant-outline" size={16} color={COLORS.text} />
+          <Text style={[styles.actionBtnText, { color: COLORS.text }]}>Share</Text>
+        </TouchableOpacity>
+        {isSeller && (
           <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => nav.navigate('Settings')}
-            accessibilityRole="button"
-            accessibilityLabel="edit profile"
-          >
-            <Icon name="edit" size={16} color={COLORS.text} />
-            <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.editProfile')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
+            style={[styles.actionBtn, { backgroundColor: COLORS.coral }]}
             onPress={() => nav.navigate('AddListing')}
             accessibilityRole="button"
             accessibilityLabel="add listing"
           >
-            <Icon name="plus" size={16} color={COLORS.text} />
-            <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.listings')}</Text>
+            <Icon name="plus" size={16} color={COLORS.white} />
+            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>Add Listing</Text>
           </TouchableOpacity>
-        </View>
-      )}
+        )}
+      </View>
 
-      {/* Seller Analytics Dashboard */}
+      {/* Seller Analytics Dashboard — legacy, kept for verified/business with data */}
       {isSeller && analyticsData && user?.seller_tier !== 'casual' && (
         <View style={styles.analyticsCard}>
           <View style={styles.analyticsHeader}>
@@ -624,6 +731,7 @@ const styles = StyleSheet.create({
   avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 80, height: 80, borderRadius: 40 },
   avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
+  tierRing: { width: 86, height: 86, borderRadius: 43, alignItems: 'center', justifyContent: 'center' },
   settingsBtn: { position: 'absolute', right: SPACING.md, top: SPACING.sm - 4, padding: 6 },
   nameBioBlock: { paddingHorizontal: SPACING.md, marginTop: 10 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -720,6 +828,49 @@ const styles = StyleSheet.create({
   },
   sellTitle: { fontSize: 13, fontWeight: '700', color: COLORS.green },
   sellHint: { fontSize: 11, color: COLORS.text2, marginTop: 1 },
+
+  /* Store Snapshot */
+  snapshotCard: {
+    marginHorizontal: SPACING.md, marginTop: SPACING.md, padding: 12,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.card,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  snapshotHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  snapshotTitle: { fontSize: 12.5, fontWeight: '700', color: COLORS.text },
+  snapshotGrid: { flexDirection: 'row', justifyContent: 'space-around' },
+  snapshotStat: { alignItems: 'center', paddingVertical: 8 },
+  snapshotStatValue: { fontSize: 15, fontWeight: '800', color: COLORS.text },
+  snapshotStatLabel: { fontSize: 10.5, color: COLORS.text2, marginTop: 2 },
+  snapshotEmpty: { fontSize: 12.5, color: COLORS.text2, lineHeight: 18 },
+
+  /* Identity Toggle */
+  identityToggle: {
+    flexDirection: 'row', marginHorizontal: SPACING.md, marginTop: SPACING.md,
+    backgroundColor: COLORS.surface2, borderRadius: 999, padding: 3,
+  },
+  identityBtn: { flex: 1, paddingVertical: 7, borderRadius: 999, alignItems: 'center' },
+  identityBtnActive: { backgroundColor: COLORS.coral },
+  identityBtnText: { fontSize: 12.5, fontWeight: '700', color: COLORS.text2 },
+  identityBtnTextActive: { color: '#fff' },
+
+  /* Trust Line */
+  trustLine: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: SPACING.md, paddingTop: 10,
+  },
+  trustLineText: { fontSize: 11.5, color: COLORS.text2 },
+
+  /* Trust Chips */
+  trustChipsRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+    paddingHorizontal: SPACING.md, paddingTop: 10,
+  },
+  trustChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6,
+    borderWidth: 1,
+  },
+  trustChipText: { fontSize: 12, fontWeight: '700' },
 
   /* Tier Badge (inline chip) */
   tierBadge: {
