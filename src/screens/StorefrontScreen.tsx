@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, useWindowDimensions,
 } from 'react-native';
@@ -16,7 +16,6 @@ import type { RootStackParamList } from '../navigation';
 import type { Product, Review, SellerProfile } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
 import { useToast } from '../components/Toast';
-import UserAvatar from '../components/UserAvatar';
 import StockBadge from '../components/StockBadge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
@@ -27,7 +26,7 @@ let _storefrontCache: Record<string, { data: any; timestamp: number }> = {};
 
 const TIER_COLORS: Record<string, string> = {
   casual: COLORS.yellow,
-  verified: COLORS.green,
+  verified: COLORS.blue,
   business: COLORS.coral,
 };
 
@@ -36,8 +35,10 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const { width: SCREEN_W } = useWindowDimensions();
-  const CARD_W = (SCREEN_W - SPACING.md * 2 - 6) / 2;
-  const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
+  const GRID_GAP = 3;
+  const GRID_PAD = 3;
+  const CARD_W = (SCREEN_W - GRID_PAD * 2 - GRID_GAP) / 2;
+  const CARD_H = Math.round(CARD_W * 1.25);
 
   const { sellerId } = route.params;
   const [seller, setSeller] = useState<SellerProfile | null>(null);
@@ -52,6 +53,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const [messageLoading, setMessageLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('listings');
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const listRef = useRef<FlatList>(null);
 
   const isOwnProfile = store.user?.id === sellerId;
 
@@ -171,6 +173,12 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const avatarUrl = getImageUrl(getSellerAvatar(seller));
   const locationCity = (seller as any)?.location_city || '';
 
+  const ratingBuckets = [5, 4, 3, 2, 1].map(s => ({
+    star: s,
+    count: reviews.filter(r => r.rating === s).length,
+    pct: reviews.length > 0 ? (reviews.filter(r => r.rating === s).length / reviews.length) * 100 : 0,
+  }));
+
   const renderGridItem = ({ item }: { item: Product }) => {
     const imgFailed = failedImages.has(item.id);
     const images = item.images && item.images.length > 0
@@ -185,7 +193,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
         accessibilityRole="button"
         accessibilityLabel={item.name}
       >
-        <View style={[styles.cardImgWrap, { height: DEFAULT_IMG_H }]}>
+        <View style={[styles.cardImgWrap, { height: CARD_H }]}>
           <FlatList
             data={images}
             horizontal
@@ -195,7 +203,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
             renderItem={({ item: img }) => {
               const url = getImageUrl(img.image_url);
               return (
-                <View style={{ width: CARD_W, height: DEFAULT_IMG_H }}>
+                <View style={{ width: CARD_W, height: CARD_H }}>
                   {url && !imgFailed ? (
                     <Image
                       source={{ uri: url }}
@@ -222,12 +230,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           </View>
           <View style={styles.cardGradient} />
           <View style={styles.cardBottomInfo}>
-            <UserAvatar seller={item.seller} size={28} />
-            <View style={{ flex: 1, marginLeft: 6 }}>
+            <View style={{ flex: 1 }}>
               <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-              {item.description ? (
-                <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
-              ) : null}
             </View>
           </View>
         </View>
@@ -238,6 +242,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
+        <View style={styles.skeletonTopBar} />
         <View style={styles.skeletonRow}>
           <View style={styles.skeletonAvatar} />
           <View style={{ flex: 1, gap: 8 }}>
@@ -257,68 +262,79 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <FlatList
+        ref={listRef}
+        key={activeTab}
         data={(activeTab === 'listings' ? products : reviews) as any}
         numColumns={activeTab === 'listings' ? 2 : 1}
-        columnWrapperStyle={activeTab === 'listings' ? styles.row : undefined}
+        columnWrapperStyle={activeTab === 'listings' ? styles.gridRow : undefined}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}
         keyExtractor={item => item.id}
         ListHeaderComponent={
           <View>
-            {/* Hero */}
-            <View style={[styles.hero, { paddingTop: insets.top }]}>
-              {/* Top bar: back + centered name */}
-              <View style={styles.topBar}>
+            {/* ── Hero / Profile header ── */}
+            <View style={styles.hero}>
+              {/* Top bar — floats over hero */}
+              <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
                 <TouchableOpacity
-                  style={[styles.backBtn, { top: insets.top + SPACING.sm }]}
+                  style={styles.backBtn}
                   onPress={() => navigation.goBack()}
                   activeOpacity={0.7}
                   accessibilityLabel="go back"
                   accessibilityRole="button"
                 >
-                  <Icon name="back" size={22} color={COLORS.text} />
+                  <Icon name="back" size={20} color={COLORS.text} />
                 </TouchableOpacity>
+
                 <View style={styles.topBarNameWrap}>
-                  <Text style={styles.topBarName} numberOfLines={1}>{displayName}</Text>
+                  <Text style={styles.topBarName} numberOfLines={1}>@{seller?.username || 'seller'}</Text>
                   {(tier === 'verified' || tier === 'business') && (
-                    <Icon name="verified" size={15} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
+                    <Icon name="verified" size={18} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
                   )}
                 </View>
               </View>
 
-              {/* Avatar with TierRing + Stats row */}
+              {/* Avatar + Stats row */}
               <View style={styles.avatarRow}>
                 <View style={[styles.tierRing, { borderColor: tierColor, borderWidth: tierColor === 'transparent' ? 0 : 3 }]}>
-                  <View style={[styles.avatar, { borderRadius: isBusinessMode ? 22 : 40 }]}>
+                  <View style={[styles.avatar, { borderRadius: isBusinessMode ? 24 : 38 }]}>
                     {avatarUrl ? (
-                      <Image source={{ uri: avatarUrl }} style={[styles.avatarImg, { borderRadius: isBusinessMode ? 20 : 40 }]} accessibilityLabel="seller avatar" />
+                      <Image source={{ uri: avatarUrl }} style={[styles.avatarImg, { borderRadius: isBusinessMode ? 22 : 36 }]} accessibilityLabel="seller avatar" />
                     ) : (
                       <Text style={styles.avatarText}>{initials}</Text>
                     )}
                   </View>
                 </View>
+
                 <View style={styles.statsRow}>
                   <View style={styles.stat}>
                     <Text style={styles.statNum}>{products.length}</Text>
-                    <Text style={styles.statLabel}>Posts</Text>
+                    <Text style={styles.statLabel}>{t('storefront.products')}</Text>
                   </View>
                   <View style={styles.stat}>
                     <Text style={styles.statNum}>{followerCount}</Text>
-                    <Text style={styles.statLabel}>{t('me.followers')}</Text>
+                    <Text style={styles.statLabel}>{t('storefront.followers')}</Text>
                   </View>
                   <View style={styles.stat}>
                     <Text style={styles.statNum}>{avgRating}</Text>
-                    <Text style={styles.statLabel}>Rating</Text>
+                    <Text style={styles.statLabel}>{t('storefront.rating')}</Text>
                   </View>
                 </View>
               </View>
 
-              {/* Trust-preserving line for business mode */}
-              {isBusinessMode && seller?.username && (
-                <View style={styles.trustLine}>
-                  <Icon name="verified" size={12} color={COLORS.green} />
-                  <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: '700' }}>@{seller.username}</Text> · Verified identity on file</Text>
-                </View>
-              )}
+              {/* Name + bio */}
+              <View style={styles.nameBioBlock}>
+                <Text style={styles.displayName}>{displayName}</Text>
+                {seller?.show_real_name && seller?.full_name && !isBusinessMode && (
+                  <View style={styles.realNameRow}>
+                    <Icon name="verified" size={11} color={COLORS.green} />
+                    <Text style={styles.realNameText}>{seller.full_name}</Text>
+                  </View>
+                )}
+                {seller?.bio ? (
+                  <Text style={styles.bio}>{seller.bio}</Text>
+                ) : null}
+                {memberSince ? <Text style={styles.memberSince}>Member since {memberSince}</Text> : null}
+              </View>
 
               {/* Trust chips */}
               <View style={styles.trustChipsRow}>
@@ -342,65 +358,59 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 ) : null}
               </View>
 
-              {/* Bio + member since + optional real name reveal */}
-              <View style={styles.nameBioBlock}>
-                {seller?.bio ? (
-                  <Text style={styles.bio} numberOfLines={2}>{seller.bio}</Text>
-                ) : null}
-                {seller?.show_real_name && seller?.full_name && !isBusinessMode && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
-                    <Icon name="verified" size={11} color={COLORS.green} />
-                    <Text style={{ fontSize: 12, color: COLORS.text }}>{seller.full_name}</Text>
-                  </View>
-                )}
-                {memberSince ? <Text style={styles.memberSince}>{t('me.since')} {memberSince}</Text> : null}
-              </View>
+              {/* Trust line for business */}
+              {isBusinessMode && seller?.username && (
+                <View style={styles.trustLine}>
+                  <Icon name="verified" size={11} color={COLORS.green} />
+                  <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: '700' }}>@{seller.username}</Text> · Verified identity on file</Text>
+                </View>
+              )}
+
+              {/* Follow + Message buttons */}
+              {store.isLoggedIn && !isOwnProfile && (
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.followBtn, following && styles.followBtnActive, followLoading && styles.actionDisabled]}
+                    onPress={handleFollow}
+                    disabled={followLoading}
+                    activeOpacity={0.7}
+                    accessibilityLabel={following ? 'unfollow seller' : 'follow seller'}
+                    accessibilityRole="button"
+                  >
+                    {followLoading ? (
+                      <ActivityIndicator size="small" color={COLORS.white} />
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons name={following ? 'heart' : 'heart-outline'} size={17} color={following ? COLORS.white : COLORS.coral} />
+                        <Text style={[styles.followBtnText, following && styles.followBtnTextActive]}>
+                          {following ? t('storefront.following') : t('storefront.follow')}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.msgBtn, messageLoading && styles.actionDisabled]}
+                    onPress={handleMessage}
+                    disabled={messageLoading}
+                    activeOpacity={0.7}
+                    accessibilityLabel="message seller"
+                    accessibilityRole="button"
+                  >
+                    {messageLoading ? (
+                      <ActivityIndicator size="small" color={COLORS.blue} />
+                    ) : (
+                      <>
+                        <Icon name="message" size={17} color={COLORS.blue} />
+                        <Text style={styles.msgBtnText}>{t('storefront.message')}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
 
-            {/* Follow + Message buttons */}
-            {store.isLoggedIn && !isOwnProfile && (
-              <View style={styles.actionRow}>
-                <TouchableOpacity
-                  style={[styles.followBtn, following && styles.followBtnActive, followLoading && styles.actionDisabled]}
-                  onPress={handleFollow}
-                  disabled={followLoading}
-                  activeOpacity={0.7}
-                  accessibilityLabel={following ? 'unfollow seller' : 'follow seller'}
-                  accessibilityRole="button"
-                >
-                  {followLoading ? (
-                    <ActivityIndicator size="small" color={COLORS.white} />
-                  ) : (
-                    <>
-                      <MaterialCommunityIcons name={following ? 'heart' : 'heart-outline'} size={18} color={following ? COLORS.white : COLORS.coral} />
-                      <Text style={[styles.followBtnText, following && styles.followBtnTextActive]}>
-                        {following ? t('storefront.following') : t('storefront.follow')}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.msgBtn, messageLoading && styles.actionDisabled]}
-                  onPress={handleMessage}
-                  disabled={messageLoading}
-                  activeOpacity={0.7}
-                  accessibilityLabel="message seller"
-                  accessibilityRole="button"
-                >
-                  {messageLoading ? (
-                    <ActivityIndicator size="small" color={COLORS.blue} />
-                  ) : (
-                    <>
-                      <Icon name="message" size={18} color={COLORS.blue} />
-                      <Text style={styles.msgBtnText}>{t('storefront.message')}</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Tabs */}
+            {/* ── Tab bar ── */}
             <View style={styles.tabBar}>
               <TouchableOpacity
                 style={[styles.tab, activeTab === 'listings' && styles.tabActive]}
@@ -421,6 +431,31 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 <Icon name="rate-this" size={22} color={activeTab === 'reviews' ? COLORS.text : COLORS.text2} />
               </TouchableOpacity>
             </View>
+
+            {/* ── Reviews header (shown when reviews tab active) ── */}
+            {activeTab === 'reviews' && reviews.length > 0 && (
+              <View style={styles.ratingSummary}>
+                <View style={styles.ratingSummaryLeft}>
+                  <Text style={styles.ratingBig}>{avgRating}</Text>
+                  <View style={styles.ratingStarsRow}>
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <Icon key={s} name={s <= Math.round(parseFloat(avgRating)) ? 'rating' : 'rate-this'} size={13} color={s <= Math.round(parseFloat(avgRating)) ? COLORS.yellow : COLORS.text2} />
+                    ))}
+                  </View>
+                  <Text style={styles.ratingCount}>{reviews.length} reviews</Text>
+                </View>
+                <View style={styles.ratingSummaryRight}>
+                  {ratingBuckets.map(({ star, count, pct }) => (
+                    <View key={star} style={styles.ratingBarRow}>
+                      <Text style={styles.ratingBarLabel}>{star}</Text>
+                      <View style={styles.ratingBarTrack}>
+                        <View style={[styles.ratingBarFill, { width: `${pct}%` }]} />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
           </View>
         }
         renderItem={activeTab === 'listings' ? renderGridItem : (({ item }: { item: Review }) => (
@@ -433,7 +468,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 <Text style={styles.reviewName} numberOfLines={1}>{item.reviewer?.username ? `@${item.reviewer.username}` : (item.reviewer?.full_name || 'Anonymous')}</Text>
                 <View style={styles.reviewStars}>
                   {[1, 2, 3, 4, 5].map(s => (
-                    <Icon key={s} name={s <= item.rating ? 'rating' : 'rate-this'} size={12} color={s <= item.rating ? COLORS.yellow : COLORS.text2} />
+                    <Icon key={s} name={s <= item.rating ? 'rating' : 'rate-this'} size={11} color={s <= item.rating ? COLORS.yellow : COLORS.text2} />
                   ))}
                 </View>
               </View>
@@ -450,7 +485,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
         )) as any}
         ListEmptyComponent={
           <EmptyState
-            icon={activeTab === 'listings' ? 'storefront-outline' : 'rating'}
+            icon={activeTab === 'listings' ? 'storefront-outline' : 'star-outline'}
             title={activeTab === 'listings' ? t('storefront.noProducts') : 'No reviews yet'}
           />
         }
@@ -463,99 +498,119 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   loadingContainer: { flex: 1, backgroundColor: COLORS.bg, paddingTop: 60, paddingHorizontal: SPACING.md },
-  content: { paddingBottom: 100 },
+  content: {},
 
-  /* Hero */
-  hero: { backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: SPACING.md },
+  /* Top bar — floats over hero */
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, position: 'relative',
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
   },
-  topBarNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '75%' },
-  topBarName: { fontSize: 15, color: COLORS.text, fontWeight: '700' },
   backBtn: {
-    position: 'absolute', left: SPACING.md,
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: COLORS.surface + 'CC',
+    width: 36, height: 36, borderRadius: 18,
     borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surface2,
     alignItems: 'center', justifyContent: 'center',
-    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25, shadowRadius: 4,
-    zIndex: 10,
+    position: 'absolute', left: SPACING.lg,
   },
+  topBarNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  topBarName: { fontSize: 20, fontWeight: '800', color: COLORS.text },
+
+  /* Hero */
+  hero: { backgroundColor: COLORS.surface, paddingBottom: SPACING.lg },
 
   avatarRow: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 0,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: SPACING.lg, paddingTop: 60,
   },
-  avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
-  avatarImg: { width: 64, height: 64, borderRadius: 32 },
-  avatarText: { fontSize: 24, color: COLORS.white, fontWeight: '700' },
-  tierRing: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center' },
+  tierRing: { width: 82, height: 82, borderRadius: 41, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 76, height: 76, borderRadius: 38, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImg: { width: 76, height: 76 },
+  avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
 
-  nameBioBlock: { paddingHorizontal: SPACING.md, marginTop: 10 },
-  bio: { fontSize: 13, color: COLORS.text2, lineHeight: 18, marginTop: 2 },
-  memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.7, marginTop: 2 },
+  statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
+  stat: { alignItems: 'center' },
+  statNum: { fontSize: 18, fontWeight: '800', color: COLORS.text, lineHeight: 22 },
+  statLabel: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
 
-  trustLine: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: SPACING.md, paddingTop: 10,
-  },
-  trustLineText: { fontSize: 11.5, color: COLORS.text2 },
+  nameBioBlock: { paddingHorizontal: SPACING.lg, paddingTop: 12 },
+  displayName: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  realNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  realNameText: { fontSize: 11.5, color: COLORS.text2 },
+  bio: { fontSize: 13, color: COLORS.text2, lineHeight: 20, marginTop: 6 },
+  memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.65, marginTop: 4 },
 
-  /* Trust Chips */
   trustChipsRow: {
     flexDirection: 'row', flexWrap: 'wrap', gap: 6,
-    paddingHorizontal: SPACING.md, paddingTop: 10,
+    paddingHorizontal: SPACING.lg, paddingTop: 10,
   },
   trustChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6,
     borderWidth: 1,
   },
-  trustChipText: { fontSize: 12, fontWeight: '700' },
+  trustChipText: { fontSize: 11, fontWeight: '700' },
 
-  /* Stats */
-  statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
-  stat: { alignItems: 'center', paddingVertical: 6 },
-  statNum: { fontSize: 17, color: COLORS.text, fontWeight: '800', lineHeight: 20 },
-  statLabel: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
+  trustLine: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: SPACING.lg, paddingTop: 8,
+  },
+  trustLineText: { fontSize: 11.5, color: COLORS.text2 },
 
   /* Action Buttons */
-  actionRow: { flexDirection: 'row', gap: 8, marginHorizontal: SPACING.md, marginTop: SPACING.md },
+  actionRow: { flexDirection: 'row', gap: 8, paddingHorizontal: SPACING.lg, paddingTop: 14 },
 
   followBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 12, borderRadius: RADIUS.button,
+    paddingVertical: 11, borderRadius: RADIUS.button,
     backgroundColor: COLORS.coral, minHeight: 44,
   },
-  followBtnActive: { backgroundColor: COLORS.surface, borderWidth: 1.5, borderColor: COLORS.coral },
+  followBtnActive: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: COLORS.coral },
   followBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
   followBtnTextActive: { color: COLORS.coral },
   actionDisabled: { opacity: 0.55 },
 
   msgBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 12, borderRadius: RADIUS.button,
+    paddingVertical: 11, borderRadius: RADIUS.button,
     borderWidth: 1.5, borderColor: COLORS.blue, minHeight: 44,
   },
   msgBtnText: { color: COLORS.blue, fontWeight: '700', fontSize: 14 },
 
   /* Tabs */
   tabBar: {
-    flexDirection: 'row', marginTop: SPACING.md,
+    flexDirection: 'row',
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.surface,
   },
   tab: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 10, borderBottomWidth: 1.5, borderBottomColor: 'transparent',
+    paddingVertical: 11, borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
   tabActive: { borderBottomColor: COLORS.text },
 
+  /* Rating Summary */
+  ratingSummary: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.card, marginHorizontal: SPACING.md, marginTop: SPACING.md,
+    padding: 14,
+  },
+  ratingSummaryLeft: { alignItems: 'center', minWidth: 60 },
+  ratingBig: { fontSize: 36, fontWeight: '800', color: COLORS.text, lineHeight: 40 },
+  ratingStarsRow: { flexDirection: 'row', gap: 1, marginTop: 4 },
+  ratingCount: { fontSize: 11, color: COLORS.text2, marginTop: 4 },
+  ratingSummaryRight: { flex: 1, gap: 3 },
+  ratingBarRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ratingBarLabel: { fontSize: 10, color: COLORS.text2, width: 6 },
+  ratingBarTrack: { flex: 1, height: 5, borderRadius: 99, backgroundColor: COLORS.surface2, overflow: 'hidden' },
+  ratingBarFill: { height: '100%', backgroundColor: COLORS.yellow, borderRadius: 99 },
+
   /* Grid */
-  row: { justifyContent: 'space-between', paddingHorizontal: SPACING.sm },
+  gridRow: { justifyContent: 'space-between', paddingHorizontal: 3 },
   card: {
     width: '48%' as any, borderRadius: RADIUS.row, overflow: 'hidden',
-    backgroundColor: COLORS.surface2,
+    backgroundColor: COLORS.surface2, marginBottom: 3,
   },
   cardImgWrap: {
     width: '100%', backgroundColor: COLORS.surface2, position: 'relative',
@@ -565,11 +620,11 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  stockBadgePos: { position: 'absolute', top: 6, left: 6 },
-  priceBadgePos: { position: 'absolute', top: 6, right: 6 },
+  stockBadgePos: { position: 'absolute', top: 7, left: 7 },
+  priceBadgePos: { position: 'absolute', top: 7, right: 7 },
   priceBadgeBg: {
-    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.row,
-    paddingHorizontal: 6, paddingVertical: 3,
+    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 3,
   },
   cardGradient: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -577,32 +632,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   cardBottomInfo: {
-    position: 'absolute', bottom: 6, left: 6, right: 6,
+    position: 'absolute', bottom: 7, left: 7, right: 7,
     flexDirection: 'row', alignItems: 'center',
   },
   cardName: { fontSize: 12, fontWeight: '600', color: COLORS.white, lineHeight: 16 },
-  cardDesc: { fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 13 },
 
   /* Reviews */
   reviewCard: {
-    marginHorizontal: SPACING.md, marginBottom: SPACING.sm, padding: SPACING.md,
+    marginHorizontal: SPACING.md, marginBottom: SPACING.sm, padding: 14,
     borderRadius: RADIUS.card, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
-  reviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: SPACING.sm },
-  reviewAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.coral, justifyContent: 'center', alignItems: 'center' },
-  reviewAvatarText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
+  reviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  reviewAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.coral, justifyContent: 'center', alignItems: 'center' },
+  reviewAvatarText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
   reviewInfo: { flex: 1 },
   reviewName: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   reviewStars: { flexDirection: 'row', gap: 2, marginTop: 2 },
   reviewDate: { fontSize: 11, color: COLORS.text2 },
   reviewComment: { fontSize: 13, color: COLORS.text2, lineHeight: 18 },
-  sellerResponse: { marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border },
-  sellerResponseLabel: { fontSize: 11, color: COLORS.blue, fontWeight: '600' },
-  sellerResponseText: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+  sellerResponse: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
+  sellerResponseLabel: { fontSize: 11, color: COLORS.blue, fontWeight: '600', marginBottom: 3 },
+  sellerResponseText: { fontSize: 12, color: COLORS.text2, lineHeight: 18 },
 
   /* Skeleton */
+  skeletonTopBar: { height: 50, backgroundColor: COLORS.surface2, marginBottom: 16 },
   skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  skeletonAvatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.surface2 },
+  skeletonAvatar: { width: 76, height: 76, borderRadius: 38, backgroundColor: COLORS.surface2 },
   skeletonLine80: { width: '80%', height: 16, borderRadius: 4, backgroundColor: COLORS.surface2 },
   skeletonLine50: { width: '50%', height: 12, borderRadius: 4, backgroundColor: COLORS.surface2 },
   skeletonLine20: { width: 120, height: 20, borderRadius: 4, backgroundColor: COLORS.surface2, marginTop: 12 },

@@ -42,6 +42,7 @@ import AddressesScreen from './src/screens/AddressesScreen';
 import PaymentsScreen from './src/screens/PaymentsScreen';
 import SellerOnboardingScreen from './src/screens/SellerOnboardingScreen';
 import EditListingScreen from './src/screens/EditListingScreen';
+import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import SettingsEditScreen from './src/screens/SettingsEditScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
 import PromoManagementScreen from './src/screens/PromoManagementScreen';
@@ -375,6 +376,7 @@ export default function App() {
             <Stack.Screen name="Addresses" component={AddressesScreen} />
             <Stack.Screen name="Payments" component={PaymentsScreen} />
             <Stack.Screen name="EditListing" component={EditListingScreen} />
+            <Stack.Screen name="Analytics" component={AnalyticsScreen} />
             <Stack.Screen name="SettingsEdit" component={SettingsEditScreen} />
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
             <Stack.Screen name="Meetup" component={LazyMeetupScreen} />

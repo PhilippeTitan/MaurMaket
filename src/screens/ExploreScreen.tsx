@@ -189,12 +189,21 @@ export default function ExploreScreen({ navigation }: Props) {
               return (
                 <View style={{ width: CARD_W, height: cardH }}>
                   {url && !imgFailed ? (
-                    <Image
-                      source={{ uri: url }}
-                      style={styles.cardImg}
-                      resizeMode="cover"
-                      onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                    />
+                    <>
+                      <Image
+                        source={{ uri: url }}
+                        style={styles.cardImg}
+                        resizeMode="cover"
+                        blurRadius={20}
+                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                      />
+                      <Image
+                        source={{ uri: url }}
+                        style={StyleSheet.absoluteFill}
+                        resizeMode="contain"
+                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                      />
+                    </>
                   ) : (
                     <View style={styles.cardPlaceholder}>
                       <Icon name="image-unavailable" size={24} color={COLORS.text2} />

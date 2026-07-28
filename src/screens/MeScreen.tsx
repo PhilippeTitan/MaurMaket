@@ -312,21 +312,28 @@ export default function MeScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />
       }
     >
-      {/* Hero */}
-      <View style={[styles.hero, { paddingTop: insets.top }]}>
-        {/* Top bar: centered name + settings */}
-        <View style={styles.topBar}>
-          <View style={{ width: 30 }} />
-          <View style={styles.topBarNameWrap}>
-            <Text style={styles.topBarName} numberOfLines={1}>{displayName}</Text>
-            {(tier === 'verified' || tier === 'business') && (
-              <Icon name="verified" size={15} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
-            )}
-          </View>
-          <TouchableOpacity style={styles.settingsBtn} onPress={() => nav.navigate('Settings')} accessibilityRole="button" accessibilityLabel="settings">
-            <MaterialCommunityIcons name="cog-outline" size={22} color={COLORS.text} />
-          </TouchableOpacity>
+      {/* Top bar — floats over hero */}
+      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
+        <TouchableOpacity
+          style={styles.settingsBtn}
+          onPress={() => nav.navigate('Settings')}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="settings"
+        >
+          <MaterialCommunityIcons name="cog-outline" size={20} color={COLORS.text} />
+        </TouchableOpacity>
+
+        <View style={styles.topBarNameWrap}>
+          <Text style={styles.topBarName} numberOfLines={1}>@{user?.username || 'you'}</Text>
+          {(tier === 'verified' || tier === 'business') && (
+            <Icon name="verified" size={18} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
+          )}
         </View>
+      </View>
+
+      {/* Hero */}
+      <View style={styles.hero}>
 
         {/* Avatar with TierRing + Stats row */}
         <View style={styles.avatarRow}>
@@ -386,28 +393,26 @@ export default function MeScreen() {
         )}
 
         {/* Trust chips */}
-        {isSeller && (
-          <View style={styles.trustChipsRow}>
-            {tier === 'verified' && (
-              <View style={[styles.trustChip, { backgroundColor: COLORS.blue + '18', borderColor: COLORS.blue + '40' }]}>
-                <Icon name="verified" size={12} color={COLORS.blue} />
-                <Text style={[styles.trustChipText, { color: COLORS.blue }]}>Verified Seller</Text>
-              </View>
-            )}
-            {tier === 'business' && (
-              <View style={[styles.trustChip, { backgroundColor: COLORS.coral + '18', borderColor: COLORS.coral + '40' }]}>
-                <Icon name="verified" size={12} color={COLORS.coral} />
-                <Text style={[styles.trustChipText, { color: COLORS.coral }]}>Business</Text>
-              </View>
-            )}
-            {locationCity ? (
-              <View style={[styles.trustChip, { backgroundColor: COLORS.green + '18', borderColor: COLORS.green + '40' }]}>
-                <MaterialCommunityIcons name="map-marker-outline" size={12} color={COLORS.green} />
-                <Text style={[styles.trustChipText, { color: COLORS.green }]}>{locationCity}</Text>
-              </View>
-            ) : null}
-          </View>
-        )}
+        <View style={styles.trustChipsRow}>
+          {isSeller && tier === 'verified' && (
+            <View style={[styles.trustChip, { backgroundColor: COLORS.blue + '18', borderColor: COLORS.blue + '40' }]}>
+              <Icon name="verified" size={12} color={COLORS.blue} />
+              <Text style={[styles.trustChipText, { color: COLORS.blue }]}>Verified Seller</Text>
+            </View>
+          )}
+          {isSeller && tier === 'business' && (
+            <View style={[styles.trustChip, { backgroundColor: COLORS.coral + '18', borderColor: COLORS.coral + '40' }]}>
+              <Icon name="verified" size={12} color={COLORS.coral} />
+              <Text style={[styles.trustChipText, { color: COLORS.coral }]}>Business</Text>
+            </View>
+          )}
+          {locationCity ? (
+            <View style={[styles.trustChip, { backgroundColor: COLORS.green + '18', borderColor: COLORS.green + '40' }]}>
+              <MaterialCommunityIcons name="map-marker-outline" size={12} color={COLORS.green} />
+              <Text style={[styles.trustChipText, { color: COLORS.green }]}>{locationCity}</Text>
+            </View>
+          ) : null}
+        </View>
 
         {/* Bio + member since + optional real-name reveal */}
         <View style={styles.nameBioBlock}>
@@ -422,57 +427,8 @@ export default function MeScreen() {
           )}
           {memberSince ? <Text style={styles.memberSince}>{memberSince}</Text> : null}
         </View>
-      </View>
 
-      {/* Store Snapshot — always visible for sellers */}
-      {isSeller && (
-        <View style={styles.snapshotCard}>
-          <View style={styles.snapshotHeader}>
-            <MaterialCommunityIcons name="chart-line" size={14} color={COLORS.blue} />
-            <Text style={styles.snapshotTitle}>Store snapshot</Text>
-          </View>
-          {analyticsData && Number(analyticsData.overview?.total_revenue || 0) > 0 ? (
-            <View style={styles.snapshotGrid}>
-              <View style={styles.snapshotStat}>
-                <Text style={styles.snapshotStatValue}>{formatPrice(Number(analyticsData.overview?.total_revenue || 0))} G</Text>
-                <Text style={styles.snapshotStatLabel}>Revenue</Text>
-              </View>
-              <View style={styles.snapshotStat}>
-                <Text style={styles.snapshotStatValue}>{Number(analyticsData.overview?.total_orders || 0)}</Text>
-                <Text style={styles.snapshotStatLabel}>Orders</Text>
-              </View>
-              <View style={styles.snapshotStat}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <Icon name="rating" size={12} color={COLORS.yellow} />
-                  <Text style={styles.snapshotStatValue}>{Number(analyticsData.overview?.avg_rating || 0).toFixed(1)}</Text>
-                </View>
-                <Text style={styles.snapshotStatLabel}>Rating</Text>
-              </View>
-            </View>
-          ) : (
-            <Text style={styles.snapshotEmpty}>No sales yet — this fills in automatically once your first order comes through.</Text>
-          )}
-        </View>
-      )}
-
-      {/* Become a Seller CTA for buyers */}
-      {!isSeller && (
-        <TouchableOpacity
-          style={styles.sellBanner}
-          onPress={() => nav.navigate('SellerOnboarding')}
-          accessibilityRole="button"
-          accessibilityLabel="become a seller"
-        >
-          <MaterialCommunityIcons name="store-plus-outline" size={20} color={COLORS.green} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.sellTitle}>{t('me.startSelling')}</Text>
-            <Text style={styles.sellHint}>List your first product in seconds</Text>
-          </View>
-          <Icon name="chevron-right" size={18} color={COLORS.green} />
-        </TouchableOpacity>
-      )}
-
-      {/* Action buttons */}
+      {/* Action buttons — inside hero */}
       <View style={styles.sellerActions}>
         <TouchableOpacity
           style={styles.actionBtn}
@@ -494,64 +450,33 @@ export default function MeScreen() {
         </TouchableOpacity>
         {isSeller && (
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: COLORS.coral }]}
-            onPress={() => nav.navigate('AddListing')}
+            style={styles.actionBtn}
+            onPress={() => nav.navigate('Analytics')}
             accessibilityRole="button"
-            accessibilityLabel="add listing"
+            accessibilityLabel="analytics"
           >
-            <Icon name="plus" size={16} color={COLORS.white} />
-            <Text style={[styles.actionBtnText, { color: COLORS.white }]}>Add Listing</Text>
+            <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.text} />
+            <Text style={[styles.actionBtnText, { color: COLORS.text }]}>Analytics</Text>
           </TouchableOpacity>
         )}
       </View>
+      </View>
 
-      {/* Seller Analytics Dashboard — legacy, kept for verified/business with data */}
-      {isSeller && analyticsData && user?.seller_tier !== 'casual' && (
-        <View style={styles.analyticsCard}>
-          <View style={styles.analyticsHeader}>
-            <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.blue} />
-            <Text style={styles.analyticsTitle}>{t('me.analytics')}</Text>
+      {/* Become a Seller CTA for buyers */}
+      {!isSeller && (
+        <TouchableOpacity
+          style={styles.sellBanner}
+          onPress={() => nav.navigate('SellerOnboarding')}
+          accessibilityRole="button"
+          accessibilityLabel="become a seller"
+        >
+          <MaterialCommunityIcons name="store-plus-outline" size={20} color={COLORS.green} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sellTitle}>{t('me.startSelling')}</Text>
+            <Text style={styles.sellHint}>List your first product in seconds</Text>
           </View>
-          <View style={styles.analyticsGrid}>
-            <View style={styles.analyticsStat}>
-              <Text style={styles.analyticsStatValue}>
-                {formatPrice(Number(analyticsData.overview?.total_revenue || 0))} G
-              </Text>
-              <Text style={styles.analyticsStatLabel}>{t('me.totalRevenue')}</Text>
-            </View>
-            <View style={styles.analyticsStat}>
-              <Text style={styles.analyticsStatValue}>{Number(analyticsData.overview?.total_orders || 0)}</Text>
-              <Text style={styles.analyticsStatLabel}>{t('me.totalOrders')}</Text>
-            </View>
-            <View style={styles.analyticsStat}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <Icon name="rating" size={12} color={COLORS.yellow} />
-                <Text style={styles.analyticsStatValue}>{Number(analyticsData.overview?.avg_rating || 0).toFixed(1)}</Text>
-              </View>
-              <Text style={styles.analyticsStatLabel}>{t('me.avgRating')}</Text>
-            </View>
-          </View>
-          {analyticsData.topProducts && analyticsData.topProducts.length > 0 && (
-            <View style={styles.topProductsSection}>
-              <Text style={styles.topProductsTitle}>{t('me.topProducts')}</Text>
-              {analyticsData.topProducts.slice(0, 3).map(tp => (
-                <TouchableOpacity
-                  key={tp.id}
-                  style={styles.topProductRow}
-                  onPress={() => nav.navigate('EditListing', { productId: tp.id })}
-                  accessibilityRole="button"
-                  accessibilityLabel={`edit ${tp.name}`}
-                >
-                  <View style={styles.topProductInfo}>
-                    <Text style={styles.topProductName} numberOfLines={1}>{tp.name}</Text>
-                    <Text style={styles.topProductMeta}>{tp.units_sold} sold · {formatPrice(tp.revenue)} G</Text>
-                  </View>
-                  <Icon name="chevron-right" size={16} color={COLORS.text2} />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
+          <Icon name="chevron-right" size={18} color={COLORS.green} />
+        </TouchableOpacity>
       )}
 
       {/* Low Stock Alert */}
@@ -717,36 +642,74 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 100 },
 
-  /* Hero */
-  hero: { backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: SPACING.md },
+  /* Top bar — floats over hero */
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: SPACING.md, paddingTop: SPACING.sm, position: 'relative',
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
   },
-  topBarNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '75%' },
-  topBarName: { fontSize: 15, color: COLORS.text, fontWeight: '700' },
+  settingsBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surface2,
+    alignItems: 'center', justifyContent: 'center',
+    position: 'absolute', right: SPACING.lg,
+  },
+  topBarNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  topBarName: { fontSize: 20, fontWeight: '800', color: COLORS.text },
+
+  /* Hero */
+  hero: { backgroundColor: COLORS.surface, paddingBottom: SPACING.lg },
   avatarRow: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 0,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: SPACING.lg, paddingTop: 60,
   },
-  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
-  avatarImg: { width: 80, height: 80, borderRadius: 40 },
+  tierRing: { width: 82, height: 82, borderRadius: 41, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 76, height: 76, borderRadius: 38, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImg: { width: 76, height: 76 },
   avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
-  tierRing: { width: 86, height: 86, borderRadius: 43, alignItems: 'center', justifyContent: 'center' },
-  settingsBtn: { position: 'absolute', right: SPACING.md, top: SPACING.sm - 4, padding: 6 },
-  nameBioBlock: { paddingHorizontal: SPACING.md, marginTop: 10 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  bio: { fontSize: 13, color: COLORS.text2, lineHeight: 18, marginTop: 2 },
-  memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.7, marginTop: 2 },
+  nameBioBlock: { paddingHorizontal: SPACING.lg, paddingTop: 12 },
+  bio: { fontSize: 13, color: COLORS.text2, lineHeight: 20, marginTop: 6 },
+  memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.65, marginTop: 4 },
+
+  /* Identity Toggle */
+  identityToggle: {
+    flexDirection: 'row', marginHorizontal: SPACING.lg, marginTop: SPACING.md,
+    backgroundColor: COLORS.surface2, borderRadius: 999, padding: 3,
+  },
+  identityBtn: { flex: 1, paddingVertical: 7, borderRadius: 999, alignItems: 'center' },
+  identityBtnActive: { backgroundColor: COLORS.coral },
+  identityBtnText: { fontSize: 12.5, fontWeight: '700', color: COLORS.text2 },
+  identityBtnTextActive: { color: '#fff' },
+
+  /* Trust Line */
+  trustLine: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: SPACING.lg, paddingTop: 8,
+  },
+  trustLineText: { fontSize: 11.5, color: COLORS.text2 },
+
+  /* Trust Chips */
+  trustChipsRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+    paddingHorizontal: SPACING.lg, paddingTop: 10,
+  },
+  trustChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6,
+    borderWidth: 1,
+  },
+  trustChipText: { fontSize: 11, fontWeight: '700' },
 
   /* Stats */
   statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
-  stat: { alignItems: 'center', paddingVertical: 6 },
-  statNum: { fontSize: 17, color: COLORS.text, fontWeight: '800', lineHeight: 20 },
+  stat: { alignItems: 'center' },
+  statNum: { fontSize: 18, fontWeight: '800', color: COLORS.text, lineHeight: 22 },
   statLabel: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
 
   /* Order Status Bar */
   orderBar: {
-    flexDirection: 'row', marginHorizontal: SPACING.md, marginTop: SPACING.md, gap: 6,
+    flexDirection: 'row', marginHorizontal: SPACING.lg, marginTop: SPACING.md, gap: 6,
   },
   orderCard: {
     flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10,
@@ -763,18 +726,19 @@ const styles = StyleSheet.create({
 
   /* Tabs */
   tabBar: {
-    flexDirection: 'row', marginTop: SPACING.md,
+    flexDirection: 'row',
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.surface,
   },
   tab: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 10, borderBottomWidth: 1.5, borderBottomColor: 'transparent',
+    paddingVertical: 11, borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
   tabActive: { borderBottomColor: COLORS.text },
 
   /* Tab Content */
-  tabContent: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: SPACING.md },
+  tabContent: { paddingTop: SPACING.md },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 3, paddingHorizontal: 3 },
   card: {
     width: '48%' as any, borderRadius: RADIUS.row, overflow: 'hidden',
     backgroundColor: COLORS.surface2,
@@ -787,22 +751,18 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  stockBadgePos: {
-    position: 'absolute', top: 6, left: 6,
-  },
-  priceBadgePos: {
-    position: 'absolute', top: 6, right: 6,
-  },
+  stockBadgePos: { position: 'absolute', top: 7, left: 7 },
+  priceBadgePos: { position: 'absolute', top: 7, right: 7 },
   priceBadgeBg: {
-    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.row,
-    paddingHorizontal: 6, paddingVertical: 3,
+    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 3,
   },
   cardGradient: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     height: '55%',
   },
   cardBottomInfo: {
-    position: 'absolute', bottom: 6, left: 6, right: 6,
+    position: 'absolute', bottom: 7, left: 7, right: 7,
     flexDirection: 'row', alignItems: 'center',
   },
   cardName: { fontSize: 12, fontWeight: '600', color: COLORS.white, lineHeight: 16 },
@@ -815,115 +775,40 @@ const styles = StyleSheet.create({
 
   /* Reviews */
   reviewCard: {
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.card, padding: 12,
+    marginHorizontal: SPACING.md, marginBottom: SPACING.sm, padding: 14,
+    borderRadius: RADIUS.card, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
 
   /* Become a Seller Banner */
   sellBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginHorizontal: SPACING.md, marginTop: SPACING.md, padding: 12,
+    marginHorizontal: SPACING.lg, marginTop: SPACING.md, padding: 12,
     backgroundColor: COLORS.green + '10', borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.green + '30',
   },
   sellTitle: { fontSize: 13, fontWeight: '700', color: COLORS.green },
   sellHint: { fontSize: 11, color: COLORS.text2, marginTop: 1 },
 
-  /* Store Snapshot */
-  snapshotCard: {
-    marginHorizontal: SPACING.md, marginTop: SPACING.md, padding: 12,
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.card,
-    borderWidth: 1, borderColor: COLORS.border,
-  },
-  snapshotHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  snapshotTitle: { fontSize: 12.5, fontWeight: '700', color: COLORS.text },
-  snapshotGrid: { flexDirection: 'row', justifyContent: 'space-around' },
-  snapshotStat: { alignItems: 'center', paddingVertical: 8 },
-  snapshotStatValue: { fontSize: 15, fontWeight: '800', color: COLORS.text },
-  snapshotStatLabel: { fontSize: 10.5, color: COLORS.text2, marginTop: 2 },
-  snapshotEmpty: { fontSize: 12.5, color: COLORS.text2, lineHeight: 18 },
-
-  /* Identity Toggle */
-  identityToggle: {
-    flexDirection: 'row', marginHorizontal: SPACING.md, marginTop: SPACING.md,
-    backgroundColor: COLORS.surface2, borderRadius: 999, padding: 3,
-  },
-  identityBtn: { flex: 1, paddingVertical: 7, borderRadius: 999, alignItems: 'center' },
-  identityBtnActive: { backgroundColor: COLORS.coral },
-  identityBtnText: { fontSize: 12.5, fontWeight: '700', color: COLORS.text2 },
-  identityBtnTextActive: { color: '#fff' },
-
-  /* Trust Line */
-  trustLine: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: SPACING.md, paddingTop: 10,
-  },
-  trustLineText: { fontSize: 11.5, color: COLORS.text2 },
-
-  /* Trust Chips */
-  trustChipsRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
-    paddingHorizontal: SPACING.md, paddingTop: 10,
-  },
-  trustChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6,
-    borderWidth: 1,
-  },
-  trustChipText: { fontSize: 12, fontWeight: '700' },
-
-  /* Tier Badge (inline chip) */
-  tierBadge: {
-    backgroundColor: COLORS.green + '20',
-    borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
-  },
-  tierBadgeText: { fontSize: 10, fontWeight: '700', color: COLORS.green },
-
   /* Seller Actions Bar */
   sellerActions: {
     flexDirection: 'row', gap: 8,
-    marginHorizontal: SPACING.md, marginTop: SPACING.md,
+    paddingHorizontal: SPACING.lg, paddingTop: 14,
   },
   actionBtn: {
-    flex: 1, minHeight: 40, borderRadius: RADIUS.row,
+    flex: 1, minHeight: 44, borderRadius: RADIUS.button,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
   },
-  actionBtnText: { fontSize: 12, fontWeight: '700' },
+  actionBtnText: { fontSize: 13, fontWeight: '700' },
   emptyAction: {
     marginTop: 8, minHeight: 38, paddingHorizontal: 14, borderRadius: RADIUS.row,
     backgroundColor: COLORS.coral, flexDirection: 'row', alignItems: 'center', gap: 5,
   },
   emptyActionText: { fontSize: 12, color: COLORS.white, fontWeight: '800' },
 
-  /* Analytics Dashboard */
-  analyticsCard: {
-    marginHorizontal: SPACING.md, marginTop: SPACING.md, padding: 12,
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.card,
-    borderWidth: 1, borderColor: COLORS.border,
-  },
-  analyticsHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  analyticsTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text },
-  analyticsGrid: { flexDirection: 'row', gap: 8 },
-  analyticsStat: {
-    flex: 1, alignItems: 'center', paddingVertical: 8,
-    backgroundColor: COLORS.surface2, borderRadius: RADIUS.row,
-  },
-  analyticsStatValue: { fontSize: 16, fontWeight: '800', color: COLORS.text },
-  analyticsStatLabel: { fontSize: 10, color: COLORS.text2, marginTop: 2 },
-  topProductsSection: { marginTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 10 },
-  topProductsTitle: { fontSize: 12, fontWeight: '700', color: COLORS.text2, marginBottom: 6 },
-  topProductRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 8, borderTopWidth: 1, borderTopColor: COLORS.border,
-  },
-  topProductInfo: { flex: 1 },
-  topProductName: { fontSize: 13, fontWeight: '600', color: COLORS.text },
-  topProductMeta: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
-
   /* Low Stock Alert */
   lowStockBanner: {
-    marginHorizontal: SPACING.md, marginTop: SPACING.md, padding: 12,
+    marginHorizontal: SPACING.lg, marginTop: SPACING.md, padding: 12,
     backgroundColor: COLORS.yellow + '10', borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.yellow + '30',
   },

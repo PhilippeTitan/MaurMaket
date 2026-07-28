@@ -50,6 +50,7 @@ export type RootStackParamList = {
   Meetup: { orderId: string };
   Notification: undefined;
   PromoManagement: undefined;
+  Analytics: undefined;
   EmailVerification: { code?: string } | undefined;
   ForgotPassword: { code?: string } | undefined;
 };

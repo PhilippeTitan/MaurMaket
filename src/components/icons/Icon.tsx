@@ -82,5 +82,6 @@ export function Icon({ name, size = 24, color = '#E6EDF3', strokeWidth = 1.75 }:
   strokeWidth?: number;
 }) {
   const C = ICONS[name];
+  if (!C) return null;
   return <C size={size} color={color} strokeWidth={strokeWidth} />;
 }
