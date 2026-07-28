@@ -76,6 +76,7 @@ window.addEventListener("load",function(){map.invalidateSize()});
 function setDarkMode(isDark){
   if(currentTile) map.removeLayer(currentTile);
   currentTile = L.tileLayer(isDark?DARK_URL:LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
+  document.querySelector('.leaflet-tile-pane').style.filter = isDark ? 'brightness(1.4) contrast(1.1)' : '';
 }
 
 var sellerLayer = L.layerGroup().addTo(map);
@@ -181,19 +182,15 @@ export default function MapScreen() {
     if (!webViewRef.current || !webviewReady.current) return;
     const data = list.map(s => {
       const raw = s.use_store_identity ? s.store_logo_url : s.avatar_url;
+      const isMe = store.user && s.id === store.user.id;
       return {
-        id: s.id, lat: s.lat, lng: s.lng, tier: s.seller_tier,
+        id: s.id, lat: (isMe && myLocation) ? myLocation.lat : s.lat, lng: (isMe && myLocation) ? myLocation.lng : s.lng, tier: s.seller_tier,
         name: s.use_store_identity ? s.store_name : (s.username ? `@${s.username}` : s.full_name),
         avatar: raw ? getImageUrl(raw) : null,
       };
     });
     webViewRef.current.injectJavaScript(`setSellerMarkers(${JSON.stringify(data)});`);
-  }, []);
-
-  const injectUserMarker = useCallback((lat: number, lng: number) => {
-    if (!webViewRef.current || !webviewReady.current) return;
-    webViewRef.current.injectJavaScript(`setUserMarker(${lat},${lng});`);
-  }, []);
+  }, [myLocation]);
 
   const openSheet = useCallback((seller: NearbySeller) => {
     if (store.user && seller.id === store.user.id) return;
@@ -304,11 +301,6 @@ export default function MapScreen() {
 
         if (cachedLoc) {
           setMyLocation(cachedLoc);
-          if (webviewReady.current) {
-            injectUserMarker(cachedLoc.lat, cachedLoc.lng);
-          } else {
-            pendingInjection.current = `setUserMarker(${cachedLoc.lat},${cachedLoc.lng});`;
-          }
           await loadCachedSellers();
         }
 
@@ -321,13 +313,8 @@ export default function MapScreen() {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         setMyLocation({ lat, lng });
-        if (webviewReady.current) {
-          injectUserMarker(lat, lng);
-        } else {
-          pendingInjection.current = `setUserMarker(${lat},${lng});`;
-        }
-        AsyncStorage.setItem(CACHE_KEY_LOCATION, JSON.stringify({ lat, lng })).catch(() => {});
         setSellerLocation(lat, lng).catch(() => {});
+        AsyncStorage.setItem(CACHE_KEY_LOCATION, JSON.stringify({ lat, lng })).catch(() => {});
         fetchSellers(lat, lng);
       } catch {
         fetchSellers(18.5944, -72.3074);
@@ -344,6 +331,13 @@ export default function MapScreen() {
       } catch {}
     })();
   }, []);
+
+  // Re-inject seller markers when myLocation changes so own marker follows GPS
+  useEffect(() => {
+    if (myLocation && sellers.length > 0) {
+      injectMarkers(sellers);
+    }
+  }, [myLocation]);
 
   const handleWebViewMessage = useCallback((event: any) => {
     try {
@@ -366,7 +360,6 @@ export default function MapScreen() {
       const lng = pos.coords.longitude;
       setMyLocation({ lat, lng });
       setSellerLocation(lat, lng).catch(() => {});
-      injectUserMarker(lat, lng);
       fetchSellers(lat, lng);
       try {
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
@@ -374,7 +367,7 @@ export default function MapScreen() {
       } catch {}
     } catch {}
     setRefreshing(false);
-  }, [refreshing, injectUserMarker, fetchSellers]);
+  }, [refreshing, fetchSellers]);
 
   const handleToggleVisibility = useCallback(async () => {
     if (visibilityLoading) return;
@@ -404,13 +397,13 @@ export default function MapScreen() {
   // ── Radial FAB (Pinterest-style hold-drag-release) ──
   const RADIAL_RADIUS = 82;
   const FAB_SIZE = 52;
-  const LONG_PRESS_MS = 320;
+  const LONG_PRESS_MS = 120;
   const isSeller = store.user?.role === 'seller';
 
   // Height of the floating tab bar's top edge above the true screen bottom.
   // Must exactly match App.tsx MainTabs tabBarStyle:
-  //   marginBottom: insets.bottom > 0 ? 12 : 16,  height: 56 + insets.bottom
-  const TAB_BAR_TOP_OFFSET = (insets.bottom > 0 ? 12 : 16) + 56 + insets.bottom;
+  //   height: 56,  marginBottom: insets.bottom > 0 ? insets.bottom + 8 : 16
+  const TAB_BAR_TOP_OFFSET = (insets.bottom > 0 ? insets.bottom + 8 : 16) + 56;
 
   const fanProgress = useRef(new Animated.Value(0)).current;
   const iconScales = useRef(
@@ -504,7 +497,9 @@ export default function MapScreen() {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: () => {
         longPressFired.current = false;
         highlightedIdxRef.current = -1;
@@ -632,7 +627,7 @@ export default function MapScreen() {
         })}
 
         {/* FAB trigger — uses PanResponder for hold-drag-release */}
-        <View {...panResponder.panHandlers}>
+        <View {...panResponder.panHandlers} style={{ width: FAB_SIZE, height: FAB_SIZE, alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <Animated.View style={[styles.fab, { width: FAB_SIZE, height: FAB_SIZE, borderRadius: FAB_SIZE / 2 }, {
             transform: [{ rotate: fabRotation }],
           }]}>
@@ -645,7 +640,7 @@ export default function MapScreen() {
         <>
           <TouchableOpacity activeOpacity={1} onPress={() => { setSelectedSeller(null); setSheetExpanded(false); }} style={styles.mapOverlay} />
           <Animated.View style={[styles.sheet, {
-          bottom: TAB_BAR_TOP_OFFSET + 8,
+          bottom: TAB_BAR_TOP_OFFSET,
           maxHeight: '60%',
           opacity: sheetOpacity,
         }]}>

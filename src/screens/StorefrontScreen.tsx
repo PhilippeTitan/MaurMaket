@@ -487,10 +487,10 @@ const styles = StyleSheet.create({
   avatarRow: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingTop: SPACING.md, gap: 0,
   },
-  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
-  avatarImg: { width: 80, height: 80, borderRadius: 40 },
-  avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
-  tierRing: { width: 86, height: 86, borderRadius: 43, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: 64, height: 64, borderRadius: 32 },
+  avatarText: { fontSize: 24, color: COLORS.white, fontWeight: '700' },
+  tierRing: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center' },
 
   nameBioBlock: { paddingHorizontal: SPACING.md, marginTop: 10 },
   bio: { fontSize: 13, color: COLORS.text2, lineHeight: 18, marginTop: 2 },
@@ -602,7 +602,7 @@ const styles = StyleSheet.create({
 
   /* Skeleton */
   skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  skeletonAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.surface2 },
+  skeletonAvatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.surface2 },
   skeletonLine80: { width: '80%', height: 16, borderRadius: 4, backgroundColor: COLORS.surface2 },
   skeletonLine50: { width: '50%', height: 12, borderRadius: 4, backgroundColor: COLORS.surface2 },
   skeletonLine20: { width: 120, height: 20, borderRadius: 4, backgroundColor: COLORS.surface2, marginTop: 12 },
