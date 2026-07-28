@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Image, Animated,
+  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Image, Animated, PanResponder,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice } from '../theme';
@@ -402,10 +401,10 @@ export default function MapScreen() {
     }
   }, [myLocation]);
 
-  // ── Radial FAB (Gesture Handler + RN Animated) ──
+  // ── Radial FAB (Pinterest-style hold-drag-release) ──
   const RADIAL_RADIUS = 82;
   const FAB_SIZE = 52;
-  const HIT_RADIUS = 40;
+  const LONG_PRESS_MS = 320;
   const isSeller = store.user?.role === 'seller';
 
   const fanProgress = useRef(new Animated.Value(0)).current;
@@ -413,7 +412,8 @@ export default function MapScreen() {
     Array.from({ length: 4 }, () => new Animated.Value(0))
   ).current;
   const fabRotation = fanProgress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] });
-  const [hoveredIdx, setHoveredIdx] = useState<number>(-1);
+  const [fanOpen, setFanOpen] = useState(false);
+  const [highlightedIdx, setHighlightedIdx] = useState<number>(-1);
 
   const menuItems = useMemo(() => {
     const items = [
@@ -438,8 +438,6 @@ export default function MapScreen() {
   }, [isSeller, refreshing, sellerVisible, darkMode, handleFindMe, handleRefreshLocation, handleToggleVisibility, handleToggleDarkMode]);
 
   const totalItems = menuItems.length;
-  const menuItemsRef = useRef(menuItems);
-  menuItemsRef.current = menuItems;
 
   const getArcPosition = useCallback((index: number, count: number) => {
     const spread = Math.PI * 0.8;
@@ -448,82 +446,114 @@ export default function MapScreen() {
     return { x: Math.cos(angle) * RADIAL_RADIUS, y: -Math.sin(angle) * RADIAL_RADIUS };
   }, []);
 
-  const findNearest = useCallback((dx: number, dy: number): number => {
-    let closest = -1;
-    let closestDist = Infinity;
-    for (let i = 0; i < totalItems; i++) {
-      const pos = getArcPosition(i, totalItems);
-      const dist = Math.sqrt((dx - pos.x) ** 2 + (dy - pos.y) ** 2);
-      if (dist < HIT_RADIUS && dist < closestDist) { closest = i; closestDist = dist; }
-    }
-    return closest;
-  }, [totalItems, getArcPosition]);
-
   const openFan = useCallback(() => {
+    setFanOpen(true);
     Animated.spring(fanProgress, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12 }).start();
     iconScales.forEach((s, i) => {
-      Animated.spring(s, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12 }).start();
+      Animated.spring(s, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12, delay: i * 40 }).start();
     });
   }, [fanProgress, iconScales]);
 
   const closeFan = useCallback(() => {
+    setFanOpen(false);
+    setHighlightedIdx(-1);
     Animated.spring(fanProgress, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
     iconScales.forEach(s => {
       Animated.spring(s, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
     });
-    setHoveredIdx(-1);
   }, [fanProgress, iconScales]);
 
-  const handleFireAction = useCallback((idx: number) => {
-    const items = menuItemsRef.current;
-    if (idx >= 0 && idx < items.length) items[idx].action();
+  // Refs so PanResponder reads fresh values (no stale closures)
+  const menuItemsRef = useRef(menuItems);
+  menuItemsRef.current = menuItems;
+  const fanOpenRef = useRef(fanOpen);
+  fanOpenRef.current = fanOpen;
+  const openFanRef = useRef(openFan);
+  openFanRef.current = openFan;
+  const closeFanRef = useRef(closeFan);
+  closeFanRef.current = closeFan;
+  const getArcPositionRef = useRef(getArcPosition);
+  getArcPositionRef.current = getArcPosition;
+  const iconScalesRef = useRef(iconScales);
+  iconScalesRef.current = iconScales;
+
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFired = useRef(false);
+  const highlightedIdxRef = useRef(-1);
+
+  const findNearestItem = useCallback((dx: number, dy: number): number => {
+    const count = menuItemsRef.current.length;
+    let closest = -1;
+    let closestDist = Infinity;
+    for (let i = 0; i < count; i++) {
+      const pos = getArcPositionRef.current(i, count);
+      const dist = Math.sqrt((dx - pos.x) ** 2 + (dy - pos.y) ** 2);
+      if (dist < 44 && dist < closestDist) {
+        closest = i;
+        closestDist = dist;
+      }
+    }
+    return closest;
   }, []);
 
-  const handlePanMove = useCallback((dx: number, dy: number) => {
-    const idx = findNearest(dx, dy);
-    setHoveredIdx(prev => {
-      if (prev !== idx) {
-        iconScales.forEach((s, i) => {
-          Animated.spring(s, { toValue: i === idx ? 1 : 0, useNativeDriver: false, tension: 250, friction: 12 }).start();
-        });
-      }
-      return idx;
-    });
-  }, [findNearest, iconScales]);
-
-  const handlePanEnd = useCallback((dx: number, dy: number) => {
-    const idx = findNearest(dx, dy);
-    if (idx >= 0) {
-      // Punch confirmation then fire
-      Animated.sequence([
-        Animated.spring(iconScales[idx], { toValue: 1.5, useNativeDriver: false, tension: 300, friction: 8 }),
-        Animated.parallel([
-          Animated.spring(fanProgress, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }),
-          ...iconScales.map(s => Animated.spring(s, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 })),
-        ]),
-      ]).start(() => {
-        setHoveredIdx(-1);
-        handleFireAction(idx);
-      });
-    } else {
-      closeFan();
-    }
-  }, [findNearest, iconScales, fanProgress, closeFan, handleFireAction]);
-
-  const composed = useMemo(() => {
-    const longPress = Gesture.LongPress()
-      .minDuration(350)
-      .onStart(() => { openFan(); });
-
-    const pan = Gesture.Pan()
-      .activeOffsetX([-10, 10])
-      .activeOffsetY([-10, 10])
-      .onUpdate((e) => { handlePanMove(e.translationX, e.translationY); })
-      .onEnd((e) => { handlePanEnd(e.translationX, e.translationY); })
-      .onFinalize(() => { closeFan(); });
-
-    return Gesture.Simultaneous(longPress, pan);
-  }, [openFan, handlePanMove, handlePanEnd, closeFan]);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => false,
+      onPanResponderGrant: () => {
+        longPressFired.current = false;
+        highlightedIdxRef.current = -1;
+        longPressTimer.current = setTimeout(() => {
+          longPressFired.current = true;
+          openFanRef.current();
+        }, LONG_PRESS_MS);
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        if (!longPressFired.current) return;
+        const idx = findNearestItem(gestureState.dx, gestureState.dy);
+        if (idx !== highlightedIdxRef.current) {
+          highlightedIdxRef.current = idx;
+          setHighlightedIdx(idx);
+          iconScalesRef.current.forEach((s, i) => {
+            Animated.spring(s, {
+              toValue: i === idx ? 1.25 : 0.85,
+              useNativeDriver: false,
+              tension: 300,
+              friction: 12,
+            }).start();
+          });
+        }
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (longPressTimer.current) {
+          clearTimeout(longPressTimer.current);
+          longPressTimer.current = null;
+        }
+        if (longPressFired.current) {
+          const idx = findNearestItem(gestureState.dx, gestureState.dy);
+          closeFanRef.current();
+          if (idx >= 0) {
+            const items = menuItemsRef.current;
+            if (idx < items.length) items[idx].action();
+          }
+        } else {
+          if (fanOpenRef.current) closeFanRef.current();
+          else openFanRef.current();
+        }
+        longPressFired.current = false;
+        highlightedIdxRef.current = -1;
+      },
+      onPanResponderTerminate: () => {
+        if (longPressTimer.current) {
+          clearTimeout(longPressTimer.current);
+          longPressTimer.current = null;
+        }
+        closeFanRef.current();
+        longPressFired.current = false;
+        highlightedIdxRef.current = -1;
+      },
+    })
+  ).current;
 
   const sheetOpacity = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
@@ -563,42 +593,48 @@ export default function MapScreen() {
         bounces={false}
       />
 
-      {/* ── Radial FAB (Gesture Handler + RN Animated) ── */}
-      <GestureDetector gesture={composed}>
-        <View style={[styles.fabAnchor, { bottom: (insets.bottom > 0 ? insets.bottom + 12 : 16) + 56 + insets.bottom + FAB_SIZE / 2 + 8 }]}>
-          {/* Fanned icons */}
-          {menuItems.map((item, i) => {
-            const pos = getArcPosition(i, totalItems);
-            const tx = fanProgress.interpolate({ inputRange: [0, 1], outputRange: [0, pos.x] });
-            const ty = fanProgress.interpolate({ inputRange: [0, 1], outputRange: [0, pos.y] });
-            const isHovered = hoveredIdx === i;
-            return (
-              <Animated.View
-                key={item.label}
-                style={[styles.radialItem, {
-                  transform: [{ translateX: tx }, { translateY: ty }, { scale: iconScales[i] }],
-                  opacity: fanProgress,
-                  zIndex: isHovered ? 20 : 10,
+      {/* ── Radial FAB (Pinterest hold-drag-release) ── */}
+      {fanOpen && (
+        <TouchableOpacity activeOpacity={1} onPress={closeFan} style={styles.mapOverlay} />
+      )}
+      <View style={[styles.fabAnchor, { bottom: (insets.bottom > 0 ? insets.bottom + 12 : 16) + 56 + insets.bottom + FAB_SIZE / 2 + 8 }]}>
+        {/* Fanned icons */}
+        {menuItems.map((item, i) => {
+          const pos = getArcPosition(i, totalItems);
+          const tx = fanProgress.interpolate({ inputRange: [0, 1], outputRange: [0, pos.x] });
+          const ty = fanProgress.interpolate({ inputRange: [0, 1], outputRange: [0, pos.y] });
+          const isHighlighted = highlightedIdx === i;
+          return (
+            <Animated.View
+              key={item.label}
+              style={[styles.radialItem, {
+                transform: [{ translateX: tx }, { translateY: ty }, { scale: iconScales[i] }],
+                opacity: fanProgress,
+              }]}
+            >
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => { closeFan(); item.action(); }}
+                style={[styles.radialItemBtn, {
+                  backgroundColor: isHighlighted ? item.color + '44' : COLORS.surface + 'EE',
+                  borderColor: isHighlighted ? item.color : COLORS.border,
                 }]}
               >
-                <View style={[styles.radialItemBtn, {
-                  backgroundColor: isHovered ? item.color + '33' : COLORS.surface + 'EE',
-                  borderColor: isHovered ? item.color : COLORS.border,
-                }]}>
-                  <MaterialCommunityIcons name={item.icon as any} size={20} color={item.color} />
-                </View>
-              </Animated.View>
-            );
-          })}
+                <MaterialCommunityIcons name={item.icon as any} size={20} color={item.color} />
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        })}
 
-          {/* FAB trigger */}
+        {/* FAB trigger — uses PanResponder for hold-drag-release */}
+        <View {...panResponder.panHandlers}>
           <Animated.View style={[styles.fab, { width: FAB_SIZE, height: FAB_SIZE, borderRadius: FAB_SIZE / 2 }, {
             transform: [{ rotate: fabRotation }],
           }]}>
             <View style={styles.triggerDot} />
           </Animated.View>
         </View>
-      </GestureDetector>
+      </View>
 
       {selectedSeller && (
         <>

@@ -6,7 +6,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { store } from './src/store';
 import { COLORS, SPACING } from './src/theme';
 import { i18n } from './src/i18n';
@@ -382,7 +381,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <GestureHandlerRootView style={{ flex: 1 }}><QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary>{appContent}</ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider></GestureHandlerRootView>;
+  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary>{appContent}</ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
 }
 
 const styles = StyleSheet.create({
