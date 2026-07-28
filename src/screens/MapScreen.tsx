@@ -407,6 +407,11 @@ export default function MapScreen() {
   const LONG_PRESS_MS = 320;
   const isSeller = store.user?.role === 'seller';
 
+  // Height of the floating tab bar's top edge above the true screen bottom.
+  // Must exactly match App.tsx MainTabs tabBarStyle:
+  //   marginBottom: insets.bottom > 0 ? 12 : 16,  height: 56 + insets.bottom
+  const TAB_BAR_TOP_OFFSET = (insets.bottom > 0 ? 12 : 16) + 56 + insets.bottom;
+
   const fanProgress = useRef(new Animated.Value(0)).current;
   const iconScales = useRef(
     Array.from({ length: 4 }, () => new Animated.Value(0))
@@ -597,7 +602,7 @@ export default function MapScreen() {
       {fanOpen && (
         <TouchableOpacity activeOpacity={1} onPress={closeFan} style={styles.mapOverlay} />
       )}
-      <View style={[styles.fabAnchor, { bottom: (insets.bottom > 0 ? insets.bottom + 12 : 16) + 56 + insets.bottom + FAB_SIZE / 2 + 8 }]}>
+      <View style={[styles.fabAnchor, { bottom: TAB_BAR_TOP_OFFSET + FAB_SIZE / 2 + 8 }]}>
         {/* Fanned icons */}
         {menuItems.map((item, i) => {
           const pos = getArcPosition(i, totalItems);
@@ -640,7 +645,7 @@ export default function MapScreen() {
         <>
           <TouchableOpacity activeOpacity={1} onPress={() => { setSelectedSeller(null); setSheetExpanded(false); }} style={styles.mapOverlay} />
           <Animated.View style={[styles.sheet, {
-          bottom: (insets.bottom > 0 ? insets.bottom + 12 : 16) + 56 + insets.bottom + 8,
+          bottom: TAB_BAR_TOP_OFFSET + 8,
           maxHeight: '60%',
           opacity: sheetOpacity,
         }]}>

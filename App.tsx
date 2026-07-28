@@ -117,6 +117,13 @@ function MainTabs() {
           headerShown: false,
           tabBarShowLabel: false,
           animation: 'fade',
+          // NOTE: height + marginBottom here define the tab bar's on-screen
+          // position. MapScreen.tsx has its own TAB_BAR_TOP_OFFSET constant
+          // that mirrors this exact math (for the radial FAB + seller sheet,
+          // which need to sit just above the tab bar). If you change
+          // height/marginBottom here, update TAB_BAR_TOP_OFFSET in
+          // MapScreen.tsx to match, or those elements will drift out of
+          // alignment with the tab bar again.
           tabBarStyle: {
             backgroundColor: COLORS.surface,
             borderRadius: 28,
