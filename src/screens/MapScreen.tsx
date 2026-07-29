@@ -5,6 +5,7 @@ import {
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice, TIER_COLORS } from '../theme';
+import UserAvatar from '../components/UserAvatar';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import {
@@ -649,15 +650,7 @@ export default function MapScreen() {
           <View style={styles.sheetContent}>
             <View style={styles.sheetTop}>
               <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id })} accessibilityLabel="visit seller profile" accessibilityRole="button">
-                <View style={[styles.sheetAvatarRing, { borderColor: selectedSeller.seller_tier && selectedSeller.seller_tier !== 'casual' ? TIER_COLORS[selectedSeller.seller_tier] : 'transparent' }]}>
-                  {sellerAvatar ? (
-                    <Image source={{ uri: sellerAvatar }} style={styles.sheetAvatar} />
-                  ) : (
-                    <View style={[styles.sheetAvatar, styles.sheetAvatarFallback]}>
-                      <Text style={styles.sheetAvatarText}>{(selectedSeller.full_name || '?')[0]}</Text>
-                    </View>
-                  )}
-                </View>
+                <UserAvatar seller={selectedSeller} size={50} />
               </TouchableOpacity>
               <View style={styles.sheetInfo}>
                 <Text style={styles.sheetName} numberOfLines={1}>{getDisplayName(selectedSeller)}</Text>
@@ -758,10 +751,6 @@ const styles = StyleSheet.create({
   chevronRow: { alignItems: 'center', paddingVertical: 6 },
   sheetContent: {},
   sheetTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingBottom: 10, gap: 10 },
-  sheetAvatarRing: { width: 50, height: 50, borderRadius: 25, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  sheetAvatar: { width: 44, height: 44, borderRadius: 22 },
-  sheetAvatarFallback: { backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
-  sheetAvatarText: { color: '#fff', fontSize: 18, fontWeight: '700' },
   sheetInfo: { flex: 1 },
   sheetName: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   sheetMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },

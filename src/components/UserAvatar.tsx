@@ -32,7 +32,7 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
   const outerSize = size + ringPad * 2;
 
   return (
-    <View style={[{ width: outerSize, height: outerSize }, resolvedRing && { borderRadius: r + ringPad, borderWidth: 2, borderColor: resolvedRing }]}>
+    <View style={[{ width: outerSize, height: outerSize, alignItems: 'center', justifyContent: 'center' }, resolvedRing && { borderRadius: r + ringPad, borderWidth: 2, borderColor: resolvedRing }]}>
       <View style={[styles.container, { width: size, height: size, borderRadius: r }]}>
         {avatarUrl && !failed ? (
           <Image
