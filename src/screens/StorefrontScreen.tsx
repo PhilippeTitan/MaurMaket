@@ -5,7 +5,7 @@ import {
 import { Icon } from '../components/icons/Icon';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, TIER_COLORS } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation, getConversations } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
@@ -18,6 +18,7 @@ import type { Product, Review, SellerProfile } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
 import { useToast } from '../components/Toast';
 import StockBadge from '../components/StockBadge';
+import UserAvatar from '../components/UserAvatar';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
 type Tab = 'listings' | 'reviews';
@@ -161,11 +162,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
     : '';
 
   const tier = seller?.seller_tier || 'casual';
-  const tierColor = TIER_COLORS[tier] || COLORS.yellow;
   const isBusinessMode = tier === 'business' && seller?.use_store_identity;
   const displayName = isBusinessMode ? seller?.store_name || getDisplayName(seller) : getDisplayName(seller);
-  const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
-  const avatarUrl = getImageUrl(getSellerAvatar(seller));
   const locationCity = (seller as any)?.location_city || '';
 
   const ratingBuckets = [5, 4, 3, 2, 1].map(s => ({
@@ -289,15 +287,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 
               {/* Avatar + Stats row */}
               <View style={styles.avatarRow}>
-                <View style={[styles.tierRing, { borderColor: tierColor, borderWidth: tierColor === 'transparent' ? 0 : 3 }]}>
-                  <View style={[styles.avatar, { borderRadius: isBusinessMode ? 24 : 38 }]}>
-                    {avatarUrl ? (
-                      <Image source={{ uri: avatarUrl }} style={[styles.avatarImg, { borderRadius: isBusinessMode ? 22 : 36 }]} accessibilityLabel="seller avatar" />
-                    ) : (
-                      <Text style={styles.avatarText}>{initials}</Text>
-                    )}
-                  </View>
-                </View>
+                <UserAvatar seller={seller} size={76} />
 
                 <View style={styles.statsRow}>
                   <View style={styles.stat}>
@@ -517,10 +507,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.lg, paddingTop: 60,
   },
-  tierRing: { width: 82, height: 82, borderRadius: 41, alignItems: 'center', justifyContent: 'center' },
-  avatar: { width: 76, height: 76, borderRadius: 38, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarImg: { width: 76, height: 76 },
-  avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
 
   statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
   stat: { alignItems: 'center' },

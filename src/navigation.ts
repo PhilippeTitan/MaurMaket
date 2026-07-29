@@ -33,6 +33,7 @@ export type RootStackParamList = {
     otherUserName: string;
     otherUserId?: string;
     otherUserAvatar?: string | null;
+    otherUserTier?: string;
     draftOffer?: {
       productId: string;
       productName: string;

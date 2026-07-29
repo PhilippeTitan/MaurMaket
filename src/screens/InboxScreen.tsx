@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator, TextInput, Image, ScrollView,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator, TextInput, ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -8,15 +8,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS, TIER_COLORS } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
-import { getConversations, getNotifications, getFollowing, getImageUrl, createConversation } from '../api';
+import { getConversations, getNotifications, getFollowing, createConversation } from '../api';
 import { useToast } from '../components/Toast';
 import type { Conversation } from '../types';
 import type { RootStackParamList } from '../navigation';
+import UserAvatar from '../components/UserAvatar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type InboxTab = 'all' | 'primary' | 'general';
@@ -129,9 +130,7 @@ export default function InboxScreen() {
 
   const renderConversation = ({ item }: { item: Conversation }) => {
     const otherName = (item as any).other_party_name || 'Seller';
-    const initial = otherName[0] || '?';
     const hasUnread = (item.unread_count || 0) > 0;
-    const avatarUrl = getImageUrl((item as any).other_party_avatar);
     const storeName = (item as any).other_party_store_name;
     const sellerTier = (item as any).other_party_seller_tier;
     const otherUserId = (item as any).other_party_id;
@@ -140,20 +139,14 @@ export default function InboxScreen() {
       <View style={styles.convo}>
         <TouchableOpacity
           style={styles.convoMain}
-          onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId, otherUserAvatar: (item as any).other_party_avatar })}
+          onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId, otherUserAvatar: (item as any).other_party_avatar, otherUserTier: sellerTier })}
           accessibilityLabel={`conversation with ${otherName}`}
           accessibilityRole="button"
           activeOpacity={0.7}
         >
-          <View style={[styles.convoAvatarRing, { borderColor: sellerTier && sellerTier !== 'none' && sellerTier !== 'casual' ? TIER_COLORS[sellerTier] : 'transparent' }]}>
-            <View style={[styles.convoAvatar, { backgroundColor: COLORS.coral }]}>
-              {avatarUrl ? (
-                <Image source={{ uri: avatarUrl }} style={styles.convoAvatarImg} />
-              ) : (
-                <Text style={styles.convoAvatarText}>{initial}</Text>
-              )}
-              {hasUnread && <View style={styles.convoUnreadBadge} />}
-            </View>
+          <View style={{ position: 'relative' }}>
+            <UserAvatar seller={{ avatar_url: (item as any).other_party_avatar, full_name: otherName, seller_tier: sellerTier } as any} size={56} />
+            {hasUnread && <View style={styles.convoUnreadBadge} />}
           </View>
           <View style={styles.convoBody}>
             <View style={styles.convoNameRow}>
@@ -186,20 +179,18 @@ export default function InboxScreen() {
   };
 
   const SellerBubble = ({ seller }: { seller: any }) => {
-    const initial = (seller.full_name || '?')[0];
-    const avatarUrl = getImageUrl(seller.avatar_url);
     const hasActivity = seller.has_unread_activity;
     const displayName = seller.store_name || (seller.username ? `@${seller.username}` : seller.full_name?.split(' ')[0]);
     const handlePress = async () => {
       try {
         const existing = conversations.find(c => c.seller_id === seller.seller_id || c.buyer_id === seller.seller_id);
         if (existing) {
-          nav.navigate('Chat', { conversationId: existing.id, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url });
+          nav.navigate('Chat', { conversationId: existing.id, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url, otherUserTier: seller.seller_tier });
           return;
         }
         const res = await createConversation({ sellerId: seller.seller_id }) as { conversationId: string };
         if (res.conversationId) {
-          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url });
+          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url, otherUserTier: seller.seller_tier });
         }
       } catch {
         toast.error('Could not start a conversation', 'Please check your connection and try again.', handlePress);
@@ -207,15 +198,7 @@ export default function InboxScreen() {
     };
     return (
       <TouchableOpacity style={styles.sellerBubble} onPress={handlePress} accessibilityLabel={`message ${displayName}`} accessibilityRole="button">
-        <View style={[styles.sellerBubbleRing, { borderColor: seller.seller_tier && seller.seller_tier !== 'none' && seller.seller_tier !== 'casual' ? TIER_COLORS[seller.seller_tier] : COLORS.border }]}>
-          <View style={[styles.sellerBubbleAvatar, { backgroundColor: COLORS.coral }]}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.sellerBubbleImg} />
-            ) : (
-              <Text style={styles.sellerBubbleText}>{initial}</Text>
-            )}
-          </View>
-        </View>
+        <UserAvatar seller={seller} size={54} />
         <Text style={styles.sellerBubbleName} numberOfLines={1}>
           {displayName}
         </Text>
@@ -361,17 +344,9 @@ const styles = StyleSheet.create({
   bubblesSection: { paddingTop: SPACING.xs, paddingBottom: 4 },
   bubblesRow: { paddingHorizontal: SPACING.md, gap: 14 },
   sellerBubble: { alignItems: 'center', width: 64 },
-  sellerBubbleRing: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  sellerBubbleAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  sellerBubbleImg: { width: 54, height: 54, borderRadius: 27 },
-  sellerBubbleText: { fontSize: 20, color: COLORS.white, fontWeight: '700' },
   sellerBubbleName: { fontSize: 11, color: COLORS.text2, marginTop: 4, textAlign: 'center' },
   convo: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 10 },
   convoMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  convoAvatarRing: { width: 62, height: 62, borderRadius: 31, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  convoAvatar: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  convoAvatarImg: { width: 56, height: 56, borderRadius: 28 },
-  convoAvatarText: { fontSize: 20, color: COLORS.white, fontWeight: '700' },
   convoUnreadBadge: { position: 'absolute', top: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: '#00C853', borderWidth: 2, borderColor: COLORS.bg },
   convoBody: { flex: 1 },
   convoNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

@@ -15,6 +15,7 @@ import type { Message } from '../types';
 import { store } from '../store';
 import * as ImagePicker from 'expo-image-picker';
 import { useToast } from '../components/Toast';
+import UserAvatar from '../components/UserAvatar';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string };
@@ -24,7 +25,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
-  const { conversationId, otherUserName, otherUserId, otherUserAvatar, draftOffer } = route.params;
+  const { conversationId, otherUserName, otherUserId, otherUserAvatar, otherUserTier, draftOffer } = route.params;
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -345,13 +346,10 @@ export default function ChatScreen({ route, navigation }: Props) {
           accessibilityLabel="view profile"
           accessibilityRole="button"
         >
-          {getImageUrl(otherUserAvatar) ? (
-            <Image source={{ uri: getImageUrl(otherUserAvatar)! }} style={styles.headerAvatarImg} />
-          ) : (
-            <View style={styles.headerAvatar}>
-              <Text style={styles.headerAvatarText}>{(otherUserName || '?')[0]}</Text>
-            </View>
-          )}
+          <UserAvatar
+            seller={{ avatar_url: otherUserAvatar, full_name: otherUserName, seller_tier: otherUserTier } as any}
+            size={34}
+          />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
             <View style={styles.headerOnlineRow}>
@@ -513,9 +511,6 @@ const styles = StyleSheet.create({
   },
   headerBack: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   headerProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(128,128,128,0.25)', alignItems: 'center', justifyContent: 'center' },
-  headerAvatarImg: { width: 34, height: 34, borderRadius: 17 },
-  headerAvatarText: { fontSize: 14, color: COLORS.text2, fontWeight: '700' },
   headerName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   headerOnlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
   onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.green },

@@ -9,7 +9,7 @@ import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice, TIER_COLORS } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
 import { useUser } from '../hooks';
 import { store } from '../store';
@@ -21,6 +21,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Product, Order, Review } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
 import StockBadge from '../components/StockBadge';
+import UserAvatar from '../components/UserAvatar';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 60_000;
@@ -77,18 +78,14 @@ export default function MeScreen() {
   const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
 
   const tier = user?.seller_tier || 'casual';
-  const tierColor = TIER_COLORS[tier] || 'transparent';
   const isBusinessMode = isSeller && user?.seller_tier === 'business' && user?.use_store_identity;
   const displayName = isBusinessMode ? (user as any)?.store_name || getDisplayName(user) : getDisplayName(user);
-  const initials = (isBusinessMode ? (user as any)?.store_name || getDisplayName(user) : getDisplayName(user)).split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
   const memberSince = user?.created_at
     ? `${t('me.since')} ${new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
     : '';
 
   const locationCity = (user as any)?.location_city || '';
-
-  const avatarUrl = getImageUrl(user?.avatar_url);
 
 
   const fetchData = useCallback(async (force = false) => {
@@ -330,15 +327,7 @@ export default function MeScreen() {
 
         {/* Avatar with TierRing + Stats row */}
         <View style={styles.avatarRow}>
-          <View style={[styles.tierRing, { borderColor: tierColor, borderWidth: tierColor === 'transparent' ? 0 : 3 }]}>
-            <View style={[styles.avatar, { borderRadius: isBusinessMode ? 22 : 40 }]}>
-              {avatarUrl ? (
-                <Image source={{ uri: avatarUrl }} style={[styles.avatarImg, { borderRadius: isBusinessMode ? 20 : 40 }]} accessibilityLabel="profile avatar" />
-              ) : (
-                <Text style={styles.avatarText}>{initials}</Text>
-              )}
-            </View>
-          </View>
+          <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={76} />
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
@@ -657,10 +646,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.lg, paddingTop: 60,
   },
-  tierRing: { width: 82, height: 82, borderRadius: 41, alignItems: 'center', justifyContent: 'center' },
-  avatar: { width: 76, height: 76, borderRadius: 38, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarImg: { width: 76, height: 76 },
-  avatarText: { fontSize: 28, color: COLORS.white, fontWeight: '700' },
   nameBioBlock: { paddingHorizontal: SPACING.lg, paddingTop: 12 },
   bio: { fontSize: 13, color: COLORS.text2, lineHeight: 20, marginTop: 6 },
   memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.65, marginTop: 4 },
