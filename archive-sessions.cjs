@@ -16,7 +16,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DB_PATH = path.join(process.env.HOME || process.env.USERPROFILE, '.local', 'share', 'opencode', 'opencode.db');
-const ARCHIVE_DIR = path.join(process.env.HOME || process.env.USERPROFILE, 'MAURINEX', 'MAURINEX NOTES', 'MaurMaket', 'sessions', 'archive');
+const ARCHIVE_DIR = 'C:/MAURINEX/MAURINEX NOTES/MaurMaket/sessions/archive';
 
 const db = new Database(DB_PATH, { readonly: true });
 

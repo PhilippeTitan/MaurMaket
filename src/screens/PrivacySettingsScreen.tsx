@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
     justifyContent: 'center',
   },
-  toggleActive: { backgroundColor: COLORS.green + '40', borderColor: COLORS.green },
+  toggleActive: { backgroundColor: COLORS.green + '80', borderColor: COLORS.green },
   toggleKnob: { width: 20, height: 20, borderRadius: RADIUS.row, backgroundColor: COLORS.text2 },
-  toggleKnobActive: { backgroundColor: COLORS.green, alignSelf: 'flex-end' },
+  toggleKnobActive: { backgroundColor: '#fff', alignSelf: 'flex-end' },
 });

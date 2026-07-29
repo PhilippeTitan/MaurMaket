@@ -58,4 +58,5 @@ export type RootStackParamList = {
   SellerToolsSettings: undefined;
   PrivacySettings: undefined;
   UsernameSettings: undefined;
+  LanguageSettings: undefined;
 };

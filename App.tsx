@@ -49,6 +49,7 @@ import EditProfileScreen from './src/screens/EditProfileScreen';
 import SellerToolsSettingsScreen from './src/screens/SellerToolsSettingsScreen';
 import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
 import UsernameSettingsScreen from './src/screens/UsernameSettingsScreen';
+import LanguageSettingsScreen from './src/screens/LanguageSettingsScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
 import PromoManagementScreen from './src/screens/PromoManagementScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
@@ -388,6 +389,7 @@ export default function App() {
             <Stack.Screen name="SellerToolsSettings" component={SellerToolsSettingsScreen} />
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
             <Stack.Screen name="UsernameSettings" component={UsernameSettingsScreen} />
+            <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
             <Stack.Screen name="Meetup" component={LazyMeetupScreen} />
             <Stack.Screen name="PromoManagement" component={PromoManagementScreen} />

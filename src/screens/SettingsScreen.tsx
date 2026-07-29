@@ -114,15 +114,18 @@ export default function SettingsScreen({ navigation }: Props) {
       {/* ── Preferences ── */}
       <SectionHeader title="Preferences" />
       <View style={styles.card}>
-        <View style={styles.row}>
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('LanguageSettings')}>
           <Icon name="time" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>Language</Text>
-          <Text style={styles.rowValue}>{langLabel}</Text>
-        </View>
+          <View style={styles.rowRight}>
+            <Text style={styles.rowValue}>{langLabel}</Text>
+            <Icon name="chevron-right" size={16} color={COLORS.text2} />
+          </View>
+        </TouchableOpacity>
       </View>
 
-      {/* ── Support ── */}
-      <View style={styles.card}>
+      {/* ── Log out ── */}
+      <View style={styles.logoutCard}>
         <TouchableOpacity style={styles.row} onPress={handleLogout}>
           <MaterialCommunityIcons name="logout" size={18} color={COLORS.coral} />
           <Text style={[styles.rowLabel, { color: COLORS.coral, fontWeight: '600' }]}>Log out</Text>
@@ -146,6 +149,10 @@ const styles = StyleSheet.create({
   },
   card: {
     marginHorizontal: SPACING.lg, backgroundColor: COLORS.surface,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, overflow: 'hidden',
+  },
+  logoutCard: {
+    marginHorizontal: SPACING.lg, marginTop: 20, backgroundColor: COLORS.surface,
     borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, overflow: 'hidden',
   },
 
