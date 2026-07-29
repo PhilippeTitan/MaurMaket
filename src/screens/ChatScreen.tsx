@@ -63,12 +63,14 @@ export default function ChatScreen({ route, navigation }: Props) {
       if (res.context?.product) setProductContext(res.context.product);
       if (older) {
         setMessages(prev => [...msgs, ...prev]);
-      } else if (lastMessageCursor.current && msgs.length > 0) {
-        setMessages(prev => {
-          const existingIds = new Set(prev.map(m => m.id));
-          const newMsgs = msgs.filter(m => !existingIds.has(m.id));
-          return newMsgs.length > 0 ? [...prev, ...newMsgs] : prev;
-        });
+      } else if (lastMessageCursor.current) {
+        if (msgs.length > 0) {
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(m => m.id));
+            const newMsgs = msgs.filter(m => !existingIds.has(m.id));
+            return newMsgs.length > 0 ? [...prev, ...newMsgs] : prev;
+          });
+        }
       } else {
         setMessages(msgs);
       }
