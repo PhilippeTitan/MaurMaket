@@ -12,7 +12,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import {
   getProducts, toggleWishlist, checkWishlist, createConversation, toggleFollow,
-  getImageUrl, getConversationUnreadCount, getProductReviews, getFollowing,
+  getImageUrl, getUnreadCount, getProductReviews, getFollowing,
   trackFeedEvent,
 } from '../api';
 import { store } from '../store';
@@ -21,6 +21,7 @@ import type { RootStackParamList } from '../navigation';
 import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
+import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { tapLight } from '../haptics';
@@ -40,7 +41,6 @@ export default function FeedScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [screenHeight, setScreenHeight] = useState(0);
   const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
-  const [followedSellerIds, setFollowedSellerIds] = useState<Set<string>>(new Set());
   const [cartCount, setCartCount] = useState(store.cartCount);
   const [unreadCount, setUnreadCount] = useState(0);
   const [commentProduct, setCommentProduct] = useState<Product | null>(null);
@@ -91,7 +91,7 @@ export default function FeedScreen() {
     let mounted = true;
     const loadUnread = async () => {
       try {
-        const res = await getConversationUnreadCount() as { count: string | number };
+        const res = await getUnreadCount() as { count: string | number };
         if (mounted) setUnreadCount(Number(res.count || 0));
       } catch {
         if (mounted) setUnreadCount(0);
@@ -130,7 +130,7 @@ export default function FeedScreen() {
         const res = await getFollowing() as { following?: Array<{ seller_id?: string; id?: string }> };
         if (!mounted) return;
         const ids = (res.following || []).map((f) => f.seller_id || f.id).filter(Boolean) as string[];
-        setFollowedSellerIds(new Set(ids));
+        store.setFollowingList(ids);
       } catch { /* silent */ }
     })();
     return () => { mounted = false; };
@@ -260,30 +260,15 @@ export default function FeedScreen() {
 
   const handleFollow = async (sellerId: string) => {
     tapLight();
-    const wasFollowing = followedSellerIds.has(sellerId);
-    setFollowedSellerIds(prev => {
-      const next = new Set(prev);
-      if (wasFollowing) next.delete(sellerId);
-      else next.add(sellerId);
-      return next;
-    });
+    const wasFollowing = store.isFollowing(sellerId);
+    store.toggleFollowing(sellerId, !wasFollowing);
     try {
       const res = await toggleFollow(sellerId) as { following?: boolean };
       if (typeof res.following === 'boolean') {
-        setFollowedSellerIds(prev => {
-          const next = new Set(prev);
-          if (res.following) next.add(sellerId);
-          else next.delete(sellerId);
-          return next;
-        });
+        store.toggleFollowing(sellerId, res.following);
       }
     } catch {
-      setFollowedSellerIds(prev => {
-        const next = new Set(prev);
-        if (wasFollowing) next.add(sellerId);
-        else next.delete(sellerId);
-        return next;
-      });
+      store.toggleFollowing(sellerId, wasFollowing);
       toast.error('Follow could not update', 'Your follow status was restored. Please try again.', () => handleFollow(sellerId));
     }
   };
@@ -291,10 +276,8 @@ export default function FeedScreen() {
   const renderFeedItem = ({ item }: { item: Product }) => {
     const primaryImg = item.images?.find(i => i.is_primary) || item.images?.[0];
     const imgUrl = getImageUrl(primaryImg?.image_url);
-    const isSoldOut = item.stock <= 0;
-    const isFollowing = followedSellerIds.has(item.seller_id);
+    const isFollowing = store.isFollowing(item.seller_id);
     const isOwnProduct = store.user?.id === item.seller_id;
-    const stockLabel = isSoldOut ? t('feed.soldOut') : item.stock === 1 ? t('feed.oneLeft') : `${item.stock} ${t('feed.available').toLowerCase()}`;
 
     return (
       <View style={[styles.slide, { height: screenHeight }]}>
@@ -405,7 +388,10 @@ export default function FeedScreen() {
 
           {/* Product name + info */}
           <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-          <Text style={styles.productInfo}>{typeof item.category === 'string' ? item.category : item.category?.name || 'Port-au-Prince'} - {stockLabel}</Text>
+          <View style={styles.productInfoRow}>
+            <Text style={styles.productInfo}>{typeof item.category === 'string' ? item.category : item.category?.name || 'Port-au-Prince'}</Text>
+            <StockBadge stock={item.stock} size="sm" />
+          </View>
 
           {/* Buy / Cart buttons */}
           <BuyRow product={item} navigation={nav} />
@@ -450,11 +436,11 @@ export default function FeedScreen() {
           <TouchableOpacity
             style={styles.utilityBtn}
             activeOpacity={0.82}
-            onPress={() => nav.navigate('Inbox', { returnTab: 'FeedTab' })}
+            onPress={() => nav.navigate('Notification')}
             accessibilityRole="button"
-            accessibilityLabel={t('accessibility.messages')}
+            accessibilityLabel="notifications"
           >
-            <MaterialCommunityIcons name="message-text-outline" size={35} color={COLORS.white} />
+            <MaterialCommunityIcons name="bell-outline" size={35} color={COLORS.white} />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -573,10 +559,10 @@ export default function FeedScreen() {
                 contentContainerStyle={{ paddingBottom: 12 }}
                 renderItem={({ item }) => (
                   <View style={styles.commentItem}>
-                      <UserAvatar name={item.reviewer?.full_name || 'B'} />
+                      <UserAvatar name={item.reviewer?.username ? `@${item.reviewer.username}` : 'B'} />
                     <View style={styles.commentBody}>
                       <View style={styles.commentNameRow}>
-                        <Text style={styles.commentName}>{item.reviewer?.username ? `@${item.reviewer.username}` : (item.reviewer?.full_name || 'Buyer')}</Text>
+                        <Text style={styles.commentName}>{item.reviewer?.username ? `@${item.reviewer.username}` : 'Buyer'}</Text>
                         <View style={styles.commentStars}>
                           <Icon name="rating" size={11} color={COLORS.yellow} />
                           <Text style={styles.commentRating}>{item.rating}</Text>
@@ -885,10 +871,15 @@ const styles = StyleSheet.create({
     marginBottom: 2,
     lineHeight: 22,
   },
+  productInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
   productInfo: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.7)',
-    marginBottom: 12,
   },
   actionDisabled: { opacity: 0.45 },
 

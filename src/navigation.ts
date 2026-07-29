@@ -60,4 +60,5 @@ export type RootStackParamList = {
   PrivacySettings: undefined;
   UsernameSettings: undefined;
   LanguageSettings: undefined;
+  OfferDetail: { messageId: string; conversationId: string };
 };

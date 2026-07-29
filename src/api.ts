@@ -372,6 +372,12 @@ export const respondToOffer = (messageId: string, action: 'accepted' | 'declined
   request(`/offers/${messageId}/respond`, { method: 'POST', body: JSON.stringify({ action }) });
 export const counterOffer = (messageId: string, offeredPrice: number) =>
   request(`/offers/${messageId}/counter`, { method: 'POST', body: JSON.stringify({ offeredPrice }) });
+export const getSellerItems = (sellerId: string) =>
+  request(`/sellers/${sellerId}/items`);
+export const getConversationsWithOffers = () =>
+  request('/conversations/with-offers');
+export const getOfferDetail = (messageId: string) =>
+  request(`/offers/${messageId}`);
 
 // Promos
 export const validatePromo = (code: string, orderTotal: number) =>

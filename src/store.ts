@@ -7,6 +7,7 @@ interface StoreState {
   user: User | null;
   token: string | null;
   cart: CartItem[];
+  followedSellerIds: Set<string>;
   listeners: Listener[];
 }
 
@@ -34,6 +35,7 @@ const state: StoreState = {
   user: null,
   token: null,
   cart: [],
+  followedSellerIds: new Set(),
   listeners: [],
 };
 
@@ -48,6 +50,8 @@ export const store = {
   get isLoggedIn() { return !!state.token; },
   get isSeller() { return state.user?.role === 'seller'; },
   get isEmailVerified() { return !!state.user?.email_verified; },
+  get followedSellerIds() { return state.followedSellerIds; },
+  isFollowing(sellerId: string) { return state.followedSellerIds.has(sellerId); },
 
   async init() {
     const token = await storage.getItem('mm_token');
@@ -134,6 +138,17 @@ export const store = {
   async clearCart() {
     state.cart = [];
     await storage.deleteItem('mm_cart');
+    notify();
+  },
+
+  setFollowingList(ids: string[]) {
+    state.followedSellerIds = new Set(ids);
+    notify();
+  },
+
+  toggleFollowing(sellerId: string, following: boolean) {
+    if (following) state.followedSellerIds.add(sellerId);
+    else state.followedSellerIds.delete(sellerId);
     notify();
   },
 

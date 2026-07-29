@@ -305,13 +305,13 @@ export default function MeScreen() {
       {/* Top bar — floats over hero */}
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
         <TouchableOpacity
-          style={styles.settingsBtn}
-          onPress={() => nav.navigate('Settings')}
+          style={styles.sellBtn}
+          onPress={() => nav.navigate(store.isSeller ? 'AddListing' : 'SellerOnboarding')}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel="settings"
+          accessibilityLabel="add listing"
         >
-          <MaterialCommunityIcons name="cog-outline" size={20} color={COLORS.text} />
+          <MaterialCommunityIcons name="plus" size={28} color={COLORS.text} />
         </TouchableOpacity>
 
         <View style={styles.topBarNameWrap}>
@@ -320,6 +320,16 @@ export default function MeScreen() {
             <Icon name="verified" size={18} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
           )}
         </View>
+
+        <TouchableOpacity
+          style={styles.settingsBtn}
+          onPress={() => nav.navigate('Settings')}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="settings"
+        >
+          <MaterialCommunityIcons name="cog-outline" size={20} color={COLORS.text} />
+        </TouchableOpacity>
       </View>
 
       {/* Hero */}
@@ -480,7 +490,7 @@ export default function MeScreen() {
               accessibilityLabel={`edit ${p.name}, ${p.stock} left`}
             >
               <Text style={styles.lowStockItemName} numberOfLines={1}>{p.name}</Text>
-              <Text style={styles.lowStockItemStock}>{p.stock} left</Text>
+              <StockBadge stock={p.stock} size="sm" />
             </TouchableOpacity>
           ))}
         </View>
@@ -630,6 +640,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
   },
+  sellBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    position: 'absolute', left: SPACING.lg,
+  },
   settingsBtn: {
     width: 36, height: 36, borderRadius: 18,
     borderWidth: 1, borderColor: COLORS.border,
@@ -741,10 +756,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6,
     paddingHorizontal: 7, paddingVertical: 3,
   },
-  stockBadgeBottom: {
-    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 6,
-    paddingHorizontal: 6, paddingVertical: 3,
-  },
+  stockBadgeBottom: {},
 
   /* Empty */
   empty: { alignItems: 'center', paddingVertical: 40, gap: 6 },

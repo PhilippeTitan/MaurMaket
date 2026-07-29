@@ -716,6 +716,24 @@ async function runMigrations() {
       );
     `);
 
+    // Add negotiation_round and fix CHECK constraint to include 'countered'
+    await c.query(`
+      ALTER TABLE message_offers ADD COLUMN IF NOT EXISTS negotiation_round INTEGER DEFAULT 1;
+    `);
+    // Drop old CHECK and recreate with 'countered' added
+    await c.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'message_offers_status_check' AND conrelid = 'message_offers'::regclass) THEN
+          ALTER TABLE message_offers DROP CONSTRAINT message_offers_status_check;
+        END IF;
+      END$$;
+    `);
+    await c.query(`
+      ALTER TABLE message_offers ADD CONSTRAINT message_offers_status_check
+        CHECK (status IN ('pending', 'accepted', 'declined', 'expired', 'redeemed', 'countered'));
+    `);
+
     // Performance indexes
     await c.query(`
       CREATE INDEX IF NOT EXISTS idx_products_seller_id ON products(seller_id);
@@ -2172,7 +2190,7 @@ app.get('/api/products', async (req, res) => {
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
-              u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar, u.use_store_identity,
+              u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar, u.use_store_identity, u.username AS seller_username,
               c.name AS category
               ${selectExtra}
        FROM products p
@@ -2215,7 +2233,7 @@ app.get('/api/products/:id', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar, u.phone AS seller_phone,
-              u.store_name, u.store_logo_url, u.seller_tier, u.id_verified, u.use_store_identity,
+              u.store_name, u.store_logo_url, u.seller_tier, u.id_verified, u.use_store_identity, u.username AS seller_username,
               c.name AS category,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
@@ -3962,7 +3980,7 @@ app.get('/api/conversations', authRequired, async (req, res) => {
     const result = await pool.query(
       `SELECT c.*, 
               CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
-              u.full_name AS other_party_name, u.avatar_url AS other_party_avatar, u.seller_tier AS other_party_seller_tier,
+              u.full_name AS other_party_name, u.username AS other_party_username, u.avatar_url AS other_party_avatar, u.seller_tier AS other_party_seller_tier,
               latest.last_message,
               COUNT(unread.id)::INTEGER AS unread_count
        FROM conversations c
@@ -4050,8 +4068,19 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
     const since = req.query.since;
     const sinceId = req.query.sinceId;
-    let query = `SELECT m.*, u.full_name AS sender_name
+    let query = `SELECT m.*, u.full_name AS sender_name,
+       mo.product_id AS offer_product_id,
+       mo.offered_price AS offer_offered_price,
+       mo.list_price AS offer_list_price,
+       mo.status AS offer_status,
+       mo.negotiation_round AS offer_negotiation_round,
+       mo.buyer_id AS offer_buyer_id,
+       mo.seller_id AS offer_seller_id,
+       mo.expires_at AS offer_expires_at,
+       p.name AS offer_product_name
        FROM messages m JOIN users u ON m.sender_id = u.id
+       LEFT JOIN message_offers mo ON mo.message_id = m.id
+       LEFT JOIN products p ON p.id = mo.product_id
        WHERE m.conversation_id = $1`;
     const params = [req.params.id];
     if (since) {
@@ -4071,6 +4100,32 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
       params.push(limit, offset);
     }
     const result = await pool.query(query, params);
+    const messages = result.rows.map(row => {
+      const msg = { ...row };
+      if (msg.offer_product_id) {
+        msg.offer_data = {
+          productId: msg.offer_product_id,
+          productName: msg.offer_product_name,
+          offeredPrice: parseFloat(msg.offer_offered_price),
+          listPrice: parseFloat(msg.offer_list_price),
+          status: msg.offer_status,
+          negotiationRound: msg.offer_negotiation_round || 1,
+          buyerId: msg.offer_buyer_id,
+          sellerId: msg.offer_seller_id,
+          expiresAt: msg.offer_expires_at,
+        };
+      }
+      delete msg.offer_product_id;
+      delete msg.offer_product_name;
+      delete msg.offer_offered_price;
+      delete msg.offer_list_price;
+      delete msg.offer_status;
+      delete msg.offer_negotiation_round;
+      delete msg.offer_buyer_id;
+      delete msg.offer_seller_id;
+      delete msg.offer_expires_at;
+      return msg;
+    });
     let product = null;
     if (conv.rows[0].product_id) {
       const productResult = await pool.query(
@@ -4081,7 +4136,7 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
       );
       product = productResult.rows[0] || null;
     }
-    res.json({ messages: result.rows, context: { product } });
+    res.json({ messages, context: { product } });
   } catch (err) {
     console.error('Messages fetch error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -4137,6 +4192,33 @@ app.get('/api/conversations/unread-count', authRequired, async (req, res) => {
     res.json({ count: parseInt(result.rows[0].count) });
   } catch (err) {
     console.error('Unread count error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get conversations with active offers (for Inbox Offers tab)
+app.get('/api/conversations/with-offers', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT c.*,
+              u.full_name AS other_party_name, u.username AS other_party_username, u.avatar_url AS other_party_avatar,
+              u.store_name AS other_party_store_name,
+              u.seller_tier AS other_party_seller_tier,
+              CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
+              mo.message_id AS offer_message_id, mo.offered_price, mo.status AS offer_status,
+              mo.negotiation_round, mo.product_id,
+              p.name AS product_name, mo.expires_at AS offer_expires_at
+       FROM conversations c
+       JOIN users u ON u.id = CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END
+       JOIN message_offers mo ON mo.conversation_id = c.id AND mo.status IN ('pending', 'countered')
+       JOIN products p ON p.id = mo.product_id
+       WHERE (c.buyer_id = $1 OR c.seller_id = $1)
+       ORDER BY mo.expires_at ASC`,
+      [req.user.id]
+    );
+    res.json({ conversations: result.rows });
+  } catch (err) {
+    console.error('Offer conversations fetch error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4257,6 +4339,7 @@ app.post('/api/conversations/:id/offer', authRequired, msgLimiter, async (req, r
         offeredPrice: parseFloat(offer.offered_price),
         listPrice: parseFloat(offer.list_price),
         status: offer.status,
+        negotiationRound: 1,
       }}
     });
   } catch (err) {
@@ -4351,6 +4434,7 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
 
 // A seller can counter directly on the structured offer card. The buyer can then
 // accept or decline the revised price with the existing response endpoint.
+// Max 3 negotiation rounds per offer.
 app.post('/api/offers/:messageId/counter', authRequired, msgLimiter, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -4363,20 +4447,90 @@ app.post('/api/offers/:messageId/counter', authRequired, msgLimiter, async (req,
     );
     const offer = result.rows[0];
     if (!offer) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Offer not found' }); }
-    if (offer.seller_id !== req.user.id || offer.status !== 'pending') { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This offer cannot be countered' }); }
-    if (offer.expires_at && new Date(offer.expires_at) < new Date()) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Offer has expired' }); }
-    await client.query("UPDATE message_offers SET offered_price = $1, status = 'countered', responded_at = CURRENT_TIMESTAMP WHERE message_id = $2", [offeredPrice, req.params.messageId]);
-    await client.query("INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, $3, 'text')", [offer.conversation_id, req.user.id, `Seller countered with G ${offeredPrice}`]);
+    if (offer.seller_id !== req.user.id || !['pending', 'countered'].includes(offer.status)) {
+      await client.query('ROLLBACK'); return res.status(403).json({ error: 'This offer cannot be countered' });
+    }
+    if (offer.expires_at && new Date(offer.expires_at) < new Date()) {
+      await client.query('ROLLBACK'); return res.status(400).json({ error: 'Offer has expired' });
+    }
+    const currentRound = offer.negotiation_round || 1;
+    if (currentRound >= 3) {
+      await client.query('ROLLBACK'); return res.status(400).json({ error: 'Maximum 3 negotiation rounds reached. Accept, decline, or let the buyer send a new offer.' });
+    }
+    await client.query(
+      "UPDATE message_offers SET offered_price = $1, status = 'countered', negotiation_round = $2, responded_at = CURRENT_TIMESTAMP, expires_at = CURRENT_TIMESTAMP + INTERVAL '48 hours' WHERE message_id = $3",
+      [offeredPrice, currentRound + 1, req.params.messageId]
+    );
+    await client.query("INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, $3, 'text')", [offer.conversation_id, req.user.id, `Seller countered with G ${offeredPrice} (round ${currentRound + 1}/3)`]);
     await client.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [offer.conversation_id]);
     await client.query('COMMIT');
     createNotification(offer.buyer_id, 'new_message', 'Counter offer', `The seller countered your offer with G ${offeredPrice}.`, { conversationId: offer.conversation_id, senderId: req.user.id });
-    res.json({ success: true, status: 'countered', offeredPrice });
+    res.json({ success: true, status: 'countered', offeredPrice, negotiationRound: currentRound + 1 });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Counter offer error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
     client.release();
+  }
+});
+
+// ───── Offer system: seller items, offer details, expire cron ─────
+
+// Get seller's active items for the offer carousel
+app.get('/api/sellers/:id/items', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT p.id, p.name, p.price, p.stock,
+              (SELECT image_url FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, display_order ASC LIMIT 1) AS image_url
+       FROM products p
+       WHERE p.seller_id = $1 AND p.is_available = true AND p.stock > 0
+       ORDER BY p.created_at DESC
+       LIMIT 20`,
+      [req.params.id]
+    );
+    res.json({ items: result.rows });
+  } catch (err) {
+    console.error('Seller items fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get offer details by message ID
+app.get('/api/offers/:messageId', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT mo.*, p.name AS product_name,
+              (SELECT image_url FROM product_images WHERE product_id = mo.product_id ORDER BY is_primary DESC, display_order ASC LIMIT 1) AS product_image
+       FROM message_offers mo
+       JOIN products p ON p.id = mo.product_id
+       JOIN messages m ON m.id = mo.message_id
+       JOIN conversations c ON c.id = mo.conversation_id
+       WHERE mo.message_id = $1 AND (c.buyer_id = $2 OR c.seller_id = $2)`,
+      [req.params.messageId, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Offer not found' });
+    const o = result.rows[0];
+    res.json({
+      offer: {
+        messageId: o.message_id,
+        productId: o.product_id,
+        productName: o.product_name,
+        productImage: o.product_image,
+        offeredPrice: parseFloat(o.offered_price),
+        listPrice: parseFloat(o.list_price),
+        status: o.status,
+        negotiationRound: o.negotiation_round || 1,
+        buyerId: o.buyer_id,
+        sellerId: o.seller_id,
+        expiresAt: o.expires_at,
+        createdAt: o.created_at,
+        respondedAt: o.responded_at,
+      }
+    });
+  } catch (err) {
+    console.error('Offer details error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -5700,7 +5854,7 @@ cron.schedule('*/5 * * * *', async () => {
 cron.schedule('*/15 * * * *', async () => {
   try {
     const expired = await pool.query(
-      "UPDATE message_offers SET status = 'expired' WHERE status = 'pending' AND expires_at < CURRENT_TIMESTAMP RETURNING buyer_id, product_id"
+      "UPDATE message_offers SET status = 'expired' WHERE status IN ('pending', 'countered') AND expires_at < CURRENT_TIMESTAMP RETURNING buyer_id, product_id"
     );
     if (expired.rows.length > 0) {
       console.log(`[CRON] Expired ${expired.rows.length} stale offers`);

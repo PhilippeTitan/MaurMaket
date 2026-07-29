@@ -162,7 +162,6 @@ export default function MapScreen() {
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedSeller, setSelectedSeller] = useState<NearbySeller | null>(null);
   const [sheetExpanded, setSheetExpanded] = useState(false);
-  const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followerCount, setFollowerCount] = useState<number | null>(null);
   const [latestItems, setLatestItems] = useState<Product[]>([]);
@@ -171,8 +170,14 @@ export default function MapScreen() {
   const [sellerVisible, setSellerVisible] = useState(true);
   const [visibilityLoading, setVisibilityLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [, setStoreTick] = useState(0);
 
   const fetchIdRef = useRef(0);
+
+  useEffect(() => {
+    const unsub = store.onChange(() => setStoreTick(t => t + 1));
+    return unsub;
+  }, []);
   const detailFetchIdRef = useRef(0);
 
   const dbg = useCallback((_msg: string) => {}, []);
@@ -197,14 +202,10 @@ export default function MapScreen() {
     setSheetExpanded(false);
     setLatestItems([]);
     setFollowerCount(null);
-    setIsFollowing(false);
     Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
 
     const thisDetail = ++detailFetchIdRef.current;
     setLoadingDetail(true);
-
-    const followingList = store.user ? (store as any)._followingIds : [];
-    if (followingList?.includes?.(seller.id)) setIsFollowing(true);
 
     getProducts({ seller: seller.id, limit: '5' } as any).then((res: any) => {
       if (thisDetail !== detailFetchIdRef.current) return;
@@ -216,11 +217,11 @@ export default function MapScreen() {
       setFollowerCount(res?.count ?? 0);
     }).catch(() => {});
 
-    if (store.token) {
+    if (store.token && !store.followedSellerIds.size) {
       getFollowing().then((res: any) => {
-        if (thisDetail !== detailFetchIdRef.current) return;
-        const list = Array.isArray(res) ? res : [];
-        setIsFollowing(list.some((f: any) => f.seller_id === seller.id || f.id === seller.id));
+        const list = Array.isArray(res) ? res : (res?.following || []);
+        const ids = list.map((f: any) => f.seller_id || f.id).filter(Boolean);
+        store.setFollowingList(ids);
       }).catch(() => {});
     }
   }, [sheetAnim]);
@@ -234,15 +235,15 @@ export default function MapScreen() {
 
   const handleFollowToggle = useCallback(async () => {
     if (!selectedSeller || followBusy) return;
-    const prev = isFollowing;
-    setIsFollowing(!prev);
+    const wasFollowing = store.isFollowing(selectedSeller.id);
+    store.toggleFollowing(selectedSeller.id, !wasFollowing);
     setFollowBusy(true);
     try {
       const res = await toggleFollow(selectedSeller.id) as { following?: boolean };
-      if (res.following !== undefined) setIsFollowing(res.following);
+      if (res.following !== undefined) store.toggleFollowing(selectedSeller.id, res.following);
       const countRes = await getFollowerCount(selectedSeller.id) as any;
       setFollowerCount(countRes?.count ?? 0);
-    } catch { setIsFollowing(prev); }
+    } catch { store.toggleFollowing(selectedSeller.id, wasFollowing); }
     setFollowBusy(false);
   }, [selectedSeller, isFollowing, followBusy]);
 
@@ -660,8 +661,8 @@ export default function MapScreen() {
                   {followerCount !== null && <Text style={styles.sheetFollower}>{followerCount} follower{followerCount !== 1 ? 's' : ''}</Text>}
                 </View>
               </View>
-              <TouchableOpacity onPress={handleFollowToggle} disabled={followBusy} style={[styles.followBtn, isFollowing && styles.followBtnActive]} accessibilityLabel={isFollowing ? 'unfollow seller' : 'follow seller'} accessibilityRole="button">
-                <Text style={[styles.followText, isFollowing && styles.followTextActive]}>{isFollowing ? 'Following' : 'Follow'}</Text>
+              <TouchableOpacity onPress={handleFollowToggle} disabled={followBusy} style={[styles.followBtn, store.isFollowing(selectedSeller?.id || '') && styles.followBtnActive]} accessibilityLabel={store.isFollowing(selectedSeller?.id || '') ? 'unfollow seller' : 'follow seller'} accessibilityRole="button">
+                <Text style={[styles.followText, store.isFollowing(selectedSeller?.id || '') && styles.followTextActive]}>{store.isFollowing(selectedSeller?.id || '') ? 'Following' : 'Follow'}</Text>
               </TouchableOpacity>
             </View>
 
@@ -747,6 +748,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1, borderColor: COLORS.border || '#30363D',
     overflow: 'hidden',
+    zIndex: 200, elevation: 20,
   },
   chevronRow: { alignItems: 'center', paddingVertical: 6 },
   sheetContent: {},

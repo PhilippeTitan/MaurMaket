@@ -42,14 +42,19 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-  const [following, setFollowing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [messageLoading, setMessageLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('listings');
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [storeTick, setStoreTick] = useState(0);
   const listRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    const unsub = store.onChange(() => setStoreTick(t => t + 1));
+    return unsub;
+  }, []);
 
   const isOwnProfile = store.user?.id === sellerId;
 
@@ -59,7 +64,6 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       setSeller(d.seller);
       setProducts(d.products);
       setReviews(d.reviews);
-      setFollowing(d.following);
       setFollowerCount(d.followerCount);
       setFollowingCount(d.followingCount);
       setLoading(false);
@@ -82,12 +86,11 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           username: r.reviewer_username,
         },
       }));
-      const followIds = (followingRes.following || []).map(f => f.seller_id || f.id).filter(Boolean);
-      const isFollowing = followIds.includes(sellerId);
+      const followIds = (followingRes.following || []).map(f => f.seller_id || f.id).filter(Boolean) as string[];
+      store.setFollowingList(followIds);
       setSeller(seller);
       setProducts(products);
       setReviews(reviews);
-      setFollowing(isFollowing);
       const countRes = await getFollowerCount(sellerId) as { count: number };
       setFollowerCount(countRes.count || 0);
       let fcing = 0;
@@ -96,7 +99,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
         fcing = fRes?.following?.length || 0;
       } catch {}
       setFollowingCount(fcing);
-      _storefrontCache[sellerId] = { timestamp: Date.now(), data: { seller, products, reviews, following: isFollowing, followerCount: countRes.count || 0, followingCount: fcing } };
+      _storefrontCache[sellerId] = { timestamp: Date.now(), data: { seller, products, reviews, followerCount: countRes.count || 0, followingCount: fcing } };
     } catch { toast.error('Seller profile could not load', 'Check your connection and try again.', () => fetchSellerData(true)); }
     setLoading(false);
   }, [sellerId]);
@@ -105,17 +108,17 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 
   const handleFollow = async () => {
     if (followLoading) return;
-    const wasFollowing = following;
+    const wasFollowing = store.isFollowing(sellerId);
     const previousCount = followerCount;
     setFollowLoading(true);
-    setFollowing(!wasFollowing);
+    store.toggleFollowing(sellerId, !wasFollowing);
     setFollowerCount(prev => Math.max(0, prev + (wasFollowing ? -1 : 1)));
     try {
       const res = await toggleFollow(sellerId) as { following: boolean };
-      setFollowing(res.following);
+      store.toggleFollowing(sellerId, res.following);
       setFollowerCount(Math.max(0, previousCount + (res.following ? 1 : 0) - (wasFollowing ? 1 : 0)));
     } catch {
-      setFollowing(wasFollowing);
+      store.toggleFollowing(sellerId, wasFollowing);
       setFollowerCount(previousCount);
       toast.error('Could not update follow', 'Your follow status was not changed.', handleFollow);
     }
@@ -354,20 +357,20 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               {store.isLoggedIn && !isOwnProfile && (
                 <View style={styles.actionRow}>
                   <TouchableOpacity
-                    style={[styles.followBtn, following && styles.followBtnActive, followLoading && styles.actionDisabled]}
+                    style={[styles.followBtn, store.isFollowing(sellerId) && styles.followBtnActive, followLoading && styles.actionDisabled]}
                     onPress={handleFollow}
                     disabled={followLoading}
                     activeOpacity={0.7}
-                    accessibilityLabel={following ? 'unfollow seller' : 'follow seller'}
+                    accessibilityLabel={store.isFollowing(sellerId) ? 'unfollow seller' : 'follow seller'}
                     accessibilityRole="button"
                   >
                     {followLoading ? (
                       <ActivityIndicator size="small" color={COLORS.white} />
                     ) : (
                       <>
-                        <MaterialCommunityIcons name={following ? 'heart' : 'heart-outline'} size={17} color={following ? COLORS.white : COLORS.coral} />
-                        <Text style={[styles.followBtnText, following && styles.followBtnTextActive]}>
-                          {following ? t('storefront.following') : t('storefront.follow')}
+                        <MaterialCommunityIcons name={store.isFollowing(sellerId) ? 'heart' : 'heart-outline'} size={17} color={store.isFollowing(sellerId) ? COLORS.white : COLORS.coral} />
+                        <Text style={[styles.followBtnText, store.isFollowing(sellerId) && styles.followBtnTextActive]}>
+                          {store.isFollowing(sellerId) ? t('storefront.following') : t('storefront.follow')}
                         </Text>
                       </>
                     )}
@@ -446,10 +449,10 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
               <View style={styles.reviewAvatar}>
-                <Text style={styles.reviewAvatarText}>{(item.reviewer?.full_name || 'A').charAt(0)}</Text>
+                <Text style={styles.reviewAvatarText}>{(item.reviewer?.username || 'A').charAt(0).toUpperCase()}</Text>
               </View>
               <View style={styles.reviewInfo}>
-                <Text style={styles.reviewName} numberOfLines={1}>{item.reviewer?.username ? `@${item.reviewer.username}` : (item.reviewer?.full_name || 'Anonymous')}</Text>
+                <Text style={styles.reviewName} numberOfLines={1}>{item.reviewer?.username ? `@${item.reviewer.username}` : 'Anonymous'}</Text>
                 <View style={styles.reviewStars}>
                   {[1, 2, 3, 4, 5].map(s => (
                     <Icon key={s} name={s <= item.rating ? 'rating' : 'rate-this'} size={11} color={s <= item.rating ? COLORS.yellow : COLORS.text2} />

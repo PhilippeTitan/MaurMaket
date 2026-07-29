@@ -16,11 +16,11 @@ import { store } from '../store';
 import * as ImagePicker from 'expo-image-picker';
 import { useToast } from '../components/Toast';
 import UserAvatar from '../components/UserAvatar';
+import SellerItemsSheet from '../components/SellerItemsSheet';
+import OfferBuilder from '../components/OfferBuilder';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string };
-type ConversationProduct = { id: string; name: string; price: number; stock: number; image_url?: string | null };
-
 export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
@@ -37,10 +37,11 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [productContext, setProductContext] = useState<ConversationProduct | null>(null);
   const [counteringMessageId, setCounteringMessageId] = useState<string | null>(null);
   const [counterPrice, setCounterPrice] = useState('');
   const [otherTyping, setOtherTyping] = useState(false);
+  const [sellerItemsVisible, setSellerItemsVisible] = useState(false);
+  const [offerBuilderItem, setOfferBuilderItem] = useState<{ id: string; name: string; price: number; image_url?: string | null } | null>(null);
   const listRef = useRef<FlatList>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appState = useRef(AppState.currentState);
@@ -58,9 +59,8 @@ export default function ChatScreen({ route, navigation }: Props) {
         (params as Record<string, string>).since = lastMessageCursor.current.time;
         (params as Record<string, string>).sinceId = lastMessageCursor.current.id;
       }
-      const res = await getMessages(conversationId, params) as { messages: Message[]; context?: { product?: ConversationProduct | null } };
+      const res = await getMessages(conversationId, params) as { messages: Message[] };
       const msgs = res.messages || [];
-      if (res.context?.product) setProductContext(res.context.product);
       if (older) {
         setMessages(prev => [...msgs, ...prev]);
       } else if (lastMessageCursor.current) {
@@ -260,7 +260,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     const isOffer = item.message_type === 'offer';
 
     if (isOffer) {
-      const offerData = item.offer_data as { productId: string; productName: string; offeredPrice: number; listPrice: number; status: 'pending' | 'accepted' | 'declined' | 'countered' } | undefined;
+      const offerData = item.offer_data as { productId: string; productName: string; offeredPrice: number; listPrice: number; status: 'pending' | 'accepted' | 'declined' | 'countered'; negotiationRound?: number } | undefined;
       if (!offerData) return null;
       const isPending = offerData.status === 'pending';
       const isCountered = offerData.status === 'countered';
@@ -284,7 +284,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 offerData.status === 'accepted' && styles.offerMsgStatusAccepted,
                 offerData.status === 'declined' && styles.offerMsgStatusDeclined,
               ]}>
-                {offerData.status === 'pending' ? 'Waiting for response' : offerData.status === 'accepted' ? 'Accepted' : offerData.status === 'declined' ? 'Declined' : 'Countered'}
+                {offerData.status === 'pending' ? 'Waiting for response' : offerData.status === 'accepted' ? 'Accepted' : offerData.status === 'declined' ? 'Declined' : `Countered${offerData.negotiationRound ? ` (${offerData.negotiationRound}/3)` : ''}`}
               </Text>
             </View>
           </View>
@@ -365,22 +365,21 @@ export default function ChatScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {productContext && (
-        <TouchableOpacity
-          style={styles.productContext}
-          onPress={() => navigation.navigate('ProductDetail', { productId: productContext.id })}
-          accessibilityRole="button"
-          accessibilityLabel={`view ${productContext.name}`}
-        >
-          {productContext.image_url ? <Image source={{ uri: getImageUrl(productContext.image_url) || productContext.image_url }} style={styles.productContextImage} /> : <View style={styles.productContextImageFallback}><Icon name="storefront" size={18} color={COLORS.text2} /></View>}
-          <View style={styles.productContextCopy}>
-            <Text style={styles.productContextLabel}>Discussing</Text>
-            <Text style={styles.productContextName} numberOfLines={1}>{productContext.name}</Text>
-            <Text style={styles.productContextPrice}>{formatPrice(Number(productContext.price))} G</Text>
-          </View>
-          <Icon name="chevron-right" size={20} color={COLORS.text2} />
-        </TouchableOpacity>
-      )}
+      {(() => {
+        const activeOffer = messages.find(m => m.message_type === 'offer' && m.offer_data && ((m.offer_data as any).status === 'pending' || (m.offer_data as any).status === 'countered'));
+        if (!activeOffer || !activeOffer.offer_data) return null;
+        const od = activeOffer.offer_data as any;
+        const isCountered = od.status === 'countered';
+        return (
+          <TouchableOpacity style={[styles.offerReminderBanner, isCountered && styles.offerReminderBannerCountered]} onPress={() => {
+            setSellerItemsVisible(true);
+          }} accessibilityLabel={`active offer: G ${od.offeredPrice} for ${od.productName}`} accessibilityRole="button">
+            <Icon name="sale-tag" size={16} color={COLORS.white} />
+            <Text style={styles.offerReminderText} numberOfLines={1}>{isCountered ? 'Counter offer' : 'Your offer'}: G {formatPrice(od.offeredPrice)} for {od.productName}</Text>
+            <Text style={styles.offerReminderAction}>View</Text>
+          </TouchableOpacity>
+        );
+      })()}
 
       {loading ? (
         <ActivityIndicator size="large" color={COLORS.coral} style={{ flex: 1 }} />
@@ -476,8 +475,8 @@ export default function ChatScreen({ route, navigation }: Props) {
         <TouchableOpacity style={styles.offerBtn} onPress={() => {
           if (draftOffer) {
             setOfferDraftVisible(true);
-          } else if (productContext && otherUserId) {
-            navigation.navigate('Storefront', { sellerId: otherUserId });
+          } else if (otherUserId) {
+            setSellerItemsVisible(true);
           }
         }} accessibilityLabel="make an offer" accessibilityRole="button">
           <Icon name="sale-tag" size={20} color={COLORS.coral} />
@@ -492,6 +491,20 @@ export default function ChatScreen({ route, navigation }: Props) {
           {previewImage && <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="contain" />}
         </Pressable>
       </Modal>
+      <SellerItemsSheet
+        visible={sellerItemsVisible}
+        sellerId={otherUserId || ''}
+        sellerName={otherUserName || 'Seller'}
+        onClose={() => setSellerItemsVisible(false)}
+        onSelectItem={(item) => { setSellerItemsVisible(false); setOfferBuilderItem(item); }}
+      />
+      <OfferBuilder
+        visible={!!offerBuilderItem}
+        item={offerBuilderItem}
+        conversationId={conversationId}
+        onClose={() => setOfferBuilderItem(null)}
+        onSent={() => { setOfferBuilderItem(null); fetchMessages(); }}
+      />
     </View>
     </KeyboardAvoidingView>
   );
@@ -511,13 +524,14 @@ const styles = StyleSheet.create({
   onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.green },
   onlineText: { fontSize: 11, color: COLORS.text2 },
   headerMore: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  productContext: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, paddingVertical: 8, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  productContextImage: { width: 42, height: 42, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
-  productContextImageFallback: { width: 42, height: 42, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
-  productContextCopy: { flex: 1, minWidth: 0 },
-  productContextLabel: { fontSize: 10, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase' },
-  productContextName: { fontSize: 13, color: COLORS.text, fontWeight: '700', marginTop: 1 },
-  productContextPrice: { fontSize: 12, color: COLORS.coral, fontWeight: '700', marginTop: 2 },
+  offerReminderBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.coral, marginHorizontal: SPACING.md, marginTop: SPACING.sm,
+    borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 10,
+  },
+  offerReminderBannerCountered: { backgroundColor: COLORS.blue },
+  offerReminderText: { flex: 1, fontSize: 13, color: COLORS.white, fontWeight: '600' },
+  offerReminderAction: { fontSize: 12, color: COLORS.white, fontWeight: '700', textTransform: 'uppercase' },
   messageList: { padding: SPACING.md, paddingBottom: 8 },
   bubble: {
     maxWidth: '75%', padding: 10, borderRadius: RADIUS.media, marginBottom: 6,

@@ -15,6 +15,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
 import SalePriceTag from '../components/SalePriceTag';
+import StockBadge from '../components/StockBadge';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -89,7 +90,7 @@ export default function WishlistScreen() {
                 <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
                 <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="md" />
                 {item.stock !== undefined && item.stock !== null && (
-                  <Text style={styles.stock}>{item.stock > 0 ? t('feed.available') : t('feed.soldOut')}</Text>
+                  <StockBadge stock={item.stock} size="sm" />
                 )}
               </View>
               <TouchableOpacity onPress={() => handleRemove(item.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="remove from wishlist" accessibilityRole="button">

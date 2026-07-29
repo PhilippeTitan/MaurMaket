@@ -8,7 +8,7 @@ export const COLORS = {
   coral: '#FF4D6A',
   blue: '#00C2FF',
   green: '#00E5A0',
-  yellow: '#FFD166',
+  yellow: '#FFE066',
   white: '#FFFFFF',
   error: '#FF4D6A',
 };

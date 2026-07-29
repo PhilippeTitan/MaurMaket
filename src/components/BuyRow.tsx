@@ -68,7 +68,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
       quantity: 1,
       images: product.images,
       seller_id: product.seller_id,
-      seller_name: product.seller?.full_name || null,
+      seller_name: getDisplayName(product.seller) || null,
       store_name: product.seller?.store_name || null,
       stock: product.stock,
     });

@@ -9,8 +9,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { store } from './src/store';
 import { COLORS, SPACING } from './src/theme';
 import { i18n } from './src/i18n';
-import { getMe } from './src/api';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { PaperPlaneIcon } from './src/components/UserAvatar';
+import { getMe } from './src/api';import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, invalidateUser } from './src/hooks';
 import { ToastProvider } from './src/components/Toast';
 import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/notifications';
@@ -50,6 +50,7 @@ import SellerToolsSettingsScreen from './src/screens/SellerToolsSettingsScreen';
 import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
 import UsernameSettingsScreen from './src/screens/UsernameSettingsScreen';
 import LanguageSettingsScreen from './src/screens/LanguageSettingsScreen';
+import OfferDetailScreen from './src/screens/OfferDetailScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
 import PromoManagementScreen from './src/screens/PromoManagementScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
@@ -182,17 +183,16 @@ function MainTabs() {
                 onPress={props.onPress}
                 activeOpacity={0.8}
               >
-                <View style={styles.fab}>
-                  <MaterialCommunityIcons name="plus" size={26} color={COLORS.white} />
-                </View>
+                  <View style={styles.fab}>
+                    <PaperPlaneIcon size={26} color={COLORS.text} />
+                  </View>
               </TouchableOpacity>
             ),
           }}
           listeners={({ navigation }) => ({
             tabPress: (e) => {
               e.preventDefault();
-              const target = store.isSeller ? 'AddListing' : 'SellerOnboarding';
-              (navigation as any).getParent()?.navigate(target);
+              (navigation as any).getParent()?.navigate('Inbox');
             },
           })}
         />
@@ -390,6 +390,7 @@ export default function App() {
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
             <Stack.Screen name="UsernameSettings" component={UsernameSettingsScreen} />
             <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
+            <Stack.Screen name="OfferDetail" component={OfferDetailScreen} />
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
             <Stack.Screen name="Meetup" component={LazyMeetupScreen} />
             <Stack.Screen name="PromoManagement" component={PromoManagementScreen} />
@@ -424,7 +425,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: COLORS.coral,
     alignItems: 'center',
     justifyContent: 'center',
   },

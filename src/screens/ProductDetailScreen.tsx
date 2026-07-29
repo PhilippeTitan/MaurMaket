@@ -51,13 +51,14 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [heroHeight, setHeroHeight] = useState(HERO_DEFAULT_H);
-  const [following, setFollowing] = useState(false);
   const [heartCount, setHeartCount] = useState(0);
+  const [storeTick, setStoreTick] = useState(0);
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    const unsub = store.onChange(() => setStoreTick(t => t + 1));
+    return () => { mountedRef.current = false; unsub(); };
   }, []);
 
   useEffect(() => {
@@ -86,7 +87,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           try {
             const folRes = await getFollowing() as { following?: { seller_id: string }[] };
             const list = folRes.following || [];
-            setFollowing(list.some((f: any) => f.seller_id === p.seller_id));
+            store.setFollowingList(list.map((f: any) => f.seller_id || f.id).filter(Boolean));
           } catch { /* silent */ }
         }
 
@@ -172,10 +173,14 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
 
   const handleFollow = async () => {
     if (!product?.seller_id) return;
+    const wasFollowing = store.isFollowing(product.seller_id);
+    store.toggleFollowing(product.seller_id, !wasFollowing);
     try {
-      await toggleFollow(product.seller_id);
-      setFollowing(prev => !prev);
-    } catch { /* silent */ }
+      const res = await toggleFollow(product.seller_id) as { following?: boolean };
+      if (res.following !== undefined) store.toggleFollowing(product.seller_id, res.following);
+    } catch {
+      store.toggleFollowing(product.seller_id, wasFollowing);
+    }
   };
 
   const getItemImageUrl = (p: Product) => {
@@ -362,12 +367,12 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                 </TouchableOpacity>
                 {!isOwnProduct && (
                   <TouchableOpacity
-                    style={[styles.followBtn, following && styles.followBtnActive]}
+                    style={[styles.followBtn, store.isFollowing(product?.seller_id || '') && styles.followBtnActive]}
                     onPress={handleFollow}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.followBtnText, following && styles.followBtnTextActive]}>
-                      {following ? 'Following' : 'Follow'}
+                    <Text style={[styles.followBtnText, store.isFollowing(product?.seller_id || '') && styles.followBtnTextActive]}>
+                      {store.isFollowing(product?.seller_id || '') ? 'Following' : 'Follow'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -402,11 +407,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                     <View style={styles.reviewerRow}>
                       <View style={styles.reviewerAvatar}>
                         <Text style={styles.reviewerAvatarText}>
-                          {(review.reviewer?.full_name || 'A').charAt(0).toUpperCase()}
+                          {(review.reviewer?.username || 'A').charAt(0).toUpperCase()}
                         </Text>
                       </View>
                       <View>
-                        <Text style={styles.reviewerName}>{review.reviewer?.username ? `@${review.reviewer.username}` : (review.reviewer?.full_name || 'Anonymous')}</Text>
+                        <Text style={styles.reviewerName}>{review.reviewer?.username ? `@${review.reviewer.username}` : 'Anonymous'}</Text>
                         <Text style={styles.reviewDate}>{new Date(review.created_at).toLocaleDateString()}</Text>
                       </View>
                     </View>
