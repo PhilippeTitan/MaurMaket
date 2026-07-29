@@ -253,7 +253,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  saveTopBtn: { fontSize: 14, fontWeight: '700', color: COLORS.coral },
+  saveTopBtn: { fontSize: 14, fontWeight: '700', color: COLORS.coral, flexShrink: 0 },
   fieldCard: {
     marginHorizontal: SPACING.lg, marginTop: SPACING.lg,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,

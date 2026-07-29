@@ -291,15 +291,17 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             ))}
           </View>
         )}
-        <View style={[styles.backBtn, { top: insets.top + 12 }]}>
-          <BackButton onPress={() => navigation.goBack()} variant="overlay" />
-        </View>
         <View style={styles.stockOverlay}>
           <StockBadge stock={product.stock} />
         </View>
         <View style={styles.priceOverlay}>
           <SalePriceTag price={product.price} effectivePrice={product.effective_price ?? product.price} isOnSale={product.is_on_sale || false} discountPct={product.discount_pct || 0} size="lg" />
         </View>
+      </View>
+
+      {/* ── Back button — above everything ── */}
+      <View style={[styles.backBtn, { top: insets.top + 12 }]}>
+        <BackButton onPress={() => navigation.goBack()} variant="overlay" />
       </View>
 
       {/* ── ScrollView — scrolls over the hero ── */}
@@ -511,7 +513,7 @@ const styles = StyleSheet.create({
   heroImg: { width: '100%', height: '100%' },
   heroPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   backBtn: {
-    position: 'absolute', left: 10, zIndex: 2,
+    position: 'absolute', left: 10, zIndex: 10,
   },
   priceOverlay: {
     position: 'absolute', bottom: 10, right: 10,
@@ -543,8 +545,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   actionRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingBottom: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    paddingHorizontal: 10, paddingTop: 8, paddingBottom: 2,
+  },
+  actionBtn: {
+    height: 34, paddingHorizontal: 8, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 4,
+  },
+  actionCount: {
+    fontSize: 13, fontWeight: '600', color: COLORS.text,
+  },
+  /* Seller row */
+  sellerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 10, gap: 10,
   },
   actionBtn: {
     width: 40, height: 40, borderRadius: 20,

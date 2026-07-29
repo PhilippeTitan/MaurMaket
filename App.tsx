@@ -44,6 +44,11 @@ import SellerOnboardingScreen from './src/screens/SellerOnboardingScreen';
 import EditListingScreen from './src/screens/EditListingScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import SettingsEditScreen from './src/screens/SettingsEditScreen';
+import LocationSettingsScreen from './src/screens/LocationSettingsScreen';
+import EditProfileScreen from './src/screens/EditProfileScreen';
+import SellerToolsSettingsScreen from './src/screens/SellerToolsSettingsScreen';
+import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
+import UsernameSettingsScreen from './src/screens/UsernameSettingsScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
 import PromoManagementScreen from './src/screens/PromoManagementScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
@@ -366,6 +371,7 @@ export default function App() {
             <Stack.Screen name="SellerOnboarding" component={SellerOnboardingScreen} />
             <Stack.Screen name="Storefront" component={StorefrontScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="Orders" component={OrdersScreen} />
             <Stack.Screen name="Inbox" component={InboxScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
@@ -378,6 +384,10 @@ export default function App() {
             <Stack.Screen name="EditListing" component={EditListingScreen} />
             <Stack.Screen name="Analytics" component={AnalyticsScreen} />
             <Stack.Screen name="SettingsEdit" component={SettingsEditScreen} />
+            <Stack.Screen name="LocationSettings" component={LocationSettingsScreen} />
+            <Stack.Screen name="SellerToolsSettings" component={SellerToolsSettingsScreen} />
+            <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
+            <Stack.Screen name="UsernameSettings" component={UsernameSettingsScreen} />
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
             <Stack.Screen name="Meetup" component={LazyMeetupScreen} />
             <Stack.Screen name="PromoManagement" component={PromoManagementScreen} />

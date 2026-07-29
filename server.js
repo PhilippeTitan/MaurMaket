@@ -1014,7 +1014,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -1340,7 +1340,7 @@ app.post('/api/auth/verify/check', authRequired, async (req, res) => {
     await pool.query('DELETE FROM otp_codes WHERE email = $1 AND purpose = $2', [user.email, 'verify']);
 
     const updated = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name FROM users WHERE id = $1`,
       [req.user.id]
     );
     res.json({ success: true, user: updated.rows[0] });
@@ -1475,7 +1475,7 @@ app.put('/api/auth/become-seller', authRequired, async (req, res) => {
     if (req.user.role === 'seller') {
       // Already a seller — still return user so frontend can sync store
       const existing = await pool.query(
-        `SELECT id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng FROM users WHERE id = $1`,
+        `SELECT id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng, username, show_real_name FROM users WHERE id = $1`,
         [req.user.id]
       );
       const token = jwt.sign({ id: existing.rows[0].id, email: existing.rows[0].email, role: existing.rows[0].role }, JWT_SECRET, { expiresIn: '7d' });
@@ -5253,7 +5253,7 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
 
       // Return updated user for frontend store sync
       const updatedUser = await pool.query(
-        `SELECT id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng FROM users WHERE id = $1`,
+        `SELECT id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng, username, show_real_name FROM users WHERE id = $1`,
         [req.user.id]
       );
       const newToken = jwt.sign({ id: updatedUser.rows[0].id, email: updatedUser.rows[0].email, role: updatedUser.rows[0].role }, JWT_SECRET, { expiresIn: '7d' });

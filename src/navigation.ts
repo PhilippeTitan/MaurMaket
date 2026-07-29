@@ -25,6 +25,7 @@ export type RootStackParamList = {
   SellerOnboarding: undefined;
   Storefront: { sellerId: string };
   Settings: undefined;
+  EditProfile: undefined;
   Orders: undefined;
   Inbox: { returnTab?: keyof TabParamList } | undefined;
   Chat: {
@@ -53,4 +54,8 @@ export type RootStackParamList = {
   Analytics: undefined;
   EmailVerification: { code?: string } | undefined;
   ForgotPassword: { code?: string } | undefined;
+  LocationSettings: undefined;
+  SellerToolsSettings: undefined;
+  PrivacySettings: undefined;
+  UsernameSettings: undefined;
 };

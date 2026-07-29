@@ -432,7 +432,7 @@ export default function MeScreen() {
       <View style={styles.sellerActions}>
         <TouchableOpacity
           style={styles.actionBtn}
-          onPress={() => nav.navigate('Settings')}
+          onPress={() => nav.navigate('EditProfile')}
           accessibilityRole="button"
           accessibilityLabel="edit profile"
         >

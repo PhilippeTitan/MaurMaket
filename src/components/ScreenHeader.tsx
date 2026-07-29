@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   right: {
-    width: 35,
+    minWidth: 35,
     alignItems: 'flex-end',
   },
 });
