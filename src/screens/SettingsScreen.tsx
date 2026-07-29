@@ -47,30 +47,6 @@ export default function SettingsScreen({ navigation }: Props) {
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
       <ScreenHeader title={t('settings.title')} onBack={() => navigation.goBack()} />
 
-      {/* ── How you use MaurMaket ── */}
-      <SectionHeader title="How you use MaurMaket" />
-      <View style={styles.card}>
-        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('LocationSettings')}>
-          <Icon name="location-pin" size={18} color={COLORS.green} />
-          <Text style={styles.rowLabel}>Location</Text>
-          <Text style={styles.rowValue} numberOfLines={1}>{user?.location_city || ''}</Text>
-          <Icon name="chevron-right" size={16} color={COLORS.text2} />
-        </TouchableOpacity>
-        <View style={styles.divider} />
-        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SellerToolsSettings')}>
-          <Icon name="storefront" size={18} color={COLORS.blue} />
-          <Text style={styles.rowLabel}>Seller tools</Text>
-          <Icon name="chevron-right" size={16} color={COLORS.text2} />
-        </TouchableOpacity>
-        <View style={styles.divider} />
-        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SellerToolsSettings')}>
-          <Icon name="verified" size={18} color={COLORS.yellow} />
-          <Text style={styles.rowLabel}>Verification & tier</Text>
-          {tierLabel ? <Text style={[styles.rowValue, { color: COLORS.green }]}>{tierLabel}</Text> : null}
-          <Icon name="chevron-right" size={16} color={COLORS.text2} />
-        </TouchableOpacity>
-      </View>
-
       {/* ── Account ── */}
       <SectionHeader title="Account" />
       <View style={styles.card}>
@@ -113,6 +89,28 @@ export default function SettingsScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
+      {/* ── Location ── */}
+      <SectionHeader title="Location" />
+      <View style={styles.card}>
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('LocationSettings')}>
+          <Icon name="location-pin" size={18} color={COLORS.green} />
+          <Text style={styles.rowLabel}>Delivery address</Text>
+          <Text style={styles.rowValue} numberOfLines={1}>{user?.location_city || ''}</Text>
+          <Icon name="chevron-right" size={16} color={COLORS.text2} />
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Verification & tier ── */}
+      <SectionHeader title="Verification & tier" />
+      <View style={styles.card}>
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SellerToolsSettings')}>
+          <Icon name="verified" size={18} color={COLORS.yellow} />
+          <Text style={styles.rowLabel}>Seller tools</Text>
+          {tierLabel ? <Text style={[styles.rowValue, { color: COLORS.green }]}>{tierLabel}</Text> : null}
+          <Icon name="chevron-right" size={16} color={COLORS.text2} />
+        </TouchableOpacity>
+      </View>
+
       {/* ── Preferences ── */}
       <SectionHeader title="Preferences" />
       <View style={styles.card}>
@@ -124,7 +122,6 @@ export default function SettingsScreen({ navigation }: Props) {
       </View>
 
       {/* ── Support ── */}
-      <SectionHeader title="Support" />
       <View style={styles.card}>
         <TouchableOpacity style={styles.row} onPress={handleLogout}>
           <MaterialCommunityIcons name="logout" size={18} color={COLORS.coral} />
