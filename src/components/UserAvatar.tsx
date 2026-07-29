@@ -39,28 +39,50 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
 
   const r = size / 2;
   // Ring thickness scales with avatar size so it reads as a crisp outline
-  // at both small (35px feed) and large (86px profile) sizes, instead of a
-  // fixed 3px that disappears into a blur at small sizes.
-  const ringWidth = resolvedRing ? Math.max(2, Math.round(size * 0.08)) : 0;
+  // at both small (35px feed) and large (86px profile) sizes.
+  const ringWidth = resolvedRing ? Math.max(3, Math.round(size * 0.13)) : 0;
   const ringGap = resolvedRing ? 2 : 0; // small breathing room between photo and ring
   const outerSize = size + (ringWidth + ringGap) * 2;
 
+  // Manual glow instead of shadowColor/elevation: RN's `elevation` (Android)
+  // ignores shadowColor and always renders a plain dark shadow, so a
+  // tier-colored glow would silently not appear on Android with the
+  // shadow-prop approach. This fakes the glow with two stacked, oversized,
+  // low-opacity circles of the ring color behind the ring — renders
+  // identically on both platforms since it's just plain Views, not shadows.
+  const glowSize1 = outerSize + Math.round(size * 0.22);
+  const glowSize2 = outerSize + Math.round(size * 0.42);
+
   return (
-    <View style={[
-      { width: outerSize, height: outerSize, alignItems: 'center', justifyContent: 'center', borderRadius: outerSize / 2 },
-      resolvedRing && { borderWidth: ringWidth, borderColor: resolvedRing },
-    ]}>
-      <View style={[styles.container, { width: size, height: size, borderRadius: r, overflow: 'hidden' }]}>
-        {avatarUrl && !failed ? (
-          <Image
-            source={{ uri: avatarUrl }}
-            style={{ width: size, height: size, borderRadius: r }}
-            onError={() => setFailed(true)}
-            accessibilityLabel={`Avatar for ${label}`}
-          />
-        ) : (
-          <UserIcon size={size * 0.5} color={COLORS.text2} />
-        )}
+    <View style={{ width: glowSize2, height: glowSize2, alignItems: 'center', justifyContent: 'center' }}>
+      {resolvedRing && (
+        <>
+          <View style={{
+            position: 'absolute', width: glowSize2, height: glowSize2, borderRadius: glowSize2 / 2,
+            backgroundColor: resolvedRing, opacity: 0.12,
+          }} />
+          <View style={{
+            position: 'absolute', width: glowSize1, height: glowSize1, borderRadius: glowSize1 / 2,
+            backgroundColor: resolvedRing, opacity: 0.22,
+          }} />
+        </>
+      )}
+      <View style={[
+        { width: outerSize, height: outerSize, alignItems: 'center', justifyContent: 'center', borderRadius: outerSize / 2 },
+        resolvedRing && { borderWidth: ringWidth, borderColor: resolvedRing },
+      ]}>
+        <View style={[styles.container, { width: size, height: size, borderRadius: r, overflow: 'hidden' }]}>
+          {avatarUrl && !failed ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              style={{ width: size, height: size, borderRadius: r }}
+              onError={() => setFailed(true)}
+              accessibilityLabel={`Avatar for ${label}`}
+            />
+          ) : (
+            <UserIcon size={size * 0.5} color={COLORS.text2} />
+          )}
+        </View>
       </View>
     </View>
   );
