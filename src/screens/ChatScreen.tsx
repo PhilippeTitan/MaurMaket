@@ -452,22 +452,6 @@ export default function ChatScreen({ route, navigation }: Props) {
       )}
 
       <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
-        <View style={styles.quickActions}>
-          <TouchableOpacity           style={styles.quickChip} onPress={() => {
-            if (draftOffer) {
-              setOfferDraftVisible(true);
-            } else if (productContext && otherUserId) {
-              navigation.navigate('Storefront', { sellerId: otherUserId });
-            }
-          }} accessibilityLabel="make an offer" accessibilityRole="button">
-            <Icon name="sale-tag" size={13} color={COLORS.blue} />
-            <Text style={styles.quickChipText}>Offer</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickChip} accessibilityLabel="arrange meet up" accessibilityRole="button">
-            <MaterialCommunityIcons name="map-marker-outline" size={13} color={COLORS.text} />
-            <Text style={[styles.quickChipText, { color: COLORS.text }]}>Meet up</Text>
-          </TouchableOpacity>
-        </View>
         <View style={styles.inputRow}>
         <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending} accessibilityLabel="attach photo" accessibilityRole="button">
           <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.text2} />
@@ -489,6 +473,15 @@ export default function ChatScreen({ route, navigation }: Props) {
           accessibilityLabel="message input"
          
         />
+        <TouchableOpacity style={styles.offerBtn} onPress={() => {
+          if (draftOffer) {
+            setOfferDraftVisible(true);
+          } else if (productContext && otherUserId) {
+            navigation.navigate('Storefront', { sellerId: otherUserId });
+          }
+        }} accessibilityLabel="make an offer" accessibilityRole="button">
+          <Icon name="sale-tag" size={20} color={COLORS.coral} />
+        </TouchableOpacity>
         <TouchableOpacity style={[styles.sendBtn, { opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()} accessibilityLabel="send message" accessibilityRole="button">
           <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
         </TouchableOpacity>
@@ -617,17 +610,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: COLORS.border,
     backgroundColor: COLORS.bg,
   },
-  quickActions: {
-    flexDirection: 'row', gap: 8,
-    paddingHorizontal: SPACING.md, paddingTop: 8, paddingBottom: 4,
-  },
-  quickChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 14, backgroundColor: COLORS.surface2,
-    borderWidth: 1, borderColor: COLORS.border,
-  },
-  quickChipText: { fontSize: 11, color: COLORS.blue, fontWeight: '600' },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md,
     gap: 8,
@@ -640,6 +622,9 @@ const styles = StyleSheet.create({
   cameraBtn: {
     width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center',
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+  },
+  offerBtn: {
+    width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center',
   },
   sendBtn: {
     width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.coral,
