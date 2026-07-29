@@ -25,14 +25,16 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
   const label = name || getDisplayName(seller) || '?';
 
   const tier = seller?.seller_tier;
-  const resolvedRing = ringColor || (tier && tier !== 'casual' ? TIER_COLORS[tier] : undefined);
+  const resolvedRing = ringColor || (tier ? TIER_COLORS[tier] : undefined);
+
+  if (!resolvedRing && tier !== 'casual') console.log(`[UserAvatar] NO ring: tier="${tier}" keys=${seller ? Object.keys(seller).join(',') : 'null'}`);
 
   const r = size / 2;
   const ringPad = resolvedRing ? 3 : 0;
   const outerSize = size + ringPad * 2;
 
   return (
-    <View style={[{ width: outerSize, height: outerSize }, resolvedRing && { borderRadius: r + ringPad, borderWidth: 1.5, borderColor: resolvedRing }]}>
+    <View style={[{ width: outerSize, height: outerSize }, resolvedRing && { borderRadius: r + ringPad, borderWidth: 2, borderColor: resolvedRing }]}>
       <View style={[styles.container, { width: size, height: size, borderRadius: r }]}>
         {avatarUrl && !failed ? (
           <Image

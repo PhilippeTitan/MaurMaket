@@ -134,6 +134,7 @@ export default function InboxScreen() {
     const storeName = (item as any).other_party_store_name;
     const sellerTier = (item as any).other_party_seller_tier;
     const otherUserId = (item as any).other_party_id;
+    console.log(`[Inbox] convo sellerTier="${sellerTier}" for ${otherName}`);
 
     return (
       <View style={styles.convo}>
@@ -179,6 +180,7 @@ export default function InboxScreen() {
   };
 
   const SellerBubble = ({ seller }: { seller: any }) => {
+    console.log(`[Inbox] sellerBubble seller_tier="${seller?.seller_tier}" name=${seller?.full_name}`);
     const hasActivity = seller.has_unread_activity;
     const displayName = seller.store_name || (seller.username ? `@${seller.username}` : seller.full_name?.split(' ')[0]);
     const handlePress = async () => {

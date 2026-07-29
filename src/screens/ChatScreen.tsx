@@ -26,6 +26,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const { conversationId, otherUserName, otherUserId, otherUserAvatar, otherUserTier, draftOffer } = route.params;
+  console.log(`[Chat] otherUserTier="${otherUserTier}" for ${otherUserName}`);
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);

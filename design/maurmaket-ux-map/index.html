@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MaurMaket — UX Map</title>
+  <style>
+    :root { --bg:#0D1117; --surface:#161B22; --surface2:#1C2235; --border:#21262D; --text:#E6EDF3; --muted:#8B949E; --coral:#FF4D6A; --blue:#00C2FF; --green:#00E5A0; --yellow:#FFD166; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font-family:Inter,system-ui,sans-serif; }
+    header { position:sticky; top:0; z-index:2; padding:24px 32px; background:rgba(13,17,23,.94); border-bottom:1px solid var(--border); backdrop-filter:blur(10px); }
+    h1,h2 { margin:0; font-family:Georgia,serif; } h1 { font-size:30px; } header p { color:var(--muted); margin:7px 0 0; }
+    main { padding:32px; } section { margin:0 0 52px; } h2 { font-size:21px; margin:0 0 18px; } .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:24px; align-items:start; }
+    .phone { min-height:570px; background:var(--bg); border:1px solid var(--border); border-radius:25px; padding:18px 14px; display:flex; flex-direction:column; gap:11px; box-shadow:0 14px 36px rgba(0,0,0,.28); }
+    .eyebrow { font-size:9px; color:var(--muted); font-weight:800; letter-spacing:.12em; } .title { font-family:Georgia,serif; font-size:22px; font-weight:700; }
+    .card { border:1px solid var(--border); background:var(--surface); border-radius:12px; padding:13px; } .card.hot { background:var(--surface2); } .card b { display:block; font-size:13px; margin-bottom:6px; } .card span { color:var(--muted); font-size:11px; line-height:1.45; }
+    .button { margin-top:auto; text-align:center; border-radius:12px; padding:13px; background:var(--coral); color:white; font-weight:800; font-size:13px; } .nav { display:flex; justify-content:space-around; color:var(--muted); background:var(--surface); border-radius:22px; padding:11px 4px; font-size:10px; } .nav strong { color:var(--coral); }
+    .legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; } .legend span { border:1px solid var(--border); color:var(--muted); padding:7px 10px; border-radius:999px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <header><h1>MaurMaket — Current App UX Map</h1><p>Offline editable visual reference · source-aligned dark palette · 38 current app routes</p><div class="legend"><span>Coral = primary action / price</span><span>Image-first marketplace cards</span><span>44px+ primary actions</span><span>Dark app theme</span></div></header>
+  <main id="app"></main>
+  <script>
+    const groups = [
+      ['Core tabs & shopping', [
+        ['Feed','Main tab',[['Trending near you','Image-first product reel · Rs 1,250',1],['Fresh listings','Verified seller · 1.8 km'],['For you','Price and trust stay visible']],'View product',1],
+        ['Explore','Main tab',[['Search MaurMaket','Products, stores & categories'],['Fashion · Tech · Home','Filter chips and two-column grid',1],['Wireless headphones','Rs 2,400 · 4.8 stars']],'',1],
+        ['Sell','Primary action',[['Post a listing','Seller route with an obvious next step',1],['Not selling yet?','Start seller onboarding']],'Post listing',1],
+        ['Map','Main tab',[['Nearby sellers','Map pins and seller preview cards',1],['Location-aware marketplace','Distance appears on products']],'Explore nearby',1],
+        ['My profile','Main tab',[['@username','Profile, orders, saved items, seller tools',1],['Your orders','Track buying and selling'],['Settings','Account, location and privacy']],'View orders',1],
+        ['Product Detail','Commerce',[['Product image gallery','Large visual-first carousel',1],['Wireless headphones','Rs 2,400 · In stock · 4.8 stars'],['Seller: @techlakay','Verified · 47 sales']],'Add to cart'],
+        ['Cart','Commerce',[['Wireless headphones × 1','Rs 2,400',1],['Promo code','Apply seller discount'],['Total','Rs 2,400']],'Checkout'],
+        ['Checkout','Commerce',[['1. Delivery method','Meetup or delivery — one decision at a time',1],['2. Payment','MonCash'],['Total due','Rs 2,400 stays visible']],'Pay Rs 2,400']
+      ]],
+      ['Orders, messaging & seller', [
+        ['Orders','Buyer & seller',[['Buying','Paid · Processing · Delivered',1],['Selling','Update item status and meet buyer'],['Order history','Reorder, review or raise dispute']],''],
+        ['Order Detail','Post-purchase',[['Timeline','Paid → Processing → Meetup → Complete',1],['Meetup agreement','Both parties confirm location'],['Escrow','Release or refund after exchange']],'Confirm exchange'],
+        ['Meetup','Exchange',[['Meetup location','Map and exact address',1],['Check-in','Buyer and seller QR check-in'],['Safety','Both see confirmed status']],'Check in'],
+        ['Inbox','Messaging',[['Conversations','Unread count and latest preview',1],['Order updates','Status notifications'],['Seller messages','Fast access to questions']],''],
+        ['Chat','Messaging',[['@techlakay','Online · Product context attached',1],['Quick reply','Is this still available?'],['Offer','Send price proposal in chat']],'Send message'],
+        ['Seller Onboarding','Seller flow',[['Casual seller','Free · up to 10 listings',1],['Verified seller','ID verification · 8% commission'],['Business seller','Rs 2,500/mo · 5% commission']],'Start selling'],
+        ['Add Listing','Seller flow',[['Photos','Image-first product card',1],['Details','Name, description, category'],['Price & stock','Visible to buyers immediately']],'Post listing'],
+        ['Edit Listing','Seller flow',[['Product details','Update price, stock or availability',1],['Delete listing','Clear destructive action']],'Save changes'],
+        ['Payments','Seller tools',[['Available balance','Net funds ready to withdraw',1],['Payout history','Pending · completed · failed'],['Minimum payout','Rs 50']],'Request payout'],
+        ['Analytics','Seller tools',[['Revenue overview','Net earnings and orders',1],['Top products','Performance by listing'],['Trust','Rating and review count']],'']
+      ]],
+      ['Profile, settings & trust', [
+        ['Storefront','Public seller',[['@techlakay','Verified · 4.8 stars · 47 sales',1],['Shop products','Image-first inventory'],['Follow or message','Trust and relationship actions']],'Message seller'],
+        ['Wishlist','Saved items',[['Saved products','Price remains prominent',1],['Back in stock','Useful notification state']],''],
+        ['Settings','Account',[['Profile','Avatar, username, bio',1],['Location & privacy','Controls with clear labels'],['Seller tools','Visible for sellers']],''],
+        ['Edit Profile','Account',[['Profile photo','Visible identity',1],['Name, @username & bio','Editable public information']],'Save profile'],
+        ['Addresses','Account',[['Home','Default delivery address',1],['Work','Secondary address'],['Add address','Fast checkout reuse']],'Add address'],
+        ['Location Settings','Account',[['Map preview','Set home marketplace location',1],['Address','City and delivery detail']],'Save location'],
+        ['Seller Tools Settings','Seller account',[['Store identity','Store name and logo',1],['Tier progression','Casual → Verified → Business'],['Promo & payout access','Benefits match the tier']],'Save'],
+        ['Privacy Settings','Account',[['Show real name','Plain-language toggle explanation',1],['Visibility','Control public profile details']],'Save'],
+        ['Username Settings','Account',[['@maurinex','Availability and validation feedback',1],['Username rules','Specific errors, not generic failure']],'Save username'],
+        ['Verification','Trust',[['Haitian CIN front + back','Secure capture flow',1],['Selfie match','On-device face comparison'],['Result','Verified or clear rejection reason']],'Start verification'],
+        ['Business Subscription','Seller trust',[['Business tier','Rs 2,500/month · 5% commission',1],['Benefits','Promos, store name, full analytics'],['Grace period','7 days with reminders']],'Subscribe']
+      ]],
+      ['Auth & utility routes', [
+        ['Log in','Auth',[['Welcome back','Email and password',1],['Forgot password?','Recovery begins without dead ends']],'Log in'],
+        ['Sign up','Auth',[['Create your account','Name, email, phone and password',1],['Browse first','Login is not required for discovery']],'Create account'],
+        ['Email Verification','Auth',[['Enter your code','Secure email confirmation',1],['Didn’t get it?','Resend action and helpful timing']],'Verify email'],
+        ['Forgot Password','Auth',[['Reset password','Recovery code and new password',1],['Clear validation','Explain exactly what needs fixing']],'Reset password'],
+        ['Notification','Utility',[['Order update','Your order is processing',1],['New message','@techlakay replied'],['Review reminder','Rate your recent purchase']],'Mark all read'],
+        ['Promo Management','Seller tools',[['Create promo code','Percentage or fixed discount',1],['Active promos','Uses, expiry and limits']],'Create promo'],
+        ['Settings Edit','Account',[['Edit field','Name, email, phone, bio or password',1],['Inline validation','Specific, useful feedback']],'Save'],
+        ['Payment Return','Utility',[['MonCash payment','Polling payment confirmation',1],['Status','Paid, failed or retry']],'Return to order'],
+        ['Empty & Error states','System',[['No listings yet','Explain what is empty and the next action',1],['Helpful error','Image too large. Max 5MB.']],'Retry']
+      ]]
+    ];
+    const app=document.querySelector('#app');
+    for(const [group,screens] of groups){ const section=document.createElement('section'); section.innerHTML='<h2>'+group+'</h2><div class="grid"></div>'; const grid=section.querySelector('.grid'); for(const [title,tag,rows,cta,nav] of screens){const el=document.createElement('article');el.className='phone';el.innerHTML='<div class="eyebrow">'+tag.toUpperCase()+'</div><div class="title">'+title+'</div>'+rows.map(([a,b,hot])=>'<div class="card '+(hot?'hot':'')+'"><b>'+a+'</b><span>'+b+'</span></div>').join('')+(cta?'<div class="button">'+cta+'</div>':'')+(nav?'<div class="nav"><span>Feed</span><span>Explore</span><strong>+</strong><span>Map</span><span>Me</span></div>':'');grid.appendChild(el);}app.appendChild(section);}
+  </script>
+</body>
+</html>
