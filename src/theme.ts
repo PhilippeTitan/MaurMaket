@@ -13,6 +13,12 @@ export const COLORS = {
   error: '#FF4D6A',
 };
 
+export const TIER_COLORS: Record<string, string> = {
+  casual: COLORS.yellow,
+  verified: COLORS.blue,
+  business: COLORS.coral,
+};
+
 export const SPACING = {
   xs: 4,
   sm: 8,

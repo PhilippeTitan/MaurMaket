@@ -3,12 +3,13 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, useWindowDimensions, FlatList,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Icon } from '../components/icons/Icon';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Icon } from '../components/icons/Icon';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice, TIER_COLORS } from '../theme';
 import { useTranslation } from '../i18n';
 import { useUser } from '../hooks';
 import { store } from '../store';
@@ -23,7 +24,7 @@ import StockBadge from '../components/StockBadge';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 60_000;
-import UserAvatar from '../components/UserAvatar';
+
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -76,7 +77,7 @@ export default function MeScreen() {
   const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
 
   const tier = user?.seller_tier || 'casual';
-  const tierColor = tier === 'business' ? COLORS.coral : tier === 'verified' ? COLORS.blue : 'transparent';
+  const tierColor = TIER_COLORS[tier] || 'transparent';
   const isBusinessMode = isSeller && user?.seller_tier === 'business' && user?.use_store_identity;
   const displayName = isBusinessMode ? (user as any)?.store_name || getDisplayName(user) : getDisplayName(user);
   const initials = (isBusinessMode ? (user as any)?.store_name || getDisplayName(user) : getDisplayName(user)).split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || '?';
@@ -255,25 +256,17 @@ export default function MeScreen() {
               );
             }}
           />
-          <View style={styles.stockBadgePos}>
-            <StockBadge stock={item.stock} size="sm" />
-          </View>
-          <View style={styles.priceBadgePos}>
-            <View style={styles.priceBadgeBg}>
-              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-            </View>
-          </View>
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
             style={styles.cardGradient}
           />
           <View style={styles.cardBottomInfo}>
-            <UserAvatar seller={item.seller} size={28} />
-            <View style={{ flex: 1, marginLeft: 6 }}>
-              <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-              {item.description ? (
-                <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
-              ) : null}
+            <View style={styles.stockBadgeBottom}>
+              <StockBadge stock={item.stock} size="sm" />
+            </View>
+            <View style={{ flex: 1 }} />
+            <View style={styles.cardPriceBottom}>
+              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
             </View>
           </View>
         </View>
@@ -751,12 +744,6 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  stockBadgePos: { position: 'absolute', top: 7, left: 7 },
-  priceBadgePos: { position: 'absolute', top: 7, right: 7 },
-  priceBadgeBg: {
-    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6,
-    paddingHorizontal: 7, paddingVertical: 3,
-  },
   cardGradient: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     height: '55%',
@@ -765,8 +752,14 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 7, left: 7, right: 7,
     flexDirection: 'row', alignItems: 'center',
   },
-  cardName: { fontSize: 12, fontWeight: '600', color: COLORS.white, lineHeight: 16 },
-  cardDesc: { fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 13 },
+  cardPriceBottom: {
+    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  stockBadgeBottom: {
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 3,
+  },
 
   /* Empty */
   empty: { alignItems: 'center', paddingVertical: 40, gap: 6 },

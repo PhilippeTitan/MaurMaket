@@ -3,8 +3,9 @@ import {
   View, Text, TextInput, Image, TouchableOpacity, StyleSheet,
   ActivityIndicator, Modal, Pressable, FlatList, Dimensions, RefreshControl,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
@@ -16,7 +17,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
 import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
-import StockBadge from '../components/StockBadge';
+
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
@@ -213,26 +214,16 @@ export default function ExploreScreen({ navigation }: Props) {
               );
             }}
           />
-          <View style={styles.stockBadgePos}>
-            <StockBadge stock={item.stock} size="sm" />
-          </View>
-          <View style={styles.priceBadgePos}>
-            <View style={styles.priceBadgeBg}>
-              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-            </View>
-          </View>
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
             style={styles.cardGradient}
           />
           {item.seller && (
             <View style={styles.cardBottomInfo}>
-              <UserAvatar seller={item.seller} />
-              <View style={{ flex: 1, marginLeft: 6 }}>
-                <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-                {item.description ? (
-                  <Text style={styles.cardDesc} numberOfLines={1}>{item.description}</Text>
-                ) : null}
+              <UserAvatar seller={item.seller} size={28} />
+              <View style={{ flex: 1 }} />
+              <View style={styles.cardPriceBottom}>
+                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
               </View>
             </View>
           )}
@@ -571,17 +562,6 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  priceBadgePos: {
-    position: 'absolute', top: 8, right: 8,
-  },
-  stockBadgePos: {
-    position: 'absolute', top: 8, left: 8,
-  },
-  priceBadgeBg: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: RADIUS.row,
-    paddingHorizontal: 6, paddingVertical: 3,
-  },
   cardGradient: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     height: '55%',
@@ -590,8 +570,11 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 8, left: 8, right: 8,
     flexDirection: 'row', alignItems: 'center',
   },
-  cardName: { fontSize: 12, fontWeight: '600', color: COLORS.white, lineHeight: 16 },
-  cardDesc: { fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 13 },
+  cardPriceBottom: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: RADIUS.row,
+    paddingHorizontal: 6, paddingVertical: 3,
+  },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
   emptyIcon: {

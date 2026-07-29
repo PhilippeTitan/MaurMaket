@@ -31,6 +31,7 @@ import { SecureAccountIcon } from './secureAccount';
 import { SearchIcon } from './search';
 import { PlusIcon } from './plus';
 import { MapIcon } from './map';
+import UserIcon from './user';
 
 export type IconName =
   | 'close' | 'close-circle' | 'check' | 'check-circle' | 'chevron-right'
@@ -38,7 +39,7 @@ export type IconName =
   | 'storefront' | 'sale-tag' | 'cart' | 'package' | 'delivery' | 'offer-coin'
   | 'location-pin' | 'my-location' | 'camera' | 'add-photo' | 'image-unavailable'
   | 'rating' | 'rate-this' | 'message' | 'qr-code' | 'time' | 'secure-account'
-  | 'search' | 'plus' | 'map';
+  | 'search' | 'plus' | 'map' | 'user';
 
 const ICONS: Record<IconName, React.FC<{ size?: number; color?: string; strokeWidth?: number }>> = {
   close: CloseIcon,
@@ -73,6 +74,7 @@ const ICONS: Record<IconName, React.FC<{ size?: number; color?: string; strokeWi
   search: SearchIcon,
   plus: PlusIcon,
   map: MapIcon,
+  user: UserIcon,
 };
 
 export function Icon({ name, size = 24, color = '#E6EDF3', strokeWidth = 1.75 }: {

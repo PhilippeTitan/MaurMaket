@@ -1844,7 +1844,7 @@ app.post('/api/follow/:sellerId', authRequired, async (req, res) => {
 app.get('/api/following', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT f.*, u.full_name, u.avatar_url,
+      `SELECT f.*, u.full_name, u.avatar_url, u.seller_tier,
         EXISTS(
           SELECT 1 FROM notifications n
           WHERE n.user_id = f.follower_id
@@ -3962,7 +3962,7 @@ app.get('/api/conversations', authRequired, async (req, res) => {
     const result = await pool.query(
       `SELECT c.*, 
               CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
-              u.full_name AS other_party_name, u.avatar_url AS other_party_avatar,
+              u.full_name AS other_party_name, u.avatar_url AS other_party_avatar, u.seller_tier AS other_party_seller_tier,
               latest.last_message,
               COUNT(unread.id)::INTEGER AS unread_count
        FROM conversations c

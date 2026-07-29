@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, TIER_COLORS } from '../theme';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
@@ -145,13 +145,15 @@ export default function InboxScreen() {
           accessibilityRole="button"
           activeOpacity={0.7}
         >
-          <View style={[styles.convoAvatar, { backgroundColor: COLORS.coral }]}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.convoAvatarImg} />
-            ) : (
-              <Text style={styles.convoAvatarText}>{initial}</Text>
-            )}
-            {hasUnread && <View style={styles.convoUnreadBadge} />}
+          <View style={[styles.convoAvatarRing, { borderColor: sellerTier && sellerTier !== 'none' && sellerTier !== 'casual' ? TIER_COLORS[sellerTier] : 'transparent' }]}>
+            <View style={[styles.convoAvatar, { backgroundColor: COLORS.coral }]}>
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.convoAvatarImg} />
+              ) : (
+                <Text style={styles.convoAvatarText}>{initial}</Text>
+              )}
+              {hasUnread && <View style={styles.convoUnreadBadge} />}
+            </View>
           </View>
           <View style={styles.convoBody}>
             <View style={styles.convoNameRow}>
@@ -205,7 +207,7 @@ export default function InboxScreen() {
     };
     return (
       <TouchableOpacity style={styles.sellerBubble} onPress={handlePress} accessibilityLabel={`message ${displayName}`} accessibilityRole="button">
-        <View style={[styles.sellerBubbleRing, { borderColor: hasActivity ? COLORS.coral : COLORS.border }]}>
+        <View style={[styles.sellerBubbleRing, { borderColor: seller.seller_tier && seller.seller_tier !== 'none' && seller.seller_tier !== 'casual' ? TIER_COLORS[seller.seller_tier] : COLORS.border }]}>
           <View style={[styles.sellerBubbleAvatar, { backgroundColor: COLORS.coral }]}>
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.sellerBubbleImg} />
@@ -366,6 +368,7 @@ const styles = StyleSheet.create({
   sellerBubbleName: { fontSize: 11, color: COLORS.text2, marginTop: 4, textAlign: 'center' },
   convo: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 10 },
   convoMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  convoAvatarRing: { width: 62, height: 62, borderRadius: 31, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   convoAvatar: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   convoAvatarImg: { width: 56, height: 56, borderRadius: 28 },
   convoAvatarText: { fontSize: 20, color: COLORS.white, fontWeight: '700' },

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
-import { COLORS } from '../theme';
+import { View, Image, StyleSheet } from 'react-native';
+import { COLORS, TIER_COLORS } from '../theme';
 import { getSellerAvatar, getDisplayName } from '../theme';
 import { getImageUrl } from '../api';
+import UserIcon from './icons/user';
 
 interface UserAvatarProps {
-  seller?: { avatar_url?: string | null; store_logo_url?: string | null; use_store_identity?: boolean; full_name?: string; username?: string | null } | null;
+  seller?: { avatar_url?: string | null; store_logo_url?: string | null; use_store_identity?: boolean; full_name?: string; username?: string | null; seller_tier?: string } | null;
   name?: string;
   uri?: string;
   size?: number;
@@ -22,15 +23,16 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
       : null;
 
   const label = name || getDisplayName(seller) || '?';
-  const initial = label.charAt(0).toUpperCase();
+
+  const tier = seller?.seller_tier;
+  const resolvedRing = ringColor || (tier && tier !== 'casual' ? TIER_COLORS[tier] : undefined);
 
   const r = size / 2;
-  const fontSize = size * 0.38;
-  const ringPad = ringColor ? 3 : 0;
+  const ringPad = resolvedRing ? 3 : 0;
   const outerSize = size + ringPad * 2;
 
   return (
-    <View style={[{ width: outerSize, height: outerSize }, ringColor && { borderRadius: r + ringPad, borderWidth: 1.5, borderColor: ringColor }]}>
+    <View style={[{ width: outerSize, height: outerSize }, resolvedRing && { borderRadius: r + ringPad, borderWidth: 1.5, borderColor: resolvedRing }]}>
       <View style={[styles.container, { width: size, height: size, borderRadius: r }]}>
         {avatarUrl && !failed ? (
           <Image
@@ -40,7 +42,7 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
             accessibilityLabel={`Avatar for ${label}`}
           />
         ) : (
-          <Text style={[styles.initial, { fontSize }]} accessibilityLabel={`Avatar for ${label}`}>{initial}</Text>
+          <UserIcon size={size * 0.5} color={COLORS.text2} />
         )}
       </View>
     </View>
@@ -49,13 +51,9 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: COLORS.coral,
+    backgroundColor: COLORS.surface2,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-  },
-  initial: {
-    color: COLORS.white,
-    fontWeight: '700',
   },
 });

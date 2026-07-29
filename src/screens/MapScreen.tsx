@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice, TIER_COLORS } from '../theme';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import {
@@ -19,9 +19,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Product } from '../types';
 import * as Location from 'expo-location';
 
-const TIER_COLORS: Record<string, string> = {
-  casual: '#F5A623', verified: '#1D9E75', business: '#E04050',
-};
+
 const SCREEN_W = Dimensions.get('window').width;
 
 interface NearbySeller {
@@ -651,13 +649,15 @@ export default function MapScreen() {
           <View style={styles.sheetContent}>
             <View style={styles.sheetTop}>
               <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id })} accessibilityLabel="visit seller profile" accessibilityRole="button">
-                {sellerAvatar ? (
-                  <Image source={{ uri: sellerAvatar }} style={styles.sheetAvatar} />
-                ) : (
-                  <View style={[styles.sheetAvatar, styles.sheetAvatarFallback]}>
-                    <Text style={styles.sheetAvatarText}>{(selectedSeller.full_name || '?')[0]}</Text>
-                  </View>
-                )}
+                <View style={[styles.sheetAvatarRing, { borderColor: selectedSeller.seller_tier && selectedSeller.seller_tier !== 'casual' ? TIER_COLORS[selectedSeller.seller_tier] : 'transparent' }]}>
+                  {sellerAvatar ? (
+                    <Image source={{ uri: sellerAvatar }} style={styles.sheetAvatar} />
+                  ) : (
+                    <View style={[styles.sheetAvatar, styles.sheetAvatarFallback]}>
+                      <Text style={styles.sheetAvatarText}>{(selectedSeller.full_name || '?')[0]}</Text>
+                    </View>
+                  )}
+                </View>
               </TouchableOpacity>
               <View style={styles.sheetInfo}>
                 <Text style={styles.sheetName} numberOfLines={1}>{getDisplayName(selectedSeller)}</Text>
@@ -758,6 +758,7 @@ const styles = StyleSheet.create({
   chevronRow: { alignItems: 'center', paddingVertical: 6 },
   sheetContent: {},
   sheetTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingBottom: 10, gap: 10 },
+  sheetAvatarRing: { width: 50, height: 50, borderRadius: 25, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   sheetAvatar: { width: 44, height: 44, borderRadius: 22 },
   sheetAvatarFallback: { backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
   sheetAvatarText: { color: '#fff', fontSize: 18, fontWeight: '700' },
