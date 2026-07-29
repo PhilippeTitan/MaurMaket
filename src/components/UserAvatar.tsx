@@ -38,12 +38,19 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
   const resolvedRing = ringColor || (tier ? TIER_COLORS[tier] : undefined);
 
   const r = size / 2;
-  const ringPad = resolvedRing ? 4 : 0;
-  const outerSize = size + ringPad * 2;
+  // Ring thickness scales with avatar size so it reads as a crisp outline
+  // at both small (35px feed) and large (86px profile) sizes, instead of a
+  // fixed 3px that disappears into a blur at small sizes.
+  const ringWidth = resolvedRing ? Math.max(2, Math.round(size * 0.08)) : 0;
+  const ringGap = resolvedRing ? 2 : 0; // small breathing room between photo and ring
+  const outerSize = size + (ringWidth + ringGap) * 2;
 
   return (
-    <View style={[{ width: outerSize, height: outerSize, alignItems: 'center', justifyContent: 'center', borderRadius: outerSize / 2, overflow: 'hidden' }, resolvedRing && { borderWidth: 3, borderColor: resolvedRing, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 3 }]}>
-      <View style={[styles.container, { width: size, height: size, borderRadius: r }]}>
+    <View style={[
+      { width: outerSize, height: outerSize, alignItems: 'center', justifyContent: 'center', borderRadius: outerSize / 2 },
+      resolvedRing && { borderWidth: ringWidth, borderColor: resolvedRing },
+    ]}>
+      <View style={[styles.container, { width: size, height: size, borderRadius: r, overflow: 'hidden' }]}>
         {avatarUrl && !failed ? (
           <Image
             source={{ uri: avatarUrl }}
