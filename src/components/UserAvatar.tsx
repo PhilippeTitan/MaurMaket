@@ -27,8 +27,6 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
   const tier = seller?.seller_tier;
   const resolvedRing = ringColor || (tier ? TIER_COLORS[tier] : undefined);
 
-  if (!resolvedRing && tier !== 'casual') console.log(`[UserAvatar] NO ring: tier=${JSON.stringify(tier)} typeof=${typeof tier} keys=${seller ? Object.keys(seller).join(',') : 'null'}`);
-
   const r = size / 2;
   const ringPad = resolvedRing ? 3 : 0;
   const outerSize = size + ringPad * 2;

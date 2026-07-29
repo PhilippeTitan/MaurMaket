@@ -64,12 +64,6 @@ async function request<T = Record<string, unknown>>(
   } catch {
     throw new Error(`Server returned invalid response (${res.status}). Please try again.`);
   }
-  if (path === '/conversations') {
-    const convos = data?.conversations;
-    if (Array.isArray(convos) && convos.length > 0) {
-      console.log('[RAW /conversations]', JSON.stringify({ seller_tier: convos[0].other_party_seller_tier, keys: Object.keys(convos[0]).join(',') }));
-    }
-  }
   if (!res.ok) {
     const msg = data.error || data.message || 'Request failed';
     const detail = data.details ? ` (${data.details})` : '';
