@@ -69,6 +69,7 @@ export default function ExploreScreen({ navigation }: Props) {
   const [catModal, setCatModal] = useState(false);
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [exploreImageIndices, setExploreImageIndices] = useState<Record<string, number>>({});
   const mountedRef = useRef(true);
   const categoryListRef = useRef<FlatList<CategoryFilter>>(null);
   const [sortBy, setSortBy] = useState('newest');
@@ -174,13 +175,7 @@ export default function ExploreScreen({ navigation }: Props) {
     const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.image_url || images[0]?.image_url);
     return (
       <View>
-        <TouchableOpacity
-          style={styles.card}
-          activeOpacity={0.82}
-          onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-          accessibilityRole="button"
-          accessibilityLabel={t('accessibility.viewProduct')}
-        >
+        <View style={styles.card}>
           {/* Stacked card backs — fanned out when multiple images */}
           {hasMore && (
             <>
@@ -189,8 +184,51 @@ export default function ExploreScreen({ navigation }: Props) {
             </>
           )}
           <View style={[styles.cardImgWrap, { height: cardH }]}>
-            {primaryUrl && !imgFailed ? (
-              <>
+            {hasMore && !imgFailed ? (
+              <FlatList
+                data={images}
+                horizontal
+                pagingEnabled
+                nestedScrollEnabled
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(img, idx) => String(img.id || idx)}
+                onMomentumScrollEnd={(e) => {
+                  const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
+                  setExploreImageIndices(prev => ({ ...prev, [item.id]: idx }));
+                }}
+                getItemLayout={(_, index) => ({ length: CARD_W, offset: CARD_W * index, index })}
+                renderItem={({ item: img }) => {
+                  const url = getImageUrl(img.image_url);
+                  return (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+                      style={{ width: CARD_W, height: cardH }}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('accessibility.viewProduct')}
+                    >
+                      {url ? (
+                        <>
+                          <Image source={{ uri: url }} style={styles.cardImg} resizeMode="cover" blurRadius={20} onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                          <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                        </>
+                      ) : (
+                        <View style={styles.cardPlaceholder}>
+                          <Icon name="image-unavailable" size={24} color={COLORS.text2} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            ) : primaryUrl && !imgFailed ? (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+                style={StyleSheet.absoluteFill}
+                accessibilityRole="button"
+                accessibilityLabel={t('accessibility.viewProduct')}
+              >
                 <Image
                   source={{ uri: primaryUrl }}
                   style={styles.cardImg}
@@ -204,33 +242,39 @@ export default function ExploreScreen({ navigation }: Props) {
                   resizeMode="contain"
                   onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
                 />
-              </>
+              </TouchableOpacity>
             ) : (
               <View style={styles.cardPlaceholder}>
                 <Icon name="image-unavailable" size={24} color={COLORS.text2} />
               </View>
             )}
             {/* Price — top right */}
-            <View style={styles.cardPriceTop}>
+            <View style={styles.cardPriceTop} pointerEvents="none">
               <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
             </View>
-            {/* Dots — bottom left (only if multiple images) */}
+            {/* Dots — bottom left (only if multiple images), reflects the actual swiped-to index */}
             {hasMore && (
-              <View style={styles.imgDots}>
+              <View style={styles.imgDots} pointerEvents="none">
                 {images.map((_: any, i: number) => (
-                  <View key={i} style={styles.imgDot} />
+                  <View key={i} style={[styles.imgDot, i === (exploreImageIndices[item.id] || 0) && styles.imgDotActive]} />
                 ))}
               </View>
             )}
           </View>
-        </TouchableOpacity>
-        {/* Name row — seller avatar + product name */}
-        <View style={styles.cardNameRow}>
+        </View>
+        {/* Name row — seller avatar + product name — tap target for opening the product */}
+        <TouchableOpacity
+          style={styles.cardNameRow}
+          activeOpacity={0.6}
+          onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.viewProduct')}
+        >
           {item.seller && (
             <UserAvatar seller={item.seller} size={18} animated={false} />
           )}
           <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-        </View>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -577,6 +621,11 @@ const styles = StyleSheet.create({
   imgDot: {
     width: 6, height: 6, borderRadius: 3,
     backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+  imgDotActive: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: '#fff',
+    transform: [{ scale: 1.25 }],
   },
   cardNameRow: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
