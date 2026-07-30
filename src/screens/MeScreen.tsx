@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, useWindowDimensions, FlatList,
 } from 'react-native';
@@ -73,9 +73,13 @@ export default function MeScreen() {
   const [analyticsData, setAnalyticsData] = useState<SellerAnalyticsResponse | null>(null);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
-  const { width: SCREEN_W } = useWindowDimensions();
-  const CARD_W = (SCREEN_W - SPACING.md * 2 - 6) / 2;
+  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
+  const mountedRef = useRef(true);
+  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
+  const CARD_W = (SCREEN_W - 3) / 2;
   const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
+  const MIN_H = CARD_W * 0.6;
+  const MAX_H = SCREEN_H * 0.52;
 
   const tier = user?.seller_tier || 'casual';
   const isBusinessMode = isSeller && user?.seller_tier === 'business' && user?.use_store_identity;
@@ -140,6 +144,14 @@ export default function MeScreen() {
         setProducts(products);
         setProductCount(products.length || 0);
         cacheData.products = products; cacheData.productCount = products.length;
+
+        products.forEach((p: Product) => {
+          const url = getImageUrl(p.images?.find(i => i.is_primary)?.image_url || p.images?.[0]?.image_url);
+          if (!url) return;
+          Image.getSize(url, (w, h) => {
+            if (mountedRef.current) setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
+          }, () => {});
+        });
 
         if (user?.seller_tier !== 'casual') {
           try {
@@ -208,66 +220,95 @@ export default function MeScreen() {
     return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  const getCardHeight = (p: Product) => {
+    const size = imageSizes[p.id];
+    if (size && size.w > 0) {
+      const ratio = size.h / size.w;
+      return Math.max(MIN_H, Math.min(MAX_H, CARD_W * ratio));
+    }
+    return DEFAULT_IMG_H;
+  };
+
+  const [leftCol, rightCol] = (() => {
+    const cols: [Product[], Product[]] = [[], []];
+    const heights = [0, 0];
+    for (const item of products) {
+      const target = heights[0] <= heights[1] ? 0 : 1;
+      cols[target].push(item);
+      heights[target] += getCardHeight(item) + 3;
+    }
+    return cols;
+  })();
+
   const renderGridItem = (item: Product) => {
     const isOwnProduct = isSeller && user?.id === item.seller_id;
     const imgFailed = failedImages.has(item.id);
+    const cardH = getCardHeight(item);
     const images = item.images && item.images.length > 0
       ? item.images
       : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
     return (
-      <TouchableOpacity
-        key={item.id}
-        style={styles.card}
-        activeOpacity={0.82}
-        onPress={() => isOwnProduct
-          ? nav.navigate('EditListing', { productId: item.id })
-          : nav.navigate('ProductDetail', { productId: item.id })
-        }
-        accessibilityRole="button"
-        accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
-      >
-        <View style={[styles.cardImgWrap, { height: DEFAULT_IMG_H }]}>
-          <FlatList
-            data={images}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(img, idx) => String(img.id || idx)}
-            renderItem={({ item: img }) => {
-              const url = getImageUrl(img.image_url);
-              return (
-                <View style={{ width: CARD_W, height: DEFAULT_IMG_H }}>
-                  {url && !imgFailed ? (
-                    <Image
-                      source={{ uri: url }}
-                      style={styles.cardImg}
-                      resizeMode="cover"
-                      onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                    />
-                  ) : (
-                    <View style={styles.cardPlaceholder}>
-                      <Icon name="image-unavailable" size={20} color={COLORS.text2} />
-                    </View>
-                  )}
-                </View>
-              );
-            }}
-          />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
-            style={styles.cardGradient}
-          />
-          <View style={styles.cardBottomInfo}>
-            <View style={styles.stockBadgeBottom}>
-              <StockBadge stock={item.stock} size="sm" />
-            </View>
-            <View style={{ flex: 1 }} />
-            <View style={styles.cardPriceBottom}>
-              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+      <View key={item.id}>
+        <TouchableOpacity
+          style={styles.card}
+          activeOpacity={0.82}
+          onPress={() => isOwnProduct
+            ? nav.navigate('EditListing', { productId: item.id })
+            : nav.navigate('ProductDetail', { productId: item.id })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
+        >
+          <View style={[styles.cardImgWrap, { height: cardH }]}>
+            <FlatList
+              data={images}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(img, idx) => String(img.id || idx)}
+              renderItem={({ item: img }) => {
+                const url = getImageUrl(img.image_url);
+                return (
+                  <View style={{ width: CARD_W, height: cardH }}>
+                    {url && !imgFailed ? (
+                      <Image
+                        source={{ uri: url }}
+                        style={styles.cardImg}
+                        resizeMode="cover"
+                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                      />
+                    ) : (
+                      <View style={styles.cardPlaceholder}>
+                        <Icon name="image-unavailable" size={20} color={COLORS.text2} />
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
+              style={styles.cardGradient}
+            />
+            {images.length > 1 && (
+              <View style={styles.imgCountBadge}>
+                <MaterialCommunityIcons name="image-multiple" size={11} color="#fff" />
+                <Text style={styles.imgCountText}>{images.length}</Text>
+              </View>
+            )}
+            <View style={styles.cardBottomInfo}>
+              <View style={styles.stockBadgeBottom}>
+                <StockBadge stock={item.stock} size="sm" />
+              </View>
+              <View style={{ flex: 1 }} />
+              <View style={styles.cardPriceBottom}>
+                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+              </View>
             </View>
           </View>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+      </View>
     );
   };
 
@@ -337,7 +378,7 @@ export default function MeScreen() {
 
         {/* Avatar with TierRing + Stats row */}
         <View style={styles.avatarRow}>
-          <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={76} />
+          <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={76} animated={true} />
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
@@ -452,6 +493,12 @@ export default function MeScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+        {/* Dark fade at bottom of hero */}
+        <LinearGradient
+          colors={['transparent', COLORS.bg]}
+          style={styles.heroFade}
+        />
       </View>
 
       {/* Become a Seller CTA for buyers */}
@@ -550,8 +597,13 @@ export default function MeScreen() {
         {activeTab === 'listings' && (
           isSeller ? (
             products.length > 0 ? (
-              <View style={styles.grid}>
-                {products.map(renderGridItem)}
+              <View style={styles.masonryGrid}>
+                <View style={styles.masonryCol}>
+                  {leftCol.map(renderGridItem)}
+                </View>
+                <View style={styles.masonryCol}>
+                  {rightCol.map(renderGridItem)}
+                </View>
               </View>
             ) : (
               <View style={styles.empty}>
@@ -656,7 +708,11 @@ const styles = StyleSheet.create({
   topBarName: { fontSize: 20, fontWeight: '800', color: COLORS.text },
 
   /* Hero */
-  hero: { backgroundColor: COLORS.surface, paddingBottom: SPACING.lg },
+  hero: { backgroundColor: COLORS.surface, paddingBottom: SPACING.lg, position: 'relative' },
+  heroFade: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    height: 40,
+  },
   avatarRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.lg, paddingTop: 60,
@@ -731,9 +787,11 @@ const styles = StyleSheet.create({
 
   /* Tab Content */
   tabContent: { paddingTop: SPACING.md },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 3, paddingHorizontal: 3 },
+  masonryGrid: { flexDirection: 'row', gap: 3 },
+  masonryCol: { flex: 1, gap: 3 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
   card: {
-    width: '48%' as any, borderRadius: RADIUS.row, overflow: 'hidden',
+    borderRadius: RADIUS.row, overflow: 'hidden',
     backgroundColor: COLORS.surface2,
   },
   cardImgWrap: {
@@ -757,6 +815,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 3,
   },
   stockBadgeBottom: {},
+
+  cardName: {
+    fontSize: 12.5, fontWeight: '600', color: COLORS.text,
+    paddingHorizontal: 6, paddingTop: 5, paddingBottom: 2,
+  },
+  imgCountBadge: {
+    position: 'absolute', bottom: 36, alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10,
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  imgCountText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 
   /* Empty */
   empty: { alignItems: 'center', paddingVertical: 40, gap: 6 },

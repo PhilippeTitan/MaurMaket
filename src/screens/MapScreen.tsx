@@ -245,7 +245,7 @@ export default function MapScreen() {
       setFollowerCount(countRes?.count ?? 0);
     } catch { store.toggleFollowing(selectedSeller.id, wasFollowing); }
     setFollowBusy(false);
-  }, [selectedSeller, isFollowing, followBusy]);
+  }, [selectedSeller, followBusy]);
 
   const fetchSellers = useCallback(async (lat: number, lng: number) => {
     const thisFetch = ++fetchIdRef.current;
@@ -651,7 +651,7 @@ export default function MapScreen() {
           <View style={styles.sheetContent}>
             <View style={styles.sheetTop}>
               <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id })} accessibilityLabel="visit seller profile" accessibilityRole="button">
-                <UserAvatar seller={selectedSeller} size={50} />
+                <UserAvatar seller={selectedSeller} size={50} animated={true} />
               </TouchableOpacity>
               <View style={styles.sheetInfo}>
                 <Text style={styles.sheetName} numberOfLines={1}>{getDisplayName(selectedSeller)}</Text>

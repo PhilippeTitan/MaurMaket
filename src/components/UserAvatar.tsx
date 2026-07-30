@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { View, Image, StyleSheet } from 'react-native';
-import { Svg, Path } from 'react-native-svg';
+import { Svg, Path, Circle } from 'react-native-svg';
 import { COLORS, TIER_COLORS } from '../theme';
 import { getSellerAvatar, getDisplayName } from '../theme';
 import { getImageUrl } from '../api';
 import UserIcon from './icons/user';
+import AnimatedTierRing from './AnimatedTierRing';
 
 interface UserAvatarProps {
   seller?: { avatar_url?: string | null; store_logo_url?: string | null; use_store_identity?: boolean; full_name?: string; username?: string | null; seller_tier?: string } | null;
@@ -12,6 +13,7 @@ interface UserAvatarProps {
   uri?: string;
   size?: number;
   ringColor?: string;
+  animated?: boolean;
 }
 
 export function PaperPlaneIcon({ size = 24, color = COLORS.text }: { size?: number; color?: string }) {
@@ -23,7 +25,7 @@ export function PaperPlaneIcon({ size = 24, color = COLORS.text }: { size?: numb
   );
 }
 
-export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: UserAvatarProps) {
+export default function UserAvatar({ seller, name, uri, size = 35, ringColor, animated }: UserAvatarProps) {
   const [failed, setFailed] = useState(false);
 
   const avatarUrl = uri
@@ -34,19 +36,10 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
 
   const label = name || getDisplayName(seller) || '?';
 
-  const tier = seller?.seller_tier;
+  const tier = seller?.seller_tier as 'casual' | 'verified' | 'business' | undefined;
   const resolvedRing = ringColor || (tier ? TIER_COLORS[tier] : undefined);
 
-  // Instagram-style ring: padding on the colored container creates the ring,
-  // white inner padding creates the gap, image sits inside.
-  const ringWidth = resolvedRing ? 3 : 0;
-  const whiteGap = 2;
-  const outerSize = size + (ringWidth + whiteGap) * 2;
-  const innerSize = outerSize - ringWidth * 2;
-  const imgSize = outerSize - (ringWidth + whiteGap) * 2;
-
   if (!resolvedRing) {
-    // No ring — just the avatar
     return (
       <View style={[styles.container, { width: size, height: size, borderRadius: size / 2 }]}>
         {avatarUrl && !failed ? (
@@ -63,18 +56,51 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor }: 
     );
   }
 
+  const outerSize = size * 100 / 80;
+
+  if (tier) {
+    return (
+      <View style={{ width: outerSize, height: outerSize, alignItems: 'center', justifyContent: 'center' }}>
+        <AnimatedTierRing tier={tier} size={outerSize} animated={animated} />
+        <View style={[styles.container, { position: 'absolute', width: size, height: size, borderRadius: size / 2 }]}>
+          {avatarUrl && !failed ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              style={{ width: size, height: size, borderRadius: size / 2 }}
+              onError={() => setFailed(true)}
+              accessibilityLabel={`Avatar for ${label}`}
+            />
+          ) : (
+            <UserIcon size={size * 0.5} color={COLORS.text2} />
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  const outerSizeFallback = size * 100 / 80;
+
   return (
-    <View style={{ width: outerSize, height: outerSize, borderRadius: outerSize / 2, backgroundColor: resolvedRing, padding: ringWidth }}>
-      <View style={{ width: innerSize, height: innerSize, borderRadius: innerSize / 2, backgroundColor: '#fff', padding: whiteGap, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: outerSizeFallback, height: outerSizeFallback, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg
+        width={outerSizeFallback}
+        height={outerSizeFallback}
+        viewBox="0 0 100 100"
+        style={{ position: 'absolute', top: 0, left: 0 }}
+      >
+        <Circle cx={50} cy={50} r={48} fill="none" stroke={resolvedRing} strokeWidth={4} />
+        <Circle cx={50} cy={50} r={43} fill={COLORS.bg} />
+      </Svg>
+      <View style={[styles.container, { width: size, height: size, borderRadius: size / 2 }]}>
         {avatarUrl && !failed ? (
           <Image
             source={{ uri: avatarUrl }}
-            style={{ width: imgSize, height: imgSize, borderRadius: imgSize / 2 }}
+            style={{ width: size, height: size, borderRadius: size / 2 }}
             onError={() => setFailed(true)}
             accessibilityLabel={`Avatar for ${label}`}
           />
         ) : (
-          <UserIcon size={imgSize * 0.5} color={COLORS.text2} />
+          <UserIcon size={size * 0.5} color={COLORS.text2} />
         )}
       </View>
     </View>

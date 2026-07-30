@@ -14,9 +14,15 @@ export const COLORS = {
 };
 
 export const TIER_COLORS: Record<string, string> = {
-  casual: COLORS.yellow,
-  verified: COLORS.blue,
-  business: COLORS.coral,
+  casual: '#00E5A0',
+  verified: '#1E3A5F',
+  business: '#FFD700',
+};
+
+export const TIER_GRADIENTS: Record<string, [string, string]> = {
+  casual: ['#00E5A0', '#00C2FF'],
+  verified: ['#1E3A5F', '#FF4D6A'],
+  business: ['#FFD700', '#FF4D6A'],
 };
 
 export const SPACING = {

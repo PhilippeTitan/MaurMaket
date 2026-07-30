@@ -247,7 +247,7 @@ export default function InboxScreen() {
           activeOpacity={0.7}
         >
           <View style={{ position: 'relative' }}>
-            <UserAvatar seller={{ avatar_url: (item as any).other_party_avatar, full_name: otherName, username: (item as any).other_party_username, seller_tier: sellerTier } as any} size={56} />
+             <UserAvatar seller={{ avatar_url: (item as any).other_party_avatar, full_name: otherName, username: (item as any).other_party_username, seller_tier: sellerTier } as any} size={44} animated={false} />
             {hasUnread && <View style={styles.convoUnreadBadge} />}
           </View>
           <View style={styles.convoBody}>
@@ -299,7 +299,7 @@ export default function InboxScreen() {
     };
     return (
       <TouchableOpacity style={styles.sellerBubble} onPress={handlePress} accessibilityLabel={`message ${displayName}`} accessibilityRole="button">
-        <UserAvatar seller={seller} size={54} />
+        <UserAvatar seller={seller} size={44} animated={false} />
         <Text style={styles.sellerBubbleName} numberOfLines={1}>
           {displayName}
         </Text>
@@ -455,7 +455,7 @@ export default function InboxScreen() {
               >
                 <View style={styles.convoMain}>
                   <View style={{ position: 'relative' }}>
-                    <UserAvatar seller={{ avatar_url: item.other_party_avatar, full_name: otherName, username: item.other_party_username, seller_tier: sellerTier } as any} size={56} />
+                    <UserAvatar seller={{ avatar_url: item.other_party_avatar, full_name: otherName, username: item.other_party_username, seller_tier: sellerTier } as any} size={44} animated={false} />
                   </View>
                   <View style={styles.convoBody}>
                     <View style={styles.convoNameRow}>
@@ -479,7 +479,7 @@ export default function InboxScreen() {
             loading ? (
               <RowListSkeleton count={4} thumbSize={48} />
             ) : (
-              <EmptyState icon="tag-outline" title="No active offers" size={56} />
+              <EmptyState icon="tag-outline" title="No active offers" size={44} />
             )
           }
         />
@@ -535,7 +535,7 @@ export default function InboxScreen() {
               loading ? (
                 <RowListSkeleton count={4} thumbSize={48} />
               ) : (
-                <EmptyState icon="package-variant" title="No orders yet" size={56} />
+                <EmptyState icon="package-variant" title="No orders yet" size={44} />
               )
             }
           />

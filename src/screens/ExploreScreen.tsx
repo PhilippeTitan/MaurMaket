@@ -170,65 +170,68 @@ export default function ExploreScreen({ navigation }: Props) {
     const images = item.images && item.images.length > 0
       ? item.images
       : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
+    const hasMore = images.length > 1;
+    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.image_url || images[0]?.image_url);
     return (
-      <TouchableOpacity
-        style={styles.card}
-        activeOpacity={0.82}
-        onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-        accessibilityRole="button"
-        accessibilityLabel={t('accessibility.viewProduct')}
-      >
-        <View style={[styles.cardImgWrap, { height: cardH }]}>
-          <FlatList
-            data={images}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(img, idx) => String(img.id || idx)}
-            renderItem={({ item: img }) => {
-              const url = getImageUrl(img.image_url);
-              return (
-                <View style={{ width: CARD_W, height: cardH }}>
-                  {url && !imgFailed ? (
-                    <>
-                      <Image
-                        source={{ uri: url }}
-                        style={styles.cardImg}
-                        resizeMode="cover"
-                        blurRadius={20}
-                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                      />
-                      <Image
-                        source={{ uri: url }}
-                        style={StyleSheet.absoluteFill}
-                        resizeMode="contain"
-                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                      />
-                    </>
-                  ) : (
-                    <View style={styles.cardPlaceholder}>
-                      <Icon name="image-unavailable" size={24} color={COLORS.text2} />
-                    </View>
-                  )}
-                </View>
-              );
-            }}
-          />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
-            style={styles.cardGradient}
-          />
-          {item.seller && (
-            <View style={styles.cardBottomInfo}>
-              <UserAvatar seller={item.seller} size={28} />
-              <View style={{ flex: 1 }} />
-              <View style={styles.cardPriceBottom}>
-                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-              </View>
-            </View>
+      <View>
+        <TouchableOpacity
+          style={styles.card}
+          activeOpacity={0.82}
+          onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.viewProduct')}
+        >
+          {/* Stacked card backs — fanned out when multiple images */}
+          {hasMore && (
+            <>
+              <View style={[styles.stackedCard, { height: cardH, transform: [{ rotate: '2.5deg' }, { translateX: 4 }, { translateY: 2 }] }]} />
+              <View style={[styles.stackedCard, { height: cardH, transform: [{ rotate: '1deg' }, { translateX: 2 }, { translateY: 1 }] }]} />
+            </>
           )}
+          <View style={[styles.cardImgWrap, { height: cardH }]}>
+            {primaryUrl && !imgFailed ? (
+              <>
+                <Image
+                  source={{ uri: primaryUrl }}
+                  style={styles.cardImg}
+                  resizeMode="cover"
+                  blurRadius={20}
+                  onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                />
+                <Image
+                  source={{ uri: primaryUrl }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="contain"
+                  onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                />
+              </>
+            ) : (
+              <View style={styles.cardPlaceholder}>
+                <Icon name="image-unavailable" size={24} color={COLORS.text2} />
+              </View>
+            )}
+            {/* Price — top right */}
+            <View style={styles.cardPriceTop}>
+              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+            </View>
+            {/* Dots — bottom left (only if multiple images) */}
+            {hasMore && (
+              <View style={styles.imgDots}>
+                {images.map((_: any, i: number) => (
+                  <View key={i} style={styles.imgDot} />
+                ))}
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+        {/* Name row — seller avatar + product name */}
+        <View style={styles.cardNameRow}>
+          {item.seller && (
+            <UserAvatar seller={item.seller} size={18} animated={false} />
+          )}
+          <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -562,18 +565,36 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  cardGradient: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    height: '55%',
+  cardPriceTop: {
+    position: 'absolute', top: 6, right: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 3,
   },
-  cardBottomInfo: {
-    position: 'absolute', bottom: 8, left: 8, right: 8,
-    flexDirection: 'row', alignItems: 'center',
+  imgDots: {
+    position: 'absolute', bottom: 8, left: 8,
+    flexDirection: 'row', gap: 4,
   },
-  cardPriceBottom: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
+  imgDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+  cardNameRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 6, paddingTop: 5, paddingBottom: 2,
+  },
+  cardName: {
+    fontSize: 12.5, fontWeight: '600', color: COLORS.text,
+    flex: 1,
+  },
+  stackedCard: {
+    position: 'absolute',
+    top: 2, right: -3,
+    width: '100%',
+    backgroundColor: COLORS.surface2,
     borderRadius: RADIUS.row,
-    paddingHorizontal: 6, paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    zIndex: -1,
   },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },

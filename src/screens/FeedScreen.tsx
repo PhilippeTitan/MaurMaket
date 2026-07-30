@@ -273,17 +273,56 @@ export default function FeedScreen() {
     }
   };
 
+  const [feedImageIndices, setFeedImageIndices] = useState<Record<string, number>>({});
+
   const renderFeedItem = ({ item }: { item: Product }) => {
-    const primaryImg = item.images?.find(i => i.is_primary) || item.images?.[0];
-    const imgUrl = getImageUrl(primaryImg?.image_url);
+    const allImages = (item.images && item.images.length > 0)
+      ? item.images
+      : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
+    const activeIdx = feedImageIndices[item.id] || 0;
+    const currentImg = allImages[activeIdx] || allImages[0];
+    const imgUrl = getImageUrl(currentImg?.image_url);
     const isFollowing = store.isFollowing(item.seller_id);
     const isOwnProduct = store.user?.id === item.seller_id;
 
     return (
       <View style={[styles.slide, { height: screenHeight }]}>
-        {/* Full-screen image / background */}
+        {/* Full-screen image / background — swipeable if multiple images */}
         <View style={styles.mediaContainer}>
-          {imgUrl ? (
+          {allImages.length > 1 ? (
+            <FlatList
+              data={allImages}
+              horizontal
+              pagingEnabled
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(img, idx) => String(img.id || idx)}
+              onMomentumScrollEnd={(e) => {
+                const idx = Math.round(e.nativeEvent.contentOffset.x / Dimensions.get('window').width);
+                setFeedImageIndices(prev => ({ ...prev, [item.id]: idx }));
+              }}
+              getItemLayout={(_, index) => ({
+                length: Dimensions.get('window').width,
+                offset: Dimensions.get('window').width * index,
+                index,
+              })}
+              renderItem={({ item: img }) => {
+                const url = getImageUrl(img.image_url);
+                return (
+                  <View style={{ width: Dimensions.get('window').width, height: '100%' }}>
+                    {url ? (
+                      <>
+                        <Image source={{ uri: url }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} />
+                        <Image source={{ uri: url }} style={styles.mediaContain} resizeMode="contain" />
+                      </>
+                    ) : (
+                      <Icon name="image-unavailable" size={48} color={COLORS.text2} />
+                    )}
+                  </View>
+                );
+              }}
+            />
+          ) : imgUrl ? (
             <>
               <Image source={{ uri: imgUrl }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} />
               <Image source={{ uri: imgUrl }} style={styles.mediaContain} resizeMode="contain" />
@@ -292,6 +331,15 @@ export default function FeedScreen() {
             <Icon name="image-unavailable" size={48} color={COLORS.text2} />
           )}
         </View>
+
+        {/* Image dots indicator */}
+        {allImages.length > 1 && (
+          <View style={styles.imgDots}>
+            {allImages.map((_: any, i: number) => (
+              <View key={i} style={[styles.imgDot, i === activeIdx && styles.imgDotActive]} />
+            ))}
+          </View>
+        )}
 
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
@@ -358,7 +406,7 @@ export default function FeedScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.visitStore')}
             >
-              <UserAvatar seller={item.seller} />
+              <UserAvatar seller={item.seller} animated={false} />
               <Text style={styles.sellerName} numberOfLines={1}>{getDisplayName(item.seller)}</Text>
             </TouchableOpacity>
             {!isOwnProduct && (
@@ -739,8 +787,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   mediaFill: {
     position: 'absolute',
@@ -750,6 +796,19 @@ const styles = StyleSheet.create({
   },
   mediaContain: {
     width: '100%', height: '100%',
+  },
+
+  /* Image dots indicator */
+  imgDots: {
+    position: 'absolute', bottom: 100, alignSelf: 'center',
+    flexDirection: 'row', gap: 5, zIndex: 10,
+  },
+  imgDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  imgDotActive: {
+    backgroundColor: '#fff', width: 8, height: 8, borderRadius: 4,
   },
 
   /* Right-side action rail — TikTok style */
@@ -1007,7 +1066,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: RADIUS.media,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.35)',
   },
   feedTabActive: {
     backgroundColor: COLORS.white,

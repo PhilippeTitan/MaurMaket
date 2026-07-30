@@ -30,11 +30,12 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const insets = useSafeAreaInsets();
-  const { width: SCREEN_W } = useWindowDimensions();
+  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const GRID_GAP = 3;
-  const GRID_PAD = 3;
-  const CARD_W = (SCREEN_W - GRID_PAD * 2 - GRID_GAP) / 2;
-  const CARD_H = Math.round(CARD_W * 1.25);
+  const CARD_W = (SCREEN_W - GRID_GAP) / 2;
+  const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
+  const MIN_H = CARD_W * 0.6;
+  const MAX_H = SCREEN_H * 0.52;
 
   const { sellerId } = route.params;
   const [seller, setSeller] = useState<SellerProfile | null>(null);
@@ -48,6 +49,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const [messageLoading, setMessageLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('listings');
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
+  const mountedRef = useRef(true);
   const [storeTick, setStoreTick] = useState(0);
   const listRef = useRef<FlatList>(null);
 
@@ -91,6 +94,14 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       setSeller(seller);
       setProducts(products);
       setReviews(reviews);
+
+      products.forEach((p: Product) => {
+        const url = getImageUrl(p.images?.find(i => i.is_primary)?.image_url || p.images?.[0]?.image_url);
+        if (!url) return;
+        Image.getSize(url, (w, h) => {
+          if (mountedRef.current) setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
+        }, () => {});
+      });
       const countRes = await getFollowerCount(sellerId) as { count: number };
       setFollowerCount(countRes.count || 0);
       let fcing = 0;
@@ -175,62 +186,91 @@ export default function StorefrontScreen({ route, navigation }: Props) {
     pct: reviews.length > 0 ? (reviews.filter(r => r.rating === s).length / reviews.length) * 100 : 0,
   }));
 
+  const getCardHeight = (p: Product) => {
+    const size = imageSizes[p.id];
+    if (size && size.w > 0) {
+      const ratio = size.h / size.w;
+      return Math.max(MIN_H, Math.min(MAX_H, CARD_W * ratio));
+    }
+    return DEFAULT_IMG_H;
+  };
+
+  const [leftCol, rightCol] = (() => {
+    const cols: [Product[], Product[]] = [[], []];
+    const heights = [0, 0];
+    for (const item of products) {
+      const target = heights[0] <= heights[1] ? 0 : 1;
+      cols[target].push(item);
+      heights[target] += getCardHeight(item) + GRID_GAP;
+    }
+    return cols;
+  })();
+
   const renderGridItem = ({ item }: { item: Product }) => {
     const imgFailed = failedImages.has(item.id);
+    const cardH = getCardHeight(item);
     const images = item.images && item.images.length > 0
       ? item.images
       : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
     return (
-      <TouchableOpacity
-        key={item.id}
-        style={styles.card}
-        activeOpacity={0.82}
-        onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-        accessibilityRole="button"
-        accessibilityLabel={item.name}
-      >
-        <View style={[styles.cardImgWrap, { height: CARD_H }]}>
-          <FlatList
-            data={images}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(img, idx) => String(img.id || idx)}
-            renderItem={({ item: img }) => {
-              const url = getImageUrl(img.image_url);
-              return (
-                <View style={{ width: CARD_W, height: CARD_H }}>
-                  {url && !imgFailed ? (
-                    <Image
-                      source={{ uri: url }}
-                      style={styles.cardImg}
-                      resizeMode="cover"
-                      onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                    />
-                  ) : (
-                    <View style={styles.cardPlaceholder}>
-                      <Icon name="image-unavailable" size={20} color={COLORS.text2} />
-                    </View>
-                  )}
-                </View>
-              );
-            }}
-          />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
-            style={styles.cardGradient}
-          />
-          <View style={styles.cardBottomInfo}>
-            <View style={styles.stockBadgeBottom}>
-              <StockBadge stock={item.stock} size="sm" />
-            </View>
-            <View style={{ flex: 1 }} />
-            <View style={styles.cardPriceBottom}>
-              <SalePriceTag price={item.price ?? 0} effectivePrice={item.effective_price ?? item.price ?? 0} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+      <View key={item.id}>
+        <TouchableOpacity
+          style={styles.card}
+          activeOpacity={0.82}
+          onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+          accessibilityRole="button"
+          accessibilityLabel={item.name}
+        >
+          <View style={[styles.cardImgWrap, { height: cardH }]}>
+            <FlatList
+              data={images}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(img, idx) => String(img.id || idx)}
+              renderItem={({ item: img }) => {
+                const url = getImageUrl(img.image_url);
+                return (
+                  <View style={{ width: CARD_W, height: cardH }}>
+                    {url && !imgFailed ? (
+                      <Image
+                        source={{ uri: url }}
+                        style={styles.cardImg}
+                        resizeMode="cover"
+                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                      />
+                    ) : (
+                      <View style={styles.cardPlaceholder}>
+                        <Icon name="image-unavailable" size={20} color={COLORS.text2} />
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
+              style={styles.cardGradient}
+            />
+            {images.length > 1 && (
+              <View style={styles.imgCountBadge}>
+                <MaterialCommunityIcons name="image-multiple" size={11} color="#fff" />
+                <Text style={styles.imgCountText}>{images.length}</Text>
+              </View>
+            )}
+            <View style={styles.cardBottomInfo}>
+              <View style={styles.stockBadgeBottom}>
+                <StockBadge stock={item.stock} size="sm" />
+              </View>
+              <View style={{ flex: 1 }} />
+              <View style={styles.cardPriceBottom}>
+                <SalePriceTag price={item.price ?? 0} effectivePrice={item.effective_price ?? item.price ?? 0} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+              </View>
             </View>
           </View>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+      </View>
     );
   };
 
@@ -259,9 +299,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       <FlatList
         ref={listRef}
         key={activeTab}
-        data={(activeTab === 'listings' ? products : reviews) as any}
-        numColumns={activeTab === 'listings' ? 2 : 1}
-        columnWrapperStyle={activeTab === 'listings' ? styles.gridRow : undefined}
+        data={activeTab === 'reviews' ? reviews as any : []}
+        numColumns={1}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}
         keyExtractor={item => item.id}
         ListHeaderComponent={
@@ -290,7 +329,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 
               {/* Avatar + Stats row */}
               <View style={styles.avatarRow}>
-                <UserAvatar seller={seller} size={76} />
+                <UserAvatar seller={seller} size={76} animated={true} />
 
                 <View style={styles.statsRow}>
                   <View style={styles.stat}>
@@ -443,6 +482,18 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 </View>
               </View>
             )}
+
+            {/* ── Listings masonry ── */}
+            {activeTab === 'listings' && products.length > 0 && (
+              <View style={styles.masonryGrid}>
+                <View style={styles.masonryCol}>
+                  {leftCol.map(item => <View key={item.id}>{renderGridItem({ item })}</View>)}
+                </View>
+                <View style={styles.masonryCol}>
+                  {rightCol.map(item => <View key={item.id}>{renderGridItem({ item })}</View>)}
+                </View>
+              </View>
+            )}
           </View>
         }
         renderItem={activeTab === 'listings' ? renderGridItem : (({ item }: { item: Review }) => (
@@ -590,9 +641,10 @@ const styles = StyleSheet.create({
   ratingBarFill: { height: '100%', backgroundColor: COLORS.yellow, borderRadius: 99 },
 
   /* Grid */
-  gridRow: { justifyContent: 'space-between', paddingHorizontal: 3 },
+  masonryGrid: { flexDirection: 'row', gap: 3 },
+  masonryCol: { flex: 1, gap: 3 },
   card: {
-    width: '48%' as any, borderRadius: RADIUS.row, overflow: 'hidden',
+    borderRadius: RADIUS.row, overflow: 'hidden',
     backgroundColor: COLORS.surface2, marginBottom: 3,
   },
   cardImgWrap: {
@@ -619,6 +671,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 6,
     paddingHorizontal: 6, paddingVertical: 3,
   },
+  cardName: {
+    fontSize: 12.5, fontWeight: '600', color: COLORS.text,
+    paddingHorizontal: 6, paddingTop: 5, paddingBottom: 2,
+  },
+  imgCountBadge: {
+    position: 'absolute', bottom: 36, alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10,
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  imgCountText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 
   /* Reviews */
   reviewCard: {

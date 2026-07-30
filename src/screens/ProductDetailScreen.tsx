@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, Image, TouchableOpacity, ScrollView, StyleSheet, Alert,
-  ActivityIndicator, Dimensions, Share,
+  ActivityIndicator, Dimensions, Share, FlatList,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -276,7 +276,41 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     <View style={styles.container}>
       {/* ── Sticky hero (does not scroll) ── */}
       <View style={[styles.hero, { height: heroHeight }]}>
-        {heroUrl ? (
+        {allImages.length > 1 ? (
+          <FlatList
+            data={allImages}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(img, idx) => String(img.id || idx)}
+            onMomentumScrollEnd={(e) => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / Dimensions.get('window').width);
+              setActiveImageIndex(idx);
+            }}
+            getItemLayout={(_, index) => ({
+              length: Dimensions.get('window').width,
+              offset: Dimensions.get('window').width * index,
+              index,
+            })}
+            renderItem={({ item: img }) => {
+              const url = getImageUrl(img.image_url);
+              return (
+                <View style={{ width: Dimensions.get('window').width, height: '100%' }}>
+                  {url ? (
+                    <>
+                      <Image source={{ uri: url }} style={styles.heroImg} resizeMode="cover" blurRadius={30} />
+                      <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+                    </>
+                  ) : (
+                    <View style={styles.heroPlaceholder}>
+                      <Icon name="image-unavailable" size={40} color={COLORS.text2} />
+                    </View>
+                  )}
+                </View>
+              );
+            }}
+          />
+        ) : heroUrl ? (
           <>
             <Image source={{ uri: heroUrl }} style={styles.heroImg} resizeMode="cover" blurRadius={30} />
             <Image source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" />
@@ -357,7 +391,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   accessibilityRole="button"
                   accessibilityLabel={t('accessibility.visitStore')}
                 >
-                  <UserAvatar seller={product.seller} />
+                  <UserAvatar seller={product.seller} animated={true} />
                   <View style={styles.sellerInfo}>
                     <Text style={styles.sellerName}>{getDisplayName(product.seller)}</Text>
                     <Text style={styles.sellerMeta}>
