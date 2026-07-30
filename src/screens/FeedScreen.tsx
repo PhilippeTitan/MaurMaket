@@ -9,7 +9,7 @@ import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS, TIER_COLORS, getDisplayName, getSellerAvatar } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import {
   getProducts, toggleWishlist, checkWishlist, createConversation, toggleFollow,
   getImageUrl, getUnreadCount, getProductReviews, getFollowing,
@@ -358,45 +358,7 @@ export default function FeedScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.visitStore')}
             >
-              {/* Instagram-style ring: padding-based, not borderWidth */}
-              {(() => {
-                const seller = item.seller;
-                const avatarUrl = seller ? getImageUrl(seller.avatar_url || seller.store_logo_url) : null;
-                const label = getDisplayName(seller) || '?';
-                const initial = label.charAt(0).toUpperCase();
-                const tier = seller?.seller_tier;
-                const ringColor = tier ? TIER_COLORS[tier] : undefined;
-                const size = 35;
-                const ringWidth = 3;
-                const whiteGap = 2;
-                const outerSize = size + (ringWidth + whiteGap) * 2;
-                const innerSize = outerSize - ringWidth * 2;
-                const imgSize = outerSize - (ringWidth + whiteGap) * 2;
-
-                if (!ringColor) {
-                  return (
-                    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                      {avatarUrl ? (
-                        <Image source={{ uri: avatarUrl }} style={{ width: size, height: size, borderRadius: size / 2 }} />
-                      ) : (
-                        <Text style={{ color: COLORS.white, fontSize: size * 0.38, fontWeight: '700' }}>{initial}</Text>
-                      )}
-                    </View>
-                  );
-                }
-
-                return (
-                  <View style={{ width: outerSize, height: outerSize, borderRadius: outerSize / 2, backgroundColor: ringColor, padding: ringWidth }}>
-                    <View style={{ width: innerSize, height: innerSize, borderRadius: innerSize / 2, backgroundColor: '#fff', padding: whiteGap, alignItems: 'center', justifyContent: 'center' }}>
-                      {avatarUrl ? (
-                        <Image source={{ uri: avatarUrl }} style={{ width: imgSize, height: imgSize, borderRadius: imgSize / 2 }} />
-                      ) : (
-                        <Text style={{ color: COLORS.text, fontSize: imgSize * 0.38, fontWeight: '700' }}>{initial}</Text>
-                      )}
-                    </View>
-                  </View>
-                );
-              })()}
+              <UserAvatar seller={item.seller} />
               <Text style={styles.sellerName} numberOfLines={1}>{getDisplayName(item.seller)}</Text>
             </TouchableOpacity>
             {!isOwnProduct && (
