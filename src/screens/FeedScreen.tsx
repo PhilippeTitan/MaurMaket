@@ -297,6 +297,7 @@ export default function FeedScreen() {
               nestedScrollEnabled
               showsHorizontalScrollIndicator={false}
               keyExtractor={(img, idx) => String(img.id || idx)}
+              style={{ width: Dimensions.get('window').width, height: '100%' }}
               onMomentumScrollEnd={(e) => {
                 const idx = Math.round(e.nativeEvent.contentOffset.x / Dimensions.get('window').width);
                 setFeedImageIndices(prev => ({ ...prev, [item.id]: idx }));
@@ -309,7 +310,7 @@ export default function FeedScreen() {
               renderItem={({ item: img }) => {
                 const url = getImageUrl(img.image_url);
                 return (
-                  <View style={{ width: Dimensions.get('window').width, height: '100%' }}>
+                  <View style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}>
                     {url ? (
                       <>
                         <Image source={{ uri: url }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} />

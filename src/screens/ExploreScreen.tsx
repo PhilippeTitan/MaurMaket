@@ -615,7 +615,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 3,
   },
   imgDots: {
-    position: 'absolute', bottom: 8, left: 8,
+    position: 'absolute', bottom: 8, alignSelf: 'center',
     flexDirection: 'row', gap: 4,
   },
   imgDot: {
