@@ -29,7 +29,7 @@ jobs:
           echo "🔄 Triggering database sync..."
           RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 60 -X POST https://maurmaket.onrender.com/api/admin/sync \
             -H "Content-Type: application/json" \
-            -H "x-admin-key: ${{ secrets.ADMIN_SYNC_KEY }}" || true)
+            -H "x-admin-key: ${{ secrets.SYNC_KEY }}" || true)
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -1)
           echo "Status: $HTTP_CODE"

@@ -3894,7 +3894,7 @@ app.get('/api/seller/products/low-stock', authRequired, sellerRequired, async (r
 // External sync trigger (GitHub Actions calls this — uses shared secret, not JWT)
 app.post('/api/admin/sync', async (req, res) => {
   const adminKey = req.headers['x-admin-key'];
-  if (!adminKey || adminKey !== process.env.ADMIN_SYNC_KEY) {
+  if (!adminKey || adminKey !== process.env.SYNC_KEY) {
     return res.status(403).json({ error: 'Invalid admin key' });
   }
   if (usingSupabase) {
