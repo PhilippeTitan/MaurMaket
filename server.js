@@ -2778,7 +2778,7 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
             {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ amount: Math.round(totalRefund), receiver: buyerPhone, referenceId: `cancel_refund_${req.params.id}` }),
+              body: JSON.stringify({ amount: Math.round(totalRefund), moncashNumber: buyerPhone, referenceId: `cancel_refund_${req.params.id}` }),
               signal: AbortSignal.timeout(15000),
             }
           );
@@ -3305,8 +3305,8 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              amount: commissionAmount,
-              receiver: process.env.PLATFORM_PHONE,
+              amount: Math.round(commissionAmount),
+              moncashNumber: process.env.PLATFORM_PHONE,
               referenceId: `platform_${req.params.id}`,
             }),
             signal: AbortSignal.timeout(15000),
@@ -3428,7 +3428,7 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
             },
             body: JSON.stringify({
               amount: Math.round(totalRefund),
-              receiver: buyerPhone,
+              moncashNumber: buyerPhone,
               referenceId: `refund_${req.params.id}`,
             }),
             signal: AbortSignal.timeout(15000),
@@ -3500,7 +3500,7 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
     // Use unique referenceId for each retry attempt (MonCash rejects duplicates)
     const retryReference = `${orderId}_retry_${Date.now()}`;
 
-    const moncashRes = await fetch(
+    let moncashRes = await fetch(
       process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
       {
         method: 'POST',
@@ -3509,7 +3509,7 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: parseFloat(order.total_amount),
+          amount: Math.round(parseFloat(order.total_amount)),
           referenceId: retryReference,
           returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
         }),
@@ -3517,8 +3517,39 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
       }
     );
 
+    // Auto-retry once on 409 (referenceId conflict)
+    if (moncashRes.status === 409) {
+      const retryRef2 = `${orderId}_retry2_${Date.now()}`;
+      moncashRes = await fetch(
+        process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.MCC_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            amount: Math.round(parseFloat(order.total_amount)),
+            referenceId: retryRef2,
+            returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
+          }),
+          signal: AbortSignal.timeout(15000),
+        }
+      );
+      if (moncashRes.ok) {
+        const retryData = await moncashRes.json();
+        if (retryData.paymentUrl) {
+          await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [retryRef2, orderId]);
+          return res.json({ paymentUrl: retryData.paymentUrl });
+        }
+      }
+    }
+
     if (!moncashRes.ok) {
       const errorText = await moncashRes.text();
+      console.error(`MonCashConnect retry HTTP ${moncashRes.status}:`, errorText);
+      if (moncashRes.status === 401) return res.status(502).json({ error: 'Payment provider auth error' });
+      if (moncashRes.status === 400) return res.status(502).json({ error: 'Invalid payment request' });
       return res.status(502).json({ error: 'Payment provider error' });
     }
     const data = await moncashRes.json();
@@ -3901,7 +3932,10 @@ app.post('/api/admin/sync', async (req, res) => {
   if (!adminKey || adminKey !== process.env.SYNC_KEY) {
     return res.status(403).json({ error: 'Invalid admin key' });
   }
-  if (usingSupabase) {
+  // Test if Neon is reachable before syncing
+  try {
+    await neonPool.query('SELECT 1');
+  } catch {
     return res.status(503).json({ error: 'Neon is down, cannot sync' });
   }
   try {
@@ -4574,7 +4608,10 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
     const order = orderResult.rows[0];
     if (order.status !== 'pending') return res.status(400).json({ error: 'Order is not pending' });
 
-    const moncashRes = await fetch(
+    // Use unique referenceId to avoid 409 conflicts on retry
+    const referenceId = `${orderId}_${Date.now()}`;
+
+    let moncashRes = await fetch(
       process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
       {
         method: 'POST',
@@ -4583,17 +4620,47 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: parseFloat(order.total_amount),
-          referenceId: orderId,
+          amount: Math.round(parseFloat(order.total_amount)),
+          referenceId,
           returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return`,
         }),
         signal: AbortSignal.timeout(15000),
       }
     );
 
+    // Auto-retry once on 409 (referenceId conflict)
+    if (moncashRes.status === 409) {
+      const retryRef = `${orderId}_retry_${Date.now()}`;
+      moncashRes = await fetch(
+        process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.MCC_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            amount: Math.round(parseFloat(order.total_amount)),
+            referenceId: retryRef,
+            returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return`,
+          }),
+          signal: AbortSignal.timeout(15000),
+        }
+      );
+      if (moncashRes.ok) {
+        const retryData = await moncashRes.json();
+        if (retryData.paymentUrl) {
+          await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [retryRef, orderId]);
+          return res.json({ paymentUrl: retryData.paymentUrl });
+        }
+      }
+    }
+
     if (!moncashRes.ok) {
       const errorText = await moncashRes.text();
       console.error(`MonCashConnect HTTP ${moncashRes.status}:`, errorText);
+      if (moncashRes.status === 401) return res.status(502).json({ error: 'Payment provider auth error' });
+      if (moncashRes.status === 400) return res.status(502).json({ error: 'Invalid payment request' });
       return res.status(502).json({ error: 'Payment provider error' });
     }
     const data = await moncashRes.json();
@@ -4602,7 +4669,7 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
       return res.status(502).json({ error: 'Payment provider error' });
     }
 
-    await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [orderId, orderId]);
+    await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [referenceId, orderId]);
     res.json({ paymentUrl: data.paymentUrl });
   } catch (err) {
     console.error('Payment create error:', err);
@@ -4758,7 +4825,7 @@ app.post('/api/payments/webhook', async (req, res) => {
                     {
                       method: 'POST',
                       headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ amount: Math.round(refundAmount), receiver: buyerPhone, referenceId: `stock_refund_${reference}` }),
+                      body: JSON.stringify({ amount: Math.round(refundAmount), moncashNumber: buyerPhone, referenceId: `stock_refund_${reference}` }),
                       signal: AbortSignal.timeout(15000),
                     }
                   );
@@ -5051,7 +5118,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
             'Authorization': `Bearer ${process.env.MCC_KEY}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ amount, receiver: phone, referenceId: payout.id }),
+          body: JSON.stringify({ amount: Math.round(amount), moncashNumber: phone, referenceId: payout.id }),
           signal: AbortSignal.timeout(15000),
         }
       );
@@ -5849,7 +5916,7 @@ cron.schedule('*/5 * * * *', async () => {
               {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: Math.round(totalRefund), receiver: buyerPhone, referenceId: `refund_${orderId}` }),
+                body: JSON.stringify({ amount: Math.round(totalRefund), moncashNumber: buyerPhone, referenceId: `refund_${orderId}` }),
                 signal: AbortSignal.timeout(15000),
               }
             );
@@ -5916,6 +5983,16 @@ const MIGRATION_TABLES = [
   'feed_events', 'seller_locations', 'otp_codes', 'message_offers'
 ];
 
+// Column whitelist for tables with schema drift between Neon and Supabase
+const MIGRATION_COLUMNS = {
+  categories: 'id, name, display_order',
+  orders: 'id, buyer_id, total_amount, status, moncash_reference, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_note, meetup_confirmed, meetup_proposed_by, created_at, updated_at',
+};
+
+function isValidUUID(val) {
+  return typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 async function migrateNeonToSupabase() {
   if (!process.env.DATABASE_URL || !process.env.SUPABASE_DATABASE_URL) return;
   if (!supabasePool) return;
@@ -5943,29 +6020,50 @@ async function migrateNeonToSupabase() {
   }
 
   let totalRows = 0;
+  const UUID_COLS = ['id', 'order_id', 'product_id', 'seller_id', 'buyer_id', 'reviewer_id', 'user_id', 'seller_id', 'follower_id'];
+  const PK_COLS = { seller_locations: 'seller_id', seller_balances: 'seller_id' };
+
   for (const table of MIGRATION_TABLES) {
+    let successCount = 0;
+    let failCount = 0;
     try {
-      const { rows } = await readPool.query(`SELECT * FROM ${table}`);
+      const colList = MIGRATION_COLUMNS[table] || '*';
+      const { rows } = await readPool.query(`SELECT ${colList} FROM ${table}`);
       if (rows.length === 0) continue;
 
       for (const row of rows) {
-        const cols = Object.keys(row);
-        const vals = Object.values(row);
-        const placeholders = cols.map((_, i) => `$${i + 1}`);
-        const updateCols = cols.filter(c => c !== 'id');
-        const PK_COLS = { seller_locations: 'seller_id', seller_balances: 'seller_id' };
-        const conflictCol = PK_COLS[table] || 'id';
-        const conflictClause = updateCols.length > 0
-          ? ` ON CONFLICT (${conflictCol}) DO UPDATE SET ${updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ')}`
-          : ' ON CONFLICT DO NOTHING';
+        try {
+          // Skip rows with invalid UUIDs in UUID columns
+          for (const col of Object.keys(row)) {
+            if (UUID_COLS.includes(col) && row[col] !== null && !isValidUUID(row[col])) {
+              console.warn(`[MIGRATION] ${table} row skipped: invalid UUID in ${col}: "${row[col]}"`);
+              failCount++;
+              continue;
+            }
+          }
 
-        await writePool.query(
-          `INSERT INTO ${table} (${cols.join(',')}) VALUES (${placeholders.join(',')})${conflictClause}`,
-          vals
-        );
+          const cols = Object.keys(row);
+          const vals = Object.values(row);
+          const placeholders = cols.map((_, i) => `$${i + 1}`);
+          const updateCols = cols.filter(c => c !== (PK_COLS[table] || 'id'));
+          const conflictCol = PK_COLS[table] || 'id';
+          const conflictClause = updateCols.length > 0
+            ? ` ON CONFLICT (${conflictCol}) DO UPDATE SET ${updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ')}`
+            : ' ON CONFLICT DO NOTHING';
+
+          await writePool.query(
+            `INSERT INTO ${table} (${cols.join(',')}) VALUES (${placeholders.join(',')})${conflictClause}`,
+            vals
+          );
+          successCount++;
+        } catch (rowErr) {
+          console.warn(`[MIGRATION] ${table} row ${row.id || '?'} skipped:`, rowErr.message);
+          failCount++;
+        }
       }
-      totalRows += rows.length;
-      console.log(`[MIGRATION] ${table}: ${rows.length} rows`);
+      totalRows += successCount;
+      const log = failCount > 0 ? ` (${failCount} skipped)` : '';
+      console.log(`[MIGRATION] ${table}: ${successCount} rows${log}`);
     } catch (err) {
       console.error(`[MIGRATION] ${table} error:`, err.message);
     }
