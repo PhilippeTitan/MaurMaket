@@ -5835,7 +5835,7 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/debug', authRequired, adminRequired, async (_req, res) => {
   try {
     const mccRes = await fetch(
-      process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-balance',
+      (process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create').replace('pay-create', 'pay-balance'),
       { headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}` } }
     );
     const data = await mccRes.json();

@@ -204,7 +204,7 @@ Config at: `C:\Users\drato\.config\opencode\opencode.json`
 | **Neon** | ✅ (when up) | Direct DB access (quota-dependent) |
 | **Render** | ✅ | Check deploy status, logs, service health |
 | **GitHub** | ✅ | Repo management, PRs, issues |
-| **MonCashConnect** | ✅ (sandbox) | Payment debugging, test payments, balance checks |
+| **MonCashConnect** | ✅ (production) | Payment debugging, test payments, balance checks |
 
 ### MonCashConnect MCP Tools
 Use these to debug payments without touching the backend:
@@ -216,7 +216,9 @@ Use these to debug payments without touching the backend:
 - `get_api_health` — Check MonCashConnect service status
 - `reveal_payment` — Get unmasked customer details (audited, requires reason)
 
-**Key**: `sk_ro_test_6e3ba75ad18b933690b758eeb19e7a90cd2eef4041eb8f68` (sandbox, read-only)
+**MCP Key**: `sk_ro_test_6e3ba75ad18b933690b758eeb19e7a90cd2eef4041eb8f68` (sandbox, read-only, for MCP only)
+**Production Key**: Stored in Render env var `MCC_KEY` (never commit to git)
+**API Base URL**: `https://api.moncashconnect.com/v1` (production, not Supabase edge functions)
 
 ## Overview
 Haitian marketplace (e-commerce) app connecting buyers and sellers. React Native/Expo mobile app (TikTok-style vertical swipe feed) + Express.js backend. MonCash payments, seller dashboard, commission system.
@@ -902,7 +904,7 @@ User tested the Lexi Tester account on physical device (EAS build). Identified 5
 
 ### MonCashConnect Deep Dive
 - **Base URL:** `https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1` (or `https://api.moncashconnect.ht/v1`)
-- **Auth:** Bearer token (`MCC_KEY` env var, `sk_proj_` prefix)
+- **Auth:** Bearer token (`MCC_KEY` env var, `sk_live_` prefix for production)
 - **Endpoints used:** `pay-create`, `external-payout-create`, `pay-balance`
 - **Endpoints available but unused:** `pay-status` (GET), `payout-create` (newer name)
 - **Webhook:** HMAC-SHA256 via `x-mcc-signature` + `x-mcc-timestamp` headers, 300s anti-replay window
