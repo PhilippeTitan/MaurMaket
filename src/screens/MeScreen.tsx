@@ -346,7 +346,7 @@ export default function MeScreen() {
       {/* Top bar — floats over hero */}
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
         <TouchableOpacity
-          style={styles.sellBtn}
+          style={[styles.sellBtn, { top: insets.top + SPACING.sm }]}
           onPress={() => nav.navigate(store.isSeller ? 'AddListing' : 'SellerOnboarding')}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -363,7 +363,7 @@ export default function MeScreen() {
         </View>
 
         <TouchableOpacity
-          style={styles.settingsBtn}
+          style={[styles.settingsBtn, { top: insets.top + SPACING.sm }]}
           onPress={() => nav.navigate('Settings')}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -377,7 +377,7 @@ export default function MeScreen() {
       <View style={styles.hero}>
 
         {/* Avatar with TierRing + Stats row */}
-        <View style={styles.avatarRow}>
+        <View style={[styles.avatarRow, { paddingTop: insets.top + 60 }]}>
           <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={76} animated={true} />
           <View style={styles.statsRow}>
             <View style={styles.stat}>

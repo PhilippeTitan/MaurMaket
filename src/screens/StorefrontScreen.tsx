@@ -310,7 +310,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               {/* Top bar — floats over hero */}
               <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
                 <TouchableOpacity
-                  style={styles.backBtn}
+                  style={[styles.backBtn, { top: insets.top + SPACING.sm }]}
                   onPress={() => navigation.goBack()}
                   activeOpacity={0.7}
                   accessibilityLabel="go back"
@@ -328,7 +328,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               </View>
 
               {/* Avatar + Stats row */}
-              <View style={styles.avatarRow}>
+              <View style={[styles.avatarRow, { paddingTop: insets.top + 60 }]}>
                 <UserAvatar seller={seller} size={76} animated={true} />
 
                 <View style={styles.statsRow}>
