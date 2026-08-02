@@ -21,7 +21,7 @@ export default function StockBadge({ stock, size = 'md' }: StockBadgeProps) {
   if (isSoldOut) {
     label = t('feed.soldOut');
   } else if (isOneLeft) {
-    label = `1 ${t('feed.oneLeft').toLowerCase()}`;
+    label = t('feed.oneLeft');
   } else {
     label = `${stock} ${t('feed.available').toLowerCase()}`;
   }
