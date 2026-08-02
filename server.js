@@ -17,7 +17,7 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// ───── Dual Database: Neon (primary) + Supabase (fallback) ─────
+// ───── Dual Database: Supabase (primary) + Neon (fallback) ─────
 const neonPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 15,
@@ -34,7 +34,7 @@ const supabasePool = process.env.SUPABASE_DATABASE_URL ? new Pool({
   ssl: { rejectUnauthorized: false },
 }) : null;
 
-let usingSupabase = false;
+let usingSupabase = true;
 
 function isConnectionError(err) {
   if (!err) return false;
@@ -57,12 +57,12 @@ function wrapClient(client) {
     try {
       return await origQuery(text, params);
     } catch (err) {
-      if (isConnectionError(err) && !usingSupabase && supabasePool) {
-        console.warn('[DB] Neon client failed mid-transaction, falling back to Supabase');
-        usingSupabase = true;
+      if (isConnectionError(err) && usingSupabase && neonPool) {
+        console.warn('[DB] Supabase client failed mid-transaction, falling back to Neon');
+        usingSupabase = false;
         try { origRelease(); } catch {}
         released = true;
-        const newClient = await supabasePool.connect();
+        const newClient = await neonPool.connect();
         return wrapClient(newClient).query(text, params);
       }
       throw err;
@@ -75,31 +75,35 @@ function wrapClient(client) {
 
 const pool = {
   async query(text, params) {
-    if (usingSupabase && supabasePool) return supabasePool.query(text, params);
-    try {
-      return await neonPool.query(text, params);
-    } catch (err) {
-      if (isConnectionError(err) && supabasePool) {
-        console.warn('[DB] Neon unavailable, falling back to Supabase. Error:', err.message);
-        usingSupabase = true;
+    if (usingSupabase && supabasePool) {
+      try {
         return await supabasePool.query(text, params);
+      } catch (err) {
+        if (isConnectionError(err) && neonPool) {
+          console.warn('[DB] Supabase unavailable, falling back to Neon. Error:', err.message);
+          usingSupabase = false;
+          return await neonPool.query(text, params);
+        }
+        throw err;
       }
-      throw err;
     }
+    return await neonPool.query(text, params);
   },
 
   async connect() {
-    if (usingSupabase && supabasePool) return wrapClient(await supabasePool.connect());
-    try {
-      return wrapClient(await neonPool.connect());
-    } catch (err) {
-      if (isConnectionError(err) && supabasePool) {
-        console.warn('[DB] Neon connect failed, falling back to Supabase. Error:', err.message);
-        usingSupabase = true;
+    if (usingSupabase && supabasePool) {
+      try {
         return wrapClient(await supabasePool.connect());
+      } catch (err) {
+        if (isConnectionError(err) && neonPool) {
+          console.warn('[DB] Supabase connect failed, falling back to Neon. Error:', err.message);
+          usingSupabase = false;
+          return wrapClient(await neonPool.connect());
+        }
+        throw err;
       }
-      throw err;
     }
+    return wrapClient(await neonPool.connect());
   },
 
   on(event, handler) {
@@ -3901,7 +3905,7 @@ app.post('/api/admin/sync', async (req, res) => {
     return res.status(503).json({ error: 'Neon is down, cannot sync' });
   }
   try {
-    await migrateSupabaseToNeon();
+    await migrateNeonToSupabase();
     res.json({ ok: true, message: 'Sync completed' });
   } catch (err) {
     console.error('[ADMIN SYNC] Error:', err.message);
@@ -5741,26 +5745,22 @@ app.get('/api/map-config', authRequired, (_req, res) => {
 });
 
 app.get('/api/health', async (_req, res) => {
-  const result = { status: 'ok', primary: 'unknown', fallback: 'unknown', active: 'neon' };
+  const result = { status: 'ok', primary: 'unknown', fallback: 'unknown', active: 'supabase' };
   try {
-    if (!usingSupabase) {
-      await neonPool.query('SELECT 1');
+    if (usingSupabase && supabasePool) {
+      await supabasePool.query('SELECT 1');
       result.primary = 'connected';
     } else {
       result.primary = 'down';
     }
   } catch { result.primary = 'down'; }
 
-  if (supabasePool) {
-    try {
-      await supabasePool.query('SELECT 1');
-      result.fallback = 'connected';
-    } catch { result.fallback = 'down'; }
-  } else {
-    result.fallback = 'not configured';
-  }
+  try {
+    await neonPool.query('SELECT 1');
+    result.fallback = 'connected';
+  } catch { result.fallback = 'down'; }
 
-  if (usingSupabase) result.active = 'supabase';
+  if (!usingSupabase) result.active = 'neon';
   result.status = (result.primary === 'connected' || result.fallback === 'connected') ? 'ok' : 'error';
   res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
@@ -5905,9 +5905,8 @@ cron.schedule('0 3 * * *', async () => {
   await cleanupOldNotifications();
 });
 
-// ───── Auto-Migration: Supabase → Neon (runs every hour) ─────
+// ───── Auto-Migration: Neon → Supabase (keeps Supabase current) ─────
 // NOTE: product_images excluded — Neon uses integer auto-increment id, Supabase uses UUID.
-// Both DBs synced; main app writes to Supabase. Neon images only used if Supabase goes down.
 const MIGRATION_TABLES = [
   'users', 'categories', 'products', 'orders', 'order_items',
   'processed_events', 'seller_balances', 'payouts', 'order_events', 'saved_addresses',
@@ -5917,26 +5916,26 @@ const MIGRATION_TABLES = [
   'feed_events', 'seller_locations', 'otp_codes', 'message_offers'
 ];
 
-async function migrateSupabaseToNeon() {
+async function migrateNeonToSupabase() {
   if (!process.env.DATABASE_URL || !process.env.SUPABASE_DATABASE_URL) return;
-  if (usingSupabase) return; // Neon is down, can't migrate to it
+  if (!supabasePool) return;
 
   const readPool = new (await import('pg')).Pool({
-    connectionString: process.env.SUPABASE_DATABASE_URL,
-    connectionTimeoutMillis: 10000,
-    ssl: { rejectUnauthorized: false },
-  });
-
-  const writePool = new (await import('pg')).Pool({
     connectionString: process.env.DATABASE_URL,
     connectionTimeoutMillis: 10000,
     ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
   });
 
+  const writePool = new (await import('pg')).Pool({
+    connectionString: process.env.SUPABASE_DATABASE_URL,
+    connectionTimeoutMillis: 10000,
+    ssl: { rejectUnauthorized: false },
+  });
+
   try {
-    const test = await writePool.query('SELECT 1');
+    const test = await readPool.query('SELECT 1');
     if (!test) return;
-    console.log('[MIGRATION] Neon is awake! Starting data migration Supabase → Neon...');
+    console.log('[MIGRATION] Neon is awake! Starting data migration Neon → Supabase...');
   } catch {
     await readPool.end().catch(() => {});
     await writePool.end().catch(() => {});
@@ -5974,11 +5973,11 @@ async function migrateSupabaseToNeon() {
 
   await readPool.end().catch(() => {});
   await writePool.end().catch(() => {});
-  console.log(`[MIGRATION] Complete! ${totalRows} total rows migrated from Supabase to Neon.`);
+  console.log(`[MIGRATION] Complete! ${totalRows} total rows migrated from Neon to Supabase.`);
 }
 
 // Sync once on startup (after 30s delay) — external cron via GitHub Actions triggers /api/admin/sync
-setTimeout(() => migrateSupabaseToNeon().catch(() => {}), 30000);
+setTimeout(() => migrateNeonToSupabase().catch(() => {}), 30000);
 
 // ───── Global Error Handler ─────
 app.use((err, req, res, next) => {
