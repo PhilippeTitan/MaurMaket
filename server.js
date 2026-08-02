@@ -4704,6 +4704,66 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
       if (moncashRes.ok) {
         const data = await moncashRes.json();
         if (data.status === 'completed' || data.paid === true) {
+          // Webhook fallback: if webhook didn't fire, process payment here
+          if (order.status === 'pending') {
+            try {
+              const client = await pool.connect();
+              try {
+                await client.query('BEGIN');
+                const updateResult = await client.query(
+                  `UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'`,
+                  [order.id]
+                );
+                if (updateResult.rowCount === 0) {
+                  await client.query('ROLLBACK');
+                } else {
+                  await logOrderEvent(order.id, 'payment_received', null, 'pending', 'paid', 'Payment confirmed via pay-status poll', client);
+                  const orderItems = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [order.id]);
+                  for (const oi of orderItems.rows) {
+                    const stockCheck = await client.query('SELECT stock FROM products WHERE id = $1 FOR UPDATE', [oi.product_id]);
+                    if (stockCheck.rows.length > 0 && stockCheck.rows[0].stock >= oi.quantity) {
+                      await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.product_id]);
+                    }
+                  }
+                  const items = await client.query('SELECT seller_id, SUM(price * quantity) AS total FROM order_items WHERE order_id = $1 GROUP BY seller_id', [order.id]);
+                  for (const item of items.rows) {
+                    if (item.seller_id) {
+                      const grossAmount = parseFloat(item.total);
+                      const tierRes = await client.query('SELECT seller_tier FROM users WHERE id = $1', [item.seller_id]);
+                      const sellerTier = tierRes.rows[0]?.seller_tier || 'none';
+                      const rate = getCommissionRate(sellerTier);
+                      const commission = Math.round(grossAmount * rate * 100) / 100;
+                      const net = Math.round((grossAmount - commission) * 100) / 100;
+                      await client.query(
+                        `INSERT INTO order_escrow (order_id, seller_id, gross_amount, commission_amount, net_amount, status)
+                         VALUES ($1, $2, $3, $4, $5, 'held') ON CONFLICT (order_id, seller_id) DO UPDATE SET gross_amount = $3, commission_amount = $4, net_amount = $5, status = 'held'`,
+                        [order.id, item.seller_id, grossAmount, commission, net]
+                      );
+                      await client.query(
+                        `INSERT INTO platform_revenue (order_id, seller_id, seller_tier, gross_amount, commission_rate, commission_amount, platform_fee, net_to_seller)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                        [order.id, item.seller_id, sellerTier, grossAmount, rate, commission, commission, net]
+                      );
+                    }
+                  }
+                  await client.query('COMMIT');
+                  console.log(`[PAY-STATUS] Order ${order.id} processed (webhook fallback)`);
+                  const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
+                  for (const sid of sellerIds) {
+                    createNotification(sid, 'order_status', 'Payment Received', 'Payment held in escrow until exchange confirmed', { orderId: order.id });
+                  }
+                  createNotification(order.buyer_id || req.user.id, 'payment_confirmed', 'Payment Confirmed', 'Your payment was successful.', { orderId: order.id });
+                }
+              } catch (e) {
+                await client.query('ROLLBACK');
+                console.error('[PAY-STATUS] Processing error:', e.message);
+              } finally {
+                client.release();
+              }
+            } catch (e) {
+              console.error('[PAY-STATUS] Fallback processing failed:', e.message);
+            }
+          }
           return res.json({ status: 'paid' });
         } else if (data.status === 'failed' || data.status === 'expired') {
           return res.json({ status: 'cancelled' });
