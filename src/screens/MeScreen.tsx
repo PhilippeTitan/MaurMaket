@@ -461,6 +461,7 @@ export default function MeScreen() {
         <LinearGradient
           colors={['transparent', COLORS.bg]}
           style={styles.heroFade}
+          pointerEvents="none"
         />
       </View>
 
