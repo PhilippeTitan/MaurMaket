@@ -15,7 +15,7 @@ import { useUser } from '../hooks';
 import { store } from '../store';
 import {
   getOrders, getSellerOrders, getSellerAnalytics, getWishlist,
-  getSellerProducts, getFollowerCount, getFollowing, getImageUrl, getSellerReviews, getLowStockProducts, updateSellerProfile,
+  getSellerProducts, getFollowerCount, getFollowing, getImageUrl, getSellerReviews, updateSellerProfile,
 } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Order, Review } from '../types';
@@ -61,17 +61,12 @@ export default function MeScreen() {
   const [rating, setRating] = useState(0);
   const [reviewCount, setReviewCount] = useState(0);
 
-  const [toPay, setToPay] = useState(0);
-  const [toShip, setToShip] = useState(0);
-  const [toReceive, setToReceive] = useState(0);
-  const [toReview, setToReview] = useState(0);
   const [hasOrders, setHasOrders] = useState(false);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [wishlist, setWishlist] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [analyticsData, setAnalyticsData] = useState<SellerAnalyticsResponse | null>(null);
-  const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const mountedRef = useRef(true);
@@ -98,11 +93,10 @@ export default function MeScreen() {
     if (!force && cached && Date.now() - cached.timestamp < CACHE_TTL) {
       const d = cached.data;
       setOrderCount(d.orderCount || 0); setSellingOrderCount(d.sellingOrderCount || 0);
-      setToPay(d.toPay || 0); setToShip(d.toShip || 0); setToReceive(d.toReceive || 0); setToReview(d.toReview || 0);
       setHasOrders(d.hasOrders || false); setProducts(d.products || []); setProductCount(d.productCount || 0);
       setRating(d.rating || 0); setReviewCount(d.reviewCount || 0); setAnalyticsData(d.analyticsData || null);
       setFollowerCount(d.followerCount || 0); setFollowingCount(d.followingCount || 0);
-      setWishlist(d.wishlist || []); setReviews(d.reviews || []); setLowStockProducts(d.lowStockProducts || []);
+      setWishlist(d.wishlist || []); setReviews(d.reviews || []);
       return;
     }
 
@@ -123,13 +117,7 @@ export default function MeScreen() {
       setOrderCount(allBuyerOrders.length);
       setSellingOrderCount(completedSellingOrders.length);
 
-      const pending = allBuyerOrders.filter((o: Order) => o.status === 'pending').length;
-      const paid = allBuyerOrders.filter((o: Order) => o.status === 'paid').length;
-      const shipped = allBuyerOrders.filter((o: Order) => o.status === 'shipped').length;
-      const delivered = allBuyerOrders.filter((o: Order) => o.status === 'delivered').length;
-      cacheData.toPay = pending; cacheData.toShip = paid; cacheData.toReceive = shipped; cacheData.toReview = delivered;
       cacheData.hasOrders = allBuyerOrders.length > 0;
-      setToPay(pending); setToShip(paid); setToReceive(shipped); setToReview(delivered);
       setHasOrders(allBuyerOrders.length > 0);
 
       let products: Product[] = [];
@@ -184,7 +172,6 @@ export default function MeScreen() {
       setWishlist(wishlistItems);
 
       let reviewsList: Review[] = [];
-      let lowStock: Product[] = [];
       if (isSeller && user?.id) {
         try {
           const rr = await getSellerReviews(user.id) as { reviews: Review[] };
@@ -197,10 +184,9 @@ export default function MeScreen() {
             },
           }));
         } catch { /* ignore */ }
-        try { const ls = await getLowStockProducts() as { products?: Product[] }; lowStock = ls.products || []; } catch { /* ignore */ }
       }
-      cacheData.reviews = reviewsList; cacheData.lowStockProducts = lowStock;
-      setReviews(reviewsList); setLowStockProducts(lowStock);
+      cacheData.reviews = reviewsList;
+      setReviews(reviewsList);
     } catch (e: any) { console.error(`[MeScreen fetchData] ERROR:`, e?.message); }
 
     if (uid) profileCache[uid] = { timestamp: Date.now(), data: cacheData };
@@ -309,29 +295,6 @@ export default function MeScreen() {
         </TouchableOpacity>
         <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
       </View>
-    );
-  };
-
-  const ORDER_STATUS_COLORS = [COLORS.coral, COLORS.blue, COLORS.green, COLORS.yellow];
-
-  const renderOrderStatusCard = (label: string, count: number, iconName: string, colorIndex: number) => {
-    const cardColor = ORDER_STATUS_COLORS[colorIndex];
-    return (
-      <TouchableOpacity
-        key={label}
-        style={styles.orderCard}
-        onPress={() => nav.navigate('Orders')}
-        accessibilityRole="button"
-        accessibilityLabel={`${label}, ${count} items`}
-      >
-        {count > 0 && (
-          <View style={[styles.orderBadge, { backgroundColor: cardColor }]}>
-            <Text style={styles.orderBadgeText}>{count}</Text>
-          </View>
-        )}
-        <MaterialCommunityIcons name={iconName as any} size={22} color={cardColor} />
-        <Text style={styles.orderLabel}>{label}</Text>
-      </TouchableOpacity>
     );
   };
 
@@ -516,41 +479,6 @@ export default function MeScreen() {
           </View>
           <Icon name="chevron-right" size={18} color={COLORS.green} />
         </TouchableOpacity>
-      )}
-
-      {/* Low Stock Alert */}
-      {isSeller && lowStockProducts.length > 0 && (
-        <View style={styles.lowStockBanner}>
-          <View style={styles.lowStockHeader}>
-            <Icon name="alert" size={18} color={COLORS.yellow} />
-            <Text style={styles.lowStockTitle}>Low Stock Alert</Text>
-          </View>
-          <Text style={styles.lowStockHint}>
-            {lowStockProducts.length} {lowStockProducts.length === 1 ? 'product has' : 'products have'} 3 or fewer items left.
-          </Text>
-          {lowStockProducts.slice(0, 2).map(p => (
-            <TouchableOpacity
-              key={p.id}
-              style={styles.lowStockItem}
-              onPress={() => nav.navigate('EditListing', { productId: p.id })}
-              accessibilityRole="button"
-              accessibilityLabel={`edit ${p.name}, ${p.stock} left`}
-            >
-              <Text style={styles.lowStockItemName} numberOfLines={1}>{p.name}</Text>
-              <StockBadge stock={p.stock} size="sm" />
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Order Status Bar */}
-      {hasOrders && (
-        <View style={styles.orderBar}>
-          {renderOrderStatusCard(t('me.toPay'), toPay, 'credit-card-outline', 0)}
-          {renderOrderStatusCard(t('me.toShip'), toShip, 'truck-delivery-outline', 1)}
-          {renderOrderStatusCard(t('me.toReceive'), toReceive, 'package-variant-closed', 2)}
-          {renderOrderStatusCard(t('me.toReview'), toReview, 'star-outline', 3)}
-        </View>
       )}
 
       {/* Tabs */}
@@ -756,23 +684,6 @@ const styles = StyleSheet.create({
   statNum: { fontSize: 18, fontWeight: '800', color: COLORS.text, lineHeight: 22 },
   statLabel: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
 
-  /* Order Status Bar */
-  orderBar: {
-    flexDirection: 'row', marginHorizontal: SPACING.lg, marginTop: SPACING.md, gap: 6,
-  },
-  orderCard: {
-    flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10,
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.row, borderWidth: 1, borderColor: COLORS.border,
-    position: 'relative',
-  },
-  orderBadge: {
-    position: 'absolute', top: -4, right: -4,
-    minWidth: 18, height: 18, borderRadius: 9,
-    paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center',
-  },
-  orderBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
-  orderLabel: { fontSize: 10, color: COLORS.text2, fontWeight: '500', textAlign: 'center' },
-
   /* Tabs */
   tabBar: {
     flexDirection: 'row',
@@ -865,20 +776,4 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.coral, flexDirection: 'row', alignItems: 'center', gap: 5,
   },
   emptyActionText: { fontSize: 12, color: COLORS.white, fontWeight: '800' },
-
-  /* Low Stock Alert */
-  lowStockBanner: {
-    marginHorizontal: SPACING.lg, marginTop: SPACING.md, padding: 12,
-    backgroundColor: COLORS.yellow + '10', borderRadius: RADIUS.card,
-    borderWidth: 1, borderColor: COLORS.yellow + '30',
-  },
-  lowStockHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  lowStockTitle: { fontSize: 14, fontWeight: '700', color: COLORS.yellow },
-  lowStockHint: { fontSize: 12, color: COLORS.text2, marginBottom: 8 },
-  lowStockItem: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 6, borderTopWidth: 1, borderTopColor: COLORS.border,
-  },
-  lowStockItemName: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.text },
-  lowStockItemStock: { fontSize: 12, fontWeight: '700', color: COLORS.coral },
 });

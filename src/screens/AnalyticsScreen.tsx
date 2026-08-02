@@ -8,9 +8,11 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
-import { getSellerAnalytics } from '../api';
+import { getSellerAnalytics, getOrders, getSellerOrders, getLowStockProducts } from '../api';
 import type { RootStackParamList } from '../navigation';
+import type { Order, Product } from '../types';
 import { Icon } from '../components/icons/Icon';
+import StockBadge from '../components/StockBadge';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -31,13 +33,14 @@ type AnalyticsData = {
     units_sold: number;
     revenue: number;
   }>;
-  recentOrders?: Array<{
-    id: string;
-    total_amount: number;
-    status: string;
-    created_at: string;
-  }>;
 };
+
+const ORDER_TABS = [
+  { key: 'toPay', label: 'To Pay', icon: 'credit-card-outline', color: COLORS.coral },
+  { key: 'toShip', label: 'To Ship', icon: 'truck-delivery-outline', color: COLORS.blue },
+  { key: 'toReceive', label: 'To Receive', icon: 'package-variant-closed', color: COLORS.green },
+  { key: 'toReview', label: 'To Review', icon: 'star-outline', color: COLORS.yellow },
+] as const;
 
 export default function AnalyticsScreen() {
   const { t } = useTranslation();
@@ -49,11 +52,35 @@ export default function AnalyticsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Order status
+  const [toPay, setToPay] = useState(0);
+  const [toShip, setToShip] = useState(0);
+  const [toReceive, setToReceive] = useState(0);
+  const [toReview, setToReview] = useState(0);
+
+  // Low stock
+  const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
+
   const fetchData = useCallback(async (force = false) => {
     if (!force && data) { setLoading(false); return; }
     try {
-      const res = await getSellerAnalytics() as AnalyticsData;
-      setData(res);
+      const [analyticsRes, buyerOrdersRes, sellerOrdersRes, lowStockRes] = await Promise.all([
+        getSellerAnalytics() as Promise<AnalyticsData>,
+        getOrders() as Promise<{ buyerOrders: Order[] }>,
+        getSellerOrders().catch(() => ({ orders: [] })) as Promise<{ orders: Order[] }>,
+        getLowStockProducts().catch(() => ({ products: [] })) as Promise<{ products: Product[] }>,
+      ]);
+
+      setData(analyticsRes);
+
+      // Compute order status from buyer orders
+      const buyerOrders = buyerOrdersRes.buyerOrders || [];
+      setToPay(buyerOrders.filter((o: Order) => o.status === 'pending').length);
+      setToShip(buyerOrders.filter((o: Order) => o.status === 'paid').length);
+      setToReceive(buyerOrders.filter((o: Order) => o.status === 'shipped').length);
+      setToReview(buyerOrders.filter((o: Order) => o.status === 'delivered').length);
+
+      setLowStockProducts(lowStockRes.products || []);
     } catch {}
     setLoading(false);
   }, []);
@@ -69,14 +96,9 @@ export default function AnalyticsScreen() {
   const followerCount = Number(overview.follower_count || 0);
   const topProducts = data?.topProducts || [];
 
-  const stats = [
-    { label: 'Revenue', value: `${formatPrice(totalRevenue)} G`, icon: 'cash', color: COLORS.green },
-    { label: 'Orders', value: String(totalOrders), icon: 'package-variant-closed', color: COLORS.blue },
-    { label: 'Rating', value: avgRating.toFixed(1), icon: 'star', color: COLORS.yellow },
-    { label: 'Reviews', value: String(reviewCount), icon: 'comment-text-outline', color: COLORS.coral },
-    { label: 'Products', value: String(productCount), icon: 'storefront-outline', color: COLORS.blue },
-    { label: 'Followers', value: String(followerCount), icon: 'heart-outline', color: COLORS.coral },
-  ];
+  const orderCounts = [toPay, toShip, toReceive, toReview];
+  const hasAnyOrders = orderCounts.some(c => c > 0);
+  const hasAnyData = totalOrders > 0 || topProducts.length > 0;
 
   if (loading) {
     return (
@@ -97,7 +119,7 @@ export default function AnalyticsScreen() {
         {/* Top bar */}
         <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
           <TouchableOpacity
-            style={styles.backBtn}
+            style={[styles.backBtn, { top: insets.top + SPACING.sm }]}
             onPress={() => nav.goBack()}
             activeOpacity={0.7}
             accessibilityLabel="go back"
@@ -105,21 +127,99 @@ export default function AnalyticsScreen() {
           >
             <Icon name="back" size={20} color={COLORS.text} />
           </TouchableOpacity>
-          <Text style={styles.topBarTitle}>Analytics</Text>
+          <Text style={styles.topBarTitle}>Dashboard</Text>
         </View>
 
-        {/* Stats grid */}
-        <View style={styles.statsGrid}>
-          {stats.map((s, i) => (
-            <View key={s.label} style={[styles.statCard, { width: (SCREEN_W - SPACING.lg * 2 - SPACING.sm) / 2 }]}>
-              <MaterialCommunityIcons name={s.icon as any} size={20} color={s.color} />
-              <Text style={styles.statValue}>{s.value}</Text>
-              <Text style={styles.statLabel}>{s.label}</Text>
+        {/* Section 1: Overview Stats */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Overview</Text>
+          <View style={styles.statsGrid}>
+            {[
+              { label: 'Revenue', value: `${formatPrice(totalRevenue)} G`, icon: 'cash', color: COLORS.green },
+              { label: 'Orders', value: String(totalOrders), icon: 'package-variant-closed', color: COLORS.blue },
+              { label: 'Rating', value: avgRating > 0 ? avgRating.toFixed(1) : '—', icon: 'star', color: COLORS.yellow },
+              { label: 'Reviews', value: String(reviewCount), icon: 'comment-text-outline', color: COLORS.coral },
+              { label: 'Products', value: String(productCount), icon: 'storefront-outline', color: COLORS.blue },
+              { label: 'Followers', value: String(followerCount), icon: 'heart-outline', color: COLORS.coral },
+            ].map((s) => (
+              <View key={s.label} style={[styles.statCard, { width: (SCREEN_W - SPACING.lg * 2 - SPACING.sm) / 2 }]}>
+                <View style={[styles.statIconWrap, { backgroundColor: s.color + '18' }]}>
+                  <MaterialCommunityIcons name={s.icon as any} size={18} color={s.color} />
+                </View>
+                <Text style={styles.statValue}>{s.value}</Text>
+                <Text style={styles.statLabel}>{s.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Section 2: Order Status */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Orders</Text>
+          {hasAnyOrders ? (
+            <View style={styles.orderGrid}>
+              {ORDER_TABS.map((tab, i) => (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={styles.orderCard}
+                  onPress={() => nav.navigate('Orders')}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${tab.label}, ${orderCounts[i]} items`}
+                >
+                  {orderCounts[i] > 0 && (
+                    <View style={[styles.orderBadge, { backgroundColor: tab.color }]}>
+                      <Text style={styles.orderBadgeText}>{orderCounts[i]}</Text>
+                    </View>
+                  )}
+                  <View style={[styles.orderIconWrap, { backgroundColor: tab.color + '18' }]}>
+                    <MaterialCommunityIcons name={tab.icon as any} size={20} color={tab.color} />
+                  </View>
+                  <Text style={styles.orderLabel}>{tab.label}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          ))}
+          ) : (
+            <View style={styles.emptySection}>
+              <MaterialCommunityIcons name="receipt" size={28} color={COLORS.text2} />
+              <Text style={styles.emptyText}>No pending orders</Text>
+            </View>
+          )}
         </View>
 
-        {/* Top Products */}
+        {/* Section 3: Low Stock Alert */}
+        {lowStockProducts.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Low Stock</Text>
+              <View style={styles.lowStockCount}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={14} color={COLORS.yellow} />
+                <Text style={styles.lowStockCountText}>{lowStockProducts.length}</Text>
+              </View>
+            </View>
+            <View style={styles.lowStockList}>
+              {lowStockProducts.slice(0, 5).map(p => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={styles.lowStockItem}
+                  onPress={() => nav.navigate('EditListing', { productId: p.id })}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`edit ${p.name}, ${p.stock} left`}
+                >
+                  <View style={styles.lowStockInfo}>
+                    <Text style={styles.lowStockName} numberOfLines={1}>{p.name}</Text>
+                    <Text style={styles.lowStockMeta}>{formatPrice(p.price)} G</Text>
+                  </View>
+                  <StockBadge stock={p.stock} size="sm" />
+                  <Icon name="chevron-right" size={14} color={COLORS.text2} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Section 4: Top Products */}
         {topProducts.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Top Products</Text>
@@ -137,19 +237,22 @@ export default function AnalyticsScreen() {
                 </View>
                 <View style={styles.productInfo}>
                   <Text style={styles.productName} numberOfLines={1}>{tp.name}</Text>
-                  <Text style={styles.productMeta}>{tp.units_sold} sold · {formatPrice(tp.revenue)} G</Text>
+                  <Text style={styles.productMeta}>{tp.units_sold} sold · {formatPrice(tp.revenue)} G revenue</Text>
                 </View>
-                <Icon name="chevron-right" size={16} color={COLORS.text2} />
+                <View style={styles.productStock}>
+                  <StockBadge stock={tp.stock} size="sm" />
+                </View>
               </TouchableOpacity>
             ))}
           </View>
         )}
 
-        {topProducts.length === 0 && totalOrders === 0 && (
+        {/* Empty state */}
+        {!hasAnyData && lowStockProducts.length === 0 && (
           <View style={styles.empty}>
             <MaterialCommunityIcons name="chart-line" size={40} color={COLORS.text2} />
             <Text style={styles.emptyText}>No data yet</Text>
-            <Text style={styles.emptyHint}>Analytics will appear once you get your first order.</Text>
+            <Text style={styles.emptyHint}>Your dashboard will come alive once you get your first order.</Text>
           </View>
         )}
       </ScrollView>
@@ -178,24 +281,70 @@ const styles = StyleSheet.create({
   },
   topBarTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text },
 
+  /* Sections */
+  section: {
+    marginHorizontal: SPACING.lg, marginTop: SPACING.lg,
+  },
+  sectionHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.sm },
+
   /* Stats grid */
   statsGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg,
   },
   statCard: {
     padding: SPACING.md, borderRadius: RADIUS.card,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     gap: 6,
   },
+  statIconWrap: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
   statValue: { fontSize: 20, fontWeight: '800', color: COLORS.text },
   statLabel: { fontSize: 12, color: COLORS.text2 },
 
-  /* Sections */
-  section: {
-    marginHorizontal: SPACING.lg, marginTop: SPACING.lg,
+  /* Order status */
+  orderGrid: {
+    flexDirection: 'row', gap: SPACING.sm,
   },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.sm },
+  orderCard: {
+    flex: 1, alignItems: 'center', gap: 6, paddingVertical: 12,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border,
+    position: 'relative',
+  },
+  orderIconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  orderBadge: {
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center',
+  },
+  orderBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
+  orderLabel: { fontSize: 10, color: COLORS.text2, fontWeight: '600', textAlign: 'center' },
+
+  /* Low stock */
+  lowStockCount: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: COLORS.yellow + '20', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2,
+  },
+  lowStockCountText: { fontSize: 11, fontWeight: '700', color: COLORS.yellow },
+  lowStockList: {
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  lowStockItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: SPACING.md, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  lowStockInfo: { flex: 1 },
+  lowStockName: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  lowStockMeta: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
 
   /* Product rows */
   productRow: {
@@ -212,9 +361,11 @@ const styles = StyleSheet.create({
   productInfo: { flex: 1 },
   productName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   productMeta: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+  productStock: { marginLeft: 4 },
 
   /* Empty */
   empty: { alignItems: 'center', paddingVertical: 60, gap: 8 },
-  emptyText: { fontSize: 16, color: COLORS.text2, fontWeight: '600' },
+  emptySection: { alignItems: 'center', paddingVertical: 24, gap: 6 },
+  emptyText: { fontSize: 14, color: COLORS.text2, fontWeight: '600' },
   emptyHint: { fontSize: 13, color: COLORS.text2, opacity: 0.7, textAlign: 'center', paddingHorizontal: 40 },
 });
