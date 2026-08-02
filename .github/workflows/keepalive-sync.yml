@@ -1,0 +1,41 @@
+name: Keep-Alive + DB Sync
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # Every 10 minutes
+  workflow_dispatch:         # Manual trigger
+
+jobs:
+  keepalive-and-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping health endpoint
+        run: |
+          echo "🏥 Pinging MaurMaket health..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 15 https://maurmaket.onrender.com/api/health || true)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "Status: $HTTP_CODE"
+          echo "Body: $BODY"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "⚠️ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          echo "✅ Server is alive"
+
+      - name: Trigger DB sync (Supabase → Neon)
+        run: |
+          echo "🔄 Triggering database sync..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 60 -X POST https://maurmaket.onrender.com/api/admin/sync \
+            -H "Content-Type: application/json" \
+            -H "x-admin-key: ${{ secrets.ADMIN_SYNC_KEY }}" || true)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "Status: $HTTP_CODE"
+          echo "Body: $BODY"
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Sync triggered successfully"
+          else
+            echo "⚠️ Sync returned HTTP $HTTP_CODE (may need admin key)"
+          fi

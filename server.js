@@ -3891,6 +3891,24 @@ app.get('/api/seller/products/low-stock', authRequired, sellerRequired, async (r
 
 // ───── Admin ─────
 
+// External sync trigger (GitHub Actions calls this — uses shared secret, not JWT)
+app.post('/api/admin/sync', async (req, res) => {
+  const adminKey = req.headers['x-admin-key'];
+  if (!adminKey || adminKey !== process.env.ADMIN_SYNC_KEY) {
+    return res.status(403).json({ error: 'Invalid admin key' });
+  }
+  if (usingSupabase) {
+    return res.status(503).json({ error: 'Neon is down, cannot sync' });
+  }
+  try {
+    await migrateSupabaseToNeon();
+    res.json({ ok: true, message: 'Sync completed' });
+  } catch (err) {
+    console.error('[ADMIN SYNC] Error:', err.message);
+    res.status(500).json({ error: 'Sync failed' });
+  }
+});
+
 function adminRequired(req, res, next) {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   next();
@@ -5959,11 +5977,7 @@ async function migrateSupabaseToNeon() {
   console.log(`[MIGRATION] Complete! ${totalRows} total rows migrated from Supabase to Neon.`);
 }
 
-// Check every hour to sync Supabase → Neon
-cron.schedule('0 * * * *', () => {
-  migrateSupabaseToNeon().catch(e => console.error('[MIGRATION] Cron error:', e.message));
-});
-// Also sync once on startup (after 30s delay)
+// Sync once on startup (after 30s delay) — external cron via GitHub Actions triggers /api/admin/sync
 setTimeout(() => migrateSupabaseToNeon().catch(() => {}), 30000);
 
 // ───── Global Error Handler ─────
