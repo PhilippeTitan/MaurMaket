@@ -3945,8 +3945,8 @@ app.post('/api/admin/sync', async (req, res) => {
     return res.status(503).json({ error: 'Neon is down, cannot sync' });
   }
   try {
-    await migrateNeonToSupabase();
-    res.json({ ok: true, message: 'Sync completed' });
+    await migrateSupabaseToNeon();
+    res.json({ ok: true, message: 'Sync completed: Supabase → Neon' });
   } catch (err) {
     console.error('[ADMIN SYNC] Error:', err.message);
     res.status(500).json({ error: 'Sync failed' });
@@ -6036,7 +6036,7 @@ cron.schedule('0 3 * * *', async () => {
   await cleanupOldNotifications();
 });
 
-// ───── Auto-Migration: Neon → Supabase (keeps Supabase current) ─────
+// ───── Auto-Migration: Supabase → Neon (keeps Neon in sync with primary) ─────
 // NOTE: product_images excluded — Neon uses integer auto-increment id, Supabase uses UUID.
 const MIGRATION_TABLES = [
   'users', 'categories', 'products', 'orders', 'order_items',
@@ -6057,30 +6057,30 @@ function isValidUUID(val) {
   return typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 }
 
-async function migrateNeonToSupabase() {
+async function migrateSupabaseToNeon() {
   if (!process.env.DATABASE_URL || !process.env.SUPABASE_DATABASE_URL) return;
   if (!supabasePool) return;
 
   const readPool = new (await import('pg')).Pool({
-    connectionString: process.env.DATABASE_URL,
-    connectionTimeoutMillis: 10000,
-    ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
-  });
-
-  const writePool = new (await import('pg')).Pool({
     connectionString: process.env.SUPABASE_DATABASE_URL,
     connectionTimeoutMillis: 10000,
     ssl: { rejectUnauthorized: false },
   });
 
+  const writePool = new (await import('pg')).Pool({
+    connectionString: process.env.DATABASE_URL,
+    connectionTimeoutMillis: 10000,
+    ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
+  });
+
   try {
     const test = await readPool.query('SELECT 1');
     if (!test) return;
-    console.log('[MIGRATION] Neon is awake! Starting data migration Neon → Supabase...');
+    console.log('[MIGRATION] Supabase → Neon: Starting data sync...');
   } catch {
     await readPool.end().catch(() => {});
     await writePool.end().catch(() => {});
-    return; // Neon still down
+    return; // Supabase down (shouldn't happen)
   }
 
   let totalRows = 0;
@@ -6135,11 +6135,11 @@ async function migrateNeonToSupabase() {
 
   await readPool.end().catch(() => {});
   await writePool.end().catch(() => {});
-  console.log(`[MIGRATION] Complete! ${totalRows} total rows migrated from Neon to Supabase.`);
+  console.log(`[MIGRATION] Complete! ${totalRows} total rows synced from Supabase → Neon.`);
 }
 
 // Sync once on startup (after 30s delay) — external cron via GitHub Actions triggers /api/admin/sync
-setTimeout(() => migrateNeonToSupabase().catch(() => {}), 30000);
+setTimeout(() => migrateSupabaseToNeon().catch(() => {}), 30000);
 
 // ───── Global Error Handler ─────
 app.use((err, req, res, next) => {
