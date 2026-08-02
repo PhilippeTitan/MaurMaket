@@ -4692,14 +4692,12 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
 
     const referenceId = order.moncash_reference || order.id;
     try {
-      const payStatusUrl = (process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create').replace('pay-create', 'pay-status');
+      const payStatusUrl = (process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create').replace('pay-create', 'pay-status') + `?referenceId=${encodeURIComponent(referenceId)}`;
       const moncashRes = await fetch(payStatusUrl, {
-        method: 'POST',
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${process.env.MCC_KEY}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ referenceId }),
         signal: AbortSignal.timeout(15000),
       });
 
