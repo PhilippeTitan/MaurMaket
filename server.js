@@ -2270,6 +2270,9 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
   if (Number(price) > 99999) {
     return res.status(400).json({ error: 'Maximum price is 99,999 G (MonCash limit)' });
   }
+  if (Number(price) < 100) {
+    return res.status(400).json({ error: 'Minimum price is 100 G' });
+  }
   if (name.length > 200) return res.status(400).json({ error: 'Product name too long (max 200 characters)' });
   if (description && description.length > 5000) return res.status(400).json({ error: 'Description too long (max 5000 characters)' });
   if (stock !== undefined && stock !== null && stock !== '' && parseInt(stock) < 1) {
@@ -2405,6 +2408,9 @@ app.put('/api/products/:id', authRequired, sellerRequired, async (req, res) => {
 
     if (price !== undefined && price !== null && Number(price) > 99999) {
       return res.status(400).json({ error: 'Maximum price is 99,999 G (MonCash limit)' });
+    }
+    if (price !== undefined && price !== null && Number(price) < 100) {
+      return res.status(400).json({ error: 'Minimum price is 100 G' });
     }
 
     // Sale price validation
