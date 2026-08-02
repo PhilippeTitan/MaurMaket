@@ -3520,6 +3520,9 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
     const data = await moncashRes.json();
     if (!data.paymentUrl) return res.status(502).json({ error: 'Payment provider error' });
 
+    // Store the retry reference so pay-status endpoint can poll MonCash with it
+    await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [retryReference, orderId]);
+
     res.json({ paymentUrl: data.paymentUrl });
   } catch (err) {
     console.error('Payment retry error:', err);
@@ -4654,10 +4657,19 @@ app.post('/api/payments/webhook', async (req, res) => {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  const { event, reference, id: eventId } = req.body;
+  let { event, reference, id: eventId } = req.body;
   console.log('MonCash webhook:', JSON.stringify(req.body));
 
   if (!reference) return res.status(400).json({ error: 'reference required' });
+
+  // Strip retry suffix — retry endpoint sends "${orderId}_retry_${timestamp}" as referenceId
+  // MonCash echoes it back in the webhook, but our order IDs are pure UUIDs
+  const baseReference = reference.includes('_retry_') ? reference.split('_retry_')[0] : reference;
+  const isRetry = baseReference !== reference;
+  if (isRetry) {
+    console.log(`Retry webhook: stripped "${reference}" → "${baseReference}"`);
+    reference = baseReference;
+  }
 
   // Idempotency — skip if this event was already processed
   if (eventId) {
@@ -5876,8 +5888,10 @@ cron.schedule('0 3 * * *', async () => {
 });
 
 // ───── Auto-Migration: Supabase → Neon (runs every hour) ─────
+// NOTE: product_images excluded — Neon uses integer auto-increment id, Supabase uses UUID.
+// Both DBs synced; main app writes to Supabase. Neon images only used if Supabase goes down.
 const MIGRATION_TABLES = [
-  'users', 'categories', 'products', 'product_images', 'orders', 'order_items',
+  'users', 'categories', 'products', 'orders', 'order_items',
   'processed_events', 'seller_balances', 'payouts', 'order_events', 'saved_addresses',
   'reviews', 'wishlists', 'follows', 'notifications', 'conversations', 'messages',
   'promo_codes', 'promo_uses', 'disputes', 'platform_revenue', 'platform_payouts',
@@ -5922,8 +5936,10 @@ async function migrateSupabaseToNeon() {
         const vals = Object.values(row);
         const placeholders = cols.map((_, i) => `$${i + 1}`);
         const updateCols = cols.filter(c => c !== 'id');
+        const PK_COLS = { seller_locations: 'seller_id', seller_balances: 'seller_id' };
+        const conflictCol = PK_COLS[table] || 'id';
         const conflictClause = updateCols.length > 0
-          ? ` ON CONFLICT (id) DO UPDATE SET ${updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ')}`
+          ? ` ON CONFLICT (${conflictCol}) DO UPDATE SET ${updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ')}`
           : ' ON CONFLICT DO NOTHING';
 
         await writePool.query(
