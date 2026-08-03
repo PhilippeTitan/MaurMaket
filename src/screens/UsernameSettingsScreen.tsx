@@ -22,8 +22,12 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const clean = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
-  const isValid = clean.length >= 3 && clean.length <= 30 && !/^[0-9]/.test(clean);
+  const clean = username.toLowerCase().replace(/[^a-z0-9._]/g, '');
+  const isValid = clean.length >= 1 && clean.length <= 30
+    && /^[a-z0-9]/.test(clean)
+    && !clean.startsWith('.')
+    && !clean.endsWith('.')
+    && !clean.includes('..');
   const changed = clean !== user?.username;
 
   const handleSave = async () => {
@@ -49,7 +53,7 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
 
       <View style={styles.card}>
         <Text style={styles.label}>Your username</Text>
-        <Text style={styles.hint}>3-30 characters. Letters, numbers, and underscores only.</Text>
+        <Text style={styles.hint}>1-30 characters. Letters, numbers, periods, and underscores only.</Text>
         <View style={styles.inputRow}>
           <Text style={styles.at}>@</Text>
           <TextInput
@@ -68,7 +72,10 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
         ) : null}
         {clean && !isValid ? (
           <Text style={styles.errorText}>
-            {clean.length < 3 ? 'Too short (min 3 characters)' : /^[0-9]/.test(clean) ? "Can't start with a number" : 'Too long (max 30 characters)'}
+            {clean.length > 30 ? 'Too long (max 30 characters)'
+              : clean.startsWith('.') || clean.endsWith('.') ? 'Cannot start or end with a period'
+              : clean.includes('..') ? 'No consecutive periods'
+              : 'Must start with a letter or number'}
           </Text>
         ) : null}
       </View>

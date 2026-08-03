@@ -765,6 +765,12 @@ async function runMigrations() {
 
     // 29. Username column
     await step('Username column', () => c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(30);`));
+    await step('Username constraints', () => c.query(`
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_check;
+      ALTER TABLE users ADD CONSTRAINT users_username_check CHECK (username ~ '^[a-z0-9][a-z0-9._]{0,28}[a-z0-9]$' OR username ~ '^[a-z0-9]$');
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;
+      ALTER TABLE users ADD CONSTRAINT users_username_key UNIQUE (username);
+    `));
 
     // 30. show_real_name column
     await step('show_real_name column', () => c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS show_real_name BOOLEAN DEFAULT false;`));
@@ -1052,19 +1058,22 @@ async function logOrderEvent(orderId, eventType, actorId, oldValue, newValue, no
   }
 }
 
-// Username generation helper
+// Username generation helper (Instagram-style: 1-30 chars, lowercase, letters/digits/underscores/periods)
 async function generateUsername(fullName, db) {
   const exec = db || pool;
   const base = (fullName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(\d)/, '_$1').slice(0, 20) || 'user';
   let username = base + '_' + Math.floor(1000 + Math.random() * 9000);
   let attempts = 0;
   while (attempts < 20) {
-    const existing = await exec.query(`SELECT 1 FROM users WHERE username = $1`, [username]);
-    if (existing.rows.length === 0) return username;
+    // Enforce Instagram rules: lowercase, 1-30 chars, no period at start/end, no double periods
+    if (username.length <= 30 && !username.startsWith('.') && !username.endsWith('.') && !username.includes('..')) {
+      const existing = await exec.query(`SELECT 1 FROM users WHERE username = $1`, [username]);
+      if (existing.rows.length === 0) return username;
+    }
     username = base + '_' + Math.floor(1000 + Math.random() * 9000);
     attempts++;
   }
-  return username;
+  return username.slice(0, 30);
 }
 
 // Notification helper
@@ -1306,9 +1315,12 @@ app.put('/api/auth/profile', authRequired, async (req, res) => {
 app.put('/api/auth/username', authRequired, async (req, res) => {
   const { username } = req.body;
   if (!username) return res.status(400).json({ error: 'Username required' });
-  const clean = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
-  if (clean.length < 3 || clean.length > 30) return res.status(400).json({ error: 'Username must be 3-30 characters (letters, numbers, underscore)' });
-  if (/^[0-9]/.test(clean)) return res.status(400).json({ error: 'Username cannot start with a number' });
+  // Instagram rules: lowercase, 1-30 chars, letters/digits/underscores/periods
+  const clean = username.toLowerCase().replace(/[^a-z0-9._]/g, '');
+  if (clean.length < 1 || clean.length > 30) return res.status(400).json({ error: 'Username must be 1-30 characters' });
+  if (clean.startsWith('.') || clean.endsWith('.')) return res.status(400).json({ error: 'Username cannot start or end with a period' });
+  if (clean.includes('..')) return res.status(400).json({ error: 'Username cannot have consecutive periods' });
+  if (!/^[a-z0-9]/.test(clean)) return res.status(400).json({ error: 'Username must start with a letter or number' });
   try {
     const existing = await pool.query('SELECT 1 FROM users WHERE username = $1 AND id != $2', [clean, req.user.id]);
     if (existing.rows.length > 0) return res.status(409).json({ error: 'Username already taken' });
