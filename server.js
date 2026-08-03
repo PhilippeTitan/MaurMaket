@@ -188,6 +188,7 @@ const paymentLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders
 const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many uploads, try again later' }, skip: testSkip });
 const msgLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many messages, try again later' }, skip: testSkip });
 const convLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many conversations, try again later' }, skip: testSkip });
+const verifyLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many verification attempts — try again in 15 minutes' }, skip: testSkip });
 
 // ───── Email Transporter (Gmail API over HTTPS — native https, no extra packages) ─────
 import https from 'https';
@@ -919,9 +920,9 @@ app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
 app.use('/api/upload', uploadLimiter);
 
-// Upload config (legacy — still needed for frontend fallback)
+// Upload config — no secrets exposed
 app.get('/api/upload/config', (req, res) => {
-  res.json({ imgbbKey: process.env.IMGBB_KEY || null, hasSupabaseStorage: !!supabaseStorage });
+  res.json({ hasSupabaseStorage: !!supabaseStorage, hasImgbb: !!process.env.IMGBB_KEY });
 });
 
 // Upload image — Supabase Storage primary, imgBB fallback
@@ -3235,7 +3236,6 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
     res.json(response);
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
-    client.release();
     console.error('Meetup check-in error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
@@ -3260,8 +3260,6 @@ app.post('/api/orders/:id/meetup/scan', authRequired, async (req, res) => {
     }
     const order = orderResult.rows[0];
 
-    // Verify this is the seller
-    const isSeller = order.delivery_method === 'meetup';
     const sellerItem = await pool.query(
       'SELECT seller_id FROM order_items WHERE order_id = $1 AND seller_id = $2',
       [req.params.id, req.user.id]
@@ -5673,7 +5671,7 @@ async function tareefCompare(imageUrl1, imageUrl2) {
   return { score: data.similarity || 0, similar: data.match || false };
 }
 
-app.post('/api/verification/submit', authRequired, sellerRequired, async (req, res) => {
+app.post('/api/verification/submit', verifyLimiter, authRequired, sellerRequired, async (req, res) => {
   const { idFrontUrl, idFaceUrl, idBackUrl, selfieUrl, deleteUrls } = req.body;
   console.log(`🔍 [VERIFY] Submission started for user ${req.user.id}`);
   console.log(`🔍 [VERIFY] Front: ${idFrontUrl ? '✅' : '❌'} | Face: ${idFaceUrl ? '✅' : '❌'} | Back: ${idBackUrl ? '✅' : '❌'} | Selfie: ${selfieUrl ? '✅' : '❌'}`);
@@ -5768,8 +5766,8 @@ app.post('/api/verification/submit', authRequired, sellerRequired, async (req, r
             console.log(`🔍 [VERIFY] Using ${idFaceUrl ? 'cropped CIN face' : 'full CIN front'} for face comparison`);
             const { score, similar } = await tareefCompare(faceImageUrl, selfieUrl);
             ocrResult.faceScore = score;
-            console.log(`✅ [VERIFY] Tareef result: score=${score} similar=${similar} → ${score >= 0.15 ? '✅ PASS' : '❌ FAIL'}`);
-            if (score < 0.15) {
+            console.log(`✅ [VERIFY] Tareef result: score=${score} similar=${similar} → ${similar || score >= 0.65 ? '✅ PASS' : '❌ FAIL'}`);
+            if (!similar && score < 0.65) {
               issues.push({ stage: 'face', message: 'Face in selfie does not match the CIN photo' });
             }
           } catch (e) {
