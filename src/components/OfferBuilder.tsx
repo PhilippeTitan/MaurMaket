@@ -79,7 +79,7 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
 
           <View style={styles.itemRow}>
             {item.image_url ? (
-              <Image source={{ uri: getImageUrl(item.image_url) }} style={styles.itemImage} />
+              <Image source={{ uri: getImageUrl(item.image_url) ?? undefined }} style={styles.itemImage} />
             ) : (
               <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
                 <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />
@@ -144,8 +144,8 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
     backgroundColor: COLORS.bg,
-    borderTopLeftRadius: RADIUS.lg,
-    borderTopRightRadius: RADIUS.lg,
+    borderTopLeftRadius: RADIUS.media,
+    borderTopRightRadius: RADIUS.media,
     paddingTop: SPACING.sm,
     paddingHorizontal: SPACING.md,
   },
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   closeBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
 
   itemRow: { flexDirection: 'row', gap: 12, marginBottom: SPACING.md },
-  itemImage: { width: 64, height: 64, borderRadius: RADIUS.sm, backgroundColor: COLORS.surface2 },
+  itemImage: { width: 64, height: 64, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
   itemImagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
   itemInfo: { flex: 1, justifyContent: 'center' },
   itemName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
 
   sectionLabel: { fontSize: 11, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', marginBottom: 6 },
 
-  priceInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, paddingHorizontal: 12, marginBottom: 4 },
+  priceInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, paddingHorizontal: 12, marginBottom: 4 },
   currencySymbol: { fontSize: 16, fontWeight: '700', color: COLORS.coral, marginRight: 6 },
   priceInput: { flex: 1, fontSize: 22, fontWeight: '700', color: COLORS.text, paddingVertical: 10 },
 
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
 
   presets: { flexDirection: 'row', gap: 8, marginBottom: SPACING.md },
   presetChip: {
-    flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: RADIUS.md,
+    flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: RADIUS.card,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   presetText: { fontSize: 11, fontWeight: '700', color: COLORS.coral },

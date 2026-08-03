@@ -51,7 +51,7 @@ export default function SettingsScreen({ navigation }: Props) {
       <SectionHeader title="Account" />
       <View style={styles.card}>
         <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SettingsEdit', { field: 'email', title: t('settings.email') })}>
-          <Icon name="email-outline" size={18} color={COLORS.text2} />
+          <MaterialCommunityIcons name="email-outline" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('settings.email')}</Text>
           <View style={styles.rowRight}>
             <Text style={styles.rowValue} numberOfLines={1}>{user?.email || ''}</Text>
@@ -60,7 +60,7 @@ export default function SettingsScreen({ navigation }: Props) {
         </TouchableOpacity>
         <View style={styles.divider} />
         <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SettingsEdit', { field: 'phone', title: t('settings.phone') })}>
-          <Icon name="phone-outline" size={18} color={COLORS.text2} />
+          <MaterialCommunityIcons name="phone-outline" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('settings.phone')}</Text>
           <View style={styles.rowRight}>
             <Text style={styles.rowValue}>{user?.phone ? `+509 ${user.phone}` : ''}</Text>
@@ -69,7 +69,7 @@ export default function SettingsScreen({ navigation }: Props) {
         </TouchableOpacity>
         <View style={styles.divider} />
         <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: t('settings.changePassword') })}>
-          <Icon name="lock-outline" size={18} color={COLORS.text2} />
+          <MaterialCommunityIcons name="lock-outline" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('settings.changePassword')}</Text>
           <View style={styles.rowRight}>
             <Text style={styles.rowValue}>••••••••</Text>

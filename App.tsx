@@ -10,7 +10,7 @@ import { store } from './src/store';
 import { COLORS, SPACING } from './src/theme';
 import { i18n } from './src/i18n';
 import { PaperPlaneIcon } from './src/components/UserAvatar';
-import { getMe } from './src/api';import { QueryClientProvider } from '@tanstack/react-query';
+import { getMe, getFollowerCount, getFollowing } from './src/api';import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, invalidateUser } from './src/hooks';
 import { ToastProvider } from './src/components/Toast';
 import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/notifications';
@@ -200,7 +200,6 @@ function MainTabs() {
           name="MapTab"
           component={LazyMapScreen}
           options={{
-            unmountOnBlur: false,
             tabBarIcon: ({ color }) => (
               <MaterialCommunityIcons name="map-marker-radius-outline" size={26} color={color} />
             ),
@@ -232,6 +231,15 @@ export default function App() {
           const res = await getMe() as { user: User };
           await store.setUser(res.user, store.token);
           registerForPushNotificationsAsync();
+          // Preload follower/following counts so MeScreen has them instantly
+          if (res.user?.id) {
+            getFollowerCount(res.user.id).then((r: any) => store.setFollowerCount(r?.count || 0)).catch(() => {});
+            getFollowing().then((r: any) => {
+              const list = r?.following || [];
+              store.setFollowingList(list.map((f: any) => f.seller_id || f.id).filter(Boolean));
+              store.setFollowingCount(list.length);
+            }).catch(() => {});
+          }
         } catch {
           await store.logout();
         }

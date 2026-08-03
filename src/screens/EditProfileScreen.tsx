@@ -77,7 +77,7 @@ export default function EditProfileScreen({ navigation }: Props) {
       <Text style={styles.sectionHeader}>Profile</Text>
       <View style={styles.card}>
         <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('UsernameSettings')}>
-          <Icon name="at" size={18} color={COLORS.text2} />
+          <MaterialCommunityIcons name="at" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>Username</Text>
           <View style={styles.rowRight}>
             <Text style={styles.rowValue}>@{user?.username || ''}</Text>
@@ -86,7 +86,7 @@ export default function EditProfileScreen({ navigation }: Props) {
         </TouchableOpacity>
         <View style={styles.divider} />
         <TouchableOpacity style={styles.row} onPress={() => goEdit('name', t('settings.fullName'))}>
-          <Icon name="account-outline" size={18} color={COLORS.text2} />
+          <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('settings.fullName')}</Text>
           <View style={styles.rowRight}>
             <Text style={styles.rowValue} numberOfLines={1}>{getDisplayName(user)}</Text>
@@ -95,7 +95,7 @@ export default function EditProfileScreen({ navigation }: Props) {
         </TouchableOpacity>
         <View style={styles.divider} />
         <TouchableOpacity style={styles.row} onPress={() => goEdit('bio', t('settings.bio'))}>
-          <Icon name="text-short" size={18} color={COLORS.text2} />
+          <MaterialCommunityIcons name="text-short" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('settings.bio')}</Text>
           <View style={styles.rowRight}>
             <Text style={styles.rowValue} numberOfLines={1}>{user?.bio || ''}</Text>
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
   avatarImg: { width: 72, height: 72, borderRadius: 36 },
   avatarText: { fontSize: 24, color: COLORS.text2, fontWeight: '700' },
   avatarLoadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 36, backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center', justifyContent: 'center',
   },

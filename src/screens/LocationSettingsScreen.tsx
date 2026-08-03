@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   mapGradient: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: COLORS.surface2,
   },
 

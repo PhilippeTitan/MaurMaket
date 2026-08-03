@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
 } from 'react-native';
-import { Icon } from '../components/icons/Icon';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
@@ -36,7 +36,7 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
       <Text style={styles.sectionHeader}>Profile Visibility</Text>
       <View style={styles.card}>
         <View style={styles.toggleRow}>
-          <Icon name="account-outline" size={18} color={COLORS.text2} />
+          <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.text2} />
           <View style={{ flex: 1 }}>
             <Text style={styles.rowLabel}>Show my real name</Text>
             <Text style={styles.rowHint}>

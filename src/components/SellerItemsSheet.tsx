@@ -37,7 +37,7 @@ export default function SellerItemsSheet({ visible, sellerId, sellerName, onClos
   const renderItem = ({ item }: { item: SellerItem }) => (
     <TouchableOpacity style={styles.card} onPress={() => onSelectItem(item)} activeOpacity={0.7} accessibilityLabel={`${item.name}, ${formatPrice(item.price)} G`} accessibilityRole="button">
       {item.image_url ? (
-        <Image source={{ uri: getImageUrl(item.image_url) }} style={styles.cardImage} />
+        <Image source={{ uri: getImageUrl(item.image_url) ?? undefined }} style={styles.cardImage} />
       ) : (
         <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
           <MaterialCommunityIcons name="image-off-outline" size={28} color={COLORS.text2} />
@@ -89,8 +89,8 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
     backgroundColor: COLORS.bg,
-    borderTopLeftRadius: RADIUS.lg,
-    borderTopRightRadius: RADIUS.lg,
+    borderTopLeftRadius: RADIUS.media,
+    borderTopRightRadius: RADIUS.media,
     paddingTop: SPACING.sm,
     maxHeight: '50%',
   },
@@ -103,12 +103,12 @@ const styles = StyleSheet.create({
   card: {
     width: 142,
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.card,
     padding: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  cardImage: { width: '100%', height: 100, borderRadius: RADIUS.sm, backgroundColor: COLORS.surface2 },
+  cardImage: { width: '100%', height: 100, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
   cardImagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
   cardName: { fontSize: 12, fontWeight: '600', color: COLORS.text, marginTop: 6 },
   cardPrice: { fontSize: 14, fontWeight: '700', color: COLORS.coral, marginTop: 2 },

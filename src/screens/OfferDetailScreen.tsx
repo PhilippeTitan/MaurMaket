@@ -142,8 +142,8 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
       <ScrollView contentContainerStyle={styles.content}>
         {offer.productImage ? (
           <View style={styles.productImageWrap}>
-            <Image source={{ uri: getImageUrl(offer.productImage) }} style={styles.productImageBg} blurRadius={20} />
-            <Image source={{ uri: getImageUrl(offer.productImage) }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+            <Image source={{ uri: getImageUrl(offer.productImage) ?? undefined }} style={styles.productImageBg} blurRadius={20} />
+            <Image source={{ uri: getImageUrl(offer.productImage) ?? undefined }} style={StyleSheet.absoluteFill} resizeMode="contain" />
           </View>
         ) : (
           <View style={[styles.productImageWrap, styles.productImagePlaceholder]}>
@@ -245,12 +245,12 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.text, flex: 1 },
   content: { padding: SPACING.md },
-  productImageWrap: { width: '100%', height: 220, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: COLORS.surface2, marginBottom: SPACING.md },
+  productImageWrap: { width: '100%', height: 220, borderRadius: RADIUS.media, overflow: 'hidden', backgroundColor: COLORS.surface2, marginBottom: SPACING.md },
   productImageBg: { width: '100%', height: '100%' },
   productImagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
   productName: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.md },
   priceCard: {
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.md, padding: SPACING.md,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: SPACING.md,
     borderWidth: 1, borderColor: COLORS.border, marginBottom: SPACING.md,
   },
   priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
   expiresText: { fontSize: 12, color: COLORS.text2 },
   expiresUrgent: { color: COLORS.coral, fontWeight: '700' },
   roundBanner: {
-    flexDirection: 'row', gap: 8, backgroundColor: COLORS.surface, borderRadius: RADIUS.md,
+    flexDirection: 'row', gap: 8, backgroundColor: COLORS.surface, borderRadius: RADIUS.card,
     padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border,
   },
   roundBannerText: { flex: 1, fontSize: 13, color: COLORS.text2, lineHeight: 18 },
