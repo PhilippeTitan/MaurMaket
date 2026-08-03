@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
-  RefreshControl, ActivityIndicator, LayoutChangeEvent, Image, Modal, Pressable, Platform,
+  RefreshControl, ActivityIndicator, LayoutChangeEvent, Image, Modal, Pressable, Platform, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -276,27 +276,24 @@ export default function FeedScreen() {
         {/* Full-screen image / background — swipeable if multiple images */}
         <View style={styles.mediaContainer}>
           {allImages.length > 1 ? (
-            <FlatList
-              data={allImages}
+            <ScrollView
               horizontal
               pagingEnabled
               nestedScrollEnabled
               showsHorizontalScrollIndicator={false}
-              keyExtractor={(img, idx) => String(img.id || idx)}
               style={{ width: Dimensions.get('window').width, height: '100%' }}
-              onMomentumScrollEnd={(e) => {
+              onScroll={(e) => {
                 const idx = Math.round(e.nativeEvent.contentOffset.x / Dimensions.get('window').width);
-                setFeedImageIndices(prev => ({ ...prev, [item.id]: idx }));
+                if (idx !== (feedImageIndices[item.id] ?? 0)) {
+                  setFeedImageIndices(prev => ({ ...prev, [item.id]: idx }));
+                }
               }}
-              getItemLayout={(_, index) => ({
-                length: Dimensions.get('window').width,
-                offset: Dimensions.get('window').width * index,
-                index,
-              })}
-              renderItem={({ item: img }) => {
+              scrollEventThrottle={16}
+            >
+              {allImages.map((img, idx) => {
                 const url = getImageUrl(img.image_url);
                 return (
-                  <View style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}>
+                  <View key={String(img.id || idx)} style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}>
                     {url ? (
                       <>
                         <Image source={{ uri: url }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} />
@@ -307,8 +304,8 @@ export default function FeedScreen() {
                     )}
                   </View>
                 );
-              }}
-            />
+              })}
+            </ScrollView>
           ) : imgUrl ? (
             <>
               <Image source={{ uri: imgUrl }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} />

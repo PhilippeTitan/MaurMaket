@@ -192,11 +192,16 @@ export default function ExploreScreen({ navigation }: Props) {
                 pagingEnabled
                 nestedScrollEnabled
                 showsHorizontalScrollIndicator={false}
+                windowSize={3}
+                maxToRenderPerBatch={2}
                 keyExtractor={(img, idx) => String(img.id || idx)}
-                onMomentumScrollEnd={(e) => {
+                onScroll={(e) => {
                   const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
-                  setExploreImageIndices(prev => ({ ...prev, [item.id]: idx }));
+                  if (idx !== (exploreImageIndices[item.id] ?? 0)) {
+                    setExploreImageIndices(prev => ({ ...prev, [item.id]: idx }));
+                  }
                 }}
+                scrollEventThrottle={16}
                 getItemLayout={(_, index) => ({ length: CARD_W, offset: CARD_W * index, index })}
                 renderItem={({ item: img }) => {
                   const url = getImageUrl(img.image_url);
