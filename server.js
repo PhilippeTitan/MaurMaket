@@ -5798,6 +5798,54 @@ async function tareefCompare(imageUrl1, imageUrl2) {
   return { score: data.similarity || 0, similar: data.match || false };
 }
 
+// ── Create Didit hosted verification session (free 500/month) ──
+app.post('/api/verification/didit-session', verifyLimiter, authRequired, sellerRequired, async (req, res) => {
+  try {
+    if (!process.env.DIDIT_API_KEY || !process.env.DIDIT_WORKFLOW_ID) {
+      return res.status(503).json({ error: 'Didit not configured' });
+    }
+
+    const callbackUrl = `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/api/webhooks/didit`;
+
+    const resp = await fetch(`${DIDIT_BASE}/v3/session/`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.DIDIT_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_id: process.env.DIDIT_WORKFLOW_ID,
+        vendor_data: req.user.id,
+        callback: callbackUrl,
+        callback_method: 'both',
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      console.error(`❌ [DIDIT] Session create failed: HTTP ${resp.status}: ${body.substring(0, 200)}`);
+      return res.status(502).json({ error: 'Failed to create verification session' });
+    }
+
+    const session = await resp.json();
+    console.log(`✅ [DIDIT] Session created: ${session.session_id} → ${session.url}`);
+
+    // Store session mapping
+    await pool.query(
+      `INSERT INTO verification_attempts (user_id, status, created_at)
+       VALUES ($1, 'pending', NOW())
+       ON CONFLICT DO NOTHING`,
+      [req.user.id]
+    ).catch(() => {});
+
+    res.json({ url: session.url, sessionId: session.session_id });
+  } catch (err) {
+    console.error(`❌ [DIDIT] Session error:`, err.message);
+    res.status(500).json({ error: 'Verification service error' });
+  }
+});
+
 app.post('/api/verification/submit', verifyLimiter, authRequired, sellerRequired, async (req, res) => {
   const { idFrontUrl, idFaceUrl, idBackUrl, selfieUrl, deleteUrls } = req.body;
   console.log(`🔍 [VERIFY] Submission started for user ${req.user.id}`);

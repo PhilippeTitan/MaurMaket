@@ -479,6 +479,9 @@ export const uploadImage = async (uri: string, expiration?: number): Promise<{ u
 };
 
 // Verification
+export const createDiditSession = () =>
+  request('/verification/didit-session', { method: 'POST' });
+
 export const submitVerification = (data: {
   idFrontUrl: string;
   idFaceUrl?: string;

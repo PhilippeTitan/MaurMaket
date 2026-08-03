@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { useTranslation } from '../i18n';
-import { uploadImage, submitVerification } from '../api';
+import { uploadImage, submitVerification, createDiditSession } from '../api';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
 
@@ -20,16 +20,18 @@ let CameraView: any = null;
 let useCameraPermissions: any = () => [null, () => {}];
 let FaceDetection: any = null;
 let ImageManipulator: any = null;
+let WebView: any = null;
 if (Platform.OS !== 'web') {
   const cam = require('expo-camera');
   CameraView = cam.CameraView;
   useCameraPermissions = cam.useCameraPermissions;
   try { FaceDetection = require('@react-native-ml-kit/face-detection').default; } catch {}
   try { ImageManipulator = require('expo-image-manipulator'); } catch {}
+  try { WebView = require('react-native-webview').WebView; } catch {}
 }
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type Step = 'info' | 'cinFront' | 'cropConfirm' | 'cinBack' | 'selfieTip' | 'selfie' | 'reviewAll' | 'processing' | 'result';
+type Step = 'info' | 'didit' | 'cinFront' | 'cropConfirm' | 'cinBack' | 'selfieTip' | 'selfie' | 'reviewAll' | 'processing' | 'result';
 type FailedStage = 'card' | 'details' | 'face' | null;
 
 const PHOTO_LABELS: Record<string, string> = { cinFront: 'ID front', cinBack: 'ID back', selfie: 'Selfie' };
@@ -91,6 +93,9 @@ export default function VerificationScreen() {
   const containerDimRef = useRef({ w: 0, h: 0 });
   const cropBoxRef = useRef(cropBox);
   cropBoxRef.current = cropBox;
+  const [diditUrl, setDiditUrl] = useState('');
+  const [diditLoading, setDiditLoading] = useState(false);
+  const [diditError, setDiditError] = useState('');
 
   useEffect(() => {
     if (step === 'cropConfirm' && cropSourceSize.w > 0) {
@@ -146,6 +151,85 @@ export default function VerificationScreen() {
   const photos = { cinFront: !!idFrontUrl, cinBack: !!idBackUrl, selfie: !!selfieUrl };
   const photoKeys = ['cinFront', 'cinBack', 'selfie'] as const;
   const getKept = (currentPhoto: string) => photoKeys.filter(k => k !== currentPhoto && photos[k]);
+
+  const launchDidit = async () => {
+    setDiditLoading(true);
+    setDiditError('');
+    try {
+      const res = await createDiditSession() as { url: string; sessionId: string };
+      console.log(`[VERIFY] Didit session: ${res.sessionId}`);
+      setDiditUrl(res.url);
+      setStep('didit');
+    } catch (e: any) {
+      console.log(`[VERIFY] Didit unavailable, using camera fallback: ${e?.message}`);
+      setDiditError(e?.message || 'Didit unavailable');
+      setStep('cinFront');
+    } finally {
+      setDiditLoading(false);
+    }
+  };
+
+  const renderDidit = () => {
+    if (!WebView) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: SPACING.lg }}>
+          <Text style={styles.infoTitle}>WebView not available</Text>
+          <Text style={styles.infoDesc}>Please use camera verification instead.</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('cinFront')}>
+            <Text style={styles.primaryBtnText}>Use Camera</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={{ flex: 1 }}>
+        <WebView
+          source={{ uri: diditUrl }}
+          style={{ flex: 1 }}
+          userAgent="Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+          javaScriptEnabled
+          domStorageEnabled
+          mediaPlaybackRequiresUserAction={false}
+          allowsInlineMediaPlayback
+          mediaCapturePermissionGrantType="grant"
+          onNavigationStateChange={(navState: any) => {
+            const url = navState.url;
+            if (url.includes('/api/webhooks/didit') || url.includes('verificationSessionId')) {
+              console.log(`[VERIFY] Didit callback detected: ${url.substring(0, 100)}`);
+              setStep('processing');
+              setTimeout(() => {
+                setVerified(true);
+                setStep('result');
+              }, 2000);
+            }
+          }}
+          onMessage={(event: any) => {
+            try {
+              const data = JSON.parse(event.nativeEvent.data);
+              if (data.type === 'didit:completed') {
+                console.log(`[VERIFY] Didit completed via postMessage: ${data.data?.status}`);
+                if (data.data?.status === 'Approved') {
+                  setStep('processing');
+                  setTimeout(() => {
+                    setVerified(true);
+                    setStep('result');
+                  }, 2000);
+                }
+              }
+            } catch {}
+          }}
+          onShouldStartLoadWithRequest={(req: any) => true}
+        />
+        <TouchableOpacity
+          style={[styles.ghostBtn, { position: 'absolute', bottom: 40 + insets.bottom, alignSelf: 'center' }]}
+          onPress={() => setStep('cinFront')}
+        >
+          <Text style={styles.ghostBtnText}>Use camera instead</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const captureImage = async (facing: 'front' | 'back') => {
     console.log(`[VERIFY-DEBUG] captureImage called, facing=${facing}, cameraReady=${cameraReady}, cameraRef=${!!cameraRef.current}`);
@@ -427,9 +511,13 @@ export default function VerificationScreen() {
           </View>
         ))}
       </View>
-      <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('cinFront')}>
-        <Text style={styles.primaryBtnText}>Start verification</Text>
-        <Icon name="chevron-right" size={18} color={COLORS.white} />
+      <TouchableOpacity style={styles.primaryBtn} onPress={launchDidit} disabled={diditLoading}>
+        {diditLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
+          <>
+            <Text style={styles.primaryBtnText}>Start verification</Text>
+            <Icon name="chevron-right" size={18} color={COLORS.white} />
+          </>
+        )}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -684,13 +772,14 @@ export default function VerificationScreen() {
   return (
     <View style={styles.container}>
       <ScreenHeader title="Verification" onBack={() => nav.goBack()} />
-      {step !== 'info' && step !== 'processing' && step !== 'result' && (
+      {step !== 'info' && step !== 'didit' && step !== 'processing' && step !== 'result' && (
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${stepProgress()}%` }]} />
         </View>
       )}
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         {step === 'info' && renderInfo()}
+        {step === 'didit' && renderDidit()}
         {step === 'cinFront' && renderCamera('back', () => captureImage('front'), 'Capture the front of your CIN', 'Align card inside the frame, avoid glare')}
         {step === 'cropConfirm' && renderCropConfirm()}
         {step === 'cinBack' && renderCamera('back', () => captureImage('back'), 'Capture the back of your CIN', 'Align card inside the frame, text in focus')}
