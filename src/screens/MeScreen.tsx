@@ -315,7 +315,7 @@ export default function MeScreen() {
           accessibilityRole="button"
           accessibilityLabel="add listing"
         >
-          <MaterialCommunityIcons name="plus" size={28} color={COLORS.text} />
+          <MaterialCommunityIcons name="plus" size={35} color={COLORS.text} />
         </TouchableOpacity>
 
         <View style={styles.topBarNameWrap}>
@@ -332,7 +332,7 @@ export default function MeScreen() {
           accessibilityRole="button"
           accessibilityLabel="settings"
         >
-          <MaterialCommunityIcons name="cog-outline" size={20} color={COLORS.text} />
+          <MaterialCommunityIcons name="cog-outline" size={35} color={COLORS.text} />
         </TouchableOpacity>
       </View>
 
@@ -622,14 +622,12 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
   },
   sellBtn: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 35, height: 35,
     alignItems: 'center', justifyContent: 'center',
     position: 'absolute', left: SPACING.lg,
   },
   settingsBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    borderWidth: 1, borderColor: COLORS.border,
-    backgroundColor: COLORS.surface2,
+    width: 35, height: 35,
     alignItems: 'center', justifyContent: 'center',
     position: 'absolute', right: SPACING.lg,
   },
