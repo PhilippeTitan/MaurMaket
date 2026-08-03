@@ -11,7 +11,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import {
-  getProducts, toggleWishlist, checkWishlist, createConversation, toggleFollow,
+  getProducts, toggleWishlist, checkWishlist, createConversation,
   getImageUrl, getUnreadCount, getProductReviews, getFollowing,
   trackFeedEvent,
 } from '../api';
@@ -22,8 +22,10 @@ import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
 import StockBadge from '../components/StockBadge';
+import FollowButton from '../components/FollowButton';
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
+import { SkeletonBlock } from '../components/Skeleton';
 import { tapLight } from '../haptics';
 import { useToast } from '../components/Toast';
 
@@ -258,21 +260,6 @@ export default function FeedScreen() {
     }
   };
 
-  const handleFollow = async (sellerId: string) => {
-    tapLight();
-    const wasFollowing = store.isFollowing(sellerId);
-    store.toggleFollowing(sellerId, !wasFollowing);
-    try {
-      const res = await toggleFollow(sellerId) as { following?: boolean };
-      if (typeof res.following === 'boolean') {
-        store.toggleFollowing(sellerId, res.following);
-      }
-    } catch {
-      store.toggleFollowing(sellerId, wasFollowing);
-      toast.error('Follow could not update', 'Your follow status was restored. Please try again.', () => handleFollow(sellerId));
-    }
-  };
-
   const [feedImageIndices, setFeedImageIndices] = useState<Record<string, number>>({});
 
   const renderFeedItem = ({ item }: { item: Product }) => {
@@ -282,7 +269,6 @@ export default function FeedScreen() {
     const activeIdx = feedImageIndices[item.id] || 0;
     const currentImg = allImages[activeIdx] || allImages[0];
     const imgUrl = getImageUrl(currentImg?.image_url);
-    const isFollowing = store.isFollowing(item.seller_id);
     const isOwnProduct = store.user?.id === item.seller_id;
 
     return (
@@ -410,17 +396,8 @@ export default function FeedScreen() {
               <UserAvatar seller={item.seller} animated={false} />
               <Text style={styles.sellerName} numberOfLines={1}>{getDisplayName(item.seller)}</Text>
             </TouchableOpacity>
-            {!isOwnProduct && (
-              <TouchableOpacity
-                style={[styles.followBtn, isFollowing && styles.followBtnActive]}
-                onPress={() => item.seller_id && handleFollow(item.seller_id)}
-                accessibilityRole="button"
-                accessibilityLabel={isFollowing ? t('accessibility.unfollow') : t('accessibility.follow')}
-              >
-                <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
-                  {isFollowing ? t('storefront.following') : t('feed.follow')}
-                </Text>
-              </TouchableOpacity>
+            {!isOwnProduct && item.seller_id && (
+              <FollowButton sellerId={item.seller_id} variant="outline" />
             )}
           </View>
 
@@ -449,10 +426,29 @@ export default function FeedScreen() {
     );
   };
 
-  if (screenHeight === 0) {
+  if (screenHeight === 0 || (products.length === 0 && !refreshing)) {
     return (
       <View style={styles.container} onLayout={onContainerLayout}>
-        <ActivityIndicator color={COLORS.coral} style={{ flex: 1 }} />
+        {/* Full-screen feed skeleton */}
+        <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
+          <SkeletonBlock width="100%" height={screenHeight || 600} radius={0} style={{ opacity: 0.4 }} />
+          {/* Action rail skeleton — right side */}
+          <View style={{ position: 'absolute', right: 14, bottom: '30%', gap: 20, alignItems: 'center' }}>
+            {[44, 44, 44, 44].map((s, i) => (
+              <SkeletonBlock key={i} width={s} height={s} radius={22} />
+            ))}
+          </View>
+          {/* Bottom info skeleton */}
+          <View style={{ position: 'absolute', bottom: 40, left: 16, right: 80, gap: 8 }}>
+            <SkeletonBlock width="45%" height={16} />
+            <SkeletonBlock width="65%" height={12} />
+            <SkeletonBlock width="30%" height={12} />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+              <SkeletonBlock width={100} height={40} radius={20} />
+              <SkeletonBlock width={44} height={44} radius={22} />
+            </View>
+          </View>
+        </View>
       </View>
     );
   }
@@ -888,26 +884,6 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: '700',
     flexShrink: 1,
-  },
-  followBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: RADIUS.media,
-    borderWidth: 1,
-    borderColor: COLORS.coral,
-  },
-  followBtnActive: {
-    backgroundColor: COLORS.coral,
-    borderColor: COLORS.coral,
-  },
-  followBtnText: {
-    fontSize: 12,
-    color: COLORS.coral,
-    fontWeight: '700',
-    flexShrink: 1,
-  },
-  followBtnTextActive: {
-    color: COLORS.white,
   },
   priceTag: {
     alignSelf: 'flex-start',

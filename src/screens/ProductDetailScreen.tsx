@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
-import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl, toggleFollow, getFollowing } from '../api';
+import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl, getFollowing } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -16,8 +16,10 @@ import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
+import FollowButton from '../components/FollowButton';
 import UserAvatar from '../components/UserAvatar';
 import BackButton from '../components/BackButton';
+import { SkeletonBlock } from '../components/Skeleton';
 import StockBadge from '../components/StockBadge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
@@ -171,18 +173,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     } catch { /* silent */ }
   };
 
-  const handleFollow = async () => {
-    if (!product?.seller_id) return;
-    const wasFollowing = store.isFollowing(product.seller_id);
-    store.toggleFollowing(product.seller_id, !wasFollowing);
-    try {
-      const res = await toggleFollow(product.seller_id) as { following?: boolean };
-      if (res.following !== undefined) store.toggleFollowing(product.seller_id, res.following);
-    } catch {
-      store.toggleFollowing(product.seller_id, wasFollowing);
-    }
-  };
-
   const getItemImageUrl = (p: Product) => {
     const img = p.images?.find(i => i.is_primary) || p.images?.[0];
     return getImageUrl(img?.image_url);
@@ -261,7 +251,34 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   }, [navigation, imageSizes]);
 
   if (loading || !product) {
-    return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>;
+    const { width: SCREEN_W } = Dimensions.get('window');
+    const heroH = Math.round(SCREEN_W * 1.1);
+    return (
+      <View style={styles.loading}>
+        {/* Hero image skeleton */}
+        <SkeletonBlock width={SCREEN_W} height={heroH} radius={0} />
+        {/* Seller row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 }}>
+          <SkeletonBlock width={40} height={40} radius={20} />
+          <View style={{ flex: 1, gap: 6 }}>
+            <SkeletonBlock width="55%" height={14} />
+            <SkeletonBlock width="35%" height={11} />
+          </View>
+          <SkeletonBlock width={70} height={30} radius={14} />
+        </View>
+        {/* Product name + description */}
+        <View style={{ padding: 14, gap: 8 }}>
+          <SkeletonBlock width="80%" height={18} />
+          <SkeletonBlock width="100%" height={12} />
+          <SkeletonBlock width="65%" height={12} />
+        </View>
+        {/* Action buttons row */}
+        <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 14, marginTop: 8 }}>
+          <SkeletonBlock width={44} height={44} radius={22} />
+          <SkeletonBlock width={44} height={44} radius={22} />
+        </View>
+      </View>
+    );
   }
 
   const isOwnProduct = store.user?.id === product.seller_id;
@@ -354,7 +371,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           {/* ── Seller row ── */}
           {product.seller && (
             <View style={styles.sellerBlock}>
-              {/* ── Heart · Share ── */}
+              {/* ── Action rail — heart · reviews · bookmark · share ── */}
               {!isOwnProduct && (
                 <View style={styles.actionRow}>
                   <TouchableOpacity
@@ -365,20 +382,41 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   >
                     <MaterialCommunityIcons
                       name={wishlisted ? 'heart' : 'heart-outline'}
-                      size={22}
+                      size={25}
                       color={wishlisted ? COLORS.coral : COLORS.text}
                     />
-                    {heartCount > 0 && (
-                      <Text style={styles.actionCount}>{heartCount}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => {}}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('accessibility.viewReviews')}
+                  >
+                    <MaterialCommunityIcons name="comment-outline" size={25} color={COLORS.text} />
+                    {(product.review_count || 0) > 0 && (
+                      <Text style={styles.actionCount}>{product.review_count}</Text>
                     )}
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={handleWishlist}
+                    accessibilityRole="button"
+                    accessibilityLabel={wishlisted ? t('accessibility.unbookmark') : t('accessibility.bookmark')}
+                  >
+                    <MaterialCommunityIcons
+                      name={wishlisted ? 'bookmark' : 'bookmark-outline'}
+                      size={25}
+                      color={wishlisted ? COLORS.coral : COLORS.text}
+                    />
+                  </TouchableOpacity>
+                  <View style={{ flex: 1 }} />
                   <TouchableOpacity
                     style={styles.actionBtn}
                     onPress={handleShare}
                     accessibilityRole="button"
                     accessibilityLabel={t('accessibility.shareProduct')}
                   >
-                    <MaterialCommunityIcons name="share-variant" size={22} color={COLORS.text} />
+                    <MaterialCommunityIcons name="share-variant" size={25} color={COLORS.text} />
                   </TouchableOpacity>
                 </View>
               )}
@@ -393,23 +431,17 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                 >
                   <UserAvatar seller={product.seller} animated={true} />
                   <View style={styles.sellerInfo}>
-                    <Text style={styles.sellerName}>{getDisplayName(product.seller)}</Text>
+                    <View style={styles.sellerNameRow}>
+                      <Text style={styles.sellerName}>{getDisplayName(product.seller)}</Text>
+                      {!isOwnProduct && product.seller_id && (
+                        <FollowButton sellerId={product.seller_id} />
+                      )}
+                    </View>
                     <Text style={styles.sellerMeta}>
                       {avgRating.toFixed(1)} ★ · {product.seller?.sales_count ?? 0} sales
                     </Text>
                   </View>
                 </TouchableOpacity>
-                {!isOwnProduct && (
-                  <TouchableOpacity
-                    style={[styles.followBtn, store.isFollowing(product?.seller_id || '') && styles.followBtnActive]}
-                    onPress={handleFollow}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.followBtnText, store.isFollowing(product?.seller_id || '') && styles.followBtnTextActive]}>
-                      {store.isFollowing(product?.seller_id || '') ? 'Following' : 'Follow'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
               </View>
             </View>
           )}
@@ -584,13 +616,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   actionRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingTop: 8, paddingBottom: 2,
   },
   actionBtn: {
-    height: 34, paddingHorizontal: 8, borderRadius: 17,
+    width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
-    flexDirection: 'row', gap: 4,
   },
   actionCount: {
     fontSize: 13, fontWeight: '600', color: COLORS.text,
@@ -600,42 +631,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 14, paddingVertical: 10, gap: 10,
   },
-  actionBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-    flexDirection: 'row', gap: 4,
-  },
-  actionCount: {
-    fontSize: 13, fontWeight: '600', color: COLORS.text,
-  },
-  /* Seller row */
-  actionBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-    flexDirection: 'row', gap: 4,
-  },
-  actionCount: {
-    fontSize: 13, fontWeight: '600', color: COLORS.text,
-  },
   sellerLeft: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9,
   },
   sellerInfo: { flex: 1, minWidth: 0 },
-  sellerName: { fontSize: 12, fontWeight: '600', color: COLORS.text },
-  sellerMeta: { fontSize: 11, color: COLORS.text2, marginTop: 1 },
-  followBtn: {
-    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 6,
-  },
-  followBtnActive: {
-    backgroundColor: COLORS.coral, borderColor: COLORS.coral,
-  },
-  followBtnText: {
-    fontSize: 11, fontWeight: '600', color: COLORS.text,
-  },
-  followBtnTextActive: {
-    color: COLORS.white,
-  },
+  sellerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sellerName: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  sellerMeta: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
 
   /* Product info */
   infoBlock: {

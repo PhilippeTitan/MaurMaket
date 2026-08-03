@@ -22,6 +22,7 @@ export interface User {
   location_lng: number | null;
   username: string | null;
   show_real_name: boolean;
+  sales_count?: number;
 }
 
 export interface ProductImage {
