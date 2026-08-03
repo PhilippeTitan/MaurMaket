@@ -406,16 +406,6 @@ export const getImageUrl = (imageUrl: string | undefined | null): string | null 
   return `${UPLOAD_BASE}${imageUrl}`;
 };
 
-let cachedImgbbKey: string | null = null;
-
-async function getImgbbKey(): Promise<string> {
-  if (cachedImgbbKey) return cachedImgbbKey;
-  const data: any = await request('/upload/config');
-  if (!data.imgbbKey) throw new Error('Upload service not configured');
-  cachedImgbbKey = data.imgbbKey as string;
-  return cachedImgbbKey;
-}
-
 async function resizeAndConvert(uri: string): Promise<{ base64: string; mimeType: string }> {
   console.log(`[UPLOAD-DEBUG] resizeAndConvert called, platform=${Platform.OS}, uri=${uri?.substring(0, 80)}`);
   if (Platform.OS === 'web') {
@@ -472,43 +462,20 @@ export const uploadImage = async (uri: string, expiration?: number): Promise<{ u
     throw new Error('Not authenticated');
   }
 
-  const imgbbKey = await getImgbbKey();
-  console.log(`[UPLOAD-DEBUG] imgbbKey=${imgbbKey ? imgbbKey.substring(0, 6) + '...' : 'null'}`);
   console.log(`[UPLOAD-DEBUG] Calling resizeAndConvert...`);
   const { base64 } = await resizeAndConvert(uri);
   console.log(`[UPLOAD-DEBUG] resizeAndConvert done, base64 length=${base64?.length}`);
 
-  const formData = new FormData();
-  formData.append('key', imgbbKey);
-  formData.append('image', base64);
-  if (expiration && expiration > 0) {
-    formData.append('expiration', String(expiration));
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
-  try {
-    console.log(`[UPLOAD-DEBUG] Posting to imgbb...`);
-    const res = await fetch('https://api.imgbb.com/1/upload', {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    console.log(`[UPLOAD-DEBUG] imgbb response status: ${res.status}`);
-    const data = await res.json();
-    console.log(`[UPLOAD-DEBUG] imgbb success=${data.success}, url=${data.data?.url?.substring(0, 60)}`);
-    if (!data.success) throw new Error(data.error?.message || 'Upload failed');
-    return { url: data.data.url, deleteUrl: data.data.delete_url };
-  } catch (e: any) {
-    clearTimeout(timer);
-    console.log(`[UPLOAD-DEBUG] ❌ imgbb error: ${e?.message}`);
-    if (e.name === 'AbortError') throw new Error('Upload timed out. Check your connection.');
-    if (e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
-      throw new Error('Cannot reach upload service. Check your connection.');
-    }
-    throw e;
-  }
+  // Send to backend — Supabase Storage primary, imgBB fallback
+  const res = await fetch(`${API_BASE}/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ image: `data:image/jpeg;base64,${base64}`, expiration }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  console.log(`[UPLOAD-DEBUG] Upload OK, provider=${data.provider}, url=${data.url?.substring(0, 60)}`);
+  return { url: data.url, deleteUrl: data.deleteUrl };
 };
 
 // Verification

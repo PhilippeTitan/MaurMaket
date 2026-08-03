@@ -8,6 +8,7 @@ import bcrypt from 'bcrypt';
 import cron from 'node-cron';
 import nodemailer from 'nodemailer';
 import { Expo } from 'expo-server-sdk';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
@@ -39,6 +40,19 @@ const supabasePool = (!isTestMode && process.env.SUPABASE_DATABASE_URL) ? new Po
 
 let usingSupabase = !isTestMode && !!supabasePool;
 let supabaseDownSince = null; // timestamp when Supabase was marked down
+
+// ───── Supabase Storage (S3 protocol) ─────
+const supabaseStorage = process.env.SUPABASE_S3_ACCESS_KEY ? new S3Client({
+  region: 'ca-central-1',
+  endpoint: process.env.SUPABASE_S3_ENDPOINT || 'https://bnnluaqrktnrnnfvmqbt.storage.supabase.co/storage/v1/s3',
+  credentials: {
+    accessKeyId: process.env.SUPABASE_S3_ACCESS_KEY,
+    secretAccessKey: process.env.SUPABASE_S3_SECRET_KEY,
+  },
+  forcePathStyle: true,
+}) : null;
+const SUPABASE_STORAGE_BUCKET = 'product-images';
+const SUPABASE_PUBLIC_BASE = process.env.SUPABASE_PUBLIC_BASE || 'https://bnnluaqrktnrnnfvmqbt.supabase.co/storage/v1/object/public/product-images';
 
 function isConnectionError(err) {
   if (!err) return false;
@@ -904,8 +918,100 @@ app.use(morgan('combined'));
 app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
 app.use('/api/upload', uploadLimiter);
+
+// Upload config (legacy — still needed for frontend fallback)
 app.get('/api/upload/config', (req, res) => {
-  res.json({ imgbbKey: process.env.IMGBB_KEY || null });
+  res.json({ imgbbKey: process.env.IMGBB_KEY || null, hasSupabaseStorage: !!supabaseStorage });
+});
+
+// Upload image — Supabase Storage primary, imgBB fallback
+app.post('/api/upload', authRequired, async (req, res) => {
+  try {
+    const { image, expiration } = req.body;
+    if (!image) return res.status(400).json({ error: 'No image data' });
+
+    // Decode base64 to buffer
+    const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    const ext = (image.match(/^data:image\/(\w+);/)?.[1] || 'jpg').replace('jpeg', 'jpg');
+    const contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+    const key = `${req.user.id}/${crypto.randomUUID()}.${ext}`;
+
+    // 1. Try Supabase Storage first
+    if (supabaseStorage) {
+      try {
+        await supabaseStorage.send(new PutObjectCommand({
+          Bucket: SUPABASE_STORAGE_BUCKET,
+          Key: key,
+          Body: buffer,
+          ContentType: contentType,
+        }));
+        const url = `${SUPABASE_PUBLIC_BASE}/${key}`;
+        return res.json({ url, deleteUrl: `supabase:${key}`, provider: 'supabase' });
+      } catch (s3Err) {
+        console.warn('[UPLOAD] Supabase Storage failed, falling back to imgBB:', s3Err.message);
+      }
+    }
+
+    // 2. Fallback to imgBB
+    if (!process.env.IMGBB_KEY) {
+      return res.status(503).json({ error: 'No upload provider available' });
+    }
+    const form = new URLSearchParams();
+    form.append('key', process.env.IMGBB_KEY);
+    form.append('image', base64Data);
+    if (expiration && expiration > 0) form.append('expiration', String(expiration));
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    const imgbbRes = await fetch('https://api.imgbb.com/1/upload', {
+      method: 'POST',
+      body: form,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const imgbbData = await imgbbRes.json();
+    if (!imgbbData.success) {
+      return res.status(502).json({ error: imgbbData.error?.message || 'imgBB upload failed' });
+    }
+    return res.json({ url: imgbbData.data.url, deleteUrl: imgbbData.data.delete_url, provider: 'imgbb' });
+  } catch (err) {
+    console.error('[UPLOAD] Error:', err.message);
+    res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+// Delete image — handles both Supabase and imgBB
+app.delete('/api/upload', authRequired, async (req, res) => {
+  try {
+    const { url, deleteUrl } = req.body;
+    const target = deleteUrl || url;
+    if (!target) return res.status(400).json({ error: 'No URL provided' });
+
+    // Supabase Storage delete
+    if (target.startsWith('supabase:')) {
+      if (!supabaseStorage) return res.status(503).json({ error: 'Supabase Storage not configured' });
+      const key = target.replace('supabase:', '');
+      await supabaseStorage.send(new DeleteObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: key }));
+      return res.json({ deleted: true, provider: 'supabase' });
+    }
+
+    // imgBB delete
+    if (target.includes('imgbb.com') || target.includes('i.ibb.co')) {
+      if (!process.env.IMGBB_KEY) return res.status(503).json({ error: 'imgBB not configured' });
+      // Extract delete URL hash from the URL or use it directly
+      const deleteUrlFull = target.includes('delete') ? target : null;
+      if (deleteUrlFull) {
+        await fetch(`${deleteUrlFull}?key=${process.env.IMGBB_KEY}`);
+      }
+      return res.json({ deleted: true, provider: 'imgbb' });
+    }
+
+    res.status(400).json({ error: 'Unknown URL provider' });
+  } catch (err) {
+    console.error('[DELETE UPLOAD] Error:', err.message);
+    res.status(500).json({ error: 'Delete failed' });
+  }
 });
 app.use('/api', generalLimiter);
 app.use(express.json({
