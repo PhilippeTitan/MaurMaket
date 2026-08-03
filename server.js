@@ -3517,7 +3517,7 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
         body: JSON.stringify({
           amount: Math.round(parseFloat(order.total_amount)),
           referenceId: retryReference,
-          returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
+          returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
         }),
         signal: AbortSignal.timeout(15000),
       }
@@ -3537,7 +3537,7 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
           body: JSON.stringify({
             amount: Math.round(parseFloat(order.total_amount)),
             referenceId: retryRef2,
-            returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
+          returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
           }),
           signal: AbortSignal.timeout(15000),
         }
@@ -4628,7 +4628,7 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
         body: JSON.stringify({
           amount: Math.round(parseFloat(order.total_amount)),
           referenceId,
-          returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return`,
+          returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
         }),
         signal: AbortSignal.timeout(15000),
       }
@@ -4648,7 +4648,7 @@ app.post('/api/payments/create', authRequired, async (req, res) => {
           body: JSON.stringify({
             amount: Math.round(parseFloat(order.total_amount)),
             referenceId: retryRef,
-            returnUrl: returnUrl || `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return`,
+            returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return`,
           }),
           signal: AbortSignal.timeout(15000),
         }
@@ -5655,7 +5655,7 @@ app.post('/api/subscriptions/create', authRequired, sellerRequired, async (req, 
         'Authorization': `Bearer ${process.env.MCC_KEY || ''}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: req.body.returnUrl || '' }),
+      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return` }),
       signal: AbortSignal.timeout(15000),
     });
     const payData = await mccRes.json();
@@ -5702,7 +5702,7 @@ app.post('/api/subscriptions/renew', authRequired, sellerRequired, async (req, r
         'Authorization': `Bearer ${process.env.MCC_KEY || ''}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: req.body.returnUrl || '' }),
+      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return` }),
       signal: AbortSignal.timeout(15000),
     });
     const payData = await mccRes.json();
