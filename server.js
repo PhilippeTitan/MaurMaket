@@ -2246,6 +2246,9 @@ app.get('/api/products', async (req, res) => {
 
 app.get('/api/products/:id', async (req, res) => {
   try {
+    const id = req.params.id;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) return res.status(404).json({ error: 'Product not found' });
     const result = await pool.query(
       `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar, u.phone AS seller_phone,
               u.store_name, u.store_logo_url, u.seller_tier, u.id_verified, u.use_store_identity, u.username AS seller_username,
@@ -2375,7 +2378,7 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
     } catch (e) { console.error('Follower notification error:', e.message); }
     res.status(201).json({ product });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('Product create error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
@@ -2594,6 +2597,12 @@ app.post('/api/orders', authRequired, async (req, res) => {
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'Cart is empty' });
   }
+  for (const item of items) {
+    if (!item.productId) return res.status(400).json({ error: 'Each item must have a productId' });
+    const qty = parseInt(item.quantity);
+    if (!qty || qty < 1) return res.status(400).json({ error: 'Quantity must be at least 1' });
+    if (qty > 999) return res.status(400).json({ error: 'Quantity too high (max 999)' });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -2718,7 +2727,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
     }
     res.status(201).json({ order });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch (rbErr) { console.error('ROLLBACK failed:', rbErr.message); }
     console.error('Order create error:', err);
     const safeMessage = err.message?.startsWith('Product') || err.message?.startsWith('You cannot') || err.message?.startsWith('Insufficient') || err.message?.startsWith('Cart') ? err.message : 'Invalid order data';
     res.status(400).json({ error: safeMessage });
@@ -4114,7 +4123,7 @@ app.post('/api/conversations', authRequired, convLimiter, async (req, res) => {
     await client.query('COMMIT');
     res.status(201).json({ conversationId: result.rows[0].id });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('Conversation create error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
@@ -4123,6 +4132,9 @@ app.post('/api/conversations', authRequired, convLimiter, async (req, res) => {
 });
 
 app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
   try {
     const conv = await pool.query(
       'SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
@@ -4220,6 +4232,9 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
 });
 
 app.post('/api/conversations/:id/messages', authRequired, msgLimiter, async (req, res) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
   const { content, imageUrl, messageType } = req.body;
   const msgType = messageType || 'text';
   if (!['text', 'image', 'offer'].includes(msgType)) return res.status(400).json({ error: 'Invalid message type' });
@@ -4419,7 +4434,7 @@ app.post('/api/conversations/:id/offer', authRequired, msgLimiter, async (req, r
       }}
     });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('Send offer error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
@@ -4500,7 +4515,7 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
 
     res.json({ success: true, status: action });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('Respond to offer error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
@@ -4543,7 +4558,7 @@ app.post('/api/offers/:messageId/counter', authRequired, msgLimiter, async (req,
     createNotification(offer.buyer_id, 'new_message', 'Counter offer', `The seller countered your offer with G ${offeredPrice}.`, { conversationId: offer.conversation_id, senderId: req.user.id });
     res.json({ success: true, status: 'countered', offeredPrice, negotiationRound: currentRound + 1 });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('Counter offer error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
@@ -5890,6 +5905,15 @@ app.get('/api/map-config', authRequired, (_req, res) => {
 
 app.get('/api/health', async (_req, res) => {
   const result = { status: 'ok', primary: 'unknown', fallback: 'unknown', active: 'supabase' };
+  if (isTestMode) {
+    try {
+      await Promise.race([neonPool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
+      result.primary = 'connected';
+      result.active = 'test-local';
+    } catch { result.primary = 'down'; }
+    result.status = result.primary === 'connected' ? 'ok' : 'error';
+    return res.status(result.status === 'ok' ? 200 : 503).json(result);
+  }
   try {
     if (usingSupabase && supabasePool) {
       await Promise.race([supabasePool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
@@ -6254,6 +6278,9 @@ setTimeout(() => migrateSupabaseToNeon().catch(() => {}), 30000);
 
 // ───── Global Error Handler ─────
 app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid JSON' });
+  }
   console.error('Unhandled error:', err.message || err);
   res.status(500).json({ error: 'Internal server error' });
 });
@@ -6261,7 +6288,7 @@ app.use((err, req, res, next) => {
 // ───── Graceful Shutdown ─────
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection:', reason);
-  process.exit(1);
+  if (!isTestMode) process.exit(1);
 });
 
 process.on('SIGTERM', async () => {

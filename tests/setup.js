@@ -287,10 +287,10 @@ export function assertNoSensitiveData(data, context) {
 export async function runTest(name, fn) {
   const start = Date.now();
   try {
-    await fn();
+    const value = await fn();
     const duration = Date.now() - start;
     console.log(`  ✅ ${name} (${duration}ms)`);
-    return { name, passed: true, duration };
+    return { name, passed: true, duration, value };
   } catch (err) {
     const duration = Date.now() - start;
     console.log(`  ❌ ${name} (${duration}ms)`);

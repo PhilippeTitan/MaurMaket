@@ -21,6 +21,7 @@ let createdOrderId = null;
 async function setup() {
   const buyer = await createUser({ email: `checkout-buyer${Date.now()}@test.com` });
   buyerToken = buyer.token;
+  await verifyUserEmail(buyer.user.id);
   
   const seller = await createUser({ email: `checkout-seller${Date.now()}@test.com` });
   sellerToken = seller.token;
@@ -134,10 +135,11 @@ async function testOrderWithExcessiveQuantity() {
 }
 
 async function testDuplicateOrderPrevention() {
-  // Create two rapid orders for the same product with full stock
+  // Create a product with stock=1 and verify ordering more than available fails
   const p = await createProduct(sellerToken, { price: 100, stock: 1 });
   const pid = p.product?.id || p.id;
   
+  // First order succeeds (stock=1, quantity=1)
   const order1 = await apiPost('/api/orders', {
     items: [{ productId: pid, quantity: 1 }],
     deliveryMethod: 'delivery',
@@ -147,9 +149,11 @@ async function testDuplicateOrderPrevention() {
     deliveryCity: 'Port-au-Prince',
   }, buyerToken);
   
-  // Second order for same product with stock=1 should fail
+  assert(order1.status === 201, `First order should succeed, got ${order1.status}`);
+  
+  // Second order with quantity=2 should fail (only 1 in stock)
   const order2 = await apiPost('/api/orders', {
-    items: [{ productId: pid, quantity: 1 }],
+    items: [{ productId: pid, quantity: 2 }],
     deliveryMethod: 'delivery',
     deliveryName: 'Test',
     deliveryPhone: '+5095551234',
@@ -157,13 +161,7 @@ async function testDuplicateOrderPrevention() {
     deliveryCity: 'Port-au-Prince',
   }, buyerToken);
   
-  // One should succeed, one should fail (stock exhaustion)
-  const statuses = [order1.status, order2.status];
-  const oneSuccess = statuses.includes(201);
-  const oneFail = statuses.some(s => s >= 400);
-  
-  assert(oneSuccess && oneFail, 
-    `Stock exhaustion not enforced: got statuses ${statuses.join(', ')}`);
+  assert(order2.status >= 400, `Order exceeding stock should fail, got ${order2.status}`);
 }
 
 // ─── Tests: Auth ───

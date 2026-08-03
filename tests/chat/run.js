@@ -97,8 +97,8 @@ async function testConversationNotFound() {
 async function testCreateOffer(conversationId) {
   const { status, data } = await apiPost(`/api/conversations/${conversationId}/offer`, {
     productId,
-    price: 4000, // 20% off
-    message: 'Would you take 4000?',
+    offeredPrice: 4000, // 20% off
+    listPrice: 5000,
   }, buyerToken);
   
   assertStatus(status, 201, 'Create offer');
@@ -109,7 +109,7 @@ async function testCreateOffer(conversationId) {
 async function testRespondToOffer(messageId) {
   // Seller accepts
   const { status } = await apiPost(`/api/offers/${messageId}/respond`, {
-    action: 'accept',
+    action: 'accepted',
   }, sellerToken);
   
   assertStatus(status, 200, 'Respond to offer');
@@ -178,7 +178,7 @@ async function main() {
     await setup();
     
     console.log('Conversations:');
-    const convId = await runTest('Create conversation with seller', testCreateConversation);
+    const { value: convId } = await runTest('Create conversation with seller', testCreateConversation);
     results.push(await runTest('List conversations', testListConversations));
     results.push(await runTest('Get unread count', testUnreadCount));
     
@@ -192,7 +192,7 @@ async function main() {
     
     console.log('\nOffers:');
     if (convId) {
-      const offerId = await runTest('Create offer on product', () => testCreateOffer(convId));
+      const { value: offerId } = await runTest('Create offer on product', () => testCreateOffer(convId));
       if (offerId) {
         await runTest('Seller responds to offer', () => testRespondToOffer(offerId));
       }

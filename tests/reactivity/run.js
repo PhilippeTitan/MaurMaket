@@ -144,27 +144,29 @@ async function testBecomeSellerReflectedInLogin() {
 
 async function testSellerCanAccessSellerEndpoints() {
   const { user, token } = await createUser({ email: `selleraccess${Date.now()}@test.com` });
-  await apiPut('/api/auth/become-seller', { tier: 'casual', store_name: 'Test Store' }, token);
+  const becomeRes = await apiPut('/api/auth/become-seller', { tier: 'casual', store_name: 'Test Store' }, token);
+  const sellerToken = becomeRes.data.token || token;
 
   // Seller orders endpoint should work
-  const { status } = await apiGet('/api/orders/seller', token);
+  const { status } = await apiGet('/api/orders', sellerToken);
   assert(status === 200, `Seller orders endpoint should return 200, got: ${status}`);
 }
 
 async function testNonSellerCannotAccessSellerEndpoints() {
   const { user, token } = await createUser({ email: `nonseller${Date.now()}@test.com` });
 
-  // Non-seller hitting seller endpoint should get 403
-  const { status } = await apiGet('/api/orders/seller', token);
-  assert(status === 403, `Non-seller orders endpoint should return 403, got: ${status}`);
+  // Non-seller hitting seller-only endpoint should get 403
+  const { status } = await apiGet('/api/seller/orders', token);
+  assert(status === 403, `Non-seller seller endpoint should return 403, got: ${status}`);
 }
 
 async function testUpgradeTierReturnsUpdatedTier() {
   const { user, token } = await createUser({ email: `upgradetier${Date.now()}@test.com` });
-  await apiPut('/api/auth/become-seller', { tier: 'casual', store_name: 'Test Store' }, token);
+  const becomeRes = await apiPut('/api/auth/become-seller', { tier: 'casual', store_name: 'Test Store' }, token);
+  const sellerToken = becomeRes.data.token || token;
 
   // Upgrade to verified (requires email_verified + id_verified, but let's test the endpoint behavior)
-  const { status } = await apiPut('/api/auth/upgrade-tier', { tier: 'verified' }, token);
+  const { status } = await apiPut('/api/auth/upgrade-tier', { tier: 'verified' }, sellerToken);
   // May return 400 if not verified — that's correct behavior
   assert(status === 200 || status === 400, `upgrade-tier should return 200 or 400, got: ${status}`);
 

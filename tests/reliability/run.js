@@ -124,7 +124,7 @@ async function testCreateConversation() {
 async function testWishlistEmpty() {
   const { status, data } = await apiGet('/api/wishlist', userToken);
   assertStatus(status, 200, '/api/wishlist');
-  assert(data.items !== undefined, 'Missing items array');
+  assert(data.wishlist !== undefined || data.items !== undefined, 'Missing wishlist/items array');
 }
 
 async function testWishlistAddRemove() {
@@ -136,7 +136,8 @@ async function testWishlistAddRemove() {
   
   // Check wishlist
   const { data } = await apiGet('/api/wishlist', userToken);
-  const found = data.items?.some(i => i.id === productId);
+  const items = data.wishlist || data.items || [];
+  const found = items.some(i => i.id === productId);
   assert(found, 'Product not in wishlist after adding');
   
   // Remove from wishlist
@@ -204,7 +205,7 @@ async function main() {
     
     console.log('\nConversations:');
     results.push(await runTest('GET /api/conversations returns list', testConversationList));
-    const convId = await runTest('POST /api/conversations creates conversation', testCreateConversation);
+    const { value: convId } = await runTest('POST /api/conversations creates conversation', testCreateConversation);
     
     console.log('\nWishlist:');
     results.push(await runTest('GET /api/wishlist returns list', testWishlistEmpty));
