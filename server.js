@@ -6886,12 +6886,11 @@ if (isMain) {
       console.log('Cron jobs active: meetup timeout auto-refund (every 5 min), offer expiry (every 15 min)');
     });
   };
-  runMigrations()
-    .then(startServer)
-    .catch(err => {
-      console.error('Startup error, starting server anyway:', err.message);
-      startServer();
-    });
+  // Start server IMMEDIATELY — migrations run in background (non-blocking)
+  startServer();
+  runMigrations().catch(err => {
+    console.error('Migration error (non-blocking):', err.message);
+  });
 
   // Non-blocking cleanup with timeout — never blocks server startup
   setTimeout(async () => {
