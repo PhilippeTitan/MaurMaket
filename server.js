@@ -879,6 +879,25 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_message_offers_status_expires ON message_offers(status, expires_at);
     `));
 
+    await step('Didit usage + webhook tables', () => c.query(`
+      CREATE TABLE IF NOT EXISTS didit_usage (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        month_year VARCHAR(7) NOT NULL,
+        count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(month_year)
+      );
+      CREATE TABLE IF NOT EXISTS didit_webhook_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        event_id VARCHAR(100) UNIQUE NOT NULL,
+        session_id VARCHAR(100),
+        webhook_type VARCHAR(50),
+        status VARCHAR(30),
+        vendor_data TEXT,
+        received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -5628,6 +5647,102 @@ function normalizeString(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
+// ───── Didit (0Didit) verification helpers ─────
+const DIDIT_BASE = 'https://verification.didit.me';
+const DIDIT_MONTHLY_LIMIT = 500;
+
+function getDiditMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+async function checkDiditQuota() {
+  if (!process.env.DIDIT_API_KEY) return false;
+  try {
+    const monthKey = getDiditMonthKey();
+    const result = await pool.query('SELECT count FROM didit_usage WHERE month_year = $1', [monthKey]);
+    const count = result.rows[0]?.count || 0;
+    console.log(`📊 [DIDIT] Quota: ${count}/${DIDIT_MONTHLY_LIMIT} used this month`);
+    return count < DIDIT_MONTHLY_LIMIT;
+  } catch (err) {
+    console.error('Didit quota check error:', err.message);
+    return false;
+  }
+}
+
+async function incrementDiditUsage() {
+  const monthKey = getDiditMonthKey();
+  await pool.query(
+    `INSERT INTO didit_usage (month_year, count) VALUES ($1, 1)
+     ON CONFLICT (month_year) DO UPDATE SET count = didit_usage.count + 1`,
+    [monthKey]
+  );
+}
+
+async function diditIdVerify(frontImageUrl, backImageUrl) {
+  const form = new FormData();
+  const fetchImg = async (url, label) => {
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`Failed to fetch ${label}: HTTP ${r.status}`);
+    const buf = await r.arrayBuffer();
+    const ct = r.headers.get('content-type') || 'image/jpeg';
+    return { buf: Buffer.from(buf), ct };
+  };
+  const [front, back] = await Promise.all([
+    fetchImg(frontImageUrl, 'CIN front'),
+    backImageUrl ? fetchImg(backImageUrl, 'CIN back') : null,
+  ]);
+  form.append('front_image', new Blob([front.buf], { type: front.ct }), 'front.jpg');
+  if (back) form.append('back_image', new Blob([back.buf], { type: back.ct }), 'back.jpg');
+  form.append('save_api_request', 'false');
+
+  console.log(`📡 [DIDIT] Calling ID verification (front=${front.buf.length} bytes${back ? `, back=${back.buf.length} bytes` : ''})`);
+  const resp = await fetch(`${DIDIT_BASE}/v3/id-verification/`, {
+    method: 'POST',
+    headers: { 'x-api-key': process.env.DIDIT_API_KEY },
+    body: form,
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`Didit ID verify HTTP ${resp.status}: ${body.substring(0, 200)}`);
+  }
+  return await resp.json();
+}
+
+async function diditFaceMatch(selfieUrl, refImageUrl) {
+  const form = new FormData();
+  const fetchImg = async (url, label) => {
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`Failed to fetch ${label}: HTTP ${r.status}`);
+    const buf = await r.arrayBuffer();
+    const ct = r.headers.get('content-type') || 'image/jpeg';
+    return { buf: Buffer.from(buf), ct };
+  };
+  const [selfie, ref] = await Promise.all([
+    fetchImg(selfieUrl, 'selfie'),
+    fetchImg(refImageUrl, 'CIN face'),
+  ]);
+  form.append('user_image', new Blob([selfie.buf], { type: selfie.ct }), 'selfie.jpg');
+  form.append('ref_image', new Blob([ref.buf], { type: ref.ct }), 'ref.jpg');
+  form.append('face_match_score_decline_threshold', '60');
+  form.append('rotate_image', 'true');
+  form.append('save_api_request', 'false');
+
+  console.log(`📡 [DIDIT] Calling face match (selfie=${selfie.buf.length} bytes, ref=${ref.buf.length} bytes)`);
+  const resp = await fetch(`${DIDIT_BASE}/v3/face-match/`, {
+    method: 'POST',
+    headers: { 'x-api-key': process.env.DIDIT_API_KEY },
+    body: form,
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`Didit face match HTTP ${resp.status}: ${body.substring(0, 200)}`);
+  }
+  return await resp.json();
+}
+
 async function tareefCompare(imageUrl1, imageUrl2) {
   const apiKey = process.env.TAREEF_API_KEY;
   if (!apiKey) throw new Error('TAREEF_API_KEY not configured');
@@ -5700,102 +5815,202 @@ app.post('/api/verification/submit', verifyLimiter, authRequired, sellerRequired
     let ocrResult = null;
     const issues = [];
 
-    if (!process.env.OCR_SPACE_KEY) {
-      console.log(`❌ [VERIFY] OCR_SPACE_KEY not configured`);
-      rejectionReason = 'Verification service not configured. Please try again later.';
-    } else {
-      let frontText = '';
-      let backText = '';
+    const userRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+    const userName = normalizeString(userRes.rows[0]?.full_name || '');
+    const faceImageUrl = idFaceUrl || idFrontUrl;
 
-      console.log(`📡 [VERIFY] Calling OCR.space for front + back...`);
+    // ── Try Didit first (primary), fall back to OCR.space + Tareef ──
+    const useDidit = await checkDiditQuota();
+    let verificationProvider = useDidit ? 'didit' : 'tareef';
+
+    if (useDidit) {
+      // ═══════════════════ DIDIT PATH ═══════════════════
+      console.log(`🚀 [VERIFY] Using Didit (primary)`);
+
+      // Step 1: Didit ID Verification (OCR + fraud checks)
       try {
-        const [frontOcr, backOcr] = await Promise.all([
-          ocrSpaceParse(idFrontUrl),
-          ocrSpaceParse(idBackUrl),
-        ]);
-        frontText = frontOcr;
-        backText = backOcr;
-        console.log(`✅ [VERIFY] OCR front (${frontText.length} chars): ${frontText.substring(0, 200).replace(/\n/g, ' | ')}`);
-        console.log(`✅ [VERIFY] OCR back (${backText.length} chars): ${backText.substring(0, 200).replace(/\n/g, ' | ')}`);
-      } catch (e) {
-        console.error(`❌ [VERIFY] OCR.space failed:`, e.message);
-        rejectionReason = 'Could not read ID card photos. Please ensure images are clear and well-lit.';
-      }
+        const idResult = await diditIdVerify(idFrontUrl, idBackUrl);
+        await incrementDiditUsage();
+        console.log(`✅ [DIDIT] ID verification status: ${idResult.id_verification?.status}`);
 
-      if (frontText || backText) {
-        const frontFields = extractCinFields(frontText);
-        const sex = extractSex(backText);
-        ocrResult = { ...frontFields, sex, rawFront: frontText, rawBack: backText };
+        if (idResult.id_verification?.status === 'Approved') {
+          const idv = idResult.id_verification;
+          const diditFirstName = idv.first_name || '';
+          const diditLastName = idv.last_name || '';
+          const diditFullName = `${diditFirstName} ${diditLastName}`.trim();
+          const diditDocNumber = idv.document_number || '';
+          const diditDob = idv.date_of_birth || '';
+          const diditNationality = idv.nationality || '';
 
-        const userRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
-        const userName = normalizeString(userRes.rows[0]?.full_name || '');
+          ocrResult = {
+            fullName: diditFullName,
+            cinNumber: diditDocNumber,
+            dateOfBirth: diditDob,
+            placeOfBirth: diditNationality,
+            sex: idv.sex || null,
+            provider: 'didit',
+            diditWarnings: idv.warnings || [],
+          };
 
-        const cinNameWords = normalizeString(frontFields.fullName).split(/\s+/).filter(Boolean).sort().join(' ');
-        const profileNameWords = userName.split(/\s+/).filter(Boolean).sort().join(' ');
-        const nameMatch = frontFields.fullName && frontFields.fullName.trim().length >= 3
-          && !/^\d+$/.test(frontFields.fullName.trim())
-          && cinNameWords === profileNameWords;
-        const hasCinNumber = frontFields.cinNumber && /^\d{8,12}$/.test(frontFields.cinNumber);
-        const hasDob = frontFields.dateOfBirth && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(frontFields.dateOfBirth);
-        const hasPlaceOfBirth = frontFields.placeOfBirth && frontFields.placeOfBirth.trim().length >= 3 && !/^\d+$/.test(frontFields.placeOfBirth.trim());
-        const hasSex = sex && /^(M|F|MASCULIN|FÉMININ|MALE|FEMALE)$/i.test(sex);
+          // Validate name match against profile
+          const cinNameWords = normalizeString(diditFullName).split(/\s+/).filter(Boolean).sort().join(' ');
+          const profileNameWords = userName.split(/\s+/).filter(Boolean).sort().join(' ');
+          const nameMatch = diditFullName && diditFullName.trim().length >= 3
+            && !/^\d+$/.test(diditFullName.trim())
+            && cinNameWords === profileNameWords;
+          const hasCinNumber = diditDocNumber && diditDocNumber.length >= 6;
+          const hasDob = diditDob && diditDob.length >= 8;
 
-        console.log(`👤 [VERIFY] Name: profile="${userName}" | CIN="${frontFields.fullName}" → ${nameMatch ? '✅ MATCH' : '❌ MISMATCH'}`);
-        console.log(`📋 [VERIFY] CIN#: ${hasCinNumber ? '✅' : '❌'} ${frontFields.cinNumber || 'N/A'}`);
-        console.log(`📋 [VERIFY] DOB: ${hasDob ? '✅' : '❌'} ${frontFields.dateOfBirth || 'N/A'}`);
-        console.log(`📋 [VERIFY] POB: ${hasPlaceOfBirth ? '✅' : '❌'} ${frontFields.placeOfBirth || 'N/A'}`);
-        console.log(`📋 [VERIFY] Sex: ${hasSex ? '✅' : '❌'} ${sex || 'N/A'}`);
+          console.log(`👤 [VERIFY] Name: profile="${userName}" | CIN="${diditFullName}" → ${nameMatch ? '✅ MATCH' : '❌ MISMATCH'}`);
+          console.log(`📋 [VERIFY] CIN#: ${hasCinNumber ? '✅' : '❌'} ${diditDocNumber || 'N/A'}`);
+          console.log(`📋 [VERIFY] DOB: ${hasDob ? '✅' : '❌'} ${diditDob || 'N/A'}`);
 
-        if (!nameMatch) issues.push({ stage: 'details', message: 'Name on CIN does not match your profile name' });
-        if (!hasCinNumber) issues.push({ stage: 'details', message: 'CIN number not recognized' });
-        if (!hasDob) issues.push({ stage: 'details', message: 'Date of birth not found on card' });
-        if (!hasPlaceOfBirth) issues.push({ stage: 'details', message: 'Place of birth not found on card' });
-        if (!hasSex) issues.push({ stage: 'details', message: 'Sex not found on CIN back' });
-      } else {
-        issues.push({ stage: 'card', message: 'Could not read any text from ID card — please retake with better lighting' });
-      }
+          if (!nameMatch) issues.push({ stage: 'details', message: 'Name on CIN does not match your profile name' });
+          if (!hasCinNumber) issues.push({ stage: 'details', message: 'CIN number not recognized' });
+          if (!hasDob) issues.push({ stage: 'details', message: 'Date of birth not found on card' });
 
-      if (issues.length === 0) {
-        if (!process.env.TAREEF_API_KEY) {
-          console.log(`❌ [VERIFY] TAREEF_API_KEY not configured — rejecting (fail-closed)`);
-          issues.push({ stage: 'face', message: 'Face verification service unavailable' });
+          // Check for fraud warnings from Didit
+          const fraudWarnings = (idv.warnings || []).filter(w =>
+            ['SCREEN_CAPTURE_DETECTED', 'PRINTED_COPY_DETECTED', 'PORTRAIT_MANIPULATION_DETECTED', 'DOCUMENT_EXPIRED'].includes(w)
+          );
+          if (fraudWarnings.length > 0) {
+            console.log(`🚨 [DIDIT] Fraud warnings: ${fraudWarnings.join(', ')}`);
+            issues.push({ stage: 'card', message: 'Document appears to be a copy or screen capture. Please upload an original photo.' });
+          }
         } else {
-          console.log(`🔍 [VERIFY] Calling Tareef face comparison (CIN face crop vs selfie)...`);
+          // Didit ID verification declined
+          const warnings = idResult.id_verification?.warnings || [];
+          console.log(`❌ [DIDIT] ID verification declined: ${warnings.join(', ')}`);
+          if (warnings.includes('COULD_NOT_RECOGNIZE_DOCUMENT')) {
+            issues.push({ stage: 'card', message: 'Could not read ID card — please retake with clear lighting and all four corners visible' });
+          } else {
+            issues.push({ stage: 'card', message: `ID verification failed: ${warnings.join('. ') || 'Document could not be verified'}` });
+          }
+        }
+
+        // Step 2: Didit Face Match (only if ID verification passed)
+        if (issues.length === 0) {
           try {
-            const faceImageUrl = idFaceUrl || idFrontUrl;
-            console.log(`🔍 [VERIFY] Using ${idFaceUrl ? 'cropped CIN face' : 'full CIN front'} for face comparison`);
-            const { score, similar } = await tareefCompare(faceImageUrl, selfieUrl);
-            ocrResult.faceScore = score;
-            console.log(`✅ [VERIFY] Tareef result: score=${score} similar=${similar} → ${similar || score >= 0.65 ? '✅ PASS' : '❌ FAIL'}`);
-            if (!similar && score < 0.65) {
+            const faceResult = await diditFaceMatch(selfieUrl, faceImageUrl);
+            await incrementDiditUsage();
+            const faceStatus = faceResult.face_match?.status;
+            const faceScore = faceResult.face_match?.score;
+            ocrResult.faceScore = faceScore;
+            console.log(`✅ [DIDIT] Face match: status=${faceStatus} score=${faceScore}`);
+
+            if (faceStatus !== 'Approved' && (!faceScore || faceScore <= 60)) {
               issues.push({ stage: 'face', message: 'Face in selfie does not match the CIN photo' });
             }
           } catch (e) {
-            console.error(`❌ [VERIFY] Tareef failed: ${e.message}`);
-            console.error(`❌ [VERIFY] Stack: ${e.stack?.split('\n').slice(0, 3).join(' | ')}`);
-            const msg = e.message || '';
-            if (msg.includes('no_face') || msg.includes('No face')) {
-              issues.push({ stage: 'face', message: 'No face detected in ID card — please retake the CIN photo with the card flat, well-lit, and the face photo clearly visible' });
-            } else if (msg.includes('low_quality') || msg.includes('blurry')) {
-              issues.push({ stage: 'face', message: 'Image too blurry — please retake with better lighting and focus' });
-            } else {
-              issues.push({ stage: 'face', message: `Face verification failed: ${msg}` });
-            }
+            console.error(`❌ [DIDIT] Face match failed: ${e.message}`);
+            issues.push({ stage: 'face', message: `Face verification failed: ${e.message}` });
           }
         }
-      } else {
-        console.log(`⏭️ [VERIFY] Skipping Tareef (OCR issues found)`);
+      } catch (e) {
+        console.error(`❌ [DIDIT] ID verification error: ${e.message}`);
+        console.log(`🔄 [VERIFY] Didit failed, falling back to Tareef path`);
+        verificationProvider = 'tareef';
+        // Fall through to Tareef path below
       }
+    }
 
-      if (issues.length === 0) {
-        console.log(`✅ [VERIFY] All checks passed → auto-verifying`);
-        autoStatus = 'verified';
+    // ═══════════════════ TAREEF FALLBACK PATH ═══════════════════
+    if (verificationProvider === 'tareef') {
+      console.log(`🔄 [VERIFY] Using Tareef + OCR.space (fallback)`);
+
+      if (!process.env.OCR_SPACE_KEY) {
+        console.log(`❌ [VERIFY] OCR_SPACE_KEY not configured`);
+        rejectionReason = 'Verification service not configured. Please try again later.';
       } else {
-        const failedStage = issues[0].stage;
-        const reasons = issues.map(i => i.message);
-        console.log(`❌ [VERIFY] Rejection: stage=${failedStage} reasons=${reasons.join(' | ')}`);
-        rejectionReason = reasons.join('. ');
+        let frontText = '';
+        let backText = '';
+
+        console.log(`📡 [VERIFY] Calling OCR.space for front + back...`);
+        try {
+          const [frontOcr, backOcr] = await Promise.all([
+            ocrSpaceParse(idFrontUrl),
+            ocrSpaceParse(idBackUrl),
+          ]);
+          frontText = frontOcr;
+          backText = backOcr;
+          console.log(`✅ [VERIFY] OCR front (${frontText.length} chars): ${frontText.substring(0, 200).replace(/\n/g, ' | ')}`);
+          console.log(`✅ [VERIFY] OCR back (${backText.length} chars): ${backText.substring(0, 200).replace(/\n/g, ' | ')}`);
+        } catch (e) {
+          console.error(`❌ [VERIFY] OCR.space failed:`, e.message);
+          rejectionReason = 'Could not read ID card photos. Please ensure images are clear and well-lit.';
+        }
+
+        if (frontText || backText) {
+          const frontFields = extractCinFields(frontText);
+          const sex = extractSex(backText);
+          ocrResult = { ...frontFields, sex, rawFront: frontText, rawBack: backText, provider: 'tareef' };
+
+          const cinNameWords = normalizeString(frontFields.fullName).split(/\s+/).filter(Boolean).sort().join(' ');
+          const profileNameWords = userName.split(/\s+/).filter(Boolean).sort().join(' ');
+          const nameMatch = frontFields.fullName && frontFields.fullName.trim().length >= 3
+            && !/^\d+$/.test(frontFields.fullName.trim())
+            && cinNameWords === profileNameWords;
+          const hasCinNumber = frontFields.cinNumber && /^\d{8,12}$/.test(frontFields.cinNumber);
+          const hasDob = frontFields.dateOfBirth && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(frontFields.dateOfBirth);
+          const hasPlaceOfBirth = frontFields.placeOfBirth && frontFields.placeOfBirth.trim().length >= 3 && !/^\d+$/.test(frontFields.placeOfBirth.trim());
+          const hasSex = sex && /^(M|F|MASCULIN|FÉMININ|MALE|FEMALE)$/i.test(sex);
+
+          console.log(`👤 [VERIFY] Name: profile="${userName}" | CIN="${frontFields.fullName}" → ${nameMatch ? '✅ MATCH' : '❌ MISMATCH'}`);
+          console.log(`📋 [VERIFY] CIN#: ${hasCinNumber ? '✅' : '❌'} ${frontFields.cinNumber || 'N/A'}`);
+          console.log(`📋 [VERIFY] DOB: ${hasDob ? '✅' : '❌'} ${frontFields.dateOfBirth || 'N/A'}`);
+          console.log(`📋 [VERIFY] POB: ${hasPlaceOfBirth ? '✅' : '❌'} ${frontFields.placeOfBirth || 'N/A'}`);
+          console.log(`📋 [VERIFY] Sex: ${hasSex ? '✅' : '❌'} ${sex || 'N/A'}`);
+
+          if (!nameMatch) issues.push({ stage: 'details', message: 'Name on CIN does not match your profile name' });
+          if (!hasCinNumber) issues.push({ stage: 'details', message: 'CIN number not recognized' });
+          if (!hasDob) issues.push({ stage: 'details', message: 'Date of birth not found on card' });
+          if (!hasPlaceOfBirth) issues.push({ stage: 'details', message: 'Place of birth not found on card' });
+          if (!hasSex) issues.push({ stage: 'details', message: 'Sex not found on CIN back' });
+        } else {
+          issues.push({ stage: 'card', message: 'Could not read any text from ID card — please retake with better lighting' });
+        }
+
+        if (issues.length === 0) {
+          if (!process.env.TAREEF_API_KEY) {
+            console.log(`❌ [VERIFY] TAREEF_API_KEY not configured — rejecting (fail-closed)`);
+            issues.push({ stage: 'face', message: 'Face verification service unavailable' });
+          } else {
+            console.log(`🔍 [VERIFY] Calling Tareef face comparison (CIN face crop vs selfie)...`);
+            try {
+              console.log(`🔍 [VERIFY] Using ${idFaceUrl ? 'cropped CIN face' : 'full CIN front'} for face comparison`);
+              const { score, similar } = await tareefCompare(faceImageUrl, selfieUrl);
+              ocrResult.faceScore = score;
+              console.log(`✅ [VERIFY] Tareef result: score=${score} similar=${similar} → ${similar || score >= 0.65 ? '✅ PASS' : '❌ FAIL'}`);
+              if (!similar && score < 0.65) {
+                issues.push({ stage: 'face', message: 'Face in selfie does not match the CIN photo' });
+              }
+            } catch (e) {
+              console.error(`❌ [VERIFY] Tareef failed: ${e.message}`);
+              console.error(`❌ [VERIFY] Stack: ${e.stack?.split('\n').slice(0, 3).join(' | ')}`);
+              const msg = e.message || '';
+              if (msg.includes('no_face') || msg.includes('No face')) {
+                issues.push({ stage: 'face', message: 'No face detected in ID card — please retake the CIN photo with the card flat, well-lit, and the face photo clearly visible' });
+              } else if (msg.includes('low_quality') || msg.includes('blurry')) {
+                issues.push({ stage: 'face', message: 'Image too blurry — please retake with better lighting and focus' });
+              } else {
+                issues.push({ stage: 'face', message: `Face verification failed: ${msg}` });
+              }
+            }
+          }
+        } else {
+          console.log(`⏭️ [VERIFY] Skipping Tareef (OCR issues found)`);
+        }
       }
+    }
+
+    if (issues.length === 0 && !rejectionReason) {
+      console.log(`✅ [VERIFY] All checks passed via ${verificationProvider} → auto-verifying`);
+      autoStatus = 'verified';
+    } else if (!rejectionReason) {
+      const failedStage = issues[0].stage;
+      const reasons = issues.map(i => i.message);
+      console.log(`❌ [VERIFY] Rejection (${verificationProvider}): stage=${failedStage} reasons=${reasons.join(' | ')}`);
+      rejectionReason = reasons.join('. ');
     }
 
     const result = await pool.query(
@@ -6059,6 +6274,123 @@ app.post('/api/subscriptions/webhook', async (req, res) => {
   } catch (err) {
     console.error('Subscription webhook error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Didit (0Didit) webhook ─────
+app.post('/api/webhooks/didit', async (req, res) => {
+  // Return 2xx ASAP per Didit docs — process async
+  res.status(200).json({ received: true });
+
+  try {
+    const rawBody = req.rawBody;
+    if (!rawBody) {
+      console.error('[DIDIT WEBHOOK] No raw body');
+      return;
+    }
+
+    // 1. Verify timestamp freshness (±300s)
+    const timestamp = parseInt(req.headers['x-timestamp'] || '0');
+    const now = Math.floor(Date.now() / 1000);
+    if (!timestamp || Math.abs(now - timestamp) > 300) {
+      console.error(`[DIDIT WEBHOOK] Timestamp expired: ${timestamp} (now: ${now})`);
+      return;
+    }
+
+    // 2. Verify HMAC-SHA256 signature
+    const webhookSecret = process.env.DIDIT_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const signatureV2 = req.headers['x-signature-v2'];
+      const signatureSimple = req.headers['x-signature-simple'];
+      const signature = req.headers['x-signature'];
+
+      let expectedSig;
+      if (signatureV2) {
+        // V2: HMAC over the canonical JSON body
+        expectedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+      } else if (signatureSimple) {
+        // Simple: HMAC over "{timestamp}:{session_id}:{status}:{webhook_type}"
+        const body = JSON.parse(rawBody);
+        const simpleStr = `${timestamp}:${body.session_id || ''}:${body.status || ''}:${body.webhook_type || ''}`;
+        expectedSig = crypto.createHmac('sha256', webhookSecret).update(simpleStr).digest('hex');
+      } else if (signature) {
+        // V1: HMAC over raw bytes
+        expectedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+      }
+
+      if (expectedSig) {
+        const sigBuf = Buffer.from(signatureV2 || signatureSimple || signature, 'hex');
+        const expBuf = Buffer.from(expectedSig, 'hex');
+        if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+          console.error('[DIDIT WEBHOOK] Invalid signature');
+          return;
+        }
+      }
+    }
+
+    // 3. Parse event
+    const event = JSON.parse(rawBody);
+    const { event_id, webhook_type, status, vendor_data, session_id, decision } = event;
+
+    // 4. Idempotency check
+    const existing = await pool.query(
+      'SELECT id FROM didit_webhook_events WHERE event_id = $1',
+      [event_id]
+    );
+    if (existing.rows.length > 0) {
+      console.log(`[DIDIT WEBHOOK] Duplicate event ${event_id} — skipping`);
+      return;
+    }
+    await pool.query(
+      'INSERT INTO didit_webhook_events (event_id, session_id, webhook_type, status, vendor_data) VALUES ($1, $2, $3, $4, $5)',
+      [event_id, session_id, webhook_type, status, vendor_data]
+    );
+
+    console.log(`[DIDIT WEBHOOK] ${webhook_type} — status=${status} vendor=${vendor_data}`);
+
+    // 5. Process by type
+    if (webhook_type === 'status.updated' && vendor_data) {
+      const userId = vendor_data;
+
+      if (status === 'Approved') {
+        const faceMatch = decision?.face_matches?.[0];
+        const faceScore = faceMatch?.score || 0;
+
+        await pool.query(
+          `UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified' WHERE id = $1`,
+          [userId]
+        );
+        await pool.query(
+          `UPDATE verification_attempts SET status = 'verified', face_match_score = $1, verified_at = CURRENT_TIMESTAMP WHERE user_id = $2 AND status != 'verified' ORDER BY created_at DESC LIMIT 1`,
+          [faceScore, userId]
+        );
+        createNotification(userId, 'verification_approved', 'Identity Verified', 'Your identity has been verified via Didit!', {});
+
+        // Auto-upgrade seller tier
+        const userCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [userId]);
+        if (userCheck.rows[0]?.seller_tier === 'casual') {
+          await pool.query(`UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [userId]);
+        }
+        console.log(`[DIDIT WEBHOOK] User ${userId} verified via webhook`);
+      } else if (status === 'Declined') {
+        const idVerifs = decision?.id_verifications || [];
+        const warnings = idVerifs.flatMap(v => v.warnings || []);
+        const reason = warnings.join('. ') || 'Verification declined';
+
+        await pool.query(`UPDATE users SET id_verification_result = 'rejected' WHERE id = $1`, [userId]);
+        await pool.query(
+          `UPDATE verification_attempts SET status = 'rejected', rejection_reason = $1 WHERE user_id = $2 AND status != 'verified' ORDER BY created_at DESC LIMIT 1`,
+          [reason, userId]
+        );
+        createNotification(userId, 'verification_rejected', 'Verification Not Approved', reason, {});
+        console.log(`[DIDIT WEBHOOK] User ${userId} declined: ${reason}`);
+      } else if (status === 'In Review') {
+        await pool.query(`UPDATE users SET id_verification_result = 'pending' WHERE id = $1`, [userId]);
+        console.log(`[DIDIT WEBHOOK] User ${userId} in review`);
+      }
+    }
+  } catch (err) {
+    console.error('[DIDIT WEBHOOK] Processing error:', err);
   }
 });
 
