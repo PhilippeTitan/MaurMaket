@@ -148,7 +148,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       }
     } catch (e: unknown) {
       notifyError();
-      toast.error('Checkout could not finish', e instanceof Error ? e.message : t('checkout.checkoutFailed'), handleCheckout);
+      const msg = e instanceof Error ? e.message : '';
+      if (msg.includes('email_not_verified') || msg.includes('verify your email')) {
+        toast.show({ kind: 'error', title: 'Email not verified', message: 'Verify your email to place orders.', actionLabel: 'Settings', onAction: () => navigation.navigate('EmailVerification') });
+      } else {
+        toast.error('Checkout could not finish', msg || t('checkout.checkoutFailed'), handleCheckout);
+      }
     } finally {
       setLoading(false);
     }
