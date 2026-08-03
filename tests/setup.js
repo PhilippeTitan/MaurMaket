@@ -45,6 +45,12 @@ export async function startTestServer() {
   
   // Explicitly disable remote pools — server.js checks NODE_ENV === 'test'
   delete process.env.SUPABASE_DATABASE_URL;
+  
+  // Required by server.js — generate a throwaway secret for tests
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-ci-only-do-not-use-in-prod';
+  process.env.QR_SECRET = process.env.QR_SECRET || 'test-qr-secret-ci-only';
+  process.env.MONCASH_PAY_CREATE_URL = 'https://api.moncashconnect.com/v1/pay-create';
+  process.env.MONCASH_PAYOUT_CREATE_URL = 'https://api.moncashconnect.com/v1/payout-create';
 
   // Start server as child process
   const { spawn } = await import('child_process');
