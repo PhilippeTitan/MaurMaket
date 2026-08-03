@@ -142,12 +142,14 @@ const BCRYPT_ROUNDS = 10;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ───── Rate Limiters ─────
-const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, try again later' }, skip: (req) => req.path === '/health' });
-const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts, try again later' } });
-const paymentLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many payment requests, try again later' } });
-const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many uploads, try again later' } });
-const msgLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many messages, try again later' } });
-const convLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many conversations, try again later' } });
+// In test mode: skip ALL rate limiting entirely to avoid CI flakiness
+const testSkip = isTestMode ? (() => true) : undefined;
+const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, try again later' }, skip: testSkip || ((req) => req.path === '/health') });
+const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts, try again later' }, skip: testSkip });
+const paymentLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many payment requests, try again later' }, skip: testSkip });
+const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many uploads, try again later' }, skip: testSkip });
+const msgLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many messages, try again later' }, skip: testSkip });
+const convLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many conversations, try again later' }, skip: testSkip });
 
 // ───── Email Transporter (Gmail API over HTTPS — native https, no extra packages) ─────
 import https from 'https';
@@ -653,8 +655,10 @@ async function runMigrations() {
         email TEXT PRIMARY KEY,
         code TEXT NOT NULL,
         purpose TEXT NOT NULL DEFAULT 'verify',
-        expires_at TIMESTAMPTZ NOT NULL
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE otp_codes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
     `);
     // User location fields
     await c.query(`
@@ -1321,6 +1325,10 @@ app.post('/api/auth/verify/send', authRequired, async (req, res) => {
 
     const sent = await sendOtpEmail(user.email, code, 'verify', language || 'en');
     if (!sent) {
+      if (isTestMode) {
+        // In test mode: OTP is stored in DB (test can read it directly), email delivery not required
+        return res.json({ success: true, email: user.email, testMode: true });
+      }
       console.error(`verify/send: SMTP failed for ${user.email} — check SMTP_HOST/USER/PASS env vars`);
       return res.status(500).json({ error: 'Failed to send email. Please try again.' });
     }

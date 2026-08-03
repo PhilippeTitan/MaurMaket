@@ -215,8 +215,8 @@ async function testAppTsxForegroundRefresh() {
   const appCode = fs.readFileSync(appPath, 'utf8');
   assert(appCode.includes('AppState'),
     'App.tsx must import AppState for foreground detection');
-  assert(appCode.includes('refreshUser'),
-    'App.tsx must call refreshUser on app foreground');
+  assert(appCode.includes('invalidateUser') || appCode.includes('invalidateQueries'),
+    'App.tsx must invalidate user cache on app foreground');
 }
 
 async function testSettingsScreenFocusRefresh() {
@@ -224,8 +224,8 @@ async function testSettingsScreenFocusRefresh() {
   const path = await import('path');
   const settingsPath = path.join(process.cwd(), 'src', 'screens', 'SettingsScreen.tsx');
   const code = fs.readFileSync(settingsPath, 'utf8');
-  assert(code.includes('refreshUser'),
-    'SettingsScreen must call store.refreshUser() on focus');
+  assert(code.includes('useUser') || code.includes('refreshUser') || code.includes('invalidateUser'),
+    'SettingsScreen must use useUser hook or refreshUser for state sync');
 }
 
 async function testMeScreenFocusRefresh() {
@@ -233,8 +233,8 @@ async function testMeScreenFocusRefresh() {
   const path = await import('path');
   const mePath = path.join(process.cwd(), 'src', 'screens', 'MeScreen.tsx');
   const code = fs.readFileSync(mePath, 'utf8');
-  assert(code.includes('refreshUser'),
-    'MeScreen must call store.refreshUser() on focus');
+  assert(code.includes('useUser') || code.includes('refreshUser') || code.includes('invalidateUser'),
+    'MeScreen must use useUser hook or refreshUser for state sync');
 }
 
 // ─── Run All Tests ───

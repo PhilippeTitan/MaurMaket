@@ -154,7 +154,7 @@ export async function becomeSeller(token, sellerData = {}) {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      store_name: `Test Store ${Date.now()}`,
+      storeName: `Test Store ${Date.now()}`,
       ...sellerData,
     }),
   });

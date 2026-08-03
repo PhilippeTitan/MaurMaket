@@ -25,7 +25,8 @@ async function setup() {
   // Create seller
   const seller = await createUser({ email: `seller${Date.now()}@test.com` });
   sellerToken = seller.token;
-  await becomeSeller(sellerToken);
+  const becomeResult = await becomeSeller(sellerToken);
+  sellerToken = becomeResult.token;
   sellerId = seller.user.id;
   await verifyUserEmail(sellerId);
   
