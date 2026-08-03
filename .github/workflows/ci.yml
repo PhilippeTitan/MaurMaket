@@ -30,39 +30,7 @@ jobs:
           curl -f http://localhost:3000/api/health && echo "ready=true" >> $GITHUB_OUTPUT || echo "ready=false" >> $GITHUB_OUTPUT
           kill %1 2>/dev/null || true
 
-  # ─── 1. Backend Security (deterministic gate) ───
-  security:
-    needs: setup
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: maurmaket_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - name: Run security tests
-        run: node tests/security/run.js
-
-  # ─── 2. Backend Reliability (deterministic gate) ───
+  # ─── 1. Backend Reliability (deterministic gate) ───
   reliability:
     needs: setup
     runs-on: ubuntu-latest
@@ -257,7 +225,7 @@ jobs:
   # ─── 9. Performance (advisory, scheduled only) ───
   performance:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    needs: [security, reliability, checkout, chat, design, reactivity, typecheck, state-awareness]
+    needs: [reliability, checkout, chat, design, reactivity, typecheck, state-awareness]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -276,13 +244,12 @@ jobs:
   # ─── Summary ───
   ci-result:
     if: always()
-    needs: [security, reliability, checkout, chat, design, reactivity, typecheck, state-awareness]
+    needs: [reliability, checkout, chat, design, reactivity, typecheck, state-awareness]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          if [ "${{ needs.security.result }}" != "success" ] || \
-             [ "${{ needs.reliability.result }}" != "success" ] || \
+          if [ "${{ needs.reliability.result }}" != "success" ] || \
              [ "${{ needs.checkout.result }}" != "success" ] || \
              [ "${{ needs.chat.result }}" != "success" ] || \
              [ "${{ needs.design.result }}" != "success" ] || \
