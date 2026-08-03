@@ -18,15 +18,18 @@ dotenv.config();
 const { Pool } = pg;
 
 // ───── Dual Database: Supabase (primary) + Neon (fallback) ─────
+// In test mode: skip remote pools entirely — only use local Postgres from DATABASE_URL
+const isTestMode = process.env.NODE_ENV === 'test';
+
 const neonPool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 15,
+  max: isTestMode ? 5 : 15,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 8000,
+  connectionTimeoutMillis: isTestMode ? 5000 : 8000,
   ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
 });
 
-const supabasePool = process.env.SUPABASE_DATABASE_URL ? new Pool({
+const supabasePool = (!isTestMode && process.env.SUPABASE_DATABASE_URL) ? new Pool({
   connectionString: process.env.SUPABASE_DATABASE_URL,
   max: 15,
   idleTimeoutMillis: 30000,
@@ -34,7 +37,7 @@ const supabasePool = process.env.SUPABASE_DATABASE_URL ? new Pool({
   ssl: { rejectUnauthorized: false },
 }) : null;
 
-let usingSupabase = true;
+let usingSupabase = !isTestMode && !!supabasePool;
 
 function isConnectionError(err) {
   if (!err) return false;
@@ -6270,6 +6273,10 @@ const __execPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 const __thisFile = fileURLToPath(import.meta.url);
 const isMain = __execPath === __thisFile || __execPath === path.resolve(__thisFile);
 if (isMain) {
+  if (isTestMode) {
+    console.log(`[TEST MODE] NODE_ENV=test, usingSupabase=${usingSupabase}, supabasePool=${!!supabasePool}`);
+    console.log(`[TEST MODE] DATABASE_URL=${process.env.DATABASE_URL?.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@') || 'NOT SET'}`);
+  }
   const startServer = () => {
     server = app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);

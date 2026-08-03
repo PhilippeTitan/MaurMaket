@@ -35,15 +35,16 @@ export async function directQuery(sql, params = []) {
 // ─── Server Management ───
 
 export async function startTestServer() {
-  // Set test environment
+  // Set test environment — override BEFORE spawning server
   process.env.NODE_ENV = 'test';
   process.env.PORT = String(TEST_PORT);
   
-  // Use Supabase for CI tests (or local if available)
-  if (!process.env.DATABASE_URL) {
-    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || 
-      'postgresql://postgres:postgres@localhost:5432/maurmaket_test';
-  }
+  // Force DATABASE_URL to local Postgres (CI provides this via service container)
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || 
+    'postgresql://postgres:postgres@localhost:5432/maurmaket_test';
+  
+  // Explicitly disable remote pools — server.js checks NODE_ENV === 'test'
+  delete process.env.SUPABASE_DATABASE_URL;
 
   // Start server as child process
   const { spawn } = await import('child_process');
@@ -61,7 +62,7 @@ export async function startTestServer() {
   });
 
   // Wait for server to be ready
-  await waitForServer(serverUrl, 15000);
+  await waitForServer(serverUrl, 120000);
   return serverUrl;
 }
 

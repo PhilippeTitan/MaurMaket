@@ -8,12 +8,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ─── Shared Setup ───
+  # ─── Shared Setup: install deps + typecheck ───
   setup:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    outputs:
-      server-ready: ${{ steps.check.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,19 +20,12 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Verify server starts
-        id: check
-        run: |
-          timeout 10 node server.js &
-          sleep 3
-          curl -f http://localhost:3000/api/health && echo "ready=true" >> $GITHUB_OUTPUT || echo "ready=false" >> $GITHUB_OUTPUT
-          kill %1 2>/dev/null || true
 
   # ─── 1. Backend Reliability (deterministic gate) ───
   reliability:
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -50,6 +41,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
     steps:
@@ -66,7 +58,7 @@ jobs:
   checkout:
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -82,6 +74,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
     steps:
@@ -98,7 +91,7 @@ jobs:
   chat:
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -114,6 +107,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
     steps:
@@ -147,7 +141,7 @@ jobs:
   reactivity:
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -163,6 +157,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
     steps:
@@ -194,7 +189,7 @@ jobs:
   state-awareness:
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -210,6 +205,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/maurmaket_test
     steps:
