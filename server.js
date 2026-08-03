@@ -2362,6 +2362,7 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
+    client.release();
     // Notify followers of new product
     try {
       const followers = await pool.query('SELECT follower_id FROM follows WHERE seller_id = $1', [req.user.id]);
@@ -2379,10 +2380,9 @@ app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
     res.status(201).json({ product });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
+    client.release();
     console.error('Product create error:', err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    client.release();
   }
 });
 
@@ -2704,6 +2704,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
+    client.release();
     logOrderEvent(order.id, 'order_placed', req.user.id, null, 'pending', `Order placed${discountAmount > 0 ? ` (promo: -G ${discountAmount.toFixed(0)})` : ''}`);
     const buyerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
     const buyerName = buyerInfo.rows[0]?.full_name || 'Someone';
@@ -2728,11 +2729,10 @@ app.post('/api/orders', authRequired, async (req, res) => {
     res.status(201).json({ order });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (rbErr) { console.error('ROLLBACK failed:', rbErr.message); }
+    client.release();
     console.error('Order create error:', err);
     const safeMessage = err.message?.startsWith('Product') || err.message?.startsWith('You cannot') || err.message?.startsWith('Insufficient') || err.message?.startsWith('Cart') ? err.message : 'Invalid order data';
     res.status(400).json({ error: safeMessage });
-  } finally {
-    client.release();
   }
 });
 
@@ -2791,6 +2791,7 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
       [req.params.id]
     );
     await client.query('COMMIT');
+    client.release();
     logOrderEvent(req.params.id, 'status_change', req.user.id, oldStatus, 'cancelled', 'Cancelled by buyer');
 
     // Send refund payout to buyer if paid order
@@ -2824,11 +2825,10 @@ app.put('/api/orders/:id/cancel', authRequired, async (req, res) => {
     }
     res.json({ cancelled: true });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
+    client.release();
     console.error('Order cancel error:', err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    client.release();
   }
 });
 
@@ -3021,6 +3021,7 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
+    client.release();
 
     // Return check-in result
     const response = {
@@ -3041,7 +3042,8 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
 
     res.json(response);
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
+    client.release();
     console.error('Meetup check-in error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
@@ -3225,6 +3227,7 @@ app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
     );
     await logOrderEvent(req.params.id, 'status_change', req.user.id, order.status, 'completed', 'Order completed', client);
     await client.query('COMMIT');
+    client.release();
     const sellersOfOrder = await pool.query(
       'SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1',
       [req.params.id]
@@ -3234,11 +3237,10 @@ app.put('/api/orders/:id/complete', authRequired, async (req, res) => {
     }
     res.json({ updated: true, status: 'completed' });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
+    client.release();
     console.error('Order complete error:', err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    client.release();
   }
 });
 
@@ -3312,6 +3314,7 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
+    client.release();
 
     // Pay out platform commission (outside transaction — best effort)
     try {
@@ -3369,11 +3372,10 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
 
     res.json({ released: true, escrowCount: escrows.rows.length });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
+    client.release();
     console.error('Escrow release error:', err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    client.release();
   }
 });
 
@@ -3440,6 +3442,7 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
     }
 
     await client.query('COMMIT');
+    client.release();
 
     // Send payout to buyer via MonCash (outside transaction — best effort)
     try {
@@ -3483,11 +3486,10 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
 
     res.json({ refunded: true, amount: totalRefund });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
+    client.release();
     console.error('Escrow refund error:', err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    client.release();
   }
 });
 
@@ -4415,6 +4417,7 @@ app.post('/api/conversations/:id/offer', authRequired, msgLimiter, async (req, r
     // Update conversation last_message_at
     await client.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
     await client.query('COMMIT');
+    client.release();
 
     // Notify seller
     const buyerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [buyerId]);
@@ -4435,10 +4438,9 @@ app.post('/api/conversations/:id/offer', authRequired, msgLimiter, async (req, r
     });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
+    client.release();
     console.error('Send offer error:', err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    client.release();
   }
 });
 
@@ -4502,6 +4504,7 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
     );
     await client.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [offer.conversation_id]);
     await client.query('COMMIT');
+    client.release();
 
     // Notify the other participant.
     const recipientId = req.user.id === offer.buyer_id ? offer.seller_id : offer.buyer_id;
@@ -4516,10 +4519,9 @@ app.post('/api/offers/:messageId/respond', authRequired, async (req, res) => {
     res.json({ success: true, status: action });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
+    client.release();
     console.error('Respond to offer error:', err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    client.release();
   }
 });
 
@@ -4555,14 +4557,14 @@ app.post('/api/offers/:messageId/counter', authRequired, msgLimiter, async (req,
     await client.query("INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES ($1, $2, $3, 'text')", [offer.conversation_id, req.user.id, `Seller countered with G ${offeredPrice} (round ${currentRound + 1}/3)`]);
     await client.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [offer.conversation_id]);
     await client.query('COMMIT');
+    client.release();
     createNotification(offer.buyer_id, 'new_message', 'Counter offer', `The seller countered your offer with G ${offeredPrice}.`, { conversationId: offer.conversation_id, senderId: req.user.id });
     res.json({ success: true, status: 'countered', offeredPrice, negotiationRound: currentRound + 1 });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
+    client.release();
     console.error('Counter offer error:', err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    client.release();
   }
 });
 
@@ -4779,6 +4781,7 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
                     }
                   }
                   await client.query('COMMIT');
+                  client.release();
                   console.log(`[PAY-STATUS] Order ${order.id} processed (webhook fallback)`);
                   const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
                   for (const sid of sellerIds) {
@@ -4787,10 +4790,9 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
                   createNotification(order.buyer_id || req.user.id, 'payment_confirmed', 'Payment Confirmed', 'Your payment was successful.', { orderId: order.id });
                 }
               } catch (e) {
-                await client.query('ROLLBACK');
-                console.error('[PAY-STATUS] Processing error:', e.message);
-              } finally {
+                try { await client.query('ROLLBACK'); } catch {}
                 client.release();
+                console.error('[PAY-STATUS] Processing error:', e.message);
               }
             } catch (e) {
               console.error('[PAY-STATUS] Fallback processing failed:', e.message);
@@ -4972,6 +4974,7 @@ app.post('/api/payments/webhook', async (req, res) => {
           }
         }
         await client.query('COMMIT');
+        client.release();
         const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
         for (const sid of sellerIds) {
           createNotification(sid, 'order_status', 'Payment Received', `Payment for order is held in escrow until exchange is confirmed`, { orderId: reference });
@@ -4985,10 +4988,9 @@ app.post('/api/payments/webhook', async (req, res) => {
         }
         console.log(`Order ${reference} paid, funds held in escrow`);
       } catch (e) {
-        await client.query('ROLLBACK');
-        throw e;
-      } finally {
+        try { await client.query('ROLLBACK'); } catch {}
         client.release();
+        throw e;
       }
 
       // Auto-payout platform commission to PLATFORM_PHONE
@@ -5005,11 +5007,11 @@ app.post('/api/payments/webhook', async (req, res) => {
         await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [reference]);
         await logOrderEvent(reference, 'status_change', null, 'pending', 'cancelled', 'Payment failed', client);
         await client.query('COMMIT');
-      } catch (e) {
-        await client.query('ROLLBACK');
-        throw e;
-      } finally {
         client.release();
+      } catch (e) {
+        try { await client.query('ROLLBACK'); } catch {}
+        client.release();
+        throw e;
       }
       console.log(`Order ${reference} cancelled via webhook`);
       // Notify buyer of payment failure
@@ -5064,6 +5066,7 @@ app.post('/api/payments/webhook', async (req, res) => {
           [reference]
         );
         await client.query('COMMIT');
+        client.release();
         console.log(`Payout ${reference} failed, balance refunded`);
         // Notify seller of payout failure
         if (payout.rows.length > 0) {
@@ -5071,10 +5074,9 @@ app.post('/api/payments/webhook', async (req, res) => {
             `Your payout of G ${parseFloat(payout.rows[0].amount).toFixed(0)} could not be processed. The amount has been returned to your balance.`, { payoutId: reference });
         }
       } catch (e) {
-        await client.query('ROLLBACK');
-        throw e;
-      } finally {
+        try { await client.query('ROLLBACK'); } catch {}
         client.release();
+        throw e;
       }
     }
 
@@ -5199,6 +5201,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
     );
 
     await c.query('COMMIT');
+    c.release();
 
     // Call MonCashConnect payout API
     try {
@@ -5244,11 +5247,10 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
       return res.status(502).json({ error: 'Payout network error' });
     }
   } catch (err) {
-    await c.query('ROLLBACK');
+    try { await c.query('ROLLBACK'); } catch {}
+    c.release();
     console.error('Payout request error:', err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    c.release();
   }
 });
 
@@ -6004,6 +6006,7 @@ cron.schedule('*/5 * * * *', async () => {
         await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [orderId]);
         await logOrderEvent(orderId, 'status_change', null, 'paid', 'cancelled', 'Meetup expired — auto-refund', client);
         await client.query('COMMIT');
+        client.release();
 
         // Send refund payout to buyer
         const buyerRes = await pool.query('SELECT phone FROM users WHERE id = $1', [order.buyer_id]);
@@ -6037,10 +6040,9 @@ cron.schedule('*/5 * * * *', async () => {
         }
 
       } catch (e) {
-        await client.query('ROLLBACK');
-        console.error(`[CRON] Error refunding order ${orderId}:`, e.message);
-      } finally {
+        try { await client.query('ROLLBACK'); } catch {}
         client.release();
+        console.error(`[CRON] Error refunding order ${orderId}:`, e.message);
       }
     }
   } catch (err) {
@@ -6120,6 +6122,7 @@ cron.schedule('*/5 * * * *', async () => {
               }
             }
             await client.query('COMMIT');
+            client.release();
             console.log(`[CRON] Stale order ${order.id} processed (payment confirmed)`);
             const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
             for (const sid of sellerIds) {
@@ -6127,10 +6130,9 @@ cron.schedule('*/5 * * * *', async () => {
             }
             createNotification(order.buyer_id, 'payment_confirmed', 'Payment Confirmed', 'Your payment was successful.', { orderId: order.id });
           } catch (e) {
-            await client.query('ROLLBACK');
-            console.error(`[CRON] Error processing stale order ${order.id}:`, e.message);
-          } finally {
+            try { await client.query('ROLLBACK'); } catch {}
             client.release();
+            console.error(`[CRON] Error processing stale order ${order.id}:`, e.message);
           }
         } else if (data.status === 'failed' || data.status === 'expired') {
           await pool.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [order.id]);
