@@ -1041,7 +1041,7 @@ app.delete('/api/upload', authRequired, async (req, res) => {
 });
 app.use('/api', generalLimiter);
 app.use(express.json({
-  limit: '1mb',
+  limit: '10mb',
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
 
