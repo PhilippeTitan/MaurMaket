@@ -378,6 +378,7 @@ export default function FeedScreen() {
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
           style={styles.bottomGradient}
+          pointerEvents="none"
         />
 
         {/* Bottom overlay — caption + actions, sits ON TOP of image */}
