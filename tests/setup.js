@@ -220,9 +220,8 @@ export async function createProduct(token, productData = {}) {
     name: `Test Product ${timestamp}`,
     description: `Test description ${timestamp}`,
     price: 1000,
-    categoryId: 'cat-electronics',
     stock: 10,
-    images: [{ image_url: 'https://placehold.co/400x400', is_primary: true }],
+    images: ['https://placehold.co/400x400'],
   };
   const data = { ...defaultData, ...productData };
 

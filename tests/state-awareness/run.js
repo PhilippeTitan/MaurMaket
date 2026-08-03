@@ -162,13 +162,9 @@ async function testAlreadyVerifiedReturnsUser() {
   const { user, token } = await createUser({ email });
   await verifyUserEmail(user.id);
 
-  // Verify again — should return user (not just error)
-  await apiPost('/api/auth/verify/send', { language: 'en' }, token);
-  const otpResult = await directQuery(
-    `SELECT code FROM otp_codes WHERE email = $1 AND purpose = 'verify' ORDER BY created_at DESC LIMIT 1`,
-    [email]
-  );
-  const { status, data } = await apiPost('/api/auth/verify/check', { code: otpResult.rows[0].code }, token);
+  // Verify again — server returns alreadyVerified:true before checking the code
+  // (no need to call verify/send — user is already verified, it returns 400)
+  const { status, data } = await apiPost('/api/auth/verify/check', { code: '000000' }, token);
 
   // Should succeed (already verified) or return 400 with user
   assert(status === 200 || status === 400,

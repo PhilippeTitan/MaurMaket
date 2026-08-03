@@ -977,7 +977,7 @@ app.post('/api/auth/signup', async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users (full_name, email, password_hash, phone, role, username)
        VALUES ($1, $2, $3, $4, 'buyer', $5)
-       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at`,
+       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified`,
       [fullName, email, passwordHash, cleanPhone, username]
     );
     const user = result.rows[0];
@@ -999,7 +999,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, username, show_real_name, password_hash FROM users WHERE email = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, username, show_real_name, seller_tier, email_verified, store_name, password_hash FROM users WHERE email = $1`,
       [email]
     );
     if (result.rows.length === 0) {
