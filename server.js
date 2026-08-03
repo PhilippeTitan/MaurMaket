@@ -261,9 +261,23 @@ const PRODUCTION_URL = process.env.PRODUCTION_URL || 'https://maurmaket.onrender
 
 async function runMigrations() {
   const c = await pool.connect();
+  let stepNum = 0;
+  const failed = [];
+  // Each migration step is isolated: failure in one does NOT prevent the rest from running.
+  const step = async (name, fn) => {
+    stepNum++;
+    try {
+      await fn();
+    } catch (e) {
+      // Skip benign "already exists" errors (42710=duplicate_object, 42P07=duplicate_table, 42P16=duplicate_constraint)
+      if (['42710', '42P07', '42P16'].includes(e.code)) return;
+      console.error(`[MIGRATION] Step ${stepNum} (${name}) failed:`, e.message);
+      failed.push(name);
+    }
+  };
   try {
-    // Base tables if they don't exist yet
-    await c.query(`
+    // 1. Base tables
+    await step('Base tables', () => c.query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         full_name TEXT NOT NULL,
@@ -352,27 +366,33 @@ async function runMigrations() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    await c.query(`
+    `));
+
+    // 2. Orders meetup columns
+    await step('Orders meetup columns', () => c.query(`
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_lat DECIMAL(10,7);
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_lng DECIMAL(10,7);
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_address TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_note TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_confirmed BOOLEAN DEFAULT false;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_proposed_by UUID REFERENCES users(id);
-    `);
-    await c.query(`
-      ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
-    `).catch(() => {});
-    await c.query(`
+    `));
+
+    // 3. Drop legacy orders status check
+    await step('Drop orders status check', () => c.query(`ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;`));
+
+    // 4. Orders delivery columns
+    await step('Orders delivery columns', () => c.query(`
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20) DEFAULT 'meetup';
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_name TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_phone TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_city TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_note TEXT;
-    `);
-    await c.query(`
+    `));
+
+    // 5. Order events table
+    await step('order_events table', () => c.query(`
       CREATE TABLE IF NOT EXISTS order_events (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         order_id UUID REFERENCES orders(id) NOT NULL,
@@ -383,8 +403,10 @@ async function runMigrations() {
         note TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    await c.query(`
+    `));
+
+    // 6. Saved addresses table
+    await step('saved_addresses table', () => c.query(`
       CREATE TABLE IF NOT EXISTS saved_addresses (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
@@ -396,8 +418,10 @@ async function runMigrations() {
         is_default BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    await c.query(`
+    `));
+
+    // 7. Reviews table
+    await step('reviews table', () => c.query(`
       CREATE TABLE IF NOT EXISTS reviews (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         order_id UUID REFERENCES orders(id) NOT NULL,
@@ -412,8 +436,10 @@ async function runMigrations() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(order_id, reviewer_id)
       );
-    `);
-    await c.query(`
+    `));
+
+    // 8. Reviews ALTER TABLE + buyer_id backfill
+    await step('Reviews ALTER TABLE', () => c.query(`
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS order_id UUID REFERENCES orders(id);
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS reviewer_id UUID REFERENCES users(id);
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS seller_id UUID REFERENCES users(id);
@@ -430,8 +456,10 @@ async function runMigrations() {
           UPDATE reviews SET reviewer_id = buyer_id WHERE reviewer_id IS NULL AND buyer_id IS NOT NULL;
         END IF;
       END $$;
-    `);
-    await c.query(`
+    `));
+
+    // 9. Wishlists table
+    await step('wishlists table', () => c.query(`
       CREATE TABLE IF NOT EXISTS wishlists (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
@@ -439,8 +467,10 @@ async function runMigrations() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, product_id)
       );
-    `);
-    await c.query(`
+    `));
+
+    // 10. Follows table
+    await step('follows table', () => c.query(`
       CREATE TABLE IF NOT EXISTS follows (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         follower_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
@@ -448,8 +478,10 @@ async function runMigrations() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(follower_id, seller_id)
       );
-    `);
-    await c.query(`
+    `));
+
+    // 11. Notifications table
+    await step('notifications table', () => c.query(`
       CREATE TABLE IF NOT EXISTS notifications (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
@@ -460,8 +492,10 @@ async function runMigrations() {
         is_read BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    await c.query(`
+    `));
+
+    // 12. Conversations table
+    await step('conversations table', () => c.query(`
       CREATE TABLE IF NOT EXISTS conversations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         order_id UUID REFERENCES orders(id),
@@ -471,8 +505,10 @@ async function runMigrations() {
         last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    await c.query(`
+    `));
+
+    // 13. Messages table
+    await step('messages table', () => c.query(`
       CREATE TABLE IF NOT EXISTS messages (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         conversation_id UUID REFERENCES conversations(id) NOT NULL,
@@ -481,8 +517,10 @@ async function runMigrations() {
         is_read BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    await c.query(`
+    `));
+
+    // 14. Promo codes table
+    await step('promo_codes table', () => c.query(`
       CREATE TABLE IF NOT EXISTS promo_codes (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         code VARCHAR(50) NOT NULL UNIQUE,
@@ -496,8 +534,10 @@ async function runMigrations() {
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    await c.query(`
+    `));
+
+    // 15. Promo uses table
+    await step('promo_uses table', () => c.query(`
       CREATE TABLE IF NOT EXISTS promo_uses (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         promo_id UUID REFERENCES promo_codes(id) NOT NULL,
@@ -507,8 +547,10 @@ async function runMigrations() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(promo_id, user_id)
       );
-    `);
-    await c.query(`
+    `));
+
+    // 16. Disputes table
+    await step('disputes table', () => c.query(`
       CREATE TABLE IF NOT EXISTS disputes (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         order_id UUID REFERENCES orders(id) NOT NULL,
@@ -520,9 +562,10 @@ async function runMigrations() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    // Platform revenue tracking
-    await c.query(`
+    `));
+
+    // 17. Platform revenue table
+    await step('platform_revenue table', () => c.query(`
       CREATE TABLE IF NOT EXISTS platform_revenue (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         order_id UUID REFERENCES orders(id),
@@ -535,9 +578,10 @@ async function runMigrations() {
         net_to_seller DECIMAL(10,2) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    // Platform payout tracking
-    await c.query(`
+    `));
+
+    // 18. Platform payouts table
+    await step('platform_payouts table', () => c.query(`
       CREATE TABLE IF NOT EXISTS platform_payouts (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         order_id UUID REFERENCES orders(id),
@@ -548,9 +592,10 @@ async function runMigrations() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    // Seller onboarding & verification columns
-    await c.query(`
+    `));
+
+    // 19. Users onboarding columns
+    await step('Users onboarding columns', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS store_name TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS store_logo_url TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS seller_tier VARCHAR(20) DEFAULT 'none';
@@ -559,9 +604,10 @@ async function runMigrations() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS id_submitted_at TIMESTAMP;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verified_at TIMESTAMP;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS use_store_identity BOOLEAN DEFAULT false;
-    `);
-    // Verification & subscription tables
-    await c.query(`
+    `));
+
+    // 20. Verification & subscription tables
+    await step('Verification & subscription tables', () => c.query(`
       CREATE TABLE IF NOT EXISTS verification_attempts (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
@@ -587,14 +633,16 @@ async function runMigrations() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
       ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_result VARCHAR(20);
-    `);
-    // Backfill id_verification_result from legacy boolean
-    await c.query(`
+    `));
+
+    // 21. Backfill id_verification_result from legacy boolean
+    await step('Backfill id_verification_result', () => c.query(`
       UPDATE users SET id_verification_result = 'verified' WHERE id_verified = true AND id_verification_result IS NULL;
       UPDATE users SET id_verification_result = 'pending' WHERE id_submitted_at IS NOT NULL AND id_verified = false AND id_verification_result IS NULL;
-    `);
-    // Escrow table — holds funds until meetup confirmation (Phase 1)
-    await c.query(`
+    `));
+
+    // 22. Escrow table
+    await step('order_escrow table', () => c.query(`
       CREATE TABLE IF NOT EXISTS order_escrow (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         order_id UUID REFERENCES orders(id) ON DELETE CASCADE NOT NULL,
@@ -607,9 +655,10 @@ async function runMigrations() {
         released_at TIMESTAMP,
         UNIQUE(order_id, seller_id)
       );
-    `);
-    // Meetup check-in tracking (Phase 1)
-    await c.query(`
+    `));
+
+    // 23. Meetup checkins + feed events + seller locations
+    await step('Meetup/feed/location tables', () => c.query(`
       CREATE TABLE IF NOT EXISTS meetup_checkins (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         order_id UUID REFERENCES orders(id) ON DELETE CASCADE NOT NULL,
@@ -622,7 +671,6 @@ async function runMigrations() {
         qr_scanned BOOLEAN DEFAULT false,
         UNIQUE(order_id, user_id)
       );
-      -- Feed events — tracks engagement for personalized feed
       CREATE TABLE IF NOT EXISTS feed_events (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
@@ -639,16 +687,20 @@ async function runMigrations() {
         is_visible BOOLEAN DEFAULT true,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    await c.query(`ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;`);
-    // Sale price columns on products
-    await c.query(`
+    `));
+
+    // 24. seller_locations is_visible (already in CREATE above, kept for idempotency)
+    await step('seller_locations is_visible', () => c.query(`ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;`));
+
+    // 25. Sale price columns
+    await step('Sale price columns', () => c.query(`
       ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DECIMAL(10,2);
       ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_starts_at TIMESTAMP;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_ends_at TIMESTAMP;
-    `);
-    // Email verification + Google Sign-In
-    await c.query(`
+    `));
+
+    // 26. Email verification + Google Sign-In + OTP
+    await step('Email verification + Google', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;
       CREATE TABLE IF NOT EXISTS otp_codes (
@@ -659,21 +711,27 @@ async function runMigrations() {
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
       ALTER TABLE otp_codes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
-    `);
-    // User location fields
-    await c.query(`
+    `));
+
+    // 27. User location fields
+    await step('User location fields', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS location_address TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS location_city TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS location_lat DECIMAL(10,7);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS location_lng DECIMAL(10,7);
-    `);
-    // Push token
-    await c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;`);
-    // Username system
-    await c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(30);`);
-    await c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS show_real_name BOOLEAN DEFAULT false;`);
-    // Backfill usernames for existing users
-    try {
+    `));
+
+    // 28. Push token column
+    await step('Push token column', () => c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;`));
+
+    // 29. Username column
+    await step('Username column', () => c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(30);`));
+
+    // 30. show_real_name column
+    await step('show_real_name column', () => c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS show_real_name BOOLEAN DEFAULT false;`));
+
+    // 31. Backfill usernames for existing users
+    await step('Username backfill', async () => {
       const unamed = await c.query(`SELECT id, full_name FROM users WHERE username IS NULL`);
       if (unamed.rows.length > 0) {
         console.log(`[MIGRATION] Backfilling usernames for ${unamed.rows.length} users...`);
@@ -689,27 +747,30 @@ async function runMigrations() {
         }
         console.log(`[MIGRATION] Backfilled ${filled}/${unamed.rows.length} usernames`);
       }
-    } catch (e) {
-      console.error('[MIGRATION] Username backfill error:', e.message);
-    }
-    // Add unique constraint after backfill (skip if already exists)
-    try {
-      await c.query(`ALTER TABLE users ADD CONSTRAINT users_username_unique UNIQUE (username);`);
-    } catch (e) {
-      if (e.code !== '42710') console.error('[MIGRATION] UNIQUE constraint error:', e.message); // 42710 = duplicate object
-    }
-    // Message media columns
-    await c.query(`
+    });
+
+    // 32. Username unique constraint
+    await step('Username unique constraint', async () => {
+      try {
+        await c.query(`ALTER TABLE users ADD CONSTRAINT users_username_unique UNIQUE (username);`);
+      } catch (e) {
+        if (e.code !== '42710') throw e; // 42710 = duplicate object, already handled by step()
+      }
+    });
+
+    // 33. Message media columns
+    await step('Message media columns', () => c.query(`
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type VARCHAR(20) DEFAULT 'text';
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_url TEXT;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_width INTEGER;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_height INTEGER;
-    `);
-    // Allow NULL content for image messages
-    await c.query(`ALTER TABLE messages ALTER COLUMN content DROP NOT NULL;`);
+    `));
 
-    // Structured offer/negotiation system
-    await c.query(`
+    // 34. Allow NULL content for image messages
+    await step('Messages content nullable', () => c.query(`ALTER TABLE messages ALTER COLUMN content DROP NOT NULL;`));
+
+    // 35. message_offers table
+    await step('message_offers table', () => c.query(`
       CREATE TABLE IF NOT EXISTS message_offers (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         message_id UUID REFERENCES messages(id) ON DELETE CASCADE NOT NULL,
@@ -725,28 +786,27 @@ async function runMigrations() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         responded_at TIMESTAMP
       );
-    `);
+    `));
 
-    // Add negotiation_round and fix CHECK constraint to include 'countered'
-    await c.query(`
-      ALTER TABLE message_offers ADD COLUMN IF NOT EXISTS negotiation_round INTEGER DEFAULT 1;
-    `);
-    // Drop old CHECK and recreate with 'countered' added
-    await c.query(`
+    // 36. negotiation_round column
+    await step('negotiation_round column', () => c.query(`ALTER TABLE message_offers ADD COLUMN IF NOT EXISTS negotiation_round INTEGER DEFAULT 1;`));
+
+    // 37. message_offers CHECK constraint update (drop old, add with 'countered')
+    await step('message_offers CHECK constraint', () => c.query(`
       DO $$
       BEGIN
         IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'message_offers_status_check' AND conrelid = 'message_offers'::regclass) THEN
           ALTER TABLE message_offers DROP CONSTRAINT message_offers_status_check;
         END IF;
       END$$;
-    `);
-    await c.query(`
+    `));
+    await step('message_offers CHECK constraint (re-add)', () => c.query(`
       ALTER TABLE message_offers ADD CONSTRAINT message_offers_status_check
         CHECK (status IN ('pending', 'accepted', 'declined', 'expired', 'redeemed', 'countered'));
-    `);
+    `));
 
-    // Performance indexes
-    await c.query(`
+    // 38. Performance indexes
+    await step('Performance indexes', () => c.query(`
       CREATE INDEX IF NOT EXISTS idx_products_seller_id ON products(seller_id);
       CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
       CREATE INDEX IF NOT EXISTS idx_products_is_available ON products(is_available);
@@ -778,11 +838,13 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_message_offers_conversation ON message_offers(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_message_offers_buyer_product ON message_offers(buyer_id, product_id, status);
       CREATE INDEX IF NOT EXISTS idx_message_offers_status_expires ON message_offers(status, expires_at);
-    `);
+    `));
 
-    console.log('Migrations complete');
-  } catch (err) {
-    console.error('Migration error:', err);
+    if (failed.length > 0) {
+      console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
+    } else {
+      console.log(`[MIGRATION] Complete — all ${stepNum} steps passed`);
+    }
   } finally {
     c.release();
   }
