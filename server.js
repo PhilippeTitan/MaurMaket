@@ -4815,12 +4815,14 @@ app.post('/api/payments/webhook', async (req, res) => {
 
   if (!reference) return res.status(400).json({ error: 'reference required' });
 
-  // Strip retry suffix — retry endpoint sends "${orderId}_retry_${timestamp}" as referenceId
-  // MonCash echoes it back in the webhook, but our order IDs are pure UUIDs
-  const baseReference = reference.includes('_retry_') ? reference.split('_retry_')[0] : reference;
-  const isRetry = baseReference !== reference;
-  if (isRetry) {
-    console.log(`Retry webhook: stripped "${reference}" → "${baseReference}"`);
+  // Strip suffix from referenceId — our references are "${orderId}_${timestamp}" or "${orderId}_retry_${timestamp}"
+  // MonCash echoes it back in the webhook, but our order IDs are pure UUIDs (36 chars)
+  // For payment events: extract the UUID prefix (first 36 chars) regardless of suffix format
+  // For payout events: keep the full reference (e.g. "refund_uuid", "cancel_refund_uuid")
+  const isPaymentEvent = event === 'payment.completed' || event === 'payment.failed';
+  if (isPaymentEvent && reference.length > 36) {
+    const baseReference = reference.substring(0, 36);
+    console.log(`Webhook: stripped "${reference}" → "${baseReference}"`);
     reference = baseReference;
   }
 
@@ -6008,6 +6010,104 @@ cron.schedule('*/5 * * * *', async () => {
     }
   } catch (err) {
     console.error('[CRON] Meetup timeout check error:', err.message);
+  }
+});
+
+// ───── Cron: Process stale pending orders via pay-status poll (every 5 minutes) ─────
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    // Find orders stuck in 'pending' for >10 minutes (webhook likely failed)
+    const staleOrders = await pool.query(
+      `SELECT id, buyer_id, moncash_reference FROM orders
+       WHERE status = 'pending' AND created_at < NOW() - INTERVAL '10 minutes'
+       ORDER BY created_at ASC LIMIT 10`
+    );
+    if (staleOrders.rows.length === 0) return;
+
+    console.log(`[CRON] Processing ${staleOrders.rows.length} stale pending orders`);
+
+    for (const order of staleOrders.rows) {
+      const referenceId = order.moncash_reference || order.id;
+      try {
+        const payStatusUrl = (process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create')
+          .replace('pay-create', 'pay-status') + `?referenceId=${encodeURIComponent(referenceId)}`;
+        const moncashRes = await fetch(payStatusUrl, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}` },
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (!moncashRes.ok) continue;
+        const data = await moncashRes.json();
+
+        if (data.status === 'completed' || data.paid === true) {
+          // Process the payment (same logic as pay-status endpoint)
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const updateResult = await client.query(
+              `UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'`,
+              [order.id]
+            );
+            if (updateResult.rowCount === 0) {
+              await client.query('ROLLBACK');
+              continue;
+            }
+            await logOrderEvent(order.id, 'payment_received', null, 'pending', 'paid', 'Payment confirmed via stale-order cron', client);
+
+            const orderItems = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [order.id]);
+            for (const oi of orderItems.rows) {
+              const stockCheck = await client.query('SELECT stock FROM products WHERE id = $1 FOR UPDATE', [oi.product_id]);
+              if (stockCheck.rows.length > 0 && stockCheck.rows[0].stock >= oi.quantity) {
+                await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.product_id]);
+              }
+            }
+
+            const items = await client.query('SELECT seller_id, SUM(price * quantity) AS total FROM order_items WHERE order_id = $1 GROUP BY seller_id', [order.id]);
+            for (const item of items.rows) {
+              if (item.seller_id) {
+                const grossAmount = parseFloat(item.total);
+                const tierRes = await client.query('SELECT seller_tier FROM users WHERE id = $1', [item.seller_id]);
+                const sellerTier = tierRes.rows[0]?.seller_tier || 'none';
+                const rate = getCommissionRate(sellerTier);
+                const commission = Math.round(grossAmount * rate * 100) / 100;
+                const net = Math.round((grossAmount - commission) * 100) / 100;
+                await client.query(
+                  `INSERT INTO order_escrow (order_id, seller_id, gross_amount, commission_amount, net_amount, status)
+                   VALUES ($1, $2, $3, $4, $5, 'held') ON CONFLICT (order_id, seller_id) DO UPDATE SET gross_amount = $3, commission_amount = $4, net_amount = $5, status = 'held'`,
+                  [order.id, item.seller_id, grossAmount, commission, net]
+                );
+                await client.query(
+                  `INSERT INTO platform_revenue (order_id, seller_id, seller_tier, gross_amount, commission_rate, commission_amount, platform_fee, net_to_seller)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                  [order.id, item.seller_id, sellerTier, grossAmount, rate, commission, commission, net]
+                );
+              }
+            }
+            await client.query('COMMIT');
+            console.log(`[CRON] Stale order ${order.id} processed (payment confirmed)`);
+            const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
+            for (const sid of sellerIds) {
+              createNotification(sid, 'order_status', 'Payment Received', 'Payment held in escrow until exchange confirmed', { orderId: order.id });
+            }
+            createNotification(order.buyer_id, 'payment_confirmed', 'Payment Confirmed', 'Your payment was successful.', { orderId: order.id });
+          } catch (e) {
+            await client.query('ROLLBACK');
+            console.error(`[CRON] Error processing stale order ${order.id}:`, e.message);
+          } finally {
+            client.release();
+          }
+        } else if (data.status === 'failed' || data.status === 'expired') {
+          await pool.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [order.id]);
+          console.log(`[CRON] Stale order ${order.id} cancelled (payment ${data.status})`);
+          createNotification(order.buyer_id, 'order_status', 'Payment Failed', 'Your payment could not be processed. The order has been cancelled.', { orderId: order.id });
+        }
+      } catch (e) {
+        console.error(`[CRON] Pay-status poll error for ${order.id}:`, e.message);
+      }
+    }
+  } catch (err) {
+    console.error('[CRON] Stale order check error:', err.message);
   }
 });
 
