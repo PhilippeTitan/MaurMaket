@@ -17,6 +17,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
 import { useTranslation } from '../i18n';
 import SalePriceTag from '../components/SalePriceTag';
+import StockBadge from '../components/StockBadge';
 
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
@@ -260,6 +261,10 @@ export default function ExploreScreen({ navigation }: Props) {
                 ))}
               </View>
             )}
+            {/* Stock badge — bottom left */}
+            <View style={styles.cardStockBadge} pointerEvents="none">
+              <StockBadge stock={item.stock} size="sm" />
+            </View>
           </View>
         </View>
         {/* Name row — seller avatar + product name — tap target for opening the product */}
@@ -271,7 +276,7 @@ export default function ExploreScreen({ navigation }: Props) {
           accessibilityLabel={t('accessibility.viewProduct')}
         >
           {item.seller && (
-            <UserAvatar seller={item.seller} size={18} animated={false} />
+            <UserAvatar seller={item.seller} size={26} animated={false} />
           )}
           <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
         </TouchableOpacity>
@@ -618,6 +623,9 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 8, alignSelf: 'center',
     flexDirection: 'row', gap: 4,
   },
+  cardStockBadge: {
+    position: 'absolute', bottom: 6, left: 6,
+  },
   imgDot: {
     width: 6, height: 6, borderRadius: 3,
     backgroundColor: 'rgba(255,255,255,0.7)',
@@ -628,11 +636,11 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.25 }],
   },
   cardNameRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 6, paddingTop: 5, paddingBottom: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 6, paddingTop: 8, paddingBottom: 4,
   },
   cardName: {
-    fontSize: 12.5, fontWeight: '600', color: COLORS.text,
+    fontSize: 14, fontWeight: '700', color: COLORS.text,
     flex: 1,
   },
   stackedCard: {

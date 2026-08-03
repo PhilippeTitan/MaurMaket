@@ -134,7 +134,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
         onPress={handleMakeOffer}
         disabled={isSoldOut}
       >
-        <Icon name="sale-tag" size={18} color={COLORS.white} />
+        <Icon name="sale-tag" size={28} color={COLORS.white} />
       </TouchableOpacity>
 
       {cartQty > 0 ? (
@@ -161,7 +161,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
           onPress={handleIncrementCart}
           disabled={isSoldOut}
         >
-          <MaterialCommunityIcons name="cart-plus" size={18} color={COLORS.white} />
+          <MaterialCommunityIcons name="cart-plus" size={28} color={COLORS.white} />
         </TouchableOpacity>
       )}
 

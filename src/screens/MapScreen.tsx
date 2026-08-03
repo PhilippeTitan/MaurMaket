@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { SkeletonBlock } from '../components/Skeleton';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice, TIER_COLORS } from '../theme';
 import UserAvatar from '../components/UserAvatar';
 import { store } from '../store';
@@ -66,8 +67,8 @@ html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
 var LIGHT_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
 var DARK_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 var currentTile = null;
-var map = L.map("map",{zoomControl:false,attributionControl:false,maxBounds:[[-85,-220],[85,220]],maxBoundsViscosity:0.8,minZoom:3,maxZoom:20}).setView([18.5944,-72.3074],12);
-currentTile = L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
+var map = L.map("map",{zoomControl:false,attributionControl:false,maxBounds:[[16.5,-76],[21,-67]],maxBoundsViscosity:1.0,minZoom:8,maxZoom:20}).setView([18.5944,-72.3074],12);
+currentTile = L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true,keepBuffer:8,updateWhenZooming:false,updateWhenIdle:true}).addTo(map);
 setTimeout(function(){map.invalidateSize()},200);
 setTimeout(function(){map.invalidateSize()},1000);
 window.addEventListener("load",function(){map.invalidateSize()});
@@ -170,7 +171,32 @@ export default function MapScreen() {
   const [sellerVisible, setSellerVisible] = useState(true);
   const [visibilityLoading, setVisibilityLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [sellersLoaded, setSellersLoaded] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [splashMsg, setSplashMsg] = useState('Loading map...');
+  const [splashPctText, setSplashPctText] = useState('0%');
+  const splashOpacity = useRef(new Animated.Value(1)).current;
+  const iconSpin = useRef(new Animated.Value(0)).current;
+  const iconPulse = useRef(new Animated.Value(0.6)).current;
+  const progressBar = useRef(new Animated.Value(0)).current;
   const [, setStoreTick] = useState(0);
+
+  // Splash animations — spin + pulse loop
+  useEffect(() => {
+    const spin = Animated.loop(
+      Animated.timing(iconSpin, { toValue: 1, duration: 1800, useNativeDriver: true })
+    );
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(iconPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(iconPulse, { toValue: 0.6, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    spin.start();
+    pulse.start();
+    return () => { spin.stop(); pulse.stop(); };
+  }, []);
 
   const fetchIdRef = useRef(0);
 
@@ -259,11 +285,14 @@ export default function MapScreen() {
         return Array.from(merged.values());
       });
       injectMarkers(list);
+      setSellersLoaded(true);
       try {
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
         await AsyncStorage.setItem(CACHE_KEY_SELLERS, JSON.stringify({ ts: Date.now(), sellers: list }));
       } catch {}
-    } catch {}
+    } catch {
+      setSellersLoaded(true);
+    }
   }, [injectMarkers]);
 
   const loadCachedSellers = useCallback(async () => {
@@ -338,6 +367,59 @@ export default function MapScreen() {
       injectMarkers(sellers);
     }
   }, [myLocation]);
+
+  // Progressive crawl: tick up ~1% every 80ms toward a "virtual ceiling"
+  // that rises as real milestones hit. Feels smooth, never lies.
+  const progressCeiling = useRef(0);
+  const progressTarget = useRef(0);
+
+  useEffect(() => {
+    // Raise the ceiling when milestones hit — leave room for sellers crawl
+    if (mapReady && sellersLoaded) progressCeiling.current = 1;
+    else if (mapReady) progressCeiling.current = Math.max(progressCeiling.current, 0.48);
+    else progressCeiling.current = Math.max(progressCeiling.current, 0.25);
+  }, [mapReady, sellersLoaded]);
+
+  useEffect(() => {
+    let raf: number;
+    let last = Date.now();
+    const tick = () => {
+      const now = Date.now();
+      const dt = now - last;
+      last = now;
+      // Move toward ceiling — faster when closer to it, slower at start (feels like real work)
+      const gap = progressCeiling.current - progressTarget.current;
+      if (gap > 0.001) {
+        // Ease-in: speed proportional to remaining gap (satisfying deceleration)
+        const speed = 0.0003 + gap * 0.002;
+        progressTarget.current = Math.min(progressCeiling.current, progressTarget.current + speed * dt);
+        progressBar.setValue(progressTarget.current);
+        setSplashPctText(`${Math.round(progressTarget.current * 100)}%`);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // Update step message as ceiling changes
+  useEffect(() => {
+    if (mapReady && sellersLoaded) {
+      const count = sellers.length;
+      setSplashMsg(count > 0 ? `${count} seller${count !== 1 ? 's' : ''} nearby` : 'Map ready');
+    } else if (mapReady) {
+      setSplashMsg('Finding sellers...');
+    }
+  }, [mapReady, sellersLoaded]);
+
+  // Dismiss splash screen once both map and sellers are loaded
+  useEffect(() => {
+    if (mapReady && sellersLoaded) {
+      setTimeout(() => {
+        Animated.timing(splashOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => setShowSplash(false));
+      }, 600);
+    }
+  }, [mapReady, sellersLoaded]);
 
   const handleWebViewMessage = useCallback((event: any) => {
     try {
@@ -570,6 +652,44 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
+      {showSplash && (
+        <Animated.View style={[styles.splash, { opacity: splashOpacity }]}>
+          <Animated.View style={{ transform: [{ rotate: iconSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }, { scale: iconPulse }] }}>
+            <MaterialCommunityIcons name="map-marker-radius" size={52} color={COLORS.coral} />
+          </Animated.View>
+          <Text style={styles.splashTitle}>Nearby Market</Text>
+          <Text style={styles.splashMsg}>{splashMsg}</Text>
+          {/* Progress bar */}
+          <View style={styles.progressTrack}>
+            <Animated.View style={[styles.progressFill, {
+              width: progressBar.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) as any,
+            }]} />
+          </View>
+          <Text style={styles.splashPct}>{splashPctText}</Text>
+          {/* Skeleton placeholder blocks */}
+          <View style={styles.skeletonRow}>
+            <SkeletonBlock width={44} height={44} radius={22} />
+            <View style={{ flex: 1, marginLeft: 12, gap: 8 }}>
+              <SkeletonBlock width="65%" height={14} />
+              <SkeletonBlock width="40%" height={11} />
+            </View>
+          </View>
+          <View style={styles.skeletonRow}>
+            <SkeletonBlock width={44} height={44} radius={22} />
+            <View style={{ flex: 1, marginLeft: 12, gap: 8 }}>
+              <SkeletonBlock width="55%" height={14} />
+              <SkeletonBlock width="35%" height={11} />
+            </View>
+          </View>
+          <View style={styles.skeletonRow}>
+            <SkeletonBlock width={44} height={44} radius={22} />
+            <View style={{ flex: 1, marginLeft: 12, gap: 8 }}>
+              <SkeletonBlock width="70%" height={14} />
+              <SkeletonBlock width="45%" height={11} />
+            </View>
+          </View>
+        </Animated.View>
+      )}
       <WebView
         ref={webViewRef}
         source={{ html: buildMapHtml() }}
@@ -577,6 +697,7 @@ export default function MapScreen() {
         onMessage={handleWebViewMessage}
         onLoadEnd={() => {
           webviewReady.current = true;
+          setMapReady(true);
           if (pendingInjection.current) {
             webViewRef.current?.injectJavaScript(pendingInjection.current);
             pendingInjection.current = null;
@@ -584,6 +705,7 @@ export default function MapScreen() {
         }}
         javaScriptEnabled
         domStorageEnabled
+        cacheEnabled
         originWhitelist={['*']}
         allowUniversalAccessFromFileURLs
         allowFileAccess
@@ -705,6 +827,24 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  splash: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: COLORS.bg,
+    zIndex: 9999, elevation: 9999,
+    alignItems: 'center', justifyContent: 'center', gap: 12,
+  },
+  splashTitle: { color: COLORS.text, fontSize: 22, fontWeight: '800', letterSpacing: 0.5 },
+  splashMsg: { color: COLORS.text2, fontSize: 14, fontWeight: '500' },
+  progressTrack: {
+    width: '60%', height: 4, borderRadius: 2,
+    backgroundColor: COLORS.surface2, overflow: 'hidden', marginTop: 8,
+  },
+  progressFill: {
+    height: '100%', borderRadius: 2,
+    backgroundColor: COLORS.coral,
+  },
+  splashPct: { color: COLORS.text2, fontSize: 11, fontWeight: '600', marginTop: 4 },
+  skeletonRow: { flexDirection: 'row', alignItems: 'center', width: '75%', marginTop: 14 },
   map: { flex: 1 },
   mapOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
 

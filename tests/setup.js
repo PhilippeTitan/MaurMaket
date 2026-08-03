@@ -48,21 +48,34 @@ export async function startTestServer() {
 
   // Start server as child process
   const { spawn } = await import('child_process');
+  const serverLogs = [];
   serverProcess = spawn('node', [SERVER_PATH], {
     env: { ...process.env, PORT: String(TEST_PORT) },
     stdio: 'pipe',
     detached: false,
   });
 
+  serverProcess.stdout.on('data', (data) => {
+    serverLogs.push(data.toString());
+    if (process.env.DEBUG) {
+      process.stdout.write(data);
+    }
+  });
   serverProcess.stderr.on('data', (data) => {
-    // Suppress server logs during tests unless DEBUG
+    serverLogs.push(data.toString());
     if (process.env.DEBUG) {
       process.stderr.write(data);
     }
   });
 
   // Wait for server to be ready
-  await waitForServer(serverUrl, 120000);
+  try {
+    await waitForServer(serverUrl, 120000);
+  } catch (err) {
+    console.error('\n❌ Server failed to start. Server logs:');
+    console.error(serverLogs.join(''));
+    throw err;
+  }
   return serverUrl;
 }
 

@@ -8,6 +8,8 @@ interface StoreState {
   token: string | null;
   cart: CartItem[];
   followedSellerIds: Set<string>;
+  followerCount: number;
+  followingCount: number;
   listeners: Listener[];
 }
 
@@ -36,6 +38,8 @@ const state: StoreState = {
   token: null,
   cart: [],
   followedSellerIds: new Set(),
+  followerCount: 0,
+  followingCount: 0,
   listeners: [],
 };
 
@@ -51,6 +55,8 @@ export const store = {
   get isSeller() { return state.user?.role === 'seller'; },
   get isEmailVerified() { return !!state.user?.email_verified; },
   get followedSellerIds() { return state.followedSellerIds; },
+  get followerCount() { return state.followerCount; },
+  get followingCount() { return state.followingCount; },
   isFollowing(sellerId: string) { return state.followedSellerIds.has(sellerId); },
 
   async init() {
@@ -143,6 +149,16 @@ export const store = {
 
   setFollowingList(ids: string[]) {
     state.followedSellerIds = new Set(ids);
+    notify();
+  },
+
+  setFollowerCount(count: number) {
+    state.followerCount = count;
+    notify();
+  },
+
+  setFollowingCount(count: number) {
+    state.followingCount = count;
     notify();
   },
 

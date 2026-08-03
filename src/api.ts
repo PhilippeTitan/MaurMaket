@@ -30,13 +30,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.14.229.105:3001/api'
+    ? 'http://10.51.76.105:3001/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.14.229.105:3001'
+    ? 'http://10.51.76.105:3001'
     : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(

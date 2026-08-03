@@ -123,9 +123,10 @@ export default function InboxScreen() {
   const followedIds = new Set(followedSellers.map((s: any) => s.seller_id));
 
   const fetchData = useCallback(async (force = false) => {
+    const prev = _inboxCache;
     _inboxCache = null;
-    if (!force && _inboxCache && Date.now() - _inboxCache.timestamp < INBOX_CACHE_TTL) {
-      const d = _inboxCache.data;
+    if (!force && prev && Date.now() - prev.timestamp < INBOX_CACHE_TTL) {
+      const d = prev.data;
       setConversations(d.conversations);
       setNotifications(d.notifications);
       setFollowedSellers(d.followedSellers);
@@ -765,7 +766,7 @@ const styles = StyleSheet.create({
   searchFilterBtn: { padding: 6, borderRadius: 20 },
   filterDropdown: {
     position: 'absolute', bottom: 70, right: SPACING.md,
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.border,
     paddingVertical: 4, minWidth: 140,
     elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8,

@@ -19,6 +19,7 @@ import UserAvatar from '../components/UserAvatar';
 import BackButton from '../components/BackButton';
 import SellerItemsSheet from '../components/SellerItemsSheet';
 import OfferBuilder from '../components/OfferBuilder';
+import { SkeletonBlock } from '../components/Skeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string };
@@ -381,7 +382,27 @@ export default function ChatScreen({ route, navigation }: Props) {
       })()}
 
       {loading ? (
-        <ActivityIndicator size="large" color={COLORS.coral} style={{ flex: 1 }} />
+        <View style={{ flex: 1, padding: SPACING.md, gap: 14, justifyContent: 'flex-end' }}>
+          {/* Their messages — left aligned */}
+          {[140, 180, 100].map((w, i) => (
+            <View key={`t${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-start' }}>
+              <SkeletonBlock width={24} height={24} radius={12} />
+              <SkeletonBlock width={w} height={36} radius={16} />
+            </View>
+          ))}
+          {/* My messages — right aligned */}
+          {[160, 120].map((w, i) => (
+            <View key={`m${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-end' }}>
+              <SkeletonBlock width={w} height={36} radius={16} style={{ backgroundColor: COLORS.coral + '30' }} />
+            </View>
+          ))}
+          {[200, 90].map((w, i) => (
+            <View key={`t2${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-start' }}>
+              <SkeletonBlock width={24} height={24} radius={12} />
+              <SkeletonBlock width={w} height={36} radius={16} />
+            </View>
+          ))}
+        </View>
       ) : (
         <FlatList
           data={messages}
@@ -525,7 +546,7 @@ const styles = StyleSheet.create({
   offerReminderBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: COLORS.coral, marginHorizontal: SPACING.md, marginTop: SPACING.sm,
-    borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: RADIUS.card, paddingHorizontal: 12, paddingVertical: 10,
   },
   offerReminderBannerCountered: { backgroundColor: COLORS.blue },
   offerReminderText: { flex: 1, fontSize: 13, color: COLORS.white, fontWeight: '600' },

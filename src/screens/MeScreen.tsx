@@ -22,6 +22,7 @@ import type { Product, Order, Review } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
 import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
+import { SkeletonBlock } from '../components/Skeleton';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 60_000;
@@ -48,13 +49,13 @@ export default function MeScreen() {
   const nav = useNavigation<Nav>();
   const { user } = useUser();
   const isSeller = user?.role === 'seller';
-  console.log(`[MeScreen RENDER] user=${user?.id?.substring(0,8)} role=${user?.role} isSeller=${isSeller} tier=${user?.seller_tier}`);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('listings');
 
-  const [followerCount, setFollowerCount] = useState(0);
-  const [followingCount, setFollowingCount] = useState(0);
+  const [followerCount, setFollowerCount] = useState(store.followerCount);
+  const [followingCount, setFollowingCount] = useState(store.followingCount);
   const [orderCount, setOrderCount] = useState(0);
   const [sellingOrderCount, setSellingOrderCount] = useState(0);
   const [productCount, setProductCount] = useState(0);
@@ -159,12 +160,14 @@ export default function MeScreen() {
       const fc = followerRes?.count || 0;
       cacheData.followerCount = fc;
       setFollowerCount(fc);
+      store.setFollowerCount(fc);
 
       let followingRes: { following?: unknown[] } | null = null;
       try { followingRes = await getFollowing() as { following?: unknown[] }; } catch { /* ignore */ }
       const fcing = followingRes?.following?.length || 0;
       cacheData.followingCount = fcing;
       setFollowingCount(fcing);
+      store.setFollowingCount(fcing);
 
       let wishlistItems: Product[] = [];
       try { const wr = await getWishlist() as { items: Product[] }; wishlistItems = wr?.items || []; } catch { /* ignore */ }
@@ -190,6 +193,7 @@ export default function MeScreen() {
     } catch (e: any) { console.error(`[MeScreen fetchData] ERROR:`, e?.message); }
 
     if (uid) profileCache[uid] = { timestamp: Date.now(), data: cacheData };
+    setLoading(false);
   }, [isSeller, user?.id]);
 
   useFocusEffect(useCallback(() => {
@@ -525,7 +529,20 @@ export default function MeScreen() {
       <View style={styles.tabContent}>
         {activeTab === 'listings' && (
           isSeller ? (
-            products.length > 0 ? (
+            loading && products.length === 0 ? (
+              <View style={styles.masonryGrid}>
+                <View style={styles.masonryCol}>
+                  {[CARD_W * 1.1, CARD_W * 0.8, CARD_W * 1.2].map((h, i) => (
+                    <SkeletonBlock key={i} width="100%" height={h} radius={RADIUS.media} />
+                  ))}
+                </View>
+                <View style={styles.masonryCol}>
+                  {[CARD_W * 0.9, CARD_W * 1.3, CARD_W * 0.7].map((h, i) => (
+                    <SkeletonBlock key={i} width="100%" height={h} radius={RADIUS.media} />
+                  ))}
+                </View>
+              </View>
+            ) : products.length > 0 ? (
               <View style={styles.masonryGrid}>
                 <View style={styles.masonryCol}>
                   {leftCol.map(renderGridItem)}
