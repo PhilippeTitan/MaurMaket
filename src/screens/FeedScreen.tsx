@@ -382,7 +382,7 @@ export default function FeedScreen() {
         />
 
         {/* Bottom overlay — caption + actions, sits ON TOP of image */}
-        <View style={[styles.bottomOverlay, { paddingBottom: Math.max(90, insets.bottom + 80) }]}>
+        <View style={[styles.bottomOverlay, { paddingBottom: Math.max(90, insets.bottom + 80) }]} pointerEvents="box-none">
           {/* Seller chip + follow */}
           <View style={styles.sellerRow}>
             <TouchableOpacity
