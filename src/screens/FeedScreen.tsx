@@ -352,7 +352,7 @@ export default function FeedScreen() {
           >
             <MaterialCommunityIcons
               name={likedIds.has(item.id) ? 'heart' : 'heart-outline'}
-              size={28}
+              size={35}
               color={likedIds.has(item.id) ? COLORS.coral : COLORS.white}
             />
           </TouchableOpacity>
@@ -363,7 +363,7 @@ export default function FeedScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.viewReviews')}
             >
-              <MaterialCommunityIcons name="comment-outline" size={28} color={COLORS.white} />
+              <MaterialCommunityIcons name="comment-outline" size={35} color={COLORS.white} />
               {(item.review_count || 0) > 0 && (
                 <Text style={styles.actionCount}>{item.review_count}</Text>
               )}
@@ -377,7 +377,7 @@ export default function FeedScreen() {
           >
             <MaterialCommunityIcons
               name={wishlistedIds.has(item.id) ? 'bookmark' : 'bookmark-outline'}
-              size={28}
+              size={35}
               color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
             />
           </TouchableOpacity>
@@ -387,7 +387,7 @@ export default function FeedScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.moreOptions')}
           >
-            <MaterialCommunityIcons name="dots-horizontal" size={28} color={COLORS.white} />
+            <MaterialCommunityIcons name="dots-horizontal" size={35} color={COLORS.white} />
           </TouchableOpacity>
         </View>
 
@@ -822,8 +822,8 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     alignItems: 'center',
-    width: 48,
-    height: 48,
+    width: 35,
+    height: 35,
     justifyContent: 'center',
     gap: 2,
   },

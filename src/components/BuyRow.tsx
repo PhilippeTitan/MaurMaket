@@ -134,7 +134,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
         onPress={handleMakeOffer}
         disabled={isSoldOut}
       >
-        <Icon name="sale-tag" size={18} color={COLORS.white} />
+        <Icon name="sale-tag" size={35} color={COLORS.white} />
       </TouchableOpacity>
 
       {cartQty > 0 ? (
@@ -161,7 +161,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
           onPress={handleIncrementCart}
           disabled={isSoldOut}
         >
-          <MaterialCommunityIcons name="cart-plus" size={18} color={COLORS.white} />
+          <MaterialCommunityIcons name="cart-plus" size={35} color={COLORS.white} />
         </TouchableOpacity>
       )}
 
@@ -177,7 +177,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
               style={styles.cartCircle}
               onPress={() => navigation.navigate('Cart')}
             >
-              <Icon name="cart" size={20} color={COLORS.white} />
+              <Icon name="cart" size={35} color={COLORS.white} />
               {cartCount > 0 && (
                 <View style={styles.cartBadge}>
                   <Text style={styles.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
@@ -195,10 +195,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255,255,255,0.30)',
+    width: 35,
+    height: 35,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -206,10 +204,8 @@ const styles = StyleSheet.create({
   cartStepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 50,
+    height: 35,
     paddingHorizontal: 4,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255,255,255,0.30)',
     flexShrink: 0,
   },
   cartStepperBtn: {
@@ -239,10 +235,8 @@ const styles = StyleSheet.create({
   },
   actionDisabled: { opacity: 0.45 },
   cartCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255,255,255,0.30)',
+    width: 35,
+    height: 35,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
