@@ -3464,6 +3464,16 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
       return res.status(400).json({ error: `Order must be paid or completed to release escrow (current: ${o.status})` });
     }
 
+    // ── SECURITY: Freeze escrow if dispute is open ──
+    const openDispute = await client.query(
+      "SELECT id FROM disputes WHERE order_id = $1 AND status = 'open'",
+      [req.params.id]
+    );
+    if (openDispute.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Escrow is frozen — an open dispute must be resolved first.' });
+    }
+
     // Get all held escrow entries for this order
     const escrows = await client.query(
       "SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE",
@@ -3591,6 +3601,39 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
     if (o.buyer_id !== req.user.id && req.user.role !== 'admin') {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Only the buyer or admin can refund escrow' });
+    }
+
+    // ── SECURITY: Status gate — prevent buyer self-refund after goods exchanged ──
+    const isAdmin = req.user.role === 'admin';
+    const isBuyer = o.buyer_id === req.user.id;
+    const refundableStatuses = ['pending', 'paid', 'cancelled'];
+    if (!isAdmin && !refundableStatuses.includes(o.status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `Cannot self-refund order in '${o.status}' status. Open a dispute instead.` });
+    }
+
+    // ── SECURITY: Block buyer self-refund if meetup checkin already happened ──
+    if (!isAdmin && isBuyer) {
+      const checkins = await client.query(
+        'SELECT id FROM meetup_checkins WHERE order_id = $1',
+        [req.params.id]
+      );
+      if (checkins.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Meetup check-in already occurred. Open a dispute to resolve this order.' });
+      }
+    }
+
+    // ── SECURITY: For orders past 'paid', require an open dispute (buyer only) ──
+    if (!isAdmin && isBuyer && !refundableStatuses.includes(o.status)) {
+      const disputes = await client.query(
+        "SELECT id FROM disputes WHERE order_id = $1 AND status = 'open'",
+        [req.params.id]
+      );
+      if (disputes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Order is past payment stage. Open a dispute to request a refund.' });
+      }
     }
 
     // Get buyer's phone for payout
