@@ -142,7 +142,7 @@ const BCRYPT_ROUNDS = 10;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ───── Rate Limiters ─────
-const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, try again later' } });
+const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, try again later' }, skip: (req) => req.path === '/health' });
 const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts, try again later' } });
 const paymentLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many payment requests, try again later' } });
 const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many uploads, try again later' } });
@@ -5884,7 +5884,7 @@ app.get('/api/health', async (_req, res) => {
   const result = { status: 'ok', primary: 'unknown', fallback: 'unknown', active: 'supabase' };
   try {
     if (usingSupabase && supabasePool) {
-      await supabasePool.query('SELECT 1');
+      await Promise.race([supabasePool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
       result.primary = 'connected';
     } else {
       result.primary = 'down';
@@ -5892,7 +5892,7 @@ app.get('/api/health', async (_req, res) => {
   } catch { result.primary = 'down'; }
 
   try {
-    await neonPool.query('SELECT 1');
+    await Promise.race([neonPool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
     result.fallback = 'connected';
   } catch { result.fallback = 'down'; }
 

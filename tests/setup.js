@@ -96,10 +96,12 @@ async function waitForServer(url, timeoutMs) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const res = await fetch(`${url}/api/health`);
+      const res = await fetch(`${url}/api/health`, {
+        signal: AbortSignal.timeout(5000),
+      });
       if (res.ok) return;
     } catch {
-      // Server not ready yet
+      // Server not ready yet or health check timed out
     }
     await new Promise(r => setTimeout(r, 500));
   }
