@@ -316,15 +316,6 @@ export default function FeedScreen() {
           )}
         </View>
 
-        {/* Image dots indicator */}
-        {allImages.length > 1 && (
-          <View style={styles.imgDots}>
-            {allImages.map((_: any, i: number) => (
-              <View key={i} style={[styles.imgDot, i === activeIdx && styles.imgDotActive]} />
-            ))}
-          </View>
-        )}
-
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
           <TouchableOpacity
@@ -415,6 +406,13 @@ export default function FeedScreen() {
           <View style={styles.productInfoRow}>
             <Text style={styles.productInfo}>{typeof item.category === 'string' ? item.category : item.category?.name || 'Port-au-Prince'}</Text>
             <StockBadge stock={item.stock} size="sm" />
+            {allImages.length > 1 && (
+              <View style={styles.imgDotsInline}>
+                {allImages.map((_: any, i: number) => (
+                  <View key={i} style={[styles.imgDot, i === activeIdx && styles.imgDotActive]} />
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Buy / Cart buttons */}
@@ -804,6 +802,9 @@ const styles = StyleSheet.create({
   },
   imgDotActive: {
     backgroundColor: '#fff', width: 8, height: 8, borderRadius: 4,
+  },
+  imgDotsInline: {
+    flexDirection: 'row', gap: 4, alignItems: 'center',
   },
 
   /* Right-side action rail — TikTok style */
