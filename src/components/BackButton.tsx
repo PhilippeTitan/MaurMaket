@@ -7,15 +7,16 @@ interface BackButtonProps {
   onPress: () => void;
   variant?: 'standard' | 'overlay';
   size?: number;
+  style?: any;
 }
 
-export default function BackButton({ onPress, variant = 'standard', size = 35 }: BackButtonProps) {
+export default function BackButton({ onPress, variant = 'standard', size = 35, style }: BackButtonProps) {
   const isOverlay = variant === 'overlay';
   return (
     <TouchableOpacity
       onPress={onPress}
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      style={isOverlay ? styles.overlay : undefined}
+      style={[isOverlay ? styles.overlay : undefined, style]}
       accessibilityLabel="Go back"
       accessibilityRole="button"
     >
@@ -30,9 +31,7 @@ export default function BackButton({ onPress, variant = 'standard', size = 35 }:
 
 const styles = StyleSheet.create({
   overlay: {
-    width: 35,
-    height: 35,
-    borderRadius: 17.5,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',

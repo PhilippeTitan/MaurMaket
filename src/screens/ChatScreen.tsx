@@ -16,6 +16,7 @@ import { store } from '../store';
 import * as ImagePicker from 'expo-image-picker';
 import { useToast } from '../components/Toast';
 import UserAvatar from '../components/UserAvatar';
+import BackButton from '../components/BackButton';
 import SellerItemsSheet from '../components/SellerItemsSheet';
 import OfferBuilder from '../components/OfferBuilder';
 
@@ -338,9 +339,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBack} accessibilityLabel="go back" accessibilityRole="button">
-          <MaterialCommunityIcons name="chevron-left" size={22} color={COLORS.text} />
-        </TouchableOpacity>
+        <BackButton onPress={() => navigation.goBack()} />
         <TouchableOpacity
           style={styles.headerProfile}
           onPress={() => { if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId }); }}
@@ -517,7 +516,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm,
     borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.bg,
   },
-  headerBack: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   headerProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   headerOnlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },

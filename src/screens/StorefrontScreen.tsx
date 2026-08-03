@@ -19,6 +19,7 @@ import SalePriceTag from '../components/SalePriceTag';
 import { useToast } from '../components/Toast';
 import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
+import BackButton from '../components/BackButton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
 type Tab = 'listings' | 'reviews';
@@ -309,15 +310,10 @@ export default function StorefrontScreen({ route, navigation }: Props) {
             <View style={styles.hero}>
               {/* Top bar — floats over hero */}
               <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
-                <TouchableOpacity
-                  style={[styles.backBtn, { top: insets.top + SPACING.sm }]}
+                <BackButton
                   onPress={() => navigation.goBack()}
-                  activeOpacity={0.7}
-                  accessibilityLabel="go back"
-                  accessibilityRole="button"
-                >
-                  <Icon name="back" size={20} color={COLORS.text} />
-                </TouchableOpacity>
+                  style={{ position: 'absolute', left: SPACING.lg, top: insets.top + SPACING.sm }}
+                />
 
                 <View style={styles.topBarNameWrap}>
                   <Text style={styles.topBarName} numberOfLines={1}>@{seller?.username || 'seller'}</Text>
@@ -543,13 +539,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-  },
-  backBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    borderWidth: 1, borderColor: COLORS.border,
-    backgroundColor: COLORS.surface2,
-    alignItems: 'center', justifyContent: 'center',
-    position: 'absolute', left: SPACING.lg,
   },
   topBarNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   topBarName: { fontSize: 20, fontWeight: '800', color: COLORS.text },

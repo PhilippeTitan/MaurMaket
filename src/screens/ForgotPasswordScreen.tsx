@@ -10,6 +10,7 @@ import { useTranslation } from '../i18n';
 import { forgotPassword, resetPassword } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, AuthStackParamList } from '../navigation';
+import BackButton from '../components/BackButton';
 
 type Props = NativeStackScreenProps<RootStackParamList & AuthStackParamList, 'ForgotPassword'>;
 
@@ -107,9 +108,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={[styles.content, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} accessibilityLabel="go back" accessibilityRole="button">
-          <Icon name="back" size={35} color={COLORS.text} />
-        </TouchableOpacity>
+        <BackButton onPress={() => navigation.goBack()} style={{ marginBottom: SPACING.md }} />
 
         {step === 'email' ? (
           <>
@@ -233,7 +232,6 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { flex: 1, paddingHorizontal: SPACING.xl },
-  backBtn: { width: 40, height: 40, justifyContent: 'center', marginBottom: SPACING.md },
   header: { alignItems: 'center', marginBottom: SPACING.xl },
   iconWrap: {
     width: 72, height: 72, borderRadius: 36,

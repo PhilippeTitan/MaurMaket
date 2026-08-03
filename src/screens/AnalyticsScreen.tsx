@@ -13,6 +13,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Order, Product } from '../types';
 import { Icon } from '../components/icons/Icon';
 import StockBadge from '../components/StockBadge';
+import BackButton from '../components/BackButton';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -118,15 +119,10 @@ export default function AnalyticsScreen() {
       >
         {/* Top bar */}
         <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
-          <TouchableOpacity
-            style={[styles.backBtn, { top: insets.top + SPACING.sm }]}
+          <BackButton
             onPress={() => nav.goBack()}
-            activeOpacity={0.7}
-            accessibilityLabel="go back"
-            accessibilityRole="button"
-          >
-            <Icon name="back" size={20} color={COLORS.text} />
-          </TouchableOpacity>
+            style={{ position: 'absolute', left: SPACING.lg, top: insets.top + SPACING.sm }}
+          />
           <Text style={styles.topBarTitle}>Dashboard</Text>
         </View>
 
@@ -271,13 +267,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
     position: 'relative',
-  },
-  backBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    borderWidth: 1, borderColor: COLORS.border,
-    backgroundColor: COLORS.surface2,
-    alignItems: 'center', justifyContent: 'center',
-    position: 'absolute', left: SPACING.lg,
   },
   topBarTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text },
 
