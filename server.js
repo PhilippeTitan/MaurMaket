@@ -951,7 +951,7 @@ app.get('/api/upload/config', (req, res) => {
 });
 
 // Upload image — Supabase Storage primary, imgBB fallback
-app.post('/api/upload', authRequired, async (req, res) => {
+app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (req, res) => {
   try {
     const { image, expiration } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
