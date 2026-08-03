@@ -192,7 +192,12 @@ export default function VerificationScreen() {
           domStorageEnabled
           mediaPlaybackRequiresUserAction={false}
           allowsInlineMediaPlayback
-          mediaCapturePermissionGrantType="grant"
+          allowsFullscreenVideo
+          mediaCapturePermissionGrantType={Platform.OS === 'ios' ? 'grant' : undefined}
+          onPermissionRequest={(event: any) => {
+            console.log(`[VERIFY] WebView permission request: ${JSON.stringify(event.permissions)}`);
+            event.grant(event.permissions);
+          }}
           onNavigationStateChange={(navState: any) => {
             const url = navState.url;
             if (url.includes('/api/webhooks/didit') || url.includes('verificationSessionId')) {
@@ -221,12 +226,6 @@ export default function VerificationScreen() {
           }}
           onShouldStartLoadWithRequest={(req: any) => true}
         />
-        <TouchableOpacity
-          style={[styles.ghostBtn, { position: 'absolute', bottom: 40 + insets.bottom, alignSelf: 'center' }]}
-          onPress={() => setStep('cinFront')}
-        >
-          <Text style={styles.ghostBtnText}>Use camera instead</Text>
-        </TouchableOpacity>
       </View>
     );
   };
@@ -468,10 +467,10 @@ export default function VerificationScreen() {
         <>
           <CameraView key={facing} ref={cameraRef} style={styles.camera} facing={facing}
             onCameraReady={() => setCameraReady(true)} />
+          {hint && <Text style={styles.faceHint}>{hint}</Text>}
           <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]}>
             {facing === 'back' ? renderCardGuide() : renderFaceGuide()}
           </View>
-          {hint && <Text style={styles.faceHint}>{hint}</Text>}
           {!cameraReady && (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
               <ActivityIndicator size="large" color={COLORS.coral} />
@@ -813,7 +812,7 @@ const styles = StyleSheet.create({
   ghostBtnText: { color: COLORS.text2, fontSize: 14, fontWeight: '600' },
   cameraWrap: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
-  faceHint: { position: 'absolute', bottom: 100, left: 0, right: 0, textAlign: 'center', color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '500' },
+  faceHint: { position: 'absolute', top: 80, left: 0, right: 0, textAlign: 'center', color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '500' },
   cameraActions: { position: 'absolute', bottom: 60, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center' },
   captureBtn: { width: 72, height: 72, borderRadius: 36, borderWidth: 4, borderColor: COLORS.white, alignItems: 'center', justifyContent: 'center' },
   captureBtnInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: COLORS.white },
