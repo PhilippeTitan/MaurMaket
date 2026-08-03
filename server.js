@@ -33,11 +33,12 @@ const supabasePool = (!isTestMode && process.env.SUPABASE_DATABASE_URL) ? new Po
   connectionString: process.env.SUPABASE_DATABASE_URL,
   max: 15,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 8000,
+  connectionTimeoutMillis: 15000,
   ssl: { rejectUnauthorized: false },
 }) : null;
 
 let usingSupabase = !isTestMode && !!supabasePool;
+let supabaseDownSince = null; // timestamp when Supabase was marked down
 
 function isConnectionError(err) {
   if (!err) return false;
@@ -83,7 +84,10 @@ const pool = {
         return await supabasePool.query(text, params);
       } catch (err) {
         if (isConnectionError(err) && neonPool) {
-          console.warn('[DB] Supabase unavailable, falling back to Neon. Error:', err.message);
+          if (usingSupabase) {
+            console.warn('[DB] Supabase unavailable, falling back to Neon. Error:', err.message);
+            supabaseDownSince = Date.now();
+          }
           usingSupabase = false;
           return await neonPool.query(text, params);
         }
@@ -99,7 +103,10 @@ const pool = {
         return wrapClient(await supabasePool.connect());
       } catch (err) {
         if (isConnectionError(err) && neonPool) {
-          console.warn('[DB] Supabase connect failed, falling back to Neon. Error:', err.message);
+          if (usingSupabase) {
+            console.warn('[DB] Supabase connect failed, falling back to Neon. Error:', err.message);
+            supabaseDownSince = Date.now();
+          }
           usingSupabase = false;
           return wrapClient(await neonPool.connect());
         }
@@ -125,6 +132,23 @@ const pool = {
   get _supabase() { return supabasePool; },
   get _usingFallback() { return usingSupabase; },
 };
+
+// ───── Supabase Recovery: try reconnecting every 60s if marked down ─────
+if (supabasePool) {
+  setInterval(async () => {
+    if (usingSupabase || !supabaseDownSince) return;
+    try {
+      const start = Date.now();
+      await supabasePool.query('SELECT 1');
+      const ms = Date.now() - start;
+      console.log(`[DB] Supabase recovered (probe took ${ms}ms). Switching back from Neon.`);
+      usingSupabase = true;
+      supabaseDownSince = null;
+    } catch {
+      // Still down — keep using Neon
+    }
+  }, 60_000);
+}
 
 pool.on('error', (err) => {
   console.error('Unexpected pool error:', err);
@@ -5993,6 +6017,7 @@ app.get('/api/health', async (_req, res) => {
   } catch { result.fallback = 'down'; }
 
   if (!usingSupabase) result.active = 'neon';
+  if (supabaseDownSince) result.supabaseDownFor = Math.round((Date.now() - supabaseDownSince) / 1000) + 's';
   result.status = (result.primary === 'connected' || result.fallback === 'connected') ? 'ok' : 'error';
   res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
