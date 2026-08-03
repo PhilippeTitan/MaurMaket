@@ -6347,7 +6347,8 @@ app.get('/api/webhooks/didit', async (req, res) => {
     try {
       // Look up user from verification_attempts (vendor_data = user_id stored via webhook)
       const attempt = await pool.query(
-        `SELECT vendor_data FROM didit_webhook_events WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1`
+        `SELECT vendor_data FROM didit_webhook_events WHERE session_id = $1 ORDER BY id DESC LIMIT 1`,
+        [verificationSessionId]
       );
       const userId = attempt.rows[0]?.vendor_data;
 
@@ -6357,10 +6358,9 @@ app.get('/api/webhooks/didit', async (req, res) => {
           `SELECT user_id FROM verification_attempts WHERE status = 'pending' ORDER BY created_at DESC LIMIT 1`
         );
         if (va.rows[0]?.user_id) {
-          // Process approval
           const uid = va.rows[0].user_id;
           await pool.query(`UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified' WHERE id = $1`, [uid]);
-          await pool.query(`UPDATE verification_attempts SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND status != 'verified' ORDER BY created_at DESC LIMIT 1`, [uid]);
+          await pool.query(`UPDATE verification_attempts SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = (SELECT id FROM verification_attempts WHERE user_id = $1 AND status != 'verified' ORDER BY created_at DESC LIMIT 1)`, [uid]);
           const userCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [uid]);
           if (userCheck.rows[0]?.seller_tier === 'casual') {
             await pool.query(`UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [uid]);
@@ -6369,12 +6369,8 @@ app.get('/api/webhooks/didit', async (req, res) => {
           console.log(`[DIDIT CALLBACK] User ${uid} verified via GET redirect`);
         }
       } else {
-        await pool.query(`UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified' WHERE id = $1`, [userId]);
-        await pool.query(`UPDATE verification_attempts SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND status != 'verified' ORDER BY created_at DESC LIMIT 1`, [userId]);
-        const userCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [userId]);
-        if (userCheck.rows[0]?.seller_tier === 'casual') {
-          await pool.query(`UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [userId]);
-        }
+        await pool.query(`UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified', seller_tier = 'verified' WHERE id = $1`, [userId]);
+        await pool.query(`UPDATE verification_attempts SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = (SELECT id FROM verification_attempts WHERE user_id = $1 AND status != 'verified' ORDER BY created_at DESC LIMIT 1)`, [userId]);
         createNotification(userId, 'verification_approved', 'Identity Verified', 'Your identity has been verified via Didit!', {});
         console.log(`[DIDIT CALLBACK] User ${userId} verified via GET redirect (from webhook_events)`);
       }
@@ -6477,20 +6473,14 @@ app.post('/api/webhooks/didit', async (req, res) => {
         const faceScore = faceMatch?.score || 0;
 
         await pool.query(
-          `UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified' WHERE id = $1`,
+          `UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified', seller_tier = CASE WHEN seller_tier = 'casual' THEN 'verified' ELSE seller_tier END WHERE id = $1`,
           [userId]
         );
         await pool.query(
-          `UPDATE verification_attempts SET status = 'verified', face_match_score = $1, verified_at = CURRENT_TIMESTAMP WHERE user_id = $2 AND status != 'verified' ORDER BY created_at DESC LIMIT 1`,
+          `UPDATE verification_attempts SET status = 'verified', face_match_score = $1, verified_at = CURRENT_TIMESTAMP WHERE id = (SELECT id FROM verification_attempts WHERE user_id = $2 AND status != 'verified' ORDER BY created_at DESC LIMIT 1)`,
           [faceScore, userId]
         );
         createNotification(userId, 'verification_approved', 'Identity Verified', 'Your identity has been verified via Didit!', {});
-
-        // Auto-upgrade seller tier
-        const userCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [userId]);
-        if (userCheck.rows[0]?.seller_tier === 'casual') {
-          await pool.query(`UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [userId]);
-        }
         console.log(`[DIDIT WEBHOOK] User ${userId} verified via webhook`);
       } else if (status === 'Declined') {
         const idVerifs = decision?.id_verifications || [];
@@ -6499,7 +6489,7 @@ app.post('/api/webhooks/didit', async (req, res) => {
 
         await pool.query(`UPDATE users SET id_verification_result = 'rejected' WHERE id = $1`, [userId]);
         await pool.query(
-          `UPDATE verification_attempts SET status = 'rejected', rejection_reason = $1 WHERE user_id = $2 AND status != 'verified' ORDER BY created_at DESC LIMIT 1`,
+          `UPDATE verification_attempts SET status = 'rejected', rejection_reason = $1 WHERE id = (SELECT id FROM verification_attempts WHERE user_id = $2 AND status != 'verified' ORDER BY created_at DESC LIMIT 1)`,
           [reason, userId]
         );
         createNotification(userId, 'verification_rejected', 'Verification Not Approved', reason, {});
