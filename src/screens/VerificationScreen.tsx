@@ -12,8 +12,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { useTranslation } from '../i18n';
-import { uploadImage, submitVerification, createDiditSession } from '../api';
+import { uploadImage, submitVerification, createDiditSession, getMe } from '../api';
 import { store } from '../store';
+import { invalidateUser } from '../hooks/useUser';
 import type { RootStackParamList } from '../navigation';
 
 let CameraView: any = null;
@@ -147,6 +148,15 @@ export default function VerificationScreen() {
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
   }, [step]);
+
+  useEffect(() => {
+    if (step === 'result' && verified) {
+      invalidateUser();
+      getMe().then((res: any) => {
+        if (res.user) store.setUser(res.user, store.token);
+      }).catch(() => {});
+    }
+  }, [step, verified]);
 
   const photos = { cinFront: !!idFrontUrl, cinBack: !!idBackUrl, selfie: !!selfieUrl };
   const photoKeys = ['cinFront', 'cinBack', 'selfie'] as const;
@@ -715,7 +725,7 @@ export default function VerificationScreen() {
           <Text style={styles.infoDesc}>
             Your ID and selfie matched. You're now a Verified Seller with a trust badge and lower commission.
           </Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => nav.goBack()}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => { invalidateUser(); nav.goBack(); }}>
             <Text style={styles.primaryBtnText}>Done</Text>
           </TouchableOpacity>
         </View>
