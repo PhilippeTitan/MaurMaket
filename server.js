@@ -321,7 +321,7 @@ async function runMigrations() {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         full_name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
+        password_hash TEXT,
         phone TEXT,
         role TEXT DEFAULT 'buyer',
         avatar_url TEXT,
@@ -904,6 +904,9 @@ async function runMigrations() {
       );
     `));
 
+    // 39. Make password_hash nullable for Google OAuth users
+    await step('password_hash nullable', () => c.query(`ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;`));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -1025,7 +1028,6 @@ app.delete('/api/upload', authRequired, async (req, res) => {
     // imgBB delete
     if (target.includes('imgbb.com') || target.includes('i.ibb.co')) {
       if (!process.env.IMGBB_KEY) return res.status(503).json({ error: 'imgBB not configured' });
-      // Extract delete URL hash from the URL or use it directly
       const deleteUrlFull = target.includes('delete') ? target : null;
       if (deleteUrlFull) {
         await fetch(`${deleteUrlFull}?key=${process.env.IMGBB_KEY}`);
@@ -1227,6 +1229,9 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
     const user = result.rows[0];
+    if (!user.password_hash) {
+      return res.status(401).json({ error: 'This account uses Google sign-in. Please use Google to sign in.' });
+    }
     let passwordValid = false;
     try {
       passwordValid = await bcrypt.compare(password, user.password_hash);
@@ -1359,6 +1364,9 @@ app.put('/api/auth/password', authRequired, async (req, res) => {
   try {
     const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    if (!result.rows[0].password_hash) {
+      return res.status(400).json({ error: 'This account uses Google sign-in. Please set a password via Forgot Password first.' });
+    }
     let valid = false;
     try { valid = await bcrypt.compare(currentPassword, result.rows[0].password_hash); } catch {}
     if (!valid) {
@@ -4513,7 +4521,7 @@ app.post('/api/conversations/:id/messages', authRequired, msgLimiter, async (req
       [req.params.id, req.user.id]
     );
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
-    const storedContent = msgType === 'image' ? (content?.trim() || '\ud83d\udcf7 Photo') : content?.trim() || null;
+    const storedContent = msgType === 'image' ? null : content?.trim() || null;
     const result = await pool.query(
       `INSERT INTO messages (conversation_id, sender_id, content, message_type, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [req.params.id, req.user.id, storedContent, msgType, imageUrl || null]
@@ -5645,7 +5653,7 @@ function extractSex(text) {
   return sexMatch ? sexMatch[1].toUpperCase() : null;
 }
 
-const ALLOWED_IMAGE_DOMAINS = ['i.ibb.co', 'ibb.co', 'i.imgur.com', 'imgur.com'];
+const ALLOWED_IMAGE_DOMAINS = ['bnnluaqrktnrnnfvmqbt.supabase.co', 'i.ibb.co', 'ibb.co'];
 
 function isAllowedImageUrl(url) {
   try {
@@ -5860,6 +5868,16 @@ app.post('/api/verification/submit', verifyLimiter, authRequired, sellerRequired
     try {
       await fetch(deleteUrl, { method: 'DELETE', signal: AbortSignal.timeout(5000) });
     } catch { /* best effort — uploads have 1h auto-expiration as fallback */ }
+  }
+
+  async function deleteStorageImage(url) {
+    if (!url || !supabaseStorage) return;
+    try {
+      if (url.includes('supabase.co/storage')) {
+        const key = url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
+        if (key) await supabaseStorage.send(new DeleteObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: key }));
+      }
+    } catch { /* best effort */ }
   }
   try {
     const existing = await pool.query(
@@ -6102,6 +6120,10 @@ app.post('/api/verification/submit', verifyLimiter, authRequired, sellerRequired
         deleteImgbbImage(deleteUrls?.idFace),
         deleteImgbbImage(deleteUrls?.idBack),
         deleteImgbbImage(deleteUrls?.selfie),
+        deleteStorageImage(idFrontUrl),
+        deleteStorageImage(idFaceUrl),
+        deleteStorageImage(idBackUrl),
+        deleteStorageImage(selfieUrl),
       ]);
       await pool.query(
         `UPDATE verification_attempts SET id_front_url = NULL, id_back_url = NULL, selfie_url = NULL WHERE id = $1`,
@@ -6122,6 +6144,23 @@ app.post('/api/verification/submit', verifyLimiter, authRequired, sellerRequired
       );
       createNotification(req.user.id, 'verification_rejected', 'Verification Not Approved',
         rejectionReason || 'Your identity verification was not approved. Please try again.', { attemptId: result.rows[0].id });
+
+      // Clean up images on rejection too
+      await Promise.all([
+        deleteImgbbImage(deleteUrls?.idFront),
+        deleteImgbbImage(deleteUrls?.idFace),
+        deleteImgbbImage(deleteUrls?.idBack),
+        deleteImgbbImage(deleteUrls?.selfie),
+        deleteStorageImage(idFrontUrl),
+        deleteStorageImage(idFaceUrl),
+        deleteStorageImage(idBackUrl),
+        deleteStorageImage(selfieUrl),
+      ]);
+      await pool.query(
+        `UPDATE verification_attempts SET id_front_url = NULL, id_back_url = NULL, selfie_url = NULL WHERE id = $1`,
+        [result.rows[0].id]
+      );
+
       const failedStage = issues.length > 0 ? issues[0].stage : null;
       const reasons = issues.map(i => i.message);
       res.json({ attempt: { ...result.rows[0], failed_stage: failedStage, reasons } });
@@ -6152,10 +6191,33 @@ app.get('/api/verification/status', authRequired, async (req, res) => {
 app.delete('/api/verification/images/:id', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `UPDATE verification_attempts SET id_front_url = NULL, id_back_url = NULL, selfie_url = NULL WHERE id = $1 AND user_id = $2 RETURNING id`,
+      `SELECT id_front_url, id_back_url, selfie_url FROM verification_attempts WHERE id = $1 AND user_id = $2`,
       [req.params.id, req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const row = result.rows[0];
+
+    // Delete files from storage
+    const urls = [row.id_front_url, row.id_back_url, row.selfie_url].filter(Boolean);
+    for (const url of urls) {
+      try {
+        if (url.includes(SUPABASE_PUBLIC_BASE.replace('https://', '')) || url.includes('supabase.co/storage')) {
+          // Supabase Storage — extract key from public URL
+          const key = url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
+          if (key && supabaseStorage) {
+            await supabaseStorage.send(new DeleteObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: key }));
+          }
+        } else if (url.includes('i.ibb.co') && process.env.IMGBB_KEY) {
+          // imgbb — no reliable delete API, but images have 1h expiration from verification upload
+        }
+      } catch { /* best effort */ }
+    }
+
+    // NULL the DB columns
+    await pool.query(
+      `UPDATE verification_attempts SET id_front_url = NULL, id_back_url = NULL, selfie_url = NULL WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id]
+    );
     res.json({ deleted: true });
   } catch (err) {
     console.error('Verification image delete error:', err);

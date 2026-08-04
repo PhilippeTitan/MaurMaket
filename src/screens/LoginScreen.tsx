@@ -14,7 +14,7 @@ import type { User } from '../types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
-const GOOGLE_WEB_CLIENT_ID = '273654218158-1d5a7pmsaj5ql6ejshbbi5igjaqe22nh.apps.googleusercontent.com';
+const GOOGLE_WEB_CLIENT_ID = '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com';
 const GOOGLE_REDIRECT_URI = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
 
 export default function LoginScreen({ navigation }: Props) {
