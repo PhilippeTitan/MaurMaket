@@ -4,8 +4,7 @@ import {
   KeyboardAvoidingView, Platform, Animated, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
-import { ResponseType } from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { signup as apiSignup, login as apiLogin, googleAuthCode } from '../api';
@@ -100,25 +99,35 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
   const [entered, setEntered] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: GOOGLE_WEB_CLIENT_ID,
-    androidClientId: GOOGLE_WEB_CLIENT_ID,
-    responseType: ResponseType.Code,
-  });
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { code } = response.params;
-      if (code) {
-        setGoogleLoading(true);
-        googleAuthCode(code).then((res: any) => {
-          store.setUser(res.user, res.token);
-        }).catch((err: any) => {
-          setErrors({ google: err?.message || 'Google sign-in failed' });
-        }).finally(() => setGoogleLoading(false));
+  const handleGoogle = async () => {
+    try {
+      setGoogleLoading(true);
+      WebBrowser.maybeCompleteAuthSession();
+      const redirectUri = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
+      const state = Math.random().toString(36).substring(2);
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${GOOGLE_WEB_CLIENT_ID}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=code` +
+        `&scope=${encodeURIComponent('openid profile email')}` +
+        `&state=${state}` +
+        `&access_type=offline`;
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+      if (result.type === 'success' && result.url) {
+        const url = new URL(result.url);
+        const code = url.searchParams.get('code');
+        if (code) {
+          const res = await googleAuthCode(code) as any;
+          await store.setUser(res.user, res.token);
+        }
       }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Google sign-in failed';
+      setErrors({ google: message });
+    } finally {
+      setGoogleLoading(false);
     }
-  }, [response]);
+  };
 
   const step: Step = STEPS[stepIdx];
   const pwLen = password.length;
@@ -383,25 +392,35 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
   const [googleLoading, setGoogleLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: GOOGLE_WEB_CLIENT_ID,
-    androidClientId: GOOGLE_WEB_CLIENT_ID,
-    responseType: ResponseType.Code,
-  });
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { code } = response.params;
-      if (code) {
-        setGoogleLoading(true);
-        googleAuthCode(code).then((res: any) => {
-          store.setUser(res.user, res.token);
-        }).catch((err: any) => {
-          setError(err?.message || 'Google sign-in failed');
-        }).finally(() => setGoogleLoading(false));
+  const handleGoogle = async () => {
+    try {
+      setGoogleLoading(true);
+      WebBrowser.maybeCompleteAuthSession();
+      const redirectUri = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
+      const state = Math.random().toString(36).substring(2);
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${GOOGLE_WEB_CLIENT_ID}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=code` +
+        `&scope=${encodeURIComponent('openid profile email')}` +
+        `&state=${state}` +
+        `&access_type=offline`;
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+      if (result.type === 'success' && result.url) {
+        const url = new URL(result.url);
+        const code = url.searchParams.get('code');
+        if (code) {
+          const res = await googleAuthCode(code) as any;
+          await store.setUser(res.user, res.token);
+        }
       }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Google sign-in failed';
+      setError(message);
+    } finally {
+      setGoogleLoading(false);
     }
-  }, [response]);
+  };
 
   const canSubmit = email.trim() && password.trim();
 
