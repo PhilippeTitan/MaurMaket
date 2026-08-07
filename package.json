@@ -31,7 +31,7 @@
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
-    "expo": "~56.0.15",
+    "expo": "~56.0.19",
     "expo-asset": "~56.0.18",
     "expo-auth-session": "~56.0.15",
     "expo-camera": "~56.0.8",

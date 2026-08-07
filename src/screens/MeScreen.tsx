@@ -87,6 +87,16 @@ export default function MeScreen() {
 
   const locationCity = (user as any)?.location_city || '';
 
+  const scrollOffset = useRef(0);
+  const [headerBg, setHeaderBg] = useState(0);
+
+  const onScroll = useCallback((e: any) => {
+    const y = e.nativeEvent.contentOffset.y;
+    scrollOffset.current = y;
+    const opacity = Math.min(1, Math.max(0, (y - 140) / 80));
+    setHeaderBg(opacity);
+  }, []);
+
 
   const fetchData = useCallback(async (force = false) => {
     const uid = user?.id || '';
@@ -286,14 +296,13 @@ export default function MeScreen() {
                 <Text style={styles.imgCountText}>{images.length}</Text>
               </View>
             )}
-            <View style={styles.cardBottomInfo}>
-              <View style={styles.stockBadgeBottom}>
-                <StockBadge stock={item.stock} size="sm" />
-              </View>
-              <View style={{ flex: 1 }} />
-              <View style={styles.cardPriceBottom}>
-                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-              </View>
+            {/* Price — top right */}
+            <View style={styles.cardPriceTop} pointerEvents="none">
+              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+            </View>
+            {/* Stock badge — bottom left */}
+            <View style={styles.cardStockBadge} pointerEvents="none">
+              <StockBadge stock={item.stock} size="sm" />
             </View>
           </View>
         </TouchableOpacity>
@@ -303,48 +312,55 @@ export default function MeScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />
-      }
-    >
-      {/* Top bar — floats over hero */}
-      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
-        <TouchableOpacity
-          style={[styles.sellBtn, { top: insets.top + SPACING.sm }]}
-          onPress={() => nav.navigate(store.isSeller ? 'AddListing' : 'SellerOnboarding')}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="add listing"
-        >
-          <MaterialCommunityIcons name="plus" size={35} color={COLORS.text} />
-        </TouchableOpacity>
+    <View style={styles.container}>
+      {/* Sticky header — name centered + sell/settings */}
+      <View style={[styles.stickyHeader, { paddingTop: insets.top + 6, paddingBottom: 8, backgroundColor: `rgba(13,17,23,${headerBg})` }]}>
+        <View style={styles.stickyHeaderInner}>
+          <TouchableOpacity
+            style={styles.sellBtn}
+            onPress={() => nav.navigate(store.isSeller ? 'AddListing' : 'SellerOnboarding')}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="add listing"
+          >
+            <MaterialCommunityIcons name="plus" size={28} color={COLORS.text} />
+          </TouchableOpacity>
 
-        <View style={styles.topBarNameWrap}>
-          <Text style={styles.topBarName} numberOfLines={1}>@{user?.username || 'you'}</Text>
-          {(tier === 'verified' || tier === 'business') && (
-            <Icon name="verified" size={18} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
-          )}
+          <View style={styles.topBarNameCenter}>
+            <View style={styles.topBarNameWrap}>
+              <Text style={styles.topBarName} numberOfLines={1}>@{user?.username || 'you'}</Text>
+              {(tier === 'verified' || tier === 'business') && (
+                <Icon name="verified" size={18} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
+              )}
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.settingsBtn}
+            onPress={() => nav.navigate('Settings')}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="settings"
+          >
+            <MaterialCommunityIcons name="cog-outline" size={26} color={COLORS.text} />
+          </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          style={[styles.settingsBtn, { top: insets.top + SPACING.sm }]}
-          onPress={() => nav.navigate('Settings')}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="settings"
-        >
-          <MaterialCommunityIcons name="cog-outline" size={35} color={COLORS.text} />
-        </TouchableOpacity>
       </View>
 
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + 44, paddingBottom: insets.bottom + 80 }]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />
+        }
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+      >
       {/* Hero */}
       <View style={styles.hero}>
 
         {/* Avatar with TierRing + Stats row */}
-        <View style={[styles.avatarRow, { paddingTop: insets.top + 60 }]}>
+        <View style={[styles.avatarRow, { paddingTop: SPACING.md }]}>
           <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={76} animated={true} />
           <View style={styles.statsRow}>
             <View style={styles.stat}>
@@ -624,7 +640,8 @@ export default function MeScreen() {
           )
         )}
       </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -632,24 +649,26 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 100 },
 
-  /* Top bar — floats over hero */
-  topBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
-    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+  /* Sticky header */
+  stickyHeader: {
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
+  },
+  stickyHeaderInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
   },
   sellBtn: {
-    width: 35, height: 35,
+    width: 40, height: 40,
     alignItems: 'center', justifyContent: 'center',
-    position: 'absolute', left: SPACING.lg,
   },
-  settingsBtn: {
-    width: 35, height: 35,
-    alignItems: 'center', justifyContent: 'center',
-    position: 'absolute', right: SPACING.lg,
-  },
+  topBarNameCenter: { flex: 1, alignItems: 'center' },
   topBarNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  topBarName: { fontSize: 20, fontWeight: '800', color: COLORS.text },
+  topBarName: { fontSize: 18, fontWeight: '800', color: COLORS.text },
+  settingsBtn: {
+    width: 40, height: 40,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scrollView: { flex: 1 },
 
   /* Hero */
   hero: { backgroundColor: COLORS.surface, paddingBottom: SPACING.lg, position: 'relative' },
@@ -733,15 +752,14 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0,
     height: '55%',
   },
-  cardBottomInfo: {
-    position: 'absolute', bottom: 7, left: 7, right: 7,
-    flexDirection: 'row', alignItems: 'center',
-  },
-  cardPriceBottom: {
-    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6,
+  cardPriceTop: {
+    position: 'absolute', top: 6, right: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6,
     paddingHorizontal: 7, paddingVertical: 3,
   },
-  stockBadgeBottom: {},
+  cardStockBadge: {
+    position: 'absolute', bottom: 6, left: 6,
+  },
 
   cardName: {
     fontSize: 12.5, fontWeight: '600', color: COLORS.text,

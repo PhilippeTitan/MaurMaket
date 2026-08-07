@@ -272,19 +272,28 @@ export default function ExploreScreen({ navigation }: Props) {
             </View>
           </View>
         </View>
-        {/* Name row — seller avatar + product name — tap target for opening the product */}
-        <TouchableOpacity
-          style={styles.cardNameRow}
-          activeOpacity={0.6}
-          onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-          accessibilityRole="button"
-          accessibilityLabel={t('accessibility.viewProduct')}
-        >
+        {/* Name row — seller avatar + product name */}
+        <View style={styles.cardNameRow}>
           {item.seller && (
-            <UserAvatar seller={item.seller} size={26} animated={false} />
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate('Storefront', { sellerId: item.seller_id })}
+              accessibilityRole="button"
+              accessibilityLabel="view seller profile"
+            >
+              <UserAvatar seller={item.seller} size={34} animated={false} />
+            </TouchableOpacity>
           )}
-          <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={{ flex: 1, justifyContent: 'center' }}
+            activeOpacity={0.6}
+            onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.viewProduct')}
+          >
+            <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };

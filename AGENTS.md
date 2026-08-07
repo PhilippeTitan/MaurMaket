@@ -1,5 +1,45 @@
 # MaurMaket — Project Context for AI Agents
 
+## Side Project: VCM App (Sister's Birthday Gift)
+
+> **Source website:** `C:\MAURINEX\Maurinex Projects\VCM Website`
+> **Goal:** Turn Victoria Christel Maurice's author website into a React Native/Expo mobile app
+> **Deadline:** Birthday is August 5, 2026 — prototype needed by then
+> **Status:** IN PROGRESS — scaffolding started
+
+### What VCM Website Is
+Next.js author/reading platform for Victoria Christel Maurice (Philippe's sister). Users browse books, unlock chapters via license codes, and read with language switching (EN/FR/Kreyol).
+
+### Core Features for App
+1. **Bookshelf** — grid of books with covers, language chips, locked/unlocked badges
+2. **Book Detail** — cover, description, chapter list with lock status
+3. **Reader** — reading view with font size control, language toggle, chapter navigation, progress bar
+4. **Auth** — login/signup (can reuse AuthScreen pattern from MaurMaket)
+5. **License Redeem** — enter code to unlock chapters
+
+### Tech Stack (Same as MaurMaket)
+- React Native 0.85.3 + Expo SDK 56 + TypeScript
+- Backend: Express.js (may share or fork MaurMaket's server)
+- Database: PostgreSQL (Prisma schema at `VCM Website/prisma/schema.prisma`)
+- i18n: EN / FR / Kreyol (translations at `VCM Website/src/lib/i18n.ts`)
+
+### Key Files in Website Source
+| File | What |
+|------|------|
+| `prisma/schema.prisma` | Full data model (User, Work, Edition, Chapter, License, AccessGrant, etc.) |
+| `src/lib/i18n.ts` | EN/FR/Kreyol translations |
+| `src/lib/translations.ts` | Book slug normalization, language grouping |
+| `src/components/LandingPage.tsx` | Bookshelf grid with filters |
+| `src/components/ReaderPage.tsx` | Chapter reader (font size, language, immersive mode) |
+| `src/app/page.tsx` | Main page with server-side data fetching |
+
+### Design Direction
+- Match the website's aesthetic: serif fonts (Playfair Display, Lora), warm tones, literary feel
+- Dark mode optional — the website uses CSS custom properties for theming
+- The reader is the star — make it comfortable and beautiful
+
+---
+
 ## Git Protocol
 - **Always push after major changes**: After committing any significant feature, bug fix, or refactor, run `git push` immediately. Do not batch pushes — push each meaningful change.
 

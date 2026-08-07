@@ -263,9 +263,9 @@ export default function VerificationScreen() {
       }
       console.log(`[VERIFY-CROP] Photo captured: ${photo.width}x${photo.height} uri=${photo.uri.substring(0, 60)}`);
       setLoading(true);
-      console.log(`[VERIFY-DEBUG] Uploading full image to imgbb...`);
+      console.log(`[VERIFY-DEBUG] Uploading image to Supabase Storage...`);
       const uploadRes = await uploadImage(photo.uri, 3600);
-      console.log(`[VERIFY-DEBUG] ✅ Full image uploaded: ${uploadRes.url?.substring(0, 60)}`);
+      console.log(`[VERIFY-DEBUG] ✅ Image uploaded: ${uploadRes.url?.substring(0, 60)}`);
 
         if (facing === 'front') {
           setIdFrontUrl(uploadRes.url);
@@ -309,7 +309,7 @@ export default function VerificationScreen() {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
       console.log(`[VERIFY-DEBUG] Selfie takePictureAsync returned: ${JSON.stringify(photo ? { uri: photo.uri?.substring(0, 80), width: photo.width, height: photo.height } : 'null')}`);
       if (photo?.uri) {
-        console.log(`[VERIFY-DEBUG] Uploading selfie to imgbb...`);
+        console.log(`[VERIFY-DEBUG] Uploading selfie to Supabase Storage...`);
         const uploadRes = await uploadImage(photo.uri, 3600);
         console.log(`[VERIFY-DEBUG] ✅ Selfie uploaded: ${uploadRes.url?.substring(0, 60)}`);
         setSelfieUrl(uploadRes.url);

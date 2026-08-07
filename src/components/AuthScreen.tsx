@@ -4,10 +4,10 @@ import {
   KeyboardAvoidingView, Platform, Animated, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
-import { signup as apiSignup, login as apiLogin, googleAuthCode } from '../api';
+import { signup as apiSignup, login as apiLogin, googleAuth } from '../api';
 import { store } from '../store';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -99,35 +99,24 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
   const [entered, setEntered] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const handleGoogle = async () => {
-    try {
-      setGoogleLoading(true);
-      WebBrowser.maybeCompleteAuthSession();
-      const redirectUri = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
-      const state = Math.random().toString(36).substring(2);
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${GOOGLE_WEB_CLIENT_ID}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&response_type=code` +
-        `&scope=${encodeURIComponent('openid profile email')}` +
-        `&state=${state}` +
-        `&access_type=offline`;
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
-      if (result.type === 'success' && result.url) {
-        const url = new URL(result.url);
-        const code = url.searchParams.get('code');
-        if (code) {
-          const res = await googleAuthCode(code) as any;
-          await store.setUser(res.user, res.token);
-        }
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: GOOGLE_WEB_CLIENT_ID,
+    androidClientId: GOOGLE_WEB_CLIENT_ID,
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      if (id_token) {
+        setGoogleLoading(true);
+        googleAuth(id_token).then((res: any) => {
+          store.setUser(res.user, res.token);
+        }).catch((err: any) => {
+          setErrors({ google: err?.message || 'Google sign-in failed' });
+        }).finally(() => setGoogleLoading(false));
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Google sign-in failed';
-      setErrors({ google: message });
-    } finally {
-      setGoogleLoading(false);
     }
-  };
+  }, [response]);
 
   const step: Step = STEPS[stepIdx];
   const pwLen = password.length;
@@ -356,8 +345,8 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
             <Divider />
             <TouchableOpacity
               style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
-              onPress={handleGoogle}
-              disabled={googleLoading}
+              onPress={() => { setGoogleLoading(true); promptAsync().finally(() => setGoogleLoading(false)); }}
+              disabled={googleLoading || !request}
             >
               <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
               <Text style={styles.googleBtnText}>{googleLoading ? 'Connecting…' : t('auth.googleSignIn')}</Text>
@@ -387,35 +376,24 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
   const [googleLoading, setGoogleLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
-  const handleGoogle = async () => {
-    try {
-      setGoogleLoading(true);
-      WebBrowser.maybeCompleteAuthSession();
-      const redirectUri = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
-      const state = Math.random().toString(36).substring(2);
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${GOOGLE_WEB_CLIENT_ID}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&response_type=code` +
-        `&scope=${encodeURIComponent('openid profile email')}` +
-        `&state=${state}` +
-        `&access_type=offline`;
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
-      if (result.type === 'success' && result.url) {
-        const url = new URL(result.url);
-        const code = url.searchParams.get('code');
-        if (code) {
-          const res = await googleAuthCode(code) as any;
-          await store.setUser(res.user, res.token);
-        }
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: GOOGLE_WEB_CLIENT_ID,
+    androidClientId: GOOGLE_WEB_CLIENT_ID,
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      if (id_token) {
+        setGoogleLoading(true);
+        googleAuth(id_token).then((res: any) => {
+          store.setUser(res.user, res.token);
+        }).catch((err: any) => {
+          setError(err?.message || 'Google sign-in failed');
+        }).finally(() => setGoogleLoading(false));
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Google sign-in failed';
-      setError(message);
-    } finally {
-      setGoogleLoading(false);
     }
-  };
+  }, [response]);
 
   const canSubmit = email.trim() && password.trim();
 
@@ -491,8 +469,8 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
 
         <TouchableOpacity
           style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
-          onPress={handleGoogle}
-          disabled={googleLoading}
+          onPress={() => { setGoogleLoading(true); promptAsync().finally(() => setGoogleLoading(false)); }}
+          disabled={googleLoading || !request}
         >
           <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
           <Text style={styles.googleBtnText}>{googleLoading ? 'Connecting…' : t('auth.googleSignIn')}</Text>

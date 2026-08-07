@@ -56,6 +56,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [heartCount, setHeartCount] = useState(0);
   const [storeTick, setStoreTick] = useState(0);
   const mountedRef = useRef(true);
+  const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -236,8 +237,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               <Icon name="image-unavailable" size={18} color={COLORS.text2} />
             </View>
           )}
-          <View style={styles.gridPriceOverlay}>
+          <View style={styles.gridPriceTop} pointerEvents="none">
             <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+          </View>
+          <View style={styles.gridStockBadge} pointerEvents="none">
+            <StockBadge stock={item.stock} size="sm" />
           </View>
         </TouchableOpacity>
       );
@@ -291,81 +295,82 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* ── Sticky hero (does not scroll) ── */}
-      <View style={[styles.hero, { height: heroHeight }]}>
-        {allImages.length > 1 ? (
-          <FlatList
-            data={allImages}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(img, idx) => String(img.id || idx)}
-            onMomentumScrollEnd={(e) => {
-              const idx = Math.round(e.nativeEvent.contentOffset.x / Dimensions.get('window').width);
-              setActiveImageIndex(idx);
-            }}
-            getItemLayout={(_, index) => ({
-              length: Dimensions.get('window').width,
-              offset: Dimensions.get('window').width * index,
-              index,
-            })}
-            renderItem={({ item: img }) => {
-              const url = getImageUrl(img.image_url);
-              return (
-                <View style={{ width: Dimensions.get('window').width, height: '100%' }}>
-                  {url ? (
-                    <>
-                      <Image source={{ uri: url }} style={styles.heroImg} resizeMode="cover" blurRadius={30} />
-                      <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" />
-                    </>
-                  ) : (
-                    <View style={styles.heroPlaceholder}>
-                      <Icon name="image-unavailable" size={40} color={COLORS.text2} />
-                    </View>
-                  )}
-                </View>
-              );
-            }}
-          />
-        ) : heroUrl ? (
-          <>
-            <Image source={{ uri: heroUrl }} style={styles.heroImg} resizeMode="cover" blurRadius={30} />
-            <Image source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" />
-          </>
-        ) : (
-          <View style={styles.heroPlaceholder}>
-            <Icon name="image-unavailable" size={40} color={COLORS.text2} />
-          </View>
-        )}
-        {allImages.length > 1 && (
-          <View style={styles.dotsRow}>
-            {allImages.map((_, i) => (
-              <View
-                key={i}
-                style={[styles.dot, i === activeImageIndex && styles.dotActive]}
-              />
-            ))}
-          </View>
-        )}
-        <View style={styles.stockOverlay}>
-          <StockBadge stock={product.stock} />
-        </View>
-        <View style={styles.priceOverlay}>
-          <SalePriceTag price={product.price} effectivePrice={product.effective_price ?? product.price} isOnSale={product.is_on_sale || false} discountPct={product.discount_pct || 0} size="lg" />
-        </View>
-      </View>
-
-      {/* ── Back button — above everything ── */}
+      {/* ── Back button — always on top ── */}
       <View style={[styles.backBtn, { top: insets.top + 12 }]}>
         <BackButton onPress={() => navigation.goBack()} variant="overlay" />
       </View>
 
-      {/* ── ScrollView — scrolls over the hero ── */}
+      {/* ── Everything scrolls together ── */}
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingTop: heroHeight }]}
         showsVerticalScrollIndicator={false}
       >
+        {/* ── Hero image — scrolls with content ── */}
+        <View style={{ width: SCREEN_W, height: heroHeight, backgroundColor: COLORS.surface2, position: 'relative' }}>
+          {allImages.length > 1 ? (
+            <FlatList
+              ref={flatListRef}
+              data={allImages}
+              horizontal
+              pagingEnabled
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(img, idx) => String(img.id || idx)}
+              onMomentumScrollEnd={(e) => {
+                const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
+                setActiveImageIndex(idx);
+              }}
+              getItemLayout={(_, index) => ({
+                length: SCREEN_W,
+                offset: SCREEN_W * index,
+                index,
+              })}
+              renderItem={({ item: img }) => {
+                const url = getImageUrl(img.image_url);
+                return (
+                  <View style={{ width: SCREEN_W, height: '100%' }}>
+                    {url ? (
+                      <>
+                        <Image source={{ uri: url }} style={styles.heroImg} resizeMode="cover" blurRadius={30} />
+                        <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+                      </>
+                    ) : (
+                      <View style={styles.heroPlaceholder}>
+                        <Icon name="image-unavailable" size={40} color={COLORS.text2} />
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
+            />
+          ) : heroUrl ? (
+            <>
+              <Image source={{ uri: heroUrl }} style={styles.heroImg} resizeMode="cover" blurRadius={30} />
+              <Image source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+            </>
+          ) : (
+            <View style={styles.heroPlaceholder}>
+              <Icon name="image-unavailable" size={40} color={COLORS.text2} />
+            </View>
+          )}
+          {allImages.length > 1 && (
+            <View style={styles.dotsRow}>
+              {allImages.map((_, i) => (
+                <View
+                  key={i}
+                  style={[styles.dot, i === activeImageIndex && styles.dotActive]}
+                />
+              ))}
+            </View>
+          )}
+          <View style={styles.stockOverlay}>
+            <StockBadge stock={product.stock} />
+          </View>
+          <View style={styles.priceOverlay}>
+            <SalePriceTag price={product.price} effectivePrice={product.effective_price ?? product.price} isOnSale={product.is_on_sale || false} discountPct={product.discount_pct || 0} size="lg" />
+          </View>
+        </View>
+
         <View style={styles.contentSheet}>
 
           {/* ── Seller row ── */}
@@ -576,16 +581,11 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: {},
 
-  /* Hero — sticky, does not scroll */
-  hero: {
-    position: 'absolute', top: 0, left: 0, right: 0,
-    backgroundColor: COLORS.surface2, zIndex: 0,
-  },
-  heroImg: { width: '100%', height: '100%' },
-  heroPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   backBtn: {
     position: 'absolute', left: 10, zIndex: 10,
   },
+  heroImg: { width: '100%', height: '100%' },
+  heroPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   priceOverlay: {
     position: 'absolute', bottom: 10, right: 10,
     backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.row,
@@ -718,9 +718,13 @@ const styles = StyleSheet.create({
   },
   gridCardImg: { width: '100%', height: '100%' },
   gridCardPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  gridPriceOverlay: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    paddingHorizontal: 3, paddingVertical: 2,
+  gridPriceTop: {
+    position: 'absolute', top: 6, right: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  gridStockBadge: {
+    position: 'absolute', bottom: 6, left: 6,
   },
 
   /* Sticky bottom bar */

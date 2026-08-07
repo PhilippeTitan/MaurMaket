@@ -259,14 +259,13 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 <Text style={styles.imgCountText}>{images.length}</Text>
               </View>
             )}
-            <View style={styles.cardBottomInfo}>
-              <View style={styles.stockBadgeBottom}>
-                <StockBadge stock={item.stock} size="sm" />
-              </View>
-              <View style={{ flex: 1 }} />
-              <View style={styles.cardPriceBottom}>
-                <SalePriceTag price={item.price ?? 0} effectivePrice={item.effective_price ?? item.price ?? 0} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-              </View>
+            {/* Price — top right */}
+            <View style={styles.cardPriceTop} pointerEvents="none">
+              <SalePriceTag price={item.price ?? 0} effectivePrice={item.effective_price ?? item.price ?? 0} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+            </View>
+            {/* Stock badge — bottom left */}
+            <View style={styles.cardStockBadge} pointerEvents="none">
+              <StockBadge stock={item.stock} size="sm" />
             </View>
           </View>
         </TouchableOpacity>
@@ -312,7 +311,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
                 <BackButton
                   onPress={() => navigation.goBack()}
-                  style={{ position: 'absolute', left: SPACING.lg, top: insets.top + SPACING.sm }}
+                  style={{ position: 'absolute', left: SPACING.lg, top: insets.top + SPACING.sm, zIndex: 20 }}
                 />
 
                 <View style={styles.topBarNameWrap}>
@@ -518,10 +517,12 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           </View>
         )) as any}
         ListEmptyComponent={
-          <EmptyState
-            icon={activeTab === 'listings' ? 'storefront-outline' : 'star-outline'}
-            title={activeTab === 'listings' ? t('storefront.noProducts') : 'No reviews yet'}
-          />
+          (activeTab === 'listings' && products.length === 0) || (activeTab === 'reviews' && reviews.length === 0) ? (
+            <EmptyState
+              icon={activeTab === 'listings' ? 'storefront-outline' : 'star-outline'}
+              title={activeTab === 'listings' ? t('storefront.noProducts') : 'No reviews yet'}
+            />
+          ) : null
         }
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchSellerData(true); setRefreshing(false); }} tintColor={COLORS.coral} />}
       />
@@ -648,17 +649,13 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0,
     height: '55%',
   },
-  cardBottomInfo: {
-    position: 'absolute', bottom: 7, left: 7, right: 7,
-    flexDirection: 'row', alignItems: 'center',
-  },
-  cardPriceBottom: {
-    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6,
+  cardPriceTop: {
+    position: 'absolute', top: 6, right: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6,
     paddingHorizontal: 7, paddingVertical: 3,
   },
-  stockBadgeBottom: {
-    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 6,
-    paddingHorizontal: 6, paddingVertical: 3,
+  cardStockBadge: {
+    position: 'absolute', bottom: 6, left: 6,
   },
   cardName: {
     fontSize: 12.5, fontWeight: '600', color: COLORS.text,
