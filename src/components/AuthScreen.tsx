@@ -177,11 +177,6 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
     }
   };
 
-  const handleGoogle = () => {
-    setGoogleLoading(true);
-    promptAsync().finally(() => setGoogleLoading(false));
-  };
-
   if (entered) {
     return <WelcomeMoment name={[firstName, middleName, lastName].filter(Boolean).join(' ')} onEnter={() => {}} />;
   }
@@ -448,11 +443,6 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleGoogle = () => {
-    setGoogleLoading(true);
-    promptAsync().finally(() => setGoogleLoading(false));
   };
 
   return (
