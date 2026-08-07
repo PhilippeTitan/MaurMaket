@@ -1,10 +1,9 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  KeyboardAvoidingView, Platform, Animated, Dimensions,
+  KeyboardAvoidingView, Platform, Animated, Dimensions, Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { signup as apiSignup, login as apiLogin, googleAuth } from '../api';
@@ -16,6 +15,7 @@ import ForgotPasswordSheet from '../components/ForgotPasswordSheet';
 import type { User } from '../types';
 
 const GOOGLE_WEB_CLIENT_ID = '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com';
+const GOOGLE_REDIRECT_URI = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const STEPS = ['name', 'email', 'password', 'phone', 'review'] as const;
@@ -97,23 +97,44 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
   const [entered, setEntered] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: GOOGLE_WEB_CLIENT_ID,
-  });
+  const handleGoogle = async () => {
+    try {
+      setGoogleLoading(true);
+      const Crypto = require('expo-crypto');
+      const WebBrowser = require('expo-web-browser');
+      WebBrowser.maybeCompleteAuthSession();
 
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      if (id_token) {
-        setGoogleLoading(true);
-        googleAuth(id_token).then((res: any) => {
-          store.setUser(res.user, res.token);
-        }).catch((err: any) => {
-          setErrors({ google: err?.message || 'Google sign-in failed' });
-        }).finally(() => setGoogleLoading(false));
+      const state = Crypto.randomUUID();
+      const nonce = Crypto.randomUUID();
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${GOOGLE_WEB_CLIENT_ID}` +
+        `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` +
+        `&response_type=id_token` +
+        `&scope=${encodeURIComponent('openid profile email')}` +
+        `&state=${state}` +
+        `&nonce=${nonce}`;
+
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, GOOGLE_REDIRECT_URI);
+
+      if (result.type === 'success' && result.url) {
+        const hash = result.url.split('#')[1] || '';
+        const params = new URLSearchParams(hash);
+        const idToken = params.get('id_token');
+        if (idToken) {
+          const res = await googleAuth(idToken) as { user: User; token: string };
+          await store.setUser(res.user, res.token);
+        } else {
+          setErrors({ google: 'No ID token received from Google' });
+        }
       }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Google sign-in failed';
+      setErrors({ google: message });
+    } finally {
+      setGoogleLoading(false);
     }
-  }, [response]);
+  };
 
   const step: Step = STEPS[stepIdx];
   const pwLen = password.length;
@@ -342,8 +363,8 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
             <Divider />
             <TouchableOpacity
               style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
-              onPress={() => { setGoogleLoading(true); promptAsync().finally(() => setGoogleLoading(false)); }}
-              disabled={googleLoading || !request}
+              onPress={handleGoogle}
+              disabled={googleLoading}
             >
               <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
               <Text style={styles.googleBtnText}>{googleLoading ? 'Connecting…' : t('auth.googleSignIn')}</Text>
@@ -373,23 +394,44 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
   const [googleLoading, setGoogleLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: GOOGLE_WEB_CLIENT_ID,
-  });
+  const handleGoogle = async () => {
+    try {
+      setGoogleLoading(true);
+      const Crypto = require('expo-crypto');
+      const WebBrowser = require('expo-web-browser');
+      WebBrowser.maybeCompleteAuthSession();
 
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      if (id_token) {
-        setGoogleLoading(true);
-        googleAuth(id_token).then((res: any) => {
-          store.setUser(res.user, res.token);
-        }).catch((err: any) => {
-          setError(err?.message || 'Google sign-in failed');
-        }).finally(() => setGoogleLoading(false));
+      const state = Crypto.randomUUID();
+      const nonce = Crypto.randomUUID();
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${GOOGLE_WEB_CLIENT_ID}` +
+        `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` +
+        `&response_type=id_token` +
+        `&scope=${encodeURIComponent('openid profile email')}` +
+        `&state=${state}` +
+        `&nonce=${nonce}`;
+
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, GOOGLE_REDIRECT_URI);
+
+      if (result.type === 'success' && result.url) {
+        const hash = result.url.split('#')[1] || '';
+        const params = new URLSearchParams(hash);
+        const idToken = params.get('id_token');
+        if (idToken) {
+          const res = await googleAuth(idToken) as { user: User; token: string };
+          await store.setUser(res.user, res.token);
+        } else {
+          setError('No ID token received from Google');
+        }
       }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Google sign-in failed';
+      setError(message);
+    } finally {
+      setGoogleLoading(false);
     }
-  }, [response]);
+  };
 
   const canSubmit = email.trim() && password.trim();
 
@@ -465,8 +507,8 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
 
         <TouchableOpacity
           style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
-          onPress={() => { setGoogleLoading(true); promptAsync().finally(() => setGoogleLoading(false)); }}
-          disabled={googleLoading || !request}
+          onPress={handleGoogle}
+          disabled={googleLoading}
         >
           <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
           <Text style={styles.googleBtnText}>{googleLoading ? 'Connecting…' : t('auth.googleSignIn')}</Text>
