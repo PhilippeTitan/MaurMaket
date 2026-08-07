@@ -18,6 +18,7 @@
     },
     "android": {
       "package": "com.maurmaket.app",
+      "googleClientId": "273654218158-v3bkf292ehhgafq59ct29mhh7cdthepc.apps.googleusercontent.com",
       "adaptiveIcon": {
         "backgroundColor": "#0B0F1A",
         "foregroundImage": "./assets/icon.png"

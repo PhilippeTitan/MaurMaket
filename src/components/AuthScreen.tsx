@@ -1,18 +1,24 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
   KeyboardAvoidingView, Platform, Animated, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import { ResponseType } from 'expo-auth-session';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
-import { signup as apiSignup, login as apiLogin, googleAuth } from '../api';
+import { signup as apiSignup, login as apiLogin, googleAuthCode } from '../api';
 import { store } from '../store';
+import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import IdentityCard from '../components/IdentityCard';
 import WelcomeMoment from '../components/WelcomeMoment';
 import ForgotPasswordSheet from '../components/ForgotPasswordSheet';
 import type { User } from '../types';
+
+const GOOGLE_WEB_CLIENT_ID = '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com';
+const ANDROID_CLIENT_ID = (Constants.expoConfig?.android as any)?.googleClientId ?? '';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const STEPS = ['name', 'email', 'password', 'phone', 'review'] as const;
@@ -94,8 +100,27 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
   const [entered, setEntered] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: GOOGLE_WEB_CLIENT_ID,
+    androidClientId: GOOGLE_WEB_CLIENT_ID,
+    responseType: ResponseType.Code,
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { code } = response.params;
+      if (code) {
+        setGoogleLoading(true);
+        googleAuthCode(code).then((res: any) => {
+          store.setUser(res.user, res.token);
+        }).catch((err: any) => {
+          setErrors({ google: err?.message || 'Google sign-in failed' });
+        }).finally(() => setGoogleLoading(false));
+      }
+    }
+  }, [response]);
+
   const step: Step = STEPS[stepIdx];
-  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const pwLen = password.length;
   const pwOk = pwLen >= 6 && pwLen <= 128;
   const pwScore = pwLen === 0 ? 0 : pwLen < 6 ? 1 : pwLen < 10 ? 2 : 3;
@@ -143,34 +168,9 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
     }
   };
 
-  const handleGoogle = async () => {
-    try {
-      setGoogleLoading(true);
-      const Crypto = require('expo-crypto');
-      const WebBrowser = require('expo-web-browser');
-      WebBrowser.maybeCompleteAuthSession();
-      const state = Crypto.randomUUID();
-      const nonce = Crypto.randomUUID();
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com` +
-        `&redirect_uri=${encodeURIComponent('https://auth.expo.io/@maurinex/MaurMaketMobile')}` +
-        `&response_type=id_token&scope=${encodeURIComponent('openid profile email')}&state=${state}&nonce=${nonce}`;
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, 'https://auth.expo.io/@maurinex/MaurMaketMobile');
-      if (result.type === 'success' && result.url) {
-        const hash = result.url.split('#')[1] || '';
-        const params = new URLSearchParams(hash);
-        const idToken = params.get('id_token');
-        if (idToken) {
-          const res = await googleAuth(idToken) as { user: User; token: string };
-          await store.setUser(res.user, res.token);
-        }
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Google sign-in failed';
-      setErrors({ google: message });
-    } finally {
-      setGoogleLoading(false);
-    }
+  const handleGoogle = () => {
+    setGoogleLoading(true);
+    promptAsync().finally(() => setGoogleLoading(false));
   };
 
   if (entered) {
@@ -383,6 +383,26 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
   const [googleLoading, setGoogleLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: GOOGLE_WEB_CLIENT_ID,
+    androidClientId: GOOGLE_WEB_CLIENT_ID,
+    responseType: ResponseType.Code,
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { code } = response.params;
+      if (code) {
+        setGoogleLoading(true);
+        googleAuthCode(code).then((res: any) => {
+          store.setUser(res.user, res.token);
+        }).catch((err: any) => {
+          setError(err?.message || 'Google sign-in failed');
+        }).finally(() => setGoogleLoading(false));
+      }
+    }
+  }, [response]);
+
   const canSubmit = email.trim() && password.trim();
 
   const triggerShake = () => {
@@ -411,34 +431,9 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
     }
   };
 
-  const handleGoogle = async () => {
-    try {
-      setGoogleLoading(true);
-      const Crypto = require('expo-crypto');
-      const WebBrowser = require('expo-web-browser');
-      WebBrowser.maybeCompleteAuthSession();
-      const state = Crypto.randomUUID();
-      const nonce = Crypto.randomUUID();
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com` +
-        `&redirect_uri=${encodeURIComponent('https://auth.expo.io/@maurinex/MaurMaketMobile')}` +
-        `&response_type=id_token&scope=${encodeURIComponent('openid profile email')}&state=${state}&nonce=${nonce}`;
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, 'https://auth.expo.io/@maurinex/MaurMaketMobile');
-      if (result.type === 'success' && result.url) {
-        const hash = result.url.split('#')[1] || '';
-        const params = new URLSearchParams(hash);
-        const idToken = params.get('id_token');
-        if (idToken) {
-          const res = await googleAuth(idToken) as { user: User; token: string };
-          await store.setUser(res.user, res.token);
-        }
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Google sign-in failed';
-      setError(message);
-    } finally {
-      setGoogleLoading(false);
-    }
+  const handleGoogle = () => {
+    setGoogleLoading(true);
+    promptAsync().finally(() => setGoogleLoading(false));
   };
 
   return (

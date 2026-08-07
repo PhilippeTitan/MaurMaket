@@ -30,13 +30,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.200.100.105:3001/api'
+    ? 'http://192.168.0.158:3001/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.200.100.105:3001'
+    ? 'http://192.168.0.158:3001'
     : 'https://maurmaket.onrender.com';
 
 async function request<T = Record<string, unknown>>(
@@ -164,7 +164,11 @@ export const sendVerifyCode = (language?: string) =>
 export const checkVerifyCode = (code: string) =>
   request('/auth/verify/check', { method: 'POST', body: JSON.stringify({ code }) });
 
-// Google Sign-In
+// Google Sign-In (authorization code flow)
+export const googleAuthCode = (code: string) =>
+  request('/auth/google-code', { method: 'POST', body: JSON.stringify({ code }) });
+
+// Google Sign-In (legacy implicit flow)
 export const googleAuth = (idToken: string) =>
   request('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) });
 
