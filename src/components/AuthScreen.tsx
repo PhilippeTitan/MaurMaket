@@ -9,7 +9,6 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { signup as apiSignup, login as apiLogin, googleAuth } from '../api';
 import { store } from '../store';
-import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import IdentityCard from '../components/IdentityCard';
 import WelcomeMoment from '../components/WelcomeMoment';
@@ -17,7 +16,6 @@ import ForgotPasswordSheet from '../components/ForgotPasswordSheet';
 import type { User } from '../types';
 
 const GOOGLE_WEB_CLIENT_ID = '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com';
-const ANDROID_CLIENT_ID = (Constants.expoConfig?.android as any)?.googleClientId ?? '';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const STEPS = ['name', 'email', 'password', 'phone', 'review'] as const;
@@ -101,7 +99,6 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: GOOGLE_WEB_CLIENT_ID,
-    androidClientId: GOOGLE_WEB_CLIENT_ID,
   });
 
   useEffect(() => {
@@ -378,7 +375,6 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: GOOGLE_WEB_CLIENT_ID,
-    androidClientId: GOOGLE_WEB_CLIENT_ID,
   });
 
   useEffect(() => {
