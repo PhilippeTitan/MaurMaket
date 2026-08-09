@@ -9,7 +9,6 @@ import { useTranslation } from '../i18n';
 import { signup as apiSignup, login as apiLogin, googleAuth } from '../api';
 import { store } from '../store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import IdentityCard from '../components/IdentityCard';
 import WelcomeMoment from '../components/WelcomeMoment';
 import ForgotPasswordSheet from '../components/ForgotPasswordSheet';
 import type { User } from '../types';
@@ -48,25 +47,6 @@ export default function AuthScreen({ initialMode = 'signup', onSwitchMode }: Pro
         contentContainerStyle={[styles.scroll, { paddingTop: insets.top + SPACING.lg }]}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Brand + Mode Toggle */}
-        <View style={styles.brandRow}>
-          <Text style={styles.brand}>Maur<Text style={styles.brandAccent}>Maket</Text></Text>
-          <View style={styles.modeSwitch}>
-            <TouchableOpacity
-              style={[styles.modeBtn, mode === 'signup' && styles.modeBtnActive]}
-              onPress={() => setMode('signup')}
-            >
-              <Text style={[styles.modeBtnText, mode === 'signup' && styles.modeBtnTextActive]}>Sign up</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modeBtn, mode === 'signin' && styles.modeBtnActive]}
-              onPress={() => setMode('signin')}
-            >
-              <Text style={[styles.modeBtnText, mode === 'signin' && styles.modeBtnTextActive]}>Sign in</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         {mode === 'signup' ? (
           <SignupWizard switchMode={switchMode} />
         ) : (
@@ -137,16 +117,10 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
   };
 
   const step: Step = STEPS[stepIdx];
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const pwLen = password.length;
   const pwOk = pwLen >= 6 && pwLen <= 128;
   const pwScore = pwLen === 0 ? 0 : pwLen < 6 ? 1 : pwLen < 10 ? 2 : 3;
-
-  const currentStepCredit =
-    step === 'name' ? (firstName.trim() && lastName.trim() ? 1 : 0.15) :
-    step === 'email' ? (emailValid ? 1 : 0.15) :
-    step === 'password' ? (pwOk ? 1 : 0.15) :
-    1;
-  const progress = Math.min((stepIdx + currentStepCredit) / STEPS.length, 1);
 
   const goNext = () => { setErrors({}); setStepIdx(i => Math.min(i + 1, STEPS.length - 1)); };
   const goBack = () => { setErrors({}); setStepIdx(i => Math.max(i - 1, 0)); };
@@ -190,30 +164,20 @@ function SignupWizard({ switchMode }: { switchMode: () => void }) {
 
   return (
     <>
-      {/* Progress bar */}
-      <View style={styles.progressRow}>
-        {stepIdx > 0 ? (
-          <TouchableOpacity onPress={goBack} style={styles.backBtn}>
-            <MaterialCommunityIcons name="arrow-left" size={18} color={COLORS.text} />
-          </TouchableOpacity>
-        ) : <View style={{ width: 36 }} />}
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${Math.min(progress, 1) * 100}%` }]} />
-        </View>
-        <Text style={styles.progressLabel}>{stepIdx + 1}/{STEPS.length}</Text>
+      <View style={styles.centeredHeader}>
+        <Text style={styles.brand}>Maur<Text style={styles.brandAccent}>Maket</Text></Text>
+        <Text style={styles.signInTitle}>Create your account</Text>
+        <Text style={styles.signInSubtitle}>Join Haiti's marketplace</Text>
       </View>
-
-      {/* Identity Card */}
-      <IdentityCard
-        firstName={firstName}
-        email={emailValid ? email : ''}
-        phone={phoneDigits.length === 8 ? phoneDigits : ''}
-        hasPassword={pwOk}
-        progress={Math.min(progress, 1)}
-      />
 
       {/* Step content */}
       <View style={styles.stepContent}>
+        {stepIdx > 0 && (
+          <TouchableOpacity onPress={goBack} style={styles.backBtnInline}>
+            <MaterialCommunityIcons name="arrow-left" size={18} color={COLORS.text2} />
+            <Text style={styles.backBtnText}>Back</Text>
+          </TouchableOpacity>
+        )}
         {step === 'name' && (
           <>
             <StepHeading eyebrow="Let's start with you" title="What's your name?" />
@@ -463,9 +427,10 @@ function SigninForm({ switchMode, onForgotPassword }: { switchMode: () => void; 
 
   return (
     <>
-      <View style={styles.signInHeader}>
+      <View style={styles.centeredHeader}>
+        <Text style={styles.brand}>Maur<Text style={styles.brandAccent}>Maket</Text></Text>
         <Text style={styles.signInTitle}>Welcome back</Text>
-        <Text style={styles.signInSubtitle}>Good to see you again.</Text>
+        <Text style={styles.signInSubtitle}>Sign in to continue</Text>
       </View>
 
       <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
@@ -611,7 +576,7 @@ function AuthInput({
    ═══════════════════════════════════════════════════════════════════════════ */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { flexGrow: 1, paddingHorizontal: SPACING.xl },
+  scroll: { flexGrow: 1, paddingHorizontal: SPACING.xl, justifyContent: 'center' },
 
   // Brand + mode switch
   brandRow: {
@@ -723,11 +688,13 @@ const styles = StyleSheet.create({
   switchLink: { color: COLORS.coral, fontWeight: '700', fontSize: 13.5 },
 
   // Sign in
-  signInHeader: { marginBottom: 28, marginTop: 8 },
-  signInTitle: { fontFamily: 'Syne', fontSize: 30, fontWeight: '800', color: COLORS.text, marginBottom: 6 },
-  signInSubtitle: { color: COLORS.text2, fontSize: 14.5 },
+  centeredHeader: { alignItems: 'center', marginBottom: 36, marginTop: SPACING.xl },
+  signInTitle: { fontFamily: 'Syne', fontSize: 34, fontWeight: '800', color: COLORS.text, marginBottom: 8, textAlign: 'center' },
+  signInSubtitle: { color: COLORS.text2, fontSize: 15, textAlign: 'center' },
   forgotBtn: { alignItems: 'flex-end', marginTop: -4, marginBottom: 8 },
   forgotText: { color: COLORS.coral, fontSize: 14, fontWeight: '500' },
+  backBtnInline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
+  backBtnText: { color: COLORS.text2, fontSize: 14, fontWeight: '500' },
 
   // Subtle link
   subtleLink: { color: COLORS.blue, fontSize: 13.5, fontWeight: '600', marginTop: 14 },
