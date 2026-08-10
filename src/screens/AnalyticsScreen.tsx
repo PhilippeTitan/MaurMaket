@@ -113,19 +113,19 @@ export default function AnalyticsScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Sticky header */}
+      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm, paddingBottom: SPACING.sm, zIndex: 10 }]}>
+        <BackButton
+          onPress={() => nav.goBack()}
+          style={{ position: 'absolute', left: SPACING.lg, top: insets.top + SPACING.sm }}
+        />
+        <Text style={styles.topBarTitle}>Dashboard</Text>
+      </View>
+
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}
+        contentContainerStyle={[styles.content, { paddingTop: 0, paddingBottom: insets.bottom + 80 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchData(true); setRefreshing(false); }} tintColor={COLORS.coral} />}
       >
-        {/* Top bar */}
-        <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
-          <BackButton
-            onPress={() => nav.goBack()}
-            style={{ position: 'absolute', left: SPACING.lg, top: insets.top + SPACING.sm }}
-          />
-          <Text style={styles.topBarTitle}>Dashboard</Text>
-        </View>
-
         {/* Section 1: Overview Stats */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Overview</Text>
