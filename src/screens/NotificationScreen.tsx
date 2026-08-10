@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, Image,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, Image, Pressable,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -109,6 +109,15 @@ function groupByDay(notifs: Notification[]): { label: string; data: Notification
 
 const ORDER_NOTIF_TYPES = new Set(['order_status', 'payment_confirmed', 'payment_failed', 'order_cancelled']);
 
+const SORT_OPTIONS = [
+  { value: 'date_desc', label: 'Newest first' },
+  { value: 'date_asc', label: 'Oldest first' },
+  { value: 'price_desc', label: 'Price: High to Low' },
+  { value: 'price_asc', label: 'Price: Low to High' },
+  { value: 'name_asc', label: 'Name: A-Z' },
+  { value: 'name_desc', label: 'Name: Z-A' },
+];
+
 export default function NotificationScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
@@ -121,6 +130,8 @@ export default function NotificationScreen() {
   const [sellOrders, setSellOrders] = useState<Order[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
+  const [sortModal, setSortModal] = useState(false);
+  const [sortBy, setSortBy] = useState('date_desc');
 
   const fetchData = useCallback(async (force = false) => {
     try {
@@ -165,11 +176,25 @@ export default function NotificationScreen() {
   const allOrders = [...buyOrders, ...sellOrders];
   const activeOrders = allOrders.filter(o => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
   const allHistoryOrders = allOrders.filter(o => ['completed', 'cancelled'].includes(o.status));
-  const historyOrders = allOrders.filter(o => {
-    if (historyFilter === 'completed') return o.status === 'completed';
-    if (historyFilter === 'cancelled') return o.status === 'cancelled';
-    return ['completed', 'cancelled'].includes(o.status);
-  });
+  const historyOrders = (() => {
+    let filtered = allOrders.filter(o => {
+      if (historyFilter === 'completed') return o.status === 'completed';
+      if (historyFilter === 'cancelled') return o.status === 'cancelled';
+      return ['completed', 'cancelled'].includes(o.status);
+    });
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'date_asc': return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case 'date_desc': return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case 'price_asc': return Number(a.total_amount) - Number(b.total_amount);
+        case 'price_desc': return Number(b.total_amount) - Number(a.total_amount);
+        case 'name_asc': return (a.first_product_name || '').localeCompare(b.first_product_name || '');
+        case 'name_desc': return (b.first_product_name || '').localeCompare(a.first_product_name || '');
+        default: return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    });
+    return filtered;
+  })();
 
   const sections = groupByDay(filteredNotifications);
   const sectionsFlat: { label: string; notif: Notification; isHeader: boolean }[] = [];
@@ -403,27 +428,14 @@ export default function NotificationScreen() {
             <BackButton onPress={() => setShowHistory(false)} />
             <Text style={styles.title}>Order History</Text>
             <TouchableOpacity
-              onPress={() => setHistoryFilter(historyFilter === 'all' ? 'completed' : historyFilter === 'completed' ? 'cancelled' : 'all')}
+              onPress={() => setSortModal(true)}
               style={styles.historyFilterBtn}
-              accessibilityLabel="filter history"
+              accessibilityLabel="sort and filter"
               accessibilityRole="button"
             >
-              <MaterialCommunityIcons name="filter-variant" size={22} color={historyFilter !== 'all' ? COLORS.coral : COLORS.text} />
+              <MaterialCommunityIcons name="tune-variant" size={30} color={COLORS.text} />
             </TouchableOpacity>
           </View>
-          {historyFilter !== 'all' && (
-            <View style={styles.filterChipRow}>
-              <TouchableOpacity
-                style={styles.filterChip}
-                onPress={() => setHistoryFilter('all')}
-                accessibilityLabel="clear filter"
-                accessibilityRole="button"
-              >
-                <Text style={styles.filterChipText}>{historyFilter === 'completed' ? 'Completed' : 'Cancelled'}</Text>
-                <MaterialCommunityIcons name="close" size={14} color={COLORS.coral} />
-              </TouchableOpacity>
-            </View>
-          )}
           {historyOrders.length === 0 ? (
             <EmptyState icon="clock-outline" title="No order history yet" size={56} />
           ) : (
@@ -435,6 +447,56 @@ export default function NotificationScreen() {
             />
           )}
         </View>
+      </Modal>
+
+      {/* Sort / Filter modal */}
+      <Modal visible={sortModal} transparent animationType="fade" onRequestClose={() => setSortModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>
+          <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Sort by</Text>
+              <TouchableOpacity onPress={() => setSortModal(false)} accessibilityRole="button" accessibilityLabel="close">
+                <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
+              </TouchableOpacity>
+            </View>
+            {SORT_OPTIONS.map(option => (
+              <TouchableOpacity
+                key={option.value}
+                style={[styles.modalItem, sortBy === option.value && styles.modalItemActive]}
+                onPress={() => { setSortBy(option.value); setSortModal(false); }}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons
+                  name={sortBy === option.value ? 'radiobox-marked' : 'radiobox-blank'}
+                  size={18}
+                  color={sortBy === option.value ? COLORS.coral : COLORS.text2}
+                />
+                <Text style={[styles.modalItemText, sortBy === option.value && styles.modalItemTextActive]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <View style={styles.modalDivider} />
+            <Text style={[styles.modalTitle, { marginBottom: 6 }]}>Status</Text>
+            {(['all', 'completed', 'cancelled'] as const).map(f => (
+              <TouchableOpacity
+                key={f}
+                style={[styles.modalItem, historyFilter === f && styles.modalItemActive]}
+                onPress={() => { setHistoryFilter(f); setSortModal(false); }}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons
+                  name={historyFilter === f ? 'radiobox-marked' : 'radiobox-blank'}
+                  size={18}
+                  color={historyFilter === f ? COLORS.coral : COLORS.text2}
+                />
+                <Text style={[styles.modalItemText, historyFilter === f && styles.modalItemTextActive]}>
+                  {f === 'all' ? 'All' : f === 'completed' ? 'Completed' : 'Cancelled'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );
@@ -459,15 +521,25 @@ const styles = StyleSheet.create({
   },
   historyBadgeText: { color: COLORS.white, fontSize: 8, fontWeight: '700' },
   historyFilterBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  filterChipRow: {
-    flexDirection: 'row', paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm,
+
+  /* Sort modal (Explore style) */
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center',
   },
-  filterChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: COLORS.coral + '18', borderRadius: RADIUS.row,
-    paddingHorizontal: 10, paddingVertical: 5,
+  modalContent: {
+    width: 240, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 10, gap: 2, overflow: 'hidden',
   },
-  filterChipText: { fontSize: 12, fontWeight: '600', color: COLORS.coral },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, marginLeft: 4 },
+  modalTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  modalItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 8, paddingHorizontal: 8, borderRadius: 6,
+  },
+  modalItemActive: { backgroundColor: COLORS.surface2 },
+  modalItemText: { fontSize: 12, color: COLORS.text2, fontWeight: '500' },
+  modalItemTextActive: { color: COLORS.text, fontWeight: '700' },
+  modalDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 6 },
 
   /* Bottom nav */
   bottomNav: {

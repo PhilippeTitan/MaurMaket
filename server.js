@@ -4084,7 +4084,11 @@ app.get('/api/seller/products', authRequired, sellerRequired, async (req, res) =
 app.get('/api/seller/orders', authRequired, sellerRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT o.*, u.full_name AS buyer_name, u.phone AS buyer_phone
+      `SELECT o.*, u.full_name AS buyer_name, u.phone AS buyer_phone,
+              'seller' AS my_role,
+              (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) AS item_count,
+              (SELECT p.name FROM order_items oi2 JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
+              (SELECT pi.image_url FROM order_items oi3 JOIN product_images pi ON oi3.product_id = pi.product_id WHERE oi3.order_id = o.id AND pi.is_primary = true ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
        FROM orders o
        JOIN order_items oi ON o.id = oi.order_id
        JOIN users u ON o.buyer_id = u.id
