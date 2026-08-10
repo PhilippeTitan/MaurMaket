@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Image,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,10 +16,9 @@ import type { Notification, Order } from '../types';
 import type { RootStackParamList } from '../navigation';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
-import UserAvatar from '../components/UserAvatar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type Tab = 'notifications' | 'orders';
+type Tab = 'notifications' | 'buying' | 'selling';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: COLORS.blue,
@@ -75,11 +74,12 @@ function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m`;
+  if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
+  if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d`;
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString('fr-HT', { day: 'numeric', month: 'short' });
 }
 
@@ -107,6 +107,8 @@ function groupByDay(notifs: Notification[]): { label: string; data: Notification
   return Object.entries(groups).map(([label, data]) => ({ label, data }));
 }
 
+const ORDER_NOTIF_TYPES = new Set(['order_status', 'payment_confirmed', 'payment_failed', 'order_cancelled']);
+
 export default function NotificationScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
@@ -117,7 +119,7 @@ export default function NotificationScreen() {
   const [loading, setLoading] = useState(true);
   const [buyOrders, setBuyOrders] = useState<Order[]>([]);
   const [sellOrders, setSellOrders] = useState<Order[]>([]);
-  const [orderTab, setOrderTab] = useState<'buying' | 'selling'>('buying');
+  const [showHistory, setShowHistory] = useState(false);
 
   const fetchData = useCallback(async (force = false) => {
     try {
@@ -157,12 +159,13 @@ export default function NotificationScreen() {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 
-  const ORDER_NOTIF_TYPES = new Set(['order_status', 'payment_confirmed', 'payment_failed', 'order_cancelled']);
-  const activeOrders = [...buyOrders, ...sellOrders].filter(o => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
   const filteredNotifications = notifications.filter(n => !ORDER_NOTIF_TYPES.has(n.type));
   const unreadCount = filteredNotifications.filter(n => !n.is_read).length;
-  const sections = groupByDay(filteredNotifications);
+  const allOrders = [...buyOrders, ...sellOrders];
+  const activeOrders = allOrders.filter(o => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
+  const historyOrders = allOrders.filter(o => ['completed', 'cancelled'].includes(o.status));
 
+  const sections = groupByDay(filteredNotifications);
   const sectionsFlat: { label: string; notif: Notification; isHeader: boolean }[] = [];
   for (const section of sections) {
     sectionsFlat.push({ label: section.label, notif: section.data[0], isHeader: true });
@@ -181,7 +184,6 @@ export default function NotificationScreen() {
     }
     const notif = item.notif;
     const { icon, color } = getNotifIcon(notif.type);
-    const imageData = (notif.data as any)?.image;
     return (
       <TouchableOpacity
         style={[styles.row, !notif.is_read && styles.rowUnread]}
@@ -198,63 +200,136 @@ export default function NotificationScreen() {
           {notif.body && <Text style={styles.rowBodyText} numberOfLines={2}>{notif.body}</Text>}
           <Text style={styles.rowTime}>{timeAgo(notif.created_at)}</Text>
         </View>
-        {imageData ? (
-          <View style={styles.rowImageWrap}>
-            <View style={[styles.rowImage, { backgroundColor: COLORS.surface2 }]} />
-          </View>
-        ) : !notif.is_read ? (
-          <View style={[styles.rowDot, { backgroundColor: color }]} />
-        ) : null}
+        {!notif.is_read ? <View style={[styles.rowDot, { backgroundColor: color }]} /> : null}
       </TouchableOpacity>
     );
   };
 
-  const tabs: { key: Tab; icon: string; label: string; badge: number }[] = [
+  const renderOrderCard = (item: Order, role: 'buying' | 'selling') => {
+    const sc = STATUS_COLORS[item.status] || COLORS.text2;
+    const currentStep = STATUS_STEPS.indexOf(item.status);
+    const isCancelled = item.status === 'cancelled';
+    const isHistory = ['completed', 'cancelled'].includes(item.status);
+    const productImageUrl = item.product_image ? getImageUrl(item.product_image) : null;
+    const itemName = item.first_product_name || 'Order';
+    const itemCount = item.item_count || 1;
+    const isMeetup = item.delivery_method === 'meetup';
+    const otherName = role === 'buying'
+      ? (item as any).seller_name || 'Seller'
+      : (item as any).buyer_name || 'Buyer';
+
+    return (
+      <TouchableOpacity
+        key={item.id}
+        style={[styles.orderCard, isHistory && styles.orderCardHistory]}
+        onPress={() => nav.navigate('OrderDetail', { orderId: item.id })}
+        accessibilityLabel={`order ${item.id.slice(0, 8)}`}
+        accessibilityRole="button"
+        activeOpacity={0.7}
+      >
+        <View style={styles.orderCardTop}>
+          {productImageUrl ? (
+            <Image source={{ uri: productImageUrl }} style={styles.orderImage} />
+          ) : (
+            <View style={[styles.orderImage, styles.orderImagePlaceholder]}>
+              <MaterialCommunityIcons name="package-variant" size={24} color={COLORS.text2} />
+            </View>
+          )}
+          <View style={styles.orderDetails}>
+            <Text style={styles.orderProductName} numberOfLines={1}>{itemName}</Text>
+            {itemCount > 1 && (
+              <Text style={styles.orderItemCount}>+{itemCount - 1} more item{itemCount > 2 ? 's' : ''}</Text>
+            )}
+            <View style={styles.orderMeta}>
+              <MaterialCommunityIcons
+                name={isMeetup ? 'map-marker-outline' : 'truck-delivery-outline'}
+                size={13}
+                color={COLORS.text2}
+              />
+              <Text style={styles.orderMetaText}>{otherName}</Text>
+            </View>
+          </View>
+          <View style={styles.orderPriceCol}>
+            <Text style={styles.orderAmount}>{formatPrice(Number(item.total_amount))} G</Text>
+            <Text style={styles.orderDate}>{timeAgo(item.created_at)}</Text>
+          </View>
+        </View>
+        <View style={styles.orderCardBottom}>
+          {isCancelled ? (
+            <View style={[styles.orderStatusPill, { backgroundColor: COLORS.coral + '18' }]}>
+              <MaterialCommunityIcons name="close-circle-outline" size={13} color={COLORS.coral} />
+              <Text style={[styles.orderStatusPillText, { color: COLORS.coral }]}>Cancelled</Text>
+            </View>
+          ) : isHistory ? (
+            <View style={[styles.orderStatusPill, { backgroundColor: COLORS.green + '18' }]}>
+              <MaterialCommunityIcons name="check-circle-outline" size={13} color={COLORS.green} />
+              <Text style={[styles.orderStatusPillText, { color: COLORS.green }]}>Completed</Text>
+            </View>
+          ) : (
+            <View style={styles.orderStepper}>
+              {STATUS_STEPS.map((step, i) => {
+                const isActive = i <= currentStep;
+                const isCurrent = i === currentStep;
+                return (
+                  <React.Fragment key={step}>
+                    <View style={[
+                      styles.stepDot,
+                      isActive && { backgroundColor: sc },
+                      isCurrent && styles.stepDotCurrent,
+                    ]} />
+                    {i < STATUS_STEPS.length - 1 && (
+                      <View style={[
+                        styles.stepLine,
+                        i < currentStep && { backgroundColor: sc },
+                      ]} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </View>
+          )}
+          <Text style={styles.orderId}>#{item.id.slice(0, 8)}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const bottomTabs: { key: Tab; icon: string; label: string; badge: number }[] = [
     { key: 'notifications', icon: 'bell-outline', label: 'Notifications', badge: unreadCount },
-    { key: 'orders', icon: 'package-variant-closed', label: 'Orders', badge: activeOrders.length },
+    { key: 'buying', icon: 'shopping-outline', label: 'Buying', badge: activeOrders.filter(o => (o as any).my_role === 'buyer').length },
+    { key: 'selling', icon: 'store-outline', label: 'Selling', badge: activeOrders.filter(o => (o as any).my_role === 'seller').length },
   ];
 
   return (
     <View style={styles.container}>
+      {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
         <BackButton onPress={() => nav.goBack()} />
-        <Text style={styles.title}>Notifications</Text>
+        <Text style={styles.title}>
+          {activeTab === 'notifications' ? 'Notifications' : activeTab === 'buying' ? 'Buying' : 'Selling'}
+        </Text>
         {activeTab === 'notifications' && unreadCount > 0 && (
           <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
             <Text style={styles.markAllText}>Mark all read</Text>
           </TouchableOpacity>
         )}
-        {activeTab !== 'notifications' || unreadCount === 0 ? <View style={{ width: 35 }} /> : null}
+        {activeTab !== 'notifications' || unreadCount === 0 ? (
+          <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
+            <MaterialCommunityIcons name="clock-outline" size={22} color={COLORS.text2} />
+            {historyOrders.length > 0 && (
+              <View style={styles.historyBadge}>
+                <Text style={styles.historyBadgeText}>{historyOrders.length > 9 ? '9+' : historyOrders.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ) : null}
       </View>
 
-      <View style={styles.tabBar}>
-        {tabs.map(tab => {
-          const isActive = activeTab === tab.key;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tabItem, isActive && styles.tabItemActive]}
-              onPress={() => setActiveTab(tab.key)}
-              accessibilityLabel={tab.label}
-              accessibilityRole="button"
-              activeOpacity={0.7}
-            >
-              <MaterialCommunityIcons name={tab.icon as any} size={20} color={isActive ? COLORS.coral : COLORS.text2} />
-              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{tab.label}</Text>
-              {tab.badge > 0 && (
-                <View style={styles.tabBadge}>
-                  <Text style={styles.tabBadgeText}>{tab.badge > 9 ? '9+' : tab.badge}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
+      {/* Content */}
       {activeTab === 'notifications' ? (
         loading ? (
           <RowListSkeleton count={7} thumbSize={40} />
-        ) : notifications.length === 0 ? (
+        ) : filteredNotifications.length === 0 ? (
           <EmptyState icon="bell-outline" title="No notifications yet" size={56} />
         ) : (
           <FlatList
@@ -267,127 +342,74 @@ export default function NotificationScreen() {
         )
       ) : (
         <>
-          {store.isSeller && (
-            <View style={styles.orderTabRow}>
-              <TouchableOpacity
-                style={[styles.orderTab, orderTab === 'buying' && styles.orderTabActive]}
-                onPress={() => setOrderTab('buying')}
-                accessibilityLabel="buying orders"
-                accessibilityRole="button"
-              >
-                <MaterialCommunityIcons name="shopping-outline" size={16} color={orderTab === 'buying' ? COLORS.white : COLORS.text2} />
-                <Text style={[styles.orderTabText, orderTab === 'buying' && styles.orderTabTextActive]}>Buying</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.orderTab, orderTab === 'selling' && styles.orderTabActive]}
-                onPress={() => setOrderTab('selling')}
-                accessibilityLabel="selling orders"
-                accessibilityRole="button"
-              >
-                <MaterialCommunityIcons name="store-outline" size={16} color={orderTab === 'selling' ? COLORS.white : COLORS.text2} />
-                <Text style={[styles.orderTabText, orderTab === 'selling' && styles.orderTabTextActive]}>Selling</Text>
-              </TouchableOpacity>
-            </View>
-          )}
           <FlatList
-            data={orderTab === 'buying' ? buyOrders : sellOrders}
+            data={activeOrders.filter(o => activeTab === 'buying' ? (o as any).my_role === 'buyer' : (o as any).my_role === 'seller')}
             keyExtractor={item => item.id}
-            contentContainerStyle={{ padding: SPACING.md, paddingBottom: insets.bottom + 100 }}
+            contentContainerStyle={{ padding: SPACING.md, paddingBottom: insets.bottom + 80 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
-            renderItem={({ item }: { item: Order }) => {
-              const sc = STATUS_COLORS[item.status] || COLORS.text2;
-              const currentStep = STATUS_STEPS.indexOf(item.status);
-              const isCancelled = item.status === 'cancelled';
-              const productImageUrl = item.product_image ? getImageUrl(item.product_image) : null;
-              const itemName = item.first_product_name || 'Order';
-              const itemCount = item.item_count || 1;
-              const isMeetup = item.delivery_method === 'meetup';
-              const otherName = orderTab === 'buying'
-                ? (item as any).seller_name || 'Seller'
-                : (item as any).buyer_name || 'Buyer';
-
-              return (
-                <TouchableOpacity
-                  style={styles.orderCard}
-                  onPress={() => nav.navigate('OrderDetail', { orderId: item.id })}
-                  accessibilityLabel={`order ${item.id.slice(0, 8)}`}
-                  accessibilityRole="button"
-                  activeOpacity={0.7}
-                >
-                  {/* Top row: image + details */}
-                  <View style={styles.orderCardTop}>
-                    {productImageUrl ? (
-                      <Image source={{ uri: productImageUrl }} style={styles.orderImage} />
-                    ) : (
-                      <View style={[styles.orderImage, styles.orderImagePlaceholder]}>
-                        <MaterialCommunityIcons name="package-variant" size={24} color={COLORS.text2} />
-                      </View>
-                    )}
-                    <View style={styles.orderDetails}>
-                      <Text style={styles.orderProductName} numberOfLines={1}>{itemName}</Text>
-                      {itemCount > 1 && (
-                        <Text style={styles.orderItemCount}>+{itemCount - 1} more item{itemCount > 2 ? 's' : ''}</Text>
-                      )}
-                      <View style={styles.orderMeta}>
-                        <MaterialCommunityIcons
-                          name={isMeetup ? 'map-marker-outline' : 'truck-delivery-outline'}
-                          size={13}
-                          color={COLORS.text2}
-                        />
-                        <Text style={styles.orderMetaText}>{otherName}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.orderPriceCol}>
-                      <Text style={styles.orderAmount}>{formatPrice(Number(item.total_amount))} G</Text>
-                      <Text style={styles.orderDate}>{timeAgo(item.created_at)}</Text>
-                    </View>
-                  </View>
-
-                  {/* Bottom row: status stepper + ID */}
-                  <View style={styles.orderCardBottom}>
-                    {isCancelled ? (
-                      <View style={[styles.orderStatusPill, { backgroundColor: COLORS.coral + '18' }]}>
-                        <MaterialCommunityIcons name="close-circle-outline" size={13} color={COLORS.coral} />
-                        <Text style={[styles.orderStatusPillText, { color: COLORS.coral }]}>Cancelled</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.orderStepper}>
-                        {STATUS_STEPS.map((step, i) => {
-                          const isActive = i <= currentStep;
-                          const isCurrent = i === currentStep;
-                          return (
-                            <React.Fragment key={step}>
-                              <View style={[
-                                styles.stepDot,
-                                isActive && { backgroundColor: sc },
-                                isCurrent && styles.stepDotCurrent,
-                              ]} />
-                              {i < STATUS_STEPS.length - 1 && (
-                                <View style={[
-                                  styles.stepLine,
-                                  i < currentStep && { backgroundColor: sc },
-                                ]} />
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
-                      </View>
-                    )}
-                    <Text style={styles.orderId}>#{item.id.slice(0, 8)}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            }}
+            renderItem={({ item }) => renderOrderCard(item, activeTab)}
             ListEmptyComponent={
               loading ? (
                 <RowListSkeleton count={4} thumbSize={48} />
               ) : (
-                <EmptyState icon="package-variant" title="No orders yet" size={44} />
+                <EmptyState
+                  icon={activeTab === 'buying' ? 'shopping-outline' : 'store-outline'}
+                  title={activeTab === 'buying' ? 'No orders to fulfill' : 'No orders from buyers'}
+                  size={44}
+                />
               )
             }
           />
         </>
       )}
+
+      {/* Bottom nav */}
+      <View style={[styles.bottomNav, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 12 }]}>
+        {bottomTabs.map(tab => {
+          const isActive = activeTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={styles.bottomNavItem}
+              onPress={() => setActiveTab(tab.key)}
+              accessibilityLabel={tab.label}
+              accessibilityRole="button"
+              activeOpacity={0.7}
+            >
+              <View style={styles.bottomNavIconWrap}>
+                <MaterialCommunityIcons name={tab.icon as any} size={24} color={isActive ? COLORS.coral : COLORS.text2} />
+                {tab.badge > 0 && (
+                  <View style={styles.bottomNavBadge}>
+                    <Text style={styles.bottomNavBadgeText}>{tab.badge > 9 ? '9+' : tab.badge}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.bottomNavLabel, isActive && styles.bottomNavLabelActive]}>{tab.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* History modal */}
+      <Modal visible={showHistory} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowHistory(false)}>
+        <View style={styles.container}>
+          <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
+            <BackButton onPress={() => setShowHistory(false)} />
+            <Text style={styles.title}>Order History</Text>
+            <View style={{ width: 35 }} />
+          </View>
+          {historyOrders.length === 0 ? (
+            <EmptyState icon="clock-outline" title="No order history yet" size={56} />
+          ) : (
+            <FlatList
+              data={historyOrders}
+              keyExtractor={item => item.id}
+              contentContainerStyle={{ padding: SPACING.md, paddingBottom: insets.bottom + 40 }}
+              renderItem={({ item }) => renderOrderCard(item, (item as any).my_role === 'buyer' ? 'buying' : 'selling')}
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -402,26 +424,34 @@ const styles = StyleSheet.create({
   title: { flex: 1, textAlign: 'center', fontSize: 18, color: COLORS.text, fontWeight: '700' },
   markAllBtn: { padding: 8, borderRadius: 20 },
   markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '500' },
+  historyBtn: { padding: 8, borderRadius: 20, position: 'relative' },
+  historyBadge: {
+    position: 'absolute', top: 2, right: 2,
+    backgroundColor: COLORS.coral, borderRadius: 8,
+    minWidth: 14, height: 14, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  historyBadgeText: { color: COLORS.white, fontSize: 8, fontWeight: '700' },
 
-  /* Tab bar */
-  tabBar: {
-    flexDirection: 'row',
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+  /* Bottom nav */
+  bottomNav: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
+    backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border,
+    paddingTop: 8,
+    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 8,
   },
-  tabItem: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent',
-  },
-  tabItemActive: { borderBottomColor: COLORS.coral },
-  tabLabel: { fontSize: 14, fontWeight: '500', color: COLORS.text2 },
-  tabLabelActive: { color: COLORS.coral, fontWeight: '700' },
-  tabBadge: {
+  bottomNavItem: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 2 },
+  bottomNavIconWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
+  bottomNavBadge: {
+    position: 'absolute', top: -4, right: -10,
     backgroundColor: COLORS.coral, borderRadius: 8,
     minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 4,
   },
-  tabBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '700' },
+  bottomNavBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '700' },
+  bottomNavLabel: { fontSize: 10, color: COLORS.text2, marginTop: 2, fontWeight: '500' },
+  bottomNavLabelActive: { color: COLORS.coral, fontWeight: '700' },
 
   /* Notifications */
   sectionHeader: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.xs },
@@ -434,23 +464,14 @@ const styles = StyleSheet.create({
   rowTitleUnread: { fontWeight: '700' },
   rowBodyText: { fontSize: 13, color: COLORS.text2, marginTop: 2 },
   rowTime: { fontSize: 11, color: COLORS.text2, marginTop: 4 },
-  rowImageWrap: { width: 44, height: 44, borderRadius: RADIUS.row, overflow: 'hidden' },
-  rowImage: { width: '100%', height: '100%' },
   rowDot: { width: 8, height: 8, borderRadius: 4 },
 
   /* Orders */
-  orderTabRow: {
-    flexDirection: 'row', marginHorizontal: SPACING.md, marginTop: SPACING.sm,
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
-  },
-  orderTab: { flex: 1, padding: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
-  orderTabActive: { backgroundColor: COLORS.coral },
-  orderTabText: { color: COLORS.text2, fontSize: 14, fontWeight: '500' },
-  orderTabTextActive: { color: COLORS.white },
   orderCard: {
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.card, padding: 14, marginBottom: 10,
   },
+  orderCardHistory: { opacity: 0.7 },
   orderCardTop: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
   },
