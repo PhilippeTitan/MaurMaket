@@ -4248,7 +4248,7 @@ app.get('/api/seller/analytics', authRequired, sellerRequired, async (req, res) 
     const overview = await pool.query(
       `SELECT
         COUNT(DISTINCT CASE WHEN o.status != 'cancelled' THEN o.id END) AS total_orders,
-        COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN oi.price * oi.quantity ELSE 0 END), 0) AS total_revenue,
+        COALESCE(SUM(CASE WHEN o.status = 'completed' THEN oi.price * oi.quantity ELSE 0 END), 0) AS total_revenue,
         (SELECT COALESCE(AVG(r.rating)::numeric(3,2), 0) FROM reviews r WHERE r.seller_id = $1) AS avg_rating,
         (SELECT COUNT(*) FROM reviews WHERE seller_id = $1) AS review_count,
         (SELECT COUNT(*) FROM follows WHERE seller_id = $1) AS follower_count,
