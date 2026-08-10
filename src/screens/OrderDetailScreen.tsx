@@ -392,8 +392,12 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.feeValue}>-{formatPrice(Math.round(Number((order as any).escrow.commission_amount)))} G</Text>
               </View>
               <View style={styles.feeRow}>
-                <Text style={styles.feeLabel}>Seller receives</Text>
-                <Text style={[styles.feeValue, { color: COLORS.green, fontWeight: '700' }]}>{formatPrice(Math.round(Number((order as any).escrow.net_amount)))} G</Text>
+                <Text style={styles.feeLabel}>MonCash fee (~7.9%)</Text>
+                <Text style={styles.feeValue}>~-{formatPrice(Math.round(Number(order.total_amount) * 0.079))} G</Text>
+              </View>
+              <View style={[styles.feeRow, { marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: COLORS.border + '40' }]}>
+                <Text style={[styles.feeLabel, { fontWeight: '700', color: COLORS.text }]}>Seller receives</Text>
+                <Text style={[styles.feeValue, { color: COLORS.green, fontWeight: '700' }]}>{formatPrice(Math.round(Number((order as any).escrow.net_amount) * 0.95))} G</Text>
               </View>
             </View>
           )}
