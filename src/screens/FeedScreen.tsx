@@ -107,6 +107,17 @@ export default function FeedScreen() {
     };
   }, []);
 
+  // Re-fetch unread count when screen comes back into focus
+  useFocusEffect(useCallback(() => {
+    const loadUnread = async () => {
+      try {
+        const res = await getUnreadCount() as { count: string | number };
+        setUnreadCount(Number(res.count || 0));
+      } catch {}
+    };
+    loadUnread();
+  }, []));
+
   useEffect(() => {
     if (!store.isLoggedIn || products.length === 0) return;
     const unchecked = products.filter(p => !checkedWishlistIds.current.has(p.id));

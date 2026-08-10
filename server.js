@@ -708,7 +708,7 @@ async function runMigrations() {
         lat DECIMAL(10,7),
         lng DECIMAL(10,7),
         checked_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        qr_token VARCHAR(255),
+        qr_token TEXT,
         qr_scanned BOOLEAN DEFAULT false,
         UNIQUE(order_id, user_id)
       );
@@ -3372,7 +3372,7 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
         );
         await client.query(
           'UPDATE meetup_checkins SET qr_token = $1 WHERE order_id = $2 AND user_id = $3',
-          [qrToken, req.params.id, req.user.id]
+          [qrToken, req.params.id, order.buyer_id]
         );
         // Log the event
         await logOrderEvent(req.params.id, 'meetup_arrived', req.user.id, null, null, `Buyer and seller within ${Math.round(distance)}m`, client);
@@ -3392,12 +3392,14 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
       meetupStartedAt: order.meetup_started_at || (proximityConfirmed ? new Date().toISOString() : null),
     };
 
-    if (proximityConfirmed && isBuyer) {
+    if (isBuyer) {
       const qrRow = await pool.query(
         'SELECT qr_token FROM meetup_checkins WHERE order_id = $1 AND user_id = $2',
         [req.params.id, req.user.id]
       );
-      response.qrToken = qrRow.rows[0]?.qr_token || null;
+      if (qrRow.rows[0]?.qr_token) {
+        response.qrToken = qrRow.rows[0].qr_token;
+      }
     }
 
     res.json(response);

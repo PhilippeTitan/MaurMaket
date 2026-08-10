@@ -8,34 +8,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
-import { getConversations, getNotifications, getFollowing, createConversation, getConversationsWithOffers, markNotificationRead, markAllNotificationsRead, getImageUrl, getOrders, getSellerOrders, cancelOrder, completeOrder, updateOrderStatus } from '../api';
+import { getConversations, getNotifications, getFollowing, createConversation, getConversationsWithOffers, markNotificationRead, markAllNotificationsRead, getImageUrl } from '../api';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
 import { routeNotification } from '../notificationRouting';
-import type { Conversation, Notification, Order } from '../types';
+import type { Conversation, Notification } from '../types';
 import type { RootStackParamList } from '../navigation';
 import UserAvatar from '../components/UserAvatar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type InboxTab = 'all' | 'primary' | 'offers' | 'orders';
+type InboxTab = 'all' | 'primary' | 'offers';
 
 const INBOX_CACHE_TTL = 15_000;
 let _inboxCache: { data: any; timestamp: number } | null = null;
-
-const STATUS_COLORS: Record<string, string> = {
-  pending: COLORS.blue,
-  paid: COLORS.green,
-  processing: COLORS.blue,
-  shipped: COLORS.blue,
-  delivered: COLORS.green,
-  completed: COLORS.green,
-  cancelled: COLORS.coral,
-};
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -115,9 +105,6 @@ export default function InboxScreen() {
   const [search, setSearch] = useState('');
   const [searchFilter, setSearchFilter] = useState<'all' | 'today' | 'week' | 'unread'>('all');
   const [showFilterDrop, setShowFilterDrop] = useState(false);
-  const [buyOrders, setBuyOrders] = useState<Order[]>([]);
-  const [sellOrders, setSellOrders] = useState<Order[]>([]);
-  const [orderTab, setOrderTab] = useState<'buying' | 'selling'>('buying');
   const searchInputRef = useRef<any>(null);
 
   const followedIds = new Set(followedSellers.map((s: any) => s.seller_id));
@@ -131,35 +118,27 @@ export default function InboxScreen() {
       setNotifications(d.notifications);
       setFollowedSellers(d.followedSellers);
       setOfferConversations(d.offerConversations || []);
-      setBuyOrders(d.buyOrders || []);
-      setSellOrders(d.sellOrders || []);
       setLoading(false);
       return;
     }
     try {
-      const [convoResult, notifResult, followingResult, offersResult, buyOrdersResult, sellOrdersResult] = await Promise.allSettled([
+      const [convoResult, notifResult, followingResult, offersResult] = await Promise.allSettled([
         getConversations() as Promise<{ conversations: Conversation[] }>,
         getNotifications() as Promise<{ notifications: Notification[] }>,
         getFollowing() as Promise<{ following: any[] }>,
         getConversationsWithOffers() as Promise<{ conversations: any[] }>,
-        getOrders() as Promise<{ buyerOrders: Order[] }>,
-        store.isSeller ? getSellerOrders() as Promise<{ orders: Order[] }> : Promise.resolve({ orders: [] }),
       ]);
       if (convoResult.status !== 'fulfilled') throw convoResult.reason;
       const conversations = convoResult.value.conversations || [];
       const notifications = notifResult.status === 'fulfilled' ? notifResult.value.notifications || [] : [];
       const followedSellers = followingResult.status === 'fulfilled' ? followingResult.value.following || [] : [];
       const offerConversations = offersResult.status === 'fulfilled' ? offersResult.value.conversations || [] : [];
-      const buyOrders = buyOrdersResult.status === 'fulfilled' ? buyOrdersResult.value.buyerOrders || [] : [];
-      const sellOrders = sellOrdersResult.status === 'fulfilled' ? sellOrdersResult.value.orders || [] : [];
       setConversations(conversations);
       setNotifications(notifications);
       setFollowedSellers(followedSellers);
       store.setFollowingList(followedSellers.map((s: any) => s.seller_id || s.id).filter(Boolean));
       setOfferConversations(offerConversations);
-      setBuyOrders(buyOrders);
-      setSellOrders(sellOrders);
-      _inboxCache = { timestamp: Date.now(), data: { conversations, notifications, followedSellers, offerConversations, buyOrders, sellOrders } };
+      _inboxCache = { timestamp: Date.now(), data: { conversations, notifications, followedSellers, offerConversations } };
     } catch {
       toast.error('Inbox could not refresh', 'Your conversations are still available when the connection returns.', () => fetchData(true));
     }
@@ -321,7 +300,6 @@ export default function InboxScreen() {
     { key: 'all', icon: 'message-text-outline', label: 'All' },
     { key: 'primary', icon: 'star-outline', label: 'Primary' },
     { key: 'search', icon: 'magnify', label: 'Search' },
-    { key: 'orders', icon: 'package-variant-closed', label: 'Orders' },
     { key: 'offers', icon: 'tag-outline', label: 'Offers' },
   ];
 
@@ -346,7 +324,7 @@ export default function InboxScreen() {
           );
         }
         const isActive = activeTab === tab.key;
-        const badge = tab.key === 'offers' ? offerConversations.length : tab.key === 'orders' ? buyOrders.length + sellOrders.length : 0;
+        const badge = tab.key === 'offers' ? offerConversations.length : 0;
         return (
           <TouchableOpacity
             key={tab.key}
@@ -484,63 +462,6 @@ export default function InboxScreen() {
             )
           }
         />
-      ) : activeTab === 'orders' ? (
-        <>
-          {store.isSeller && (
-            <View style={styles.orderTabRow}>
-              <TouchableOpacity
-                style={[styles.orderTab, orderTab === 'buying' && styles.orderTabActive]}
-                onPress={() => setOrderTab('buying')}
-                accessibilityLabel="buying orders"
-                accessibilityRole="button"
-              >
-                <Text style={[styles.orderTabText, orderTab === 'buying' && styles.orderTabTextActive]}>Buying</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.orderTab, orderTab === 'selling' && styles.orderTabActive]}
-                onPress={() => setOrderTab('selling')}
-                accessibilityLabel="selling orders"
-                accessibilityRole="button"
-              >
-                <Text style={[styles.orderTabText, orderTab === 'selling' && styles.orderTabTextActive]}>Selling</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          <FlatList
-            data={orderTab === 'buying' ? buyOrders : sellOrders}
-            keyExtractor={item => item.id}
-            contentContainerStyle={{ padding: SPACING.md, paddingBottom: insets.bottom + 100 }}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
-            renderItem={({ item }: { item: Order }) => {
-              const sc = STATUS_COLORS[item.status] || COLORS.text2;
-              return (
-                <TouchableOpacity
-                  style={styles.orderCard}
-                  onPress={() => nav.navigate('OrderDetail', { orderId: item.id })}
-                  accessibilityLabel={`order ${item.id.slice(0, 8)}`}
-                  accessibilityRole="button"
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.orderCardHeader}>
-                    <Text style={styles.orderId}>#{item.id.slice(0, 8)}</Text>
-                    <View style={[styles.orderStatusBadge, { backgroundColor: sc + '1A' }]}>
-                      <Text style={[styles.orderStatusText, { color: sc }]}>{item.status}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.orderAmount}>{formatPrice(Number(item.total_amount))} G</Text>
-                  <Text style={styles.orderDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
-                </TouchableOpacity>
-              );
-            }}
-            ListEmptyComponent={
-              loading ? (
-                <RowListSkeleton count={4} thumbSize={48} />
-              ) : (
-                <EmptyState icon="package-variant" title="No orders yet" size={44} />
-              )
-            }
-          />
-        </>
       ) : (
         <FlatList
           data={filteredConversations as any}
@@ -775,24 +696,4 @@ const styles = StyleSheet.create({
   filterDropItemActive: { backgroundColor: COLORS.coral + '15' },
   filterDropText: { fontSize: 14, color: COLORS.text },
   filterDropTextActive: { color: COLORS.coral, fontWeight: '700' },
-
-  /* Orders */
-  orderTabRow: {
-    flexDirection: 'row', marginHorizontal: SPACING.md, marginTop: SPACING.sm,
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
-  },
-  orderTab: { flex: 1, padding: 10, alignItems: 'center' },
-  orderTabActive: { backgroundColor: COLORS.coral },
-  orderTabText: { color: COLORS.text2, fontSize: 14, fontWeight: '500' },
-  orderTabTextActive: { color: COLORS.white },
-  orderCard: {
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.media, padding: 14, marginBottom: 8,
-  },
-  orderCardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  orderId: { fontSize: 12, color: COLORS.text2, fontFamily: 'monospace' },
-  orderStatusBadge: { borderRadius: RADIUS.row, paddingHorizontal: 8, paddingVertical: 2 },
-  orderStatusText: { fontSize: 12, fontWeight: '600' },
-  orderAmount: { fontFamily: 'Syne', fontSize: 16, fontWeight: '700', color: COLORS.coral },
-  orderDate: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
 });

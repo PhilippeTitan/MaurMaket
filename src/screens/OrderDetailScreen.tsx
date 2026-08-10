@@ -259,13 +259,15 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   const isSellerOfOrder = isSeller && order.items?.some((item: any) => item.seller_id === store.user?.id);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <View style={styles.container}>
       <ScreenHeader
         title={`${t('orderDetail.title')} #${order.id.slice(0, 8)}`}
         onBack={() => navigation.goBack()}
         variant="branded"
         bordered={false}
       />
+
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll}>
 
       <View style={styles.card}>
         <View style={styles.row}>
@@ -404,7 +406,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
       <View style={styles.actions}>
         {/* ── Meetup CTA (for both buyer and seller) ── */}
-        {order.delivery_method === 'meetup' && ['paid', 'completed'].includes(order.status) && (
+        {order.delivery_method === 'meetup' && order.status === 'paid' && (
           <TouchableOpacity
             style={styles.meetupBtn}
             onPress={() => navigation.navigate('Meetup', { orderId })}
@@ -610,7 +612,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
