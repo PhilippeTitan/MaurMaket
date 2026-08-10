@@ -384,6 +384,19 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             <Text style={styles.totalLabel}>{t('orderDetail.total')}</Text>
             <Text style={styles.totalValue}>{formatPrice(Number(order.total_amount))} G</Text>
           </View>
+          {/* Fee breakdown */}
+          {(order as any).escrow && (
+            <View style={styles.feeBreakdown}>
+              <View style={styles.feeRow}>
+                <Text style={styles.feeLabel}>MaurMaket fee ({Math.round((order as any).escrow.commission_rate * 100)}%)</Text>
+                <Text style={styles.feeValue}>-{formatPrice(Math.round(Number((order as any).escrow.commission_amount)))} G</Text>
+              </View>
+              <View style={styles.feeRow}>
+                <Text style={styles.feeLabel}>Seller receives</Text>
+                <Text style={[styles.feeValue, { color: COLORS.green, fontWeight: '700' }]}>{formatPrice(Math.round(Number((order as any).escrow.net_amount)))} G</Text>
+              </View>
+            </View>
+          )}
         </View>
       )}
 
@@ -818,6 +831,10 @@ const styles = StyleSheet.create({
   },
   totalLabel: { fontSize: 14, fontWeight: '700', color: COLORS.text },
   totalValue: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.coral },
+  feeBreakdown: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border + '60' },
+  feeRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  feeLabel: { fontSize: 12, color: COLORS.text2 },
+  feeValue: { fontSize: 12, fontWeight: '600', color: COLORS.text2 },
 
   /* ── Info sections (delivery / meetup) ── */
   infoHeader: {

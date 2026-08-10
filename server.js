@@ -2890,7 +2890,12 @@ app.get('/api/orders/:id', authRequired, async (req, res) => {
       `SELECT id, full_name, phone FROM users WHERE id = $1`,
       [otherUserId]
     );
-    res.json({ order: { ...order, items: items.rows, my_role: myRole, other_party: otherParty.rows[0] || null } });
+    const escrowResult = await pool.query(
+      `SELECT gross_amount, commission_amount, net_amount, commission_rate
+       FROM platform_revenue WHERE order_id = $1 LIMIT 1`,
+      [req.params.id]
+    );
+    res.json({ order: { ...order, items: items.rows, my_role: myRole, other_party: otherParty.rows[0] || null, escrow: escrowResult.rows[0] || null } });
   } catch (err) {
     console.error('Order fetch error:', err);
     res.status(500).json({ error: 'Server error' });
