@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, Image, Pressable,
 } from 'react-native';
@@ -132,6 +132,34 @@ export default function NotificationScreen() {
   const [historyFilter, setHistoryFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
   const [sortModal, setSortModal] = useState(false);
   const [sortBy, setSortBy] = useState('date_desc');
+  const viewedOrdersRef = useRef<Set<string>>(new Set());
+
+  // Load viewed orders from AsyncStorage
+  useEffect(() => {
+    (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const raw = await AsyncStorage.getItem('viewed_orders');
+        if (raw) viewedOrdersRef.current = new Set(JSON.parse(raw));
+      } catch {}
+    })();
+  }, []);
+
+  const markOrderViewed = useCallback(async (orderId: string) => {
+    viewedOrdersRef.current.add(orderId);
+    try {
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.setItem('viewed_orders', JSON.stringify([...viewedOrdersRef.current]));
+    } catch {}
+  }, []);
+
+  const markAllOrdersViewed = useCallback(async () => {
+    allOrders.forEach(o => viewedOrdersRef.current.add(o.id));
+    try {
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.setItem('viewed_orders', JSON.stringify([...viewedOrdersRef.current]));
+    } catch {}
+  }, [allOrders]);
 
   const fetchData = useCallback(async (force = false) => {
     try {
@@ -248,12 +276,13 @@ export default function NotificationScreen() {
     const otherName = role === 'buying'
       ? (item as any).seller_name || 'Seller'
       : (item as any).buyer_name || 'Buyer';
+    const isUnread = !viewedOrdersRef.current.has(item.id);
 
     return (
       <TouchableOpacity
         key={item.id}
         style={[styles.orderCard, isHistory && styles.orderCardHistory]}
-        onPress={() => nav.navigate('OrderDetail', { orderId: item.id })}
+        onPress={() => { markOrderViewed(item.id); nav.navigate('OrderDetail', { orderId: item.id }); }}
         accessibilityLabel={`order ${item.id.slice(0, 8)}`}
         accessibilityRole="button"
         activeOpacity={0.7}
@@ -267,8 +296,8 @@ export default function NotificationScreen() {
                 <MaterialCommunityIcons name="package-variant" size={24} color={COLORS.text2} />
               </View>
             )}
-            {isHistory && (
-              <View style={[styles.orderDot, { backgroundColor: isCancelled ? COLORS.coral : COLORS.green }]} />
+            {isUnread && (
+              <View style={styles.orderDot} />
             )}
           </View>
           <View style={styles.orderDetails}>
@@ -349,16 +378,19 @@ export default function NotificationScreen() {
             <Text style={styles.markAllText}>Mark all read</Text>
           </TouchableOpacity>
         )}
-        {activeTab !== 'notifications' || unreadCount === 0 ? (
-          <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
-            <MaterialCommunityIcons name="clock-outline" size={26} color={COLORS.text} />
-            {allHistoryOrders.length > 0 && (
-              <View style={styles.historyBadge}>
-                <Text style={styles.historyBadgeText}>{allHistoryOrders.length > 9 ? '9+' : allHistoryOrders.length}</Text>
-              </View>
-            )}
+        {(activeTab === 'buying' || activeTab === 'selling') && (
+          <TouchableOpacity onPress={markAllOrdersViewed} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
+            <Text style={styles.markAllText}>Mark all read</Text>
           </TouchableOpacity>
-        ) : null}
+        )}
+        <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
+          <MaterialCommunityIcons name="clock-outline" size={26} color={COLORS.text} />
+          {allHistoryOrders.length > 0 && (
+            <View style={styles.historyBadge}>
+              <Text style={styles.historyBadgeText}>{allHistoryOrders.length > 9 ? '9+' : allHistoryOrders.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* Content */}
@@ -597,6 +629,7 @@ const styles = StyleSheet.create({
   orderDot: {
     position: 'absolute', top: -2, right: -2,
     width: 10, height: 10, borderRadius: 5,
+    backgroundColor: COLORS.coral,
     borderWidth: 2, borderColor: COLORS.surface,
   },
   orderDetails: {
