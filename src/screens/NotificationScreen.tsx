@@ -259,13 +259,18 @@ export default function NotificationScreen() {
         activeOpacity={0.7}
       >
         <View style={styles.orderCardTop}>
-          {productImageUrl ? (
-            <Image source={{ uri: productImageUrl }} style={styles.orderImage} />
-          ) : (
-            <View style={[styles.orderImage, styles.orderImagePlaceholder]}>
-              <MaterialCommunityIcons name="package-variant" size={24} color={COLORS.text2} />
-            </View>
-          )}
+          <View>
+            {productImageUrl ? (
+              <Image source={{ uri: productImageUrl }} style={styles.orderImage} />
+            ) : (
+              <View style={[styles.orderImage, styles.orderImagePlaceholder]}>
+                <MaterialCommunityIcons name="package-variant" size={24} color={COLORS.text2} />
+              </View>
+            )}
+            {isHistory && (
+              <View style={[styles.orderDot, { backgroundColor: isCancelled ? COLORS.coral : COLORS.green }]} />
+            )}
+          </View>
           <View style={styles.orderDetails}>
             <Text style={styles.orderProductName} numberOfLines={1}>{itemName}</Text>
             {itemCount > 1 && (
@@ -588,6 +593,11 @@ const styles = StyleSheet.create({
   },
   orderImagePlaceholder: {
     alignItems: 'center', justifyContent: 'center',
+  },
+  orderDot: {
+    position: 'absolute', top: -2, right: -2,
+    width: 10, height: 10, borderRadius: 5,
+    borderWidth: 2, borderColor: COLORS.surface,
   },
   orderDetails: {
     flex: 1, gap: 2,
