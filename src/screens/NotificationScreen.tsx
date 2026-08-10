@@ -315,7 +315,7 @@ export default function NotificationScreen() {
         )}
         {activeTab !== 'notifications' || unreadCount === 0 ? (
           <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
-            <MaterialCommunityIcons name="clock-outline" size={22} color={COLORS.text2} />
+            <MaterialCommunityIcons name="clock-outline" size={26} color={COLORS.text} />
             {historyOrders.length > 0 && (
               <View style={styles.historyBadge}>
                 <Text style={styles.historyBadgeText}>{historyOrders.length > 9 ? '9+' : historyOrders.length}</Text>
@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
   title: { flex: 1, textAlign: 'center', fontSize: 18, color: COLORS.text, fontWeight: '700' },
   markAllBtn: { padding: 8, borderRadius: 20 },
   markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '500' },
-  historyBtn: { padding: 8, borderRadius: 20, position: 'relative' },
+  historyBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   historyBadge: {
     position: 'absolute', top: 2, right: 2,
     backgroundColor: COLORS.coral, borderRadius: 8,
