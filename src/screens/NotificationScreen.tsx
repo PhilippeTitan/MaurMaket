@@ -153,14 +153,6 @@ export default function NotificationScreen() {
     } catch {}
   }, []);
 
-  const markAllOrdersViewed = useCallback(async () => {
-    allOrders.forEach(o => viewedOrdersRef.current.add(o.id));
-    try {
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      await AsyncStorage.setItem('viewed_orders', JSON.stringify([...viewedOrdersRef.current]));
-    } catch {}
-  }, [allOrders]);
-
   const fetchData = useCallback(async (force = false) => {
     try {
       const [notifResult, buyOrdersResult, sellOrdersResult] = await Promise.allSettled([
@@ -204,6 +196,14 @@ export default function NotificationScreen() {
   const allOrders = [...buyOrders, ...sellOrders];
   const activeOrders = allOrders.filter(o => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
   const allHistoryOrders = allOrders.filter(o => ['completed', 'cancelled'].includes(o.status));
+
+  const markAllOrdersViewed = useCallback(async () => {
+    allOrders.forEach(o => viewedOrdersRef.current.add(o.id));
+    try {
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.setItem('viewed_orders', JSON.stringify([...viewedOrdersRef.current]));
+    } catch {}
+  }, [allOrders]);
   const historyOrders = (() => {
     let filtered = allOrders.filter(o => {
       if (historyFilter === 'completed') return o.status === 'completed';
@@ -373,16 +373,6 @@ export default function NotificationScreen() {
         <Text style={styles.title}>
           {activeTab === 'notifications' ? 'Notifications' : activeTab === 'buying' ? 'Buying' : 'Selling'}
         </Text>
-        {activeTab === 'notifications' && unreadCount > 0 && (
-          <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
-            <Text style={styles.markAllText}>Mark all read</Text>
-          </TouchableOpacity>
-        )}
-        {(activeTab === 'buying' || activeTab === 'selling') && (
-          <TouchableOpacity onPress={markAllOrdersViewed} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
-            <Text style={styles.markAllText}>Mark all read</Text>
-          </TouchableOpacity>
-        )}
         <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
           <MaterialCommunityIcons name="clock-outline" size={26} color={COLORS.text} />
           {allHistoryOrders.length > 0 && (
@@ -392,6 +382,24 @@ export default function NotificationScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Mark all read row */}
+      {activeTab === 'notifications' && unreadCount > 0 && (
+        <View style={styles.markAllRow}>
+          <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
+            <MaterialCommunityIcons name="check-all" size={14} color={COLORS.blue} />
+            <Text style={styles.markAllText}>Mark all read</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {(activeTab === 'buying' || activeTab === 'selling') && (
+        <View style={styles.markAllRow}>
+          <TouchableOpacity onPress={markAllOrdersViewed} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
+            <MaterialCommunityIcons name="check-all" size={14} color={COLORS.blue} />
+            <Text style={styles.markAllText}>Mark all read</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Content */}
       {activeTab === 'notifications' ? (
@@ -547,8 +555,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   title: { flex: 1, textAlign: 'center', fontSize: 18, color: COLORS.text, fontWeight: '700' },
-  markAllBtn: { padding: 8, borderRadius: 20 },
-  markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '500' },
+  markAllRow: {
+    flexDirection: 'row', justifyContent: 'flex-end',
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  markAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, backgroundColor: COLORS.blue + '15' },
+  markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '600' },
   historyBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   historyBadge: {
     position: 'absolute', top: 2, right: 2,

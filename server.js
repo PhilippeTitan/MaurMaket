@@ -1049,6 +1049,16 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
 
+// Force UTF-8 charset on all JSON responses so accented characters render correctly
+app.use((_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = function (data) {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return originalJson(data);
+  };
+  next();
+});
+
 // Event logging helper
 async function logOrderEvent(orderId, eventType, actorId, oldValue, newValue, note, db) {
   const exec = db || pool;

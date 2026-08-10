@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Linking,
-  Modal, TextInput, KeyboardAvoidingView, Platform,
+  Modal, TextInput, KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
-import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup } from '../api';
+import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup, getImageUrl } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -28,6 +28,34 @@ const STATUS_COLORS: Record<string, string> = {
   completed: COLORS.green,
   cancelled: COLORS.coral,
 };
+
+const STATUS_STEPS = ['pending', 'paid', 'shipped', 'delivered', 'completed'];
+
+function getStatusLabel(status: string): string {
+  switch (status) {
+    case 'pending': return 'To Pay';
+    case 'paid': return 'Paid';
+    case 'processing': return 'Processing';
+    case 'shipped': return 'Shipped';
+    case 'delivered': return 'Delivered';
+    case 'completed': return 'Completed';
+    case 'cancelled': return 'Cancelled';
+    default: return status;
+  }
+}
+
+function getStatusIcon(status: string): string {
+  switch (status) {
+    case 'pending': return 'clock-outline';
+    case 'paid': return 'check-circle-outline';
+    case 'processing': return 'cog-outline';
+    case 'shipped': return 'truck-delivery-outline';
+    case 'delivered': return 'map-marker-check';
+    case 'completed': return 'check-all';
+    case 'cancelled': return 'close-circle-outline';
+    default: return 'circle-outline';
+  }
+}
 
 const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error ? err.message : fallback;
 
@@ -254,9 +282,15 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   }
 
   const statusColor = STATUS_COLORS[order.status] || COLORS.text2;
+  const currentStep = STATUS_STEPS.indexOf(order.status);
+  const isCancelled = order.status === 'cancelled';
+  const isHistory = ['completed', 'cancelled'].includes(order.status);
 
   const isSeller = store.isSeller;
   const isSellerOfOrder = isSeller && order.items?.some((item: any) => item.seller_id === store.user?.id);
+  const isBuyerOfOrder = store.user?.id === order.buyer_id;
+
+  const subtotal = order.items?.reduce((sum: number, item: any) => sum + Number(item.price) * Number(item.quantity), 0) || Number(order.total_amount);
 
   return (
     <View style={styles.container}>
@@ -267,74 +301,130 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         bordered={false}
       />
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-      <View style={styles.card}>
-        <View style={styles.row}>
-          <Text style={styles.label}>{t('orderDetail.status')}</Text>
-          <Text style={[styles.value, { color: statusColor, fontWeight: '700', textTransform: 'capitalize' }]}>{order.status}</Text>
+      {/* ── Status Hero ── */}
+      <View style={[styles.statusHero, { borderLeftColor: statusColor }]}>
+        <View style={styles.statusHeroTop}>
+          <View style={[styles.statusIconWrap, { backgroundColor: statusColor + '18' }]}>
+            <MaterialCommunityIcons name={getStatusIcon(order.status) as any} size={22} color={statusColor} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.statusHeroLabel, { color: statusColor }]}>{getStatusLabel(order.status)}</Text>
+            <Text style={styles.statusHeroDate}>
+              {new Date(order.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </Text>
+          </View>
+          <Text style={styles.orderIdBadge}>#{order.id.slice(0, 8)}</Text>
         </View>
-        <View style={styles.row}>
-          <Text style={styles.label}>{t('orderDetail.total')}</Text>
-          <Text style={[styles.value, { color: COLORS.coral, fontWeight: '700' }]}>
-            {formatPrice(Number(order.total_amount))} G
-          </Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.label}>{t('orderDetail.deliveryMethod')}</Text>
-          <Text style={styles.value}>{order.delivery_method === 'delivery' ? t('orderDetail.delivery') : t('orderDetail.meetup')}</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.label}>{t('orderDetail.date')}</Text>
-          <Text style={styles.value}>{new Date(order.created_at).toLocaleDateString()}</Text>
-        </View>
+
+        {/* Progress stepper */}
+        {!isCancelled && currentStep >= 0 && (
+          <View style={styles.stepper}>
+            {STATUS_STEPS.map((step, i) => {
+              const isActive = i <= currentStep;
+              const isCurrent = i === currentStep;
+              return (
+                <React.Fragment key={step}>
+                  <View style={styles.stepCol}>
+                    <View style={[
+                      styles.stepDot,
+                      isActive && { backgroundColor: statusColor },
+                      isCurrent && styles.stepDotCurrent,
+                      isCurrent && { borderColor: statusColor },
+                    ]}>
+                      {isCurrent && <View style={[styles.stepDotInner, { backgroundColor: statusColor }]} />}
+                    </View>
+                    <Text style={[styles.stepLabel, isActive && { color: statusColor }]} numberOfLines={1}>
+                      {getStatusLabel(step)}
+                    </Text>
+                  </View>
+                  {i < STATUS_STEPS.length - 1 && (
+                    <View style={[styles.stepLine, i < currentStep && { backgroundColor: statusColor }]} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </View>
+        )}
+        {isCancelled && (
+          <View style={styles.cancelledBanner}>
+            <MaterialCommunityIcons name="close-circle-outline" size={16} color={COLORS.coral} />
+            <Text style={styles.cancelledBannerText}>This order has been cancelled</Text>
+          </View>
+        )}
       </View>
 
       {/* ── Order Items ── */}
       {order.items && order.items.length > 0 && (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>{t('orderDetail.items')}</Text>
-          {order.items.map((item: any, idx: number) => (
-            <View key={item.id || idx} style={[styles.eventItem, { borderBottomColor: COLORS.border }]}>
-              <Text style={styles.eventType}>{item.product_name || `Product #${item.product_id?.slice(0, 8)}`}</Text>
-              <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 4 }}>
-                <Text style={styles.label}>x{item.quantity}</Text>
-                <Text style={[styles.value, { color: COLORS.coral }]}>{formatPrice(Number(item.price))} G</Text>
+          {order.items?.map((item: any, idx: number) => {
+            const img = item.image_url || item.product_image;
+            const imgUrl = img ? getImageUrl(img) : null;
+            return (
+              <View key={item.id || idx} style={[styles.itemRow, idx < (order.items?.length || 0) - 1 && styles.itemRowBorder]}>
+                {imgUrl ? (
+                  <Image source={{ uri: imgUrl }} style={styles.itemImage} />
+                ) : (
+                  <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
+                    <MaterialCommunityIcons name="package-variant" size={20} color={COLORS.text2} />
+                  </View>
+                )}
+                <View style={styles.itemInfo}>
+                  <Text style={styles.itemName} numberOfLines={2}>{item.product_name || `Product #${item.product_id?.slice(0, 8)}`}</Text>
+                  <Text style={styles.itemQty}>x{item.quantity}</Text>
+                </View>
+                <Text style={styles.itemPrice}>{formatPrice(Number(item.price) * Number(item.quantity))} G</Text>
               </View>
-            </View>
-          ))}
+            );
+          })}
+          {/* Total row */}
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>{t('orderDetail.total')}</Text>
+            <Text style={styles.totalValue}>{formatPrice(Number(order.total_amount))} G</Text>
+          </View>
         </View>
       )}
 
+      {/* ── Delivery Address ── */}
       {order.delivery_method === 'delivery' && order.delivery_name && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>{t('orderDetail.deliveryAddress')}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <Icon name="location-pin" size={14} color={COLORS.coral} />
-            <Text style={styles.meetupText}>{order.delivery_name}</Text>
+          <View style={styles.infoHeader}>
+            <View style={[styles.infoIconWrap, { backgroundColor: COLORS.blue + '18' }]}>
+              <MaterialCommunityIcons name="truck-delivery-outline" size={18} color={COLORS.blue} />
+            </View>
+            <Text style={styles.sectionTitle}>{t('orderDetail.deliveryAddress')}</Text>
           </View>
-          <Text style={styles.meetupText}>{order.delivery_address}{order.delivery_city ? `, ${order.delivery_city}` : ''}</Text>
-          {order.delivery_phone && <Text style={styles.meetupNote}>{t('orderDetail.phone')}: {order.delivery_phone}</Text>}
-          {order.delivery_note && <Text style={styles.meetupNote}>{t('orderDetail.note')}: {order.delivery_note}</Text>}
+          <Text style={styles.infoName}>{order.delivery_name}</Text>
+          <Text style={styles.infoText}>{order.delivery_address}{order.delivery_city ? `, ${order.delivery_city}` : ''}</Text>
+          {order.delivery_phone && <Text style={styles.infoMeta}>{t('orderDetail.phone')}: {order.delivery_phone}</Text>}
+          {order.delivery_note && <Text style={styles.infoMeta}>{t('orderDetail.note')}: {order.delivery_note}</Text>}
         </View>
       )}
 
+      {/* ── Meetup Info ── */}
       {order.meetup_address && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>{t('orderDetail.meetup')} {t('orderDetail.deliveryMethod')}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <Icon name="location-pin" size={14} color={COLORS.coral} />
-            <Text style={styles.meetupText}>{order.meetup_address}</Text>
+          <View style={styles.infoHeader}>
+            <View style={[styles.infoIconWrap, { backgroundColor: COLORS.coral + '18' }]}>
+              <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
+            </View>
+            <Text style={styles.sectionTitle}>{t('orderDetail.meetup')}</Text>
           </View>
-          {order.meetup_note && <Text style={styles.meetupNote}>{t('orderDetail.note')}: {order.meetup_note}</Text>}
-          
+          <Text style={styles.infoName}>{order.meetup_address}</Text>
+          {order.meetup_note && <Text style={styles.infoMeta}>{t('orderDetail.note')}: {order.meetup_note}</Text>}
+
           {/* Status + Accept/Decline buttons */}
           {isSellerOfOrder && !order.meetup_confirmed && order.meetup_proposed_by !== store.user?.id ? (
-            <View style={{ marginTop: 8, gap: 8 }}>
-              <Text style={[styles.meetupConfirm, { color: COLORS.yellow }]}>
-                {t('orderDetail.buyerProposedLocation')}
-              </Text>
-              
+            <View style={styles.meetupActionWrap}>
+              <View style={styles.meetupAlert}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={16} color={COLORS.yellow} />
+                <Text style={[styles.meetupAlertText, { color: COLORS.yellow }]}>
+                  {t('orderDetail.buyerProposedLocation')}
+                </Text>
+              </View>
+
               {/* Mini map preview */}
               {order.meetup_lat && order.meetup_lng && (
                 <View style={styles.miniMapContainer}>
@@ -347,40 +437,40 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                   />
                 </View>
               )}
-              
-              <View style={{ flexDirection: 'row', gap: 8 }}>
+
+              <View style={styles.meetupButtons}>
                 <TouchableOpacity
-                  style={[styles.acceptBtn, { flex: 1 }]}
+                  style={[styles.meetupAcceptBtn]}
                   onPress={handleAcceptMeetup}
                   disabled={confirmLoading || declineLoading}
                 >
                   {confirmLoading ? (
                     <ActivityIndicator size="small" color={COLORS.white} />
                   ) : (
-                    <Text style={styles.acceptBtnText}>{t('orderDetail.acceptMeetup')}</Text>
+                    <Text style={styles.meetupAcceptBtnText}>{t('orderDetail.acceptMeetup')}</Text>
                   )}
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.declineBtn, { flex: 1 }]}
+                  style={[styles.meetupDeclineBtn]}
                   onPress={handleDeclineMeetup}
                   disabled={confirmLoading || declineLoading}
                 >
                   {declineLoading ? (
                     <ActivityIndicator size="small" color={COLORS.white} />
                   ) : (
-                    <Text style={styles.declineBtnText}>{t('orderDetail.declineMeetup')}</Text>
+                    <Text style={styles.meetupDeclineBtnText}>{t('orderDetail.declineMeetup')}</Text>
                   )}
                 </TouchableOpacity>
               </View>
             </View>
           ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Icon
-                name={order.meetup_confirmed ? 'check-circle' : 'time'}
-                size={14}
+            <View style={styles.meetupStatusRow}>
+              <MaterialCommunityIcons
+                name={order.meetup_confirmed ? 'check-circle' : 'clock-outline'}
+                size={16}
                 color={order.meetup_confirmed ? COLORS.green : COLORS.yellow}
               />
-              <Text style={[styles.meetupConfirm, { color: order.meetup_confirmed ? COLORS.green : COLORS.yellow }]}>
+              <Text style={[styles.meetupStatusText, { color: order.meetup_confirmed ? COLORS.green : COLORS.yellow }]}>
                 {order.meetup_confirmed ? t('orderDetail.confirmMeetup') : t('orderDetail.pending')}
               </Text>
             </View>
@@ -388,13 +478,22 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {/* ── Timeline ── */}
       {events.length > 0 && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>{t('orderDetail.timeline')}</Text>
-          {events.map(event => (
-            <View key={event.id} style={styles.eventItem}>
-              <View style={styles.eventDot} />
-              <View style={styles.eventInfo}>
+          <View style={styles.infoHeader}>
+            <View style={[styles.infoIconWrap, { backgroundColor: COLORS.green + '18' }]}>
+              <MaterialCommunityIcons name="timeline-text-outline" size={18} color={COLORS.green} />
+            </View>
+            <Text style={styles.sectionTitle}>{t('orderDetail.timeline')}</Text>
+          </View>
+          {events.map((event, idx) => (
+            <View key={event.id} style={[styles.eventRow, idx < events.length - 1 && styles.eventRowBorder]}>
+              <View style={styles.eventTimeline}>
+                <View style={[styles.eventDot, { backgroundColor: idx === events.length - 1 ? statusColor : COLORS.text2 }]} />
+                {idx < events.length - 1 && <View style={styles.eventLine} />}
+              </View>
+              <View style={styles.eventContent}>
                 <Text style={styles.eventType}>{event.event_type.replace(/_/g, ' ')}</Text>
                 {event.note && <Text style={styles.eventNote}>{event.note}</Text>}
                 <Text style={styles.eventTime}>{new Date(event.created_at).toLocaleString()}</Text>
@@ -404,86 +503,97 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      <View style={styles.actions}>
-        {/* ── Meetup CTA (for both buyer and seller) ── */}
+      <View style={{ height: 100 }} />
+      </ScrollView>
+
+      {/* ── Bottom Action Bar ── */}
+      <View style={[styles.bottomBar, { paddingBottom: SPACING.lg }]}>
+        {/* Meetup CTA (for both buyer and seller) */}
         {order.delivery_method === 'meetup' && order.status === 'paid' && (
           <TouchableOpacity
-            style={styles.meetupBtn}
+            style={styles.meetupCtaBtn}
             onPress={() => navigation.navigate('Meetup', { orderId })}
             accessibilityLabel="go to meetup"
             accessibilityRole="button"
           >
-            <Icon name="map" size={18} color={COLORS.white} />
-            <Text style={styles.meetupBtnText}>Go to Meetup</Text>
+            <MaterialCommunityIcons name="map-marker-radius" size={18} color={COLORS.white} />
+            <Text style={styles.meetupCtaBtnText}>Go to Meetup</Text>
           </TouchableOpacity>
         )}
 
-        {/* ── Seller actions ── */}
+        {/* Seller actions */}
         {isSellerOfOrder && order.status === 'paid' && (
-          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('processing')} disabled={actionLoading} accessibilityLabel="mark processing" accessibilityRole="button">
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => handleAdvanceStatus('processing')} disabled={actionLoading} accessibilityLabel="mark processing" accessibilityRole="button">
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-              <Text style={styles.advanceBtnText}>{t('orderDetail.processing')}</Text>
+              <>
+                <MaterialCommunityIcons name="cog-outline" size={18} color={COLORS.white} />
+                <Text style={styles.primaryBtnText}>{t('orderDetail.processing')}</Text>
+              </>
             )}
           </TouchableOpacity>
         )}
         {isSellerOfOrder && order.status === 'processing' && (
-          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('shipped')} disabled={actionLoading} accessibilityLabel="mark shipped" accessibilityRole="button">
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => handleAdvanceStatus('shipped')} disabled={actionLoading} accessibilityLabel="mark shipped" accessibilityRole="button">
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-              <Text style={styles.advanceBtnText}>{t('orderDetail.shipped')}</Text>
+              <>
+                <MaterialCommunityIcons name="truck-delivery-outline" size={18} color={COLORS.white} />
+                <Text style={styles.primaryBtnText}>{t('orderDetail.shipped')}</Text>
+              </>
             )}
           </TouchableOpacity>
         )}
         {isSellerOfOrder && order.status === 'shipped' && (
-          <TouchableOpacity style={styles.advanceBtn} onPress={() => handleAdvanceStatus('delivered')} disabled={actionLoading} accessibilityLabel="mark delivered" accessibilityRole="button">
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => handleAdvanceStatus('delivered')} disabled={actionLoading} accessibilityLabel="mark delivered" accessibilityRole="button">
             {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-              <Text style={styles.advanceBtnText}>{t('orderDetail.markDelivered')}</Text>
+              <>
+                <MaterialCommunityIcons name="map-marker-check" size={18} color={COLORS.white} />
+                <Text style={styles.primaryBtnText}>{t('orderDetail.markDelivered')}</Text>
+              </>
             )}
           </TouchableOpacity>
         )}
 
-        {/* ── Buyer actions ── */}
-        {store.user?.id === order.buyer_id && order.status === 'pending' && (
-          <>
-            <TouchableOpacity style={styles.retryBtn} onPress={handleRetryPayment} disabled={actionLoading} accessibilityLabel="retry payment" accessibilityRole="button">
+        {/* Buyer: pending → pay */}
+        {isBuyerOfOrder && order.status === 'pending' && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.primaryBtnFlex} onPress={handleRetryPayment} disabled={actionLoading} accessibilityLabel="retry payment" accessibilityRole="button">
               {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-                <Text style={styles.retryBtnText}>{t('orderDetail.retryPayment')}</Text>
+                <Text style={styles.primaryBtnText}>{t('orderDetail.retryPayment')}</Text>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} disabled={actionLoading} accessibilityLabel="cancel order" accessibilityRole="button">
-              <Text style={styles.cancelBtnText}>{t('orderDetail.cancelOrder')}</Text>
+            <TouchableOpacity style={styles.cancelBtnFlex} onPress={handleCancel} disabled={actionLoading} accessibilityLabel="cancel order" accessibilityRole="button">
+              <Text style={styles.cancelBtnFlexText}>{t('orderDetail.cancelOrder')}</Text>
             </TouchableOpacity>
-          </>
+          </View>
         )}
-        {store.user?.id === order.buyer_id && order.status === 'delivered' && (
-          <>
-            <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={actionLoading} accessibilityLabel="confirm received" accessibilityRole="button">
+
+        {/* Buyer: delivered → confirm/review */}
+        {isBuyerOfOrder && order.status === 'delivered' && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.primaryBtnFlex} onPress={handleComplete} disabled={actionLoading} accessibilityLabel="confirm received" accessibilityRole="button">
               {actionLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-                <Text style={styles.completeBtnText}>{t('orderDetail.completed')}</Text>
+                <Text style={styles.primaryBtnText}>{t('orderDetail.completed')}</Text>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryLink} onPress={() => setDisputeModalVisible(true)} accessibilityLabel="open dispute" accessibilityRole="button">
+            <TouchableOpacity style={styles.disputeBtnFlex} onPress={() => setDisputeModalVisible(true)} accessibilityLabel="open dispute" accessibilityRole="button">
               <MaterialCommunityIcons name="flag-outline" size={14} color={COLORS.text2} />
-              <Text style={styles.secondaryLinkText}>{t('orderDetail.openDispute')}</Text>
+              <Text style={styles.disputeBtnText}>{t('orderDetail.openDispute')}</Text>
             </TouchableOpacity>
-          </>
+          </View>
         )}
-        {order.status === 'completed' && store.user?.id === order.buyer_id && (
-          <>
-            <TouchableOpacity style={styles.reviewBtn} onPress={() => setReviewModalVisible(true)} accessibilityLabel="review order" accessibilityRole="button">
-              <Icon name="rate-this" size={16} color={COLORS.yellow} />
+
+        {/* Buyer: completed → review/reorder */}
+        {order.status === 'completed' && isBuyerOfOrder && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.reviewBtnFlex} onPress={() => setReviewModalVisible(true)} accessibilityLabel="review order" accessibilityRole="button">
+              <MaterialCommunityIcons name="star-outline" size={16} color={COLORS.yellow} />
               <Text style={styles.reviewBtnText}>{t('orderDetail.reviewOrder')}</Text>
             </TouchableOpacity>
-            <View style={styles.secondaryRow}>
-              <TouchableOpacity style={styles.secondaryLink} onPress={handleReorder} disabled={actionLoading} accessibilityLabel="reorder" accessibilityRole="button">
-                <MaterialCommunityIcons name="replay" size={14} color={COLORS.coral} />
-                <Text style={styles.secondaryLinkText}>{t('orderDetail.reorder')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryLink} onPress={() => setDisputeModalVisible(true)} accessibilityLabel="open dispute" accessibilityRole="button">
-                <MaterialCommunityIcons name="flag-outline" size={14} color={COLORS.text2} />
-                <Text style={styles.secondaryLinkText}>{t('orderDetail.openDispute')}</Text>
-              </TouchableOpacity>
-            </View>
-          </>
+            <TouchableOpacity style={styles.reorderBtnFlex} onPress={handleReorder} disabled={actionLoading} accessibilityLabel="reorder" accessibilityRole="button">
+              <MaterialCommunityIcons name="replay" size={14} color={COLORS.coral} />
+              <Text style={styles.reorderBtnText}>{t('orderDetail.reorder')}</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -523,11 +633,10 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               numberOfLines={4}
               textAlignVertical="top"
               accessibilityLabel="review comment"
-             
             />
 
             <TouchableOpacity
-              style={[styles.submitReviewBtn, reviewSubmitting && { opacity: 0.5 }]}
+              style={[styles.submitBtn, { backgroundColor: COLORS.yellow }, reviewSubmitting && { opacity: 0.5 }]}
               onPress={handleSubmitReview}
               disabled={reviewSubmitting}
               accessibilityLabel="submit review"
@@ -536,7 +645,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               {reviewSubmitting ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
-                <Text style={styles.submitReviewBtnText}>{t('orderDetail.submit')}</Text>
+                <Text style={styles.submitBtnText}>{t('orderDetail.submit')}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -593,11 +702,10 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               numberOfLines={3}
               textAlignVertical="top"
               accessibilityLabel="dispute description"
-             
             />
 
             <TouchableOpacity
-              style={[styles.submitReviewBtn, { backgroundColor: COLORS.coral }, disputeSubmitting && { opacity: 0.5 }]}
+              style={[styles.submitBtn, { backgroundColor: COLORS.coral }, disputeSubmitting && { opacity: 0.5 }]}
               onPress={handleSubmitDispute}
               disabled={disputeSubmitting}
               accessibilityLabel="submit dispute"
@@ -606,13 +714,12 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               {disputeSubmitting ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
-                <Text style={[styles.submitReviewBtnText, { color: COLORS.white }]}>{t('orderDetail.submitDispute')}</Text>
+                <Text style={styles.submitBtnText}>{t('orderDetail.submitDispute')}</Text>
               )}
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
       </Modal>
-      </ScrollView>
     </View>
   );
 }
@@ -620,69 +727,207 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
-  scroll: { paddingBottom: 60 },
+  scroll: { paddingBottom: 20 },
 
+  /* ── Status Hero ── */
+  statusHero: {
+    marginHorizontal: SPACING.lg, marginBottom: 12,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.media, padding: 16,
+    borderLeftWidth: 3,
+  },
+  statusHeroTop: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  statusIconWrap: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  statusHeroLabel: {
+    fontSize: 17, fontWeight: '700',
+  },
+  statusHeroDate: {
+    fontSize: 12, color: COLORS.text2, marginTop: 1,
+  },
+  orderIdBadge: {
+    fontSize: 12, fontFamily: 'monospace', color: COLORS.text2,
+    backgroundColor: COLORS.surface2, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 6, overflow: 'hidden',
+  },
+
+  /* Stepper */
+  stepper: {
+    flexDirection: 'row', alignItems: 'flex-start', marginTop: 16, gap: 0,
+  },
+  stepCol: { alignItems: 'center', width: 52 },
+  stepDot: {
+    width: 12, height: 12, borderRadius: 6,
+    backgroundColor: COLORS.border, marginBottom: 4,
+  },
+  stepDotCurrent: {
+    width: 16, height: 16, borderRadius: 8,
+    borderWidth: 2, borderColor: COLORS.surface,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stepDotInner: {
+    width: 6, height: 6, borderRadius: 3,
+  },
+  stepLine: {
+    flex: 1, height: 2, backgroundColor: COLORS.border,
+    marginTop: 5, marginHorizontal: -2,
+  },
+  stepLabel: {
+    fontSize: 9, color: COLORS.text2, fontWeight: '500', textAlign: 'center',
+  },
+  cancelledBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12,
+    paddingVertical: 8, paddingHorizontal: 12,
+    backgroundColor: COLORS.coral + '12', borderRadius: RADIUS.row,
+  },
+  cancelledBannerText: { fontSize: 13, fontWeight: '600', color: COLORS.coral },
+
+  /* ── Card ── */
   card: {
     marginHorizontal: SPACING.lg, marginBottom: 12, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.media, padding: 14,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.media, padding: 16,
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
-  label: { fontSize: 13, color: COLORS.text2 },
-  value: { fontSize: 13, color: COLORS.text },
-  sectionTitle: { fontFamily: 'Syne', fontSize: 14, fontWeight: '700', color: COLORS.text, marginBottom: 8 },
-  meetupText: { fontSize: 13, color: COLORS.text, marginBottom: 4 },
-  meetupNote: { fontSize: 12, color: COLORS.text2, marginBottom: 4 },
-  meetupConfirm: { fontSize: 12, fontWeight: '600' },
+  sectionTitle: {
+    fontSize: 14, fontWeight: '700', color: COLORS.text, marginBottom: 12,
+  },
+
+  /* ── Items ── */
+  itemRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
+  },
+  itemRowBorder: {
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  itemImage: {
+    width: 48, height: 48, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2,
+  },
+  itemImagePlaceholder: {
+    alignItems: 'center', justifyContent: 'center',
+  },
+  itemInfo: { flex: 1, gap: 2 },
+  itemName: { fontSize: 14, fontWeight: '600', color: COLORS.text, lineHeight: 19 },
+  itemQty: { fontSize: 12, color: COLORS.text2 },
+  itemPrice: { fontSize: 14, fontWeight: '700', color: COLORS.coral },
+  totalRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  totalLabel: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  totalValue: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.coral },
+
+  /* ── Info sections (delivery / meetup) ── */
+  infoHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10,
+  },
+  infoIconWrap: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  infoName: { fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: 4 },
+  infoText: { fontSize: 13, color: COLORS.text2, marginBottom: 4 },
+  infoMeta: { fontSize: 12, color: COLORS.text2, marginBottom: 2 },
+
+  /* Meetup action */
+  meetupActionWrap: { marginTop: 8, gap: 8 },
+  meetupAlert: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 8, paddingHorizontal: 12,
+    backgroundColor: COLORS.yellow + '12', borderRadius: RADIUS.row,
+  },
+  meetupAlertText: { fontSize: 13, fontWeight: '600', flex: 1 },
   miniMapContainer: {
-    height: 120,
-    borderRadius: RADIUS.card,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    height: 120, borderRadius: RADIUS.card,
+    overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border,
   },
-  miniMap: {
-    flex: 1,
+  miniMap: { flex: 1 },
+  meetupButtons: { flexDirection: 'row', gap: 8 },
+  meetupAcceptBtn: {
+    flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 6,
+    padding: 12, borderRadius: RADIUS.pill, backgroundColor: COLORS.green, alignItems: 'center',
   },
-  eventItem: { flexDirection: 'row', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  eventDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.coral, marginTop: 5 },
-  eventInfo: { flex: 1 },
+  meetupAcceptBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 14 },
+  meetupDeclineBtn: {
+    flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 6,
+    padding: 12, borderRadius: RADIUS.pill, backgroundColor: COLORS.coral, alignItems: 'center',
+  },
+  meetupDeclineBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 14 },
+  meetupStatusRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8,
+  },
+  meetupStatusText: { fontSize: 13, fontWeight: '600' },
+
+  /* ── Timeline ── */
+  eventRow: {
+    flexDirection: 'row', gap: 12,
+  },
+  eventRowBorder: {
+    paddingBottom: 12, marginBottom: 0,
+  },
+  eventTimeline: { alignItems: 'center', width: 16 },
+  eventDot: {
+    width: 8, height: 8, borderRadius: 4, marginTop: 4,
+  },
+  eventLine: {
+    width: 1, flex: 1, backgroundColor: COLORS.border, marginTop: 4,
+  },
+  eventContent: { flex: 1, paddingBottom: 12 },
   eventType: { fontSize: 13, fontWeight: '600', color: COLORS.text, textTransform: 'capitalize' },
   eventNote: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
   eventTime: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
-  actions: { marginHorizontal: SPACING.lg, gap: 8 },
-  cancelBtn: { padding: 14, borderRadius: RADIUS.pill, borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center' },
-  cancelBtnText: { color: COLORS.coral, fontWeight: '600', fontSize: 15 },
-  completeBtn: { padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.green, alignItems: 'center' },
-  completeBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
-  retryBtn: { padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.blue, alignItems: 'center' },
-  retryBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
-  secondaryRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 4 },
-  secondaryLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 8 },
-  secondaryLinkText: { fontSize: 13, color: COLORS.text2, fontWeight: '500' },
-  reviewBtn: {
-    flexDirection: 'row', justifyContent: 'center', gap: 6, padding: 14, borderRadius: RADIUS.pill,
-    borderWidth: 1.5, borderColor: COLORS.yellow, alignItems: 'center',
-  },
-  reviewBtnText: { color: COLORS.yellow, fontWeight: '600', fontSize: 15 },
-  advanceBtn: { padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.blue, alignItems: 'center' },
-  advanceBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
-  meetupBtn: {
-    flexDirection: 'row', justifyContent: 'center', gap: 8, padding: 16, borderRadius: RADIUS.pill,
-    backgroundColor: COLORS.green, alignItems: 'center',
-  },
-  meetupBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
-  acceptBtn: {
-    flexDirection: 'row', justifyContent: 'center', gap: 8, padding: 12, borderRadius: RADIUS.pill,
-    backgroundColor: COLORS.green, alignItems: 'center',
-  },
-  acceptBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 14 },
-  declineBtn: {
-    flexDirection: 'row', justifyContent: 'center', gap: 8, padding: 12, borderRadius: RADIUS.pill,
-    backgroundColor: COLORS.coral, alignItems: 'center',
-  },
-  declineBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 14 },
 
-  /* Review modal */
+  /* ── Bottom Bar ── */
+  bottomBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingHorizontal: SPACING.lg, paddingTop: SPACING.md,
+    backgroundColor: COLORS.bg,
+    borderTopWidth: 1, borderTopColor: COLORS.border,
+    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 8,
+  },
+  primaryBtn: {
+    flexDirection: 'row', justifyContent: 'center', gap: 8,
+    padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.blue, alignItems: 'center',
+  },
+  primaryBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
+  meetupCtaBtn: {
+    flexDirection: 'row', justifyContent: 'center', gap: 8,
+    padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.green, alignItems: 'center',
+  },
+  meetupCtaBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
+  actionRow: { flexDirection: 'row', gap: 8 },
+  primaryBtnFlex: {
+    flex: 1, padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.green,
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6,
+  },
+  cancelBtnFlex: {
+    padding: 14, borderRadius: RADIUS.pill,
+    borderWidth: 1.5, borderColor: COLORS.coral, alignItems: 'center', justifyContent: 'center',
+    minWidth: 100,
+  },
+  cancelBtnFlexText: { color: COLORS.coral, fontWeight: '600', fontSize: 14 },
+  disputeBtnFlex: {
+    padding: 14, borderRadius: RADIUS.pill,
+    borderWidth: 1.5, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 4, minWidth: 100,
+  },
+  disputeBtnText: { fontSize: 13, color: COLORS.text2, fontWeight: '500' },
+  reviewBtnFlex: {
+    flex: 1, padding: 14, borderRadius: RADIUS.pill,
+    borderWidth: 1.5, borderColor: COLORS.yellow, alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 6,
+  },
+  reviewBtnText: { color: COLORS.yellow, fontWeight: '600', fontSize: 14 },
+  reorderBtnFlex: {
+    padding: 14, borderRadius: RADIUS.pill,
+    borderWidth: 1.5, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 4, minWidth: 80,
+  },
+  reorderBtnText: { fontSize: 13, color: COLORS.text2, fontWeight: '500' },
+
+  /* ── Modals ── */
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
@@ -705,10 +950,10 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.card, padding: 12, fontSize: 14, color: COLORS.text,
     minHeight: 100, marginBottom: SPACING.lg,
   },
-  submitReviewBtn: {
-    padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.yellow, alignItems: 'center',
+  submitBtn: {
+    padding: 14, borderRadius: RADIUS.pill, alignItems: 'center',
   },
-  submitReviewBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
+  submitBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   disputeLabel: { fontSize: 12, fontWeight: '700', color: COLORS.text2, marginBottom: 8 },
   disputeReasonBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10,

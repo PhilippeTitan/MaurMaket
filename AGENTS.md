@@ -246,6 +246,37 @@ Config at: `C:\Users\drato\.config\opencode\opencode.json`
 | **GitHub** | ✅ | Repo management, PRs, issues |
 | **MonCashConnect** | ✅ (production) | Payment debugging, test payments, balance checks |
 
+### Supabase MCP Tools
+**ALWAYS use these for database queries instead of connecting via `pg` directly.**
+- `supabase_execute_sql` — Run raw SQL against the Supabase Postgres database
+- `supabase_list_tables` — List all tables with column details
+- `supabase_list_extensions` — List installed Postgres extensions
+- `supabase_list_migrations` — List applied migrations
+- `supabase_apply_migration` — Apply a DDL migration
+- `supabase_get_logs` — Get logs by service (api, auth, storage, etc.)
+- `supabase_get_advisors` — Security + performance advisories
+- `supabase_get_project_url` — Get project API URL
+- `supabase_get_publishable_keys` — Get API keys
+- `supabase_generate_typescript_types` — Generate TS types for all tables
+- `supabase_list_edge_functions` — List deployed edge functions
+- `supabase_get_edge_function` — Get function source code
+- `supabase_deploy_edge_function` — Deploy/update an edge function
+- `supabase_create_branch` — Create a dev branch
+- `supabase_list_branches` — List dev branches
+- `supabase_delete_branch` — Delete a dev branch
+- `supabase_merge_branch` — Merge branch to production
+- `supabase_reset_branch` — Reset branch migrations
+- `supabase_rebase_branch` — Rebase branch on production
+
+**Project ref:** `bnnluaqrktnrnnfvmqbt`
+
+### Neon MCP Tools (secondary DB — Supabase syncs here)
+- `neon_run_sql` — Execute SQL
+- `neon_run_sql_transaction` — Execute SQL transaction
+- `neon_describe_project` — Project details
+- `neon_get_database_tables` — List all tables
+- `neon_describe_table_schema` — Column details for a table
+
 ### MonCashConnect MCP Tools
 Use these to debug payments without touching the backend:
 - `get_payment` — Check payment status by merchant reference
