@@ -3,16 +3,16 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS } from '../../../theme';
-import { useTranslation } from '../../../i18n';
-import { signup as apiSignup, googleAuth, API_BASE } from '../../../api';
-import { store } from '../../../store';
+import { COLORS, SPACING, RADIUS } from '../../theme';
+import { useTranslation } from '../../i18n';
+import { signup as apiSignup, googleAuth, API_BASE } from '../../api';
+import { store } from '../../store';
 import AuthInput from './components/AuthInput';
 import StepHeading from './components/StepHeading';
 import ReviewRow from './components/ReviewRow';
 import Divider from './components/Divider';
-import WelcomeMoment from '../../../components/WelcomeMoment';
-import type { User } from '../../../types';
+import WelcomeMoment from '../../components/WelcomeMoment';
+import type { User } from '../../types';
 
 const GOOGLE_WEB_CLIENT_ID = '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com';
 const GOOGLE_REDIRECT_URI = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
