@@ -194,7 +194,7 @@ export default function NotificationScreen() {
   const filteredNotifications = notifications.filter(n => !ORDER_NOTIF_TYPES.has(n.type));
   const unreadCount = filteredNotifications.filter(n => !n.is_read).length;
   const allOrders = [...buyOrders, ...sellOrders];
-  const activeOrders = allOrders.filter(o => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
+  const activeOrders = allOrders.filter(o => ['pending', 'paid', 'processing', 'shipped', 'delivered'].includes(o.status));
   const allHistoryOrders = allOrders.filter(o => ['completed', 'cancelled'].includes(o.status));
 
   const markAllOrdersViewed = useCallback(async () => {
