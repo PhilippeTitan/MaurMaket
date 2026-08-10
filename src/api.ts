@@ -147,8 +147,8 @@ const normalizeProductsResponse = (data: unknown) => {
 };
 
 // Auth
-export const signup = (fullName: string, email: string, password: string, phone: string) =>
-  request('/auth/signup', { method: 'POST', body: JSON.stringify({ fullName, email, password, phone }) });
+export const signup = (fullName: string, email: string, password: string, phone: string, dateOfBirth: string) =>
+  request('/auth/signup', { method: 'POST', body: JSON.stringify({ fullName, email, password, phone, dateOfBirth }) });
 
 export const login = (email: string, password: string) =>
   request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });

@@ -909,6 +909,9 @@ async function runMigrations() {
     // 39. Make password_hash nullable for Google OAuth users
     await step('password_hash nullable', () => c.query(`ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;`));
 
+    // 40. Date of birth column for age gate (18+)
+    await step('date_of_birth column', () => c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;`));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -1198,10 +1201,18 @@ function sellerRequired(req, res, next) {
 // ───── Auth routes ─────
 
 app.post('/api/auth/signup', async (req, res) => {
-  const { fullName, email, password, phone } = req.body;
+  const { fullName, email, password, phone, dateOfBirth } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email, and password required' });
   }
+  if (!dateOfBirth) return res.status(400).json({ error: 'Date of birth is required' });
+  const dob = new Date(dateOfBirth);
+  if (isNaN(dob.getTime())) return res.status(400).json({ error: 'Invalid date of birth' });
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
+  if (age < 18) return res.status(400).json({ error: 'You must be at least 18 years old to create an account' });
   if (fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
   if (email.length > 254) return res.status(400).json({ error: 'Email too long' });
   if (password.length < 6 || password.length > 128) return res.status(400).json({ error: 'Password must be 6-128 characters' });
@@ -1210,10 +1221,10 @@ app.post('/api/auth/signup', async (req, res) => {
     const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
     const username = await generateUsername(fullName);
     const result = await pool.query(
-      `INSERT INTO users (full_name, email, password_hash, phone, role, username)
-       VALUES ($1, $2, $3, $4, 'buyer', $5)
+      `INSERT INTO users (full_name, email, password_hash, phone, role, username, date_of_birth)
+       VALUES ($1, $2, $3, $4, 'buyer', $5, $6)
        RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified`,
-      [fullName, email, passwordHash, cleanPhone, username]
+      [fullName, email, passwordHash, cleanPhone, username, dateOfBirth]
     );
     const user = result.rows[0];
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });

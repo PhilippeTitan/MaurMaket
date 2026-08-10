@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../../theme';
@@ -17,7 +17,7 @@ import type { User } from '../../types';
 const GOOGLE_WEB_CLIENT_ID = '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com';
 const GOOGLE_REDIRECT_URI = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
 
-const STEPS = ['name', 'email', 'password', 'phone', 'review'] as const;
+const STEPS = ['name', 'email', 'password', 'phone', 'dob', 'review'] as const;
 type Step = typeof STEPS[number];
 
 interface SignupWizardProps {
@@ -35,6 +35,9 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [phoneDigits, setPhoneDigits] = useState('');
+  const [birthMonth, setBirthMonth] = useState<number | null>(null);
+  const [birthDay, setBirthDay] = useState<number | null>(null);
+  const [birthYear, setBirthYear] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [entered, setEntered] = useState(false);
@@ -141,6 +144,15 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
     if (step === 'password') {
       if (!pwOk) { setErrors({ password: 'Needs at least 6 characters' }); return; }
     }
+    if (step === 'dob') {
+      if (!birthMonth || !birthDay || !birthYear) { setErrors({ dob: 'Please enter your full date of birth' }); return; }
+      const dob = new Date(birthYear, birthMonth - 1, birthDay);
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      const m = today.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+      if (age < 18) { setErrors({ dob: 'You must be at least 18 years old' }); return; }
+    }
     goNext();
   };
 
@@ -148,8 +160,11 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
     setLoading(true);
     setErrors({});
     const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
+    const dobStr = birthYear && birthMonth && birthDay
+      ? `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`
+      : '';
     try {
-      const res = await apiSignup(fullName, email, password, phoneDigits) as { user: User; token: string };
+      const res = await apiSignup(fullName, email, password, phoneDigits, dobStr) as { user: User; token: string };
       setUserResult(res);
       setEntered(true);
     } catch (err: unknown) {
@@ -290,6 +305,58 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
           </>
         )}
 
+        {step === 'dob' && (
+          <>
+            <StepHeading eyebrow="Required for account safety" title="When's your birthday?" />
+            <Text style={styles.hint}>You must be 18 or older to use MaurMaket. This is not shown publicly.</Text>
+            <View style={styles.dobRow}>
+              <View style={styles.dobCol}>
+                <Text style={styles.dobLabel}>Month</Text>
+                <ScrollView style={styles.dobScroll} showsVerticalScrollIndicator={false}>
+                  {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={[styles.dobItem, birthMonth === i + 1 && styles.dobItemActive]}
+                      onPress={() => setBirthMonth(i + 1)}
+                    >
+                      <Text style={[styles.dobItemText, birthMonth === i + 1 && styles.dobItemTextActive]}>{m}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+              <View style={styles.dobCol}>
+                <Text style={styles.dobLabel}>Day</Text>
+                <ScrollView style={styles.dobScroll} showsVerticalScrollIndicator={false}>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                    <TouchableOpacity
+                      key={d}
+                      style={[styles.dobItem, birthDay === d && styles.dobItemActive]}
+                      onPress={() => setBirthDay(d)}
+                    >
+                      <Text style={[styles.dobItemText, birthDay === d && styles.dobItemTextActive]}>{d}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+              <View style={styles.dobCol}>
+                <Text style={styles.dobLabel}>Year</Text>
+                <ScrollView style={styles.dobScroll} showsVerticalScrollIndicator={false}>
+                  {Array.from({ length: 80 }, (_, i) => new Date().getFullYear() - 18 - i).map(y => (
+                    <TouchableOpacity
+                      key={y}
+                      style={[styles.dobItem, birthYear === y && styles.dobItemActive]}
+                      onPress={() => setBirthYear(y)}
+                    >
+                      <Text style={[styles.dobItemText, birthYear === y && styles.dobItemTextActive]}>{y}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+            {errors.dob && <Text style={styles.dobError}>{errors.dob}</Text>}
+          </>
+        )}
+
         {step === 'review' && (
           <>
             <StepHeading eyebrow="Last look" title="Ready to join?" />
@@ -298,6 +365,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
               <ReviewRow label="Email" value={email} />
               <ReviewRow label="Password" value={'•'.repeat(Math.min(pwLen, 10))} />
               <ReviewRow label="Phone" value={phoneDigits ? `+509 ${phoneDigits}` : 'Not added'} muted={!phoneDigits} />
+              <ReviewRow label="Birthday" value={birthMonth && birthDay && birthYear ? `${birthMonth}/${birthDay}/${birthYear}` : 'Not provided'} muted={!birthMonth} />
             </View>
           </>
         )}
@@ -310,13 +378,15 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
             style={[styles.primaryBtn, (
               (step === 'name' && (!firstName.trim() || !lastName.trim())) ||
               (step === 'email' && (!emailValid || emailAvailable === false)) ||
-              (step === 'password' && !pwOk)
+              (step === 'password' && !pwOk) ||
+              (step === 'dob' && (!birthMonth || !birthDay || !birthYear))
             ) && styles.btnDisabled]}
             onPress={validateAndNext}
             disabled={
               (step === 'name' && (!firstName.trim() || !lastName.trim())) ||
               (step === 'email' && (!emailValid || emailAvailable === false)) ||
-              (step === 'password' && !pwOk)
+              (step === 'password' && !pwOk) ||
+              (step === 'dob' && (!birthMonth || !birthDay || !birthYear))
             }
           >
             <Text style={styles.primaryBtnText}>Continue</Text>
@@ -407,4 +477,13 @@ const styles = StyleSheet.create({
 
   hint: { color: COLORS.text2, fontSize: 12.5, marginTop: 8 },
   subtleLink: { color: COLORS.blue, fontSize: 13.5, fontWeight: '600', marginTop: 14 },
+  dobRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  dobCol: { flex: 1 },
+  dobLabel: { fontSize: 11, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', marginBottom: 6, textAlign: 'center' },
+  dobScroll: { maxHeight: 160, backgroundColor: COLORS.surface, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: RADIUS.card },
+  dobItem: { paddingVertical: 10, alignItems: 'center' },
+  dobItemActive: { backgroundColor: COLORS.coral + '18' },
+  dobItemText: { fontSize: 15, color: COLORS.text2, fontWeight: '500' },
+  dobItemTextActive: { color: COLORS.coral, fontWeight: '700' },
+  dobError: { color: COLORS.coral, fontSize: 12.5, marginTop: 8 },
 });
