@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +30,34 @@ const STATUS_COLORS: Record<string, string> = {
   completed: COLORS.green,
   cancelled: COLORS.coral,
 };
+
+const STATUS_STEPS = ['pending', 'paid', 'shipped', 'delivered', 'completed'];
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString('fr-HT', { day: 'numeric', month: 'short' });
+}
+
+function getStatusLabel(status: string): string {
+  switch (status) {
+    case 'pending': return 'To Pay';
+    case 'paid': return 'Paid';
+    case 'processing': return 'Processing';
+    case 'shipped': return 'Shipped';
+    case 'delivered': return 'Delivered';
+    case 'completed': return 'Completed';
+    case 'cancelled': return 'Cancelled';
+    default: return status;
+  }
+}
 
 function getNotifIcon(type: string): { icon: string; color: string } {
   switch (type) {
@@ -260,6 +288,7 @@ export default function NotificationScreen() {
                 accessibilityLabel="buying orders"
                 accessibilityRole="button"
               >
+                <MaterialCommunityIcons name="shopping-outline" size={16} color={orderTab === 'buying' ? COLORS.white : COLORS.text2} />
                 <Text style={[styles.orderTabText, orderTab === 'buying' && styles.orderTabTextActive]}>Buying</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -268,6 +297,7 @@ export default function NotificationScreen() {
                 accessibilityLabel="selling orders"
                 accessibilityRole="button"
               >
+                <MaterialCommunityIcons name="store-outline" size={16} color={orderTab === 'selling' ? COLORS.white : COLORS.text2} />
                 <Text style={[styles.orderTabText, orderTab === 'selling' && styles.orderTabTextActive]}>Selling</Text>
               </TouchableOpacity>
             </View>
@@ -279,6 +309,16 @@ export default function NotificationScreen() {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
             renderItem={({ item }: { item: Order }) => {
               const sc = STATUS_COLORS[item.status] || COLORS.text2;
+              const currentStep = STATUS_STEPS.indexOf(item.status);
+              const isCancelled = item.status === 'cancelled';
+              const productImageUrl = item.product_image ? getImageUrl(item.product_image) : null;
+              const itemName = item.first_product_name || 'Order';
+              const itemCount = item.item_count || 1;
+              const isMeetup = item.delivery_method === 'meetup';
+              const otherName = orderTab === 'buying'
+                ? (item as any).seller_name || 'Seller'
+                : (item as any).buyer_name || 'Buyer';
+
               return (
                 <TouchableOpacity
                   style={styles.orderCard}
@@ -287,14 +327,67 @@ export default function NotificationScreen() {
                   accessibilityRole="button"
                   activeOpacity={0.7}
                 >
-                  <View style={styles.orderCardHeader}>
-                    <Text style={styles.orderId}>#{item.id.slice(0, 8)}</Text>
-                    <View style={[styles.orderStatusBadge, { backgroundColor: sc + '1A' }]}>
-                      <Text style={[styles.orderStatusText, { color: sc }]}>{item.status}</Text>
+                  {/* Top row: image + details */}
+                  <View style={styles.orderCardTop}>
+                    {productImageUrl ? (
+                      <Image source={{ uri: productImageUrl }} style={styles.orderImage} />
+                    ) : (
+                      <View style={[styles.orderImage, styles.orderImagePlaceholder]}>
+                        <MaterialCommunityIcons name="package-variant" size={24} color={COLORS.text2} />
+                      </View>
+                    )}
+                    <View style={styles.orderDetails}>
+                      <Text style={styles.orderProductName} numberOfLines={1}>{itemName}</Text>
+                      {itemCount > 1 && (
+                        <Text style={styles.orderItemCount}>+{itemCount - 1} more item{itemCount > 2 ? 's' : ''}</Text>
+                      )}
+                      <View style={styles.orderMeta}>
+                        <MaterialCommunityIcons
+                          name={isMeetup ? 'map-marker-outline' : 'truck-delivery-outline'}
+                          size={13}
+                          color={COLORS.text2}
+                        />
+                        <Text style={styles.orderMetaText}>{otherName}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.orderPriceCol}>
+                      <Text style={styles.orderAmount}>{formatPrice(Number(item.total_amount))} G</Text>
+                      <Text style={styles.orderDate}>{timeAgo(item.created_at)}</Text>
                     </View>
                   </View>
-                  <Text style={styles.orderAmount}>{formatPrice(Number(item.total_amount))} G</Text>
-                  <Text style={styles.orderDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
+
+                  {/* Bottom row: status stepper + ID */}
+                  <View style={styles.orderCardBottom}>
+                    {isCancelled ? (
+                      <View style={[styles.orderStatusPill, { backgroundColor: COLORS.coral + '18' }]}>
+                        <MaterialCommunityIcons name="close-circle-outline" size={13} color={COLORS.coral} />
+                        <Text style={[styles.orderStatusPillText, { color: COLORS.coral }]}>Cancelled</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.orderStepper}>
+                        {STATUS_STEPS.map((step, i) => {
+                          const isActive = i <= currentStep;
+                          const isCurrent = i === currentStep;
+                          return (
+                            <React.Fragment key={step}>
+                              <View style={[
+                                styles.stepDot,
+                                isActive && { backgroundColor: sc },
+                                isCurrent && styles.stepDotCurrent,
+                              ]} />
+                              {i < STATUS_STEPS.length - 1 && (
+                                <View style={[
+                                  styles.stepLine,
+                                  i < currentStep && { backgroundColor: sc },
+                                ]} />
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </View>
+                    )}
+                    <Text style={styles.orderId}>#{item.id.slice(0, 8)}</Text>
+                  </View>
                 </TouchableOpacity>
               );
             }}
@@ -363,18 +456,72 @@ const styles = StyleSheet.create({
     flexDirection: 'row', marginHorizontal: SPACING.md, marginTop: SPACING.sm,
     backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
   },
-  orderTab: { flex: 1, padding: 10, alignItems: 'center' },
+  orderTab: { flex: 1, padding: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   orderTabActive: { backgroundColor: COLORS.coral },
   orderTabText: { color: COLORS.text2, fontSize: 14, fontWeight: '500' },
   orderTabTextActive: { color: COLORS.white },
   orderCard: {
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.media, padding: 14, marginBottom: 8,
+    borderRadius: RADIUS.card, padding: 14, marginBottom: 10,
   },
-  orderCardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  orderId: { fontSize: 12, color: COLORS.text2, fontFamily: 'monospace' },
-  orderStatusBadge: { borderRadius: RADIUS.row, paddingHorizontal: 8, paddingVertical: 2 },
-  orderStatusText: { fontSize: 12, fontWeight: '600' },
-  orderAmount: { fontFamily: 'Syne', fontSize: 16, fontWeight: '700', color: COLORS.coral },
-  orderDate: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
+  orderCardTop: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  orderImage: {
+    width: 52, height: 52, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2,
+  },
+  orderImagePlaceholder: {
+    alignItems: 'center', justifyContent: 'center',
+  },
+  orderDetails: {
+    flex: 1, gap: 2,
+  },
+  orderProductName: {
+    fontSize: 15, fontWeight: '600', color: COLORS.text, lineHeight: 20,
+  },
+  orderItemCount: {
+    fontSize: 12, color: COLORS.text2,
+  },
+  orderMeta: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2,
+  },
+  orderMetaText: {
+    fontSize: 12, color: COLORS.text2,
+  },
+  orderPriceCol: {
+    alignItems: 'flex-end', gap: 2,
+  },
+  orderAmount: {
+    fontFamily: 'Syne', fontSize: 16, fontWeight: '700', color: COLORS.coral,
+  },
+  orderDate: {
+    fontSize: 11, color: COLORS.text2,
+  },
+  orderCardBottom: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  orderStatusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.row,
+  },
+  orderStatusPillText: {
+    fontSize: 12, fontWeight: '600',
+  },
+  orderStepper: {
+    flexDirection: 'row', alignItems: 'center', flex: 1,
+  },
+  stepDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.border,
+  },
+  stepDotCurrent: {
+    width: 10, height: 10, borderRadius: 5,
+    borderWidth: 2, borderColor: COLORS.surface,
+  },
+  stepLine: {
+    flex: 1, height: 2, backgroundColor: COLORS.border, marginHorizontal: 2,
+  },
+  orderId: {
+    fontSize: 11, color: COLORS.text2, fontFamily: 'monospace',
+  },
 });

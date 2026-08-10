@@ -109,6 +109,12 @@ export interface Order {
   created_at: string;
   updated_at: string;
   items?: OrderItem[];
+  seller_name?: string;
+  buyer_name?: string;
+  my_role?: 'buyer' | 'seller';
+  item_count?: number;
+  first_product_name?: string;
+  product_image?: string | null;
 }
 
 export interface OrderEvent {
