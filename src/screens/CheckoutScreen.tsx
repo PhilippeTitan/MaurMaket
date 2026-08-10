@@ -18,6 +18,7 @@ import type { Address } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
 import { notifySuccess, notifyError } from '../haptics';
 import { useToast } from '../components/Toast';
+import LocationPicker from '../components/LocationPicker';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 
@@ -39,6 +40,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [discount, setDiscount] = useState(0);
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [meetupLat, setMeetupLat] = useState<number | null>(null);
+  const [meetupLng, setMeetupLng] = useState<number | null>(null);
+  const [meetupAddress, setMeetupAddress] = useState<string | null>(null);
 
   const fetchAddresses = useCallback(async () => {
     try {
@@ -123,6 +127,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       return;
     }
 
+    if (method === 'meetup' && (!meetupLat || !meetupLng)) {
+      toast.error(t('checkout.missingInfo'), 'Please select a meetup location on the map');
+      return;
+    }
+
     setLoading(true);
     try {
       const orderData: Record<string, unknown> = {
@@ -135,6 +144,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         orderData.deliveryPhone = phone;
         orderData.deliveryAddress = address;
         orderData.deliveryCity = city;
+        orderData.deliveryNote = note;
+      } else {
+        orderData.meetupLat = meetupLat;
+        orderData.meetupLng = meetupLng;
+        orderData.meetupAddress = meetupAddress;
         orderData.deliveryNote = note;
       }
 
@@ -303,12 +317,24 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         </View>
       ) : (
         <View style={styles.fields}>
-          <View style={styles.meetupInfo}>
-            <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.blue} />
-            <Text style={styles.meetupInfoText}>
-              {t('checkout.meetupInfo')}
-            </Text>
-          </View>
+          <Text style={styles.sectionLabel}>{t('checkout.meetupLocation')}</Text>
+          <LocationPicker
+            onLocationSelect={(lat, lng, addr) => {
+              setMeetupLat(lat);
+              setMeetupLng(lng);
+              setMeetupAddress(addr);
+            }}
+            initialLat={meetupLat}
+            initialLng={meetupLng}
+            height={220}
+          />
+          {meetupAddress && (
+            <View style={styles.meetupAddressPreview}>
+              <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
+              <Text style={styles.meetupAddressText} numberOfLines={2}>{meetupAddress}</Text>
+            </View>
+          )}
+          <TextInput style={styles.input} placeholder={t('checkout.meetupNote')} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline accessibilityLabel="meetup note" />
         </View>
       )}
 
@@ -436,6 +462,8 @@ const styles = StyleSheet.create({
   },
   meetupInfo: { flexDirection: 'row', gap: 8, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12 },
   meetupInfoText: { flex: 1, fontSize: 12, color: COLORS.text2, lineHeight: 18 },
+  meetupAddressPreview: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, paddingHorizontal: 4 },
+  meetupAddressText: { flex: 1, fontSize: 12, color: COLORS.text2 },
   moncashBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: SPACING.md, backgroundColor: 'rgba(0,194,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,194,255,0.3)', borderRadius: RADIUS.row, padding: 10 },
   moncashText: { fontSize: 12, color: COLORS.blue },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', padding: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border, marginTop: SPACING.md },

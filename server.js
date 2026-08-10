@@ -2943,7 +2943,7 @@ app.post('/api/orders', authRequired, async (req, res) => {
   if (!evCheck.rows[0]?.email_verified) {
     return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to place orders.' });
   }
-  const { items, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, promoCode } = req.body;
+  const { items, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, promoCode, meetupLat, meetupLng, meetupAddress } = req.body;
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'Cart is empty' });
   }
@@ -3032,9 +3032,11 @@ app.post('/api/orders', authRequired, async (req, res) => {
     // Apply promo discount to the order total so buyer is charged the discounted amount
     const finalTotal = discountAmount > 0 ? Math.round((total - discountAmount) * 100) / 100 : total;
     const orderResult = await client.query(
-      `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note)
-       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [req.user.id, finalTotal, method, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null]
+      `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_proposed_by)
+       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      [req.user.id, finalTotal, method, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null,
+       meetupLat ? parseFloat(meetupLat) : null, meetupLng ? parseFloat(meetupLng) : null, meetupAddress || null,
+       meetupLat && meetupLng ? req.user.id : null]
     );
     const order = orderResult.rows[0];
 
