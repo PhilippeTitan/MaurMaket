@@ -56,6 +56,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [timeLeft, setTimeLeft] = useState(MEETUP_TIMEOUT_MS);
+  const [meetupStartedAt, setMeetupStartedAt] = useState<string | null>(null);
   const [checkins, setCheckins] = useState<any[]>([]);
   const locationWatcher = useRef<any>(null);
 
@@ -68,7 +69,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
     try {
       const [orderRes, statusRes] = await Promise.all([
         getOrder(orderId) as Promise<{ order: Order }>,
-        getMeetupStatus(orderId) as Promise<{ checkins: any[] }>,
+        getMeetupStatus(orderId) as Promise<{ checkins: any[]; meetupStartedAt: string | null }>,
       ]);
       setOrder(orderRes.order);
       setCheckins(statusRes.checkins || []);
@@ -78,6 +79,12 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
       setMyCheckedIn(!!myCheckin);
       setOtherCheckedIn(!!otherCheckin);
+
+      // Use meetupStartedAt from server, or from order, or from checkins response
+      const startedAt = statusRes.meetupStartedAt || orderRes.order.meetup_started_at || null;
+      if (startedAt) {
+        setMeetupStartedAt(startedAt);
+      }
 
       if (myCheckin?.qr_token) {
         setQrToken(myCheckin.qr_token);
@@ -95,14 +102,20 @@ export default function MeetupScreen({ route, navigation }: Props) {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
+    if (!meetupStartedAt) return;
+    const startedMs = new Date(meetupStartedAt).getTime();
+    const endMs = startedMs + MEETUP_TIMEOUT_MS;
+    // Calculate initial remaining time
+    const initial = Math.max(0, endMs - Date.now());
+    setTimeLeft(initial);
+    if (initial <= 0) return;
     const interval = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 0) return 0;
-        return prev - 1000;
-      });
+      const remaining = Math.max(0, endMs - Date.now());
+      setTimeLeft(remaining);
+      if (remaining <= 0) clearInterval(interval);
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [meetupStartedAt]);
 
   useEffect(() => {
     if (Platform.OS === 'web' || !ExpoLocation) return;
@@ -148,6 +161,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
       setOtherCheckedIn(res.otherPartyCheckedIn);
       setProximityConfirmed(res.proximityConfirmed);
       if (res.distance) setDistance(res.distance);
+      if (res.meetupStartedAt) setMeetupStartedAt(res.meetupStartedAt);
       if (res.qrToken) {
         setQrToken(res.qrToken);
         setProximityConfirmed(true);
@@ -325,11 +339,25 @@ export default function MeetupScreen({ route, navigation }: Props) {
         <View style={styles.handle} />
 
         {/* Timer */}
-        {timeLeft > 0 && (
+        {meetupStartedAt ? (
+          timeLeft > 0 ? (
+            <View style={styles.timerRow}>
+              <MaterialCommunityIcons name="timer-outline" size={16} color={timeLeft < 600000 ? COLORS.coral : COLORS.yellow} />
+              <Text style={[styles.timerText, timeLeft < 600000 && { color: COLORS.coral }]}>
+                {formatTime(timeLeft)} remaining
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.timerRow}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={16} color={COLORS.coral} />
+              <Text style={[styles.timerText, { color: COLORS.coral }]}>Time expired</Text>
+            </View>
+          )
+        ) : (
           <View style={styles.timerRow}>
-            <MaterialCommunityIcons name="timer-outline" size={16} color={timeLeft < 600000 ? COLORS.coral : COLORS.yellow} />
-            <Text style={[styles.timerText, timeLeft < 600000 && { color: COLORS.coral }]}>
-              {formatTime(timeLeft)} remaining
+            <MaterialCommunityIcons name="map-marker-distance" size={16} color={COLORS.text2} />
+            <Text style={[styles.timerText, { color: COLORS.text2 }]}>
+              {myCheckedIn && otherCheckedIn ? 'Both arrived — starting...' : 'Waiting for both parties to arrive...'}
             </Text>
           </View>
         )}

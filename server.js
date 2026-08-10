@@ -373,6 +373,7 @@ async function runMigrations() {
         delivery_name TEXT, delivery_phone TEXT, delivery_address TEXT, delivery_city TEXT, delivery_note TEXT,
         meetup_lat DECIMAL(10,7), meetup_lng DECIMAL(10,7), meetup_address TEXT, meetup_note TEXT,
         meetup_confirmed BOOLEAN DEFAULT false, meetup_proposed_by UUID REFERENCES users(id),
+        meetup_started_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE IF NOT EXISTS order_items (
@@ -415,6 +416,7 @@ async function runMigrations() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_note TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_confirmed BOOLEAN DEFAULT false;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_proposed_by UUID REFERENCES users(id);
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_started_at TIMESTAMP;
     `));
 
     // 3. Drop legacy orders status check
@@ -3346,7 +3348,14 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
       proximityConfirmed = distance <= 150;
 
       if (proximityConfirmed) {
-        // Both are within 150m — generate QR code for the buyer
+        // Both are within 150m — start the meetup timer if not already started
+        if (!order.meetup_started_at) {
+          await client.query(
+            'UPDATE orders SET meetup_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+            [req.params.id]
+          );
+        }
+        // Generate QR code for the buyer
         const nonce = crypto.randomBytes(16).toString('hex');
         const qrToken = jwt.sign(
           {
@@ -3378,6 +3387,7 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
       otherPartyCheckedIn: otherCheckin.rows.length > 0,
       proximityConfirmed,
       distance: distance ? Math.round(distance) : null,
+      meetupStartedAt: order.meetup_started_at || (proximityConfirmed ? new Date().toISOString() : null),
     };
 
     if (proximityConfirmed && isBuyer) {
@@ -3529,7 +3539,7 @@ app.get('/api/orders/:id/meetup/status', authRequired, async (req, res) => {
       [req.params.id]
     );
 
-    res.json({ checkins: checkins.rows });
+    res.json({ checkins: checkins.rows, meetupStartedAt: order.meetup_started_at });
   } catch (err) {
     console.error('Meetup status error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -7097,7 +7107,7 @@ const MIGRATION_TABLES = [
 // Column whitelist for tables with schema drift between Neon and Supabase
 const MIGRATION_COLUMNS = {
   categories: 'id, name, display_order',
-  orders: 'id, buyer_id, total_amount, status, moncash_reference, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_note, meetup_confirmed, meetup_proposed_by, created_at, updated_at',
+  orders: 'id, buyer_id, total_amount, status, moncash_reference, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_note, meetup_confirmed, meetup_proposed_by, meetup_started_at, created_at, updated_at',
 };
 
 function isValidUUID(val) {

@@ -105,6 +105,7 @@ export interface Order {
   meetup_note: string | null;
   meetup_confirmed: boolean;
   meetup_proposed_by: string | null;
+  meetup_started_at: string | null;
   created_at: string;
   updated_at: string;
   items?: OrderItem[];
