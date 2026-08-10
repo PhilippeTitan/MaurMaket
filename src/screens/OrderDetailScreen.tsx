@@ -295,7 +295,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScreenHeader
-        title={`${t('orderDetail.title')} #${order.id.slice(0, 8)}`}
+        title={t('orderDetail.title')}
         onBack={() => navigation.goBack()}
         variant="branded"
         bordered={false}

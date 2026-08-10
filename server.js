@@ -2872,8 +2872,11 @@ app.get('/api/orders/:id', authRequired, async (req, res) => {
     const order = await canAccessOrder(req.user.id, req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     const items = await pool.query(
-      `SELECT oi.*, p.name AS product_name, p.price AS product_price
-       FROM order_items oi JOIN products p ON oi.product_id = p.id
+      `SELECT oi.*, p.name AS product_name, p.price AS product_price,
+              pi.image_url AS product_image
+       FROM order_items oi
+       JOIN products p ON oi.product_id = p.id
+       LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = true
        WHERE oi.order_id = $1`,
       [req.params.id]
     );
