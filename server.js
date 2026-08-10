@@ -1215,6 +1215,43 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
+// ─── Check email availability ───────────────────────────────────────────────
+app.get('/api/auth/check-email', async (req, res) => {
+  const { email } = req.query;
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'Email query parameter required' });
+  }
+  try {
+    const result = await pool.query('SELECT 1 FROM users WHERE email = $1', [email.trim().toLowerCase()]);
+    return res.json({ available: result.rows.length === 0 });
+  } catch (err) {
+    console.error('check-email error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── Check username availability ────────────────────────────────────────────
+app.get('/api/auth/check-username', async (req, res) => {
+  const { username } = req.query;
+  if (!username || typeof username !== 'string') {
+    return res.status(400).json({ error: 'Username query parameter required' });
+  }
+  const clean = username.trim().toLowerCase();
+  if (clean.length < 1 || clean.length > 30) {
+    return res.json({ available: false, reason: 'Username must be 1-30 characters' });
+  }
+  if (!/^[a-z0-9][a-z0-9._]{0,28}[a-z0-9]$/.test(clean) && clean.length > 1) {
+    return res.json({ available: false, reason: 'Lowercase letters, numbers, dots, and underscores only' });
+  }
+  try {
+    const result = await pool.query('SELECT 1 FROM users WHERE username = $1', [clean]);
+    return res.json({ available: result.rows.length === 0 });
+  } catch (err) {
+    console.error('check-username error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
