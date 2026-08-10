@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import BackButton from '../components/BackButton';
@@ -121,7 +121,7 @@ export default function NotificationScreen() {
     setLoading(false);
   }, []);
 
-  React.useEffect(() => { fetchData(); }, []);
+  useFocusEffect(useCallback(() => { fetchData(true); }, []));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
