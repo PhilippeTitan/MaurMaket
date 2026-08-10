@@ -375,11 +375,6 @@ export default function NotificationScreen() {
         </Text>
         <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
           <MaterialCommunityIcons name="clock-outline" size={26} color={COLORS.text} />
-          {allHistoryOrders.length > 0 && (
-            <View style={styles.historyBadge}>
-              <Text style={styles.historyBadgeText}>{allHistoryOrders.length > 9 ? '9+' : allHistoryOrders.length}</Text>
-            </View>
-          )}
         </TouchableOpacity>
       </View>
 
@@ -562,14 +557,7 @@ const styles = StyleSheet.create({
   },
   markAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, backgroundColor: COLORS.blue + '15' },
   markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '600' },
-  historyBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  historyBadge: {
-    position: 'absolute', top: 2, right: 2,
-    backgroundColor: COLORS.coral, borderRadius: 8,
-    minWidth: 14, height: 14, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  historyBadgeText: { color: COLORS.white, fontSize: 8, fontWeight: '700' },
+  historyBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   historyFilterBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 
   /* Sort modal (Explore style) */
