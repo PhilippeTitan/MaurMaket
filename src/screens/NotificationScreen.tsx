@@ -120,6 +120,7 @@ export default function NotificationScreen() {
   const [buyOrders, setBuyOrders] = useState<Order[]>([]);
   const [sellOrders, setSellOrders] = useState<Order[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
 
   const fetchData = useCallback(async (force = false) => {
     try {
@@ -163,7 +164,12 @@ export default function NotificationScreen() {
   const unreadCount = filteredNotifications.filter(n => !n.is_read).length;
   const allOrders = [...buyOrders, ...sellOrders];
   const activeOrders = allOrders.filter(o => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
-  const historyOrders = allOrders.filter(o => ['completed', 'cancelled'].includes(o.status));
+  const allHistoryOrders = allOrders.filter(o => ['completed', 'cancelled'].includes(o.status));
+  const historyOrders = allOrders.filter(o => {
+    if (historyFilter === 'completed') return o.status === 'completed';
+    if (historyFilter === 'cancelled') return o.status === 'cancelled';
+    return ['completed', 'cancelled'].includes(o.status);
+  });
 
   const sections = groupByDay(filteredNotifications);
   const sectionsFlat: { label: string; notif: Notification; isHeader: boolean }[] = [];
@@ -316,9 +322,9 @@ export default function NotificationScreen() {
         {activeTab !== 'notifications' || unreadCount === 0 ? (
           <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
             <MaterialCommunityIcons name="clock-outline" size={26} color={COLORS.text} />
-            {historyOrders.length > 0 && (
+            {allHistoryOrders.length > 0 && (
               <View style={styles.historyBadge}>
-                <Text style={styles.historyBadgeText}>{historyOrders.length > 9 ? '9+' : historyOrders.length}</Text>
+                <Text style={styles.historyBadgeText}>{allHistoryOrders.length > 9 ? '9+' : allHistoryOrders.length}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -396,8 +402,28 @@ export default function NotificationScreen() {
           <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
             <BackButton onPress={() => setShowHistory(false)} />
             <Text style={styles.title}>Order History</Text>
-            <View style={{ width: 35 }} />
+            <TouchableOpacity
+              onPress={() => setHistoryFilter(historyFilter === 'all' ? 'completed' : historyFilter === 'completed' ? 'cancelled' : 'all')}
+              style={styles.historyFilterBtn}
+              accessibilityLabel="filter history"
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="filter-variant" size={22} color={historyFilter !== 'all' ? COLORS.coral : COLORS.text} />
+            </TouchableOpacity>
           </View>
+          {historyFilter !== 'all' && (
+            <View style={styles.filterChipRow}>
+              <TouchableOpacity
+                style={styles.filterChip}
+                onPress={() => setHistoryFilter('all')}
+                accessibilityLabel="clear filter"
+                accessibilityRole="button"
+              >
+                <Text style={styles.filterChipText}>{historyFilter === 'completed' ? 'Completed' : 'Cancelled'}</Text>
+                <MaterialCommunityIcons name="close" size={14} color={COLORS.coral} />
+              </TouchableOpacity>
+            </View>
+          )}
           {historyOrders.length === 0 ? (
             <EmptyState icon="clock-outline" title="No order history yet" size={56} />
           ) : (
@@ -432,6 +458,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   historyBadgeText: { color: COLORS.white, fontSize: 8, fontWeight: '700' },
+  historyFilterBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  filterChipRow: {
+    flexDirection: 'row', paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm,
+  },
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: COLORS.coral + '18', borderRadius: RADIUS.row,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  filterChipText: { fontSize: 12, fontWeight: '600', color: COLORS.coral },
 
   /* Bottom nav */
   bottomNav: {
