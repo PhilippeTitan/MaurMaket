@@ -912,6 +912,9 @@ async function runMigrations() {
     // 40. Date of birth column for age gate (18+)
     await step('date_of_birth column', () => c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;`));
 
+    // 41. Pending DOB flag for Google OAuth users
+    await step('pending_dob column', () => c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_dob BOOLEAN DEFAULT false;`));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -1155,6 +1158,17 @@ async function sendPushNotification(userId, title, body, data) {
   }
 }
 
+// Age verification helper — returns true if date of birth implies age >= 18
+function isAtLeast18(dateOfBirth) {
+  const dob = new Date(dateOfBirth);
+  if (isNaN(dob.getTime())) return false;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age >= 18;
+}
+
 // Commission rate by seller tier
 function getCommissionRate(tier) {
   switch (tier) {
@@ -1206,13 +1220,7 @@ app.post('/api/auth/signup', async (req, res) => {
     return res.status(400).json({ error: 'Full name, email, and password required' });
   }
   if (!dateOfBirth) return res.status(400).json({ error: 'Date of birth is required' });
-  const dob = new Date(dateOfBirth);
-  if (isNaN(dob.getTime())) return res.status(400).json({ error: 'Invalid date of birth' });
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
-  if (age < 18) return res.status(400).json({ error: 'You must be at least 18 years old to create an account' });
+  if (!isAtLeast18(dateOfBirth)) return res.status(400).json({ error: 'You must be at least 18 years old to create an account' });
   if (fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
   if (email.length > 254) return res.status(400).json({ error: 'Email too long' });
   if (password.length < 6 || password.length > 128) return res.status(400).json({ error: 'Password must be 6-128 characters' });
@@ -1772,13 +1780,14 @@ app.post('/api/auth/google-code', async (req, res) => {
     if (!googleId || !email) return res.status(400).json({ error: 'Invalid Google token' });
 
     let userRow = null;
+    let isNewUser = false;
 
     const byGoogleId = await pool.query('SELECT id FROM users WHERE google_id = $1', [googleId]);
     if (byGoogleId.rows.length > 0) {
       const updated = await pool.query(
         `UPDATE users SET email = $1, full_name = $2, avatar_url = $3, updated_at = CURRENT_TIMESTAMP
          WHERE google_id = $4
-         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng`,
+         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
         [email, name, picture, googleId]
       );
       userRow = updated.rows[0];
@@ -1788,23 +1797,25 @@ app.post('/api/auth/google-code', async (req, res) => {
         const updated = await pool.query(
           `UPDATE users SET google_id = $1, avatar_url = COALESCE($2, avatar_url), updated_at = CURRENT_TIMESTAMP
            WHERE lower(email) = lower($3)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng`,
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
           [googleId, picture, email]
         );
         userRow = updated.rows[0];
       } else {
+        isNewUser = true;
         const inserted = await pool.query(
-          `INSERT INTO users (email, google_id, full_name, avatar_url, role, email_verified)
-           VALUES ($1, $2, $3, $4, 'buyer', true)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng`,
+          `INSERT INTO users (email, google_id, full_name, avatar_url, role, email_verified, pending_dob)
+           VALUES ($1, $2, $3, $4, 'buyer', true, true)
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
           [email, googleId, name, picture]
         );
         userRow = inserted.rows[0];
       }
     }
 
+    const needsDob = isNewUser || userRow.pending_dob;
     const token = jwt.sign({ id: userRow.id, email: userRow.email, role: userRow.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: userRow, token });
+    res.json({ user: userRow, token, needs_dob: needsDob });
   } catch (err) {
     console.error('Google code exchange error:', err);
     res.status(500).json({ error: 'Google authentication failed' });
@@ -1833,13 +1844,14 @@ app.post('/api/auth/google', async (req, res) => {
     if (!googleId || !email) return res.status(400).json({ error: 'Invalid Google token' });
 
     let userRow = null;
+    let isNewUser = false;
 
     const byGoogleId = await pool.query('SELECT id FROM users WHERE google_id = $1', [googleId]);
     if (byGoogleId.rows.length > 0) {
       const updated = await pool.query(
         `UPDATE users SET email = $1, full_name = $2, avatar_url = $3, updated_at = CURRENT_TIMESTAMP
          WHERE google_id = $4
-         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng`,
+         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
         [email, name, picture, googleId]
       );
       userRow = updated.rows[0];
@@ -1849,23 +1861,25 @@ app.post('/api/auth/google', async (req, res) => {
         const updated = await pool.query(
           `UPDATE users SET google_id = $1, avatar_url = COALESCE($2, avatar_url), updated_at = CURRENT_TIMESTAMP
            WHERE lower(email) = lower($3)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng`,
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
           [googleId, picture, email]
         );
         userRow = updated.rows[0];
       } else {
+        isNewUser = true;
         const inserted = await pool.query(
-          `INSERT INTO users (email, google_id, full_name, avatar_url, role, email_verified)
-           VALUES ($1, $2, $3, $4, 'buyer', true)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng`,
+          `INSERT INTO users (email, google_id, full_name, avatar_url, role, email_verified, pending_dob)
+           VALUES ($1, $2, $3, $4, 'buyer', true, true)
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
           [email, googleId, name, picture]
         );
         userRow = inserted.rows[0];
       }
     }
 
+    const needsDob = isNewUser || userRow.pending_dob;
     const token = jwt.sign({ id: userRow.id, email: userRow.email, role: userRow.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: userRow, token });
+    res.json({ user: userRow, token, needs_dob: needsDob });
   } catch (err) {
     console.error('Google auth error:', err);
     res.status(500).json({ error: 'Google authentication failed' });
