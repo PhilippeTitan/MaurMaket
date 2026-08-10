@@ -96,6 +96,9 @@ export const store = {
   },
 
   async addToCart(product: CartItem) {
+    if (product.seller_id && state.user?.id && product.seller_id === state.user.id) {
+      return { added: false, reason: 'own-product' as const, quantity: 0, stock: 0 };
+    }
     const stock = Math.max(0, Number(product.stock) || 0);
     if (stock <= 0) return { added: false, reason: 'out-of-stock' as const, quantity: 0, stock };
     const existing = state.cart.find(c => c.id === product.id);

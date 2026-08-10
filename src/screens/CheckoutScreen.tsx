@@ -109,6 +109,15 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       return;
     }
 
+    const ownItems = cart.filter(item => item.seller_id && item.seller_id === store.user?.id);
+    if (ownItems.length > 0) {
+      for (const item of ownItems) {
+        await store.removeFromCart(item.id);
+      }
+      toast.error('Cannot purchase your own items', `${ownItems.length} item(s) from your store were removed from cart.`);
+      if (cart.length - ownItems.length === 0) return;
+    }
+
     if (method === 'delivery' && (!name || !phone || !address || !city)) {
       toast.error(t('checkout.missingInfo'), t('checkout.fillRequired'));
       return;

@@ -3194,7 +3194,7 @@ app.post('/api/orders/:id/reorder', authRequired, async (req, res) => {
       [req.params.id]
     );
     const availableItems = items.rows
-      .filter(item => item.is_available && item.stock > 0)
+      .filter(item => item.is_available && item.stock > 0 && item.seller_id !== req.user.id)
       .map(item => {
         const isOnSale = item.sale_price && (item.sale_starts_at === null || new Date(item.sale_starts_at) <= new Date()) && (item.sale_ends_at === null || new Date(item.sale_ends_at) >= new Date());
         const effectivePrice = isOnSale ? parseFloat(item.sale_price) : parseFloat(item.price);

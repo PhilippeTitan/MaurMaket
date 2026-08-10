@@ -37,6 +37,13 @@ export default function CartScreen({ navigation }: Props) {
     return unsub;
   }, []);
 
+  useEffect(() => {
+    const ownIds = cart.filter(item => item.seller_id && item.seller_id === store.user?.id).map(item => item.id);
+    if (ownIds.length > 0) {
+      for (const id of ownIds) store.removeFromCart(id);
+    }
+  }, []);
+
   const total = cart.reduce((sum, item) => sum + (item.effective_price ?? item.price) * item.quantity, 0);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const finalTotal = Math.max(0, total - discount);
