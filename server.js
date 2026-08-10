@@ -1155,10 +1155,10 @@ async function sendPushNotification(userId, title, body, data) {
 // Commission rate by seller tier
 function getCommissionRate(tier) {
   switch (tier) {
-    case 'business': return 0.05;
-    case 'verified': return 0.08;
-    case 'casual': return 0.10;
-    default: return 0.10;
+    case 'business': return 0.03;
+    case 'verified': return 0.05;
+    case 'casual': return 0.08;
+    default: return 0.08;
   }
 }
 

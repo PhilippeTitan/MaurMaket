@@ -13,6 +13,7 @@ import { getProduct, updateProduct, deleteProduct, getCategories, uploadImage, g
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Category, ProductImage } from '../types';
+import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
 import SaleSection from '../components/SaleSection';
 
@@ -251,23 +252,29 @@ export default function EditListingScreen({ route, navigation }: Props) {
       <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} accessibilityLabel="description" />
       <TextInput style={styles.input} placeholder={`${t('editListing.price')} (100-99,999 G)`} placeholderTextColor={COLORS.text2} value={price} onChangeText={(v) => { const num = v.replace(/[^0-9]/g, ''); if (!num || Number(num) <= 99999) setPrice(num); }} keyboardType="numeric" accessibilityLabel="price" maxLength={5} />
 
-      {price && Number(price) >= 100 && (
-        <View style={styles.netPreview}>
-          <View style={styles.netPreviewRow}>
-            <Text style={styles.netPreviewLabel}>MaurMaket fee (8%)</Text>
-            <Text style={styles.netPreviewValue}>-{Math.round(Number(price) * 0.08)} G</Text>
+      {price && Number(price) >= 100 && (() => {
+        const tier = store.user?.seller_tier || 'casual';
+        const rate = tier === 'business' ? 0.03 : tier === 'verified' ? 0.05 : 0.08;
+        const moncash = 0.079;
+        const net = Math.round(Number(price) * (1 - rate) * (1 - moncash));
+        return (
+          <View style={styles.netPreview}>
+            <View style={styles.netPreviewRow}>
+              <Text style={styles.netPreviewLabel}>MaurMaket fee ({Math.round(rate * 100)}%)</Text>
+              <Text style={styles.netPreviewValue}>-{Math.round(Number(price) * rate)} G</Text>
+            </View>
+            <View style={styles.netPreviewRow}>
+              <Text style={styles.netPreviewLabel}>MonCash fee (~7.9%)</Text>
+              <Text style={styles.netPreviewValue}>~-{Math.round(Number(price) * moncash)} G</Text>
+            </View>
+            <View style={[styles.netPreviewRow, styles.netPreviewTotal]}>
+              <Text style={styles.netPreviewTotalLabel}>You receive</Text>
+              <Text style={styles.netPreviewTotalValue}>{net} G</Text>
+            </View>
+            <Text style={styles.netPreviewTip}>Tip: price ~{Math.round((rate + moncash) * 100)}% above your target to cover fees</Text>
           </View>
-          <View style={styles.netPreviewRow}>
-            <Text style={styles.netPreviewLabel}>MonCash fee (~7.9%)</Text>
-            <Text style={styles.netPreviewValue}>~-{Math.round(Number(price) * 0.079)} G</Text>
-          </View>
-          <View style={[styles.netPreviewRow, styles.netPreviewTotal]}>
-            <Text style={styles.netPreviewTotalLabel}>You receive</Text>
-            <Text style={styles.netPreviewTotalValue}>{Math.round(Number(price) * 0.92 * 0.95)} G</Text>
-          </View>
-          <Text style={styles.netPreviewTip}>Tip: price ~18% above your target to cover fees</Text>
-        </View>
-      )}
+        );
+      })()}
 
       <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
         <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
