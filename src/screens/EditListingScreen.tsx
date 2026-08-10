@@ -251,6 +251,24 @@ export default function EditListingScreen({ route, navigation }: Props) {
       <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} accessibilityLabel="description" />
       <TextInput style={styles.input} placeholder={`${t('editListing.price')} (100-99,999 G)`} placeholderTextColor={COLORS.text2} value={price} onChangeText={(v) => { const num = v.replace(/[^0-9]/g, ''); if (!num || Number(num) <= 99999) setPrice(num); }} keyboardType="numeric" accessibilityLabel="price" maxLength={5} />
 
+      {price && Number(price) >= 100 && (
+        <View style={styles.netPreview}>
+          <View style={styles.netPreviewRow}>
+            <Text style={styles.netPreviewLabel}>MaurMaket fee (8%)</Text>
+            <Text style={styles.netPreviewValue}>-{Math.round(Number(price) * 0.08)} G</Text>
+          </View>
+          <View style={styles.netPreviewRow}>
+            <Text style={styles.netPreviewLabel}>MonCash fee (~7.9%)</Text>
+            <Text style={styles.netPreviewValue}>~-{Math.round(Number(price) * 0.079)} G</Text>
+          </View>
+          <View style={[styles.netPreviewRow, styles.netPreviewTotal]}>
+            <Text style={styles.netPreviewTotalLabel}>You receive</Text>
+            <Text style={styles.netPreviewTotalValue}>{Math.round(Number(price) * 0.92 * 0.95)} G</Text>
+          </View>
+          <Text style={styles.netPreviewTip}>Tip: price ~18% above your target to cover fees</Text>
+        </View>
+      )}
+
       <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
         <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
         <Icon name="sale-tag" size={16} color={showSale ? COLORS.coral : COLORS.text2} />
@@ -351,6 +369,14 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
+  netPreview: { marginHorizontal: SPACING.md, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12, marginBottom: 8 },
+  netPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  netPreviewLabel: { fontSize: 12, color: COLORS.text2 },
+  netPreviewValue: { fontSize: 12, fontWeight: '600', color: COLORS.text2 },
+  netPreviewTotal: { marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border + '60', marginBottom: 0 },
+  netPreviewTotalLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  netPreviewTotalValue: { fontSize: 13, fontWeight: '800', color: COLORS.green },
+  netPreviewTip: { fontSize: 11, color: COLORS.coral, marginTop: 6, fontStyle: 'italic' },
   toggleRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: SPACING.md, marginBottom: 8,
