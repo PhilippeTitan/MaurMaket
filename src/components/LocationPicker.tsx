@@ -155,7 +155,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.card,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: COLORS.border,

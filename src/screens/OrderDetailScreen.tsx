@@ -3,11 +3,12 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Linking,
   Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
-import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus } from '../api';
+import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -30,6 +31,35 @@ const STATUS_COLORS: Record<string, string> = {
 
 const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error ? err.message : fallback;
 
+function buildMiniMapHtml(lat: number, lng: number): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
+.leaflet-control-zoom{display:none}
+.leaflet-control-attribution{display:none!important}
+.meetup-pin{width:24px;height:24px;border-radius:50%;background:#FF6B6B;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+var map = L.map("map",{zoomControl:false,attributionControl:false}).setView([${lat},${lng}],15);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{maxZoom:20,subdomains:"abcd"}).addTo(map);
+var icon = L.divIcon({className:'',iconSize:[24,24],iconAnchor:[12,12],html:'<div class="meetup-pin"></div>'});
+L.marker([${lat},${lng}],{icon:icon}).addTo(map);
+setTimeout(function(){map.invalidateSize()},200);
+</script>
+</body>
+</html>`;
+}
+
 export default function OrderDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -47,6 +77,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeDescription, setDisputeDescription] = useState('');
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [declineLoading, setDeclineLoading] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -185,6 +217,38 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
     setActionLoading(false);
   };
 
+  const handleAcceptMeetup = async () => {
+    setConfirmLoading(true);
+    try {
+      await confirmMeetup(orderId);
+      toast.success(t('orderDetail.confirmMeetup'), t('orderDetail.meetupConfirmed'));
+      fetchData();
+    } catch (err: unknown) {
+      toast.error(t('common.error'), errorMessage(err, 'Could not confirm meetup'));
+    }
+    setConfirmLoading(false);
+  };
+
+  const handleDeclineMeetup = () => {
+    toast.show({
+      kind: 'warning',
+      title: t('orderDetail.declineMeetup'),
+      message: t('orderDetail.declineMeetupConfirm'),
+      actionLabel: 'Yes, decline',
+      onAction: async () => {
+        setDeclineLoading(true);
+        try {
+          await cancelOrder(orderId);
+          toast.success(t('orderDetail.orderCancelled'));
+          fetchData();
+        } catch (err: unknown) {
+          toast.error(t('common.error'), errorMessage(err, 'Could not decline meetup'));
+        }
+        setDeclineLoading(false);
+      },
+    });
+  };
+
   if (loading || !order) {
     return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>;
   }
@@ -261,16 +325,64 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             <Text style={styles.meetupText}>{order.meetup_address}</Text>
           </View>
           {order.meetup_note && <Text style={styles.meetupNote}>{t('orderDetail.note')}: {order.meetup_note}</Text>}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Icon
-              name={order.meetup_confirmed ? 'check-circle' : 'time'}
-              size={14}
-              color={order.meetup_confirmed ? COLORS.green : COLORS.yellow}
-            />
-            <Text style={[styles.meetupConfirm, { color: order.meetup_confirmed ? COLORS.green : COLORS.yellow }]}>
-              {order.meetup_confirmed ? t('orderDetail.confirmMeetup') : t('orderDetail.pending')}
-            </Text>
-          </View>
+          
+          {/* Status + Accept/Decline buttons */}
+          {isSellerOfOrder && !order.meetup_confirmed && order.meetup_proposed_by !== store.user?.id ? (
+            <View style={{ marginTop: 8, gap: 8 }}>
+              <Text style={[styles.meetupConfirm, { color: COLORS.yellow }]}>
+                {t('orderDetail.buyerProposedLocation')}
+              </Text>
+              
+              {/* Mini map preview */}
+              {order.meetup_lat && order.meetup_lng && (
+                <View style={styles.miniMapContainer}>
+                  <WebView
+                    source={{ html: buildMiniMapHtml(order.meetup_lat, order.meetup_lng) }}
+                    style={styles.miniMap}
+                    scrollEnabled={false}
+                    showsHorizontalScrollIndicator={false}
+                    showsVerticalScrollIndicator={false}
+                  />
+                </View>
+              )}
+              
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={[styles.acceptBtn, { flex: 1 }]}
+                  onPress={handleAcceptMeetup}
+                  disabled={confirmLoading || declineLoading}
+                >
+                  {confirmLoading ? (
+                    <ActivityIndicator size="small" color={COLORS.white} />
+                  ) : (
+                    <Text style={styles.acceptBtnText}>{t('orderDetail.acceptMeetup')}</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.declineBtn, { flex: 1 }]}
+                  onPress={handleDeclineMeetup}
+                  disabled={confirmLoading || declineLoading}
+                >
+                  {declineLoading ? (
+                    <ActivityIndicator size="small" color={COLORS.white} />
+                  ) : (
+                    <Text style={styles.declineBtnText}>{t('orderDetail.declineMeetup')}</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Icon
+                name={order.meetup_confirmed ? 'check-circle' : 'time'}
+                size={14}
+                color={order.meetup_confirmed ? COLORS.green : COLORS.yellow}
+              />
+              <Text style={[styles.meetupConfirm, { color: order.meetup_confirmed ? COLORS.green : COLORS.yellow }]}>
+                {order.meetup_confirmed ? t('orderDetail.confirmMeetup') : t('orderDetail.pending')}
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -518,6 +630,16 @@ const styles = StyleSheet.create({
   meetupText: { fontSize: 13, color: COLORS.text, marginBottom: 4 },
   meetupNote: { fontSize: 12, color: COLORS.text2, marginBottom: 4 },
   meetupConfirm: { fontSize: 12, fontWeight: '600' },
+  miniMapContainer: {
+    height: 120,
+    borderRadius: RADIUS.card,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  miniMap: {
+    flex: 1,
+  },
   eventItem: { flexDirection: 'row', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   eventDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.coral, marginTop: 5 },
   eventInfo: { flex: 1 },
@@ -546,6 +668,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.green, alignItems: 'center',
   },
   meetupBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
+  acceptBtn: {
+    flexDirection: 'row', justifyContent: 'center', gap: 8, padding: 12, borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.green, alignItems: 'center',
+  },
+  acceptBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 14 },
+  declineBtn: {
+    flexDirection: 'row', justifyContent: 'center', gap: 8, padding: 12, borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.coral, alignItems: 'center',
+  },
+  declineBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 14 },
 
   /* Review modal */
   modalOverlay: {
