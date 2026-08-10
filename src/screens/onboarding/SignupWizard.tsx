@@ -39,6 +39,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
   const [loading, setLoading] = useState(false);
   const [entered, setEntered] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [userResult, setUserResult] = useState<{ user: User; token: string } | null>(null);
 
   // Real-time email availability
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
@@ -149,7 +150,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
     const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
     try {
       const res = await apiSignup(fullName, email, password, phoneDigits) as { user: User; token: string };
-      await store.setUser(res.user, res.token);
+      setUserResult(res);
       setEntered(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Signup failed';
@@ -160,8 +161,14 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
     }
   };
 
+  const handleEnterApp = async () => {
+    if (userResult) {
+      await store.setUser(userResult.user, userResult.token);
+    }
+  };
+
   if (entered) {
-    return <WelcomeMoment name={[firstName, middleName, lastName].filter(Boolean).join(' ')} onEnter={() => {}} />;
+    return <WelcomeMoment name={[firstName, middleName, lastName].filter(Boolean).join(' ')} onEnter={handleEnterApp} />;
   }
 
   return (
