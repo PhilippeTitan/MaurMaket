@@ -13,7 +13,7 @@ import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../the
 import {
   getProducts, toggleWishlist, checkWishlist, createConversation,
   getImageUrl, getUnreadCount, getProductReviews, getFollowing,
-  trackFeedEvent,
+  trackFeedEvent, getOrders, getSellerOrders,
 } from '../api';
 import { store } from '../store';
 import type { Product, Review } from '../types';
@@ -93,8 +93,16 @@ export default function FeedScreen() {
     let mounted = true;
     const loadUnread = async () => {
       try {
-        const res = await getUnreadCount() as { count: string | number };
-        if (mounted) setUnreadCount(Number(res.count || 0));
+        const [notifRes, buyRes, sellRes] = await Promise.allSettled([
+          getUnreadCount() as Promise<{ count: string | number }>,
+          getOrders() as Promise<{ buyerOrders: any[] }>,
+          store.isSeller ? getSellerOrders() as Promise<{ orders: any[] }> : Promise.resolve({ orders: [] }),
+        ]);
+        const notifCount = notifRes.status === 'fulfilled' ? Number(notifRes.value.count || 0) : 0;
+        const buyOrders = buyRes.status === 'fulfilled' ? (buyRes.value.buyerOrders || []) : [];
+        const sellOrders = sellRes.status === 'fulfilled' ? (sellRes.value.orders || []) : [];
+        const activeOrders = [...buyOrders, ...sellOrders].filter((o: any) => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
+        if (mounted) setUnreadCount(notifCount + activeOrders.length);
       } catch {
         if (mounted) setUnreadCount(0);
       }
@@ -111,8 +119,16 @@ export default function FeedScreen() {
   useFocusEffect(useCallback(() => {
     const loadUnread = async () => {
       try {
-        const res = await getUnreadCount() as { count: string | number };
-        setUnreadCount(Number(res.count || 0));
+        const [notifRes, buyRes, sellRes] = await Promise.allSettled([
+          getUnreadCount() as Promise<{ count: string | number }>,
+          getOrders() as Promise<{ buyerOrders: any[] }>,
+          store.isSeller ? getSellerOrders() as Promise<{ orders: any[] }> : Promise.resolve({ orders: [] }),
+        ]);
+        const notifCount = notifRes.status === 'fulfilled' ? Number(notifRes.value.count || 0) : 0;
+        const buyOrders = buyRes.status === 'fulfilled' ? (buyRes.value.buyerOrders || []) : [];
+        const sellOrders = sellRes.status === 'fulfilled' ? (sellRes.value.orders || []) : [];
+        const activeOrders = [...buyOrders, ...sellOrders].filter((o: any) => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
+        setUnreadCount(notifCount + activeOrders.length);
       } catch {}
     };
     loadUnread();

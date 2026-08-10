@@ -142,8 +142,11 @@ export default function NotificationScreen() {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
-  const sections = groupByDay(notifications);
+  const ORDER_NOTIF_TYPES = new Set(['order_status', 'payment_confirmed', 'payment_failed', 'order_cancelled']);
+  const activeOrders = [...buyOrders, ...sellOrders].filter(o => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
+  const filteredNotifications = notifications.filter(n => !ORDER_NOTIF_TYPES.has(n.type));
+  const unreadCount = filteredNotifications.filter(n => !n.is_read).length;
+  const sections = groupByDay(filteredNotifications);
 
   const sectionsFlat: { label: string; notif: Notification; isHeader: boolean }[] = [];
   for (const section of sections) {
@@ -193,7 +196,7 @@ export default function NotificationScreen() {
 
   const tabs: { key: Tab; icon: string; label: string; badge: number }[] = [
     { key: 'notifications', icon: 'bell-outline', label: 'Notifications', badge: unreadCount },
-    { key: 'orders', icon: 'package-variant-closed', label: 'Orders', badge: buyOrders.length + sellOrders.length },
+    { key: 'orders', icon: 'package-variant-closed', label: 'Orders', badge: activeOrders.length },
   ];
 
   return (
