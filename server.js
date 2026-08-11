@@ -1213,18 +1213,26 @@ function sellerRequired(req, res, next) {
 }
 
 // Verified seller required — casual sellers can buy but not list products
-function verifiedSellerRequired(req, res, next) {
+async function verifiedSellerRequired(req, res, next) {
   if (req.user.role !== 'seller') {
     return res.status(403).json({ error: 'Seller access required' });
   }
-  if (req.user.seller_tier === 'casual' || req.user.seller_tier === 'none') {
-    return res.status(403).json({
-      error: 'Verification required',
-      code: 'VERIFICATION_REQUIRED',
-      message: 'You need to verify your identity before listing products. Go to Settings > Verification to get started.',
-    });
+  try {
+    const result = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'User not found' });
+    const tier = result.rows[0].seller_tier;
+    if (tier === 'casual' || tier === 'none') {
+      return res.status(403).json({
+        error: 'Verification required',
+        code: 'VERIFICATION_REQUIRED',
+        message: 'You need to verify your identity before listing products. Go to Settings > Verification to get started.',
+      });
+    }
+    next();
+  } catch (err) {
+    console.error('verifiedSellerRequired error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
-  next();
 }
 
 // DOB required middleware — blocks write actions for Google OAuth users who haven't confirmed age
