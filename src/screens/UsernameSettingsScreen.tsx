@@ -48,8 +48,9 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <View style={styles.container}>
       <ScreenHeader title="Username" onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.scroll}>
 
       <View style={styles.card}>
         <Text style={styles.label}>Your username</Text>
@@ -93,7 +94,8 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       <View style={{ height: 60 }} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 

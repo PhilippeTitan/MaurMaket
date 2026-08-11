@@ -28,8 +28,9 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <View style={styles.container}>
       <ScreenHeader title="Language" onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.scroll}>
 
       <Text style={styles.sectionHeader}>Select Language</Text>
       <View style={styles.card}>
@@ -47,7 +48,8 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
       </View>
 
       <View style={{ height: 60 }} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 

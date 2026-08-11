@@ -51,8 +51,9 @@ export default function EditProfileScreen({ navigation }: Props) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <View style={styles.container}>
       <ScreenHeader title={t('me.editProfile')} onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.scroll}>
 
       {/* ── Avatar ── */}
       <TouchableOpacity style={styles.avatarSection} onPress={handlePickAvatar} disabled={avatarUploading}>
@@ -105,7 +106,8 @@ export default function EditProfileScreen({ navigation }: Props) {
       </View>
 
       <View style={{ height: 60 }} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 

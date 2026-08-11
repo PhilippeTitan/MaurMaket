@@ -62,8 +62,9 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
 
   if (!isSeller) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+      <View style={styles.container}>
         <ScreenHeader title={t('settings.seller')} onBack={() => navigation.goBack()} />
+        <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.row}
@@ -75,13 +76,15 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
         <View style={{ height: 60 }} />
-      </ScrollView>
+        </ScrollView>
+      </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <View style={styles.container}>
       <ScreenHeader title={t('settings.seller')} onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.scroll}>
 
       {/* ── Store Profile ── */}
       <Text style={styles.sectionHeader}>Store Profile</Text>
@@ -212,7 +215,8 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
       )}
 
       <View style={{ height: 60 }} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 

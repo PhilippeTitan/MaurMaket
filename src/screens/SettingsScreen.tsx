@@ -44,8 +44,9 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <View style={styles.container}>
       <ScreenHeader title={t('settings.title')} onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.scroll}>
 
       {/* ── Account ── */}
       <SectionHeader title="Account" />
@@ -133,7 +134,8 @@ export default function SettingsScreen({ navigation }: Props) {
       </View>
 
       <View style={{ height: 60 }} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 

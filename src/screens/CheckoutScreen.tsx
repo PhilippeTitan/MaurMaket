@@ -184,11 +184,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <View style={styles.container}>
       <ScreenHeader
         title={t('checkout.title')}
         onBack={() => navigation.goBack()}
       />
+      <ScrollView contentContainerStyle={styles.content}>
 
       <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
       <View style={[styles.sellerSummary, sellerCount > 1 && styles.sellerSummaryMixed]}>
@@ -374,7 +375,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <Text style={styles.ctaText}>{t('checkout.confirmPay')}</Text>
         )}
       </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </View>
     </KeyboardAvoidingView>
   );
 }

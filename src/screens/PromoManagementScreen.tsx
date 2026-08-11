@@ -143,8 +143,8 @@ export default function PromoManagementScreen() {
 
   return (
     <View style={styles.container}>
+      <ScreenHeader title="Promotions" onBack={() => nav.goBack()} />
       <ScrollView contentContainerStyle={styles.scroll}>
-        <ScreenHeader title="Promotions" onBack={() => nav.goBack()} />
 
         {activePromos.length > 0 && (
           <View key="active-section">
@@ -167,7 +167,7 @@ export default function PromoManagementScreen() {
             <Text style={styles.emptyHint}>Create your first promo code to attract buyers</Text>
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
 
       {/* Create button */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>

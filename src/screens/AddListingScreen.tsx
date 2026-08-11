@@ -166,8 +166,9 @@ export default function AddListingScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <View style={styles.container}>
       <ScreenHeader title={t('addListing.title')} onBack={() => nav.goBack()} />
+      <ScrollView contentContainerStyle={styles.content}>
 
       {isCasualSeller ? (
         <View style={styles.limitBlock}>
@@ -317,7 +318,8 @@ export default function AddListingScreen() {
           </TouchableOpacity>
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
     </KeyboardAvoidingView>
   );
 }

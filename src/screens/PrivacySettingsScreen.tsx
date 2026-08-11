@@ -30,8 +30,9 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <View style={styles.container}>
       <ScreenHeader title="Privacy" onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.scroll}>
 
       <Text style={styles.sectionHeader}>Profile Visibility</Text>
       <View style={styles.card}>
@@ -59,7 +60,8 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
       </View>
 
       <View style={{ height: 60 }} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
