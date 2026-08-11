@@ -169,7 +169,26 @@ export default function AddListingScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <ScreenHeader title={t('addListing.title')} onBack={() => nav.goBack()} />
 
-      {atListingLimit ? (
+      {isCasualSeller ? (
+        <View style={styles.limitBlock}>
+          <View style={styles.limitIcon}>
+            <MaterialCommunityIcons name="shield-lock-outline" size={40} color={COLORS.coral} />
+          </View>
+          <Text style={styles.limitTitle}>Verification Required</Text>
+          <Text style={styles.limitHint}>
+            You need to verify your identity before listing products on MaurMaket. This helps keep our marketplace safe and trustworthy.
+          </Text>
+          <TouchableOpacity
+            style={styles.upgradeBtn}
+            onPress={() => { nav.navigate('Settings'); }}
+            accessibilityRole="button"
+            accessibilityLabel="go to verification settings"
+          >
+            <MaterialCommunityIcons name="shield-check-outline" size={18} color={COLORS.white} />
+            <Text style={styles.upgradeBtnText}>Go to Settings</Text>
+          </TouchableOpacity>
+        </View>
+      ) : atListingLimit ? (
         <View style={styles.limitBlock}>
           <View style={styles.limitIcon}>
             <Icon name="package" size={40} color={COLORS.text2} />

@@ -1212,6 +1212,21 @@ function sellerRequired(req, res, next) {
   next();
 }
 
+// Verified seller required — casual sellers can buy but not list products
+function verifiedSellerRequired(req, res, next) {
+  if (req.user.role !== 'seller') {
+    return res.status(403).json({ error: 'Seller access required' });
+  }
+  if (req.user.seller_tier === 'casual' || req.user.seller_tier === 'none') {
+    return res.status(403).json({
+      error: 'Verification required',
+      code: 'VERIFICATION_REQUIRED',
+      message: 'You need to verify your identity before listing products. Go to Settings > Verification to get started.',
+    });
+  }
+  next();
+}
+
 // DOB required middleware — blocks write actions for Google OAuth users who haven't confirmed age
 async function dobRequired(req, res, next) {
   try {
@@ -2696,7 +2711,7 @@ app.get('/api/products/:id', async (req, res) => {
   }
 });
 
-app.post('/api/products', authRequired, sellerRequired, dobRequired, async (req, res) => {
+app.post('/api/products', authRequired, verifiedSellerRequired, dobRequired, async (req, res) => {
   // Email verification gate
   const evCheck = await pool.query('SELECT email_verified FROM users WHERE id = $1', [req.user.id]);
   if (!evCheck.rows[0]?.email_verified) {
@@ -2831,7 +2846,7 @@ app.delete('/api/products/:id', authRequired, sellerRequired, async (req, res) =
   }
 });
 
-app.put('/api/products/:id', authRequired, sellerRequired, async (req, res) => {
+app.put('/api/products/:id', authRequired, verifiedSellerRequired, async (req, res) => {
   const client = await pool.connect();
   try {
     const check = await client.query('SELECT seller_id, price FROM products WHERE id = $1', [req.params.id]);
@@ -5750,7 +5765,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
 });
 
 // Dedicated sale lifecycle endpoint
-app.post('/api/products/:id/sale', authRequired, sellerRequired, async (req, res) => {
+app.post('/api/products/:id/sale', authRequired, verifiedSellerRequired, async (req, res) => {
   try {
     const check = await pool.query('SELECT seller_id, price FROM products WHERE id = $1', [req.params.id]);
     if (check.rows.length === 0) return res.status(404).json({ error: 'Product not found' });

@@ -216,6 +216,32 @@ export default function EditListingScreen({ route, navigation }: Props) {
     return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>;
   }
 
+  if (store.user?.seller_tier === 'casual') {
+    return (
+      <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
+        <ScreenHeader title={t('editListing.title')} onBack={() => navigation.goBack()} />
+        <View style={styles.limitBlock}>
+          <View style={styles.limitIcon}>
+            <MaterialCommunityIcons name="shield-lock-outline" size={40} color={COLORS.coral} />
+          </View>
+          <Text style={styles.limitTitle}>Verification Required</Text>
+          <Text style={styles.limitHint}>
+            You need to verify your identity before editing products on MaurMaket. This helps keep our marketplace safe and trustworthy.
+          </Text>
+          <TouchableOpacity
+            style={styles.upgradeBtn}
+            onPress={() => { navigation.navigate('Settings'); }}
+            accessibilityRole="button"
+            accessibilityLabel="go to verification settings"
+          >
+            <MaterialCommunityIcons name="shield-check-outline" size={18} color={COLORS.white} />
+            <Text style={styles.upgradeBtnText}>Go to Settings</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
@@ -413,4 +439,14 @@ const styles = StyleSheet.create({
   saleToggleText: { fontSize: 13, color: COLORS.text, fontWeight: '600' },
   saleSection: { marginHorizontal: SPACING.md, marginBottom: 8, gap: 4 },
   saleHint: { fontSize: 12, color: '#00E5A0', fontWeight: '600', paddingHorizontal: 4 },
+  limitBlock: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, gap: 8 },
+  limitIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  limitTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
+  limitHint: { fontSize: 13, color: COLORS.text2, textAlign: 'center', lineHeight: 18 },
+  upgradeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 12, paddingHorizontal: 20, paddingVertical: 12,
+    backgroundColor: COLORS.green, borderRadius: RADIUS.button,
+  },
+  upgradeBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.white },
 });
