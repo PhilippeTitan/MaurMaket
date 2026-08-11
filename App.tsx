@@ -54,6 +54,7 @@ import OfferDetailScreen from './src/screens/OfferDetailScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
 import PromoManagementScreen from './src/screens/PromoManagementScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
+import DobConfirmModal from './src/components/DobConfirmModal';
 
 const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
 
@@ -221,6 +222,7 @@ function MainTabs() {
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [pendingDob, setPendingDob] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -245,10 +247,12 @@ export default function App() {
         }
       }
       setIsLoggedIn(store.isLoggedIn);
+      setPendingDob(!!store.user?.pending_dob);
     })();
 
     const unsub = store.onChange(() => {
       setIsLoggedIn(store.isLoggedIn);
+      setPendingDob(!!store.user?.pending_dob);
     });
     return unsub;
   }, []);
@@ -411,7 +415,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary>{appContent}</ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary>{appContent}<DobConfirmModal visible={pendingDob} onCompleted={() => setPendingDob(false)} /></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
 }
 
 const styles = StyleSheet.create({

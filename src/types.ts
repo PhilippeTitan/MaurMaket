@@ -23,6 +23,7 @@ export interface User {
   username: string | null;
   show_real_name: boolean;
   sales_count?: number;
+  pending_dob?: boolean;
 }
 
 export interface ProductImage {

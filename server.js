@@ -1212,6 +1212,21 @@ function sellerRequired(req, res, next) {
   next();
 }
 
+// DOB required middleware — blocks write actions for Google OAuth users who haven't confirmed age
+async function dobRequired(req, res, next) {
+  try {
+    const result = await pool.query('SELECT date_of_birth FROM users WHERE id = $1', [req.user.id]);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'User not found' });
+    if (!result.rows[0].date_of_birth) {
+      return res.status(403).json({ error: 'Date of birth required to continue', code: 'PENDING_DOB' });
+    }
+    next();
+  } catch (err) {
+    console.error('dobRequired error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
 // ───── Auth routes ─────
 
 app.post('/api/auth/signup', async (req, res) => {
@@ -1337,7 +1352,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -1787,7 +1802,7 @@ app.post('/api/auth/google-code', async (req, res) => {
       const updated = await pool.query(
         `UPDATE users SET email = $1, full_name = $2, avatar_url = $3, updated_at = CURRENT_TIMESTAMP
          WHERE google_id = $4
-         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
+         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, pending_dob`,
         [email, name, picture, googleId]
       );
       userRow = updated.rows[0];
@@ -1797,7 +1812,7 @@ app.post('/api/auth/google-code', async (req, res) => {
         const updated = await pool.query(
           `UPDATE users SET google_id = $1, avatar_url = COALESCE($2, avatar_url), updated_at = CURRENT_TIMESTAMP
            WHERE lower(email) = lower($3)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, pending_dob`,
           [googleId, picture, email]
         );
         userRow = updated.rows[0];
@@ -1806,7 +1821,7 @@ app.post('/api/auth/google-code', async (req, res) => {
         const inserted = await pool.query(
           `INSERT INTO users (email, google_id, full_name, avatar_url, role, email_verified, pending_dob)
            VALUES ($1, $2, $3, $4, 'buyer', true, true)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, pending_dob`,
           [email, googleId, name, picture]
         );
         userRow = inserted.rows[0];
@@ -1851,7 +1866,7 @@ app.post('/api/auth/google', async (req, res) => {
       const updated = await pool.query(
         `UPDATE users SET email = $1, full_name = $2, avatar_url = $3, updated_at = CURRENT_TIMESTAMP
          WHERE google_id = $4
-         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
+         RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, pending_dob`,
         [email, name, picture, googleId]
       );
       userRow = updated.rows[0];
@@ -1861,7 +1876,7 @@ app.post('/api/auth/google', async (req, res) => {
         const updated = await pool.query(
           `UPDATE users SET google_id = $1, avatar_url = COALESCE($2, avatar_url), updated_at = CURRENT_TIMESTAMP
            WHERE lower(email) = lower($3)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, pending_dob`,
           [googleId, picture, email]
         );
         userRow = updated.rows[0];
@@ -1870,7 +1885,7 @@ app.post('/api/auth/google', async (req, res) => {
         const inserted = await pool.query(
           `INSERT INTO users (email, google_id, full_name, avatar_url, role, email_verified, pending_dob)
            VALUES ($1, $2, $3, $4, 'buyer', true, true)
-           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, pending_dob`,
+           RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, pending_dob`,
           [email, googleId, name, picture]
         );
         userRow = inserted.rows[0];
@@ -1886,9 +1901,34 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
+// ───── Complete DOB (Google OAuth users) ─────
+
+app.post('/api/auth/complete-dob', authRequired, async (req, res) => {
+  const { dateOfBirth } = req.body;
+  if (!dateOfBirth) return res.status(400).json({ error: 'Date of birth is required' });
+  if (!isAtLeast18(dateOfBirth)) return res.status(400).json({ error: 'You must be at least 18 years old' });
+  try {
+    const result = await pool.query(
+      `UPDATE users SET date_of_birth = $1, pending_dob = false, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND pending_dob = true
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob`,
+      [dateOfBirth, req.user.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'DOB already set or user not found' });
+    }
+    const user = result.rows[0];
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ user, token });
+  } catch (err) {
+    console.error('complete-dob error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ───── Become a Seller ─────
 
-app.put('/api/auth/become-seller', authRequired, async (req, res) => {
+app.put('/api/auth/become-seller', authRequired, dobRequired, async (req, res) => {
   try {
     if (req.user.role === 'seller') {
       // Already a seller — still return user so frontend can sync store
@@ -2043,7 +2083,7 @@ app.get('/api/addresses', authRequired, async (req, res) => {
   }
 });
 
-app.post('/api/addresses', authRequired, async (req, res) => {
+app.post('/api/addresses', authRequired, dobRequired, async (req, res) => {
   const { label, name, phone, address, city, isDefault } = req.body;
   if (!name || !phone || !address || !city) {
     return res.status(400).json({ error: 'Name, phone, address, and city required' });
@@ -2098,7 +2138,7 @@ app.delete('/api/addresses/:id', authRequired, async (req, res) => {
 
 // ───── Reviews & Ratings ─────
 
-app.post('/api/reviews', authRequired, async (req, res) => {
+app.post('/api/reviews', authRequired, dobRequired, async (req, res) => {
   const { orderId, rating, comment } = req.body;
   if (!orderId || !rating || rating < 1 || rating > 5) {
     return res.status(400).json({ error: 'orderId and rating (1-5) required' });
@@ -2656,7 +2696,7 @@ app.get('/api/products/:id', async (req, res) => {
   }
 });
 
-app.post('/api/products', authRequired, sellerRequired, async (req, res) => {
+app.post('/api/products', authRequired, sellerRequired, dobRequired, async (req, res) => {
   // Email verification gate
   const evCheck = await pool.query('SELECT email_verified FROM users WHERE id = $1', [req.user.id]);
   if (!evCheck.rows[0]?.email_verified) {
@@ -2986,7 +3026,7 @@ app.get('/api/orders', authRequired, async (req, res) => {
   }
 });
 
-app.post('/api/orders', authRequired, async (req, res) => {
+app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
   // Email verification gate
   const evCheck = await pool.query('SELECT email_verified FROM users WHERE id = $1', [req.user.id]);
   if (!evCheck.rows[0]?.email_verified) {
@@ -4339,7 +4379,7 @@ app.get('/api/seller/analytics', authRequired, sellerRequired, async (req, res) 
 
 // ───── Disputes ─────
 
-app.post('/api/disputes', authRequired, async (req, res) => {
+app.post('/api/disputes', authRequired, dobRequired, async (req, res) => {
   const { orderId, reason, description } = req.body;
   if (!orderId || !reason) return res.status(400).json({ error: 'orderId and reason required' });
   try {
@@ -4546,7 +4586,7 @@ app.get('/api/conversations', authRequired, async (req, res) => {
   }
 });
 
-app.post('/api/conversations', authRequired, convLimiter, async (req, res) => {
+app.post('/api/conversations', authRequired, convLimiter, dobRequired, async (req, res) => {
   const { productId, orderId, sellerId: directSellerId } = req.body;
   if (!productId && !orderId && !directSellerId) return res.status(400).json({ error: 'productId, orderId, or sellerId required' });
   const client = await pool.connect();
@@ -4688,7 +4728,7 @@ app.get('/api/conversations/:id/messages', authRequired, async (req, res) => {
   }
 });
 
-app.post('/api/conversations/:id/messages', authRequired, msgLimiter, async (req, res) => {
+app.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequired, async (req, res) => {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
     return res.status(404).json({ error: 'Conversation not found' });
   }

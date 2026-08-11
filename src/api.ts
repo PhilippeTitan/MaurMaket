@@ -153,6 +153,9 @@ export const signup = (fullName: string, email: string, password: string, phone:
 export const login = (email: string, password: string) =>
   request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
 
+export const completeDob = (dateOfBirth: string) =>
+  request('/auth/complete-dob', { method: 'POST', body: JSON.stringify({ dateOfBirth }) });
+
 export const getMe = () => request('/auth/me');
 export const savePushToken = (pushToken: string) =>
   request('/users/push-token', { method: 'POST', body: JSON.stringify({ pushToken }) });
