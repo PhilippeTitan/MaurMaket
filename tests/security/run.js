@@ -159,6 +159,57 @@ async function testErrorInfoLeakage() {
   }
 }
 
+// ─── Test: Casual sellers cannot create products (VERIFICATION_REQUIRED) ───
+
+async function testCasualSellerBlockedFromListing() {
+  // Create a user, make them a casual seller, verify email + DOB
+  const { user, token } = await createUser({
+    fullName: 'Casual Seller Test',
+    dateOfBirth: '1990-05-15',
+  });
+  await verifyUserEmail(user.id);
+  const sellerRes = await becomeSeller(token);
+  // become-seller grants 'casual' tier by default
+  assert(sellerRes.user.seller_tier === 'casual',
+    `Expected casual tier after become-seller, got: ${sellerRes.user.seller_tier}`);
+
+  // Try to create a product — should be blocked with 403 VERIFICATION_REQUIRED
+  const { status, data } = await apiPost('/api/products', {
+    name: 'Should Fail Product',
+    description: 'This should not be created',
+    price: 500,
+    stock: 1,
+    images: ['https://placehold.co/400x400'],
+  }, token);
+
+  assertStatus(status, 403, 'POST /api/products as casual seller');
+  assert(data.code === 'VERIFICATION_REQUIRED',
+    `Expected code VERIFICATION_REQUIRED, got: ${data.code}`);
+}
+
+// ─── Test: Verified sellers CAN create products ───
+
+async function testVerifiedSellerCanList() {
+  const { user, token } = await createUser({
+    fullName: 'Verified Seller Test',
+    dateOfBirth: '1988-03-20',
+  });
+  await verifyUserEmail(user.id);
+  await becomeSeller(token);
+  // Upgrade to verified tier
+  await directQuery("UPDATE users SET seller_tier = 'verified' WHERE id = $1", [user.id]);
+
+  const { status } = await apiPost('/api/products', {
+    name: 'Should Pass Product',
+    description: 'Verified seller listing',
+    price: 1500,
+    stock: 5,
+    images: ['https://placehold.co/400x400'],
+  }, token);
+
+  assert(status === 201, `Verified seller should create product, got status ${status}`);
+}
+
 // ─── Helpers ───
 
 function getAllFiles(dir) {
@@ -196,6 +247,8 @@ async function main() {
     results.push(await runTest('SQL injection resistance', testSqlInjection));
     results.push(await runTest('Rate limiting on auth endpoints', testRateLimiting));
     results.push(await runTest('Error messages don\'t leak user info', testErrorInfoLeakage));
+    results.push(await runTest('Casual seller blocked from listing (403 VERIFICATION_REQUIRED)', testCasualSellerBlockedFromListing));
+    results.push(await runTest('Verified seller CAN create products', testVerifiedSellerCanList));
   } finally {
     await stopTestServer();
   }
