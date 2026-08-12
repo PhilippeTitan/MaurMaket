@@ -258,7 +258,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         >
           {imgUrl ? (
             <View style={{ width: '100%', height: '100%' }}>
-              <ExpoImage source={{ uri: imgUrl }} style={styles.gridCardImg} contentFit="cover" blurRadius={20} cachePolicy="memory-disk" />
               <ExpoImage source={{ uri: imgUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
             </View>
           ) : (
@@ -360,7 +359,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   <View style={{ width: SCREEN_W, height: '100%' }}>
                     {url ? (
                       <>
-                        <ExpoImage source={{ uri: url }} style={styles.heroImg} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
                         <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
                       </>
                     ) : (
@@ -374,7 +372,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             />
           ) : heroUrl ? (
             <>
-              <ExpoImage source={{ uri: heroUrl }} style={styles.heroImg} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
               <ExpoImage source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
             </>
           ) : (

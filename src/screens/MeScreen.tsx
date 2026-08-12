@@ -4,7 +4,6 @@ import {
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '../components/icons/Icon';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -313,11 +312,6 @@ export default function MeScreen() {
                 <Icon name="image-unavailable" size={20} color={COLORS.text2} />
               </View>
             )}
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
-              style={styles.cardGradient}
-              pointerEvents="none"
-            />
             {hasMore && (
               <View style={styles.imgDots} pointerEvents="none">
                 {images.map((_, index) => (
@@ -506,12 +500,6 @@ export default function MeScreen() {
         )}
       </View>
 
-        {/* Dark fade at bottom of hero */}
-        <LinearGradient
-          colors={['transparent', 'rgba(13,17,23,0.78)', '#0D1117']}
-          style={styles.heroFade}
-          pointerEvents="none"
-        />
       </View>
 
       {/* Become a Seller CTA for buyers */}
@@ -701,10 +689,6 @@ const styles = StyleSheet.create({
 
   /* Hero */
   hero: { backgroundColor: COLORS.surface, paddingBottom: SPACING.lg, position: 'relative' },
-  heroFade: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    height: 40,
-  },
   avatarRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.lg, paddingTop: 60,
@@ -776,10 +760,6 @@ const styles = StyleSheet.create({
   cardPlaceholder: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
-  },
-  cardGradient: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    height: '55%', zIndex: 5,
   },
   cardPriceTop: {
     position: 'absolute', top: 6, right: 6, zIndex: 6,
