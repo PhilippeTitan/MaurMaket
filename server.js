@@ -2546,24 +2546,27 @@ app.get('/api/products', async (req, res) => {
   }
 
   try {
-    const countResult = await pool.query(
-      `SELECT COUNT(*) FROM products p LEFT JOIN categories c ON p.category_id = c.id ${where}`,
-      personalized === 'true' && params.length > 0 ? params.slice(0, -1) : params
-    );
-    const total = parseInt(countResult.rows[0].count);
-
     const result = await pool.query(
-      `SELECT p.id, p.name, p.description, p.price, p.stock, p.created_at, p.category_id,
+      `SELECT COUNT(*) OVER() AS total_count,
+              p.id, p.name, p.description, p.price, p.stock, p.created_at, p.category_id,
               p.sale_price, p.sale_starts_at, p.sale_ends_at,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
               u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar, u.use_store_identity, u.username AS seller_username,
-              c.name AS category
+              c.name AS category, images.images
               ${selectExtra}
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(
+           json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC),
+           '[]'::json
+         ) AS images
+         FROM product_images pi
+         WHERE pi.product_id = p.id
+       ) images ON TRUE
        ${joinExtra}
        ${where}
        ORDER BY ${orderBy}
@@ -2571,26 +2574,9 @@ app.get('/api/products', async (req, res) => {
       [...params, Math.min(limit, 50), offset]
     );
 
-    // Batch-load images for all products in one query (fixes N+1)
-    if (result.rows.length > 0) {
-      const productIds = result.rows.map(p => p.id);
-      const imagesResult = await pool.query(
-        `SELECT product_id, image_url, is_primary
-         FROM product_images WHERE product_id = ANY($1::uuid[])
-         ORDER BY is_primary DESC, display_order ASC`,
-        [productIds]
-      );
-      const imagesByProduct = {};
-      for (const img of imagesResult.rows) {
-        if (!imagesByProduct[img.product_id]) imagesByProduct[img.product_id] = [];
-        imagesByProduct[img.product_id].push({ image_url: img.image_url, is_primary: img.is_primary });
-      }
-      for (const product of result.rows) {
-        product.images = imagesByProduct[product.id] || null;
-      }
-    }
-
-    res.json({ products: result.rows, total, page: +page, pages: Math.ceil(total / Math.min(limit, 50)) });
+    const total = result.rows.length > 0 ? Number(result.rows[0].total_count) : 0;
+    const products = result.rows.map(({ total_count, ...product }) => product);
+    res.json({ products, total, page: +page, pages: Math.ceil(total / Math.min(limit, 50)) });
   } catch (err) {
     console.error('Products fetch error:', err);
     res.status(500).json({ error: 'Server error' });
