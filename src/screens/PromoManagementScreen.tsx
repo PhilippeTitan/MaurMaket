@@ -21,14 +21,14 @@ function generateCode(): string {
   return `${part()}-${part()}`;
 }
 
-function formatTimeLeft(validUntil: string | null): string {
-  if (!validUntil) return 'No expiry';
+function formatTimeLeft(validUntil: string | null, t: (key: string, params?: Record<string, string | number>) => string): string {
+  if (!validUntil) return t('promo.noExpiry');
   const diff = new Date(validUntil).getTime() - Date.now();
-  if (diff <= 0) return 'Expired';
+  if (diff <= 0) return t('promo.expired');
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  if (days > 0) return `Expires in ${days}d`;
+  if (days > 0) return t('promo.expiresDays', { days });
   const hours = Math.floor(diff / (1000 * 60 * 60));
-  return `Expires in ${hours}h`;
+  return t('promo.expiresHours', { hours });
 }
 
 export default function PromoManagementScreen() {
@@ -60,16 +60,16 @@ export default function PromoManagementScreen() {
 
   const handleCreate = async () => {
     if (!code || !discountValue) {
-      Alert.alert(t('common.error'), 'Code and discount value are required');
+      Alert.alert(t('common.error'), t('promo.required'));
       return;
     }
     const dv = parseFloat(discountValue);
     if (isNaN(dv) || dv <= 0) {
-      Alert.alert(t('common.error'), 'Discount value must be positive');
+      Alert.alert(t('common.error'), t('promo.positiveDiscount'));
       return;
     }
     if (discountType === 'percentage' && dv > 25) {
-      Alert.alert(t('common.error'), 'Maximum percentage discount is 25%');
+      Alert.alert(t('common.error'), t('promo.maximumDiscount'));
       return;
     }
 
@@ -85,7 +85,7 @@ export default function PromoManagementScreen() {
       if (validUntil) data.validUntil = new Date(validUntil).toISOString();
 
       await createPromo(data);
-      Alert.alert('Success', `Promo code ${code.toUpperCase()} created`);
+      Alert.alert(t('common.success'), t('promo.created', { code: code.toUpperCase() }));
       setShowCreate(false);
       setCode(''); setDiscountValue(''); setMinOrder(''); setMaxUses(''); setValidUntil('');
       fetchPromos();
@@ -124,7 +124,7 @@ export default function PromoManagementScreen() {
 
         <Text style={styles.promoDiscount}>{discountLabel}{promo.min_order_amount ? ` · Min ${promo.min_order_amount} G` : ''}</Text>
         <Text style={styles.promoMeta}>
-          {promo.uses_count} uses{promo.max_uses ? `/${promo.max_uses}` : ''} · {formatTimeLeft(promo.valid_until)}
+          {promo.uses_count} uses{promo.max_uses ? `/${promo.max_uses}` : ''} · {formatTimeLeft(promo.valid_until, t)}
         </Text>
 
         <TouchableOpacity style={styles.toggleBtn} onPress={() => handleToggle(promo)} accessibilityRole="button" accessibilityLabel={promo.is_active ? 'pause promo' : 'reactivate promo'}>

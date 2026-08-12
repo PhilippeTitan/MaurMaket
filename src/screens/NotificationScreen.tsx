@@ -16,6 +16,7 @@ import type { Notification, Order } from '../types';
 import type { RootStackParamList } from '../navigation';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
+import { useTranslation } from '../i18n';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Tab = 'notifications' | 'buying' | 'selling';
@@ -119,6 +120,7 @@ const SORT_OPTIONS = [
 ];
 
 export default function NotificationScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const toast = useToast();
@@ -166,7 +168,7 @@ export default function NotificationScreen() {
       setNotifications(notifs);
       setBuyOrders(buy);
       setSellOrders(sell);
-    } catch { toast.error('Notifications could not load', 'Check your connection and try again.', () => fetchData(true)); }
+    } catch { toast.error(t('feedback.notificationsLoadFailed'), t('feedback.connectionRetry'), () => fetchData(true)); }
     setLoading(false);
   }, []);
 
@@ -180,14 +182,14 @@ export default function NotificationScreen() {
 
   const handlePress = async (notif: Notification) => {
     if (!notif.is_read) {
-      try { await markNotificationRead(notif.id); } catch { toast.error('Could not update notification', 'It will remain unread until the next refresh.'); }
+      try { await markNotificationRead(notif.id); } catch { toast.error(t('feedback.notificationUpdateFailed'), t('feedback.connectionRetry')); }
       setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
     }
     routeNotification(nav, notif.type, notif.data as Record<string, any>);
   };
 
   const handleMarkAllRead = async () => {
-    try { await markAllNotificationsRead(); } catch { toast.error('Could not mark notifications read', 'Please try again.', handleMarkAllRead); return; }
+    try { await markAllNotificationsRead(); } catch { toast.error(t('feedback.markNotificationsFailed'), t('common.tryAgain'), handleMarkAllRead); return; }
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 

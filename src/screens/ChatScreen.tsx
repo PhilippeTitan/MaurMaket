@@ -82,7 +82,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       }
       if (older || !lastMessageCursor.current || pageNum === 0) setHasMore(msgs.length === 50);
     } catch {
-      if (!quiet) toast.error('Messages could not load', 'Check your connection and try again.', () => fetchMessages(pageNum, older));
+      if (!quiet) toast.error(t('feedback.messagesUnavailable'), t('feedback.connectionRetry'), () => fetchMessages(pageNum, older));
     } finally {
       if (older) setLoadingOlder(false);
     }
@@ -154,7 +154,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       lastMessageCursor.current = { time: result.message.created_at, id: result.message.id };
     } catch {
       setMessages(prev => prev.map(m => m.id === tempId ? { ...m, pending: false, failed: true } : m));
-      toast.error('Message not sent', t('chat.sendFailed'), () => {
+      toast.error(t('chat.messageNotSent'), t('chat.sendFailed'), () => {
         setText(msg);
         setMessages(prev => prev.filter(m => m.id !== tempId));
         handleSend();
@@ -174,7 +174,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       lastMessageCursor.current = { time: result.message.created_at, id: result.message.id };
     } catch {
       setMessages(prev => prev.map(m => m.id === tempId ? { ...m, pending: false, failed: true } : m));
-      toast.error('Photo not sent', 'Your photo is still here. Try sending it again.', () => sendImage(uri, tempId));
+      toast.error(t('chat.photoNotSent'), t('chat.photoStillHere'), () => sendImage(uri, tempId));
     }
   };
 
@@ -193,7 +193,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       setMessages(prev => [...prev, { id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '', content: '', message_type: 'image', image_url: result.assets![0].uri, localImageUri: result.assets![0].uri, is_read: true, created_at: new Date().toISOString(), pending: true }]);
       await sendImage(result.assets[0].uri, tempId);
     } catch {
-      toast.error('Photo picker failed', 'Please try selecting the photo again.');
+      toast.error(t('chat.photoPickerFailed'), t('chat.photoPickerRetry'));
     } finally {
       setSending(false);
       sendingRef.current = false;
@@ -216,7 +216,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       await fetchMessages();
       setOfferDraftVisible(false);
     } catch {
-      toast.error('Offer not sent', t('chat.sendFailed'));
+      toast.error(t('offer.notSent'), t('chat.sendFailed'));
     } finally {
       setSending(false);
       sendingRef.current = false;

@@ -118,7 +118,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       for (const item of ownItems) {
         await store.removeFromCart(item.id);
       }
-      toast.error('Cannot purchase your own items', `${ownItems.length} item(s) from your store were removed from cart.`);
+      toast.error(t('checkout.ownItems'), t('checkout.ownItemsRemoved', { count: ownItems.length }));
       if (cart.length - ownItems.length === 0) return;
     }
 
@@ -128,7 +128,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     }
 
     if (method === 'meetup' && (!meetupLat || !meetupLng)) {
-      toast.error(t('checkout.missingInfo'), 'Please select a meetup location on the map');
+      toast.error(t('checkout.missingInfo'), t('checkout.selectMeetupLocation'));
       return;
     }
 
@@ -161,21 +161,21 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           await Linking.openURL(payRes.paymentUrl);
         }
         notifySuccess();
-        toast.success('Order created', 'Opening MonCash to complete your payment.');
+        toast.success(t('checkout.orderCreated'), t('checkout.openingMonCash'));
         navigation.navigate('Orders');
       } catch (paymentErr: unknown) {
         notifyError();
         navigation.navigate('Orders');
-        const msg = paymentErr instanceof Error ? paymentErr.message : 'Payment could not start.';
+        const msg = paymentErr instanceof Error ? paymentErr.message : t('checkout.paymentStartFailed');
         toast.error(t('checkout.orderCreated'), `${msg} ${t('checkout.retryPayment')}`);
       }
     } catch (e: unknown) {
       notifyError();
       const msg = e instanceof Error ? e.message : '';
       if (msg.includes('email_not_verified') || msg.includes('verify your email')) {
-        toast.show({ kind: 'error', title: 'Email not verified', message: 'Verify your email to place orders.', actionLabel: 'Settings', onAction: () => navigation.navigate('EmailVerification') });
+        toast.show({ kind: 'error', title: t('checkout.emailNotVerified'), message: t('checkout.verifyEmailToOrder'), actionLabel: t('me.settings'), onAction: () => navigation.navigate('EmailVerification') });
       } else {
-        toast.error('Checkout could not finish', msg || t('checkout.checkoutFailed'), handleCheckout);
+        toast.error(t('checkout.finishFailed'), msg || t('checkout.checkoutFailed'), handleCheckout);
       }
     } finally {
       setLoading(false);

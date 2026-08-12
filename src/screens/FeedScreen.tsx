@@ -83,7 +83,7 @@ export default function FeedScreen() {
       }
       setHasMore(p < res.pages);
     } catch {
-      if (replace) toast.error('Feed could not refresh', 'Check your connection and try again.', () => fetchProducts(p, replace));
+      if (replace) toast.error(t('feedback.feedRefreshFailed'), t('feedback.connectionRetry'), () => fetchProducts(p, replace));
     }
   }, [feedTab]);
 
@@ -286,7 +286,7 @@ export default function FeedScreen() {
         otherUserAvatar: product.seller.avatar_url,
       });
     } catch {
-      toast.error('Could not open messages', 'Please check your connection and try again.', () => handleChat(product));
+      toast.error(t('feedback.messagesUnavailable'), t('feedback.connectionRetry'), () => handleChat(product));
     }
   };
 

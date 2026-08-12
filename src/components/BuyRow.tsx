@@ -53,7 +53,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
         },
       });
     } catch {
-      toast.error('Offer unavailable', 'Could not start this negotiation right now.');
+      toast.error(t('feedback.offerUnavailable'), t('feedback.negotiationUnavailable'));
     }
   };
 

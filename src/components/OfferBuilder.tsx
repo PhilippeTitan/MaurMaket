@@ -50,11 +50,11 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
         offeredPrice: offerPrice,
         listPrice,
       });
-      toast.success('Offer sent', `Your offer of G ${formatPrice(offerPrice)} has been sent.`);
+      toast.success(t('offer.sent'), t('offer.sentDetail', { price: formatPrice(offerPrice) }));
       setPrice('');
       onSent();
     } catch (err: any) {
-      toast.error('Offer not sent', err?.message || 'Please try again.');
+      toast.error(t('offer.notSent'), err?.message || t('common.tryAgain'));
     } finally {
       setSending(false);
     }
@@ -71,7 +71,7 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
         <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }]}>
           <View style={styles.handle} />
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Make an offer</Text>
+            <Text style={styles.sheetTitle}>{t('offer.make')}</Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn} accessibilityLabel="close" accessibilityRole="button">
               <MaterialCommunityIcons name="close" size={22} color={COLORS.text2} />
             </TouchableOpacity>
@@ -87,11 +87,11 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
             )}
             <View style={styles.itemInfo}>
               <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
-              <Text style={styles.listPrice}>Listed: {formatPrice(listPrice)} G</Text>
+              <Text style={styles.listPrice}>{t('offer.listed', { price: formatPrice(listPrice) })}</Text>
             </View>
           </View>
 
-          <Text style={styles.sectionLabel}>Your offer</Text>
+          <Text style={styles.sectionLabel}>{t('offer.yourOffer')}</Text>
           <View style={styles.priceInputWrap}>
             <Text style={styles.currencySymbol}>G</Text>
             <TextInput
@@ -102,16 +102,16 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
               placeholder="0"
               placeholderTextColor={COLORS.text2}
               maxLength={6}
-              accessibilityLabel="offer price"
+              accessibilityLabel={t('offer.priceAccessibility')}
             />
           </View>
           {offerPrice > 0 && (
             <Text style={[styles.discountText, discount > 0 ? styles.discountPositive : styles.discountNegative]}>
-              {discount > 0 ? `${discount}% off` : 'Above listed price'}
+              {discount > 0 ? `${discount}% ${t('common.off')}` : t('offer.aboveListPrice')}
             </Text>
           )}
 
-          <Text style={styles.sectionLabel}>Quick pick</Text>
+          <Text style={styles.sectionLabel}>{t('offer.quickPick')}</Text>
           <View style={styles.presets}>
             {PRESET_PERCENTAGES.map((pct) => {
               const p = Math.round(listPrice * (1 - pct / 100));
@@ -128,11 +128,11 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
             style={[styles.sendBtn, (!isValid || sending) && styles.sendBtnDisabled]}
             onPress={handleSend}
             disabled={!isValid || sending}
-            accessibilityLabel={sending ? 'sending offer' : 'send offer'}
+            accessibilityLabel={sending ? t('offer.sendingAccessibility') : t('offer.sendAccessibility')}
             accessibilityRole="button"
           >
             <Icon name="sale-tag" size={18} color={COLORS.white} />
-            <Text style={styles.sendBtnText}>{sending ? 'Sending...' : `Send offer — G ${formatPrice(offerPrice || 0)}`}</Text>
+            <Text style={styles.sendBtnText}>{sending ? t('offer.sending') : t('offer.send', { price: formatPrice(offerPrice || 0) })}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

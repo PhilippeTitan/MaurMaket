@@ -37,31 +37,31 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
     try {
       const res = await updateUsername(clean) as { user: { username: string } };
       await store.setUser({ ...store.user!, username: res.user.username } as any, store.token!);
-      toast.success('Username updated', `@${res.user.username}`);
+      toast.success(t('username.updated'), `@${res.user.username}`);
       navigation.goBack();
     } catch (err: any) {
-      const msg = err?.message || 'Failed to update username';
+      const msg = err?.message || t('username.updateFailed');
       setError(msg);
-      toast.error('Error', msg);
+      toast.error(t('common.error'), msg);
     }
     setSaving(false);
   };
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Username" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('username.title')} onBack={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.scroll}>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Your username</Text>
-        <Text style={styles.hint}>1-30 characters. Letters, numbers, periods, and underscores only.</Text>
+        <Text style={styles.label}>{t('username.label')}</Text>
+        <Text style={styles.hint}>{t('username.hint')}</Text>
         <View style={styles.inputRow}>
           <Text style={styles.at}>@</Text>
           <TextInput
             style={[styles.input, error && styles.inputError]}
             value={username}
             onChangeText={(v) => { setUsername(v); setError(''); }}
-            placeholder="username"
+            placeholder={t('username.placeholder')}
             placeholderTextColor={COLORS.text2}
             autoCapitalize="none"
             autoCorrect={false}
@@ -69,14 +69,14 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
         </View>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
         {clean && isValid && changed ? (
-          <Text style={styles.preview}>New username: @{clean}</Text>
+          <Text style={styles.preview}>{t('username.newPreview', { username: clean })}</Text>
         ) : null}
         {clean && !isValid ? (
           <Text style={styles.errorText}>
-            {clean.length > 30 ? 'Too long (max 30 characters)'
-              : clean.startsWith('.') || clean.endsWith('.') ? 'Cannot start or end with a period'
-              : clean.includes('..') ? 'No consecutive periods'
-              : 'Must start with a letter or number'}
+            {clean.length > 30 ? t('username.tooLong')
+              : clean.startsWith('.') || clean.endsWith('.') ? t('username.noEdgePeriod')
+              : clean.includes('..') ? t('username.noDoublePeriod')
+              : t('username.startAlphanumeric')}
           </Text>
         ) : null}
       </View>

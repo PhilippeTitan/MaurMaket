@@ -140,7 +140,7 @@ export default function InboxScreen() {
       setOfferConversations(offerConversations);
       _inboxCache = { timestamp: Date.now(), data: { conversations, notifications, followedSellers, offerConversations } };
     } catch {
-      toast.error('Inbox could not refresh', 'Your conversations are still available when the connection returns.', () => fetchData(true));
+      toast.error(t('feedback.inboxRefreshFailed'), t('feedback.connectionRetry'), () => fetchData(true));
     }
     setLoading(false);
   }, []);
@@ -199,14 +199,14 @@ export default function InboxScreen() {
 
   const handleNotifPress = async (notif: Notification) => {
     if (!notif.is_read) {
-      try { await markNotificationRead(notif.id); } catch { toast.error('Could not update notification'); }
+      try { await markNotificationRead(notif.id); } catch { toast.error(t('feedback.notificationUpdateFailed')); }
       setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
     }
     routeNotification(nav, notif.type, notif.data as Record<string, any>);
   };
 
   const handleMarkAllRead = async () => {
-    try { await markAllNotificationsRead(); } catch { toast.error('Could not mark notifications read'); return; }
+    try { await markAllNotificationsRead(); } catch { toast.error(t('feedback.markNotificationsFailed')); return; }
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 
@@ -274,7 +274,7 @@ export default function InboxScreen() {
           nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url, otherUserTier: seller.seller_tier });
         }
       } catch {
-        toast.error('Could not start a conversation', 'Please check your connection and try again.', handlePress);
+        toast.error(t('feedback.messagesUnavailable'), t('feedback.connectionRetry'), handlePress);
       }
     };
     return (
