@@ -314,7 +314,7 @@ export default function MeScreen() {
               </View>
             )}
             <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
+              colors={['rgba(13,17,23,0)', 'rgba(13,17,23,0.72)', '#0D1117']}
               style={styles.cardGradient}
             />
             {hasMore && (

@@ -4081,7 +4081,16 @@ app.get('/api/seller/products', authRequired, sellerRequired, async (req, res) =
   try {
     const result = await pool.query(
       `SELECT p.*, c.name AS category,
-              (SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.is_primary DESC, pi.display_order ASC LIMIT 1) AS image_url
+              COALESCE((
+                SELECT json_agg(json_build_object(
+                  'id', pi.id,
+                  'image_url', pi.image_url,
+                  'is_primary', pi.is_primary,
+                  'display_order', pi.display_order
+                ) ORDER BY pi.is_primary DESC, pi.display_order ASC)
+                FROM product_images pi
+                WHERE pi.product_id = p.id
+              ), '[]'::json) AS images
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
        WHERE p.seller_id = $1
