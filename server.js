@@ -18,28 +18,26 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// ───── Dual Database: Supabase (primary) + Neon (fallback) ─────
-// In test mode: skip remote pools entirely — only use local Postgres from DATABASE_URL
+// ───── Database: Supabase primary; Neon offline recovery backup ─────
+// Production traffic never falls back to Neon. A stale backup must not accept
+// orders, payments, or inventory writes after a primary connection failure.
 const isTestMode = process.env.NODE_ENV === 'test';
+const primaryDatabaseUrl = isTestMode ? process.env.DATABASE_URL : process.env.SUPABASE_DATABASE_URL;
+const neonBackupDatabaseUrl = !isTestMode
+  ? (process.env.NEON_BACKUP_DATABASE_URL || process.env.DATABASE_URL || null)
+  : null;
 
-const neonPool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+if (!primaryDatabaseUrl) {
+  throw new Error(isTestMode ? 'DATABASE_URL is required in test mode' : 'SUPABASE_DATABASE_URL is required in production');
+}
+
+const pool = new Pool({
+  connectionString: primaryDatabaseUrl,
   max: isTestMode ? 5 : 15,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: isTestMode ? 5000 : 8000,
-  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
+  connectionTimeoutMillis: isTestMode ? 5000 : 15000,
+  ssl: primaryDatabaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
 });
-
-const supabasePool = (!isTestMode && process.env.SUPABASE_DATABASE_URL) ? new Pool({
-  connectionString: process.env.SUPABASE_DATABASE_URL,
-  max: 15,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 15000,
-  ssl: { rejectUnauthorized: false },
-}) : null;
-
-let usingSupabase = !isTestMode && !!supabasePool;
-let supabaseDownSince = null; // timestamp when Supabase was marked down
 
 // ───── Supabase Storage (S3 protocol) ─────
 const supabaseStorage = process.env.SUPABASE_S3_ACCESS_KEY ? new S3Client({
@@ -53,116 +51,6 @@ const supabaseStorage = process.env.SUPABASE_S3_ACCESS_KEY ? new S3Client({
 }) : null;
 const SUPABASE_STORAGE_BUCKET = 'product-images';
 const SUPABASE_PUBLIC_BASE = process.env.SUPABASE_PUBLIC_BASE || 'https://bnnluaqrktnrnnfvmqbt.supabase.co/storage/v1/object/public/product-images';
-
-function isConnectionError(err) {
-  if (!err) return false;
-  const code = err.code || '';
-  const msg = (err.message || '').toLowerCase();
-  return code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ECONNRESET' ||
-         code === 'ENOTFOUND' || code === 'EPIPE' || code === '57P01' || code === '57P03' ||
-         msg.includes('compute time quota') || msg.includes('timeout') ||
-         msg.includes('connection') || msg.includes('terminated') ||
-         msg.includes('pool is shutting down') || msg.includes('connecting pool');
-}
-
-function wrapClient(client) {
-  const origQuery = client.query.bind(client);
-  const origRelease = client.release.bind(client);
-  let released = false;
-
-  client.query = async (text, params) => {
-    if (released) throw new Error('Client already released');
-    try {
-      return await origQuery(text, params);
-    } catch (err) {
-      if (isConnectionError(err) && usingSupabase && neonPool) {
-        console.warn('[DB] Supabase client failed mid-transaction, falling back to Neon');
-        usingSupabase = false;
-        try { origRelease(); } catch {}
-        released = true;
-        const newClient = await neonPool.connect();
-        return wrapClient(newClient).query(text, params);
-      }
-      throw err;
-    }
-  };
-
-  client.release = () => { if (!released) origRelease(); };
-  return client;
-}
-
-const pool = {
-  async query(text, params) {
-    if (usingSupabase && supabasePool) {
-      try {
-        return await supabasePool.query(text, params);
-      } catch (err) {
-        if (isConnectionError(err) && neonPool) {
-          if (usingSupabase) {
-            console.warn('[DB] Supabase unavailable, falling back to Neon. Error:', err.message);
-            supabaseDownSince = Date.now();
-          }
-          usingSupabase = false;
-          return await neonPool.query(text, params);
-        }
-        throw err;
-      }
-    }
-    return await neonPool.query(text, params);
-  },
-
-  async connect() {
-    if (usingSupabase && supabasePool) {
-      try {
-        return wrapClient(await supabasePool.connect());
-      } catch (err) {
-        if (isConnectionError(err) && neonPool) {
-          if (usingSupabase) {
-            console.warn('[DB] Supabase connect failed, falling back to Neon. Error:', err.message);
-            supabaseDownSince = Date.now();
-          }
-          usingSupabase = false;
-          return wrapClient(await neonPool.connect());
-        }
-        throw err;
-      }
-    }
-    return wrapClient(await neonPool.connect());
-  },
-
-  on(event, handler) {
-    if (event === 'error') {
-      neonPool.on('error', handler);
-      if (supabasePool) supabasePool.on('error', handler);
-    }
-  },
-
-  async end() {
-    await neonPool.end().catch(() => {});
-    if (supabasePool) await supabasePool.end().catch(() => {});
-  },
-
-  get _neon() { return neonPool; },
-  get _supabase() { return supabasePool; },
-  get _usingFallback() { return usingSupabase; },
-};
-
-// ───── Supabase Recovery: try reconnecting every 60s if marked down ─────
-if (supabasePool) {
-  setInterval(async () => {
-    if (usingSupabase || !supabaseDownSince) return;
-    try {
-      const start = Date.now();
-      await supabasePool.query('SELECT 1');
-      const ms = Date.now() - start;
-      console.log(`[DB] Supabase recovered (probe took ${ms}ms). Switching back from Neon.`);
-      usingSupabase = true;
-      supabaseDownSince = null;
-    } catch {
-      // Still down — keep using Neon
-    }
-  }, 60_000);
-}
 
 pool.on('error', (err) => {
   console.error('Unexpected pool error:', err);
@@ -4511,12 +4399,7 @@ app.post('/api/admin/sync', async (req, res) => {
   if (!adminKey || adminKey !== process.env.SYNC_KEY) {
     return res.status(403).json({ error: 'Invalid admin key' });
   }
-  // Test if Neon is reachable before syncing
-  try {
-    await neonPool.query('SELECT 1');
-  } catch {
-    return res.status(503).json({ error: 'Neon is down, cannot sync' });
-  }
+  if (!neonBackupDatabaseUrl) return res.status(503).json({ error: 'Neon backup is not configured' });
   try {
     await migrateSupabaseToNeon();
     res.json({ ok: true, message: 'Sync completed: Supabase → Neon' });
@@ -6922,33 +6805,17 @@ app.get('/api/map-config', authRequired, (_req, res) => {
 });
 
 app.get('/api/health', async (_req, res) => {
-  const result = { status: 'ok', primary: 'unknown', fallback: 'unknown', active: 'supabase' };
-  if (isTestMode) {
-    try {
-      await Promise.race([neonPool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
-      result.primary = 'connected';
-      result.active = 'test-local';
-    } catch { result.primary = 'down'; }
-    result.status = result.primary === 'connected' ? 'ok' : 'error';
-    return res.status(result.status === 'ok' ? 200 : 503).json(result);
-  }
+  const result = {
+    status: 'ok',
+    primary: 'unknown',
+    active: isTestMode ? 'test-local' : 'supabase',
+    backupConfigured: Boolean(neonBackupDatabaseUrl),
+  };
   try {
-    if (usingSupabase && supabasePool) {
-      await Promise.race([supabasePool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
-      result.primary = 'connected';
-    } else {
-      result.primary = 'down';
-    }
+    await Promise.race([pool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
+    result.primary = 'connected';
   } catch { result.primary = 'down'; }
-
-  try {
-    await Promise.race([neonPool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
-    result.fallback = 'connected';
-  } catch { result.fallback = 'down'; }
-
-  if (!usingSupabase) result.active = 'neon';
-  if (supabaseDownSince) result.supabaseDownFor = Math.round((Date.now() - supabaseDownSince) / 1000) + 's';
-  result.status = (result.primary === 'connected' || result.fallback === 'connected') ? 'ok' : 'error';
+  result.status = result.primary === 'connected' ? 'ok' : 'error';
   res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
 
@@ -7268,19 +7135,14 @@ function isValidUUID(val) {
 }
 
 async function migrateSupabaseToNeon() {
-  if (!process.env.DATABASE_URL || !process.env.SUPABASE_DATABASE_URL) return;
-  if (!supabasePool) return;
-
-  const readPool = new (await import('pg')).Pool({
-    connectionString: process.env.SUPABASE_DATABASE_URL,
-    connectionTimeoutMillis: 10000,
-    ssl: { rejectUnauthorized: false },
-  });
+  if (!neonBackupDatabaseUrl || isTestMode) return;
+  // Read from the live primary only. Neon is never part of request handling.
+  const readPool = pool;
 
   const writePool = new (await import('pg')).Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: neonBackupDatabaseUrl,
     connectionTimeoutMillis: 10000,
-    ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
+    ssl: neonBackupDatabaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
   });
 
   try {
@@ -7288,7 +7150,6 @@ async function migrateSupabaseToNeon() {
     if (!test) return;
     console.log('[MIGRATION] Supabase → Neon: Starting data sync...');
   } catch {
-    await readPool.end().catch(() => {});
     await writePool.end().catch(() => {});
     return; // Supabase down (shouldn't happen)
   }
@@ -7343,13 +7204,11 @@ async function migrateSupabaseToNeon() {
     }
   }
 
-  await readPool.end().catch(() => {});
   await writePool.end().catch(() => {});
   console.log(`[MIGRATION] Complete! ${totalRows} total rows synced from Supabase → Neon.`);
 }
 
-// Sync once on startup (after 30s delay) — external cron via GitHub Actions triggers /api/admin/sync
-setTimeout(() => migrateSupabaseToNeon().catch(() => {}), 30000);
+// Backup sync is triggered by the dedicated scheduled GitHub Actions workflow.
 
 // ───── Global Error Handler ─────
 app.use((err, req, res, next) => {
@@ -7384,7 +7243,7 @@ const __thisFile = fileURLToPath(import.meta.url);
 const isMain = __execPath === __thisFile || __execPath === path.resolve(__thisFile);
 if (isMain) {
   if (isTestMode) {
-    console.log(`[TEST MODE] NODE_ENV=test, usingSupabase=${usingSupabase}, supabasePool=${!!supabasePool}`);
+    console.log('[TEST MODE] NODE_ENV=test, using local test database');
     console.log(`[TEST MODE] DATABASE_URL=${process.env.DATABASE_URL?.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@') || 'NOT SET'}`);
   }
   const startServer = () => {

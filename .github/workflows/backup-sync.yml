@@ -1,0 +1,22 @@
+name: Supabase to Neon Backup
+
+on:
+  schedule:
+    - cron: '17 */12 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger Neon backup sync
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 180 -X POST https://maurmaket.onrender.com/api/admin/sync \
+            -H "Content-Type: application/json" \
+            -H "x-admin-key: ${{ secrets.SYNC_KEY }}" || true)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "Status: $HTTP_CODE"
+          echo "Body: $BODY"
+          test "$HTTP_CODE" = "200"
