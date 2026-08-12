@@ -22,6 +22,7 @@ import UserAvatar from '../components/UserAvatar';
 import BackButton from '../components/BackButton';
 import { SkeletonBlock } from '../components/Skeleton';
 import StockBadge from '../components/StockBadge';
+import { queryClient } from '../hooks';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -68,7 +69,17 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await getProduct(productId) as { product: Product };
+        const detailKey = ['product-detail', productId] as const;
+        const cached = queryClient.getQueryData<{ product: Product }>(detailKey);
+        if (cached?.product) {
+          setProduct(cached.product);
+          setLoading(false);
+        }
+        const res = await queryClient.fetchQuery({
+          queryKey: detailKey,
+          queryFn: () => getProduct(productId) as Promise<{ product: Product }>,
+          staleTime: 5 * 60_000,
+        });
         const p = res.product;
         setProduct(p);
 
@@ -123,10 +134,18 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             ? p.category
             : p.category?.name;
           if (p.seller_id) {
-            relatedReqs.push(getProducts({ seller: p.seller_id, limit: '20' }) as Promise<{ products: Product[] }>);
+            relatedReqs.push(queryClient.fetchQuery({
+              queryKey: ['seller-related-products', p.seller_id],
+              queryFn: () => getProducts({ seller: p.seller_id, limit: '20' }) as Promise<{ products: Product[] }>,
+              staleTime: 5 * 60_000,
+            }));
           }
           if (catName) {
-            relatedReqs.push(getProducts({ category: catName, limit: '20' }) as Promise<{ products: Product[] }>);
+            relatedReqs.push(queryClient.fetchQuery({
+              queryKey: ['category-related-products', catName],
+              queryFn: () => getProducts({ category: catName, limit: '20' }) as Promise<{ products: Product[] }>,
+              staleTime: 5 * 60_000,
+            }));
           }
           const results = await Promise.all(relatedReqs);
           if (p.seller_id && results[0]) {

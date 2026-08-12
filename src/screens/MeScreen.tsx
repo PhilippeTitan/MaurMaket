@@ -207,7 +207,8 @@ export default function MeScreen() {
   }, [isSeller, user?.id]);
 
   useFocusEffect(useCallback(() => {
-    fetchData(true);
+    // Preserve recently loaded profile data on tab return; pull-to-refresh remains explicit.
+    fetchData(false);
   }, [fetchData]));
 
   const onRefresh = useCallback(async () => {

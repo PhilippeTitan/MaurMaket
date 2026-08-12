@@ -29,6 +29,7 @@ import EmptyState from '../components/EmptyState';
 import { SkeletonBlock } from '../components/Skeleton';
 import { tapLight } from '../haptics';
 import { useToast } from '../components/Toast';
+import { queryClient } from '../hooks';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -67,9 +68,12 @@ export default function FeedScreen() {
       } else {
         params.sort = 'newest';
       }
-      const res = await getProducts(params) as {
-        products: Product[]; total: number; pages: number;
-      };
+      const queryKey = ['feed-products', feedTab, p] as const;
+      const res = await queryClient.fetchQuery({
+        queryKey,
+        queryFn: () => getProducts(params) as Promise<{ products: Product[]; total: number; pages: number }>,
+        staleTime: 30_000,
+      });
       if (replace) {
         checkedWishlistIds.current.clear();
         setWishlistedIds(new Set());
@@ -171,9 +175,10 @@ export default function FeedScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     setPage(1);
+    await queryClient.invalidateQueries({ queryKey: ['feed-products', feedTab] });
     await fetchProducts(1, true);
     setRefreshing(false);
-  }, []);
+  }, [feedTab, fetchProducts]);
 
   const onEndReached = useCallback(async () => {
     if (loadingMore || !hasMore) return;

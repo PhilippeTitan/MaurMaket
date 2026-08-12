@@ -125,7 +125,7 @@ function MainTabs() {
         screenOptions={{
           headerShown: false,
           tabBarShowLabel: false,
-          animation: 'fade',
+          animation: 'none',
           // NOTE: height + marginBottom here define the tab bar's on-screen
           // position. MapScreen.tsx has its own TAB_BAR_TOP_OFFSET constant
           // that mirrors this exact math (for the radial FAB + seller sheet,
@@ -371,7 +371,7 @@ export default function App() {
       }
     }}>
       <StatusBar style="light" />
-      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 200, contentStyle: { backgroundColor: COLORS.bg } }}>
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right', animationDuration: 220, contentStyle: { backgroundColor: COLORS.bg } }}>
         {!isLoggedIn ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
         ) : (

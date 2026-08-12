@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, Modal, Pressable, FlatList, Dimensions, RefreshControl,
@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
 import { store } from '../store';
-import { useFocusEffect } from '@react-navigation/native';
+import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
@@ -23,7 +23,6 @@ import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
-import { useToast } from '../components/Toast';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -60,19 +59,14 @@ const MAX_H = SCREEN_H * 0.52;
 
 export default function ExploreScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const toast = useToast();
   const insets = useSafeAreaInsets();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCat, setSelectedCat] = useState<string>('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [loading, setLoading] = useState(true);
   const [catModal, setCatModal] = useState(false);
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [exploreImageIndices, setExploreImageIndices] = useState<Record<string, number>>({});
-  const mountedRef = useRef(true);
   const categoryListRef = useRef<FlatList<CategoryFilter>>(null);
   const [sortBy, setSortBy] = useState('newest');
   const [sortModal, setSortModal] = useState(false);
@@ -81,17 +75,11 @@ export default function ExploreScreen({ navigation }: Props) {
   const [showPriceFilter, setShowPriceFilter] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-
-  useEffect(() => {
-    getCategories().then((res: unknown) => {
-      const data = res as { categories: Category[] };
-      setCategories(data.categories || []);
-    }).catch(() => {});
-  }, []);
+  const { data: categories = [] } = useQuery<Category[]>({
+    queryKey: ['categories'],
+    queryFn: async () => ((await getCategories()) as { categories?: Category[] }).categories || [],
+    staleTime: 10 * 60_000,
+  });
 
   // Debounce the raw `search` value so the TextInput stays instantly
   // responsive while network requests only fire ~350ms after the user
@@ -103,34 +91,36 @@ export default function ExploreScreen({ navigation }: Props) {
     return () => clearTimeout(handle);
   }, [search]);
 
-  const fetchProducts = useCallback(async () => {
-    setLoading(true);
-    setImageSizes({});
-    setFailedImages(new Set());
-    try {
-      const params: Record<string, string> = { limit: '50' };
-      if (store.isLoggedIn) params.personalized = 'true';
-      if (selectedCat) params.category = selectedCat;
-      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
-      if (sortBy) params.sort = sortBy;
-      if (minPrice.trim()) params.minPrice = minPrice.trim();
-      if (maxPrice.trim()) params.maxPrice = maxPrice.trim();
-      const res = await getProducts(params) as { products: Product[] };
-      const prods = res.products || [];
-      setProducts(prods);
-
-      const defaults: Record<string, { w: number; h: number }> = {};
-      prods.forEach((p: Product) => {
-        if (!imageSizes[p.id]) defaults[p.id] = { w: CARD_W, h: CARD_W * 1.25 };
-      });
-      if (Object.keys(defaults).length > 0) {
-        setImageSizes(prev => ({ ...prev, ...defaults }));
-      }
-    } catch { toast.error('Products could not load', 'Check your connection and try again.', fetchProducts); }
-    setLoading(false);
+  const productParams = useMemo(() => {
+    const params: Record<string, string> = { limit: '50' };
+    if (store.isLoggedIn) params.personalized = 'true';
+    if (selectedCat) params.category = selectedCat;
+    if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
+    if (sortBy) params.sort = sortBy;
+    if (minPrice.trim()) params.minPrice = minPrice.trim();
+    if (maxPrice.trim()) params.maxPrice = maxPrice.trim();
+    return params;
   }, [selectedCat, debouncedSearch, sortBy, minPrice, maxPrice]);
 
-  useFocusEffect(useCallback(() => { fetchProducts(); }, [fetchProducts]));
+  const { data: products = [], isLoading: loading, refetch } = useQuery<Product[]>({
+    queryKey: ['explore-products', productParams],
+    queryFn: async () => ((await getProducts(productParams)) as { products?: Product[] }).products || [],
+    placeholderData: previousData => previousData,
+  });
+
+  const refreshProducts = useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
+
+  useEffect(() => {
+    const defaults: Record<string, { w: number; h: number }> = {};
+    products.forEach(p => {
+      if (!imageSizes[p.id]) defaults[p.id] = { w: CARD_W, h: CARD_W * 1.25 };
+    });
+    if (Object.keys(defaults).length > 0) setImageSizes(prev => ({ ...prev, ...defaults }));
+  }, [products]);
 
   const getItemImageUrl = (p: Product) => {
     const img = p.images?.find(i => i.is_primary) || p.images?.[0];
@@ -316,7 +306,7 @@ export default function ExploreScreen({ navigation }: Props) {
               placeholderTextColor={COLORS.text2}
               value={search}
               onChangeText={setSearch}
-              onSubmitEditing={fetchProducts}
+              onSubmitEditing={() => refetch()}
               accessibilityRole="search"
               accessibilityLabel={t('accessibility.searchProducts')}
             />
@@ -425,7 +415,7 @@ export default function ExploreScreen({ navigation }: Props) {
             </View>
           )}
           contentContainerStyle={[styles.gridContainer, { paddingBottom: insets.bottom + 80 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchProducts(); setRefreshing(false); }} tintColor={COLORS.coral} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshProducts} tintColor={COLORS.coral} />}
         />
       )}
 
@@ -531,7 +521,7 @@ export default function ExploreScreen({ navigation }: Props) {
             </View>
             <TouchableOpacity
               style={styles.modalApplyBtn}
-              onPress={() => { setSortModal(false); fetchProducts(); }}
+              onPress={() => { setSortModal(false); refetch(); }}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.apply')}
             >
