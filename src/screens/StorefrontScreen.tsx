@@ -3,7 +3,6 @@ import {
   View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, useWindowDimensions,
 } from 'react-native';
 import { Icon } from '../components/icons/Icon';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation, getConversations } from '../api';
@@ -51,6 +50,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('listings');
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
+  const [listingImageIndices, setListingImageIndices] = useState<Record<string, number>>({});
   const mountedRef = useRef(true);
   const [storeTick, setStoreTick] = useState(0);
   const listRef = useRef<FlatList>(null);
@@ -213,50 +213,72 @@ export default function StorefrontScreen({ route, navigation }: Props) {
     const images = item.images && item.images.length > 0
       ? item.images
       : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
+    const hasMore = images.length > 1;
+    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.image_url || images[0]?.image_url);
+    const openProduct = () => navigation.navigate('ProductDetail', { productId: item.id });
     return (
       <View key={item.id}>
-        <TouchableOpacity
-          style={styles.card}
-          activeOpacity={0.82}
-          onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-          accessibilityRole="button"
-          accessibilityLabel={item.name}
-        >
+        <View style={styles.card}>
           <View style={[styles.cardImgWrap, { height: cardH }]}>
-            <FlatList
-              data={images}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(img, idx) => String(img.id || idx)}
-              renderItem={({ item: img }) => {
-                const url = getImageUrl(img.image_url);
-                return (
-                  <View style={{ width: CARD_W, height: cardH }}>
-                    {url && !imgFailed ? (
-                      <Image
-                        source={{ uri: url }}
-                        style={styles.cardImg}
-                        resizeMode="cover"
-                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                      />
-                    ) : (
-                      <View style={styles.cardPlaceholder}>
-                        <Icon name="image-unavailable" size={20} color={COLORS.text2} />
-                      </View>
-                    )}
-                  </View>
-                );
-              }}
-            />
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
-              style={styles.cardGradient}
-            />
-            {images.length > 1 && (
-              <View style={styles.imgCountBadge}>
-                <MaterialCommunityIcons name="image-multiple" size={11} color="#fff" />
-                <Text style={styles.imgCountText}>{images.length}</Text>
+            {hasMore && !imgFailed ? (
+              <FlatList
+                data={images}
+                horizontal
+                pagingEnabled
+                nestedScrollEnabled
+                showsHorizontalScrollIndicator={false}
+                windowSize={3}
+                maxToRenderPerBatch={2}
+                keyExtractor={(img, idx) => String(img.id || idx)}
+                onScroll={(e) => {
+                  const index = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
+                  if (index !== (listingImageIndices[item.id] ?? 0)) {
+                    setListingImageIndices(prev => ({ ...prev, [item.id]: index }));
+                  }
+                }}
+                scrollEventThrottle={16}
+                getItemLayout={(_, index) => ({ length: CARD_W, offset: CARD_W * index, index })}
+                renderItem={({ item: img }) => {
+                  const url = getImageUrl(img.image_url);
+                  return (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={openProduct}
+                      style={{ width: CARD_W, height: cardH }}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.name}
+                    >
+                      {url ? (
+                        <Image source={{ uri: url }} style={styles.cardImg} resizeMode="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                      ) : (
+                        <View style={styles.cardPlaceholder}>
+                          <Icon name="image-unavailable" size={20} color={COLORS.text2} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            ) : primaryUrl && !imgFailed ? (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={openProduct}
+                style={StyleSheet.absoluteFill}
+                accessibilityRole="button"
+                accessibilityLabel={item.name}
+              >
+                <Image source={{ uri: primaryUrl }} style={styles.cardImg} resizeMode="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.cardPlaceholder}>
+                <Icon name="image-unavailable" size={20} color={COLORS.text2} />
+              </View>
+            )}
+            {hasMore && (
+              <View style={styles.imgDots} pointerEvents="none">
+                {images.map((_, index) => (
+                  <View key={index} style={[styles.imgDot, index === (listingImageIndices[item.id] || 0) && styles.imgDotActive]} />
+                ))}
               </View>
             )}
             {/* Price — top right */}
@@ -268,7 +290,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               <StockBadge stock={item.stock} size="sm" />
             </View>
           </View>
-        </TouchableOpacity>
+        </View>
         <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
       </View>
     );
@@ -645,10 +667,6 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  cardGradient: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    height: '55%',
-  },
   cardPriceTop: {
     position: 'absolute', top: 6, right: 6,
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6,
@@ -661,13 +679,12 @@ const styles = StyleSheet.create({
     fontSize: 12.5, fontWeight: '600', color: COLORS.text,
     paddingHorizontal: 6, paddingTop: 5, paddingBottom: 2,
   },
-  imgCountBadge: {
-    position: 'absolute', bottom: 36, alignSelf: 'center',
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10,
-    paddingHorizontal: 7, paddingVertical: 3,
+  imgDots: {
+    position: 'absolute', bottom: 8, alignSelf: 'center',
+    flexDirection: 'row', gap: 4,
   },
-  imgCountText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  imgDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.7)' },
+  imgDotActive: { width: 14, backgroundColor: COLORS.white },
 
   /* Reviews */
   reviewCard: {
