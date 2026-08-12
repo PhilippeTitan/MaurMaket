@@ -779,18 +779,18 @@ const styles = StyleSheet.create({
   },
   cardGradient: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    height: '55%',
+    height: '55%', zIndex: 5,
   },
   cardPriceTop: {
-    position: 'absolute', top: 6, right: 6,
+    position: 'absolute', top: 6, right: 6, zIndex: 6,
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6,
     paddingHorizontal: 7, paddingVertical: 3,
   },
   cardStockBadge: {
-    position: 'absolute', bottom: 6, left: 6,
+    position: 'absolute', bottom: 6, left: 6, zIndex: 6,
   },
   imgDots: {
-    position: 'absolute', bottom: 8, alignSelf: 'center',
+    position: 'absolute', bottom: 8, alignSelf: 'center', zIndex: 6,
     flexDirection: 'row', gap: 4,
   },
   imgDot: {
