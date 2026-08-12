@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, Image, TouchableOpacity, ScrollView, StyleSheet, Alert,
+  View, Text, Image as NativeImage, TouchableOpacity, ScrollView, StyleSheet, Alert,
   ActivityIndicator, Dimensions, Share, FlatList,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -71,40 +72,49 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         const p = res.product;
         setProduct(p);
 
-        try {
-          const wlRes = await checkWishlist(productId) as { wishlisted: boolean };
-          setWishlisted(wlRes.wishlisted);
-        } catch { /* silent */ }
+        const postProduct: Promise<void>[] = [];
+
+        postProduct.push(
+          checkWishlist(productId).then(wlRes => {
+            if (mountedRef.current) setWishlisted((wlRes as { wishlisted: boolean }).wishlisted);
+          }).catch(() => {})
+        );
 
         if (p.seller_id) {
-          try {
-            const revRes = await getSellerReviews(p.seller_id) as {
-              reviews: Review[];
-              stats?: { avg_rating?: string | number };
-              avg_rating?: string | number;
-            };
-            setSellerReviews(revRes.reviews || []);
-            setAvgRating(Number(revRes.stats?.avg_rating ?? revRes.avg_rating ?? 0));
-          } catch { /* silent */ }
-
-          try {
-            const folRes = await getFollowing() as { following?: { seller_id: string }[] };
-            const list = folRes.following || [];
-            store.setFollowingList(list.map((f: any) => f.seller_id || f.id).filter(Boolean));
-          } catch { /* silent */ }
+          postProduct.push(
+            getSellerReviews(p.seller_id).then(revRes => {
+              const r = revRes as { reviews: Review[]; stats?: { avg_rating?: string | number }; avg_rating?: string | number };
+              if (mountedRef.current) {
+                setSellerReviews(r.reviews || []);
+                setAvgRating(Number(r.stats?.avg_rating ?? r.avg_rating ?? 0));
+              }
+            }).catch(() => {})
+          );
+          postProduct.push(
+            getFollowing().then(folRes => {
+              const list = (folRes as { following?: { seller_id: string }[] }).following || [];
+              store.setFollowingList(list.map((f: any) => f.seller_id || f.id).filter(Boolean));
+            }).catch(() => {})
+          );
         }
 
-        try {
-          const prodRevRes = await getProductReviews(productId) as { reviews?: Review[] };
-          setProductReviews((prodRevRes.reviews || []).map((r: any) => ({
-            ...r,
-            reviewer: r.reviewer || {
-              full_name: r.reviewer_name,
-              avatar_url: r.reviewer_avatar,
-              username: r.reviewer_username,
-            },
-          })));
-        } catch { /* silent */ }
+        postProduct.push(
+          getProductReviews(productId).then(prodRevRes => {
+            const pr = prodRevRes as { reviews?: Review[] };
+            if (mountedRef.current) {
+              setProductReviews((pr.reviews || []).map((r: any) => ({
+                ...r,
+                reviewer: r.reviewer || {
+                  full_name: r.reviewer_name,
+                  avatar_url: r.reviewer_avatar,
+                  username: r.reviewer_username,
+                },
+              })));
+            }
+          }).catch(() => {})
+        );
+
+        await Promise.all(postProduct);
 
         setLoadingRelated(true);
         try {
@@ -128,7 +138,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             catProds.forEach((cp: Product) => {
               const url = getImageUrl(cp.images?.find(i => i.is_primary)?.image_url || cp.images?.[0]?.image_url);
               if (!url) return;
-              Image.getSize(url, (w, h) => {
+              NativeImage.getSize(url, (w, h) => {
                 if (mountedRef.current) {
                   setImageSizes(prev => ({ ...prev, [cp.id]: { w, h } }));
                 }
@@ -150,7 +160,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     const img = imgs && imgs.length > 0 ? imgs[activeImageIndex] || imgs[0] : null;
     const url = img ? getImageUrl(img.image_url) : null;
     if (!url) { setHeroHeight(HERO_DEFAULT_H); return; }
-    Image.getSize(url, (w, h) => {
+    NativeImage.getSize(url, (w, h) => {
       if (!mountedRef.current || w === 0) return;
       const aspectH = (h / w) * SCREEN_W;
       setHeroHeight(Math.max(HERO_MIN_H, Math.min(HERO_MAX_H, aspectH)));
@@ -190,7 +200,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         accessibilityLabel={t('accessibility.viewProduct')}
       >
         {imgUrl ? (
-          <Image source={{ uri: imgUrl }} style={styles.sellerCardImg} resizeMode="cover" />
+          <ExpoImage source={{ uri: imgUrl }} style={styles.sellerCardImg} resizeMode="cover" cachePolicy="memory-disk" />
         ) : (
           <View style={styles.sellerCardPlaceholder}>
             <Icon name="image-unavailable" size={16} color={COLORS.text2} />
@@ -229,8 +239,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         >
           {imgUrl ? (
             <View style={{ width: '100%', height: '100%' }}>
-              <Image source={{ uri: imgUrl }} style={styles.gridCardImg} resizeMode="cover" blurRadius={20} />
-              <Image source={{ uri: imgUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+              <ExpoImage source={{ uri: imgUrl }} style={styles.gridCardImg} resizeMode="cover" blurRadius={20} cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: imgUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" cachePolicy="memory-disk" />
             </View>
           ) : (
             <View style={styles.gridCardPlaceholder}>
@@ -331,8 +341,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   <View style={{ width: SCREEN_W, height: '100%' }}>
                     {url ? (
                       <>
-                        <Image source={{ uri: url }} style={styles.heroImg} resizeMode="cover" blurRadius={30} />
-                        <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+                        <ExpoImage source={{ uri: url }} style={styles.heroImg} resizeMode="cover" blurRadius={30} cachePolicy="memory-disk" />
+                        <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" cachePolicy="memory-disk" />
                       </>
                     ) : (
                       <View style={styles.heroPlaceholder}>
@@ -345,8 +355,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             />
           ) : heroUrl ? (
             <>
-              <Image source={{ uri: heroUrl }} style={styles.heroImg} resizeMode="cover" blurRadius={30} />
-              <Image source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+              <ExpoImage source={{ uri: heroUrl }} style={styles.heroImg} resizeMode="cover" blurRadius={30} cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" cachePolicy="memory-disk" />
             </>
           ) : (
             <View style={styles.heroPlaceholder}>

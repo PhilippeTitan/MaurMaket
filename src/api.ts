@@ -30,46 +30,71 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.168.154.105:3001/api'
+    ? 'http://10.174.194.105:3001/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.168.154.105:3001'
+    ? 'http://10.174.194.105:3001'
     : 'https://maurmaket.onrender.com';
+
+let _cachedToken: string | null = null;
+let _tokenRead = false;
+
+async function getToken(): Promise<string | null> {
+  if (_tokenRead) return _cachedToken;
+  if (Platform.OS === 'web') {
+    _cachedToken = localStorage.getItem('mm_token');
+  } else {
+    const SecureStore = require('expo-secure-store');
+    _cachedToken = await SecureStore.getItemAsync('mm_token');
+  }
+  _tokenRead = true;
+  return _cachedToken;
+}
+
+export function setCachedToken(token: string | null) {
+  _cachedToken = token;
+  _tokenRead = true;
+}
 
 async function request<T = Record<string, unknown>>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  let token: string | null = null;
-  if (Platform.OS === 'web') {
-    token = localStorage.getItem('mm_token');
-  } else {
-    const SecureStore = require('expo-secure-store');
-    token = await SecureStore.getItemAsync('mm_token');
-  }
+  const token = await getToken();
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> || {}),
   };
   if (options.body) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  const text = await res.text();
-  let data: any;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
   try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    throw new Error(`Server returned invalid response (${res.status}). Please try again.`);
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    let data: any;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Server returned invalid response (${res.status}). Please try again.`);
+    }
+    if (!res.ok) {
+      const msg = data.error || data.message || 'Request failed';
+      const detail = data.details ? ` (${data.details})` : '';
+      throw new Error(`${msg}${detail}`);
+    }
+    return data as T;
+  } finally {
+    clearTimeout(timeout);
   }
-  if (!res.ok) {
-    const msg = data.error || data.message || 'Request failed';
-    const detail = data.details ? ` (${data.details})` : '';
-    throw new Error(`${msg}${detail}`);
-  }
-  return data as T;
 }
 
 const unwrapWishlistItems = (data: unknown): Product[] => {
@@ -227,6 +252,7 @@ export const createOrder = (data: Record<string, unknown>) =>
   request('/orders', { method: 'POST', body: JSON.stringify(data) });
 
 export const getOrders = () => request('/orders');
+export const getActiveOrderCount = () => request('/orders/active-count');
 
 export const getOrder = (id: string) => request(`/orders/${id}`);
 
@@ -309,6 +335,9 @@ export const getWishlist = async () => {
 
 export const checkWishlist = (productId: string) =>
   request(`/wishlist/check/${productId}`);
+
+export const checkWishlistBatch = (ids: string[]) =>
+  request(`/wishlist/status?ids=${ids.join(',')}`);
 
 // Follows
 export const toggleFollow = (sellerId: string) =>

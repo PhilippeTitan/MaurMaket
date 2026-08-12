@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, TextInput, Image, TouchableOpacity, StyleSheet,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, Modal, Pressable, FlatList, Dimensions, RefreshControl,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -115,17 +116,16 @@ export default function ExploreScreen({ navigation }: Props) {
       if (minPrice.trim()) params.minPrice = minPrice.trim();
       if (maxPrice.trim()) params.maxPrice = maxPrice.trim();
       const res = await getProducts(params) as { products: Product[] };
-      setProducts(res.products || []);
+      const prods = res.products || [];
+      setProducts(prods);
 
-      (res.products || []).forEach((p: Product) => {
-        const url = getImageUrl(p.images?.find(i => i.is_primary)?.image_url || p.images?.[0]?.image_url);
-        if (!url) return;
-        Image.getSize(url, (w, h) => {
-          if (mountedRef.current) {
-            setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
-          }
-        }, () => {});
+      const defaults: Record<string, { w: number; h: number }> = {};
+      prods.forEach((p: Product) => {
+        if (!imageSizes[p.id]) defaults[p.id] = { w: CARD_W, h: CARD_W * 1.25 };
       });
+      if (Object.keys(defaults).length > 0) {
+        setImageSizes(prev => ({ ...prev, ...defaults }));
+      }
     } catch { toast.error('Products could not load', 'Check your connection and try again.', fetchProducts); }
     setLoading(false);
   }, [selectedCat, debouncedSearch, sortBy, minPrice, maxPrice]);
@@ -215,8 +215,8 @@ export default function ExploreScreen({ navigation }: Props) {
                     >
                       {url ? (
                         <>
-                          <Image source={{ uri: url }} style={styles.cardImg} resizeMode="cover" blurRadius={20} onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
-                          <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                          <ExpoImage source={{ uri: url }} style={styles.cardImg} resizeMode="cover" blurRadius={20} onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
+                          <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
                         </>
                       ) : (
                         <View style={styles.cardPlaceholder}>
@@ -235,18 +235,20 @@ export default function ExploreScreen({ navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={t('accessibility.viewProduct')}
               >
-                <Image
+                <ExpoImage
                   source={{ uri: primaryUrl }}
                   style={styles.cardImg}
                   resizeMode="cover"
                   blurRadius={20}
                   onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                  cachePolicy="memory-disk"
                 />
-                <Image
+                <ExpoImage
                   source={{ uri: primaryUrl }}
                   style={StyleSheet.absoluteFill}
                   resizeMode="contain"
                   onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                  cachePolicy="memory-disk"
                 />
               </TouchableOpacity>
             ) : (

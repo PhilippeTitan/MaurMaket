@@ -2301,6 +2301,23 @@ app.get('/api/wishlist/check/:productId', authRequired, async (req, res) => {
   }
 });
 
+app.get('/api/wishlist/status', authRequired, async (req, res) => {
+  try {
+    const ids = (req.query.ids || '').split(',').filter(Boolean);
+    if (ids.length === 0) return res.json({ wishlisted: {} });
+    const result = await pool.query(
+      'SELECT product_id FROM wishlists WHERE user_id = $1 AND product_id = ANY($2)',
+      [req.user.id, ids]
+    );
+    const set = {};
+    for (const row of result.rows) set[row.product_id] = true;
+    res.json({ wishlisted: set });
+  } catch (err) {
+    console.error('Wishlist batch check error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ───── Follow Sellers ─────
 
 app.post('/api/follow/:sellerId', authRequired, async (req, res) => {
@@ -3045,6 +3062,22 @@ app.get('/api/orders', authRequired, async (req, res) => {
     res.json({ buyerOrders: buyerOrders.rows, sellerOrders: sellerOrders.rows });
   } catch (err) {
     console.error('Orders error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/orders/active-count', authRequired, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT COUNT(DISTINCT o.id)::int AS count FROM orders o
+       JOIN order_items oi ON o.id = oi.order_id
+       WHERE (o.buyer_id = $1 OR oi.seller_id = $1)
+         AND o.status IN ('pending','paid','processing','shipped')`,
+      [req.user.id]
+    );
+    res.json({ count: r.rows[0]?.count || 0 });
+  } catch (err) {
+    console.error('Active orders count error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

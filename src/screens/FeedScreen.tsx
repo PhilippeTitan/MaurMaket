@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
-  RefreshControl, ActivityIndicator, LayoutChangeEvent, Image, Modal, Pressable, Platform, ScrollView,
+  RefreshControl, ActivityIndicator, LayoutChangeEvent, Modal, Pressable, Platform, ScrollView,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -11,9 +12,9 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import {
-  getProducts, toggleWishlist, checkWishlist, createConversation,
+  getProducts, toggleWishlist, checkWishlist, checkWishlistBatch, createConversation,
   getImageUrl, getUnreadCount, getProductReviews, getFollowing,
-  trackFeedEvent, getOrders, getSellerOrders,
+  trackFeedEvent, getActiveOrderCount,
 } from '../api';
 import { store } from '../store';
 import type { Product, Review } from '../types';
@@ -93,22 +94,19 @@ export default function FeedScreen() {
     let mounted = true;
     const loadUnread = async () => {
       try {
-        const [notifRes, buyRes, sellRes] = await Promise.allSettled([
+        const [notifRes, activeRes] = await Promise.allSettled([
           getUnreadCount() as Promise<{ count: string | number }>,
-          getOrders() as Promise<{ buyerOrders: any[] }>,
-          store.isSeller ? getSellerOrders() as Promise<{ orders: any[] }> : Promise.resolve({ orders: [] }),
+          getActiveOrderCount() as Promise<{ count: number }>,
         ]);
         const notifCount = notifRes.status === 'fulfilled' ? Number(notifRes.value.count || 0) : 0;
-        const buyOrders = buyRes.status === 'fulfilled' ? (buyRes.value.buyerOrders || []) : [];
-        const sellOrders = sellRes.status === 'fulfilled' ? (sellRes.value.orders || []) : [];
-        const activeOrders = [...buyOrders, ...sellOrders].filter((o: any) => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
-        if (mounted) setUnreadCount(notifCount + activeOrders.length);
+        const activeCount = activeRes.status === 'fulfilled' ? Number(activeRes.value.count || 0) : 0;
+        if (mounted) setUnreadCount(notifCount + activeCount);
       } catch {
         if (mounted) setUnreadCount(0);
       }
     };
     loadUnread();
-    const interval = setInterval(loadUnread, 15000);
+    const interval = setInterval(loadUnread, 30000);
     return () => {
       mounted = false;
       clearInterval(interval);
@@ -119,16 +117,13 @@ export default function FeedScreen() {
   useFocusEffect(useCallback(() => {
     const loadUnread = async () => {
       try {
-        const [notifRes, buyRes, sellRes] = await Promise.allSettled([
+        const [notifRes, activeRes] = await Promise.allSettled([
           getUnreadCount() as Promise<{ count: string | number }>,
-          getOrders() as Promise<{ buyerOrders: any[] }>,
-          store.isSeller ? getSellerOrders() as Promise<{ orders: any[] }> : Promise.resolve({ orders: [] }),
+          getActiveOrderCount() as Promise<{ count: number }>,
         ]);
         const notifCount = notifRes.status === 'fulfilled' ? Number(notifRes.value.count || 0) : 0;
-        const buyOrders = buyRes.status === 'fulfilled' ? (buyRes.value.buyerOrders || []) : [];
-        const sellOrders = sellRes.status === 'fulfilled' ? (sellRes.value.orders || []) : [];
-        const activeOrders = [...buyOrders, ...sellOrders].filter((o: any) => ['pending', 'paid', 'processing', 'shipped'].includes(o.status));
-        setUnreadCount(notifCount + activeOrders.length);
+        const activeCount = activeRes.status === 'fulfilled' ? Number(activeRes.value.count || 0) : 0;
+        setUnreadCount(notifCount + activeCount);
       } catch {}
     };
     loadUnread();
@@ -137,18 +132,21 @@ export default function FeedScreen() {
   useEffect(() => {
     if (!store.isLoggedIn || products.length === 0) return;
     const unchecked = products.filter(p => !checkedWishlistIds.current.has(p.id));
-    unchecked.forEach(async (p) => {
-      checkedWishlistIds.current.add(p.id);
+    if (unchecked.length === 0) return;
+    unchecked.forEach(p => checkedWishlistIds.current.add(p.id));
+    (async () => {
       try {
-        const res = await checkWishlist(p.id) as { wishlisted: boolean };
+        const res = await checkWishlistBatch(unchecked.map(p => p.id)) as { wishlisted: Record<string, boolean> };
         setWishlistedIds(prev => {
           const next = new Set(prev);
-          if (res.wishlisted) next.add(p.id);
-          else next.delete(p.id);
+          for (const p of unchecked) {
+            if (res.wishlisted[p.id]) next.add(p.id);
+            else next.delete(p.id);
+          }
           return next;
         });
-    } catch { /* Product cards remain usable even if wishlist state is unavailable. */ }
-    });
+      } catch { /* Product cards remain usable even if wishlist state is unavailable. */ }
+    })();
   }, [products]);
 
   useEffect(() => {
@@ -323,8 +321,8 @@ export default function FeedScreen() {
                   <View key={String(img.id || idx)} style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}>
                     {url ? (
                       <>
-                        <Image source={{ uri: url }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} />
-                        <Image source={{ uri: url }} style={styles.mediaContain} resizeMode="contain" />
+                        <ExpoImage source={{ uri: url }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} cachePolicy="memory-disk" />
+                        <ExpoImage source={{ uri: url }} style={styles.mediaContain} resizeMode="contain" cachePolicy="memory-disk" />
                       </>
                     ) : (
                       <Icon name="image-unavailable" size={48} color={COLORS.text2} />
@@ -335,8 +333,8 @@ export default function FeedScreen() {
             </ScrollView>
           ) : imgUrl ? (
             <>
-              <Image source={{ uri: imgUrl }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} />
-              <Image source={{ uri: imgUrl }} style={styles.mediaContain} resizeMode="contain" />
+              <ExpoImage source={{ uri: imgUrl }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: imgUrl }} style={styles.mediaContain} resizeMode="contain" cachePolicy="memory-disk" />
             </>
           ) : (
             <Icon name="image-unavailable" size={48} color={COLORS.text2} />

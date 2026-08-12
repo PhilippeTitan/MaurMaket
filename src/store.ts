@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import type { User, CartItem } from './types';
+import { setCachedToken } from './api';
 
 type Listener = () => void;
 
@@ -62,7 +63,10 @@ export const store = {
   async init() {
     const token = await storage.getItem('mm_token');
     const cartStr = await storage.getItem('mm_cart');
-    if (token) state.token = token;
+    if (token) {
+      state.token = token;
+      setCachedToken(token);
+    }
     if (cartStr) {
       try { state.cart = JSON.parse(cartStr); } catch { /* ignore */ }
     }
@@ -71,6 +75,7 @@ export const store = {
   async setUser(user: User | null, token: string | null) {
     state.user = user;
     state.token = token;
+    setCachedToken(token);
     if (token) await storage.setItem('mm_token', token);
     else await storage.deleteItem('mm_token');
     notify();
@@ -91,6 +96,7 @@ export const store = {
   async logout() {
     state.user = null;
     state.token = null;
+    setCachedToken(null);
     await storage.deleteItem('mm_token');
     notify();
   },
