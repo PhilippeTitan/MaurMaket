@@ -89,8 +89,10 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
     tapMedium();
     const result = await addToCart();
     if (!result.added) {
-      toast.warning('Stock limit', result.reason === 'out-of-stock' ? 'This item is sold out.' : `Only ${result.stock} available.`);
+      toast.warning(t('cart.stockLimit'), result.reason === 'out-of-stock' ? t('cart.soldOut') : t('cart.onlyAvailable', { count: result.stock }));
+      return;
     }
+    toast.success(t('cart.added'), t('cart.addedDetail', { name: product.name }));
   };
 
   const handleIncrementCart = async () => {
@@ -100,7 +102,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
     }
     tapLight();
     if (cartQty >= product.stock) {
-      toast.warning('Stock limit', `Only ${product.stock} available.`);
+      toast.warning(t('cart.stockLimit'), t('cart.onlyAvailable', { count: product.stock }));
       return;
     }
     await store.updateQuantity(product.id, cartQty + 1);

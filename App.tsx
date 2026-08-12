@@ -174,8 +174,8 @@ function MainTabs() {
           }}
         />
         <Tab.Screen
-          name="SellTab"
-          component={View}
+          name="InboxTab"
+          component={InboxScreen}
           options={{
             tabBarIcon: () => null,
             tabBarButton: (props) => (
@@ -190,12 +190,6 @@ function MainTabs() {
               </TouchableOpacity>
             ),
           }}
-          listeners={({ navigation }) => ({
-            tabPress: (e) => {
-              e.preventDefault();
-              (navigation as any).getParent()?.navigate('Inbox');
-            },
-          })}
         />
         <Tab.Screen
           name="MapTab"

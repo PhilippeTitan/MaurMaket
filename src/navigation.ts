@@ -10,7 +10,7 @@ export type AuthStackParamList = {
 export type TabParamList = {
   FeedTab: undefined;
   ExploreTab: undefined;
-  SellTab: undefined;
+  InboxTab: undefined;
   MapTab: undefined;
   MeTab: undefined;
 };

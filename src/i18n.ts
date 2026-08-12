@@ -351,6 +351,9 @@ const translations: Record<Language, Record<string, string>> = {
     'cart.proceedCheckout': 'Proceed to Checkout',
     'cart.stockLimit': 'Stock limit',
     'cart.onlyAvailable': 'Only {count} available',
+    'cart.added': 'Added to cart',
+    'cart.addedDetail': '{name} is ready in your cart.',
+    'cart.soldOut': 'This item is sold out.',
     'cart.off': 'off',
     'cart.promoHint': 'Promo will be checked at checkout',
 
@@ -974,6 +977,9 @@ const translations: Record<Language, Record<string, string>> = {
     'cart.proceedCheckout': 'Pwoche pou Checkout',
     'cart.stockLimit': 'Limit stock',
     'cart.onlyAvailable': 'Genyen sèlman {count}',
+    'cart.added': 'Ajoute nan panyen',
+    'cart.addedDetail': '{name} pare nan panyen ou.',
+    'cart.soldOut': 'Atik sa a fini.',
     'cart.off': 'de',
     'cart.promoHint': 'Promo pral tcheke nan checkout',
 
@@ -1597,6 +1603,9 @@ const translations: Record<Language, Record<string, string>> = {
     'cart.proceedCheckout': 'Passer au paiement',
     'cart.stockLimit': 'Limite de stock',
     'cart.onlyAvailable': 'Seulement {count} disponible(s)',
+    'cart.added': 'Ajoute au panier',
+    'cart.addedDetail': '{name} est pret dans votre panier.',
+    'cart.soldOut': 'Cet article est epuise.',
     'cart.off': 'de réduction',
     'cart.promoHint': 'Le promo sera vérifié lors du paiement',
 
