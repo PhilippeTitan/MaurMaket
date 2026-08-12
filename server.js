@@ -2846,6 +2846,24 @@ app.get('/api/categories', async (_req, res) => {
 
 // ───── Order routes ─────
 
+// Literal routes must be registered before /:id, otherwise Express treats
+// "active-count" as an order UUID and the database rejects it.
+app.get('/api/orders/active-count', authRequired, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT COUNT(DISTINCT o.id)::int AS count FROM orders o
+       JOIN order_items oi ON o.id = oi.order_id
+       WHERE (o.buyer_id = $1 OR oi.seller_id = $1)
+         AND o.status IN ('pending','paid','processing','shipped')`,
+      [req.user.id]
+    );
+    res.json({ count: r.rows[0]?.count || 0 });
+  } catch (err) {
+    console.error('Active orders count error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/orders/:id', authRequired, async (req, res) => {
   try {
     const order = await canAccessOrder(req.user.id, req.params.id);
@@ -2936,22 +2954,6 @@ app.get('/api/orders', authRequired, async (req, res) => {
     res.json({ buyerOrders: buyerOrders.rows, sellerOrders: sellerOrders.rows });
   } catch (err) {
     console.error('Orders error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-app.get('/api/orders/active-count', authRequired, async (req, res) => {
-  try {
-    const r = await pool.query(
-      `SELECT COUNT(DISTINCT o.id)::int AS count FROM orders o
-       JOIN order_items oi ON o.id = oi.order_id
-       WHERE (o.buyer_id = $1 OR oi.seller_id = $1)
-         AND o.status IN ('pending','paid','processing','shipped')`,
-      [req.user.id]
-    );
-    res.json({ count: r.rows[0]?.count || 0 });
-  } catch (err) {
-    console.error('Active orders count error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
