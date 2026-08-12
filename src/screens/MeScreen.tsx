@@ -288,10 +288,7 @@ export default function MeScreen() {
                       accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
                     >
                       {url ? (
-                        <>
-                          <ExpoImage source={{ uri: url }} style={styles.cardImg} contentFit="cover" blurRadius={20} cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
-                          <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
-                        </>
+                        <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
                       ) : (
                         <View style={styles.cardPlaceholder}>
                           <Icon name="image-unavailable" size={20} color={COLORS.text2} />
@@ -309,7 +306,6 @@ export default function MeScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
               >
-                <ExpoImage source={{ uri: primaryUrl }} style={styles.cardImg} contentFit="cover" blurRadius={20} cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
                 <ExpoImage source={{ uri: primaryUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
               </TouchableOpacity>
             ) : (
@@ -318,8 +314,9 @@ export default function MeScreen() {
               </View>
             )}
             <LinearGradient
-              colors={['rgba(13,17,23,0)', 'rgba(13,17,23,0.72)', '#0D1117']}
+              colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
               style={styles.cardGradient}
+              pointerEvents="none"
             />
             {hasMore && (
               <View style={styles.imgDots} pointerEvents="none">
