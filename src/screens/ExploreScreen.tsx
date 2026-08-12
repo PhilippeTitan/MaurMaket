@@ -205,8 +205,8 @@ export default function ExploreScreen({ navigation }: Props) {
                     >
                       {url ? (
                         <>
-                          <ExpoImage source={{ uri: url }} style={styles.cardImg} resizeMode="cover" blurRadius={20} onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
-                          <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
+                          <ExpoImage source={{ uri: url }} style={styles.cardImg} contentFit="cover" blurRadius={20} onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
+                          <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
                         </>
                       ) : (
                         <View style={styles.cardPlaceholder}>
@@ -228,7 +228,7 @@ export default function ExploreScreen({ navigation }: Props) {
                 <ExpoImage
                   source={{ uri: primaryUrl }}
                   style={styles.cardImg}
-                  resizeMode="cover"
+                  contentFit="cover"
                   blurRadius={20}
                   onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
                   cachePolicy="memory-disk"
@@ -236,7 +236,7 @@ export default function ExploreScreen({ navigation }: Props) {
                 <ExpoImage
                   source={{ uri: primaryUrl }}
                   style={StyleSheet.absoluteFill}
-                  resizeMode="contain"
+                  contentFit="contain"
                   onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
                   cachePolicy="memory-disk"
                 />

@@ -326,8 +326,8 @@ export default function FeedScreen() {
                   <View key={String(img.id || idx)} style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}>
                     {url ? (
                       <>
-                        <ExpoImage source={{ uri: url }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} cachePolicy="memory-disk" />
-                        <ExpoImage source={{ uri: url }} style={styles.mediaContain} resizeMode="contain" cachePolicy="memory-disk" />
+                        <ExpoImage source={{ uri: url }} style={styles.mediaFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+                        <ExpoImage source={{ uri: url }} style={styles.mediaContain} contentFit="contain" cachePolicy="memory-disk" />
                       </>
                     ) : (
                       <Icon name="image-unavailable" size={48} color={COLORS.text2} />
@@ -338,8 +338,8 @@ export default function FeedScreen() {
             </ScrollView>
           ) : imgUrl ? (
             <>
-              <ExpoImage source={{ uri: imgUrl }} style={styles.mediaFill} resizeMode="cover" blurRadius={30} cachePolicy="memory-disk" />
-              <ExpoImage source={{ uri: imgUrl }} style={styles.mediaContain} resizeMode="contain" cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: imgUrl }} style={styles.mediaFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: imgUrl }} style={styles.mediaContain} contentFit="contain" cachePolicy="memory-disk" />
             </>
           ) : (
             <Icon name="image-unavailable" size={48} color={COLORS.text2} />

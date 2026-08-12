@@ -219,7 +219,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         accessibilityLabel={t('accessibility.viewProduct')}
       >
         {imgUrl ? (
-          <ExpoImage source={{ uri: imgUrl }} style={styles.sellerCardImg} resizeMode="cover" cachePolicy="memory-disk" />
+          <ExpoImage source={{ uri: imgUrl }} style={styles.sellerCardImg} contentFit="cover" cachePolicy="memory-disk" />
         ) : (
           <View style={styles.sellerCardPlaceholder}>
             <Icon name="image-unavailable" size={16} color={COLORS.text2} />
@@ -258,8 +258,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         >
           {imgUrl ? (
             <View style={{ width: '100%', height: '100%' }}>
-              <ExpoImage source={{ uri: imgUrl }} style={styles.gridCardImg} resizeMode="cover" blurRadius={20} cachePolicy="memory-disk" />
-              <ExpoImage source={{ uri: imgUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: imgUrl }} style={styles.gridCardImg} contentFit="cover" blurRadius={20} cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: imgUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
             </View>
           ) : (
             <View style={styles.gridCardPlaceholder}>
@@ -360,8 +360,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   <View style={{ width: SCREEN_W, height: '100%' }}>
                     {url ? (
                       <>
-                        <ExpoImage source={{ uri: url }} style={styles.heroImg} resizeMode="cover" blurRadius={30} cachePolicy="memory-disk" />
-                        <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" cachePolicy="memory-disk" />
+                        <ExpoImage source={{ uri: url }} style={styles.heroImg} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+                        <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
                       </>
                     ) : (
                       <View style={styles.heroPlaceholder}>
@@ -374,8 +374,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             />
           ) : heroUrl ? (
             <>
-              <ExpoImage source={{ uri: heroUrl }} style={styles.heroImg} resizeMode="cover" blurRadius={30} cachePolicy="memory-disk" />
-              <ExpoImage source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: heroUrl }} style={styles.heroImg} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
             </>
           ) : (
             <View style={styles.heroPlaceholder}>

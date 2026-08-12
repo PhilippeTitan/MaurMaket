@@ -288,7 +288,10 @@ export default function MeScreen() {
                       accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
                     >
                       {url ? (
-                        <ExpoImage source={{ uri: url }} style={styles.cardImg} resizeMode="cover" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                        <>
+                          <ExpoImage source={{ uri: url }} style={styles.cardImg} contentFit="cover" blurRadius={20} cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                          <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                        </>
                       ) : (
                         <View style={styles.cardPlaceholder}>
                           <Icon name="image-unavailable" size={20} color={COLORS.text2} />
@@ -306,7 +309,8 @@ export default function MeScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
               >
-                <ExpoImage source={{ uri: primaryUrl }} style={styles.cardImg} resizeMode="cover" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                <ExpoImage source={{ uri: primaryUrl }} style={styles.cardImg} contentFit="cover" blurRadius={20} cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                <ExpoImage source={{ uri: primaryUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
               </TouchableOpacity>
             ) : (
               <View style={styles.cardPlaceholder}>
