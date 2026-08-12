@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, useWindowDimensions, FlatList,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '../components/icons/Icon';
@@ -70,6 +71,7 @@ export default function MeScreen() {
   const [analyticsData, setAnalyticsData] = useState<SellerAnalyticsResponse | null>(null);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
+  const [listingImageIndices, setListingImageIndices] = useState<Record<string, number>>({});
   const mountedRef = useRef(true);
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const CARD_W = (SCREEN_W - 3) / 2;
@@ -248,53 +250,78 @@ export default function MeScreen() {
     const images = item.images && item.images.length > 0
       ? item.images
       : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
+    const hasMore = images.length > 1;
+    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.image_url || images[0]?.image_url);
+    const openListing = () => isOwnProduct
+      ? nav.navigate('EditListing', { productId: item.id })
+      : nav.navigate('ProductDetail', { productId: item.id });
     return (
       <View key={item.id}>
-        <TouchableOpacity
-          style={styles.card}
-          activeOpacity={0.82}
-          onPress={() => isOwnProduct
-            ? nav.navigate('EditListing', { productId: item.id })
-            : nav.navigate('ProductDetail', { productId: item.id })
-          }
-          accessibilityRole="button"
-          accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
-        >
+        <View style={styles.card}>
           <View style={[styles.cardImgWrap, { height: cardH }]}>
-            <FlatList
-              data={images}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(img, idx) => String(img.id || idx)}
-              renderItem={({ item: img }) => {
-                const url = getImageUrl(img.image_url);
-                return (
-                  <View style={{ width: CARD_W, height: cardH }}>
-                    {url && !imgFailed ? (
-                      <Image
-                        source={{ uri: url }}
-                        style={styles.cardImg}
-                        resizeMode="cover"
-                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                      />
-                    ) : (
-                      <View style={styles.cardPlaceholder}>
-                        <Icon name="image-unavailable" size={20} color={COLORS.text2} />
-                      </View>
-                    )}
-                  </View>
-                );
-              }}
-            />
+            {hasMore && !imgFailed ? (
+              <FlatList
+                data={images}
+                horizontal
+                pagingEnabled
+                nestedScrollEnabled
+                showsHorizontalScrollIndicator={false}
+                windowSize={3}
+                maxToRenderPerBatch={2}
+                keyExtractor={(img, idx) => String(img.id || idx)}
+                onScroll={(e) => {
+                  const index = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
+                  if (index !== (listingImageIndices[item.id] ?? 0)) {
+                    setListingImageIndices(prev => ({ ...prev, [item.id]: index }));
+                  }
+                }}
+                scrollEventThrottle={16}
+                getItemLayout={(_, index) => ({ length: CARD_W, offset: CARD_W * index, index })}
+                renderItem={({ item: img }) => {
+                  const url = getImageUrl(img.image_url);
+                  return (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={openListing}
+                      style={{ width: CARD_W, height: cardH }}
+                      accessibilityRole="button"
+                      accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
+                    >
+                      {url ? (
+                        <ExpoImage source={{ uri: url }} style={styles.cardImg} resizeMode="cover" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                      ) : (
+                        <View style={styles.cardPlaceholder}>
+                          <Icon name="image-unavailable" size={20} color={COLORS.text2} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            ) : primaryUrl && !imgFailed ? (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={openListing}
+                style={StyleSheet.absoluteFill}
+                accessibilityRole="button"
+                accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
+              >
+                <ExpoImage source={{ uri: primaryUrl }} style={styles.cardImg} resizeMode="cover" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.cardPlaceholder}>
+                <Icon name="image-unavailable" size={20} color={COLORS.text2} />
+              </View>
+            )}
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.92)']}
               style={styles.cardGradient}
             />
-            {images.length > 1 && (
-              <View style={styles.imgCountBadge}>
-                <MaterialCommunityIcons name="image-multiple" size={11} color="#fff" />
-                <Text style={styles.imgCountText}>{images.length}</Text>
+            {hasMore && (
+              <View style={styles.imgDots} pointerEvents="none">
+                {images.map((_, index) => (
+                  <View key={index} style={[styles.imgDot, index === (listingImageIndices[item.id] || 0) && styles.imgDotActive]} />
+                ))}
               </View>
             )}
             {/* Price — top right */}
@@ -306,7 +333,7 @@ export default function MeScreen() {
               <StockBadge stock={item.stock} size="sm" />
             </View>
           </View>
-        </TouchableOpacity>
+        </View>
         <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
       </View>
     );
@@ -480,7 +507,7 @@ export default function MeScreen() {
 
         {/* Dark fade at bottom of hero */}
         <LinearGradient
-          colors={['transparent', COLORS.bg]}
+          colors={['transparent', 'rgba(13,17,23,0.78)', '#0D1117']}
           style={styles.heroFade}
           pointerEvents="none"
         />
@@ -761,19 +788,20 @@ const styles = StyleSheet.create({
   cardStockBadge: {
     position: 'absolute', bottom: 6, left: 6,
   },
+  imgDots: {
+    position: 'absolute', bottom: 8, alignSelf: 'center',
+    flexDirection: 'row', gap: 4,
+  },
+  imgDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+  imgDotActive: { backgroundColor: COLORS.white, width: 14 },
 
   cardName: {
     fontSize: 12.5, fontWeight: '600', color: COLORS.text,
     paddingHorizontal: 6, paddingTop: 5, paddingBottom: 2,
   },
-  imgCountBadge: {
-    position: 'absolute', bottom: 36, alignSelf: 'center',
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10,
-    paddingHorizontal: 7, paddingVertical: 3,
-  },
-  imgCountText: { fontSize: 11, fontWeight: '700', color: '#fff' },
-
   /* Empty */
   empty: { alignItems: 'center', paddingVertical: 40, gap: 6 },
   emptyText: { fontSize: 14, color: COLORS.text2, fontWeight: '600' },
