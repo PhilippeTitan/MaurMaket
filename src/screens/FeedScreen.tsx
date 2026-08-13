@@ -30,6 +30,7 @@ import { SkeletonBlock } from '../components/Skeleton';
 import { tapLight } from '../haptics';
 import { useToast } from '../components/Toast';
 import { queryClient } from '../hooks';
+import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -61,6 +62,16 @@ export default function FeedScreen() {
   const dragStartIndexRef = useRef(0);
 
   const fetchProducts = useCallback(async (p = 1, replace = false) => {
+    const cacheKey = cacheKeys.feed(feedTab, store.user?.id);
+    if (p === 1 && replace) {
+      const snapshot = await readSnapshot<{ products: Product[]; pages: number }>(cacheKey);
+      if (snapshot?.value.products?.length) {
+        checkedWishlistIds.current.clear();
+        setWishlistedIds(new Set());
+        setProducts(snapshot.value.products);
+        setHasMore(1 < snapshot.value.pages);
+      }
+    }
     try {
       const params: Record<string, string> = { page: String(p), limit: '20' };
       if (feedTab === 'forYou') {
@@ -78,6 +89,7 @@ export default function FeedScreen() {
         checkedWishlistIds.current.clear();
         setWishlistedIds(new Set());
         setProducts(res.products);
+        if (p === 1) void writeSnapshot(cacheKey, { products: res.products, pages: res.pages });
       } else {
         setProducts(prev => [...prev, ...res.products]);
       }

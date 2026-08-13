@@ -13,6 +13,8 @@ import { COLORS, RADIUS, getDisplayName } from '../theme';
 import { getProducts, getCategories, getImageUrl } from '../api';
 import { store } from '../store';
 import { useQuery } from '@tanstack/react-query';
+import { queryClient } from '../hooks';
+import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
@@ -107,6 +109,21 @@ export default function ExploreScreen({ navigation }: Props) {
     queryFn: async () => ((await getProducts(productParams)) as { products?: Product[] }).products || [],
     placeholderData: previousData => previousData,
   });
+
+  const productCacheKey = cacheKeys.explore(productParams, store.user?.id);
+  useEffect(() => {
+    let active = true;
+    void readSnapshot<Product[]>(productCacheKey).then(snapshot => {
+      if (active && snapshot?.value?.length && !queryClient.getQueryData(['explore-products', productParams])) {
+        queryClient.setQueryData(['explore-products', productParams], snapshot.value);
+      }
+    });
+    return () => { active = false; };
+  }, [productCacheKey]);
+
+  useEffect(() => {
+    if (products.length) void writeSnapshot(productCacheKey, products);
+  }, [productCacheKey, products]);
 
   const refreshProducts = useCallback(async () => {
     setRefreshing(true);

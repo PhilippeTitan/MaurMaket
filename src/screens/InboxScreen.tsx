@@ -20,6 +20,7 @@ import { routeNotification } from '../notificationRouting';
 import type { Conversation, Notification } from '../types';
 import type { RootStackParamList } from '../navigation';
 import UserAvatar from '../components/UserAvatar';
+import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type InboxTab = 'all' | 'primary' | 'offers';
@@ -110,6 +111,7 @@ export default function InboxScreen() {
   const followedIds = new Set(followedSellers.map((s: any) => s.seller_id));
 
   const fetchData = useCallback(async (force = false) => {
+    const cacheKey = store.user?.id ? cacheKeys.inbox(store.user.id) : null;
     const prev = _inboxCache;
     _inboxCache = null;
     if (!force && prev && Date.now() - prev.timestamp < INBOX_CACHE_TTL) {
@@ -120,6 +122,15 @@ export default function InboxScreen() {
       setOfferConversations(d.offerConversations || []);
       setLoading(false);
       return;
+    }
+    if (!force && cacheKey) {
+      const snapshot = await readSnapshot<{ conversations: Conversation[]; notifications: Notification[]; followedSellers: any[]; offerConversations: any[] }>(cacheKey);
+      if (snapshot?.value) {
+        const d = snapshot.value;
+        setConversations(d.conversations || []); setNotifications(d.notifications || []);
+        setFollowedSellers(d.followedSellers || []); setOfferConversations(d.offerConversations || []);
+        setLoading(false);
+      }
     }
     try {
       const [convoResult, notifResult, followingResult, offersResult] = await Promise.allSettled([
@@ -139,6 +150,7 @@ export default function InboxScreen() {
       store.setFollowingList(followedSellers.map((s: any) => s.seller_id || s.id).filter(Boolean));
       setOfferConversations(offerConversations);
       _inboxCache = { timestamp: Date.now(), data: { conversations, notifications, followedSellers, offerConversations } };
+      if (cacheKey) void writeSnapshot(cacheKey, { conversations, notifications, followedSellers, offerConversations });
     } catch {
       toast.error(t('feedback.inboxRefreshFailed'), t('feedback.connectionRetry'), () => fetchData(true));
     }

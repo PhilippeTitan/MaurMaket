@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import type { User, CartItem } from './types';
 import { setCachedToken } from './api';
+import { clearUserSnapshots } from './offlineCache';
 
 type Listener = () => void;
 
@@ -61,14 +62,20 @@ export const store = {
   isFollowing(sellerId: string) { return state.followedSellerIds.has(sellerId); },
 
   async init() {
-    const token = await storage.getItem('mm_token');
-    const cartStr = await storage.getItem('mm_cart');
+    const [token, userStr, cartStr] = await Promise.all([
+      storage.getItem('mm_token'),
+      storage.getItem('mm_user'),
+      storage.getItem('mm_cart'),
+    ]);
     if (token) {
       state.token = token;
       setCachedToken(token);
     }
     if (cartStr) {
       try { state.cart = JSON.parse(cartStr); } catch { /* ignore */ }
+    }
+    if (userStr && token) {
+      try { state.user = JSON.parse(userStr); } catch { /* ignore */ }
     }
   },
 
@@ -78,6 +85,8 @@ export const store = {
     setCachedToken(token);
     if (token) await storage.setItem('mm_token', token);
     else await storage.deleteItem('mm_token');
+    if (user && token) await storage.setItem('mm_user', JSON.stringify(user));
+    else await storage.deleteItem('mm_user');
     notify();
   },
 
@@ -88,16 +97,20 @@ export const store = {
       const res = await getMe() as { user: any };
       if (res.user) {
         state.user = res.user;
+        await storage.setItem('mm_user', JSON.stringify(res.user));
         notify();
       }
     } catch { /* token expired or network error — keep current state */ }
   },
 
   async logout() {
+    const previousUserId = state.user?.id;
     state.user = null;
     state.token = null;
     setCachedToken(null);
     await storage.deleteItem('mm_token');
+    await storage.deleteItem('mm_user');
+    await clearUserSnapshots(previousUserId);
     notify();
   },
 

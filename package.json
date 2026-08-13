@@ -49,6 +49,7 @@
     "expo-notifications": "~56.0.20",
     "expo-secure-store": "^56.0.4",
     "expo-server-sdk": "^6.1.0",
+    "expo-sqlite": "~56.0.5",
     "expo-status-bar": "~56.0.4",
     "expo-web-browser": "~56.0.5",
     "express": "^4.21.2",

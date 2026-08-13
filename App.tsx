@@ -223,9 +223,10 @@ export default function App() {
       await store.init();
       await i18n.init();
       if (store.token) {
-        try {
-          const res = await getMe() as { user: User };
-          await store.setUser(res.user, store.token);
+        const hydrateSession = async () => {
+          try {
+            const res = await getMe() as { user: User };
+            await store.setUser(res.user, store.token);
           registerForPushNotificationsAsync();
           // Preload follower/following counts so MeScreen has them instantly
           if (res.user?.id) {
@@ -236,8 +237,17 @@ export default function App() {
               store.setFollowingCount(list.length);
             }).catch(() => {});
           }
-        } catch {
-          await store.logout();
+          } catch {
+            await store.logout();
+          }
+        };
+        if (store.user) {
+          // The encrypted profile snapshot makes repeat launches feel immediate;
+          // the server still validates the token and refreshes the profile in background.
+          queryClient.setQueryData(['user'], store.user);
+          void hydrateSession();
+        } else {
+          await hydrateSession();
         }
       }
       setIsLoggedIn(store.isLoggedIn);

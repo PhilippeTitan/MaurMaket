@@ -23,6 +23,7 @@ import SalePriceTag from '../components/SalePriceTag';
 import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import { SkeletonBlock } from '../components/Skeleton';
+import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 60_000;
@@ -110,6 +111,19 @@ export default function MeScreen() {
       setFollowerCount(d.followerCount || 0); setFollowingCount(d.followingCount || 0);
       setWishlist(d.wishlist || []); setReviews(d.reviews || []);
       return;
+    }
+
+    if (!force && uid) {
+      const snapshot = await readSnapshot<Record<string, any>>(cacheKeys.profile(uid));
+      if (snapshot?.value) {
+        const d = snapshot.value;
+        setOrderCount(d.orderCount || 0); setSellingOrderCount(d.sellingOrderCount || 0);
+        setHasOrders(d.hasOrders || false); setProducts(d.products || []); setProductCount(d.productCount || 0);
+        setRating(d.rating || 0); setReviewCount(d.reviewCount || 0); setAnalyticsData(d.analyticsData || null);
+        setFollowerCount(d.followerCount || 0); setFollowingCount(d.followingCount || 0);
+        setWishlist(d.wishlist || []); setReviews(d.reviews || []);
+        setLoading(false);
+      }
     }
 
     let cacheData: Record<string, any> = {};
@@ -203,7 +217,10 @@ export default function MeScreen() {
       setReviews(reviewsList);
     } catch (e: any) { console.error(`[MeScreen fetchData] ERROR:`, e?.message); }
 
-    if (uid) profileCache[uid] = { timestamp: Date.now(), data: cacheData };
+    if (uid) {
+      profileCache[uid] = { timestamp: Date.now(), data: cacheData };
+      void writeSnapshot(cacheKeys.profile(uid), cacheData);
+    }
     setLoading(false);
   }, [isSeller, user?.id]);
 
