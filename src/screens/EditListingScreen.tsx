@@ -16,6 +16,7 @@ import type { Category, ProductImage } from '../types';
 import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
 import SaleSection from '../components/SaleSection';
+import { SkeletonBlock } from '../components/Skeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditListing'>;
 
@@ -213,7 +214,19 @@ export default function EditListingScreen({ route, navigation }: Props) {
   };
 
   if (loading) {
-    return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>;
+    return (
+      <View style={styles.container}>
+        <View style={styles.editSkeletonHeader}><SkeletonBlock width={38} height={38} radius={19} /><SkeletonBlock width="34%" height={16} /></View>
+        <ScrollView contentContainerStyle={styles.editSkeleton}>
+          <SkeletonBlock height={112} radius={RADIUS.card} />
+          <SkeletonBlock height={18} width="30%" />
+          <SkeletonBlock height={48} radius={RADIUS.row} />
+          <SkeletonBlock height={18} width="30%" />
+          <SkeletonBlock height={110} radius={RADIUS.row} />
+          <SkeletonBlock height={54} radius={RADIUS.button} />
+        </ScrollView>
+      </View>
+    );
   }
 
   if (store.user?.seller_tier === 'casual') {
@@ -383,6 +396,8 @@ export default function EditListingScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  editSkeletonHeader: { height: 62, paddingHorizontal: SPACING.lg, flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: COLORS.surface },
+  editSkeleton: { padding: SPACING.lg, gap: SPACING.md },
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 60 },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },

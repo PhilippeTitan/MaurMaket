@@ -12,6 +12,7 @@ import { useTranslation } from '../i18n';
 import { getMyPromos, createPromo, togglePromo } from '../api';
 import type { PromoCode } from '../types';
 import ScreenHeader from '../components/ScreenHeader';
+import { SkeletonBlock } from '../components/Skeleton';
 
 const DISCOUNT_TYPES = ['percentage', 'fixed'] as const;
 
@@ -138,7 +139,17 @@ export default function PromoManagementScreen() {
   };
 
   if (loading) {
-    return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>;
+    return (
+      <View style={styles.container}>
+        <View style={styles.promoSkeletonHeader}><SkeletonBlock width={38} height={38} radius={19} /><SkeletonBlock width="34%" height={16} /></View>
+        <View style={styles.promoSkeleton}>
+          <SkeletonBlock height={18} width="24%" />
+          <SkeletonBlock height={116} radius={RADIUS.card} />
+          <SkeletonBlock height={116} radius={RADIUS.card} />
+          <SkeletonBlock height={54} radius={RADIUS.button} />
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -236,6 +247,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingBottom: 100 },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
+  promoSkeletonHeader: { height: 62, paddingHorizontal: SPACING.lg, flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: COLORS.surface },
+  promoSkeleton: { padding: SPACING.lg, gap: SPACING.md },
 
   sectionLabel: {
     fontSize: 11, fontWeight: '700', color: COLORS.text2,
