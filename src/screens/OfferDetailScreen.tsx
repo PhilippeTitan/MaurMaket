@@ -12,6 +12,7 @@ import { getOfferDetail, respondToOffer, counterOffer, getImageUrl } from '../ap
 import { useToast } from '../components/Toast';
 import { store } from '../store';
 import BackButton from '../components/BackButton';
+import { SkeletonBlock } from '../components/Skeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OfferDetail'>;
 
@@ -110,7 +111,13 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={COLORS.coral} style={{ flex: 1 }} />
+        <View style={styles.offerSkeletonHeader}><SkeletonBlock width={36} height={36} radius={18} /><SkeletonBlock width="32%" height={16} /></View>
+        <View style={styles.offerSkeleton}>
+          <SkeletonBlock height={188} radius={RADIUS.media} />
+          <SkeletonBlock width="65%" height={20} />
+          <SkeletonBlock width="45%" height={14} />
+          <SkeletonBlock height={54} radius={RADIUS.button} />
+        </View>
       </View>
     );
   }
@@ -238,6 +245,8 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  offerSkeletonHeader: { height: 58, paddingHorizontal: SPACING.lg, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  offerSkeleton: { padding: SPACING.lg, gap: SPACING.md },
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm,

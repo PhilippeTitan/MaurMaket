@@ -23,6 +23,7 @@ import { store } from '../store';
 import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow, extendMeetup } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
+import { SkeletonBlock } from '../components/Skeleton';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Order } from '../types';
@@ -268,7 +269,16 @@ export default function MeetupScreen({ route, navigation }: Props) {
   };
 
   if (loading || !order) {
-    return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>;
+    return (
+      <View style={styles.container}>
+        <View style={styles.meetupSkeletonHeader}><SkeletonBlock width={38} height={38} radius={19} /><SkeletonBlock width="30%" height={16} /></View>
+        <View style={styles.meetupSkeleton}>
+          <SkeletonBlock height={260} radius={RADIUS.media} />
+          <SkeletonBlock height={110} radius={RADIUS.card} />
+          <SkeletonBlock height={54} radius={RADIUS.button} />
+        </View>
+      </View>
+    );
   }
 
   const region = meetupLat && meetupLng ? {
@@ -618,6 +628,8 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
+  meetupSkeletonHeader: { height: 62, paddingHorizontal: SPACING.lg, flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: COLORS.surface },
+  meetupSkeleton: { padding: SPACING.lg, gap: SPACING.lg },
 
   mapContainer: { height: 260, marginHorizontal: SPACING.lg, borderRadius: RADIUS.media, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
   map: { flex: 1 },

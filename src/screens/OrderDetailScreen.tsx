@@ -12,6 +12,7 @@ import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, r
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
+import { SkeletonBlock } from '../components/Skeleton';
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -278,7 +279,17 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   };
 
   if (loading || !order) {
-    return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>;
+    return (
+      <View style={styles.container}>
+        <View style={styles.detailSkeletonHeader}><SkeletonBlock width={38} height={38} radius={19} /><SkeletonBlock width="38%" height={16} /></View>
+        <View style={styles.detailSkeleton}>
+          <SkeletonBlock height={126} radius={RADIUS.card} />
+          <SkeletonBlock height={112} radius={RADIUS.card} />
+          <SkeletonBlock height={76} radius={RADIUS.card} />
+          <SkeletonBlock height={52} radius={RADIUS.button} />
+        </View>
+      </View>
+    );
   }
 
   const statusColor = STATUS_COLORS[order.status] || COLORS.text2;
@@ -750,6 +761,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
+  detailSkeletonHeader: { height: 62, paddingHorizontal: SPACING.lg, flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: COLORS.surface },
+  detailSkeleton: { padding: SPACING.lg, gap: SPACING.md },
   scroll: { paddingBottom: 20 },
 
   /* ── Status Hero ── */
