@@ -10,7 +10,7 @@ import { readFileSync, readdirSync } from 'fs';
 import { join, extname } from 'path';
 import {
   startTestServer, stopTestServer,
-  createUser, apiGet, apiPost,
+  createUser, apiGet, apiPost, verifyUserEmail, becomeSeller, directQuery,
   runTest, printResults, assert, assertStatus, assertNoSensitiveData,
 } from '../setup.js';
 
@@ -227,6 +227,53 @@ function getAllFiles(dir) {
   return files;
 }
 
+// ─── Test: Payout serialization blocks concurrent in-flight payouts (409 payout_in_progress) ───
+
+async function testPayoutSerializationInflightCheck() {
+  const { user, token } = await createUser({
+    fullName: 'Payout Serialization Test',
+    dateOfBirth: '1990-01-01',
+    phone: '+50937001122',
+  });
+  await verifyUserEmail(user.id);
+  await becomeSeller(token);
+  await directQuery("UPDATE users SET seller_tier = 'verified', phone = '50937001122' WHERE id = $1", [user.id]);
+  
+  // Set seller balance to 1000 G
+  await directQuery(
+    `INSERT INTO seller_balances (seller_id, balance) VALUES ($1, 1000)
+     ON CONFLICT (seller_id) DO UPDATE SET balance = 1000`,
+    [user.id]
+  );
+
+  // Insert an existing 'processing' payout for this seller directly into DB
+  await directQuery(
+    `INSERT INTO payouts (seller_id, amount, status, receiver_phone)
+     VALUES ($1, 200, 'processing', '50937001122')`,
+    [user.id]
+  );
+
+  // Attempt a second payout request via endpoint while first is processing
+  const { status, data } = await apiPost('/api/seller/payouts/request', { amount: 150 }, token);
+
+  assertStatus(status, 409, 'POST /api/seller/payouts/request with in-flight payout');
+  assert(data?.error === 'payout_in_progress',
+    `Expected error code payout_in_progress, got: ${data?.error}`);
+
+  // Test DB unique index constraint as well
+  let dbIndexBlocked = false;
+  try {
+    await directQuery(
+      `INSERT INTO payouts (seller_id, amount, status, receiver_phone)
+       VALUES ($1, 300, 'processing', '50937001122')`,
+      [user.id]
+    );
+  } catch (err) {
+    dbIndexBlocked = true;
+  }
+  assert(dbIndexBlocked, 'Database partial unique index should block second processing payout row');
+}
+
 // ─── Main ───
 
 async function main() {
@@ -249,6 +296,7 @@ async function main() {
     results.push(await runTest('Error messages don\'t leak user info', testErrorInfoLeakage));
     results.push(await runTest('Casual seller blocked from listing (403 VERIFICATION_REQUIRED)', testCasualSellerBlockedFromListing));
     results.push(await runTest('Verified seller CAN create products', testVerifiedSellerCanList));
+    results.push(await runTest('Payout serialization blocks in-flight payouts (409 payout_in_progress)', testPayoutSerializationInflightCheck));
   } finally {
     await stopTestServer();
   }
