@@ -803,6 +803,12 @@ async function runMigrations() {
     // 41. Pending DOB flag for Google OAuth users
     await step('pending_dob column', () => c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_dob BOOLEAN DEFAULT false;`));
 
+    // 42. Partial unique index: only one 'processing' payout per seller at a time (MCC constraint)
+    await step('payouts processing unique index', () => c.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payouts_one_processing_per_seller
+      ON payouts (seller_id) WHERE status = 'processing';
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -5593,7 +5599,7 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
     return res.status(400).json({ error: 'Valid amount required' });
   }
 
-  const MIN_PAYOUT = parseFloat(process.env.MIN_PAYOUT_AMOUNT || '50');
+  const MIN_PAYOUT = parseFloat(process.env.MIN_PAYOUT_AMOUNT || '100');
   if (amount < MIN_PAYOUT) {
     return res.status(400).json({ error: `Minimum payout is G ${MIN_PAYOUT}` });
   }
@@ -5606,6 +5612,20 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
       'SELECT balance FROM seller_balances WHERE seller_id = $1 FOR UPDATE',
       [req.user.id]
     );
+
+    // ── MCC Serialization: reject if a payout is already in-flight ──
+    const inflightCheck = await c.query(
+      "SELECT id FROM payouts WHERE seller_id = $1 AND status = 'processing'",
+      [req.user.id]
+    );
+    if (inflightCheck.rows.length > 0) {
+      await c.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'payout_in_progress',
+        message: 'You already have a payout being processed. Please wait for it to complete before requesting another.'
+      });
+    }
+
     const currentBalance = balanceResult.rows.length > 0 ? parseFloat(balanceResult.rows[0].balance) : 0;
     if (currentBalance < amount) {
       await c.query('ROLLBACK');
@@ -5659,23 +5679,30 @@ app.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req
       }
 
       const errorText = await mccRes.text();
-      console.error(`MonCashConnect payout error: ${mccRes.status}`, errorText);
+      console.error(`[MCC-ALERT] Payout API failure: HTTP ${mccRes.status}`, errorText);
+      // Extract MCC-specific reason if available
+      let reason = 'Payout failed. Please try again later.';
+      try {
+        const parsed = JSON.parse(errorText);
+        if (parsed.reason) reason = parsed.reason;
+        else if (parsed.message) reason = parsed.message;
+      } catch {}
       const refundC = await pool.connect();
       try {
         await refundPayout(refundC, req.user.id, amount, payout.id, `MonCashConnect returned ${mccRes.status}: ${errorText}`);
       } finally {
         refundC.release();
       }
-      return res.status(502).json({ error: 'Payout failed' });
+      return res.status(502).json({ error: 'payout_failed', message: reason });
     } catch (fetchErr) {
-      console.error('Payout network error:', fetchErr);
+      console.error('[MCC-ALERT] Payout network timeout/error:', fetchErr.message);
       const refundC = await pool.connect();
       try {
         await refundPayout(refundC, req.user.id, amount, payout.id, fetchErr.message);
       } finally {
         refundC.release();
       }
-      return res.status(502).json({ error: 'Payout network error' });
+      return res.status(502).json({ error: 'payout_network_error', message: 'Could not reach MonCash. Your balance has been restored.' });
     }
   } catch (err) {
     try { await c.query('ROLLBACK'); } catch {}

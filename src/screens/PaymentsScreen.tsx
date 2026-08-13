@@ -18,6 +18,7 @@ interface Payout {
   id: string;
   amount: number;
   status: string;
+  error_message?: string;
   receiver_phone: string;
   created_at: string;
 }
@@ -77,7 +78,7 @@ export default function PaymentsScreen() {
 
   const handleRequestPayout = async () => {
     const amt = parseFloat(amount);
-    if (!amt || amt < 50) {
+    if (!amt || amt < 100) {
       Alert.alert(t('payments.minimum'), t('payments.minWithdrawal'));
       return;
     }
@@ -90,11 +91,27 @@ export default function PaymentsScreen() {
       await requestPayout(amt);
       Alert.alert(t('payments.success'), t('payments.requestSubmitted'));
       setAmount('');
-      await fetchData();
+      _paymentsCache = null; // Force refresh to show new processing payout
+      await fetchData(true);
     } catch (e: any) {
-      Alert.alert(t('common.error'), e.message);
+      // Handle specific MCC error codes
+      const msg = e?.message || '';
+      if (msg.includes('payout_in_progress') || e?.error === 'payout_in_progress') {
+        Alert.alert(t('payments.minimum'), t('payments.payoutInProgress'));
+      } else {
+        Alert.alert(t('common.error'), msg || t('payments.loadFailed'));
+      }
     } finally {
       setRequesting(false);
+    }
+  };
+
+  const getStatusStyle = (status: string) => {
+    switch (status) {
+      case 'completed': return { bg: 'rgba(0,229,160,0.15)', color: COLORS.green, label: t('payments.statusCompleted') };
+      case 'processing': return { bg: 'rgba(255,193,7,0.15)', color: '#FFC107', label: t('payments.statusProcessing') };
+      case 'failed': return { bg: 'rgba(255,77,106,0.15)', color: COLORS.coral, label: t('payments.statusFailed') };
+      default: return { bg: COLORS.surface2, color: COLORS.text2, label: status };
     }
   };
 
@@ -146,16 +163,19 @@ export default function PaymentsScreen() {
               </View>
             </View>
             <View style={styles.requestSection}>
-              <TextInput
-                style={styles.input}
-                placeholder={t('payments.amount')}
-                placeholderTextColor={COLORS.text2}
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="numeric"
-                accessibilityLabel="payout amount"
-               
-              />
+              <View style={styles.inputWrap}>
+                <TextInput
+                  style={styles.input}
+                  placeholder={t('payments.amount')}
+                  placeholderTextColor={COLORS.text2}
+                  value={amount}
+                  onChangeText={setAmount}
+                  keyboardType="numeric"
+                  accessibilityLabel="payout amount"
+                 
+                />
+                <Text style={styles.minHint}>{t('payments.minPayoutHint')}</Text>
+              </View>
               <TouchableOpacity
                 style={[styles.requestBtn, requesting && { opacity: 0.6 }]}
                 onPress={handleRequestPayout}
@@ -169,19 +189,25 @@ export default function PaymentsScreen() {
             <Text style={styles.sectionTitle}>{t('payments.payoutHistory')}</Text>
           </>
         }
-        renderItem={({ item }) => (
-          <View style={styles.payoutRow}>
-            <View>
-              <Text style={styles.payoutAmount}>{formatPrice(item.amount)} G</Text>
-              <Text style={styles.payoutDate}>{new Date(item.created_at).toLocaleDateString('fr-HT')}</Text>
+        renderItem={({ item }) => {
+          const s = getStatusStyle(item.status);
+          return (
+            <View style={styles.payoutRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.payoutAmount}>{formatPrice(item.amount)} G</Text>
+                <Text style={styles.payoutDate}>{new Date(item.created_at).toLocaleDateString('fr-HT')}</Text>
+                {item.status === 'failed' && item.error_message ? (
+                  <Text style={styles.errorMsg} numberOfLines={2}>{item.error_message}</Text>
+                ) : null}
+              </View>
+              <View style={[styles.statusBadge, { backgroundColor: s.bg }]}>
+                <Text style={[styles.statusText, { color: s.color }]}>
+                  {s.label}
+                </Text>
+              </View>
             </View>
-            <View style={[styles.statusBadge, item.status === 'completed' && styles.statusCompleted]}>
-              <Text style={[styles.statusText, item.status === 'completed' && styles.statusTextCompleted]}>
-                {item.status}
-              </Text>
-            </View>
-          </View>
-        )}
+          );
+        }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         ListEmptyComponent={
           !refreshing ? <EmptyState icon="cash-multiple" title={t('payments.noPayouts')} /> : null
@@ -200,16 +226,17 @@ const styles = StyleSheet.create({
   balanceStat: {},
   balanceStatNum: { fontSize: 13, color: COLORS.text, fontWeight: '700' },
   balanceStatLabel: { fontSize: 10, color: COLORS.text2 },
-  requestSection: { paddingHorizontal: SPACING.md, flexDirection: 'row', gap: 8 },
-  input: { flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 10, color: COLORS.text, fontSize: 13 },
-  requestBtn: { backgroundColor: COLORS.coral, borderRadius: RADIUS.row, paddingHorizontal: 16, justifyContent: 'center' },
+  requestSection: { paddingHorizontal: SPACING.md, flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+  inputWrap: { flex: 1 },
+  input: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 10, color: COLORS.text, fontSize: 13 },
+  minHint: { fontSize: 10, color: COLORS.text2, marginTop: 3, marginLeft: 4 },
+  requestBtn: { backgroundColor: COLORS.coral, borderRadius: RADIUS.row, paddingHorizontal: 16, height: 40, justifyContent: 'center' },
   requestBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
   sectionTitle: { fontSize: 12, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: SPACING.md, marginBottom: 8 },
   payoutRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   payoutAmount: { fontSize: 14, color: COLORS.text, fontWeight: '700' },
   payoutDate: { fontSize: 10, color: COLORS.text2, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.card, backgroundColor: COLORS.surface2 },
-  statusCompleted: { backgroundColor: 'rgba(0,229,160,0.15)' },
-  statusText: { fontSize: 10, color: COLORS.text2, fontWeight: '600', textTransform: 'capitalize' },
-  statusTextCompleted: { color: COLORS.green },
+  errorMsg: { fontSize: 10, color: COLORS.coral, marginTop: 3, fontStyle: 'italic' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.card },
+  statusText: { fontSize: 10, fontWeight: '600', textTransform: 'capitalize' },
 });
