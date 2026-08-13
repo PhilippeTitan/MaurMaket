@@ -772,7 +772,7 @@ export default function MapScreen() {
 
           <View style={styles.sheetContent}>
             <View style={styles.sheetTop}>
-              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id })} accessibilityLabel="visit seller profile" accessibilityRole="button">
+              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id, preloadedSeller: selectedSeller })} accessibilityLabel="visit seller profile" accessibilityRole="button">
                 <UserAvatar seller={selectedSeller} size={50} animated={true} />
               </TouchableOpacity>
               <View style={styles.sheetInfo}>

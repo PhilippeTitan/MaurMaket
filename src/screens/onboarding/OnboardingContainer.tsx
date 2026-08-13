@@ -29,7 +29,7 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + SPACING.lg }]}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + SPACING.lg, paddingBottom: insets.bottom + SPACING.lg }]}
         keyboardShouldPersistTaps="handled"
       >
         {mode === 'signup' ? (

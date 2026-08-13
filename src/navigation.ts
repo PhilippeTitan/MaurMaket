@@ -15,6 +15,20 @@ export type TabParamList = {
   MeTab: undefined;
 };
 
+export type PreloadedSeller = {
+  username?: string | null;
+  full_name?: string | null;
+  store_name?: string | null;
+  avatar_url?: string | null;
+  store_logo_url?: string | null;
+  seller_tier?: string | null;
+  bio?: string | null;
+  use_store_identity?: boolean | null;
+  location_city?: string | null;
+  show_real_name?: boolean | null;
+  created_at?: string | null;
+};
+
 export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Main: NavigatorScreenParams<TabParamList>;
@@ -23,7 +37,7 @@ export type RootStackParamList = {
   Checkout: { promoCode?: string } | undefined;
   AddListing: undefined;
   SellerOnboarding: undefined;
-  Storefront: { sellerId: string };
+  Storefront: { sellerId: string; preloadedSeller?: PreloadedSeller };
   Settings: undefined;
   EditProfile: undefined;
   Orders: undefined;

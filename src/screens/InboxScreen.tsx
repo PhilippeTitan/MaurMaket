@@ -260,7 +260,7 @@ export default function InboxScreen() {
         {otherUserId && (
           <TouchableOpacity
             style={styles.convoStoreBtn}
-            onPress={() => nav.navigate('Storefront', { sellerId: otherUserId })}
+            onPress={() => nav.navigate('Storefront', { sellerId: otherUserId, preloadedSeller: { username: (item as any).other_party_username, full_name: otherName, avatar_url: (item as any).other_party_avatar, seller_tier: sellerTier, store_name: storeName } })}
             accessibilityLabel={`visit ${otherName}'s store`}
             accessibilityRole="button"
             activeOpacity={0.7}

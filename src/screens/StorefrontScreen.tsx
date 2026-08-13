@@ -37,8 +37,23 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const MIN_H = CARD_W * 0.6;
   const MAX_H = SCREEN_H * 0.52;
 
-  const { sellerId } = route.params;
-  const [seller, setSeller] = useState<SellerProfile | null>(null);
+  const { sellerId, preloadedSeller } = route.params;
+  const [seller, setSeller] = useState<SellerProfile | null>(
+    preloadedSeller ? ({
+      id: sellerId,
+      username: preloadedSeller.username || '',
+      full_name: preloadedSeller.full_name || '',
+      store_name: preloadedSeller.store_name,
+      avatar_url: preloadedSeller.avatar_url,
+      store_logo_url: preloadedSeller.store_logo_url,
+      seller_tier: preloadedSeller.seller_tier || 'casual',
+      bio: preloadedSeller.bio,
+      use_store_identity: preloadedSeller.use_store_identity ?? false,
+      location_city: preloadedSeller.location_city,
+      show_real_name: preloadedSeller.show_real_name ?? false,
+      created_at: preloadedSeller.created_at,
+    } as any) : null
+  );
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [followerCount, setFollowerCount] = useState(0);
@@ -296,7 +311,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
     );
   };
 
-  if (loading) {
+  if (loading && !seller) {
     return (
       <View style={styles.loadingContainer}>
         <View style={styles.skeletonTopBar} />
@@ -500,8 +515,19 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               </View>
             )}
 
-            {/* ── Listings masonry ── */}
-            {activeTab === 'listings' && products.length > 0 && (
+            {/* ── Listings masonry / skeleton ── */}
+            {activeTab === 'listings' && loading ? (
+              <View style={styles.masonryGrid}>
+                <View style={styles.masonryCol}>
+                  <View style={[styles.card, { height: 180, backgroundColor: COLORS.surface2 }]} />
+                  <View style={[styles.card, { height: 220, backgroundColor: COLORS.surface2 }]} />
+                </View>
+                <View style={styles.masonryCol}>
+                  <View style={[styles.card, { height: 220, backgroundColor: COLORS.surface2 }]} />
+                  <View style={[styles.card, { height: 180, backgroundColor: COLORS.surface2 }]} />
+                </View>
+              </View>
+            ) : activeTab === 'listings' && products.length > 0 ? (
               <View style={styles.masonryGrid}>
                 <View style={styles.masonryCol}>
                   {leftCol.map(item => <View key={item.id}>{renderGridItem({ item })}</View>)}
@@ -510,7 +536,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                   {rightCol.map(item => <View key={item.id}>{renderGridItem({ item })}</View>)}
                 </View>
               </View>
-            )}
+            ) : null}
           </View>
         }
         renderItem={activeTab === 'listings' ? renderGridItem : (({ item }: { item: Review }) => (

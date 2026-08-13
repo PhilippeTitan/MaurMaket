@@ -420,7 +420,7 @@ export default function FeedScreen() {
           <View style={styles.sellerRow}>
             <TouchableOpacity
               style={styles.sellerChip}
-              onPress={() => item.seller && nav.navigate('Storefront', { sellerId: item.seller_id })}
+              onPress={() => item.seller && nav.navigate('Storefront', { sellerId: item.seller_id, preloadedSeller: item.seller })}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.visitStore')}
             >

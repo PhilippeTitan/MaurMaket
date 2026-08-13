@@ -6,11 +6,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { useTranslation } from '../i18n';
 import { createSubscription, renewSubscription, getCurrentSubscription } from '../api';
 import { store } from '../store';
+import { SkeletonBlock } from '../components/Skeleton';
 import type { RootStackParamList } from '../navigation';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -24,6 +26,7 @@ interface Subscription {
 export default function BusinessSubscriptionScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -74,8 +77,10 @@ export default function BusinessSubscriptionScreen() {
     return (
       <View style={styles.container}>
         <ScreenHeader title="Business Subscription" onBack={() => nav.goBack()} />
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color={COLORS.coral} />
+        <View style={styles.subscriptionSkeleton}>
+          <SkeletonBlock height={210} radius={RADIUS.card} />
+          <SkeletonBlock height={124} radius={RADIUS.card} />
+          <SkeletonBlock height={54} radius={RADIUS.button} />
         </View>
       </View>
     );
@@ -86,7 +91,7 @@ export default function BusinessSubscriptionScreen() {
       <ScreenHeader title="Business Subscription" onBack={() => nav.goBack()} />
 
       {isActive ? (
-        <View style={styles.content}>
+        <View style={[styles.content, { paddingBottom: insets.bottom + SPACING.lg }]}>
           <View style={styles.activeCard}>
             <Icon name="check-circle" size={48} color={COLORS.green} />
             <Text style={styles.activeTitle}>You're a Business Seller!</Text>
@@ -115,7 +120,7 @@ export default function BusinessSubscriptionScreen() {
           </View>
         </View>
       ) : isPastDue ? (
-        <View style={styles.content}>
+        <View style={[styles.content, { paddingBottom: insets.bottom + SPACING.lg }]}>
           <View style={styles.pastDueCard}>
             <MaterialCommunityIcons name="clock-alert-outline" size={48} color={COLORS.yellow} />
             <Text style={styles.pastDueTitle}>Subscription Expired</Text>
@@ -132,7 +137,7 @@ export default function BusinessSubscriptionScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <View style={styles.content}>
+        <View style={[styles.content, { paddingBottom: insets.bottom + SPACING.lg }]}>
           <View style={styles.heroCard}>
             <View style={styles.heroIcon}>
               <Icon name="storefront" size={48} color={COLORS.coral} />
@@ -186,6 +191,7 @@ const benefitStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  subscriptionSkeleton: { flex: 1, padding: SPACING.md, paddingTop: SPACING.xxl, gap: SPACING.lg },
 
   content: { flex: 1, padding: SPACING.md, gap: 16 },
   heroCard: { alignItems: 'center', paddingVertical: 32, gap: 8 },

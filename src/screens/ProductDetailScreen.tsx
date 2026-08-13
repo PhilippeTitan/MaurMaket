@@ -456,7 +456,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                 <TouchableOpacity
                   style={styles.sellerLeft}
                   activeOpacity={0.7}
-                  onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id })}
+                  onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id, preloadedSeller: product.seller })}
                   accessibilityRole="button"
                   accessibilityLabel={t('accessibility.visitStore')}
                 >
@@ -557,7 +557,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>More from {getDisplayName(product.seller)}</Text>
                 <TouchableOpacity
-                  onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id })}
+                  onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id, preloadedSeller: product.seller })}
                   accessibilityRole="button"
                   accessibilityLabel={t('accessibility.visitStore')}
                 >

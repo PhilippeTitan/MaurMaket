@@ -286,7 +286,7 @@ export default function ExploreScreen({ navigation }: Props) {
           {item.seller && (
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('Storefront', { sellerId: item.seller_id })}
+              onPress={() => navigation.navigate('Storefront', { sellerId: item.seller_id, preloadedSeller: item.seller })}
               accessibilityRole="button"
               accessibilityLabel="view seller profile"
             >

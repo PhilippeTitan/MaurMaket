@@ -343,7 +343,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         <BackButton onPress={() => navigation.goBack()} />
         <TouchableOpacity
           style={styles.headerProfile}
-          onPress={() => { if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId }); }}
+          onPress={() => { if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId, preloadedSeller: { username: otherUserName, avatar_url: otherUserAvatar, seller_tier: otherUserTier } }); }}
           activeOpacity={0.7}
           accessibilityLabel="view profile"
           accessibilityRole="button"

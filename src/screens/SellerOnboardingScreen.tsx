@@ -276,7 +276,7 @@ export default function SellerOnboardingScreen() {
   const currentStepIdx = step === 'welcome' ? 0 : step === 'choose' ? 1 : step === 'store' ? 2 : 3;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xl }]}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xl, paddingBottom: insets.bottom + SPACING.xl }]}>
       <View style={{ alignSelf: 'flex-start', marginBottom: 16 }}>
         <BackButton onPress={() => nav.goBack()} size={24} />
       </View>
