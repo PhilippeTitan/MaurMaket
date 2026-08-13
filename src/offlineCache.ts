@@ -1,43 +1,18 @@
-import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type CacheRecord<T> = {
   value: T;
   updatedAt: number;
 };
 
-let databasePromise: Promise<any> | null = null;
-
-async function getDatabase() {
-  if (Platform.OS === 'web') return null;
-  if (!databasePromise) {
-    databasePromise = (async () => {
-      const SQLite = require('expo-sqlite');
-      const database = await SQLite.openDatabaseAsync('maurmaket-cache.db');
-      await database.execAsync(`
-        PRAGMA journal_mode = WAL;
-        CREATE TABLE IF NOT EXISTS cache_entries (
-          cache_key TEXT PRIMARY KEY NOT NULL,
-          value TEXT NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-      `);
-      return database;
-    })();
-  }
-  return databasePromise;
-}
+const CACHE_PREFIX = 'mm_snapshot:';
 
 /** Small, versioned screen snapshots. Never store authentication tokens here. */
 export async function readSnapshot<T>(key: string): Promise<CacheRecord<T> | null> {
   try {
-    const database = await getDatabase();
-    if (!database) return null;
-    const row = await database.getFirstAsync(
-      'SELECT value, updated_at FROM cache_entries WHERE cache_key = ?',
-      [key],
-    ) as { value: string; updated_at: number } | null;
-    if (!row) return null;
-    return { value: JSON.parse(row.value) as T, updatedAt: row.updated_at };
+    const raw = await AsyncStorage.getItem(`${CACHE_PREFIX}${key}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as CacheRecord<T>;
   } catch {
     return null;
   }
@@ -45,14 +20,7 @@ export async function readSnapshot<T>(key: string): Promise<CacheRecord<T> | nul
 
 export async function writeSnapshot<T>(key: string, value: T): Promise<void> {
   try {
-    const database = await getDatabase();
-    if (!database) return;
-    await database.runAsync(
-      `INSERT INTO cache_entries (cache_key, value, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT(cache_key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      [key, JSON.stringify(value), Date.now()],
-    );
+    await AsyncStorage.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify({ value, updatedAt: Date.now() }));
   } catch {
     // Caching is an enhancement. A full disk or malformed legacy cache must not block the app.
   }
@@ -61,9 +29,10 @@ export async function writeSnapshot<T>(key: string, value: T): Promise<void> {
 export async function clearUserSnapshots(userId: string | null | undefined): Promise<void> {
   if (!userId) return;
   try {
-    const database = await getDatabase();
-    if (!database) return;
-    await database.runAsync('DELETE FROM cache_entries WHERE cache_key LIKE ?', [`user:${userId}:%`]);
+    const keys = await AsyncStorage.getAllKeys();
+    const userPrefix = `${CACHE_PREFIX}user:${userId}:`;
+    const scopedKeys = keys.filter(key => key.startsWith(userPrefix));
+    if (scopedKeys.length) await AsyncStorage.multiRemove(scopedKeys);
   } catch {
     // Best effort only; the next signed-in user receives a distinct cache namespace regardless.
   }
