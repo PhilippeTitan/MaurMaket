@@ -11,6 +11,7 @@ import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
+import { network } from '../network';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -77,6 +78,10 @@ export default function PaymentsScreen() {
   }, []);
 
   const handleRequestPayout = async () => {
+    if (network.isOffline) {
+      Alert.alert(t('network.offline'), 'Payout requests require an internet connection.');
+      return;
+    }
     const amt = parseFloat(amount);
     if (!amt || amt < 100) {
       Alert.alert(t('payments.minimum'), t('payments.minWithdrawal'));

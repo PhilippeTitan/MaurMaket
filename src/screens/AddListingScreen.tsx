@@ -13,6 +13,7 @@ import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
 import { createProduct, getCategories, uploadImage, getSellerProducts } from '../api';
 import { store } from '../store';
+import { network } from '../network';
 import type { Category } from '../types';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';

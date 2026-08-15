@@ -10,9 +10,11 @@ import { store } from './src/store';
 import { COLORS, SPACING } from './src/theme';
 import { i18n } from './src/i18n';
 import { network } from './src/network';
+import { offlineQueue } from './src/offlineQueue';
 import OfflineBanner from './src/components/OfflineBanner';
 import { PaperPlaneIcon } from './src/components/UserAvatar';
-import { getMe, getFollowerCount, getFollowing } from './src/api';import { QueryClientProvider } from '@tanstack/react-query';
+import { getMe, getFollowerCount, getFollowing } from './src/api';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, invalidateUser } from './src/hooks';
 import { ToastProvider } from './src/components/Toast';
 import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/notifications';
@@ -225,6 +227,7 @@ export default function App() {
       await store.init();
       await i18n.init();
       await network.init();
+      await offlineQueue.init();
       if (store.token) {
         const hydrateSession = async () => {
           try {

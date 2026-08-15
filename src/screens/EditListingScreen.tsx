@@ -17,6 +17,7 @@ import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
 import SaleSection from '../components/SaleSection';
 import { SkeletonBlock } from '../components/Skeleton';
+import { network } from '../network';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditListing'>;
 
@@ -112,6 +113,10 @@ export default function EditListingScreen({ route, navigation }: Props) {
   };
 
   const handleSave = async () => {
+    if (network.isOffline) {
+      toast.error(t('network.offline'), 'Saving listing changes requires an internet connection.');
+      return;
+    }
     if (!name || !price) {
       toast.error(t('editListing.missingInfo'), t('editListing.fillFields'));
       return;
@@ -189,6 +194,10 @@ export default function EditListingScreen({ route, navigation }: Props) {
   };
 
   const handleDelete = () => {
+    if (network.isOffline) {
+      toast.error(t('network.offline'), 'Deleting a listing requires an internet connection.');
+      return;
+    }
     const doDelete = async () => {
       setDeleting(true);
       try {

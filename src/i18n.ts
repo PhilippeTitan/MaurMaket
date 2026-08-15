@@ -651,6 +651,7 @@ const translations: Record<Language, Record<string, string>> = {
     'network.offline': 'Offline',
     'network.cachedData': 'Showing cached data',
     'network.backOnline': 'Back online',
+    'checkout.offlinePayment': 'Payment requires internet connection. Your cart is saved.',
   },
 
   ht: {
@@ -1285,6 +1286,7 @@ const translations: Record<Language, Record<string, string>> = {
     'network.offline': 'Pa okonekte',
     'network.cachedData': 'Ap montre done ki estoke',
     'network.backOnline': 'Retounen sou entènèt',
+    'checkout.offlinePayment': 'Peman mande entènèt. Panyen ou an sove.',
   },
 
   fr: {
@@ -1919,6 +1921,7 @@ const translations: Record<Language, Record<string, string>> = {
     'network.offline': 'Hors ligne',
     'network.cachedData': 'Affichage des données en cache',
     'network.backOnline': 'De retour en ligne',
+    'checkout.offlinePayment': 'Le paiement nécessite une connexion Internet. Votre panier est sauvegardé.',
   },
 };
 

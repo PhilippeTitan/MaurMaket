@@ -2,6 +2,14 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import type { Conversation, Product } from './types';
 import { network } from './network';
+import { offlineQueue } from './offlineQueue';
+
+export class OfflineError extends Error {
+  constructor(message = 'No internet connection') {
+    super(message);
+    this.name = 'OfflineError';
+  }
+}
 
 const getWebApiBase = () => {
   if (typeof window === 'undefined') return 'http://localhost:4000/api';
@@ -64,6 +72,10 @@ async function request<T = Record<string, unknown>>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  if (network.isOffline) {
+    throw new OfflineError();
+  }
+
   const token = await getToken();
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> || {}),
@@ -93,6 +105,16 @@ async function request<T = Record<string, unknown>>(
       throw new Error(`${msg}${detail}`);
     }
     return data as T;
+  } catch (err: any) {
+    if (err instanceof OfflineError) throw err;
+    if (
+      err?.name === 'AbortError' ||
+      err?.message?.includes('Network request failed') ||
+      err?.message?.includes('Failed to fetch')
+    ) {
+      throw new OfflineError();
+    }
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
@@ -298,8 +320,17 @@ export const getEscrowStatus = (orderId: string) =>
   request(`/orders/${orderId}/escrow`);
 
 // Feed
-export const trackFeedEvent = (productId: string, eventType: string, durationMs?: number) =>
-  request('/feed/event', { method: 'POST', body: JSON.stringify({ productId, eventType, durationMs }) });
+export const trackFeedEvent = (productId: string, eventType: string, durationMs?: number, isSync = false) => {
+  if (network.isOffline && !isSync) {
+    offlineQueue.enqueue({ type: 'feed_event', productId, eventType, dwellTimeMs: durationMs });
+    return Promise.resolve({ tracked: true, queued: true });
+  }
+  return request('/feed/event', { method: 'POST', body: JSON.stringify({ productId, eventType, durationMs }) }).catch(() => {
+    if (!isSync) {
+      offlineQueue.enqueue({ type: 'feed_event', productId, eventType, dwellTimeMs: durationMs });
+    }
+  });
+};
 
 // Seller
 export const getSellerProducts = () => request('/seller/products').then(normalizeProductsResponse);
@@ -326,8 +357,13 @@ export const checkPaymentStatus = (orderId: string) =>
   request(`/payments/${orderId}/status`);
 
 // Wishlist
-export const toggleWishlist = (productId: string) =>
-  request(`/wishlist/${productId}`, { method: 'POST' });
+export const toggleWishlist = (productId: string, isSync = false) => {
+  if (network.isOffline && !isSync) {
+    offlineQueue.enqueue({ type: 'wishlist_toggle', productId });
+    return Promise.resolve({ success: true, queued: true });
+  }
+  return request(`/wishlist/${productId}`, { method: 'POST' });
+};
 
 export const getWishlist = async () => {
   const data = await request('/wishlist');
@@ -341,8 +377,15 @@ export const checkWishlistBatch = (ids: string[]) =>
   request(`/wishlist/status?ids=${ids.join(',')}`);
 
 // Follows
-export const toggleFollow = (sellerId: string) =>
-  request(`/follow/${sellerId}`, { method: 'POST' });
+export const toggleFollow = (sellerId: string, isSync = false) => {
+  if (network.isOffline && !isSync) {
+    offlineQueue.enqueue({ type: 'follow_toggle', sellerId });
+    return Promise.resolve({ success: true, queued: true });
+  }
+  return request(`/follow/${sellerId}`, { method: 'POST' });
+};
+
+export const toggleFollowing = toggleFollow;
 
 export const getFollowing = () => request('/following');
 

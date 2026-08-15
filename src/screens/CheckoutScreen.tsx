@@ -19,15 +19,14 @@ import SalePriceTag from '../components/SalePriceTag';
 import { notifySuccess, notifyError } from '../haptics';
 import { useToast } from '../components/Toast';
 import LocationPicker from '../components/LocationPicker';
+import { network } from '../network';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
-
 type DeliveryMethod = 'delivery' | 'meetup';
 
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
-
   const cart = store.cart;
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
   const [name, setName] = useState('');
@@ -107,6 +106,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const sellerCount = sellerGroups.length;
 
   const handleCheckout = async () => {
+    if (network.isOffline) {
+      toast.info(t('network.offline'), t('checkout.offlinePayment'));
+      return;
+    }
+
     if (cart.length === 0) {
       toast.info(t('checkout.cartEmpty'), t('checkout.addBeforeCheckout'));
       navigation.goBack();
