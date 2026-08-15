@@ -648,6 +648,9 @@ const translations: Record<Language, Record<string, string>> = {
     'accessibility.phone': 'phone',
     'accessibility.createAccount': 'create account',
     'accessibility.goToLogin': 'go to sign in',
+    'network.offline': 'Offline',
+    'network.cachedData': 'Showing cached data',
+    'network.backOnline': 'Back online',
   },
 
   ht: {
@@ -1279,6 +1282,9 @@ const translations: Record<Language, Record<string, string>> = {
     'accessibility.phone': 'telefòn',
     'accessibility.createAccount': 'kreye kont',
     'accessibility.goToLogin': 'ale nan konekte',
+    'network.offline': 'Pa okonekte',
+    'network.cachedData': 'Ap montre done ki estoke',
+    'network.backOnline': 'Retounen sou entènèt',
   },
 
   fr: {
@@ -1910,6 +1916,9 @@ const translations: Record<Language, Record<string, string>> = {
     'accessibility.phone': 'téléphone',
     'accessibility.createAccount': 'créer un compte',
     'accessibility.goToLogin': 'aller à la connexion',
+    'network.offline': 'Hors ligne',
+    'network.cachedData': 'Affichage des données en cache',
+    'network.backOnline': 'De retour en ligne',
   },
 };
 

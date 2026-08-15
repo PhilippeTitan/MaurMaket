@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import type { Conversation, Product } from './types';
+import { network } from './network';
 
 const getWebApiBase = () => {
   if (typeof window === 'undefined') return 'http://localhost:4000/api';
@@ -172,7 +173,7 @@ const normalizeProductsResponse = (data: unknown) => {
 };
 
 // Auth
-export const signup = (fullName: string, email: string, password: string, phone: string, dateOfBirth: string) =>
+export const signup = (fullName: string, email: string, password: string, phone: string, dateOfBirth?: string) =>
   request('/auth/signup', { method: 'POST', body: JSON.stringify({ fullName, email, password, phone, dateOfBirth }) });
 
 export const login = (email: string, password: string) =>

@@ -23,6 +23,7 @@ import { SkeletonBlock } from '../components/Skeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string };
+
 export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
@@ -33,8 +34,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [offerDraftVisible, setOfferDraftVisible] = useState(Boolean(draftOffer));
-  const [profileMenuVisible, setProfileMenuVisible] = useState(false);
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const [, setProfileMenuVisible] = useState(false);
+  const [, setHeaderHeight] = useState(0);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -265,56 +266,188 @@ export default function ChatScreen({ route, navigation }: Props) {
       const offerData = item.offer_data as { productId: string; productName: string; offeredPrice: number; listPrice: number; status: 'pending' | 'accepted' | 'declined' | 'countered'; negotiationRound?: number } | undefined;
       if (!offerData) return null;
       const isPending = offerData.status === 'pending';
+      const isAccepted = offerData.status === 'accepted';
+      const isDeclined = offerData.status === 'declined';
       const isCountered = offerData.status === 'countered';
       const sellerCanRespond = isPending && !isMe;
       const buyerCanRespond = isCountered && isMe;
+      const discountPct = offerData.listPrice && offerData.listPrice > offerData.offeredPrice
+        ? Math.round(((offerData.listPrice - offerData.offeredPrice) / offerData.listPrice) * 100)
+        : null;
+
+      const handleCheckoutOffer = () => {
+        store.addToCart({
+          id: offerData.productId,
+          name: offerData.productName,
+          price: offerData.offeredPrice,
+          stock: 1,
+          quantity: 1,
+        } as any);
+        navigation.navigate('Cart');
+      };
+
       return (
         <View style={[styles.offerMsgWrap, isMe ? styles.offerMsgWrapMe : styles.offerMsgWrapThem]}>
-          <View style={styles.offerMsgCard}>
-            <View style={styles.offerMsgIconWrap}>
-              <Icon name="sale-tag" size={16} color={COLORS.coral} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.offerMsgEyebrow}>{isMe ? 'Your offer' : 'Offer received'}</Text>
-              <Text style={styles.offerMsgProduct} numberOfLines={1}>{offerData.productName}</Text>
-              <View style={styles.offerMsgPriceRow}>
-                <Text style={styles.offerMsgPrice}>{formatPrice(offerData.offeredPrice)} G</Text>
-                <Text style={styles.offerMsgListPrice}>{formatPrice(offerData.listPrice)} G</Text>
+          <View style={[
+            styles.offerMsgCard,
+            isAccepted && styles.offerMsgCardAccepted,
+            isDeclined && styles.offerMsgCardDeclined,
+            isCountered && styles.offerMsgCardCountered,
+          ]}>
+            {/* Header Stripe */}
+            <View style={styles.offerMsgHeader}>
+              <View style={styles.offerMsgTypeWrap}>
+                <Icon name="sale-tag" size={14} color={isAccepted ? '#1D9E75' : isCountered ? '#3B82F6' : COLORS.coral} />
+                <Text style={styles.offerMsgEyebrow}>
+                  {isMe ? 'Your Offer' : 'Offer Received'}
+                </Text>
               </View>
-              <Text style={[
-                styles.offerMsgStatus,
-                offerData.status === 'accepted' && styles.offerMsgStatusAccepted,
-                offerData.status === 'declined' && styles.offerMsgStatusDeclined,
+              <View style={[
+                styles.offerStatusBadge,
+                isAccepted && styles.offerStatusBadgeAccepted,
+                isDeclined && styles.offerStatusBadgeDeclined,
+                isCountered && styles.offerStatusBadgeCountered,
+                isPending && styles.offerStatusBadgePending,
               ]}>
-                {offerData.status === 'pending' ? 'Waiting for response' : offerData.status === 'accepted' ? 'Accepted' : offerData.status === 'declined' ? 'Declined' : `Countered${offerData.negotiationRound ? ` (${offerData.negotiationRound}/3)` : ''}`}
-              </Text>
+                <Text style={[
+                  styles.offerStatusText,
+                  isAccepted && styles.offerStatusTextAccepted,
+                  isDeclined && styles.offerStatusTextDeclined,
+                  isCountered && styles.offerStatusTextCountered,
+                  isPending && styles.offerStatusTextPending,
+                ]}>
+                  {isAccepted ? '✓ Accepted' : isDeclined ? '✕ Declined' : isCountered ? `🔄 Counter (${offerData.negotiationRound || 1}/3)` : '⏳ Pending'}
+                </Text>
+              </View>
             </View>
+
+            <View style={styles.offerMsgDivider} />
+
+            {/* Product & Price Details */}
+            <View style={styles.offerMsgBody}>
+              <View style={styles.offerMsgProductIconWrap}>
+                <MaterialCommunityIcons name="shopping-outline" size={20} color={COLORS.coral} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.offerMsgProduct} numberOfLines={2}>{offerData.productName}</Text>
+                <View style={styles.offerMsgPriceRow}>
+                  <Text style={styles.offerMsgPrice}>G {formatPrice(offerData.offeredPrice)}</Text>
+                  {offerData.listPrice && offerData.listPrice > offerData.offeredPrice ? (
+                    <Text style={styles.offerMsgListPrice}>G {formatPrice(offerData.listPrice)}</Text>
+                  ) : null}
+                  {discountPct !== null && discountPct > 0 && (
+                    <View style={styles.offerDiscountPill}>
+                      <Text style={styles.offerDiscountText}>-{discountPct}%</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+
+            {/* Action Buttons for Seller */}
+            {sellerCanRespond && (
+              <View style={styles.offerMsgActions}>
+                <TouchableOpacity
+                  style={styles.offerMsgDecline}
+                  onPress={() => handleOfferRespond(item.id, 'declined')}
+                  accessibilityLabel="decline offer"
+                  accessibilityRole="button"
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.offerMsgDeclineText}>Decline</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.offerMsgCounter}
+                  onPress={() => { setCounteringMessageId(item.id); setCounterPrice(String(offerData.offeredPrice || offerData.listPrice)); }}
+                  accessibilityLabel="counter offer"
+                  accessibilityRole="button"
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.offerMsgCounterText}>Counter</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.offerMsgAccept}
+                  onPress={() => handleOfferRespond(item.id, 'accepted')}
+                  accessibilityLabel="accept offer"
+                  accessibilityRole="button"
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.offerMsgAcceptText}>Accept</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Counter Price Entry Form */}
+            {counteringMessageId === item.id && (
+              <View style={styles.counterEntry}>
+                <View style={styles.counterInputWrap}>
+                  <Text style={styles.counterCurrencyPrefix}>G</Text>
+                  <TextInput
+                    value={counterPrice}
+                    onChangeText={setCounterPrice}
+                    keyboardType="decimal-pad"
+                    style={styles.counterInput}
+                    placeholder="Counter price"
+                    placeholderTextColor={COLORS.text2}
+                    accessibilityLabel="counter offer price"
+                    autoFocus
+                  />
+                </View>
+                <TouchableOpacity
+                  style={styles.counterSubmitBtn}
+                  onPress={() => handleCounterOffer(item.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel="send counter offer"
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.counterSubmitText}>Send</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Action Buttons for Buyer Counter */}
+            {buyerCanRespond && (
+              <View style={styles.offerMsgActions}>
+                <TouchableOpacity
+                  style={styles.offerMsgDecline}
+                  onPress={() => handleOfferRespond(item.id, 'declined')}
+                  accessibilityLabel="decline counter offer"
+                  accessibilityRole="button"
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.offerMsgDeclineText}>Decline</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.offerMsgAccept}
+                  onPress={() => handleOfferRespond(item.id, 'accepted')}
+                  accessibilityLabel="accept counter offer"
+                  accessibilityRole="button"
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.offerMsgAcceptText}>Accept Counter</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Instant Checkout Button for Buyer when Accepted */}
+            {isAccepted && isMe && (
+              <TouchableOpacity
+                style={styles.offerCheckoutBtn}
+                onPress={handleCheckoutOffer}
+                accessibilityLabel="checkout now"
+                accessibilityRole="button"
+                activeOpacity={0.8}
+              >
+                <MaterialCommunityIcons name="lightning-bolt" size={16} color={COLORS.white} />
+                <Text style={styles.offerCheckoutBtnText}>
+                  Checkout Now • G {formatPrice(offerData.offeredPrice)}
+                </Text>
+                <MaterialCommunityIcons name="arrow-right" size={16} color={COLORS.white} />
+              </TouchableOpacity>
+            )}
+
+            <Text style={styles.offerMsgTime}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
           </View>
-          {sellerCanRespond && (
-            <View style={styles.offerMsgActions}>
-              <TouchableOpacity style={styles.offerMsgDecline} onPress={() => handleOfferRespond(item.id, 'declined')} accessibilityLabel="decline offer" accessibilityRole="button">
-                <Text style={styles.offerMsgDeclineText}>Decline</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.offerMsgAccept} onPress={() => handleOfferRespond(item.id, 'accepted')} accessibilityLabel="accept offer" accessibilityRole="button">
-                <Text style={styles.offerMsgAcceptText}>Accept</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.offerMsgCounter} onPress={() => { setCounteringMessageId(item.id); setCounterPrice(String(offerData.listPrice)); }} accessibilityLabel="counter offer" accessibilityRole="button">
-                <Text style={styles.offerMsgCounterText}>Counter</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          {counteringMessageId === item.id && (
-            <View style={styles.counterEntry}>
-              <TextInput value={counterPrice} onChangeText={setCounterPrice} keyboardType="decimal-pad" style={styles.counterInput} placeholder="Counter price" placeholderTextColor={COLORS.text2} accessibilityLabel="counter offer price" />
-              <TouchableOpacity style={styles.offerMsgAccept} onPress={() => handleCounterOffer(item.id)} accessibilityRole="button" accessibilityLabel="send counter offer"><Text style={styles.offerMsgAcceptText}>Send</Text></TouchableOpacity>
-            </View>
-          )}
-          {buyerCanRespond && (
-            <View style={styles.offerMsgActions}>
-              <TouchableOpacity style={styles.offerMsgDecline} onPress={() => handleOfferRespond(item.id, 'declined')} accessibilityLabel="decline counter offer" accessibilityRole="button"><Text style={styles.offerMsgDeclineText}>Decline</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.offerMsgAccept} onPress={() => handleOfferRespond(item.id, 'accepted')} accessibilityLabel="accept counter offer" accessibilityRole="button"><Text style={styles.offerMsgAcceptText}>Accept counter</Text></TouchableOpacity>
-            </View>
-          )}
         </View>
       );
     }
@@ -338,194 +471,194 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-    <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
-        <BackButton onPress={() => navigation.goBack()} />
-        <TouchableOpacity
-          style={styles.headerProfile}
-          onPress={() => { if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId, preloadedSeller: { username: otherUserName, avatar_url: otherUserAvatar, seller_tier: otherUserTier } }); }}
-          activeOpacity={0.7}
-          accessibilityLabel="view profile"
-          accessibilityRole="button"
-        >
-          <UserAvatar
-            seller={{ avatar_url: otherUserAvatar, full_name: otherUserName, seller_tier: otherUserTier } as any}
-            size={34}
+      <View style={styles.container}>
+        <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
+          <BackButton onPress={() => navigation.goBack()} />
+          <TouchableOpacity
+            style={styles.headerProfile}
+            onPress={() => { if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId, preloadedSeller: { username: otherUserName, avatar_url: otherUserAvatar, seller_tier: otherUserTier } }); }}
+            activeOpacity={0.7}
+            accessibilityLabel="view profile"
+            accessibilityRole="button"
+          >
+            <UserAvatar
+              seller={{ avatar_url: otherUserAvatar, full_name: otherUserName, seller_tier: otherUserTier } as any}
+              size={34}
+            />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
+              <View style={styles.headerOnlineRow}>
+                <View style={styles.onlineDot} />
+                <Text style={styles.onlineText}>Active now</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerMore} onPress={() => setProfileMenuVisible(true)} accessibilityLabel="more options" accessibilityRole="button">
+            <MaterialCommunityIcons name="dots-vertical" size={18} color={COLORS.text2} />
+          </TouchableOpacity>
+        </View>
+
+        {(() => {
+          const activeOffer = messages.find(m => m.message_type === 'offer' && m.offer_data && ((m.offer_data as any).status === 'pending' || (m.offer_data as any).status === 'countered'));
+          if (!activeOffer || !activeOffer.offer_data) return null;
+          const od = activeOffer.offer_data as any;
+          const isCountered = od.status === 'countered';
+          return (
+            <TouchableOpacity style={[styles.offerReminderBanner, isCountered && styles.offerReminderBannerCountered]} onPress={() => {
+              setSellerItemsVisible(true);
+            }} accessibilityLabel={`active offer: G ${od.offeredPrice} for ${od.productName}`} accessibilityRole="button">
+              <Icon name="sale-tag" size={16} color={COLORS.white} />
+              <Text style={styles.offerReminderText} numberOfLines={1}>{isCountered ? 'Counter offer' : 'Your offer'}: G {formatPrice(od.offeredPrice)} for {od.productName}</Text>
+              <Text style={styles.offerReminderAction}>View</Text>
+            </TouchableOpacity>
+          );
+        })()}
+
+        {loading ? (
+          <View style={{ flex: 1, padding: SPACING.md, gap: 14, justifyContent: 'flex-end' }}>
+            {[140, 180, 100].map((w, i) => (
+              <View key={`t${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-start' }}>
+                <SkeletonBlock width={24} height={24} radius={12} />
+                <SkeletonBlock width={w} height={36} radius={16} />
+              </View>
+            ))}
+            {[160, 120].map((w, i) => (
+              <View key={`m${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-end' }}>
+                <SkeletonBlock width={w} height={36} radius={16} style={{ backgroundColor: COLORS.coral + '30' }} />
+              </View>
+            ))}
+            {[200, 90].map((w, i) => (
+              <View key={`t2${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-start' }}>
+                <SkeletonBlock width={24} height={24} radius={12} />
+                <SkeletonBlock width={w} height={36} radius={16} />
+              </View>
+            ))}
+          </View>
+        ) : (
+          <FlatList
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.messageList}
+            ref={listRef}
+            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+            onScroll={({ nativeEvent }) => {
+              const distanceFromBottom = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y;
+              stickToLatest.current = distanceFromBottom < 96;
+              if (nativeEvent.contentOffset.y < 72 && hasMore && !loadingOlder) {
+                const nextPage = page + 1;
+                setPage(nextPage);
+                fetchMessages(nextPage, true);
+              }
+            }}
+            scrollEventThrottle={16}
+            ListHeaderComponent={
+              loadingOlder ? <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} /> : null
+            }
+            onContentSizeChange={() => {
+              if (listRef.current && stickToLatest.current) {
+                listRef.current.scrollToEnd({ animated: false });
+              }
+            }}
           />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
-            <View style={styles.headerOnlineRow}>
-              <View style={styles.onlineDot} />
-              <Text style={styles.onlineText}>Active now</Text>
+        )}
+
+        {draftOffer && offerDraftVisible && (
+          <View style={styles.offerDock}>
+            <View style={styles.offerIcon}>
+              <Icon name="sale-tag" size={18} color={COLORS.white} />
             </View>
+            <View style={styles.offerBody}>
+              <Text style={styles.offerEyebrow}>{t('chat.negotiationDraft')}</Text>
+              <Text style={styles.offerTitle} numberOfLines={1}>{draftOffer.productName}</Text>
+              <View style={styles.offerChips}>
+                {[0.85, 0.9, 0.95].map(multiplier => {
+                  const price = Math.max(1, Math.round(draftOffer.listPrice * multiplier));
+                  return (
+                    <TouchableOpacity
+                      key={multiplier}
+                      style={styles.offerChip}
+                      onPress={() => handleSendOffer(price)}
+                      disabled={sending}
+                      accessibilityLabel={`send offer rs ${price}`}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.offerChipText}>{formatPrice(price)} G</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => setOfferDraftVisible(false)} style={styles.offerClose} accessibilityLabel="close offer" accessibilityRole="button">
+              <Icon name="close" size={16} color={COLORS.text2} />
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.headerMore} accessibilityLabel="more options" accessibilityRole="button">
-          <MaterialCommunityIcons name="dots-vertical" size={18} color={COLORS.text2} />
-        </TouchableOpacity>
-      </View>
+        )}
 
-      {(() => {
-        const activeOffer = messages.find(m => m.message_type === 'offer' && m.offer_data && ((m.offer_data as any).status === 'pending' || (m.offer_data as any).status === 'countered'));
-        if (!activeOffer || !activeOffer.offer_data) return null;
-        const od = activeOffer.offer_data as any;
-        const isCountered = od.status === 'countered';
-        return (
-          <TouchableOpacity style={[styles.offerReminderBanner, isCountered && styles.offerReminderBannerCountered]} onPress={() => {
-            setSellerItemsVisible(true);
-          }} accessibilityLabel={`active offer: G ${od.offeredPrice} for ${od.productName}`} accessibilityRole="button">
-            <Icon name="sale-tag" size={16} color={COLORS.white} />
-            <Text style={styles.offerReminderText} numberOfLines={1}>{isCountered ? 'Counter offer' : 'Your offer'}: G {formatPrice(od.offeredPrice)} for {od.productName}</Text>
-            <Text style={styles.offerReminderAction}>View</Text>
-          </TouchableOpacity>
-        );
-      })()}
+        {otherTyping && (
+          <View style={styles.typingRow}>
+            <Text style={styles.typingText}>{otherUserName || 'They'} is typing…</Text>
+          </View>
+        )}
 
-      {loading ? (
-        <View style={{ flex: 1, padding: SPACING.md, gap: 14, justifyContent: 'flex-end' }}>
-          {/* Their messages — left aligned */}
-          {[140, 180, 100].map((w, i) => (
-            <View key={`t${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-start' }}>
-              <SkeletonBlock width={24} height={24} radius={12} />
-              <SkeletonBlock width={w} height={36} radius={16} />
-            </View>
-          ))}
-          {/* My messages — right aligned */}
-          {[160, 120].map((w, i) => (
-            <View key={`m${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-end' }}>
-              <SkeletonBlock width={w} height={36} radius={16} style={{ backgroundColor: COLORS.coral + '30' }} />
-            </View>
-          ))}
-          {[200, 90].map((w, i) => (
-            <View key={`t2${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-start' }}>
-              <SkeletonBlock width={24} height={24} radius={12} />
-              <SkeletonBlock width={w} height={36} radius={16} />
-            </View>
-          ))}
+        <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
+          <View style={styles.inputRow}>
+            <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending} accessibilityLabel="attach photo" accessibilityRole="button">
+              <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.text2} />
+            </TouchableOpacity>
+            <TextInput
+              style={styles.input}
+              value={text}
+              onChangeText={(t) => {
+                setText(t);
+                if (t.trim() && !typingCooldownRef.current) {
+                  typingCooldownRef.current = true;
+                  sendTyping(conversationId).catch(() => {});
+                  setTimeout(() => { typingCooldownRef.current = false; }, 3000);
+                }
+              }}
+              placeholder={t('chat.placeholder')}
+              placeholderTextColor={COLORS.text2}
+              multiline
+              accessibilityLabel="message input"
+            />
+            <TouchableOpacity style={styles.offerBtn} onPress={() => {
+              if (draftOffer) {
+                setOfferDraftVisible(true);
+              } else if (otherUserId) {
+                setSellerItemsVisible(true);
+              }
+            }} accessibilityLabel="make an offer" accessibilityRole="button">
+              <Icon name="sale-tag" size={20} color={COLORS.coral} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.sendBtn, { opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()} accessibilityLabel="send message" accessibilityRole="button">
+              <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
+            </TouchableOpacity>
+          </View>
         </View>
-      ) : (
-        <FlatList
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.messageList}
-          ref={listRef}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-          onScroll={({ nativeEvent }) => {
-            const distanceFromBottom = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y;
-            stickToLatest.current = distanceFromBottom < 96;
-            if (nativeEvent.contentOffset.y < 72 && hasMore && !loadingOlder) {
-              const nextPage = page + 1;
-              setPage(nextPage);
-              fetchMessages(nextPage, true);
-            }
-          }}
-          scrollEventThrottle={16}
-          ListHeaderComponent={
-            loadingOlder ? <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} /> : null
-          }
-          onContentSizeChange={() => {
-            if (listRef.current && stickToLatest.current) {
-              listRef.current.scrollToEnd({ animated: false });
-            }
-          }}
+
+        <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
+          <Pressable style={styles.imagePreview} onPress={() => setPreviewImage(null)} accessibilityLabel="close photo" accessibilityRole="button">
+            {previewImage && <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="contain" />}
+          </Pressable>
+        </Modal>
+
+        <SellerItemsSheet
+          visible={sellerItemsVisible}
+          sellerId={otherUserId || ''}
+          sellerName={otherUserName || 'Seller'}
+          onClose={() => setSellerItemsVisible(false)}
+          onSelectItem={(item) => { setSellerItemsVisible(false); setOfferBuilderItem(item); }}
         />
-      )}
 
-      {draftOffer && offerDraftVisible && (
-        <View style={styles.offerDock}>
-          <View style={styles.offerIcon}>
-            <Icon name="sale-tag" size={18} color={COLORS.white} />
-          </View>
-          <View style={styles.offerBody}>
-            <Text style={styles.offerEyebrow}>{t('chat.negotiationDraft')}</Text>
-            <Text style={styles.offerTitle} numberOfLines={1}>{draftOffer.productName}</Text>
-            <View style={styles.offerChips}>
-              {[0.85, 0.9, 0.95].map(multiplier => {
-                const price = Math.max(1, Math.round(draftOffer.listPrice * multiplier));
-                return (
-                  <TouchableOpacity
-                    key={multiplier}
-                    style={styles.offerChip}
-                    onPress={() => handleSendOffer(price)}
-                    disabled={sending}
-                    accessibilityLabel={`send offer rs ${price}`}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.offerChipText}>{formatPrice(price)} G</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-          <TouchableOpacity onPress={() => setOfferDraftVisible(false)} style={styles.offerClose} accessibilityLabel="close offer" accessibilityRole="button">
-            <Icon name="close" size={16} color={COLORS.text2} />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {otherTyping && (
-        <View style={styles.typingRow}>
-          <Text style={styles.typingText}>{otherUserName || 'They'} is typing…</Text>
-        </View>
-      )}
-
-      <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
-        <View style={styles.inputRow}>
-        <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending} accessibilityLabel="attach photo" accessibilityRole="button">
-          <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.text2} />
-        </TouchableOpacity>
-        <TextInput
-          style={styles.input}
-          value={text}
-          onChangeText={(t) => {
-            setText(t);
-            if (t.trim() && !typingCooldownRef.current) {
-              typingCooldownRef.current = true;
-              sendTyping(conversationId).catch(() => {});
-              setTimeout(() => { typingCooldownRef.current = false; }, 3000);
-            }
-          }}
-          placeholder={t('chat.placeholder')}
-          placeholderTextColor={COLORS.text2}
-          multiline
-          accessibilityLabel="message input"
-         
+        <OfferBuilder
+          visible={!!offerBuilderItem}
+          item={offerBuilderItem}
+          conversationId={conversationId}
+          onClose={() => setOfferBuilderItem(null)}
+          onSent={() => { setOfferBuilderItem(null); fetchMessages(); }}
         />
-        <TouchableOpacity style={styles.offerBtn} onPress={() => {
-          if (draftOffer) {
-            setOfferDraftVisible(true);
-          } else if (otherUserId) {
-            setSellerItemsVisible(true);
-          }
-        }} accessibilityLabel="make an offer" accessibilityRole="button">
-          <Icon name="sale-tag" size={20} color={COLORS.coral} />
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.sendBtn, { opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()} accessibilityLabel="send message" accessibilityRole="button">
-          <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
-        </TouchableOpacity>
-        </View>
       </View>
-      <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
-        <Pressable style={styles.imagePreview} onPress={() => setPreviewImage(null)} accessibilityLabel="close photo" accessibilityRole="button">
-          {previewImage && <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="contain" />}
-        </Pressable>
-      </Modal>
-      <SellerItemsSheet
-        visible={sellerItemsVisible}
-        sellerId={otherUserId || ''}
-        sellerName={otherUserName || 'Seller'}
-        onClose={() => setSellerItemsVisible(false)}
-        onSelectItem={(item) => { setSellerItemsVisible(false); setOfferBuilderItem(item); }}
-      />
-      <OfferBuilder
-        visible={!!offerBuilderItem}
-        item={offerBuilderItem}
-        conversationId={conversationId}
-        onClose={() => setOfferBuilderItem(null)}
-        onSent={() => { setOfferBuilderItem(null); fetchMessages(); }}
-      />
-    </View>
     </KeyboardAvoidingView>
   );
 }
@@ -538,68 +671,285 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.bg,
   },
   headerProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  headerName: { fontSize: 16, fontWeight: '700', color: COLORS.text },
   headerOnlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
-  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.green },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00C853' },
   onlineText: { fontSize: 11, color: COLORS.text2 },
-  headerMore: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  headerMore: { padding: 8, borderRadius: 20 },
   offerReminderBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: COLORS.coral, marginHorizontal: SPACING.md, marginTop: SPACING.sm,
-    borderRadius: RADIUS.card, paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: 'rgba(216,90,48,0.15)', borderWidth: 1, borderColor: COLORS.coral,
+    borderRadius: RADIUS.card, marginHorizontal: SPACING.md, marginTop: SPACING.xs,
+    paddingVertical: 8, paddingHorizontal: 12,
   },
-  offerReminderBannerCountered: { backgroundColor: COLORS.blue },
-  offerReminderText: { flex: 1, fontSize: 13, color: COLORS.white, fontWeight: '600' },
-  offerReminderAction: { fontSize: 12, color: COLORS.white, fontWeight: '700', textTransform: 'uppercase' },
-  messageList: { padding: SPACING.md, paddingBottom: 8 },
+  offerReminderBannerCountered: {
+    backgroundColor: 'rgba(59,130,246,0.15)',
+    borderColor: COLORS.blue,
+  },
+  offerReminderText: { flex: 1, fontSize: 12, color: COLORS.text, fontWeight: '600' },
+  offerReminderAction: { fontSize: 12, color: COLORS.coral, fontWeight: '700' },
+  messageList: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   bubble: {
-    maxWidth: '75%', padding: 10, borderRadius: RADIUS.media, marginBottom: 6,
+    maxWidth: '78%', paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: RADIUS.row, marginBottom: 8,
   },
-  bubbleMe: { alignSelf: 'flex-end', backgroundColor: COLORS.coral, borderBottomRightRadius: 4 },
-  bubbleThem: { alignSelf: 'flex-start', backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderBottomLeftRadius: 4 },
-  bubbleText: { fontSize: 14, color: COLORS.text },
+  bubbleMe: {
+    alignSelf: 'flex-end', backgroundColor: COLORS.coral,
+    borderBottomRightRadius: 4,
+  },
+  bubbleThem: {
+    alignSelf: 'flex-start', backgroundColor: COLORS.surface,
+    borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border,
+  },
+  bubbleImage: { padding: 4, backgroundColor: 'transparent', borderWidth: 0 },
+  bubbleText: { fontSize: 15, color: COLORS.text, lineHeight: 20 },
   bubbleTextMe: { color: COLORS.white },
-  bubbleImage: { padding: 4 },
-  chatImage: { width: 200, height: 200, borderRadius: RADIUS.media },
-  bubbleTime: { fontSize: 10, color: COLORS.text2, marginTop: 2, alignSelf: 'flex-end' },
+  bubbleTime: { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 4, alignSelf: 'flex-end' },
+  chatImage: { width: 220, height: 220, borderRadius: RADIUS.card },
   bubbleTimeImage: { marginTop: 4 },
   messageState: { fontSize: 10, color: COLORS.text2, marginTop: 3, alignSelf: 'flex-end' },
   messageFailed: { fontSize: 10, color: COLORS.coral, marginTop: 3, alignSelf: 'flex-end', fontWeight: '700' },
-  offerMsgWrap: { maxWidth: '78%', marginBottom: 8 },
+
+  /* Rich Offer Message Card */
+  offerMsgWrap: { maxWidth: '88%', marginBottom: 12 },
   offerMsgWrapMe: { alignSelf: 'flex-end' },
   offerMsgWrapThem: { alignSelf: 'flex-start' },
   offerMsgCard: {
-    flexDirection: 'row', gap: 10, padding: 12,
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.media,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.card,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  offerMsgIconWrap: {
-    width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(216,90,48,0.15)',
+  offerMsgCardAccepted: {
+    borderColor: 'rgba(29,158,117,0.4)',
+    backgroundColor: 'rgba(29,158,117,0.06)',
   },
-  offerMsgEyebrow: { fontSize: 10, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase' },
-  offerMsgProduct: { fontSize: 13, color: COLORS.text, fontWeight: '700', marginTop: 2 },
-  offerMsgPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4 },
-  offerMsgPrice: { fontSize: 16, color: COLORS.coral, fontWeight: '700' },
-  offerMsgListPrice: { fontSize: 12, color: COLORS.text2, textDecorationLine: 'line-through' },
-  offerMsgStatus: { fontSize: 11, color: COLORS.text2, marginTop: 4 },
-  offerMsgStatusAccepted: { color: '#1D9E75', fontWeight: '700' },
-  offerMsgStatusDeclined: { color: '#E24B4A', fontWeight: '700' },
-  offerMsgActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  offerMsgCardDeclined: {
+    borderColor: 'rgba(226,75,74,0.3)',
+    backgroundColor: 'rgba(226,75,74,0.04)',
+  },
+  offerMsgCardCountered: {
+    borderColor: 'rgba(59,130,246,0.35)',
+    backgroundColor: 'rgba(59,130,246,0.05)',
+  },
+  offerMsgHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  offerMsgTypeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  offerMsgEyebrow: {
+    fontSize: 11,
+    color: COLORS.text2,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  offerStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface2,
+  },
+  offerStatusBadgePending: {
+    backgroundColor: 'rgba(245,166,35,0.15)',
+    borderWidth: 1,
+    borderColor: '#F5A623',
+  },
+  offerStatusBadgeAccepted: {
+    backgroundColor: 'rgba(29,158,117,0.15)',
+    borderWidth: 1,
+    borderColor: '#1D9E75',
+  },
+  offerStatusBadgeDeclined: {
+    backgroundColor: 'rgba(226,75,74,0.15)',
+    borderWidth: 1,
+    borderColor: '#E24B4A',
+  },
+  offerStatusBadgeCountered: {
+    backgroundColor: 'rgba(59,130,246,0.15)',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  offerStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.text2,
+  },
+  offerStatusTextPending: { color: '#F5A623' },
+  offerStatusTextAccepted: { color: '#1D9E75' },
+  offerStatusTextDeclined: { color: '#E24B4A' },
+  offerStatusTextCountered: { color: '#3B82F6' },
+  offerMsgDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: 10,
+  },
+  offerMsgBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  offerMsgProductIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(216,90,48,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offerMsgProduct: {
+    fontSize: 14,
+    color: COLORS.text,
+    fontWeight: '700',
+  },
+  offerMsgPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginTop: 4,
+  },
+  offerMsgPrice: {
+    fontSize: 16,
+    color: COLORS.coral,
+    fontWeight: '800',
+  },
+  offerMsgListPrice: {
+    fontSize: 12,
+    color: COLORS.text2,
+    textDecorationLine: 'line-through',
+  },
+  offerDiscountPill: {
+    backgroundColor: 'rgba(29,158,117,0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  offerDiscountText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#1D9E75',
+  },
+  offerMsgActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
   offerMsgDecline: {
-    flex: 1, paddingVertical: 8, borderRadius: RADIUS.pill, alignItems: 'center',
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: RADIUS.pill,
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  offerMsgDeclineText: { fontSize: 12, color: COLORS.text2, fontWeight: '700' },
+  offerMsgDeclineText: {
+    fontSize: 12,
+    color: COLORS.text2,
+    fontWeight: '700',
+  },
+  offerMsgCounter: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: RADIUS.pill,
+    alignItems: 'center',
+    backgroundColor: 'rgba(59,130,246,0.1)',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  offerMsgCounterText: {
+    fontSize: 12,
+    color: '#3B82F6',
+    fontWeight: '700',
+  },
   offerMsgAccept: {
-    flex: 1, paddingVertical: 8, borderRadius: RADIUS.pill, alignItems: 'center',
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: RADIUS.pill,
+    alignItems: 'center',
     backgroundColor: COLORS.coral,
   },
-  offerMsgAcceptText: { fontSize: 12, color: COLORS.white, fontWeight: '700' },
-  offerMsgCounter: { flex: 1, paddingVertical: 8, borderRadius: RADIUS.pill, alignItems: 'center', backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.blue },
-  offerMsgCounterText: { fontSize: 12, color: COLORS.blue, fontWeight: '700' },
-  counterEntry: { flexDirection: 'row', gap: 8, marginTop: 6, alignItems: 'center' },
-  counterInput: { flex: 1, minWidth: 0, color: COLORS.text, backgroundColor: COLORS.surface, borderColor: COLORS.border, borderWidth: 1, borderRadius: RADIUS.pill, paddingHorizontal: 10, paddingVertical: 7, fontSize: 13 },
+  offerMsgAcceptText: {
+    fontSize: 12,
+    color: COLORS.white,
+    fontWeight: '700',
+  },
+  counterEntry: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  counterInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface2,
+    borderRadius: RADIUS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 10,
+  },
+  counterCurrencyPrefix: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.coral,
+    marginRight: 4,
+  },
+  counterInput: {
+    flex: 1,
+    color: COLORS.text,
+    paddingVertical: 6,
+    fontSize: 13,
+  },
+  counterSubmitBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  counterSubmitText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  offerCheckoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#1D9E75',
+    borderRadius: RADIUS.pill,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginTop: 12,
+  },
+  offerCheckoutBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.white,
+  },
+  offerMsgTime: {
+    fontSize: 10,
+    color: COLORS.text2,
+    marginTop: 8,
+    alignSelf: 'flex-end',
+  },
+
+  /* Offer Dock (at bottom) */
   offerDock: {
     flexDirection: 'row',
     alignItems: 'flex-start',

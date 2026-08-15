@@ -1,18 +1,48 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { network } from './network';
 
 type CacheRecord<T> = {
   value: T;
   updatedAt: number;
 };
 
+export type SnapshotResult<T> = {
+  value: T;
+  isStale: boolean;
+};
+
 const CACHE_PREFIX = 'mm_snapshot:';
 
+const DEFAULT_TTL: Record<string, number> = {
+  feed: 60 * 60 * 1000,       // 1 hour
+  explore: 30 * 60 * 1000,    // 30 minutes
+  profile: 24 * 60 * 60 * 1000, // 24 hours
+  inbox: 5 * 60 * 1000,       // 5 minutes
+  categories: 24 * 60 * 60 * 1000, // 24 hours
+};
+
+function getTtlForKey(key: string): number {
+  for (const [prefix, ttl] of Object.entries(DEFAULT_TTL)) {
+    if (key.includes(prefix)) return ttl;
+  }
+  return 60 * 60 * 1000; // default 1 hour
+}
+
 /** Small, versioned screen snapshots. Never store authentication tokens here. */
-export async function readSnapshot<T>(key: string): Promise<CacheRecord<T> | null> {
+export async function readSnapshot<T>(key: string): Promise<SnapshotResult<T> | null> {
   try {
     const raw = await AsyncStorage.getItem(`${CACHE_PREFIX}${key}`);
     if (!raw) return null;
-    return JSON.parse(raw) as CacheRecord<T>;
+    const record = JSON.parse(raw) as CacheRecord<T>;
+    const age = Date.now() - record.updatedAt;
+    const ttl = getTtlForKey(key);
+    const isStale = age > ttl;
+
+    if (isStale && network.isOnline) {
+      return null; // Online + stale → fetch fresh data
+    }
+
+    return { value: record.value, isStale };
   } catch {
     return null;
   }

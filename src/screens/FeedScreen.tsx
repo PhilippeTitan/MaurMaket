@@ -31,6 +31,7 @@ import { tapLight } from '../haptics';
 import { useToast } from '../components/Toast';
 import { queryClient } from '../hooks';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
+import { network } from '../network';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -109,6 +110,7 @@ export default function FeedScreen() {
   useEffect(() => {
     let mounted = true;
     const loadUnread = async () => {
+      if (network.isOffline) return;
       try {
         const [notifRes, activeRes] = await Promise.allSettled([
           getUnreadCount() as Promise<{ count: string | number }>,
@@ -146,7 +148,7 @@ export default function FeedScreen() {
   }, []));
 
   useEffect(() => {
-    if (!store.isLoggedIn || products.length === 0) return;
+    if (!store.isLoggedIn || products.length === 0 || network.isOffline) return;
     const unchecked = products.filter(p => !checkedWishlistIds.current.has(p.id));
     if (unchecked.length === 0) return;
     unchecked.forEach(p => checkedWishlistIds.current.add(p.id));

@@ -35,6 +35,8 @@ uploads/
 nul
 _srv.log
 *.log
+*.zip
+*.exe
 
 # Expo
 .expo/

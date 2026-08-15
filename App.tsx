@@ -9,6 +9,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { store } from './src/store';
 import { COLORS, SPACING } from './src/theme';
 import { i18n } from './src/i18n';
+import { network } from './src/network';
+import OfflineBanner from './src/components/OfflineBanner';
 import { PaperPlaneIcon } from './src/components/UserAvatar';
 import { getMe, getFollowerCount, getFollowing } from './src/api';import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, invalidateUser } from './src/hooks';
@@ -222,6 +224,7 @@ export default function App() {
     (async () => {
       await store.init();
       await i18n.init();
+      await network.init();
       if (store.token) {
         const hydrateSession = async () => {
           try {
@@ -419,7 +422,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary>{appContent}<DobConfirmModal visible={pendingDob} onCompleted={() => setPendingDob(false)} /></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner />{appContent}<DobConfirmModal visible={pendingDob} onCompleted={() => setPendingDob(false)} /></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
 }
 
 const styles = StyleSheet.create({

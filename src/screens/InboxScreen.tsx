@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator, TextInput, ScrollView, Modal, Keyboard,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput, ScrollView, Modal, Keyboard,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -8,12 +8,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
 import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
-import { getConversations, getNotifications, getFollowing, createConversation, getConversationsWithOffers, markNotificationRead, markAllNotificationsRead, getImageUrl } from '../api';
+import { getConversations, getNotifications, getFollowing, createConversation, getConversationsWithOffers, markNotificationRead, markAllNotificationsRead } from '../api';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
 import { routeNotification } from '../notificationRouting';
@@ -38,55 +38,6 @@ function timeAgo(dateStr: string): string {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d`;
   return new Date(dateStr).toLocaleDateString('fr-HT', { day: 'numeric', month: 'short' });
-}
-
-function getNotifIcon(type: string): { icon: string; color: string } {
-  switch (type) {
-    case 'new_message': return { icon: 'message-text-outline', color: COLORS.blue };
-    case 'order_status':
-    case 'payment_confirmed':
-    case 'payment_failed':
-    case 'order_cancelled': return { icon: 'package-variant', color: '#1D9E75' };
-    case 'meetup_proposed':
-    case 'meetup_confirmed':
-    case 'meetup_expired': return { icon: 'map-marker-outline', color: COLORS.blue };
-    case 'review_received': return { icon: 'star-outline', color: '#F5A623' };
-    case 'new_follower': return { icon: 'account-plus-outline', color: COLORS.coral };
-    case 'new_product_from_followed': return { icon: 'tag-outline', color: '#1D9E75' };
-    case 'escrow_refunded':
-    case 'payout_failed': return { icon: 'currency-usd', color: COLORS.coral };
-    case 'subscription_expired':
-    case 'subscription_activated': return { icon: 'crown-outline', color: '#F5A623' };
-    case 'verification_approved':
-    case 'verification_rejected': return { icon: 'shield-check-outline', color: '#1D9E75' };
-    case 'low_stock':
-    case 'product_sold_out': return { icon: 'alert-circle-outline', color: COLORS.coral };
-    default: return { icon: 'bell-outline', color: COLORS.text2 };
-  }
-}
-
-function groupByDay(notifs: Notification[]): { label: string; data: Notification[] }[] {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 86400000);
-  const weekAgo = new Date(today.getTime() - 7 * 86400000);
-
-  const groups: Record<string, Notification[]> = {};
-  for (const n of notifs) {
-    const d = new Date(n.created_at);
-    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    let label: string;
-    if (dayStart.getTime() === today.getTime()) label = 'Today';
-    else if (dayStart.getTime() === yesterday.getTime()) label = 'Yesterday';
-    else if (dayStart.getTime() < weekAgo.getTime()) {
-      label = d.toLocaleDateString('fr-HT', { day: 'numeric', month: 'long', year: 'numeric' });
-    } else {
-      label = d.toLocaleDateString('fr-HT', { weekday: 'long', day: 'numeric', month: 'long' });
-    }
-    if (!groups[label]) groups[label] = [];
-    groups[label].push(n);
-  }
-  return Object.entries(groups).map(([label, data]) => ({ label, data }));
 }
 
 export default function InboxScreen() {
@@ -177,8 +128,6 @@ export default function InboxScreen() {
     nav.navigate('Main', { screen: 'FeedTab' });
   };
 
-  const unreadNotifCount = notifications.filter((n: any) => !n.is_read).length;
-
   const sortedConversations = conversations
     .slice()
     .sort((a, b) => {
@@ -208,19 +157,6 @@ export default function InboxScreen() {
       if (searchFilter === 'unread') return matchesSearch && (c.unread_count || 0) > 0;
       return matchesSearch;
     });
-
-  const handleNotifPress = async (notif: Notification) => {
-    if (!notif.is_read) {
-      try { await markNotificationRead(notif.id); } catch { toast.error(t('feedback.notificationUpdateFailed')); }
-      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
-    }
-    routeNotification(nav, notif.type, notif.data as Record<string, any>);
-  };
-
-  const handleMarkAllRead = async () => {
-    try { await markAllNotificationsRead(); } catch { toast.error(t('feedback.markNotificationsFailed')); return; }
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-  };
 
   const renderConversation = ({ item }: { item: Conversation }) => {
     const otherName = (item as any).other_party_username ? `@${(item as any).other_party_username}` : ((item as any).other_party_name || 'Seller');
@@ -299,109 +235,74 @@ export default function InboxScreen() {
     );
   };
 
-  const notifSections = groupByDay(notifications);
-  const notifsFlat: { label: string; notif: Notification; isHeader: boolean }[] = [];
-  for (const section of notifSections) {
-    notifsFlat.push({ label: section.label, notif: section.data[0], isHeader: true });
-    for (const n of section.data) {
-      notifsFlat.push({ label: '', notif: n, isHeader: false });
-    }
-  }
-
-  const TABS: { key: InboxTab | 'search'; icon: string; label: string }[] = [
-    { key: 'all', icon: 'message-text-outline', label: 'All' },
-    { key: 'primary', icon: 'star-outline', label: 'Primary' },
-    { key: 'search', icon: 'magnify', label: 'Search' },
-    { key: 'offers', icon: 'tag-outline', label: 'Offers' },
-  ];
-
-  const bottomTabBar = (
-    <View style={[styles.bottomNav, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 12 }]}>
-      {TABS.map(tab => {
-        if (tab.key === 'search') {
-          return (
-            <TouchableOpacity
-              key="search"
-              style={styles.bottomNavItem}
-              onPress={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 100); }}
-              accessibilityLabel="search"
-              accessibilityRole="button"
-              activeOpacity={0.7}
-            >
-              <View style={styles.bottomNavIconWrap}>
-                <MaterialCommunityIcons name="magnify" size={24} color={COLORS.text2} />
-              </View>
-              <Text style={styles.bottomNavLabel}>Search</Text>
-            </TouchableOpacity>
-          );
-        }
-        const isActive = activeTab === tab.key;
-        const badge = tab.key === 'offers' ? offerConversations.length : 0;
-        return (
-          <TouchableOpacity
-            key={tab.key}
-            style={styles.bottomNavItem}
-            onPress={() => setActiveTab(tab.key as InboxTab)}
-            accessibilityLabel={tab.label}
-            accessibilityRole="button"
-            activeOpacity={0.7}
-          >
-            <View style={styles.bottomNavIconWrap}>
-              <MaterialCommunityIcons
-                name={tab.icon as any}
-                size={24}
-                color={isActive ? COLORS.coral : COLORS.text2}
-              />
-              {badge > 0 && (
-                <View style={styles.bottomNavBadge}>
-                  <Text style={styles.bottomNavBadgeText}>{badge > 9 ? '9+' : badge}</Text>
-                </View>
-              )}
-            </View>
-            <Text style={[styles.bottomNavLabel, isActive && styles.bottomNavLabelActive]}>{tab.label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-
-  const renderNotifItem = ({ item }: { item: { label: string; notif: Notification; isHeader: boolean } }) => {
-    if (item.isHeader) {
-      return (
-        <View style={styles.notifSectionHeader}>
-          <Text style={styles.notifSectionHeaderText}>{item.label}</Text>
-        </View>
-      );
-    }
-    const notif = item.notif;
-    const { icon, color } = getNotifIcon(notif.type);
-    const imageData = (notif.data as any)?.image;
-    return (
+  const topSegmentedTabs = (
+    <View style={styles.topTabsWrap}>
       <TouchableOpacity
-        style={[styles.notifRow, !notif.is_read && styles.notifRowUnread]}
-        onPress={() => handleNotifPress(notif)}
+        style={[styles.topTabItem, activeTab === 'all' && styles.topTabItemActive]}
+        onPress={() => setActiveTab('all')}
         activeOpacity={0.7}
-        accessibilityLabel={notif.title}
+        accessibilityLabel="All messages"
         accessibilityRole="button"
       >
-        <View style={[styles.notifIconWrap, { backgroundColor: color + '18' }]}>
-          <MaterialCommunityIcons name={icon as any} size={20} color={color} />
-        </View>
-        <View style={styles.notifBody}>
-          <Text style={[styles.notifTitle, !notif.is_read && styles.notifTitleUnread]} numberOfLines={1}>{notif.title}</Text>
-          {notif.body && <Text style={styles.notifBodyText} numberOfLines={2}>{notif.body}</Text>}
-          <Text style={styles.notifTime}>{timeAgo(notif.created_at)}</Text>
-        </View>
-        {imageData ? (
-          <View style={styles.notifImageWrap}>
-            <View style={[styles.notifImage, { backgroundColor: COLORS.surface2 }]} />
+        <MaterialCommunityIcons
+          name="message-text-outline"
+          size={15}
+          color={activeTab === 'all' ? COLORS.white : COLORS.text2}
+        />
+        <Text style={[styles.topTabLabel, activeTab === 'all' && styles.topTabLabelActive]}>
+          All
+        </Text>
+        {conversations.length > 0 && (
+          <View style={[styles.topTabCount, activeTab === 'all' && styles.topTabCountActive]}>
+            <Text style={[styles.topTabCountText, activeTab === 'all' && styles.topTabCountTextActive]}>
+              {conversations.length}
+            </Text>
           </View>
-        ) : !notif.is_read ? (
-          <View style={[styles.notifDot, { backgroundColor: color }]} />
-        ) : null}
+        )}
       </TouchableOpacity>
-    );
-  };
+
+      <TouchableOpacity
+        style={[styles.topTabItem, activeTab === 'primary' && styles.topTabItemActive]}
+        onPress={() => setActiveTab('primary')}
+        activeOpacity={0.7}
+        accessibilityLabel="Primary messages"
+        accessibilityRole="button"
+      >
+        <MaterialCommunityIcons
+          name="star-outline"
+          size={15}
+          color={activeTab === 'primary' ? COLORS.white : COLORS.text2}
+        />
+        <Text style={[styles.topTabLabel, activeTab === 'primary' && styles.topTabLabelActive]}>
+          Primary
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.topTabItem, activeTab === 'offers' && styles.topTabItemActive]}
+        onPress={() => setActiveTab('offers')}
+        activeOpacity={0.7}
+        accessibilityLabel="Offers"
+        accessibilityRole="button"
+      >
+        <MaterialCommunityIcons
+          name="tag-outline"
+          size={15}
+          color={activeTab === 'offers' ? COLORS.white : COLORS.coral}
+        />
+        <Text style={[styles.topTabLabel, activeTab === 'offers' && styles.topTabLabelActive]}>
+          Offers
+        </Text>
+        {offerConversations.length > 0 && (
+          <View style={[styles.topTabOfferBadge, activeTab === 'offers' && styles.topTabOfferBadgeActive]}>
+            <Text style={[styles.topTabOfferBadgeText, activeTab === 'offers' && styles.topTabOfferBadgeTextActive]}>
+              {offerConversations.length > 9 ? '9+' : offerConversations.length}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
 
   const conversationsListHeader = (
     <>
@@ -419,12 +320,25 @@ export default function InboxScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
-        {(route.params?.returnTab || nav.canGoBack()) && (
-          <BackButton onPress={handleBack} />
-        )}
-        <Text style={[styles.title, !(route.params?.returnTab || nav.canGoBack()) && { marginLeft: 35 }]}>{t('inbox.title')}</Text>
+      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.xs }]}>
+        <View style={styles.topBarLeft}>
+          {(route.params?.returnTab || nav.canGoBack()) ? (
+            <BackButton onPress={handleBack} />
+          ) : null}
+          <Text style={styles.title}>{t('inbox.title')}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.searchBtn}
+          onPress={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 100); }}
+          accessibilityLabel="search messages"
+          accessibilityRole="button"
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="magnify" size={22} color={COLORS.text} />
+        </TouchableOpacity>
       </View>
+
+      {topSegmentedTabs}
 
       {activeTab === 'offers' ? (
         <FlatList
@@ -434,37 +348,78 @@ export default function InboxScreen() {
             const sellerTier = item.other_party_seller_tier;
             const offerStatus = item.offer_status;
             const isCountered = offerStatus === 'countered';
+            const isAccepted = offerStatus === 'accepted';
+            const isDeclined = offerStatus === 'declined';
+            const isPending = !isCountered && !isAccepted && !isDeclined;
             const round = item.negotiation_round || 1;
             const expiresIn = item.offer_expires_at ? Math.max(0, Math.floor((new Date(item.offer_expires_at).getTime() - Date.now()) / 3600000)) : null;
             return (
               <TouchableOpacity
-                style={styles.convo}
+                style={styles.offerCard}
                 onPress={() => nav.navigate('OfferDetail', { messageId: item.offer_message_id, conversationId: item.id })}
                 accessibilityLabel={`offer with ${otherName}`}
                 accessibilityRole="button"
                 activeOpacity={0.7}
               >
-                <View style={styles.convoMain}>
-                  <View style={{ position: 'relative' }}>
-                    <UserAvatar seller={{ avatar_url: item.other_party_avatar, full_name: otherName, username: item.other_party_username, seller_tier: sellerTier } as any} size={44} animated={false} />
-                  </View>
-                  <View style={styles.convoBody}>
-                    <View style={styles.convoNameRow}>
-                      <Text style={styles.convoName} numberOfLines={1}>{otherName}</Text>
-                      <Text style={styles.convoTime}>{timeAgo(item.last_message_at || item.created_at)}</Text>
+                <View style={styles.offerCardHeader}>
+                  <View style={styles.offerCardUserRow}>
+                    <UserAvatar seller={{ avatar_url: item.other_party_avatar, full_name: otherName, username: item.other_party_username, seller_tier: sellerTier } as any} size={30} animated={false} />
+                    <View style={{ flex: 1, minWidth: 0, marginLeft: 8 }}>
+                      <Text style={styles.offerCardUsername} numberOfLines={1}>{otherName}</Text>
+                      <Text style={styles.offerCardTime}>{timeAgo(item.last_message_at || item.created_at)}</Text>
                     </View>
-                    <Text style={styles.convoMsg} numberOfLines={1}>
-                      {isCountered ? `Counter: G ${item.offered_price} (round ${round}/3)` : `Offer: G ${item.offered_price} — ${item.product_name}`}
+                  </View>
+                  <View style={[
+                    styles.offerStatusBadge,
+                    isAccepted && styles.offerStatusBadgeAccepted,
+                    isDeclined && styles.offerStatusBadgeDeclined,
+                    isCountered && styles.offerStatusBadgeCountered,
+                    isPending && styles.offerStatusBadgePending,
+                  ]}>
+                    <Text style={[
+                      styles.offerStatusText,
+                      isAccepted && styles.offerStatusTextAccepted,
+                      isDeclined && styles.offerStatusTextDeclined,
+                      isCountered && styles.offerStatusTextCountered,
+                      isPending && styles.offerStatusTextPending,
+                    ]}>
+                      {isAccepted ? '✓ Accepted' : isDeclined ? '✕ Declined' : isCountered ? `🔄 Counter (${round}/3)` : '⏳ Pending'}
                     </Text>
-                    {expiresIn !== null && <Text style={{ fontSize: 11, color: expiresIn < 6 ? COLORS.coral : COLORS.text2, marginTop: 2 }}>{expiresIn}h left</Text>}
                   </View>
                 </View>
+
+                <View style={styles.offerCardDivider} />
+
+                <View style={styles.offerCardBody}>
+                  <View style={styles.offerProductIconWrap}>
+                    <Icon name="sale-tag" size={18} color={COLORS.coral} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.offerProductName} numberOfLines={1}>{item.product_name}</Text>
+                    <View style={styles.offerPriceRow}>
+                      <Text style={styles.offerPriceValue}>G {formatPrice(item.offered_price)}</Text>
+                      {item.list_price && item.list_price > item.offered_price ? (
+                        <Text style={styles.offerListPriceValue}>G {formatPrice(item.list_price)}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />
+                </View>
+
+                {expiresIn !== null && isPending && (
+                  <View style={styles.offerFooter}>
+                    <MaterialCommunityIcons name="clock-outline" size={12} color={expiresIn < 6 ? COLORS.coral : COLORS.text2} />
+                    <Text style={[styles.offerExpiresText, expiresIn < 6 && { color: COLORS.coral }]}>
+                      {expiresIn === 0 ? 'Expiring soon' : `${expiresIn}h left to respond`}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           }}
           keyExtractor={(item: any) => `${item.id}-${item.product_id}`}
           ListHeaderComponent={conversationsListHeader}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 90, paddingHorizontal: SPACING.md, paddingTop: SPACING.xs }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
           ListEmptyComponent={
             loading ? (
@@ -480,7 +435,7 @@ export default function InboxScreen() {
           renderItem={renderConversation as any}
           keyExtractor={(item: any) => item.id}
           ListHeaderComponent={conversationsListHeader}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
           ListEmptyComponent={
             loading ? (
@@ -495,8 +450,6 @@ export default function InboxScreen() {
           }
         />
       )}
-
-      {bottomTabBar}
 
       <Modal
         visible={searchOpen}
@@ -586,59 +539,216 @@ export default function InboxScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   topBar: {
-    flexDirection: 'row', alignItems: 'center',
-    padding: SPACING.md, paddingBottom: SPACING.sm,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  title: { flex: 1, textAlign: 'center', fontSize: 18, color: COLORS.text, fontWeight: '700' },
-  markAllBtn: { padding: 8, borderRadius: 20 },
-  markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '500' },
-
-  /* Bottom nav bar */
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.xs,
+  },
+  topBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  title: { fontSize: 22, color: COLORS.text, fontWeight: '700' },
+  searchBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: COLORS.surface,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: 8,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-  },
-  bottomNavItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingVertical: 2,
-  },
-  bottomNavIconWrap: {
-    position: 'relative',
+    borderWidth: 1,
+    borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bottomNavBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -10,
+
+  /* Top Segmented Tabs */
+  topTabsWrap: {
+    flexDirection: 'row',
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.sm,
+    paddingTop: 4,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  topTabItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  topTabItemActive: {
     backgroundColor: COLORS.coral,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+    borderColor: COLORS.coral,
+  },
+  topTabLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text2,
+  },
+  topTabLabelActive: {
+    color: COLORS.white,
+    fontWeight: '700',
+  },
+  topTabCount: {
+    backgroundColor: COLORS.surface2,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+  },
+  topTabCountActive: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  topTabCountText: {
+    fontSize: 11,
+    color: COLORS.text2,
+    fontWeight: '700',
+  },
+  topTabCountTextActive: {
+    color: COLORS.white,
+  },
+  topTabOfferBadge: {
+    backgroundColor: COLORS.coral,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+  },
+  topTabOfferBadgeActive: {
+    backgroundColor: COLORS.white,
+  },
+  topTabOfferBadgeText: {
+    fontSize: 10,
+    color: COLORS.white,
+    fontWeight: '700',
+  },
+  topTabOfferBadgeTextActive: {
+    color: COLORS.coral,
+  },
+
+  /* Offer Card Styles */
+  offerCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 12,
+    marginBottom: 10,
+  },
+  offerCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  offerCardUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+  },
+  offerCardUsername: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  offerCardTime: {
+    fontSize: 10,
+    color: COLORS.text2,
+    marginTop: 1,
+  },
+  offerStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface2,
+  },
+  offerStatusBadgePending: {
+    backgroundColor: 'rgba(245,166,35,0.15)',
+    borderWidth: 1,
+    borderColor: '#F5A623',
+  },
+  offerStatusBadgeAccepted: {
+    backgroundColor: 'rgba(29,158,117,0.15)',
+    borderWidth: 1,
+    borderColor: '#1D9E75',
+  },
+  offerStatusBadgeDeclined: {
+    backgroundColor: 'rgba(226,75,74,0.15)',
+    borderWidth: 1,
+    borderColor: '#E24B4A',
+  },
+  offerStatusBadgeCountered: {
+    backgroundColor: 'rgba(59,130,246,0.15)',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  offerStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.text2,
+  },
+  offerStatusTextPending: { color: '#F5A623' },
+  offerStatusTextAccepted: { color: '#1D9E75' },
+  offerStatusTextDeclined: { color: '#E24B4A' },
+  offerStatusTextCountered: { color: '#3B82F6' },
+  offerCardDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: 10,
+  },
+  offerCardBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  offerProductIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(216,90,48,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
   },
-  bottomNavBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '700' },
-  bottomNavLabel: { fontSize: 10, color: COLORS.text2, marginTop: 2, fontWeight: '500' },
-  bottomNavLabelActive: { color: COLORS.coral, fontWeight: '700' },
+  offerProductName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  offerPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginTop: 3,
+  },
+  offerPriceValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.coral,
+  },
+  offerListPriceValue: {
+    fontSize: 12,
+    color: COLORS.text2,
+    textDecorationLine: 'line-through',
+  },
+  offerFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+  },
+  offerExpiresText: {
+    fontSize: 11,
+    color: COLORS.text2,
+    fontWeight: '500',
+  },
 
   /* Conversations */
   convo: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 10 },
@@ -660,21 +770,6 @@ const styles = StyleSheet.create({
   bubblesRow: { paddingHorizontal: SPACING.md, gap: 14 },
   sellerBubble: { alignItems: 'center', width: 64 },
   sellerBubbleName: { fontSize: 11, color: COLORS.text2, marginTop: 4, textAlign: 'center' },
-
-  /* Notifications */
-  notifSectionHeader: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.xs },
-  notifSectionHeaderText: { fontSize: 13, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', letterSpacing: 0.5 },
-  notifRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  notifRowUnread: { backgroundColor: COLORS.surface },
-  notifIconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  notifBody: { flex: 1 },
-  notifTitle: { fontSize: 14, fontWeight: '500', color: COLORS.text },
-  notifTitleUnread: { fontWeight: '700' },
-  notifBodyText: { fontSize: 13, color: COLORS.text2, marginTop: 2 },
-  notifTime: { fontSize: 11, color: COLORS.text2, marginTop: 4 },
-  notifImageWrap: { width: 44, height: 44, borderRadius: RADIUS.row, overflow: 'hidden' },
-  notifImage: { width: '100%', height: '100%' },
-  notifDot: { width: 8, height: 8, borderRadius: 4 },
 
   /* Search modal */
   searchModal: { flex: 1, backgroundColor: COLORS.bg },
