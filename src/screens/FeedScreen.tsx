@@ -76,9 +76,9 @@ export default function FeedScreen() {
     try {
       const params: Record<string, string> = { page: String(p), limit: '20' };
       if (feedTab === 'forYou') {
-        params.personalized = 'true';
+        params.following = 'true';
       } else {
-        params.sort = 'newest';
+        params.personalized = 'true';
       }
       const queryKey = ['feed-products', feedTab, p] as const;
       const res = await queryClient.fetchQuery({
@@ -528,7 +528,7 @@ export default function FeedScreen() {
         <View style={styles.feedTabs}>
           <TouchableOpacity
             style={[styles.feedTab, feedTab === 'new' && styles.feedTabActive]}
-            onPress={() => { setFeedTab('new'); setPage(1); setProducts([]); }}
+            onPress={() => { if (feedTab !== 'new') { setFeedTab('new'); setPage(1); setProducts([]); } }}
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.newTab')}
           >
@@ -536,7 +536,7 @@ export default function FeedScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.feedTab, feedTab === 'forYou' && styles.feedTabActive]}
-            onPress={() => { setFeedTab('forYou'); setPage(1); setProducts([]); }}
+            onPress={() => { if (feedTab !== 'forYou') { setFeedTab('forYou'); setPage(1); setProducts([]); } }}
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.forYouTab')}
           >

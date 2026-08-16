@@ -2620,7 +2620,7 @@ app.get('/api/sellers/:id', async (req, res) => {
 // ───── Product routes ─────
 
 app.get('/api/products', async (req, res) => {
-  const { category, search, seller, minPrice, maxPrice, sort, page = 1, limit = 20, personalized } = req.query;
+  const { category, search, seller, minPrice, maxPrice, sort, page = 1, limit = 20, personalized, following } = req.query;
   const offset = (Math.max(1, page) - 1) * Math.min(limit, 50);
   const params = [];
   const conditions = ['p.is_available = TRUE'];
@@ -2648,12 +2648,10 @@ app.get('/api/products', async (req, res) => {
     params.push(maxPrice);
   }
 
-  const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
-
   // Check if personalized feed is requested and user is authenticated
   let usePersonalized = false;
   let userId = null;
-  if (personalized === 'true') {
+  if (personalized === 'true' || following === 'true') {
     try {
       // Extract token from Authorization header
       const authHeader = req.headers.authorization;
@@ -2826,6 +2824,12 @@ app.get('/api/products/:id/co-purchases', async (req, res) => {
     console.error('Co-purchase recommendations error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+
+  if (following === 'true' && userId) {
+    conditions.push(`p.seller_id IN (SELECT seller_id FROM follows WHERE follower_id = $${paramIndex++})`);
+    params.push(userId);
+  }
+  const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 });
 
 app.get('/api/products/:id', async (req, res) => {

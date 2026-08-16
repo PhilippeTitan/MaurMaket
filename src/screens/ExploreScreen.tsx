@@ -79,6 +79,13 @@ export default function ExploreScreen({ navigation }: Props) {
   const [showPriceFilter, setShowPriceFilter] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [quickProduct, setQuickProduct] = useState<Product | null>(null);
+  const [quickDismissable, setQuickDismissable] = useState(false);
+
+  useEffect(() => {
+    if (!quickProduct) { setQuickDismissable(false); return; }
+    const timer = setTimeout(() => setQuickDismissable(true), 180);
+    return () => clearTimeout(timer);
+  }, [quickProduct]);
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
@@ -460,7 +467,7 @@ export default function ExploreScreen({ navigation }: Props) {
       )}
 
       <Modal visible={Boolean(quickProduct)} transparent animationType="fade" onRequestClose={() => setQuickProduct(null)}>
-        <Pressable style={styles.quickOverlay} onPress={() => setQuickProduct(null)}>
+        <Pressable style={styles.quickOverlay} onPress={() => { if (quickDismissable) setQuickProduct(null); }}>
           <Pressable style={styles.quickFan} onPress={e => e.stopPropagation()}>
             <Text style={styles.quickTitle} numberOfLines={1}>{quickProduct?.name}</Text>
             <View style={styles.quickActions}>
