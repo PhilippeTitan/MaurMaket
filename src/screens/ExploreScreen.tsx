@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
-import { getProducts, getCategories, getImageUrl } from '../api';
+import { getProducts, getCategories, getImageUrl, trackFeedEvent } from '../api';
 import { store } from '../store';
 import { useQuery } from '@tanstack/react-query';
 import { queryClient } from '../hooks';
@@ -25,6 +25,7 @@ import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
+import { useToast } from '../components/Toast';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -61,6 +62,7 @@ const MAX_H = SCREEN_H * 0.52;
 
 export default function ExploreScreen({ navigation }: Props) {
   const { t } = useTranslation();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const [selectedCat, setSelectedCat] = useState<string>('');
   const [search, setSearch] = useState('');
@@ -76,6 +78,7 @@ export default function ExploreScreen({ navigation }: Props) {
   const [maxPrice, setMaxPrice] = useState('');
   const [showPriceFilter, setShowPriceFilter] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [quickProduct, setQuickProduct] = useState<Product | null>(null);
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
@@ -130,6 +133,22 @@ export default function ExploreScreen({ navigation }: Props) {
     await refetch();
     setRefreshing(false);
   }, [refetch]);
+
+  const applyQuickFeedback = async (eventType: 'relevant' | 'not_relevant') => {
+    const product = quickProduct;
+    if (!product) return;
+    setQuickProduct(null);
+    if (eventType === 'not_relevant') {
+      queryClient.setQueryData<Product[]>(['explore-products', productParams], prev => (prev || []).filter(p => p.id !== product.id));
+    }
+    try {
+      await trackFeedEvent(product.id, eventType);
+      await queryClient.invalidateQueries({ queryKey: ['explore-products'] });
+      await refetch();
+    } catch {
+      toast.error(t('common.error'), 'Your feed preference could not be saved.');
+    }
+  };
 
   useEffect(() => {
     const defaults: Record<string, { w: number; h: number }> = {};
@@ -216,6 +235,8 @@ export default function ExploreScreen({ navigation }: Props) {
                     <TouchableOpacity
                       activeOpacity={0.9}
                       onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+                      onLongPress={() => setQuickProduct(item)}
+                      delayLongPress={400}
                       style={{ width: CARD_W, height: cardH }}
                       accessibilityRole="button"
                       accessibilityLabel={t('accessibility.viewProduct')}
@@ -238,6 +259,8 @@ export default function ExploreScreen({ navigation }: Props) {
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+                onLongPress={() => setQuickProduct(item)}
+                delayLongPress={400}
                 style={StyleSheet.absoluteFill}
                 accessibilityRole="button"
                 accessibilityLabel={t('accessibility.viewProduct')}
@@ -435,6 +458,26 @@ export default function ExploreScreen({ navigation }: Props) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshProducts} tintColor={COLORS.coral} />}
         />
       )}
+
+      <Modal visible={Boolean(quickProduct)} transparent animationType="fade" onRequestClose={() => setQuickProduct(null)}>
+        <Pressable style={styles.quickOverlay} onPress={() => setQuickProduct(null)}>
+          <Pressable style={styles.quickFan} onPress={e => e.stopPropagation()}>
+            <Text style={styles.quickTitle} numberOfLines={1}>{quickProduct?.name}</Text>
+            <View style={styles.quickActions}>
+              <TouchableOpacity style={[styles.quickAction, styles.quickActionLeft]} onPress={() => { if (quickProduct) navigation.navigate('ProductDetail', { productId: quickProduct.id }); setQuickProduct(null); }} accessibilityRole="button" accessibilityLabel="View product">
+                <MaterialCommunityIcons name="eye-outline" size={22} color={COLORS.text} /><Text style={styles.quickLabel}>View</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.quickAction, styles.quickActionTop]} onPress={() => applyQuickFeedback('relevant')} accessibilityRole="button" accessibilityLabel="Show more like this">
+                <MaterialCommunityIcons name="thumb-up-outline" size={22} color={COLORS.coral} /><Text style={styles.quickLabel}>More like this</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.quickAction, styles.quickActionRight]} onPress={() => applyQuickFeedback('not_relevant')} accessibilityRole="button" accessibilityLabel="Not interested">
+                <MaterialCommunityIcons name="thumb-down-outline" size={22} color={COLORS.coral} /><Text style={styles.quickLabel}>Not interested</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.quickHint}>Long-press any listing to tune your recommendations.</Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={catModal} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setCatModal(false)}>
@@ -688,6 +731,16 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center', alignItems: 'center',
   },
+  quickOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', alignItems: 'center', justifyContent: 'center' },
+  quickFan: { width: 300, height: 260, alignItems: 'center', justifyContent: 'center' },
+  quickTitle: { color: COLORS.white, fontSize: 15, fontWeight: '800', maxWidth: 240, textAlign: 'center', marginBottom: 14 },
+  quickActions: { width: '100%', height: 132, position: 'relative' },
+  quickAction: { position: 'absolute', width: 94, minHeight: 94, borderRadius: 47, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, gap: 4 },
+  quickActionLeft: { left: 0, bottom: 0 },
+  quickActionTop: { left: 103, top: 0 },
+  quickActionRight: { right: 0, bottom: 0 },
+  quickLabel: { color: COLORS.text, fontSize: 10, fontWeight: '700', textAlign: 'center' },
+  quickHint: { color: 'rgba(255,255,255,0.76)', fontSize: 12, marginTop: 12, textAlign: 'center' },
   modalContent: {
     width: 240, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 10, gap: 2, overflow: 'hidden',
   },
