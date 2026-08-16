@@ -44,6 +44,7 @@ export default function FeedScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [screenHeight, setScreenHeight] = useState(0);
   const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
@@ -61,8 +62,9 @@ export default function FeedScreen() {
   const currentProductId = useRef<string | null>(null);
   const scrollOffsetRef = useRef(0);
   const dragStartIndexRef = useRef(0);
+  const viewedProductIds = useRef<Set<string>>(new Set());
 
-  const fetchProducts = useCallback(async (p = 1, replace = false) => {
+const fetchProducts = useCallback(async (p = 1, replace = false) => {
     const cacheKey = cacheKeys.feed(feedTab, store.user?.id);
     if (p === 1 && replace) {
       const snapshot = await readSnapshot<{ products: Product[]; pages: number }>(cacheKey);
@@ -95,7 +97,9 @@ export default function FeedScreen() {
         setProducts(prev => [...prev, ...res.products]);
       }
       setHasMore(p < res.pages);
+      if (p === 1) setLoading(false);
     } catch {
+      if (p === 1) setLoading(false);
       if (replace) toast.error(t('feedback.feedRefreshFailed'), t('feedback.connectionRetry'), () => fetchProducts(p, replace));
     }
   }, [feedTab]);
@@ -234,8 +238,13 @@ export default function FeedScreen() {
       else next.add(product.id);
       return next;
     });
-    try { await toggleWishlist(product.id); }
-    catch {
+    try {
+      await toggleWishlist(product.id);
+      if (!wasWishlisted) {
+        // Fire 'save' event when adding to wishlist
+        trackFeedEvent(product.id, 'save').catch(() => {});
+      }
+    } catch {
       setWishlistedIds(prev => {
         const next = new Set(prev);
         if (wasWishlisted) next.add(product.id);
@@ -492,7 +501,7 @@ export default function FeedScreen() {
     );
   };
 
-  if (screenHeight === 0 || (products.length === 0 && !refreshing)) {
+  if (screenHeight === 0 || loading) {
     return (
       <View style={styles.container} onLayout={onContainerLayout}>
         {/* Full-screen feed skeleton */}
@@ -598,6 +607,11 @@ export default function FeedScreen() {
           if (visible?.item) {
             currentProductId.current = visible.item.id;
             viewStartTime.current = Date.now();
+            // Fire 'view' event once per product per session
+            if (!viewedProductIds.current.has(visible.item.id)) {
+              viewedProductIds.current.add(visible.item.id);
+              trackFeedEvent(visible.item.id, 'view').catch(() => {});
+            }
           }
         }}
         onEndReached={onEndReached}

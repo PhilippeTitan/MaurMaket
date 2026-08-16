@@ -2754,6 +2754,29 @@ app.get('/api/products', async (req, res) => {
     orderBy = 'p.created_at ASC';
   }
 
+  if (following === 'true' && userId) {
+    conditions.push(`p.seller_id IN (SELECT seller_id FROM follows WHERE follower_id = $${paramIndex++})`);
+    params.push(userId);
+  } else if (following === 'true' && !userId) {
+    // Fallback: if following requested but no auth, use personalized scoring
+    selectExtra = `, COALESCE(score.total_score, 0) AS feed_score, score.recommendation_reason`;
+    joinExtra = `LEFT JOIN (
+      WITH user_follows AS (
+        SELECT 1 AS seller_id WHERE false
+      ),
+      user_wishlists AS (SELECT 1 AS product_id WHERE false),
+      user_likes AS (SELECT 1 AS product_id WHERE false),
+      user_relevant AS (SELECT 1 AS product_id WHERE false),
+      user_not_relevant AS (SELECT 1 AS product_id WHERE false),
+      user_category_affinities AS (SELECT 1 AS category_id WHERE false),
+      user_purchases AS (SELECT 1 AS seller_id, 1 AS category_id WHERE false)
+      SELECT p2.id AS product_id, 0 AS total_score, 'New' AS recommendation_reason
+      FROM products p2 WHERE false
+    ) score ON score.product_id = p.id`;
+    orderBy = 'p.created_at DESC';
+  }
+  const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
   try {
     const result = await pool.query(
       `SELECT COUNT(*) OVER() AS total_count,
@@ -2821,15 +2844,9 @@ app.get('/api/products/:id/co-purchases', async (req, res) => {
     );
     res.json({ products: result.rows });
   } catch (err) {
-    console.error('Co-purchase recommendations error:', err);
+console.error('Co-purchase recommendations error:', err);
     res.status(500).json({ error: 'Server error' });
   }
-
-  if (following === 'true' && userId) {
-    conditions.push(`p.seller_id IN (SELECT seller_id FROM follows WHERE follower_id = $${paramIndex++})`);
-    params.push(userId);
-  }
-  const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 });
 
 app.get('/api/users/:userId/follows/:kind', authRequired, async (req, res) => {
@@ -7075,7 +7092,7 @@ app.post('/api/feed/event', authRequired, async (req, res) => {
       [req.user.id]
     );
     if (parseInt(rateCheck.rows[0].count) >= 50) {
-      return res.status(429).json({ error: 'Too many actions. Please wait.' });
+      return res.status(429).json({ error: 'Too many actions. Please wait.', rateLimited: true });
     }
 
     await pool.query(

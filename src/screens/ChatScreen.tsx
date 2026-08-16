@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Image, Pressable, AppState, AppStateStatus, Modal,
+  Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -49,6 +50,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appState = useRef(AppState.currentState);
   const typingCooldownRef = useRef(false);
+  const pendingPulse = useRef(new Animated.Value(0)).current;
 
   const lastMessageCursor = useRef<{ time: string; id: string } | null>(null);
   const sendingRef = useRef(false);
@@ -122,7 +124,15 @@ export default function ChatScreen({ route, navigation }: Props) {
       } else if (appState.current.match(/inactive|background/) && next === 'active') {
         fetchMessages(0, false, true);
         checkTyping();
-        startPolling();
+startPolling();
+
+    // Start pending pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pendingPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(pendingPulse, { toValue: 0, duration: 800, useNativeDriver: true }),
+      ])
+    ).start();
       }
       appState.current = next;
     };
@@ -309,15 +319,22 @@ export default function ChatScreen({ route, navigation }: Props) {
                 isCountered && styles.offerStatusBadgeCountered,
                 isPending && styles.offerStatusBadgePending,
               ]}>
-                <Text style={[
-                  styles.offerStatusText,
-                  isAccepted && styles.offerStatusTextAccepted,
-                  isDeclined && styles.offerStatusTextDeclined,
-                  isCountered && styles.offerStatusTextCountered,
-                  isPending && styles.offerStatusTextPending,
-                ]}>
-                  {isAccepted ? '✓ Accepted' : isDeclined ? '✕ Declined' : isCountered ? `🔄 Counter (${offerData.negotiationRound || 1}/3)` : '⏳ Pending'}
-                </Text>
+                {isAccepted ? (
+                  <Text style={[styles.offerStatusText, styles.offerStatusTextAccepted]}>✓ Accepted</Text>
+                ) : isDeclined ? (
+                  <Text style={[styles.offerStatusText, styles.offerStatusTextDeclined]}>✕ Declined</Text>
+                ) : isCountered ? (
+                  <Text style={[styles.offerStatusText, styles.offerStatusTextCountered]}>🔄 Counter ({offerData.negotiationRound || 1}/3)</Text>
+                ) : (
+                  <View style={styles.offerStatusPendingIcon}>
+                    <Animated.View style={{
+                      transform: [{ scale: pendingPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.2] }) }],
+                      opacity: pendingPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 0.6] }),
+                    }}>
+                      <MaterialCommunityIcons name="clock-outline" size={14} color="#F5A623" />
+                    </Animated.View>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -373,6 +390,21 @@ export default function ChatScreen({ route, navigation }: Props) {
                   activeOpacity={0.7}
                 >
                   <Text style={styles.offerMsgAcceptText}>Accept</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* View Offer Details Button - for users who can't respond */}
+            {!sellerCanRespond && !buyerCanRespond && !isAccepted && (
+              <View style={styles.offerMsgActions}>
+                <TouchableOpacity
+                  style={styles.offerMsgView}
+                  onPress={() => navigation.navigate('OfferDetail', { messageId: item.id, conversationId })}
+                  accessibilityLabel="view offer details"
+                  accessibilityRole="button"
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.offerMsgViewText}>View</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -498,22 +530,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {(() => {
-          const activeOffer = messages.find(m => m.message_type === 'offer' && m.offer_data && ((m.offer_data as any).status === 'pending' || (m.offer_data as any).status === 'countered'));
-          if (!activeOffer || !activeOffer.offer_data) return null;
-          const od = activeOffer.offer_data as any;
-          const isCountered = od.status === 'countered';
-          return (
-            <TouchableOpacity style={[styles.offerReminderBanner, isCountered && styles.offerReminderBannerCountered]} onPress={() => {
-              setSellerItemsVisible(true);
-            }} accessibilityLabel={`active offer: G ${od.offeredPrice} for ${od.productName}`} accessibilityRole="button">
-              <Icon name="sale-tag" size={16} color={COLORS.white} />
-              <Text style={styles.offerReminderText} numberOfLines={1}>{isCountered ? 'Counter offer' : 'Your offer'}: G {formatPrice(od.offeredPrice)} for {od.productName}</Text>
-              <Text style={styles.offerReminderAction}>View</Text>
-            </TouchableOpacity>
-          );
-        })()}
-
+{/* Offer Reminder Banner - removed, View button is now on the offer card itself */}
         {loading ? (
           <View style={{ flex: 1, padding: SPACING.md, gap: 14, justifyContent: 'flex-end' }}>
             {[140, 180, 100].map((w, i) => (
@@ -711,7 +728,7 @@ const styles = StyleSheet.create({
   messageFailed: { fontSize: 10, color: COLORS.coral, marginTop: 3, alignSelf: 'flex-end', fontWeight: '700' },
 
   /* Rich Offer Message Card */
-  offerMsgWrap: { maxWidth: '88%', marginBottom: 12 },
+  offerMsgWrap: { maxWidth: '95%', width: '95%', marginBottom: 12 },
   offerMsgWrapMe: { alignSelf: 'flex-end' },
   offerMsgWrapThem: { alignSelf: 'flex-start' },
   offerMsgCard: {
@@ -790,6 +807,16 @@ const styles = StyleSheet.create({
   offerStatusTextAccepted: { color: '#1D9E75' },
   offerStatusTextDeclined: { color: '#E24B4A' },
   offerStatusTextCountered: { color: '#3B82F6' },
+  offerStatusPendingIcon: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.pill,
+    backgroundColor: 'rgba(245,166,35,0.15)',
+    borderWidth: 1,
+    borderColor: '#F5A623',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   offerMsgDivider: {
     height: 1,
     backgroundColor: COLORS.border,
@@ -885,6 +912,18 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: '700',
   },
+  offerMsgView: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: RADIUS.pill,
+    alignItems: 'center',
+    backgroundColor: COLORS.coral,
+  },
+  offerMsgViewText: {
+    fontSize: 12,
+    color: COLORS.white,
+    fontWeight: '700',
+  },
   counterEntry: {
     flexDirection: 'row',
     gap: 8,
@@ -947,6 +986,22 @@ const styles = StyleSheet.create({
     color: COLORS.text2,
     marginTop: 8,
     alignSelf: 'flex-end',
+  },
+  offerViewBtn: {
+    backgroundColor: COLORS.coral,
+    borderRadius: RADIUS.pill,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginTop: 12,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  offerViewBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.white,
   },
 
   /* Offer Dock (at bottom) */

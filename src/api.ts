@@ -39,13 +39,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.156.1.105:4000/api'
+    ? 'http://10.11.73.105:4000/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.156.1.105:4000'
+    ? 'http://10.11.73.105:4000'
     : 'https://maurmaket.onrender.com';
 
 let _cachedToken: string | null = null;
@@ -328,11 +328,18 @@ export const trackFeedEvent = (productId: string, eventType: string, durationMs?
     offlineQueue.enqueue({ type: 'feed_event', productId, eventType, dwellTimeMs: durationMs });
     return Promise.resolve({ tracked: true, queued: true });
   }
-  return request('/feed/event', { method: 'POST', body: JSON.stringify({ productId, eventType, durationMs }) }).catch(() => {
-    if (!isSync) {
-      offlineQueue.enqueue({ type: 'feed_event', productId, eventType, dwellTimeMs: durationMs });
-    }
-  });
+  return request('/feed/event', { method: 'POST', body: JSON.stringify({ productId, eventType, durationMs }) })
+    .then(res => ({ tracked: true, rateLimited: res.rateLimited === true }))
+    .catch((err) => {
+      const isRateLimited = err?.message?.includes('429') || err?.message?.includes('Too many actions');
+      if (!isSync && !isRateLimited) {
+        offlineQueue.enqueue({ type: 'feed_event', productId, eventType, dwellTimeMs: durationMs });
+      }
+      if (isRateLimited) {
+        return { tracked: false, rateLimited: true };
+      }
+      return { tracked: false, rateLimited: false };
+    });
 };
 
 export const saveFeedTaste = (categoryIds: string[]) =>

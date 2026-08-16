@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { COLORS, RADIUS } from '../theme';
 import { toggleFollow } from '../api';
@@ -14,18 +14,25 @@ interface FollowButtonProps {
 
 export default function FollowButton({ sellerId, variant = 'outline', size = 'sm' }: FollowButtonProps) {
   const { t } = useTranslation();
-  const isFollowing = store.isFollowing(sellerId);
+  const [isFollowing, setIsFollowing] = useState(() => store.isFollowing(sellerId));
+
+  useEffect(() => {
+    const unsub = store.onChange(() => {
+      setIsFollowing(store.isFollowing(sellerId));
+    });
+    return unsub;
+  }, [sellerId]);
 
   const handleFollow = async () => {
-    const wasFollowing = store.isFollowing(sellerId);
-    store.toggleFollowing(sellerId, !wasFollowing);
+    const wasFollowing = isFollowing;
+    setIsFollowing(!wasFollowing);
     try {
       const res = (await toggleFollow(sellerId)) as { following?: boolean };
       if (typeof res.following === 'boolean') {
-        store.toggleFollowing(sellerId, res.following);
+        setIsFollowing(res.following);
       }
     } catch {
-      store.toggleFollowing(sellerId, wasFollowing);
+      setIsFollowing(wasFollowing);
     }
   };
 

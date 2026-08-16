@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
-import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl, getFollowing, getCoPurchaseRecommendations } from '../api';
+import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl, getFollowing, getCoPurchaseRecommendations, trackFeedEvent } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -201,6 +201,9 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
       const res = await toggleWishlist(productId) as { wishlisted: boolean };
       setWishlisted(res.wishlisted);
       setHeartCount(prev => res.wishlisted ? prev + 1 : Math.max(0, prev - 1));
+      if (res.wishlisted) {
+        trackFeedEvent(productId, 'save').catch(() => {});
+      }
     } catch { /* silent */ }
   };
 
