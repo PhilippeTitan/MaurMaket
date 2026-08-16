@@ -2832,6 +2832,25 @@ app.get('/api/products/:id/co-purchases', async (req, res) => {
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 });
 
+app.get('/api/users/:userId/follows/:kind', authRequired, async (req, res) => {
+  const { userId, kind } = req.params;
+  if (!['followers', 'following'].includes(kind)) return res.status(400).json({ error: 'Invalid follow list' });
+  try {
+    const result = await pool.query(
+      kind === 'followers'
+        ? `SELECT u.id, u.full_name, u.username, u.avatar_url, u.store_name, u.store_logo_url, u.seller_tier, u.use_store_identity
+           FROM follows f JOIN users u ON u.id = f.follower_id WHERE f.seller_id = $1 ORDER BY f.created_at DESC`
+        : `SELECT u.id, u.full_name, u.username, u.avatar_url, u.store_name, u.store_logo_url, u.seller_tier, u.use_store_identity
+           FROM follows f JOIN users u ON u.id = f.seller_id WHERE f.follower_id = $1 ORDER BY f.created_at DESC`,
+      [userId]
+    );
+    res.json({ users: result.rows });
+  } catch (err) {
+    console.error('Follow list fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/products/:id', async (req, res) => {
   try {
     const id = req.params.id;

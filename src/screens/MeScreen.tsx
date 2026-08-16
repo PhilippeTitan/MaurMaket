@@ -407,14 +407,14 @@ export default function MeScreen() {
               <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
               <Text style={styles.statLabel}>{isSeller ? 'Sales' : t('me.totalOrders')}</Text>
             </View>
-            <View style={styles.stat}>
+            <TouchableOpacity style={styles.stat} onPress={() => user && nav.navigate('FollowList', { userId: user.id, kind: 'followers', title: t('me.followers') })}>
               <Text style={styles.statNum}>{followerCount}</Text>
               <Text style={styles.statLabel}>{t('me.followers')}</Text>
-            </View>
-            <View style={styles.stat}>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.stat} onPress={() => user && nav.navigate('FollowList', { userId: user.id, kind: 'following', title: t('me.following') })}>
               <Text style={styles.statNum}>{followingCount}</Text>
               <Text style={styles.statLabel}>{t('me.following')}</Text>
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
 

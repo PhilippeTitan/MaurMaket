@@ -60,6 +60,7 @@ import PromoManagementScreen from './src/screens/PromoManagementScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
 import DobConfirmModal from './src/components/DobConfirmModal';
 import TasteOnboarding from './src/components/TasteOnboarding';
+import FollowListScreen from './src/screens/FollowListScreen';
 
 const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
 
@@ -413,6 +414,7 @@ export default function App() {
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
             <Stack.Screen name="UsernameSettings" component={UsernameSettingsScreen} />
             <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
+            <Stack.Screen name="FollowList" component={FollowListScreen} />
             <Stack.Screen name="OfferDetail" component={OfferDetailScreen} />
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
             <Stack.Screen name="Meetup" component={LazyMeetupScreen} />

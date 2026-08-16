@@ -400,6 +400,8 @@ export const getFollowing = () => request('/following');
 
 export const getFollowerCount = (sellerId: string) =>
   request(`/followers/count/${sellerId}`);
+export const getFollowList = (userId: string, kind: 'followers' | 'following') =>
+  request(`/users/${userId}/follows/${kind}`);
 
 // Reviews
 export const createReview = (orderId: string, rating: number, comment: string) =>

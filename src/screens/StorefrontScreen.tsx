@@ -368,10 +368,10 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                     <Text style={styles.statNum}>{products.length}</Text>
                     <Text style={styles.statLabel}>{t('storefront.products')}</Text>
                   </View>
-                  <View style={styles.stat}>
+                  <TouchableOpacity style={styles.stat} onPress={() => navigation.navigate('FollowList', { userId: sellerId, kind: 'followers', title: t('storefront.followers') })}>
                     <Text style={styles.statNum}>{followerCount}</Text>
                     <Text style={styles.statLabel}>{t('storefront.followers')}</Text>
-                  </View>
+                  </TouchableOpacity>
                   <View style={styles.stat}>
                     <Text style={styles.statNum}>{avgRating}</Text>
                     <Text style={styles.statLabel}>{t('storefront.rating')}</Text>

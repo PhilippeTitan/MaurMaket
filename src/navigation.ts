@@ -74,5 +74,6 @@ export type RootStackParamList = {
   PrivacySettings: undefined;
   UsernameSettings: undefined;
   LanguageSettings: undefined;
+  FollowList: { userId: string; kind: 'followers' | 'following'; title: string };
   OfferDetail: { messageId: string; conversationId: string };
 };
