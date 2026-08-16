@@ -24,6 +24,7 @@ export interface User {
   show_real_name: boolean;
   sales_count?: number;
   pending_dob?: boolean;
+  taste_onboarding_completed?: boolean;
 }
 
 export interface ProductImage {

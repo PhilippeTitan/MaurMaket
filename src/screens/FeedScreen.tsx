@@ -318,7 +318,13 @@ export default function FeedScreen() {
     return (
       <View style={[styles.slide, { height: screenHeight }]}>
         {/* Full-screen image / background — swipeable if multiple images */}
-        <View style={styles.mediaContainer}>
+        <Pressable
+          style={styles.mediaContainer}
+          onLongPress={() => setMoreProduct(item)}
+          delayLongPress={450}
+          accessibilityRole="button"
+          accessibilityLabel="Product image. Long press for feed options."
+        >
           {allImages.length > 1 ? (
             <ScrollView
               horizontal
@@ -358,7 +364,7 @@ export default function FeedScreen() {
           ) : (
             <Icon name="image-unavailable" size={48} color={COLORS.text2} />
           )}
-        </View>
+        </Pressable>
 
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
@@ -714,7 +720,7 @@ export default function FeedScreen() {
               accessibilityLabel={t('accessibility.markRelevant')}
             >
               <MaterialCommunityIcons name="thumb-up-outline" size={18} color={COLORS.text} />
-              <Text style={styles.moreItemText}>Relevant</Text>
+              <Text style={styles.moreItemText}>Show more like this</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.moreItem}
@@ -726,7 +732,7 @@ export default function FeedScreen() {
               accessibilityLabel={t('accessibility.markNotRelevant')}
             >
               <MaterialCommunityIcons name="thumb-down-outline" size={18} color={COLORS.text} />
-              <Text style={styles.moreItemText}>Not relevant</Text>
+              <Text style={styles.moreItemText}>Not interested</Text>
             </TouchableOpacity>
             <View style={styles.moreDivider} />
             <TouchableOpacity

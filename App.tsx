@@ -59,6 +59,7 @@ import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
 import PromoManagementScreen from './src/screens/PromoManagementScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
 import DobConfirmModal from './src/components/DobConfirmModal';
+import TasteOnboarding from './src/components/TasteOnboarding';
 
 const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
 
@@ -425,7 +426,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner />{appContent}<DobConfirmModal visible={pendingDob} onCompleted={() => setPendingDob(false)} /></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner />{appContent}<DobConfirmModal visible={pendingDob} onCompleted={() => setPendingDob(false)} />{isLoggedIn && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}</ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
 }
 
 const styles = StyleSheet.create({

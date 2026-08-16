@@ -809,6 +809,20 @@ async function runMigrations() {
       ON payouts (seller_id) WHERE status = 'processing';
     `));
 
+    // 43. Feed taste onboarding and category-level recommendation signals.
+    // Existing accounts are opted out by default; newly-created accounts opt in below.
+    await step('Feed preferences', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS taste_onboarding_completed BOOLEAN DEFAULT true;
+      CREATE TABLE IF NOT EXISTS user_category_affinities (
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        category_id UUID REFERENCES categories(id) ON DELETE CASCADE NOT NULL,
+        score REAL NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, category_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_category_affinities_user ON user_category_affinities(user_id, score DESC);
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -1168,9 +1182,9 @@ app.post('/api/auth/signup', async (req, res) => {
     const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
     const username = await generateUsername(fullName);
     const result = await pool.query(
-      `INSERT INTO users (full_name, email, password_hash, phone, role, username, date_of_birth)
-       VALUES ($1, $2, $3, $4, 'buyer', $5, $6)
-       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified`,
+      `INSERT INTO users (full_name, email, password_hash, phone, role, username, date_of_birth, taste_onboarding_completed)
+       VALUES ($1, $2, $3, $4, 'buyer', $5, $6, false)
+       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified, taste_onboarding_completed`,
       [fullName, email, passwordHash, cleanPhone, username, dateOfBirth]
     );
     const user = result.rows[0];
@@ -1229,7 +1243,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, username, show_real_name, seller_tier, email_verified, store_name, password_hash FROM users WHERE email = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, username, show_real_name, seller_tier, email_verified, store_name, taste_onboarding_completed, password_hash FROM users WHERE email = $1`,
       [email]
     );
     if (result.rows.length === 0) {
@@ -1276,7 +1290,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -2654,16 +2668,19 @@ app.get('/api/products', async (req, res) => {
         SELECT seller_id FROM follows WHERE follower_id = $${paramIndex}
       ),
       user_wishlists AS (
-        SELECT product_id FROM wishlists WHERE user_id = $${paramIndex}
+        SELECT product_id, created_at FROM wishlists WHERE user_id = $${paramIndex}
       ),
       user_likes AS (
-        SELECT product_id FROM feed_events WHERE user_id = $${paramIndex} AND event_type = 'like'
+        SELECT product_id, created_at FROM feed_events WHERE user_id = $${paramIndex} AND event_type = 'like'
       ),
       user_relevant AS (
-        SELECT product_id FROM feed_events WHERE user_id = $${paramIndex} AND event_type = 'relevant'
+        SELECT product_id, created_at FROM feed_events WHERE user_id = $${paramIndex} AND event_type = 'relevant'
       ),
       user_not_relevant AS (
-        SELECT product_id FROM feed_events WHERE user_id = $${paramIndex} AND event_type = 'not_relevant'
+        SELECT product_id, created_at FROM feed_events WHERE user_id = $${paramIndex} AND event_type = 'not_relevant'
+      ),
+      user_category_affinities AS (
+        SELECT category_id, score FROM user_category_affinities WHERE user_id = $${paramIndex}
       ),
       user_purchases AS (
         SELECT DISTINCT oi.seller_id, p3.category_id
@@ -2680,14 +2697,15 @@ app.get('/api/products', async (req, res) => {
         p2.id AS product_id,
         (
           COALESCE((SELECT 3.0 FROM user_follows WHERE seller_id = p2.seller_id LIMIT 1), 0)
-          + COALESCE((SELECT 2.0 FROM user_wishlists WHERE product_id = p2.id LIMIT 1), 0)
-          + COALESCE((SELECT 2.0 FROM user_likes WHERE product_id = p2.id LIMIT 1), 0)
+          + COALESCE((SELECT 2.0 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_wishlists WHERE product_id = p2.id LIMIT 1), 0)
+          + COALESCE((SELECT 2.0 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_likes WHERE product_id = p2.id LIMIT 1), 0)
           + COALESCE((SELECT 1.5 FROM user_purchases WHERE seller_id = p2.seller_id LIMIT 1), 0)
-          + COALESCE((SELECT 1.5 FROM user_relevant WHERE product_id = p2.id LIMIT 1), 0)
+          + COALESCE((SELECT 1.5 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_relevant WHERE product_id = p2.id LIMIT 1), 0)
+          + COALESCE((SELECT score * 1.5 FROM user_category_affinities WHERE category_id = p2.category_id LIMIT 1), 0)
           + COALESCE((SELECT 1.0 FROM user_purchases WHERE category_id = p2.category_id LIMIT 1), 0)
-          + CASE WHEN p2.created_at > NOW() - INTERVAL '24 hours' THEN 1.0 ELSE 0 END
+          + 1.5 * exp(-0.1 * EXTRACT(EPOCH FROM (NOW() - p2.created_at)) / 86400)
           + COALESCE((SELECT CASE WHEN avg_rating > 4 THEN 0.5 ELSE 0 END FROM seller_ratings WHERE seller_id = p2.seller_id), 0)
-          - COALESCE((SELECT 3.0 FROM user_not_relevant WHERE product_id = p2.id LIMIT 1), 0)
+          - COALESCE((SELECT 3.0 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_not_relevant WHERE product_id = p2.id LIMIT 1), 0)
         ) AS total_score
       FROM products p2
       WHERE p2.is_available = TRUE
@@ -2701,6 +2719,8 @@ app.get('/api/products', async (req, res) => {
           SELECT 1 FROM user_relevant WHERE product_id = p2.id
           UNION ALL
           SELECT 1 FROM user_not_relevant WHERE product_id = p2.id
+          UNION ALL
+          SELECT 1 FROM user_category_affinities WHERE category_id = p2.category_id
           UNION ALL
           SELECT 1 FROM user_purchases WHERE seller_id = p2.seller_id OR category_id = p2.category_id
         )
@@ -6968,10 +6988,71 @@ app.post('/api/feed/event', authRequired, async (req, res) => {
          created_at = CURRENT_TIMESTAMP`,
       [req.user.id, productId, eventType, durationMs || null]
     );
+    // Explicit feedback should improve similar listings too, not only this exact product.
+    if (eventType === 'relevant' || eventType === 'not_relevant') {
+      const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
+      if (category.rows[0]?.category_id) {
+        const delta = eventType === 'relevant' ? 1 : -1;
+        await pool.query(
+          `INSERT INTO user_category_affinities (user_id, category_id, score)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id, category_id) DO UPDATE SET
+             score = GREATEST(-3, LEAST(3, user_category_affinities.score + EXCLUDED.score)),
+             updated_at = CURRENT_TIMESTAMP`,
+          [req.user.id, category.rows[0].category_id, delta]
+        );
+      }
+    }
     res.json({ recorded: true });
   } catch (err) {
     console.error('Feed event error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Seed a new account's feed with a few intentional category choices.
+app.post('/api/feed/taste', authRequired, async (req, res) => {
+  const { categoryIds } = req.body;
+  if (!Array.isArray(categoryIds) || categoryIds.length < 3 || categoryIds.length > 12 || categoryIds.some(id => typeof id !== 'string')) {
+    return res.status(400).json({ error: 'Choose between 3 and 12 categories' });
+  }
+  const uniqueIds = [...new Set(categoryIds)];
+  try {
+    const categories = await pool.query('SELECT id FROM categories WHERE id = ANY($1::uuid[])', [uniqueIds]);
+    if (categories.rows.length !== uniqueIds.length) return res.status(400).json({ error: 'One or more categories are invalid' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const { id } of categories.rows) {
+        await client.query(
+          `INSERT INTO user_category_affinities (user_id, category_id, score)
+           VALUES ($1, $2, 2)
+           ON CONFLICT (user_id, category_id) DO UPDATE SET score = GREATEST(user_category_affinities.score, 2), updated_at = CURRENT_TIMESTAMP`,
+          [req.user.id, id]
+        );
+      }
+      await client.query('UPDATE users SET taste_onboarding_completed = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [req.user.id]);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+    res.json({ saved: true });
+  } catch (err) {
+    console.error('Feed taste error:', err);
+    res.status(500).json({ error: 'Could not save your preferences' });
+  }
+});
+
+app.post('/api/feed/taste/skip', authRequired, async (req, res) => {
+  try {
+    await pool.query('UPDATE users SET taste_onboarding_completed = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [req.user.id]);
+    res.json({ saved: true });
+  } catch (err) {
+    console.error('Feed taste skip error:', err);
+    res.status(500).json({ error: 'Could not update preferences' });
   }
 });
 

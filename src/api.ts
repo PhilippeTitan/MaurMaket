@@ -332,6 +332,12 @@ export const trackFeedEvent = (productId: string, eventType: string, durationMs?
   });
 };
 
+export const saveFeedTaste = (categoryIds: string[]) =>
+  request('/feed/taste', { method: 'POST', body: JSON.stringify({ categoryIds }) });
+
+export const skipFeedTaste = () =>
+  request('/feed/taste/skip', { method: 'POST' });
+
 // Seller
 export const getSellerProducts = () => request('/seller/products').then(normalizeProductsResponse);
 export const getSellerOrders = () => request('/seller/orders');
