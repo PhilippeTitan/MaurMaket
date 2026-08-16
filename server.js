@@ -1085,14 +1085,21 @@ function optionalAuth(req, _res, next) {
 }
 
 // Auth middleware
-function authRequired(req, res, next) {
+async function authRequired(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   try {
     const payload = jwt.verify(auth.slice(7), JWT_SECRET);
-    req.user = payload;
+    // Re-check identity against the DB on every request rather than trusting
+    // the JWT's embedded role/email. This closes the gap where a deleted or
+    // role-changed account could keep acting on a still-valid 7-day token.
+    const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [payload.id]);
+    if (result.rows.length === 0 || result.rows[0].role === 'deleted') {
+      return res.status(401).json({ error: 'Account no longer active' });
+    }
+    req.user = { id: result.rows[0].id, email: result.rows[0].email, role: result.rows[0].role };
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid token' });
@@ -1396,6 +1403,9 @@ app.delete('/api/auth/delete-account', authRequired, async (req, res) => {
   const userId = req.user.id;
   const client = await pool.connect();
   try {
+    // Pre-checks (fast fail before opening a transaction) — these are
+    // re-verified again inside the transaction below with row locks, so a
+    // late-arriving order/payout/dispute between here and BEGIN can't slip through.
     const activeBuyerOrders = await client.query(
       `SELECT id, status FROM orders 
        WHERE buyer_id = $1 AND status NOT IN ('completed', 'cancelled', 'refunded')`,
@@ -1416,6 +1426,25 @@ app.delete('/api/auth/delete-account', authRequired, async (req, res) => {
     if (activeSellerOrders.rows.length > 0) {
       return res.status(400).json({ 
         error: 'Cannot delete account with active sales. Please complete all pending fulfillments or cancellations first.' 
+      });
+    }
+
+    // Open disputes — checked independently of order status, since a dispute's
+    // own status ('open'/'resolved') is tracked separately from orders.status
+    // and an order can already read 'completed' while its dispute is still open.
+    const openDisputes = await client.query(
+      `SELECT DISTINCT d.id FROM disputes d
+       JOIN orders o ON o.id = d.order_id
+       WHERE d.status = 'open' AND (
+         d.raised_by = $1
+         OR o.buyer_id = $1
+         OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.seller_id = $1)
+       )`,
+      [userId]
+    );
+    if (openDisputes.rows.length > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete account while a dispute involving you is open. Please wait until it is resolved.'
       });
     }
 
@@ -1441,12 +1470,60 @@ app.delete('/api/auth/delete-account', authRequired, async (req, res) => {
 
     await client.query('BEGIN');
 
+    // Re-verify the money-related checks inside the transaction, with a row
+    // lock on the balance, to close the gap between the pre-checks above and
+    // this point (e.g. a payout or sale completing in between).
+    const lockedBalance = await client.query(
+      `SELECT balance FROM seller_balances WHERE seller_id = $1 FOR UPDATE`,
+      [userId]
+    );
+    if (lockedBalance.rows.length > 0 && parseFloat(lockedBalance.rows[0].balance || 0) > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'Please withdraw your remaining seller balance before deleting your account.'
+      });
+    }
+    const recheckPendingPayouts = await client.query(
+      `SELECT id FROM payouts WHERE seller_id = $1 AND status IN ('pending', 'processing')`,
+      [userId]
+    );
+    if (recheckPendingPayouts.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'You have a payout in progress. Please wait until your payout completes before deleting your account.'
+      });
+    }
+
     await client.query('UPDATE products SET is_available = FALSE WHERE seller_id = $1', [userId]);
 
     await client.query('DELETE FROM wishlists WHERE user_id = $1', [userId]);
     await client.query('DELETE FROM follows WHERE follower_id = $1 OR seller_id = $1', [userId]);
     await client.query('DELETE FROM feed_events WHERE user_id = $1', [userId]);
     await client.query('DELETE FROM saved_addresses WHERE user_id = $1', [userId]);
+
+    // Scrub KYC document data. We keep the verification_attempts row itself
+    // (status + timestamps) for accounting/audit continuity — same pattern as
+    // order/transaction retention — but null out the actual document images,
+    // OCR-extracted personal data, and face-match score.
+    await client.query(
+      `UPDATE verification_attempts SET
+        id_front_url = NULL,
+        id_back_url = NULL,
+        selfie_url = NULL,
+        ocr_result = NULL,
+        face_match_score = NULL,
+        rejection_reason = NULL
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    // didit_webhook_events has no user_id column, but vendor_data is set to
+    // the user's id at session-creation time (see /api/verification/session),
+    // so it's effectively a personal identifier and needs scrubbing too.
+    await client.query(
+      `UPDATE didit_webhook_events SET vendor_data = 'deleted' WHERE vendor_data = $1`,
+      [userId]
+    );
 
     const anonymizedEmail = `deleted_${userId.slice(0, 8)}_${Date.now()}@deleted.maurmaket.com`;
     const anonymizedUsername = `deleted_${userId.slice(0, 8)}`;
@@ -6933,6 +7010,58 @@ app.get('/api/health', async (_req, res) => {
   result.status = result.primary === 'connected' ? 'ok' : 'error';
   res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
+app.get('/api/debug', authRequired, adminRequired, async (_req, res) => {
+  try {
+    const mccRes = await fetch(
+      (process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create').replace('pay-create', 'pay-balance'),
+      { headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}` } }
+    );
+    const data = await mccRes.json();
+    res.json({ mccStatus: mccRes.status, mccOk: mccRes.ok, data, hasKey: !!process.env.MCC_KEY });
+  } catch (err) {
+    res.status(500).json({ error: err.message, hasKey: !!process.env.MCC_KEY });
+  }
+});
+
+// ───── Legal Pages (Google OAuth requirement) ─────
+const legalPage = (title, content) => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} - MaurMaket</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1a1a1a;line-height:1.6}h1{font-size:1.8em;margin-bottom:.3em}h2{font-size:1.3em;margin-top:1.5em}p,li{font-size:.95em}a{color:#C0406A}ul{padding-left:1.5em}.meta{color:#666;font-size:.85em;margin-bottom:2em}</style></head><body><h1>${title}</h1><p class="meta">Effective: August 7, 2026 &middot; MaurMaket (maurmaket.onrender.com)</p>${content}<hr><p style="color:#999;font-size:.8em">Questions? Contact us at maurinexus.contact@gmail.com</p></body></html>`;
+
+app.get('/privacy', (_req, res) => {
+  res.type('html').send(legalPage('Privacy Policy', `
+    <h2>Information We Collect</h2>
+    <p>When you use MaurMaket, we collect information you provide directly: name, email, phone number, and profile photo. We also collect transaction data (listings, purchases, messages between buyers and sellers) and device information for app functionality.</p>
+    <h2>How We Use Your Information</h2>
+    <ul>
+      <li>To provide, maintain, and improve MaurMaket services</li>
+      <li>To process transactions and send related information</li>
+      <li>To send technical notices, updates, and security alerts</li>
+      <li>To respond to your comments and customer service requests</li>
+      <li>To detect and prevent fraud or abuse</li>
+    </ul>
+    <h2>Information Sharing</h2>
+    <p>We do not sell your personal information. We share data only with your consent, to comply with laws, or with service providers who assist in operating the platform (hosting, payment processing, analytics).</p>
+    <h2>Data Security</h2>
+    <p>We implement industry-standard security measures including encryption in transit (TLS) and at rest. However, no method of transmission over the Internet is 100% secure.</p>
+    <h2>Data Retention</h2>
+    <p>We retain your information as long as your account is active or as needed to provide services. You may request deletion of your account and data at any time.</p>
+    <h2>Your Rights</h2>
+    <p>You may access, update, or delete your personal information through your account settings or by contacting us at maurinexus.contact@gmail.com.</p>
+    <h2>Changes</h2>
+    <p>We may update this policy from time to time. Continued use of MaurMaket after changes constitutes acceptance of the revised policy.</p>
+  `));
+});
+
+app.get('/terms', (_req, res) => {
+  res.type('html').send(legalPage('Terms of Service', `
+    <h2>Acceptance of Terms</h2>
+    <p>By accessing or using MaurMaket, you agree to be bound by these Terms of Service. If you do not agree, do not use the service.</p>
+    <h2>User Accounts</h2>
+    <p>You must be at least 18 years old to use MaurMaket. You are responsible for maintaining the confidentiality of your account credentials and for all activity under your account.</p>
+    <h2>Marketplace Rules</h2>
+    <ul>
+      <li>Listings must be accurate and not misleading</li>
+      <li>You may not list prohibited items (weapons, drugs, counterfeit goods)</li>
+      <li>Transactions must be completed through MaurMaket's payment system</li>
       <li>Meetups for exchanges must follow safety guidelines</li>
     </ul>
     <h2>Payments &amp; Fees</h2>
