@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
-import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl, getFollowing } from '../api';
+import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl, getFollowing, getCoPurchaseRecommendations } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -51,6 +51,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [avgRating, setAvgRating] = useState(0);
   const [sellerProducts, setSellerProducts] = useState<Product[]>([]);
   const [categoryProducts, setCategoryProducts] = useState<Product[]>([]);
+  const [coPurchaseProducts, setCoPurchaseProducts] = useState<Product[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -129,7 +130,13 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
 
         setLoadingRelated(true);
         try {
-          const relatedReqs: Promise<{ products: Product[] }>[] = [];
+          const relatedReqs: Promise<{ products: Product[] }>[] = [
+            queryClient.fetchQuery({
+              queryKey: ['co-purchase-products', p.id],
+              queryFn: () => getCoPurchaseRecommendations(p.id) as Promise<{ products: Product[] }>,
+              staleTime: 5 * 60_000,
+            }),
+          ];
           const catName = typeof p.category === 'string'
             ? p.category
             : p.category?.name;
@@ -148,11 +155,14 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             }));
           }
           const results = await Promise.all(relatedReqs);
-          if (p.seller_id && results[0]) {
-            setSellerProducts(results[0].products.filter((pp: Product) => pp.id !== p.id).slice(0, 12));
+          if (results[0]) setCoPurchaseProducts(results[0].products.slice(0, 8));
+          const sellerOffset = 1;
+          if (p.seller_id && results[sellerOffset]) {
+            setSellerProducts(results[sellerOffset].products.filter((pp: Product) => pp.id !== p.id).slice(0, 12));
           }
-          if (catName && results[p.seller_id ? 1 : 0]) {
-            const catProds = results[p.seller_id ? 1 : 0].products.filter((pp: Product) => pp.id !== p.id).slice(0, 9);
+          const categoryOffset = sellerOffset + (p.seller_id ? 1 : 0);
+          if (catName && results[categoryOffset]) {
+            const catProds = results[categoryOffset].products.filter((pp: Product) => pp.id !== p.id).slice(0, 9);
             setCategoryProducts(catProds);
             catProds.forEach((cp: Product) => {
               const url = getImageUrl(cp.images?.find(i => i.is_primary)?.image_url || cp.images?.[0]?.image_url);
@@ -552,6 +562,19 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           )}
 
           {/* ── More from seller ── */}
+          {coPurchaseProducts.length > 0 && (
+            <View style={styles.sectionBorder}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Often bought together</Text>
+              </View>
+              <Text style={styles.sectionHint}>Based on completed purchases from MaurMaket shoppers.</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.sellerScroll, { gap: 10 }]}>
+                {coPurchaseProducts.map(item => <View key={item.id} style={{ width: 130 }}>{renderSellerCard({ item })}</View>)}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* ── More from seller ── */}
           {sellerProducts.length > 0 && (
             <View style={styles.sectionBorder}>
               <View style={styles.sectionHeader}>
@@ -719,6 +742,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 9,
   },
   sectionTitle: { fontSize: 12, fontWeight: '700', color: COLORS.text },
+  sectionHint: { fontSize: 12, color: COLORS.text2, paddingHorizontal: 12, paddingBottom: 10 },
   sectionSeeAll: { fontSize: 11, color: COLORS.coral, fontWeight: '600' },
 
   /* Seller horizontal scroll — 80px square cards */

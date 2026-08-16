@@ -56,6 +56,7 @@ export interface Product {
   category?: Category;
   avg_rating?: number;
   review_count?: number;
+  recommendation_reason?: string;
 }
 
 export interface Category {

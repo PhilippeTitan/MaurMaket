@@ -36,7 +36,7 @@ export default function TasteOnboarding() {
     <Modal visible transparent animationType="fade" statusBarTranslucent>
       <View style={styles.scrim}>
         <View style={styles.card}>
-          <View style={styles.icon}><MaterialCommunityIcons name="sparkles" size={28} color={COLORS.coral} /></View>
+          <View style={styles.icon}><MaterialCommunityIcons name="star-four-points" size={28} color={COLORS.coral} /></View>
           <Text style={styles.title}>Make your feed yours</Text>
           <Text style={styles.subtitle}>Choose at least 3 categories you want to discover. You can always change this through what you like and hide.</Text>
           <ScrollView contentContainerStyle={styles.chips} showsVerticalScrollIndicator={false}>

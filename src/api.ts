@@ -319,6 +319,9 @@ export const refundEscrow = (orderId: string) =>
 export const getEscrowStatus = (orderId: string) =>
   request(`/orders/${orderId}/escrow`);
 
+export const getCoPurchaseRecommendations = (productId: string) =>
+  request(`/products/${productId}/co-purchases`);
+
 // Feed
 export const trackFeedEvent = (productId: string, eventType: string, durationMs?: number, isSync = false) => {
   if (network.isOffline && !isSync) {

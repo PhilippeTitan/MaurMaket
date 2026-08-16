@@ -821,6 +821,16 @@ async function runMigrations() {
         PRIMARY KEY (user_id, category_id)
       );
       CREATE INDEX IF NOT EXISTS idx_user_category_affinities_user ON user_category_affinities(user_id, score DESC);
+      CREATE TABLE IF NOT EXISTS product_cooccurrences (
+        product_a_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
+        product_b_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
+        purchase_count INTEGER NOT NULL DEFAULT 1,
+        last_purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (product_a_id, product_b_id),
+        CHECK (product_a_id < product_b_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_product_cooccurrences_a ON product_cooccurrences(product_a_id, purchase_count DESC);
+      CREATE INDEX IF NOT EXISTS idx_product_cooccurrences_b ON product_cooccurrences(product_b_id, purchase_count DESC);
     `));
 
     if (failed.length > 0) {
@@ -2662,7 +2672,7 @@ app.get('/api/products', async (req, res) => {
 
   if (usePersonalized && userId) {
     // Personalized scoring using CTE for efficiency
-    selectExtra = `, COALESCE(score.total_score, 0) AS feed_score`;
+    selectExtra = `, COALESCE(score.total_score, 0) AS feed_score, score.recommendation_reason`;
     joinExtra = `LEFT JOIN (
       WITH user_follows AS (
         SELECT seller_id FROM follows WHERE follower_id = $${paramIndex}
@@ -2695,6 +2705,12 @@ app.get('/api/products', async (req, res) => {
       )
       SELECT
         p2.id AS product_id,
+        CASE
+          WHEN EXISTS (SELECT 1 FROM user_category_affinities a WHERE a.category_id = p2.category_id AND a.score > 0) THEN 'Because you like ' || COALESCE(c2.name, 'this category')
+          WHEN EXISTS (SELECT 1 FROM user_follows WHERE seller_id = p2.seller_id) THEN 'From a seller you follow'
+          WHEN EXISTS (SELECT 1 FROM user_purchases WHERE category_id = p2.category_id) THEN 'Based on your purchases'
+          ELSE 'Picked for you'
+        END AS recommendation_reason,
         (
           COALESCE((SELECT 3.0 FROM user_follows WHERE seller_id = p2.seller_id LIMIT 1), 0)
           + COALESCE((SELECT 2.0 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_wishlists WHERE product_id = p2.id LIMIT 1), 0)
@@ -2708,6 +2724,7 @@ app.get('/api/products', async (req, res) => {
           - COALESCE((SELECT 3.0 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_not_relevant WHERE product_id = p2.id LIMIT 1), 0)
         ) AS total_score
       FROM products p2
+      LEFT JOIN categories c2 ON c2.id = p2.category_id
       WHERE p2.is_available = TRUE
         AND EXISTS (
           SELECT 1 FROM user_follows WHERE seller_id = p2.seller_id
@@ -2773,6 +2790,40 @@ app.get('/api/products', async (req, res) => {
     res.json({ products, total, page: +page, pages: Math.ceil(total / Math.min(limit, 50)) });
   } catch (err) {
     console.error('Products fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/products/:id/co-purchases', async (req, res) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(req.params.id)) return res.status(404).json({ error: 'Product not found' });
+  try {
+    const result = await pool.query(
+      `SELECT p.id, p.seller_id, p.category_id, p.name, p.description, p.price, p.stock, p.is_available, p.created_at,
+              p.sale_price, p.sale_starts_at, p.sale_ends_at,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
+              u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar, u.use_store_identity, u.username AS seller_username,
+              c.name AS category, rel.purchase_count, images.images
+       FROM (
+         SELECT CASE WHEN product_a_id = $1 THEN product_b_id ELSE product_a_id END AS product_id, purchase_count
+         FROM product_cooccurrences
+         WHERE product_a_id = $1 OR product_b_id = $1
+         ORDER BY purchase_count DESC, last_purchased_at DESC LIMIT 12
+       ) rel
+       JOIN products p ON p.id = rel.product_id AND p.is_available = TRUE
+       JOIN users u ON u.id = p.seller_id
+       LEFT JOIN categories c ON c.id = p.category_id
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC), '[]'::json) AS images
+         FROM product_images pi WHERE pi.product_id = p.id
+       ) images ON TRUE
+       ORDER BY rel.purchase_count DESC, p.created_at DESC`,
+      [req.params.id]
+    );
+    res.json({ products: result.rows });
+  } catch (err) {
+    console.error('Co-purchase recommendations error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -5254,6 +5305,27 @@ app.get('/api/offers/:messageId', authRequired, async (req, res) => {
 
 // ───── Payment routes ─────
 
+// Persist each paid basket as unordered product pairs.  This is deliberately
+// transaction-bound and idempotent with the paid-status transition above.
+async function recordProductCooccurrences(orderId, client) {
+  const { rows } = await client.query(
+    'SELECT DISTINCT product_id FROM order_items WHERE order_id = $1 ORDER BY product_id',
+    [orderId]
+  );
+  for (let i = 0; i < rows.length; i += 1) {
+    for (let j = i + 1; j < rows.length; j += 1) {
+      await client.query(
+        `INSERT INTO product_cooccurrences (product_a_id, product_b_id, purchase_count, last_purchased_at)
+         VALUES ($1, $2, 1, CURRENT_TIMESTAMP)
+         ON CONFLICT (product_a_id, product_b_id) DO UPDATE SET
+           purchase_count = product_cooccurrences.purchase_count + 1,
+           last_purchased_at = CURRENT_TIMESTAMP`,
+        [rows[i].product_id, rows[j].product_id]
+      );
+    }
+  }
+}
+
 app.post('/api/payments/create', authRequired, async (req, res) => {
   const { orderId, returnUrl } = req.body;
   if (!orderId) return res.status(400).json({ error: 'orderId required' });
@@ -5384,6 +5456,7 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
                       await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.product_id]);
                     }
                   }
+                  await recordProductCooccurrences(order.id, client);
                   const items = await client.query('SELECT seller_id, SUM(price * quantity) AS total FROM order_items WHERE order_id = $1 GROUP BY seller_id', [order.id]);
                   for (const item of items.rows) {
                     if (item.seller_id) {
@@ -5511,6 +5584,8 @@ app.post('/api/payments/webhook', async (req, res) => {
           return res.json({ received: true, already_processed: true });
         }
         await logOrderEvent(reference, 'payment_received', null, 'pending', 'paid', 'Payment completed via MonCash', client);
+
+        await recordProductCooccurrences(reference, client);
 
         // Decrement stock at payment time (not order creation) to prevent ghost inventory
         const orderItems = await client.query(
@@ -7312,6 +7387,7 @@ cron.schedule('*/5 * * * *', async () => {
               }
             }
 
+            await recordProductCooccurrences(order.id, client);
             const items = await client.query('SELECT seller_id, SUM(price * quantity) AS total FROM order_items WHERE order_id = $1 GROUP BY seller_id', [order.id]);
             for (const item of items.rows) {
               if (item.seller_id) {
@@ -7393,7 +7469,7 @@ const MIGRATION_TABLES = [
   'reviews', 'wishlists', 'follows', 'notifications', 'conversations', 'messages',
   'promo_codes', 'promo_uses', 'disputes', 'platform_revenue', 'platform_payouts',
   'verification_attempts', 'seller_subscriptions', 'order_escrow', 'meetup_checkins',
-  'feed_events', 'seller_locations', 'otp_codes', 'message_offers'
+  'feed_events', 'seller_locations', 'otp_codes', 'message_offers', 'user_category_affinities', 'product_cooccurrences'
 ];
 
 // Column whitelist for tables with schema drift between Neon and Supabase

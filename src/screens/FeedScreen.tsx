@@ -53,7 +53,7 @@ export default function FeedScreen() {
   const [comments, setComments] = useState<Review[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [moreProduct, setMoreProduct] = useState<Product | null>(null);
-  const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('new');
+  const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('forYou');
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const flatListRef = useRef<FlatList>(null);
   const checkedWishlistIds = useRef<Set<string>>(new Set());
@@ -266,6 +266,20 @@ export default function FeedScreen() {
     }
   };
 
+  const handleFeedback = async (eventType: 'relevant' | 'not_relevant') => {
+    const product = moreProduct;
+    if (!product) return;
+    setMoreProduct(null);
+    if (eventType === 'not_relevant') setProducts(prev => prev.filter(item => item.id !== product.id));
+    try {
+      await trackFeedEvent(product.id, eventType);
+      await queryClient.invalidateQueries({ queryKey: ['feed-products', 'forYou'] });
+      if (feedTab === 'forYou') await fetchProducts(1, true);
+    } catch {
+      toast.error(t('common.error'), 'Your feed preference could not be saved.');
+    }
+  };
+
   const handleOpenComments = async (product: Product) => {
     setCommentProduct(product);
     setComments([]);
@@ -441,6 +455,12 @@ export default function FeedScreen() {
           </View>
 
           {/* Price */}
+          {feedTab === 'forYou' && item.recommendation_reason && (
+            <TouchableOpacity style={styles.reasonPill} onPress={() => setMoreProduct(item)} accessibilityRole="button" accessibilityLabel={`Why you are seeing this: ${item.recommendation_reason}`}>
+              <MaterialCommunityIcons name="star-four-points" size={13} color={COLORS.white} />
+              <Text style={styles.reasonText}>{item.recommendation_reason}</Text>
+            </TouchableOpacity>
+          )}
           <View style={styles.priceTag}>
             <SalePriceTag
               price={item.price}
@@ -710,12 +730,15 @@ export default function FeedScreen() {
           />
           <View style={styles.moreSheet}>
             <View style={styles.sheetHandle} />
+            {moreProduct?.recommendation_reason && (
+              <View style={styles.reasonExplain}>
+                <MaterialCommunityIcons name="information-outline" size={17} color={COLORS.text2} />
+                <Text style={styles.reasonExplainText}>{moreProduct.recommendation_reason}</Text>
+              </View>
+            )}
             <TouchableOpacity
               style={styles.moreItem}
-              onPress={() => {
-                if (moreProduct) trackFeedEvent(moreProduct.id, 'relevant');
-                setMoreProduct(null);
-              }}
+              onPress={() => handleFeedback('relevant')}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.markRelevant')}
             >
@@ -724,10 +747,7 @@ export default function FeedScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.moreItem}
-              onPress={() => {
-                if (moreProduct) trackFeedEvent(moreProduct.id, 'not_relevant');
-                setMoreProduct(null);
-              }}
+              onPress={() => handleFeedback('not_relevant')}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.markNotRelevant')}
             >
@@ -944,6 +964,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginBottom: 6,
   },
+  reasonPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.42)', borderRadius: 14, paddingHorizontal: 10, minHeight: 28, marginBottom: 8 },
+  reasonText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
   priceText: {
     fontSize: 16,
     fontWeight: '800',
@@ -1117,6 +1139,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  reasonExplain: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingBottom: 10 },
+  reasonExplainText: { color: COLORS.text2, fontSize: 13, flex: 1 },
   moreItem: {
     flexDirection: 'row',
     alignItems: 'center',
