@@ -1391,6 +1391,97 @@ app.put('/api/auth/password', authRequired, async (req, res) => {
   }
 });
 
+// ───── Account Deletion (GDPR / App Store Compliance) ─────
+app.delete('/api/auth/delete-account', authRequired, async (req, res) => {
+  const userId = req.user.id;
+  const client = await pool.connect();
+  try {
+    const activeBuyerOrders = await client.query(
+      `SELECT id, status FROM orders 
+       WHERE buyer_id = $1 AND status NOT IN ('completed', 'cancelled', 'refunded')`,
+      [userId]
+    );
+    if (activeBuyerOrders.rows.length > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete account with active orders. Please wait until your pending orders are completed or cancelled.' 
+      });
+    }
+
+    const activeSellerOrders = await client.query(
+      `SELECT o.id, o.status FROM orders o
+       JOIN order_items oi ON oi.order_id = o.id
+       WHERE oi.seller_id = $1 AND o.status NOT IN ('completed', 'cancelled', 'refunded')`,
+      [userId]
+    );
+    if (activeSellerOrders.rows.length > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete account with active sales. Please complete all pending fulfillments or cancellations first.' 
+      });
+    }
+
+    const sellerBalance = await client.query(
+      `SELECT balance FROM seller_balances WHERE seller_id = $1`,
+      [userId]
+    );
+    if (sellerBalance.rows.length > 0 && parseFloat(sellerBalance.rows[0].balance || 0) > 0) {
+      return res.status(400).json({ 
+        error: 'Please withdraw your remaining seller balance before deleting your account.' 
+      });
+    }
+
+    const pendingPayouts = await client.query(
+      `SELECT id FROM payouts WHERE seller_id = $1 AND status IN ('pending', 'processing')`,
+      [userId]
+    );
+    if (pendingPayouts.rows.length > 0) {
+      return res.status(400).json({ 
+        error: 'You have a payout in progress. Please wait until your payout completes before deleting your account.' 
+      });
+    }
+
+    await client.query('BEGIN');
+
+    await client.query('UPDATE products SET is_available = FALSE WHERE seller_id = $1', [userId]);
+
+    await client.query('DELETE FROM wishlists WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM follows WHERE follower_id = $1 OR seller_id = $1', [userId]);
+    await client.query('DELETE FROM feed_events WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM saved_addresses WHERE user_id = $1', [userId]);
+
+    const anonymizedEmail = `deleted_${userId.slice(0, 8)}_${Date.now()}@deleted.maurmaket.com`;
+    const anonymizedUsername = `deleted_${userId.slice(0, 8)}`;
+    await client.query(
+      `UPDATE users SET 
+        full_name = 'Deleted User',
+        username = $1,
+        email = $2,
+        password_hash = 'DELETED',
+        phone = NULL,
+        avatar_url = NULL,
+        bio = NULL,
+        store_name = NULL,
+        store_logo_url = NULL,
+        id_document_url = NULL,
+        id_verified = FALSE,
+        role = 'deleted',
+        seller_tier = 'none',
+        push_token = NULL,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [anonymizedUsername, anonymizedEmail, userId]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Account deleted successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Account deletion error:', err);
+    res.status(500).json({ error: 'Failed to delete account. Please try again later.' });
+  } finally {
+    client.release();
+  }
+});
+
 // ───── Email Verification ─────
 
 const EMAIL_TEMPLATES = {
@@ -6842,59 +6933,6 @@ app.get('/api/health', async (_req, res) => {
   result.status = result.primary === 'connected' ? 'ok' : 'error';
   res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
-
-app.get('/api/debug', authRequired, adminRequired, async (_req, res) => {
-  try {
-    const mccRes = await fetch(
-      (process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create').replace('pay-create', 'pay-balance'),
-      { headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}` } }
-    );
-    const data = await mccRes.json();
-    res.json({ mccStatus: mccRes.status, mccOk: mccRes.ok, data, hasKey: !!process.env.MCC_KEY });
-  } catch (err) {
-    res.status(500).json({ error: err.message, hasKey: !!process.env.MCC_KEY });
-  }
-});
-
-// ───── Legal Pages (Google OAuth requirement) ─────
-const legalPage = (title, content) => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} - MaurMaket</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1a1a1a;line-height:1.6}h1{font-size:1.8em;margin-bottom:.3em}h2{font-size:1.3em;margin-top:1.5em}p,li{font-size:.95em}a{color:#C0406A}ul{padding-left:1.5em}.meta{color:#666;font-size:.85em;margin-bottom:2em}</style></head><body><h1>${title}</h1><p class="meta">Effective: August 7, 2026 &middot; MaurMaket (maurmaket.onrender.com)</p>${content}<hr><p style="color:#999;font-size:.8em">Questions? Contact us at maurinexus.contact@gmail.com</p></body></html>`;
-
-app.get('/privacy', (_req, res) => {
-  res.type('html').send(legalPage('Privacy Policy', `
-    <h2>Information We Collect</h2>
-    <p>When you use MaurMaket, we collect information you provide directly: name, email, phone number, and profile photo. We also collect transaction data (listings, purchases, messages between buyers and sellers) and device information for app functionality.</p>
-    <h2>How We Use Your Information</h2>
-    <ul>
-      <li>To provide, maintain, and improve MaurMaket services</li>
-      <li>To process transactions and send related information</li>
-      <li>To send technical notices, updates, and security alerts</li>
-      <li>To respond to your comments and customer service requests</li>
-      <li>To detect and prevent fraud or abuse</li>
-    </ul>
-    <h2>Information Sharing</h2>
-    <p>We do not sell your personal information. We share data only with your consent, to comply with laws, or with service providers who assist in operating the platform (hosting, payment processing, analytics).</p>
-    <h2>Data Security</h2>
-    <p>We implement industry-standard security measures including encryption in transit (TLS) and at rest. However, no method of transmission over the Internet is 100% secure.</p>
-    <h2>Data Retention</h2>
-    <p>We retain your information as long as your account is active or as needed to provide services. You may request deletion of your account and data at any time.</p>
-    <h2>Your Rights</h2>
-    <p>You may access, update, or delete your personal information through your account settings or by contacting us at maurinexus.contact@gmail.com.</p>
-    <h2>Changes</h2>
-    <p>We may update this policy from time to time. Continued use of MaurMaket after changes constitutes acceptance of the revised policy.</p>
-  `));
-});
-
-app.get('/terms', (_req, res) => {
-  res.type('html').send(legalPage('Terms of Service', `
-    <h2>Acceptance of Terms</h2>
-    <p>By accessing or using MaurMaket, you agree to be bound by these Terms of Service. If you do not agree, do not use the service.</p>
-    <h2>User Accounts</h2>
-    <p>You must be at least 18 years old to use MaurMaket. You are responsible for maintaining the confidentiality of your account credentials and for all activity under your account.</p>
-    <h2>Marketplace Rules</h2>
-    <ul>
-      <li>Listings must be accurate and not misleading</li>
-      <li>You may not list prohibited items (weapons, drugs, counterfeit goods)</li>
-      <li>Transactions must be completed through MaurMaket's payment system</li>
       <li>Meetups for exchanges must follow safety guidelines</li>
     </ul>
     <h2>Payments &amp; Fees</h2>
