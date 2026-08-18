@@ -48,8 +48,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
   const [otherCheckedIn, setOtherCheckedIn] = useState(false);
   const [myCheckedIn, setMyCheckedIn] = useState(false);
   const [proximityConfirmed, setProximityConfirmed] = useState(false);
-  const [qrToken, setQrToken] = useState<string | null>(null);
-  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [meetupCode, setMeetupCode] = useState<string | null>(null);
+  const [codeModalVisible, setCodeModalVisible] = useState(false);
   const [scanModalVisible, setScanModalVisible] = useState(false);
   const [scanInput, setScanInput] = useState('');
   const [scanLoading, setScanLoading] = useState(false);
@@ -87,8 +87,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
         setMeetupStartedAt(startedAt);
       }
 
-      if (myCheckin?.qr_token) {
-        setQrToken(myCheckin.qr_token);
+      if (myCheckin?.meetup_code) {
+        setMeetupCode(myCheckin.meetup_code);
         if (myCheckin.qr_scanned) {
           setReceiptModalVisible(true);
         }
@@ -163,15 +163,15 @@ export default function MeetupScreen({ route, navigation }: Props) {
       setProximityConfirmed(res.proximityConfirmed);
       if (res.distance) setDistance(res.distance);
       if (res.meetupStartedAt) setMeetupStartedAt(res.meetupStartedAt);
-      if (res.qrToken) {
-        setQrToken(res.qrToken);
+      if (res.meetupCode) {
+        setMeetupCode(res.meetupCode);
         setProximityConfirmed(true);
       }
       if (res.proximityConfirmed && isSeller) {
-        Alert.alert('You\'re close!', 'You are within range. Ask the buyer to show their QR code.');
+        Alert.alert('You\'re close!', 'You are within range. Ask the buyer for their delivery code.');
       }
-      if (res.proximityConfirmed && isBuyer && res.qrToken) {
-        Alert.alert('Ready!', 'You are within range. Your QR code is ready. Show it to the seller.');
+      if (res.proximityConfirmed && isBuyer && res.meetupCode) {
+        Alert.alert('Ready!', 'You are within range. Show the delivery code to the seller.');
       }
     } catch (err: any) {
       Alert.alert(t('common.error'), err.message || 'Check-in failed');
@@ -181,7 +181,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
   const handleScan = async () => {
     if (!scanInput.trim()) {
-      Alert.alert('Enter code', 'Please enter or paste the buyer\'s QR code.');
+      Alert.alert('Enter code', 'Please enter the buyer\'s 4-digit delivery code.');
       return;
     }
     setScanLoading(true);
@@ -397,18 +397,18 @@ export default function MeetupScreen({ route, navigation }: Props) {
         </View>
 
         {/* QR section for buyer */}
-        {isBuyer && myCheckedIn && otherCheckedIn && proximityConfirmed && qrToken && (
-          <TouchableOpacity style={styles.qrButton} onPress={() => setQrModalVisible(true)} accessibilityLabel="show qr code" accessibilityRole="button">
-            <Icon name="qr-code" size={20} color={COLORS.white} />
-            <Text style={styles.qrButtonText}>Show QR Code</Text>
+        {isBuyer && myCheckedIn && otherCheckedIn && proximityConfirmed && meetupCode && (
+          <TouchableOpacity style={styles.qrButton} onPress={() => setCodeModalVisible(true)} accessibilityLabel="show delivery code" accessibilityRole="button">
+            <MaterialCommunityIcons name="numeric" size={20} color={COLORS.white} />
+            <Text style={styles.qrButtonText}>Show delivery code</Text>
           </TouchableOpacity>
         )}
 
         {/* Scan section for seller */}
         {isSeller && myCheckedIn && otherCheckedIn && proximityConfirmed && (
-          <TouchableOpacity style={styles.scanButton} onPress={() => setScanModalVisible(true)} accessibilityLabel="scan buyer qr" accessibilityRole="button">
-            <MaterialCommunityIcons name="qrcode-scan" size={20} color={COLORS.white} />
-            <Text style={styles.scanButtonText}>Scan Buyer's QR</Text>
+          <TouchableOpacity style={styles.scanButton} onPress={() => setScanModalVisible(true)} accessibilityLabel="enter delivery code" accessibilityRole="button">
+            <MaterialCommunityIcons name="form-textbox-password" size={20} color={COLORS.white} />
+            <Text style={styles.scanButtonText}>Enter delivery code</Text>
           </TouchableOpacity>
         )}
 
@@ -450,7 +450,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
         )}
 
         {/* Confirm receipt for buyer */}
-        {isBuyer && qrToken && checkins.some((c: any) => c.qr_scanned) && order.status === 'paid' && (
+        {isBuyer && meetupCode && checkins.some((c: any) => c.qr_scanned) && order.status === 'paid' && (
           <TouchableOpacity
             style={styles.receiptBtn}
             onPress={() => setReceiptModalVisible(true)}
@@ -487,36 +487,20 @@ export default function MeetupScreen({ route, navigation }: Props) {
         )}
       </ScrollView>
 
-      {/* QR Modal */}
-      <Modal visible={qrModalVisible} transparent animationType="slide">
+      {/* Delivery code modal */}
+      <Modal visible={codeModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Show this QR code</Text>
-              <TouchableOpacity onPress={() => setQrModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
+              <Text style={styles.modalTitle}>Your delivery code</Text>
+                <TouchableOpacity onPress={() => setCodeModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
                 <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             <View style={styles.qrContainer}>
-              <Icon name="qr-code" size={180} color={COLORS.text} />
+              <Text style={styles.meetupCodeText}>{meetupCode}</Text>
             </View>
-            <Text style={styles.qrHint}>Seller will scan this to confirm the exchange.</Text>
-            {qrToken && (
-              <TouchableOpacity
-                style={styles.copyTokenBtn}
-                onPress={() => {
-                  if (Platform.OS !== 'web') {
-                    const Clipboard = require('expo-clipboard');
-                    Clipboard.setString(qrToken);
-                    Alert.alert('Copied', 'QR token copied to clipboard.');
-                  }
-                }}
-                accessibilityLabel="copy code"
-                accessibilityRole="button"
-              >
-                <Text style={styles.copyTokenText}>Copy code</Text>
-              </TouchableOpacity>
-            )}
+            <Text style={styles.qrHint}>Tell this code to the seller when you receive your item.</Text>
           </View>
         </View>
       </Modal>
@@ -526,24 +510,26 @@ export default function MeetupScreen({ route, navigation }: Props) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Scan buyer's QR</Text>
+              <Text style={styles.modalTitle}>Enter delivery code</Text>
               <TouchableOpacity onPress={() => setScanModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
                 <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             <Text style={styles.scanHint}>
-              Ask the buyer to show their QR code, or paste the code below.
+              Ask the buyer for the 4-digit code shown in their app.
             </Text>
             <View style={styles.scanInputRow}>
               <TextInput
                 style={styles.scanInput}
-                placeholder="Paste QR code here..."
+                placeholder="4-digit code"
                 placeholderTextColor={COLORS.text2}
                 value={scanInput}
                 onChangeText={setScanInput}
                 autoCapitalize="none"
                 autoCorrect={false}
-                accessibilityLabel="qr code input"
+                keyboardType="number-pad"
+                maxLength={4}
+                accessibilityLabel="delivery code input"
                
               />
             </View>
@@ -708,6 +694,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.text },
   qrContainer: { alignItems: 'center', paddingVertical: 24, backgroundColor: COLORS.bg, borderRadius: RADIUS.media, marginBottom: 14 },
+  meetupCodeText: { color: COLORS.text, fontSize: 48, fontWeight: '800', letterSpacing: 10 },
   qrHint: { fontSize: 13, color: COLORS.text2, textAlign: 'center', marginBottom: 12 },
   copyTokenBtn: { alignItems: 'center', padding: 10 },
   copyTokenText: { fontSize: 13, color: COLORS.blue, fontWeight: '600' },

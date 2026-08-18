@@ -600,6 +600,9 @@ async function runMigrations() {
         qr_scanned BOOLEAN DEFAULT false,
         UNIQUE(order_id, user_id)
       );
+      ALTER TABLE meetup_checkins ADD COLUMN IF NOT EXISTS meetup_code TEXT;
+      ALTER TABLE meetup_checkins ADD COLUMN IF NOT EXISTS meetup_code_expires_at TIMESTAMPTZ;
+      ALTER TABLE meetup_checkins ADD COLUMN IF NOT EXISTS meetup_code_attempts INTEGER NOT NULL DEFAULT 0;
       CREATE TABLE IF NOT EXISTS feed_events (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
@@ -3622,12 +3625,14 @@ app.put('/api/orders/:id/meetup/confirm', authRequired, async (req, res) => {
   }
 });
 
-// ───── Meetup Check-in + QR ─────
+// ───── Meetup Check-in + delivery code ─────
 
-const QR_SECRET = process.env.QR_SECRET || (() => {
-  console.error('WARNING: QR_SECRET not set — falling back to JWT_SECRET + "_qr". Set QR_SECRET in production.');
-  return process.env.JWT_SECRET + '_qr';
-})();
+const MEETUP_CODE_TTL_MS = 30 * 60 * 1000;
+const MAX_MEETUP_CODE_ATTEMPTS = 5;
+
+function generateMeetupCode() {
+  return String(crypto.randomInt(1000, 10000));
+}
 
 function haversineDistance(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -3662,15 +3667,17 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'Order must be paid to check in' });
     }
 
-    const role = order.buyer_id === req.user.id ? 'buyer' : 'seller';
-    const isSeller = role === 'seller';
-    const isBuyer = role === 'buyer';
-
-    // Only buyer or seller of this order can check in
-    if (!isBuyer && !isSeller) {
+    const sellerMembership = await client.query(
+      'SELECT 1 FROM order_items WHERE order_id = $1 AND seller_id = $2 LIMIT 1',
+      [req.params.id, req.user.id]
+    );
+    const role = order.buyer_id === req.user.id ? 'buyer' : sellerMembership.rows.length > 0 ? 'seller' : null;
+    if (!role) {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Not a party to this order' });
     }
+    const isSeller = role === 'seller';
+    const isBuyer = role === 'buyer';
 
     // Upsert check-in
     await client.query(
@@ -3702,22 +3709,14 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
             [req.params.id]
           );
         }
-        // Generate QR code for the buyer
-        const nonce = crypto.randomBytes(16).toString('hex');
-        const qrToken = jwt.sign(
-          {
-            orderId: req.params.id,
-            buyerId: order.buyer_id,
-            sellerId: other.user_id,
-            gpsHash: crypto.createHmac('sha256', QR_SECRET).update(`${lat},${lng}`).digest('hex'),
-            nonce,
-          },
-          QR_SECRET,
-          { expiresIn: '30m' }
-        );
+        // Generate a short delivery code for the buyer once both parties are nearby.
+        const meetupCode = generateMeetupCode();
         await client.query(
-          'UPDATE meetup_checkins SET qr_token = $1 WHERE order_id = $2 AND user_id = $3',
-          [qrToken, req.params.id, order.buyer_id]
+          `UPDATE meetup_checkins
+           SET meetup_code = $1, meetup_code_expires_at = CURRENT_TIMESTAMP + INTERVAL '30 minutes',
+               meetup_code_attempts = 0, qr_scanned = false
+           WHERE order_id = $2 AND user_id = $3`,
+          [meetupCode, req.params.id, order.buyer_id]
         );
         // Log the event
         await logOrderEvent(req.params.id, 'meetup_arrived', req.user.id, null, null, `Buyer and seller within ${Math.round(distance)}m`, client);
@@ -3739,11 +3738,11 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
 
     if (isBuyer) {
       const qrRow = await pool.query(
-        'SELECT qr_token FROM meetup_checkins WHERE order_id = $1 AND user_id = $2',
+        'SELECT meetup_code FROM meetup_checkins WHERE order_id = $1 AND user_id = $2',
         [req.params.id, req.user.id]
       );
-      if (qrRow.rows[0]?.qr_token) {
-        response.qrToken = qrRow.rows[0].qr_token;
+      if (qrRow.rows[0]?.meetup_code) {
+        response.meetupCode = qrRow.rows[0].meetup_code;
       }
     }
 
@@ -3757,10 +3756,10 @@ app.post('/api/orders/:id/meetup/checkin', authRequired, async (req, res) => {
   }
 });
 
-// Seller scans buyer's QR code
+// Seller enters the buyer's short delivery code
 app.post('/api/orders/:id/meetup/scan', authRequired, async (req, res) => {
-  const { qrToken } = req.body;
-  if (!qrToken) return res.status(400).json({ error: 'QR token required' });
+  const { code } = req.body;
+  if (!/^\d{4}$/.test(String(code || ''))) return res.status(400).json({ error: 'Enter the 4-digit delivery code' });
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -3780,31 +3779,7 @@ app.post('/api/orders/:id/meetup/scan', authRequired, async (req, res) => {
     );
     if (sellerItem.rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Only the seller can scan the QR code' });
-    }
-
-    // Verify QR token
-    let decoded;
-    try {
-      decoded = jwt.verify(qrToken, QR_SECRET);
-    } catch (err) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'QR code is invalid or expired' });
-    }
-
-    if (decoded.orderId !== req.params.id || decoded.sellerId !== req.user.id) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'QR code does not match this order or seller' });
-    }
-
-    // Check if QR was already used
-    const existingScan = await pool.query(
-      'SELECT * FROM meetup_checkins WHERE qr_token = $1 AND qr_scanned = true',
-      [qrToken]
-    );
-    if (existingScan.rows.length > 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'QR code has already been used' });
+      return res.status(403).json({ error: 'Only a seller on this order can enter the delivery code' });
     }
 
     // Verify GPS proximity at scan time
@@ -3828,14 +3803,36 @@ app.post('/api/orders/:id/meetup/scan', authRequired, async (req, res) => {
       }
     }
 
-    // Mark QR as scanned
+    const buyerMeetup = buyerCheckin.rows[0];
+    if (!buyerMeetup?.meetup_code || !buyerMeetup.meetup_code_expires_at || new Date(buyerMeetup.meetup_code_expires_at).getTime() <= Date.now()) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Delivery code is expired. Ask the buyer to refresh it.' });
+    }
+    if (buyerMeetup.meetup_code_attempts >= MAX_MEETUP_CODE_ATTEMPTS) {
+      await client.query('ROLLBACK');
+      return res.status(429).json({ error: 'Too many incorrect attempts. Ask the buyer to refresh the delivery code.' });
+    }
+
+    const expectedCode = Buffer.from(String(buyerMeetup.meetup_code), 'utf8');
+    const enteredCode = Buffer.from(String(code), 'utf8');
+    if (expectedCode.length !== enteredCode.length || !crypto.timingSafeEqual(expectedCode, enteredCode)) {
+      const attempts = buyerMeetup.meetup_code_attempts + 1;
+      await client.query(
+        'UPDATE meetup_checkins SET meetup_code_attempts = $1 WHERE order_id = $2 AND user_id = $3',
+        [attempts, req.params.id, order.buyer_id]
+      );
+      await client.query('COMMIT');
+      return res.status(400).json({ error: attempts >= MAX_MEETUP_CODE_ATTEMPTS ? 'Too many incorrect attempts. Ask the buyer to refresh the delivery code.' : 'Incorrect delivery code' });
+    }
+
+    // Mark delivery code as used
     await client.query(
       'UPDATE meetup_checkins SET qr_scanned = true WHERE order_id = $1 AND user_id = $2',
       [req.params.id, order.buyer_id]
     );
 
     // Log the event
-    await logOrderEvent(req.params.id, 'exchange_confirmed', req.user.id, null, null, 'QR code scanned — exchange confirmed', client);
+    await logOrderEvent(req.params.id, 'exchange_confirmed', req.user.id, null, null, 'Delivery code entered — exchange confirmed', client);
 
     await client.query('COMMIT');
 
@@ -3845,7 +3842,7 @@ app.post('/api/orders/:id/meetup/scan', authRequired, async (req, res) => {
     });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('QR scan error:', err);
+    console.error('Meetup code verification error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {
     client.release();
@@ -3881,11 +3878,14 @@ app.get('/api/orders/:id/meetup/status', authRequired, async (req, res) => {
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     const checkins = await pool.query(
-      `SELECT mc.*, u.full_name, u.avatar_url
+                  `SELECT mc.id, mc.order_id, mc.user_id, mc.role, mc.lat, mc.lng, mc.checked_in_at,
+                    mc.qr_scanned, mc.meetup_code_expires_at, mc.meetup_code_attempts,
+                    CASE WHEN mc.user_id = $2 THEN mc.meetup_code ELSE NULL END AS meetup_code,
+                    u.full_name, u.avatar_url
        FROM meetup_checkins mc
        JOIN users u ON mc.user_id = u.id
-       WHERE mc.order_id = $1`,
-      [req.params.id]
+             WHERE mc.order_id = $1`,
+            [req.params.id, req.user.id]
     );
 
     res.json({ checkins: checkins.rows, meetupStartedAt: order.meetup_started_at });
@@ -3974,6 +3974,15 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
     if (o.status !== 'paid' && o.status !== 'completed') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: `Order must be paid or completed to release escrow (current: ${o.status})` });
+    }
+
+    const verifiedExchange = await client.query(
+      'SELECT 1 FROM meetup_checkins WHERE order_id = $1 AND role = \'buyer\' AND qr_scanned = true LIMIT 1',
+      [req.params.id]
+    );
+    if (verifiedExchange.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'The seller must verify the delivery code before escrow can be released' });
     }
 
     // ── SECURITY: Freeze escrow if dispute is open ──

@@ -301,8 +301,8 @@ export const confirmMeetup = (orderId: string) =>
 export const meetupCheckin = (orderId: string, lat: number, lng: number) =>
   request(`/orders/${orderId}/meetup/checkin`, { method: 'POST', body: JSON.stringify({ lat, lng }) });
 
-export const meetupScan = (orderId: string, qrToken: string) =>
-  request(`/orders/${orderId}/meetup/scan`, { method: 'POST', body: JSON.stringify({ qrToken }) });
+export const meetupScan = (orderId: string, code: string) =>
+  request(`/orders/${orderId}/meetup/scan`, { method: 'POST', body: JSON.stringify({ code }) });
 
 export const getMeetupStatus = (orderId: string) =>
   request(`/orders/${orderId}/meetup/status`);
