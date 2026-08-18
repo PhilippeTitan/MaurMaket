@@ -523,6 +523,23 @@ async function runMigrations() {
       );
     `));
 
+    await step('refund_payouts table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS refund_payouts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+        buyer_id UUID NOT NULL REFERENCES users(id),
+        amount DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+        receiver_phone VARCHAR(20) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','completed','failed')),
+        moncash_reference VARCHAR(150) UNIQUE,
+        error_message TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `));
+
     // 19. Users onboarding columns
     await step('Users onboarding columns', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS store_name TEXT;
@@ -1100,6 +1117,112 @@ function getCommissionRate(tier) {
   }
 }
 
+// Allocate the amount actually paid across sellers. Promo discounts are applied
+// proportionally so escrow and commission never exceed the order total.
+async function getSellerPaymentAllocations(client, orderId) {
+  const result = await client.query(
+    `SELECT o.total_amount,
+            oi.seller_id,
+            SUM(oi.price * oi.quantity) AS line_total
+     FROM orders o
+     JOIN order_items oi ON oi.order_id = o.id
+     WHERE o.id = $1
+     GROUP BY o.total_amount, oi.seller_id
+     ORDER BY oi.seller_id`,
+    [orderId]
+  );
+  const subtotal = result.rows.reduce((sum, row) => sum + parseFloat(row.line_total), 0);
+  const paidTotal = parseFloat(result.rows[0]?.total_amount || 0);
+  if (subtotal <= 0 || paidTotal < 0) return [];
+
+  let allocated = 0;
+  return result.rows.map((row, index) => {
+    const lineTotal = parseFloat(row.line_total);
+    const paidTotalForSeller = index === result.rows.length - 1
+      ? Math.max(0, Math.round((paidTotal - allocated) * 100) / 100)
+      : Math.round((paidTotal * lineTotal / subtotal) * 100) / 100;
+    allocated += paidTotalForSeller;
+    return { seller_id: row.seller_id, total: lineTotal, paid_total: paidTotalForSeller };
+  });
+}
+
+async function reserveOrderStock(client, orderId) {
+  const orderItems = await client.query(
+    'SELECT product_id, quantity FROM order_items WHERE order_id = $1',
+    [orderId]
+  );
+  for (const item of orderItems.rows) {
+    const product = await client.query(
+      'SELECT stock FROM products WHERE id = $1 FOR UPDATE',
+      [item.product_id]
+    );
+    if (product.rows.length === 0 || product.rows[0].stock < item.quantity) {
+      const error = new Error(`Insufficient stock for product ${item.product_id}`);
+      error.code = 'INSUFFICIENT_STOCK';
+      throw error;
+    }
+  }
+  for (const item of orderItems.rows) {
+    await client.query(
+      'UPDATE products SET stock = stock - $1 WHERE id = $2',
+      [item.quantity, item.product_id]
+    );
+  }
+  return orderItems.rows;
+}
+
+async function processRefundPayout(orderId) {
+  const claim = await pool.query(
+    `UPDATE refund_payouts
+     SET status = 'processing', attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+     WHERE order_id = $1 AND status IN ('pending', 'failed')
+       AND next_attempt_at <= CURRENT_TIMESTAMP
+     RETURNING *`,
+    [orderId]
+  );
+  if (claim.rows.length === 0) return;
+  const refund = claim.rows[0];
+  const referenceId = refund.moncash_reference || `refund_${orderId}`;
+  try {
+    const payoutRes = await fetch(
+      process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.MCC_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: Math.round(parseFloat(refund.amount)),
+          moncashNumber: refund.receiver_phone,
+          referenceId,
+        }),
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+    if (!payoutRes.ok) throw new Error(await payoutRes.text());
+    const payoutData = await payoutRes.json().catch(() => ({}));
+    await pool.query(
+      `UPDATE refund_payouts
+       SET status = 'completed', moncash_reference = COALESCE(moncash_reference, $2),
+           error_message = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [refund.id, payoutData.reference || payoutData.transactionId || referenceId]
+    );
+    createNotification(refund.buyer_id, 'order_status', 'Order Refunded',
+      `G ${parseFloat(refund.amount).toFixed(0)} refunded for order`, { orderId });
+  } catch (error) {
+    const retryMinutes = Math.min(60, 5 * (2 ** Math.min(refund.attempts, 4)));
+    await pool.query(
+      `UPDATE refund_payouts SET status = 'failed', error_message = $2,
+         next_attempt_at = CURRENT_TIMESTAMP + ($3 * INTERVAL '1 minute'),
+         updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [refund.id, error.message, retryMinutes]
+    );
+    console.error(`[REFUND] Payout pending for order ${orderId}:`, error.message);
+  }
+}
+
 // Optional auth middleware
 function optionalAuth(req, _res, next) {
   const auth = req.headers.authorization;
@@ -1392,8 +1515,8 @@ app.put('/api/auth/password', authRequired, async (req, res) => {
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'Current and new password required' });
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  if (newPassword.length < 6 || newPassword.length > 128) {
+    return res.status(400).json({ error: 'New password must be 6-128 characters' });
   }
   try {
     const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
@@ -1841,7 +1964,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 app.post('/api/auth/reset-password', async (req, res) => {
   const { email, code, newPassword } = req.body;
   if (!email || !code || !newPassword) return res.status(400).json({ error: 'Email, code, and new password required' });
-  if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (newPassword.length < 6 || newPassword.length > 128) return res.status(400).json({ error: 'Password must be 6-128 characters' });
   try {
     const otpResult = await pool.query(
       `SELECT code FROM otp_codes WHERE lower(email) = lower($1) AND purpose = 'reset' AND expires_at > now()`,
@@ -2287,6 +2410,12 @@ app.post('/api/reviews', authRequired, dobRequired, async (req, res) => {
 
 app.put('/api/reviews/:id', authRequired, async (req, res) => {
   const { rating, comment } = req.body;
+  if (rating !== undefined && (!Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5)) {
+    return res.status(400).json({ error: 'Rating must be an integer from 1 to 5' });
+  }
+  if (comment !== undefined && comment !== null && String(comment).length > 2000) {
+    return res.status(400).json({ error: 'Comment is too long' });
+  }
   try {
     const result = await pool.query(
       `UPDATE reviews SET rating = COALESCE($1, rating), comment = COALESCE($2, comment), is_edited = true, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND reviewer_id = $4 RETURNING *`,
@@ -2903,7 +3032,7 @@ app.get('/api/products/:id', async (req, res) => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(id)) return res.status(404).json({ error: 'Product not found' });
     const result = await pool.query(
-      `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar, u.phone AS seller_phone,
+      `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar,
               u.store_name, u.store_logo_url, u.seller_tier, u.id_verified, u.use_store_identity, u.username AS seller_username,
               c.name AS category,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
@@ -2926,7 +3055,7 @@ app.get('/api/products/:id', async (req, res) => {
          FROM wishlists
          GROUP BY product_id
        ) wishlist_counts ON wishlist_counts.product_id = p.id
-       WHERE p.id = $1`,
+      WHERE p.id = $1 AND p.is_available = TRUE`,
       [req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
@@ -3301,6 +3430,23 @@ app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
     if (!qty || qty < 1) return res.status(400).json({ error: 'Quantity must be at least 1' });
     if (qty > 999) return res.status(400).json({ error: 'Quantity too high (max 999)' });
   }
+  const method = deliveryMethod === 'delivery' ? 'delivery' : 'meetup';
+  if (method === 'delivery') {
+    if (!deliveryName || !deliveryName.trim()) return res.status(400).json({ error: 'Delivery name is required' });
+    if (!deliveryPhone || !deliveryPhone.trim()) return res.status(400).json({ error: 'Delivery phone is required' });
+    if (!deliveryAddress || !deliveryAddress.trim()) return res.status(400).json({ error: 'Delivery address is required' });
+    if (!deliveryCity || !deliveryCity.trim()) return res.status(400).json({ error: 'Delivery city is required' });
+    if (deliveryName.length > 100) return res.status(400).json({ error: 'Name too long' });
+    if (deliveryPhone.length > 20) return res.status(400).json({ error: 'Phone too long' });
+    if (deliveryAddress.length > 200) return res.status(400).json({ error: 'Address too long' });
+    if (deliveryCity.length > 100) return res.status(400).json({ error: 'City too long' });
+  } else {
+    const latitude = Number(meetupLat);
+    const longitude = Number(meetupLng);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180 || !meetupAddress?.trim()) {
+      return res.status(400).json({ error: 'Meetup coordinates and address are required' });
+    }
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -3355,28 +3501,19 @@ app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
         const promo = promoResult.rows[0];
         if (!promo.max_uses || promo.uses_count < promo.max_uses) {
           const used = await client.query('SELECT id FROM promo_uses WHERE promo_id = $1 AND user_id = $2', [promo.id, req.user.id]);
-          if (used.rows.length === 0 && total >= parseFloat(promo.min_order_amount)) {
+          const eligibleTotal = promo.seller_id
+            ? orderItems.filter(item => item.sellerId === promo.seller_id).reduce((sum, item) => sum + item.price * item.quantity, 0)
+            : total;
+          if (used.rows.length === 0 && eligibleTotal >= parseFloat(promo.min_order_amount)) {
             discountAmount = promo.discount_type === 'percentage'
-              ? Math.min(total * parseFloat(promo.discount_value) / 100, parseFloat(promo.discount_value) * 10)
-              : Math.min(parseFloat(promo.discount_value), total);
+              ? Math.min(eligibleTotal * parseFloat(promo.discount_value) / 100, parseFloat(promo.discount_value) * 10)
+              : Math.min(parseFloat(promo.discount_value), eligibleTotal);
             promoId = promo.id;
           }
         }
       }
     }
 
-    const method = deliveryMethod === 'delivery' ? 'delivery' : 'meetup';
-    // Validate delivery fields when delivery method is selected
-    if (method === 'delivery') {
-      if (!deliveryName || !deliveryName.trim()) return res.status(400).json({ error: 'Delivery name is required' });
-      if (!deliveryPhone || !deliveryPhone.trim()) return res.status(400).json({ error: 'Delivery phone is required' });
-      if (!deliveryAddress || !deliveryAddress.trim()) return res.status(400).json({ error: 'Delivery address is required' });
-      if (!deliveryCity || !deliveryCity.trim()) return res.status(400).json({ error: 'Delivery city is required' });
-      if (deliveryName.length > 100) return res.status(400).json({ error: 'Name too long' });
-      if (deliveryPhone.length > 20) return res.status(400).json({ error: 'Phone too long' });
-      if (deliveryAddress.length > 200) return res.status(400).json({ error: 'Address too long' });
-      if (deliveryCity.length > 100) return res.status(400).json({ error: 'City too long' });
-    }
     // Apply promo discount to the order total so buyer is charged the discounted amount
     const finalTotal = discountAmount > 0 ? Math.round((total - discountAmount) * 100) / 100 : total;
     const orderResult = await client.query(
@@ -3977,10 +4114,15 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
     }
 
     const verifiedExchange = await client.query(
-      'SELECT 1 FROM meetup_checkins WHERE order_id = $1 AND role = \'buyer\' AND qr_scanned = true LIMIT 1',
+      `SELECT
+         COUNT(*) FILTER (WHERE role = 'buyer' AND qr_scanned = true) AS buyer_verified,
+         COUNT(*) FILTER (WHERE role = 'seller') AS seller_checked_in
+       FROM meetup_checkins
+       WHERE order_id = $1`,
       [req.params.id]
     );
-    if (verifiedExchange.rows.length === 0) {
+    const exchange = verifiedExchange.rows[0];
+    if (Number(exchange.buyer_verified) < 1 || Number(exchange.seller_checked_in) < 1) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'The seller must verify the delivery code before escrow can be released' });
     }
@@ -4197,42 +4339,17 @@ app.post('/api/orders/:id/escrow/refund', authRequired, async (req, res) => {
       await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
     }
 
+    await client.query(
+      `INSERT INTO refund_payouts (order_id, buyer_id, amount, receiver_phone, moncash_reference)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (order_id) DO NOTHING`,
+      [req.params.id, o.buyer_id, totalRefund, buyerPhone, `refund_${req.params.id}`]
+    );
+
     await client.query('COMMIT');
     client.release();
 
-    // Send payout to buyer via MonCash (outside transaction — best effort)
-    try {
-      if (totalRefund > 0 && buyerPhone) {
-        const payoutRes = await fetch(
-          process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${process.env.MCC_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              amount: Math.round(totalRefund),
-              moncashNumber: buyerPhone,
-              referenceId: `refund_${req.params.id}`,
-            }),
-            signal: AbortSignal.timeout(15000),
-          }
-        );
-
-        if (payoutRes.ok) {
-          console.log(`Refund G ${totalRefund} sent to buyer ${buyerPhone}`);
-        } else {
-          const errText = await payoutRes.text();
-          console.error(`Refund payout failed: ${errText}`);
-        }
-      }
-    } catch (payoutErr) {
-      console.error('Refund payout error:', payoutErr.message);
-    }
-
-    createNotification(o.buyer_id, 'order_status', 'Order Refunded',
-      `G ${totalRefund.toFixed(0)} refunded for order`, { orderId: req.params.id });
+    await processRefundPayout(req.params.id);
 
     // Notify sellers that escrow was refunded
     for (const escrow of escrows.rows) {
@@ -4726,7 +4843,10 @@ app.get('/api/seller/products/low-stock', authRequired, sellerRequired, async (r
 // External sync trigger (GitHub Actions calls this — uses shared secret, not JWT)
 app.post('/api/admin/sync', async (req, res) => {
   const adminKey = req.headers['x-admin-key'];
-  if (!adminKey || adminKey !== process.env.SYNC_KEY) {
+  const configuredKey = process.env.SYNC_KEY;
+  const providedKey = Buffer.from(String(adminKey || ''), 'utf8');
+  const expectedKey = Buffer.from(String(configuredKey || ''), 'utf8');
+  if (!configuredKey || providedKey.length !== expectedKey.length || !crypto.timingSafeEqual(providedKey, expectedKey)) {
     return res.status(403).json({ error: 'Invalid admin key' });
   }
   if (!neonBackupDatabaseUrl) return res.status(503).json({ error: 'Neon backup is not configured' });
@@ -5524,6 +5644,7 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
         const data = await moncashRes.json();
         if (data.status === 'completed' || data.paid === true) {
           // Webhook fallback: if webhook didn't fire, process payment here
+          let fallbackProcessed = false;
           if (order.status === 'pending') {
             try {
               const client = await pool.connect();
@@ -5537,18 +5658,12 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
                   await client.query('ROLLBACK');
                 } else {
                   await logOrderEvent(order.id, 'payment_received', null, 'pending', 'paid', 'Payment confirmed via pay-status poll', client);
-                  const orderItems = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [order.id]);
-                  for (const oi of orderItems.rows) {
-                    const stockCheck = await client.query('SELECT stock FROM products WHERE id = $1 FOR UPDATE', [oi.product_id]);
-                    if (stockCheck.rows.length > 0 && stockCheck.rows[0].stock >= oi.quantity) {
-                      await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.product_id]);
-                    }
-                  }
+                  await reserveOrderStock(client, order.id);
                   await recordProductCooccurrences(order.id, client);
-                  const items = await client.query('SELECT seller_id, SUM(price * quantity) AS total FROM order_items WHERE order_id = $1 GROUP BY seller_id', [order.id]);
+                  const items = { rows: await getSellerPaymentAllocations(client, order.id) };
                   for (const item of items.rows) {
                     if (item.seller_id) {
-                      const grossAmount = parseFloat(item.total);
+                      const grossAmount = parseFloat(item.paid_total);
                       const tierRes = await client.query('SELECT seller_tier FROM users WHERE id = $1', [item.seller_id]);
                       const sellerTier = tierRes.rows[0]?.seller_tier || 'none';
                       const rate = getCommissionRate(sellerTier);
@@ -5568,6 +5683,7 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
                   }
                   await client.query('COMMIT');
                   client.release();
+                  fallbackProcessed = true;
                   console.log(`[PAY-STATUS] Order ${order.id} processed (webhook fallback)`);
                   const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
                   for (const sid of sellerIds) {
@@ -5584,8 +5700,16 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
               console.error('[PAY-STATUS] Fallback processing failed:', e.message);
             }
           }
+          if (!fallbackProcessed && order.status === 'pending') {
+            return res.status(503).json({ status: 'pending', error: 'Payment is confirmed but still being reconciled' });
+          }
           return res.json({ status: 'paid' });
         } else if (data.status === 'failed' || data.status === 'expired') {
+          await pool.query(
+            `UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 AND status = 'pending'`,
+            [order.id]
+          );
           return res.json({ status: 'cancelled' });
         }
       }
@@ -5614,7 +5738,7 @@ app.post('/api/payments/webhook', async (req, res) => {
   }
   const ts = parseInt(timestamp) * 1000;
   const age = (Date.now() - ts) / 1000;
-  if (age > 300) {
+  if (Math.abs(age) > 300) {
     return res.status(401).json({ error: 'Webhook timestamp expired' });
   }
   const expected = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
@@ -5729,13 +5853,10 @@ app.post('/api/payments/webhook', async (req, res) => {
           }
         }
 
-        const items = await client.query(
-          'SELECT seller_id, SUM(price * quantity) AS total FROM order_items WHERE order_id = $1 GROUP BY seller_id',
-          [reference]
-        );
+        const items = { rows: await getSellerPaymentAllocations(client, reference) };
         for (const item of items.rows) {
           if (item.seller_id) {
-            const grossAmount = parseFloat(item.total);
+            const grossAmount = parseFloat(item.paid_total);
             const tierRes = await client.query('SELECT seller_tier FROM users WHERE id = $1', [item.seller_id]);
             const sellerTier = tierRes.rows[0]?.seller_tier || 'none';
             const rate = getCommissionRate(sellerTier);
@@ -5770,7 +5891,7 @@ app.post('/api/payments/webhook', async (req, res) => {
         // Notify buyer that payment was successful
         const buyerOrder = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [reference]);
         if (buyerOrder.rows.length > 0) {
-          const totalPaid = items.rows.reduce((sum, r) => sum + parseFloat(r.total), 0);
+          const totalPaid = items.rows.reduce((sum, r) => sum + parseFloat(r.paid_total), 0);
           createNotification(buyerOrder.rows[0].buyer_id, 'payment_confirmed', 'Payment Confirmed',
             `Your payment of G ${totalPaid.toFixed(0)} was successful.`, { orderId: reference });
         }
@@ -6944,34 +7065,21 @@ app.get('/api/webhooks/didit', async (req, res) => {
 
   if (status === 'Approved' && verificationSessionId && process.env.DIDIT_API_KEY) {
     try {
-      // Look up user from verification_attempts (vendor_data = user_id stored via webhook)
+      // The redirect is only trusted when a matching verified webhook event exists.
       const attempt = await pool.query(
-        `SELECT vendor_data FROM didit_webhook_events WHERE session_id = $1 ORDER BY id DESC LIMIT 1`,
+        `SELECT vendor_data FROM didit_webhook_events
+         WHERE session_id = $1 AND status = 'Approved' AND webhook_type = 'status.updated'
+         ORDER BY received_at DESC LIMIT 1`,
         [verificationSessionId]
       );
       const userId = attempt.rows[0]?.vendor_data;
-
-      // Fallback: look up from verification_attempts
-      if (!userId) {
-        const va = await pool.query(
-          `SELECT user_id FROM verification_attempts WHERE status = 'pending' ORDER BY created_at DESC LIMIT 1`
-        );
-        if (va.rows[0]?.user_id) {
-          const uid = va.rows[0].user_id;
-          await pool.query(`UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified' WHERE id = $1`, [uid]);
-          await pool.query(`UPDATE verification_attempts SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = (SELECT id FROM verification_attempts WHERE user_id = $1 AND status != 'verified' ORDER BY created_at DESC LIMIT 1)`, [uid]);
-          const userCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [uid]);
-          if (userCheck.rows[0]?.seller_tier === 'casual') {
-            await pool.query(`UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [uid]);
-          }
-          createNotification(uid, 'verification_approved', 'Identity Verified', 'Your identity has been verified via Didit!', {});
-          console.log(`[DIDIT CALLBACK] User ${uid} verified via GET redirect`);
-        }
-      } else {
+      if (userId && /^[0-9a-f-]{36}$/i.test(userId)) {
         await pool.query(`UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified', seller_tier = 'verified' WHERE id = $1`, [userId]);
         await pool.query(`UPDATE verification_attempts SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = (SELECT id FROM verification_attempts WHERE user_id = $1 AND status != 'verified' ORDER BY created_at DESC LIMIT 1)`, [userId]);
         createNotification(userId, 'verification_approved', 'Identity Verified', 'Your identity has been verified via Didit!', {});
         console.log(`[DIDIT CALLBACK] User ${userId} verified via GET redirect (from webhook_events)`);
+      } else {
+        console.warn(`[DIDIT CALLBACK] No verified webhook mapping for session ${verificationSessionId}`);
       }
     } catch (err) {
       console.error('[DIDIT CALLBACK] Error processing redirect:', err.message);
@@ -6984,14 +7092,11 @@ app.get('/api/webhooks/didit', async (req, res) => {
 
 // POST handler: Didit sends webhook events here
 app.post('/api/webhooks/didit', async (req, res) => {
-  // Return 2xx ASAP per Didit docs — process async
-  res.status(200).json({ received: true });
-
   try {
     const rawBody = req.rawBody;
     if (!rawBody) {
       console.error('[DIDIT WEBHOOK] No raw body');
-      return;
+      return res.status(400).json({ error: 'Raw webhook body required' });
     }
 
     // 1. Log signature headers for debugging
@@ -7006,48 +7111,50 @@ app.post('/api/webhooks/didit', async (req, res) => {
     // 2. Verify timestamp freshness (±300s)
     const timestamp = parseInt(req.headers['x-timestamp'] || '0');
     const now = Math.floor(Date.now() / 1000);
-    if (timestamp && Math.abs(now - timestamp) > 300) {
-      console.error(`[DIDIT WEBHOOK] Timestamp expired: ${timestamp} (now: ${now})`);
-      return;
+    if (!timestamp || Math.abs(now - timestamp) > 300) {
+      console.error(`[DIDIT WEBHOOK] Invalid or expired timestamp: ${timestamp} (now: ${now})`);
+      return res.status(401).json({ error: 'Invalid webhook timestamp' });
     }
 
-    // 3. Verify HMAC-SHA256 signature (non-blocking — warn but don't reject)
+    // 3. Verify HMAC-SHA256 signature before parsing or processing the event.
     const webhookSecret = process.env.DIDIT_WEBHOOK_SECRET;
-    let sigValid = true;
-    if (webhookSecret) {
-      const signatureV2 = req.headers['x-signature-v2'];
-      const signatureSimple = req.headers['x-signature-simple'];
-      const signature = req.headers['x-signature'];
-
-      let expectedSig;
-      if (signatureV2) {
-        expectedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-      } else if (signatureSimple) {
-        const body = JSON.parse(rawBody);
-        const simpleStr = `${timestamp}:${body.session_id || ''}:${body.status || ''}:${body.webhook_type || ''}`;
-        expectedSig = crypto.createHmac('sha256', webhookSecret).update(simpleStr).digest('hex');
-      } else if (signature) {
-        expectedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-      }
-
-      if (expectedSig) {
-        const sigBuf = Buffer.from(signatureV2 || signatureSimple || signature, 'hex');
-        const expBuf = Buffer.from(expectedSig, 'hex');
-        if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-          console.warn('[DIDIT WEBHOOK] Signature mismatch — processing anyway (non-blocking)');
-          sigValid = false;
-        }
-      } else {
-        console.log('[DIDIT WEBHOOK] No signature headers — processing');
-        sigValid = false;
-      }
+    if (!webhookSecret) {
+      console.error('[DIDIT WEBHOOK] DIDIT_WEBHOOK_SECRET is not configured');
+      return res.status(503).json({ error: 'Webhook verification unavailable' });
+    }
+    const signatureV2 = req.headers['x-signature-v2'];
+    const signatureSimple = req.headers['x-signature-simple'];
+    const signature = req.headers['x-signature'];
+    const providedSignature = signatureV2 || signatureSimple || signature;
+    if (!providedSignature) {
+      return res.status(401).json({ error: 'Missing webhook signature' });
     }
 
-    // 3. Parse event
+    let expectedSig;
+    if (signatureSimple) {
+      const body = JSON.parse(rawBody);
+      const simpleStr = `${timestamp}:${body.session_id || ''}:${body.status || ''}:${body.webhook_type || ''}`;
+      expectedSig = crypto.createHmac('sha256', webhookSecret).update(simpleStr).digest('hex');
+    } else {
+      expectedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+    }
+    const sigBuf = Buffer.from(providedSignature, 'hex');
+    const expBuf = Buffer.from(expectedSig, 'hex');
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return res.status(401).json({ error: 'Invalid webhook signature' });
+    }
+
+    // 4. Parse and validate event identity before applying any state changes.
     const event = JSON.parse(rawBody);
     const { event_id, webhook_type, status, vendor_data, session_id, decision } = event;
+    if (!event_id || !session_id || !webhook_type || !status) {
+      return res.status(400).json({ error: 'Incomplete webhook event' });
+    }
+    if (vendor_data && !/^[0-9a-f-]{36}$/i.test(vendor_data)) {
+      return res.status(400).json({ error: 'Invalid verification subject' });
+    }
 
-    // 4. Idempotency check
+    // 5. Reserve the event ID so concurrent deliveries cannot process twice.
     const existing = await pool.query(
       'SELECT id FROM didit_webhook_events WHERE event_id = $1',
       [event_id]
@@ -7057,7 +7164,7 @@ app.post('/api/webhooks/didit', async (req, res) => {
       return;
     }
     await pool.query(
-      'INSERT INTO didit_webhook_events (event_id, session_id, webhook_type, status, vendor_data) VALUES ($1, $2, $3, $4, $5)',
+      'INSERT INTO didit_webhook_events (event_id, session_id, webhook_type, status, vendor_data) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (event_id) DO NOTHING',
       [event_id, session_id, webhook_type, status, vendor_data]
     );
 
@@ -7098,8 +7205,10 @@ app.post('/api/webhooks/didit', async (req, res) => {
         console.log(`[DIDIT WEBHOOK] User ${userId} in review`);
       }
     }
+    return res.status(200).json({ received: true });
   } catch (err) {
     console.error('[DIDIT WEBHOOK] Processing error:', err);
+    return res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
@@ -7456,6 +7565,21 @@ cron.schedule('*/5 * * * *', async () => {
 // ───── Cron: Process stale pending orders via pay-status poll (every 5 minutes) ─────
 cron.schedule('*/5 * * * *', async () => {
   try {
+    const pendingRefunds = await pool.query(
+      `SELECT order_id FROM refund_payouts
+       WHERE status IN ('pending', 'failed') AND next_attempt_at <= CURRENT_TIMESTAMP
+       ORDER BY created_at ASC LIMIT 20`
+    );
+    for (const refund of pendingRefunds.rows) {
+      await processRefundPayout(refund.order_id);
+    }
+  } catch (err) {
+    console.error('[CRON] Refund payout retry error:', err.message);
+  }
+});
+
+cron.schedule('*/5 * * * *', async () => {
+  try {
     // Find orders stuck in 'pending' for >10 minutes (webhook likely failed)
     const staleOrders = await pool.query(
       `SELECT id, buyer_id, moncash_reference FROM orders
@@ -7495,19 +7619,13 @@ cron.schedule('*/5 * * * *', async () => {
             }
             await logOrderEvent(order.id, 'payment_received', null, 'pending', 'paid', 'Payment confirmed via stale-order cron', client);
 
-            const orderItems = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [order.id]);
-            for (const oi of orderItems.rows) {
-              const stockCheck = await client.query('SELECT stock FROM products WHERE id = $1 FOR UPDATE', [oi.product_id]);
-              if (stockCheck.rows.length > 0 && stockCheck.rows[0].stock >= oi.quantity) {
-                await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.product_id]);
-              }
-            }
+            await reserveOrderStock(client, order.id);
 
             await recordProductCooccurrences(order.id, client);
-            const items = await client.query('SELECT seller_id, SUM(price * quantity) AS total FROM order_items WHERE order_id = $1 GROUP BY seller_id', [order.id]);
+            const items = { rows: await getSellerPaymentAllocations(client, order.id) };
             for (const item of items.rows) {
               if (item.seller_id) {
-                const grossAmount = parseFloat(item.total);
+                const grossAmount = parseFloat(item.paid_total);
                 const tierRes = await client.query('SELECT seller_tier FROM users WHERE id = $1', [item.seller_id]);
                 const sellerTier = tierRes.rows[0]?.seller_tier || 'none';
                 const rate = getCommissionRate(sellerTier);
