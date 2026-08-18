@@ -54,7 +54,7 @@ export default function FeedScreen() {
   const [comments, setComments] = useState<Review[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [moreProduct, setMoreProduct] = useState<Product | null>(null);
-  const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('forYou');
+  const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('new');
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const flatListRef = useRef<FlatList>(null);
   const checkedWishlistIds = useRef<Set<string>>(new Set());
@@ -402,6 +402,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               size={35}
               color={likedIds.has(item.id) ? COLORS.coral : COLORS.white}
             />
+            <Text style={styles.actionCount}>{item.like_count || 0}</Text>
           </TouchableOpacity>
           {!isOwnProduct && (
             <TouchableOpacity
@@ -411,9 +412,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               accessibilityLabel={t('accessibility.viewReviews')}
             >
               <MaterialCommunityIcons name="comment-outline" size={35} color={COLORS.white} />
-              {(item.review_count || 0) > 0 && (
-                <Text style={styles.actionCount}>{item.review_count}</Text>
-              )}
+              <Text style={styles.actionCount}>{item.review_count || 0}</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -427,6 +426,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               size={35}
               color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
             />
+            <Text style={styles.actionCount}>{item.wishlist_count || 0}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionBtn}
@@ -459,12 +459,12 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               <Text style={styles.sellerName} numberOfLines={1}>{getDisplayName(item.seller)}</Text>
             </TouchableOpacity>
             {!isOwnProduct && item.seller_id && (
-              <FollowButton sellerId={item.seller_id} variant="outline" />
+              <FollowButton sellerId={item.seller_id} size="md" />
             )}
           </View>
 
-          {/* Price */}
-          {feedTab === 'forYou' && item.recommendation_reason && (
+{/* Price */}
+          {feedTab === 'forYou' && item.recommendation_reason && item.recommendation_reason !== 'From a seller you follow' && (
             <TouchableOpacity style={styles.reasonPill} onPress={() => setMoreProduct(item)} accessibilityRole="button" accessibilityLabel={`Why you are seeing this: ${item.recommendation_reason}`}>
               <MaterialCommunityIcons name="star-four-points" size={13} color={COLORS.white} />
               <Text style={styles.reasonText}>{item.recommendation_reason}</Text>
@@ -896,15 +896,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 12,
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
     zIndex: 15,
   },
   actionBtn: {
     alignItems: 'center',
-    width: 35,
-    height: 35,
+    width: 48,
+    height: 60,
     justifyContent: 'center',
-    gap: 2,
+    gap: 4,
   },
   actionCount: {
     color: COLORS.white,

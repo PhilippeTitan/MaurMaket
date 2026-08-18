@@ -2788,6 +2788,8 @@ app.get('/api/products', async (req, res) => {
               u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar, u.use_store_identity, u.username AS seller_username,
               c.name AS category, images.images
               ${selectExtra}
+              , COALESCE(like_counts.like_count, 0) AS like_count
+              , COALESCE(wishlist_counts.wishlist_count, 0) AS wishlist_count
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
@@ -2799,6 +2801,17 @@ app.get('/api/products', async (req, res) => {
          FROM product_images pi
          WHERE pi.product_id = p.id
        ) images ON TRUE
+       LEFT JOIN (
+         SELECT product_id, COUNT(*) AS like_count
+         FROM feed_events
+         WHERE event_type = 'like'
+         GROUP BY product_id
+       ) like_counts ON like_counts.product_id = p.id
+       LEFT JOIN (
+         SELECT product_id, COUNT(*) AS wishlist_count
+         FROM wishlists
+         GROUP BY product_id
+       ) wishlist_counts ON wishlist_counts.product_id = p.id
        ${joinExtra}
        ${where}
        ORDER BY ${orderBy}
@@ -2818,14 +2831,16 @@ app.get('/api/products', async (req, res) => {
 app.get('/api/products/:id/co-purchases', async (req, res) => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(req.params.id)) return res.status(404).json({ error: 'Product not found' });
-  try {
+try {
     const result = await pool.query(
       `SELECT p.id, p.seller_id, p.category_id, p.name, p.description, p.price, p.stock, p.is_available, p.created_at,
               p.sale_price, p.sale_starts_at, p.sale_ends_at,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
               u.full_name AS seller_name, u.id AS seller_id, u.store_name, u.store_logo_url, u.seller_tier, u.avatar_url AS seller_avatar, u.use_store_identity, u.username AS seller_username,
-              c.name AS category, rel.purchase_count, images.images
+              c.name AS category, rel.purchase_count, images.images,
+              COALESCE(like_counts.like_count, 0) AS like_count,
+              COALESCE(wishlist_counts.wishlist_count, 0) AS wishlist_count
        FROM (
          SELECT CASE WHEN product_a_id = $1 THEN product_b_id ELSE product_a_id END AS product_id, purchase_count
          FROM product_cooccurrences
@@ -2839,6 +2854,17 @@ app.get('/api/products/:id/co-purchases', async (req, res) => {
          SELECT COALESCE(json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC), '[]'::json) AS images
          FROM product_images pi WHERE pi.product_id = p.id
        ) images ON TRUE
+       LEFT JOIN (
+         SELECT product_id, COUNT(*) AS like_count
+         FROM feed_events
+         WHERE event_type = 'like'
+         GROUP BY product_id
+       ) like_counts ON like_counts.product_id = p.id
+       LEFT JOIN (
+         SELECT product_id, COUNT(*) AS wishlist_count
+         FROM wishlists
+         GROUP BY product_id
+       ) wishlist_counts ON wishlist_counts.product_id = p.id
        ORDER BY rel.purchase_count DESC, p.created_at DESC`,
       [req.params.id]
     );
@@ -2880,10 +2906,23 @@ app.get('/api/products/:id', async (req, res) => {
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
+              COALESCE(like_counts.like_count, 0) AS like_count,
+              COALESCE(wishlist_counts.wishlist_count, 0) AS wishlist_count,
               (SELECT json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
+       LEFT JOIN (
+         SELECT product_id, COUNT(*) AS like_count
+         FROM feed_events
+         WHERE event_type = 'like'
+         GROUP BY product_id
+       ) like_counts ON like_counts.product_id = p.id
+       LEFT JOIN (
+         SELECT product_id, COUNT(*) AS wishlist_count
+         FROM wishlists
+         GROUP BY product_id
+       ) wishlist_counts ON wishlist_counts.product_id = p.id
        WHERE p.id = $1`,
       [req.params.id]
     );
@@ -7102,7 +7141,7 @@ app.post('/api/feed/event', authRequired, async (req, res) => {
          duration_ms = COALESCE($4, feed_events.duration_ms),
          created_at = CURRENT_TIMESTAMP`,
       [req.user.id, productId, eventType, durationMs || null]
-    );
+);
     // Explicit feedback should improve similar listings too, not only this exact product.
     if (eventType === 'relevant' || eventType === 'not_relevant') {
       const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
@@ -7115,6 +7154,34 @@ app.post('/api/feed/event', authRequired, async (req, res) => {
              score = GREATEST(-3, LEAST(3, user_category_affinities.score + EXCLUDED.score)),
              updated_at = CURRENT_TIMESTAMP`,
           [req.user.id, category.rows[0].category_id, delta]
+        );
+      }
+    }
+    // Likes and saves also boost category affinity (positive signal)
+    if (eventType === 'like' || eventType === 'save') {
+      const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
+      if (category.rows[0]?.category_id) {
+        await pool.query(
+          `INSERT INTO user_category_affinities (user_id, category_id, score)
+           VALUES ($1, $2, 1)
+           ON CONFLICT (user_id, category_id) DO UPDATE SET
+             score = GREATEST(-3, LEAST(3, user_category_affinities.score + 1)),
+             updated_at = CURRENT_TIMESTAMP`,
+          [req.user.id, category.rows[0].category_id]
+        );
+      }
+    }
+    // Unlike removes the positive signal
+    if (eventType === 'unlike') {
+      const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
+      if (category.rows[0]?.category_id) {
+        await pool.query(
+          `INSERT INTO user_category_affinities (user_id, category_id, score)
+           VALUES ($1, $2, -1)
+           ON CONFLICT (user_id, category_id) DO UPDATE SET
+             score = GREATEST(-3, LEAST(3, user_category_affinities.score - 1)),
+             updated_at = CURRENT_TIMESTAMP`,
+          [req.user.id, category.rows[0].category_id]
         );
       }
     }

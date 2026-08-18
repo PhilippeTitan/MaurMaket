@@ -39,13 +39,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.11.73.105:4000/api'
+    ? 'http://10.11.201.105:4000/api'
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.11.73.105:4000'
+    ? 'http://10.11.201.105:4000'
     : 'https://maurmaket.onrender.com';
 
 let _cachedToken: string | null = null;

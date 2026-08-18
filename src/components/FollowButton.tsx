@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { TouchableOpacity, Text, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, RADIUS } from '../theme';
 import { toggleFollow } from '../api';
 import { store } from '../store';
@@ -7,18 +8,23 @@ import { useTranslation } from '../i18n';
 
 interface FollowButtonProps {
   sellerId: string;
-  /** 'outline' = coral border on dark (Feed), 'filled' = dark bg (ProductDetail) */
-  variant?: 'outline' | 'filled';
   size?: 'sm' | 'md';
 }
 
-export default function FollowButton({ sellerId, variant = 'outline', size = 'sm' }: FollowButtonProps) {
+export default function FollowButton({ sellerId, size = 'sm' }: FollowButtonProps) {
   const { t } = useTranslation();
   const [isFollowing, setIsFollowing] = useState(() => store.isFollowing(sellerId));
+  const checkAnim = useRef(new Animated.Value(isFollowing ? 1 : 0)).current;
 
   useEffect(() => {
     const unsub = store.onChange(() => {
-      setIsFollowing(store.isFollowing(sellerId));
+      const next = store.isFollowing(sellerId);
+      setIsFollowing(next);
+      Animated.timing(checkAnim, {
+        toValue: next ? 1 : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }).start();
     });
     return unsub;
   }, [sellerId]);
@@ -26,6 +32,11 @@ export default function FollowButton({ sellerId, variant = 'outline', size = 'sm
   const handleFollow = async () => {
     const wasFollowing = isFollowing;
     setIsFollowing(!wasFollowing);
+    Animated.timing(checkAnim, {
+      toValue: !wasFollowing ? 1 : 0,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
     try {
       const res = (await toggleFollow(sellerId)) as { following?: boolean };
       if (typeof res.following === 'boolean') {
@@ -33,113 +44,66 @@ export default function FollowButton({ sellerId, variant = 'outline', size = 'sm
       }
     } catch {
       setIsFollowing(wasFollowing);
+      Animated.timing(checkAnim, {
+        toValue: wasFollowing ? 1 : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }).start();
     }
   };
 
-  if (variant === 'outline') {
-    return (
-      <TouchableOpacity
-        style={[
-          styles.outlineBtn,
-          isFollowing && styles.outlineBtnActive,
-          size === 'md' && styles.outlineBtnMd,
-        ]}
-        onPress={handleFollow}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel={isFollowing ? t('accessibility.unfollow') : t('accessibility.follow')}
-      >
-        <Text
-          style={[
-            styles.outlineText,
-            isFollowing && styles.outlineTextActive,
-            size === 'md' && styles.textMd,
-          ]}
-        >
-          {isFollowing ? t('storefront.following') : t('feed.follow')}
-        </Text>
-      </TouchableOpacity>
-    );
-  }
+  const pillSize = size === 'md' ? 28 : 24;
+  const iconSize = size === 'md' ? 16 : 14;
 
   return (
     <TouchableOpacity
-      style={[
-        styles.filledBtn,
-        isFollowing && styles.filledBtnActive,
-        size === 'md' && styles.filledBtnMd,
-      ]}
+      style={styles.pill}
       onPress={handleFollow}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={isFollowing ? t('accessibility.unfollow') : t('accessibility.follow')}
     >
-      <Text
-        style={[
-          styles.filledText,
-          isFollowing && styles.filledTextActive,
-          size === 'md' && styles.textMd,
-        ]}
-      >
-        {isFollowing ? t('storefront.following') : t('feed.follow')}
-      </Text>
+      <Animated.View style={[
+        styles.ring,
+        { width: pillSize, height: pillSize },
+        isFollowing && styles.ringActive,
+      ]}>
+        <Animated.View style={[
+          styles.checkWrapper,
+          { width: pillSize, height: pillSize },
+          {
+            transform: [
+              { scale: checkAnim },
+            ],
+            opacity: checkAnim,
+          },
+        ]}>
+          <MaterialCommunityIcons name="check" size={iconSize} color={COLORS.white} />
+        </Animated.View>
+      </Animated.View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  /* Outline variant (Feed) */
-  outlineBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: RADIUS.media,
-    borderWidth: 1,
-    borderColor: COLORS.coral,
+  pill: {
+    paddingHorizontal: 2,
+    paddingVertical: 2,
   },
-  outlineBtnActive: {
+  ring: {
+    borderWidth: 2,
+    borderColor: COLORS.coral,
+    borderRadius: RADIUS.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  ringActive: {
     backgroundColor: COLORS.coral,
     borderColor: COLORS.coral,
   },
-  outlineBtnMd: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: RADIUS.pill,
-  },
-  outlineText: {
-    fontSize: 12,
-    color: COLORS.coral,
-    fontWeight: '700',
-  },
-  outlineTextActive: {
-    color: COLORS.white,
-  },
-
-  /* Filled variant (ProductDetail) */
-  filledBtn: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  filledBtnActive: {
-    backgroundColor: COLORS.coral,
-  },
-  filledBtnMd: {
-    borderRadius: RADIUS.pill,
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-  },
-  filledText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  filledTextActive: {
-    color: COLORS.white,
-  },
-
-  /* Shared */
-  textMd: {
-    fontSize: 13,
+  checkWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -46,6 +46,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [wishlisted, setWishlisted] = useState(false);
+  const [liked, setLiked] = useState(false);
   const [sellerReviews, setSellerReviews] = useState<Review[]>([]);
   const [productReviews, setProductReviews] = useState<Review[]>([]);
   const [avgRating, setAvgRating] = useState(0);
@@ -205,6 +206,19 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         trackFeedEvent(productId, 'save').catch(() => {});
       }
     } catch { /* silent */ }
+  };
+
+  const handleLike = async () => {
+    if (!product) return;
+    const newLiked = !liked;
+    setLiked(newLiked);
+    setHeartCount(prev => newLiked ? prev + 1 : Math.max(0, prev - 1));
+    try {
+      await trackFeedEvent(product.id, newLiked ? 'like' : 'unlike');
+    } catch {
+      setLiked(liked);
+      setHeartCount(prev => liked ? prev + 1 : Math.max(0, prev - 1));
+    }
   };
 
   const handleShare = async () => {
@@ -415,20 +429,21 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           {/* ── Seller row ── */}
           {product.seller && (
             <View style={styles.sellerBlock}>
-              {/* ── Action rail — heart · reviews · bookmark · share ── */}
+              {/* ── Action rail — like · reviews · bookmark · share ── */}
               {!isOwnProduct && (
                 <View style={styles.actionRow}>
                   <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={handleWishlist}
+                    onPress={handleLike}
                     accessibilityRole="button"
-                    accessibilityLabel={wishlisted ? t('accessibility.removeFromWishlist') : t('accessibility.addToWishlist')}
+                    accessibilityLabel={liked ? t('accessibility.unlike') : t('accessibility.like')}
                   >
                     <MaterialCommunityIcons
-                      name={wishlisted ? 'heart' : 'heart-outline'}
+                      name={liked ? 'heart' : 'heart-outline'}
                       size={25}
-                      color={wishlisted ? COLORS.coral : COLORS.text}
+                      color={liked ? COLORS.coral : COLORS.text}
                     />
+                    <Text style={styles.actionCount}>{product.like_count || 0}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionBtn}
@@ -437,9 +452,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                     accessibilityLabel={t('accessibility.viewReviews')}
                   >
                     <MaterialCommunityIcons name="comment-outline" size={25} color={COLORS.text} />
-                    {(product.review_count || 0) > 0 && (
-                      <Text style={styles.actionCount}>{product.review_count}</Text>
-                    )}
+                    <Text style={styles.actionCount}>{product.review_count || 0}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionBtn}
@@ -452,6 +465,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                       size={25}
                       color={wishlisted ? COLORS.coral : COLORS.text}
                     />
+                    <Text style={styles.actionCount}>{product.wishlist_count || 0}</Text>
                   </TouchableOpacity>
                   <View style={{ flex: 1 }} />
                   <TouchableOpacity
