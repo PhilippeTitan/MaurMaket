@@ -778,6 +778,9 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_buyer_id ON conversations(buyer_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_seller_id ON conversations(seller_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_order_pair
+        ON conversations (order_id, LEAST(buyer_id, seller_id), GREATEST(buyer_id, seller_id))
+        WHERE order_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_wishlists_user_id ON wishlists(user_id);
       CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows(follower_id);
       CREATE INDEX IF NOT EXISTS idx_follows_seller_id ON follows(seller_id);
@@ -4987,7 +4990,11 @@ app.post('/api/conversations', authRequired, convLimiter, dobRequired, async (re
     } else if (orderId) {
       const o = await client.query('SELECT buyer_id FROM orders WHERE id = $1', [orderId]);
       if (o.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
-      const items = await client.query('SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1', [orderId]);
+      const items = await client.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [orderId]);
+      if (req.user.id !== o.rows[0].buyer_id && !items.rows.some(item => item.seller_id === req.user.id)) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Not a participant in this order' });
+      }
       sellerId = items.rows[0]?.seller_id;
       if (req.user.id === sellerId) sellerId = o.rows[0].buyer_id;
     } else {
@@ -5010,6 +5017,16 @@ app.post('/api/conversations', authRequired, convLimiter, dobRequired, async (re
     res.status(201).json({ conversationId: result.rows[0].id });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
+    if (err.code === '23505' && orderId) {
+      const existing = await pool.query(
+        `SELECT id FROM conversations
+         WHERE order_id = $1 AND LEAST(buyer_id, seller_id) = LEAST($2::uuid, $3::uuid)
+           AND GREATEST(buyer_id, seller_id) = GREATEST($2::uuid, $3::uuid)
+         LIMIT 1`,
+        [orderId, req.user.id, sellerId]
+      );
+      if (existing.rows.length > 0) return res.json({ conversationId: existing.rows[0].id });
+    }
     console.error('Conversation create error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {

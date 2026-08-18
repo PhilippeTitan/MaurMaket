@@ -20,7 +20,7 @@ if (Platform.OS !== 'web') {
   ExpoLocation = require('expo-location');
 }
 import { store } from '../store';
-import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow, extendMeetup } from '../api';
+import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow, extendMeetup, createDispute } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
 import { SkeletonBlock } from '../components/Skeleton';
@@ -231,6 +231,16 @@ export default function MeetupScreen({ route, navigation }: Props) {
         },
       },
     ]);
+  };
+
+  const handleDispute = async () => {
+    try {
+      await createDispute({ orderId, reason: 'item_issue', description: 'Buyer did not confirm receiving the item in good condition.' });
+      setReceiptModalVisible(false);
+      Alert.alert('Dispute opened', 'Support will review this order. Your payment is held securely.');
+    } catch (err: any) {
+      Alert.alert(t('common.error'), err.message || 'Could not open dispute');
+    }
   };
 
   const handleEmergencyExit = () => {
@@ -587,10 +597,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.receiptDisputeBtn}
-              onPress={() => {
-                setReceiptModalVisible(false);
-                Alert.alert('Dispute opened', 'Support will review this order. Your payment is held securely.');
-              }}
+              onPress={handleDispute}
               accessibilityLabel="open dispute"
               accessibilityRole="button"
             >
