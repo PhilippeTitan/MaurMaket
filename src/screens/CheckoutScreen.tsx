@@ -3,6 +3,8 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Linking,
   KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -23,12 +25,15 @@ import { network } from '../network';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 type DeliveryMethod = 'delivery' | 'meetup';
+import moncashLogo from '../../assets/MonNatCash/moncash.webp';
+import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const cart = store.cart;
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
+  const [paymentMethod, setPaymentMethod] = useState<'moncash' | 'natcash'>('moncash');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -42,6 +47,42 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [meetupLat, setMeetupLat] = useState<number | null>(null);
   const [meetupLng, setMeetupLng] = useState<number | null>(null);
   const [meetupAddress, setMeetupAddress] = useState<string | null>(null);
+
+  // Button 1: Laser Conic Sweep (Clockwise 3s)
+  const laserRotation = useSharedValue(0);
+  // Button 5: Dual Counter-Flare (CW 2.5s & CCW 3.25s)
+  const dualRotationCW = useSharedValue(0);
+  const dualRotationCCW = useSharedValue(360);
+
+  useEffect(() => {
+    laserRotation.value = withRepeat(
+      withTiming(360, { duration: 3000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    dualRotationCW.value = withRepeat(
+      withTiming(360, { duration: 2500, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    dualRotationCCW.value = withRepeat(
+      withTiming(0, { duration: 3250, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, []);
+
+  const animatedLaserStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${laserRotation.value}deg` }],
+  }));
+
+  const animatedDualCWStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${dualRotationCW.value}deg` }],
+  }));
+
+  const animatedDualCCWStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${dualRotationCCW.value}deg` }],
+  }));
 
   const fetchAddresses = useCallback(async () => {
     try {
@@ -156,22 +197,30 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         orderData.deliveryNote = note;
       }
 
+      orderData.paymentMethod = paymentMethod;
       const orderRes = await createOrder(orderData) as { order: { id: string } };
       await store.clearCart();
 
-      try {
-        const payRes = await createPayment(orderRes.order.id, `maurmaket://payment-return?orderId=${orderRes.order.id}`) as { paymentUrl: string };
-        if (payRes.paymentUrl) {
-          await Linking.openURL(payRes.paymentUrl);
+      if (paymentMethod === 'moncash') {
+        try {
+          const payRes = await createPayment(orderRes.order.id, `maurmaket://payment-return?orderId=${orderRes.order.id}`) as { paymentUrl: string };
+          if (payRes.paymentUrl) {
+            await Linking.openURL(payRes.paymentUrl);
+          }
+          notifySuccess();
+          toast.success(t('checkout.orderCreated'), t('checkout.openingMonCash'));
+          navigation.navigate('Orders');
+        } catch (paymentErr: unknown) {
+          notifyError();
+          navigation.navigate('Orders');
+          const msg = paymentErr instanceof Error ? paymentErr.message : t('checkout.paymentStartFailed');
+          toast.error(t('checkout.orderCreated'), `${msg} ${t('checkout.retryPayment')}`);
         }
+      } else {
+        // NatCash — placeholder for now
         notifySuccess();
-        toast.success(t('checkout.orderCreated'), t('checkout.openingMonCash'));
+        toast.success(t('checkout.orderCreated'), 'NatCash payment coming soon!');
         navigation.navigate('Orders');
-      } catch (paymentErr: unknown) {
-        notifyError();
-        navigation.navigate('Orders');
-        const msg = paymentErr instanceof Error ? paymentErr.message : t('checkout.paymentStartFailed');
-        toast.error(t('checkout.orderCreated'), `${msg} ${t('checkout.retryPayment')}`);
       }
     } catch (e: unknown) {
       notifyError();
@@ -344,10 +393,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       )}
 
       <Text style={styles.sectionLabel}>{t('checkout.payment')}</Text>
-      <View style={styles.moncashBadge}>
-        <MaterialCommunityIcons name="cellphone" size={18} color={COLORS.blue} />
-        <Text style={styles.moncashText}>{t('checkout.moncashNote')}</Text>
-      </View>
 
       {discount > 0 && (
         <View style={styles.totalRow}>
@@ -366,6 +411,82 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         <Text style={styles.totalValue}>{formatPrice(finalTotal)} G</Text>
       </View>
 
+      <View style={styles.payBtnRow}>
+        {/* BUTTON 1: Conic Laser Sweep on MonCash */}
+        <TouchableOpacity
+          style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
+          onPress={() => setPaymentMethod('moncash')}
+          disabled={loading}
+          accessibilityLabel="pay with MonCash"
+          accessibilityRole="button"
+        >
+          <View style={[styles.payBtnOuter, paymentMethod === 'moncash' && styles.payBtnActiveLaser]}>
+            {paymentMethod === 'moncash' ? (
+              <Animated.View style={[styles.animGradientSquare, animatedLaserStyle]}>
+                <LinearGradient
+                  colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899', 'transparent']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </Animated.View>
+            ) : (
+              <View style={styles.inactiveBorder} />
+            )}
+            <View style={styles.payBtnLogoWrap}>
+              <Image
+                source={moncashLogo}
+                style={styles.payBtnLogo}
+                resizeMode="contain"
+              />
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* BUTTON 5: Dual Counter-Flare Shimmer on NatCash */}
+        <TouchableOpacity
+          style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
+          onPress={() => setPaymentMethod('natcash')}
+          disabled={loading}
+          accessibilityLabel="pay with NatCash"
+          accessibilityRole="button"
+        >
+          <View style={[styles.payBtnOuter, paymentMethod === 'natcash' && styles.payBtnActiveDual]}>
+            {paymentMethod === 'natcash' ? (
+              <>
+                {/* Primary Flare (Clockwise) */}
+                <Animated.View style={[styles.animGradientSquare, animatedDualCWStyle]}>
+                  <LinearGradient
+                    colors={['#a855f7', 'transparent', '#ec4899', '#a855f7']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </Animated.View>
+                {/* Secondary Counter-Flare (Counter-Clockwise) */}
+                <Animated.View style={[styles.animGradientSquare, styles.dualInnerBorder, animatedDualCCWStyle]}>
+                  <LinearGradient
+                    colors={['transparent', '#06b6d4', '#3b82f6', 'transparent']}
+                    start={{ x: 1, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </Animated.View>
+              </>
+            ) : (
+              <View style={styles.inactiveBorder} />
+            )}
+            <View style={styles.payBtnLogoWrap}>
+              <Image
+                source={natcashLogo}
+                style={styles.payBtnLogo}
+                resizeMode="contain"
+              />
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+
       <TouchableOpacity
         style={[styles.ctaBtn, loading && styles.ctaBtnDisabled]}
         onPress={handleCheckout}
@@ -376,7 +497,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         {loading ? (
           <ActivityIndicator color={COLORS.white} />
         ) : (
-          <Text style={styles.ctaText}>{t('checkout.confirmPay')}</Text>
+          <Text style={styles.ctaText}>Pay {paymentMethod === 'moncash' ? 'MonCash' : 'NatCash'}</Text>
         )}
       </TouchableOpacity>
       </ScrollView>
@@ -442,7 +563,7 @@ const styles = StyleSheet.create({
   orderItemQty: { fontSize: 12, color: COLORS.text2, fontWeight: '600' },
   orderItemPrice: { fontSize: 13, color: COLORS.coral, fontWeight: '700' },
   methodRow: { flexDirection: 'row', gap: 10, paddingHorizontal: SPACING.md },
-  methodCard: { flex: 1, alignItems: 'center', gap: 6, padding: 12, borderRadius: RADIUS.row, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  methodCard: { width: 170, height: 99, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.row, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
   methodActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
   methodText: { fontSize: 11, color: COLORS.text2 },
   methodTextActive: { color: COLORS.coral, fontWeight: '700' },
@@ -475,7 +596,43 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', padding: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border, marginTop: SPACING.md },
   totalLabel: { fontSize: 14, color: COLORS.text2 },
   totalValue: { fontSize: 18, color: COLORS.coral, fontWeight: '700' },
-  ctaBtn: { marginHorizontal: SPACING.md, backgroundColor: COLORS.coral, borderRadius: RADIUS.button, padding: 14, alignItems: 'center' },
+  payBtnRow: { flexDirection: 'row', gap: 10, paddingHorizontal: SPACING.md, marginTop: 8 },
+  payBtnTouch: { width: 178, height: 107, alignItems: 'center', justifyContent: 'center' },
+  payBtnOuter: {
+    width: 178, height: 107, borderRadius: RADIUS.row, overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center', position: 'relative',
+  },
+  payBtnActiveLaser: {
+    shadowColor: '#EC4899',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  payBtnActiveDual: {
+    shadowColor: '#A855F7',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  animGradientSquare: {
+    position: 'absolute', top: -76, left: -41, width: 260, height: 260,
+  },
+  dualInnerBorder: {
+    opacity: 0.85,
+  },
+  inactiveBorder: {
+    ...StyleSheet.absoluteFill, borderRadius: RADIUS.row,
+    borderWidth: 1.5, borderColor: COLORS.border, backgroundColor: COLORS.surface,
+  },
+  payBtnLogoWrap: {
+    width: 172, height: 101, borderRadius: RADIUS.row - 2,
+    backgroundColor: COLORS.surface, overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  payBtnLogo: { width: 170, height: 99, borderRadius: RADIUS.row - 2 },
+  ctaBtn: { marginHorizontal: SPACING.md, marginTop: 12, backgroundColor: COLORS.coral, borderRadius: RADIUS.button, padding: 14, alignItems: 'center' },
   ctaBtnDisabled: { opacity: 0.6 },
   ctaText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
 });
