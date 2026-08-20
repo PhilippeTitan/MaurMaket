@@ -22,7 +22,7 @@ export default function FollowListScreen({ route, navigation }: Props) {
   return <View style={styles.container}>
     <ScreenHeader title={title} onBack={() => navigation.goBack()} />
     {loading ? <ActivityIndicator style={{ marginTop: 32 }} color={COLORS.coral} /> : error ? <Text style={styles.empty}>{error}</Text> : <FlatList data={users} keyExtractor={item => item.id} ListEmptyComponent={<Text style={styles.empty}>No {kind} yet.</Text>} renderItem={({ item }) => <TouchableOpacity style={styles.row} onPress={() => navigation.push('Storefront', { sellerId: item.id, preloadedSeller: item as any })}>
-      <UserAvatar seller={item as any} size={48} animated={false} /><View style={{ flex: 1 }}><Text style={styles.name}>{item.store_name || item.full_name}</Text><Text style={styles.handle}>{item.username ? `@${item.username}` : ''}</Text></View>
+      <UserAvatar seller={item as any} size={48} animated={false} /><View style={{ flex: 1 }}><Text style={styles.name}>{item.store_name || item.full_name}</Text><Text style={styles.handle}>{item.username ? `${item.username}` : ''}</Text></View>
     </TouchableOpacity>} />}
   </View>;
 }

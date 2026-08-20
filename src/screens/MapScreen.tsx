@@ -215,7 +215,7 @@ export default function MapScreen() {
       const isMe = store.user && s.id === store.user.id;
       return {
         id: s.id, lat: (isMe && myLocation) ? myLocation.lat : s.lat, lng: (isMe && myLocation) ? myLocation.lng : s.lng, tier: s.seller_tier,
-        name: s.use_store_identity ? s.store_name : (s.username ? `@${s.username}` : s.full_name),
+        name: s.use_store_identity ? s.store_name : (s.username ? `${s.username}` : s.full_name),
         avatar: raw ? getImageUrl(raw) : null,
       };
     });

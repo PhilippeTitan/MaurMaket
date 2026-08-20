@@ -535,7 +535,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                         </Text>
                       </View>
                       <View>
-                        <Text style={styles.reviewerName}>{review.reviewer?.username ? `@${review.reviewer.username}` : 'Anonymous'}</Text>
+                        <Text style={styles.reviewerName}>{review.reviewer?.username ? `${review.reviewer.username}` : 'Anonymous'}</Text>
                         <Text style={styles.reviewDate}>{new Date(review.created_at).toLocaleDateString()}</Text>
                       </View>
                     </View>

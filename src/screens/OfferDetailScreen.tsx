@@ -27,6 +27,13 @@ type OfferDetail = {
   negotiationRound: number;
   buyerId: string;
   sellerId: string;
+  buyerName?: string;
+  buyerAvatar?: string;
+  sellerName?: string;
+  sellerAvatar?: string;
+  sellerTier?: string;
+  sellerUseStoreIdentity?: boolean;
+  sellerStoreLogoUrl?: string;
   expiresAt: string;
 };
 
@@ -224,8 +231,10 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
               </TouchableOpacity>
             </View>
           )}
-          {!canRespond && !canCounter && (
-            <TouchableOpacity style={styles.chatBtn} onPress={() => navigation.navigate('Chat', { conversationId, otherUserName: '', otherUserId: isBuyer ? offer.sellerId : offer.buyerId })} accessibilityLabel="open chat" accessibilityRole="button">
+          {!canRespond && !canCounter && (            <TouchableOpacity style={styles.chatBtn} onPress={() => {
+              const ou = isBuyer ? { name: offer.sellerName, avatar: offer.sellerAvatar, tier: offer.sellerTier, storeLogoUrl: offer.sellerStoreLogoUrl, useStoreIdentity: offer.sellerUseStoreIdentity } : { name: offer.buyerName, avatar: offer.buyerAvatar };
+              navigation.navigate('Chat', { conversationId, otherUserName: ou.name || '', otherUserId: isBuyer ? offer.sellerId : offer.buyerId, otherUserAvatar: ou.avatar, otherUserStoreLogoUrl: (ou as any).storeLogoUrl, otherUserUseStoreIdentity: (ou as any).useStoreIdentity, otherUserTier: (ou as any).tier });
+            }} accessibilityLabel="open chat" accessibilityRole="button">
               <Text style={styles.chatBtnText}>Open chat</Text>
             </TouchableOpacity>
           )}
@@ -234,7 +243,10 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
 
       {isFinalized && (
         <View style={[styles.actions, { paddingBottom: insets.bottom + SPACING.md }]}>
-          <TouchableOpacity style={styles.chatBtn} onPress={() => navigation.navigate('Chat', { conversationId, otherUserName: '', otherUserId: isBuyer ? offer.sellerId : offer.buyerId })} accessibilityLabel="open chat" accessibilityRole="button">
+            <TouchableOpacity style={styles.chatBtn} onPress={() => {
+              const ou = isBuyer ? { name: offer.sellerName, avatar: offer.sellerAvatar, tier: offer.sellerTier, storeLogoUrl: offer.sellerStoreLogoUrl, useStoreIdentity: offer.sellerUseStoreIdentity } : { name: offer.buyerName, avatar: offer.buyerAvatar };
+              navigation.navigate('Chat', { conversationId, otherUserName: ou.name || '', otherUserId: isBuyer ? offer.sellerId : offer.buyerId, otherUserAvatar: ou.avatar, otherUserStoreLogoUrl: (ou as any).storeLogoUrl, otherUserUseStoreIdentity: (ou as any).useStoreIdentity, otherUserTier: (ou as any).tier });
+            }} accessibilityLabel="open chat" accessibilityRole="button">
             <Text style={styles.chatBtnText}>Open chat</Text>
           </TouchableOpacity>
         </View>

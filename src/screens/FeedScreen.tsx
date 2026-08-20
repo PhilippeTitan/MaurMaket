@@ -684,10 +684,10 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                 contentContainerStyle={{ paddingBottom: 12 }}
                 renderItem={({ item }) => (
                   <View style={styles.commentItem}>
-                      <UserAvatar name={item.reviewer?.username ? `@${item.reviewer.username}` : 'B'} />
+                      <UserAvatar name={item.reviewer?.username ? `${item.reviewer.username}` : 'B'} />
                     <View style={styles.commentBody}>
                       <View style={styles.commentNameRow}>
-                        <Text style={styles.commentName}>{item.reviewer?.username ? `@${item.reviewer.username}` : 'Buyer'}</Text>
+                        <Text style={styles.commentName}>{item.reviewer?.username ? `${item.reviewer.username}` : 'Buyer'}</Text>
                         <View style={styles.commentStars}>
                           <Icon name="rating" size={11} color={COLORS.yellow} />
                           <Text style={styles.commentRating}>{item.rating}</Text>

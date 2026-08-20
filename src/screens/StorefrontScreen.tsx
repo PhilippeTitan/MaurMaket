@@ -165,6 +165,9 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           otherUserName: getDisplayName(seller) || 'Seller',
           otherUserId: sellerId,
           otherUserAvatar: getSellerAvatar(seller),
+          otherUserStoreLogoUrl: seller?.store_logo_url,
+          otherUserUseStoreIdentity: seller?.use_store_identity,
+          otherUserTier: seller?.seller_tier,
         });
       } else {
         const productContext = products[0];
@@ -174,6 +177,9 @@ export default function StorefrontScreen({ route, navigation }: Props) {
           otherUserName: getDisplayName(seller) || 'Seller',
           otherUserId: sellerId,
           otherUserAvatar: getSellerAvatar(seller),
+          otherUserStoreLogoUrl: seller?.store_logo_url,
+          otherUserUseStoreIdentity: seller?.use_store_identity,
+          otherUserTier: seller?.seller_tier,
         });
       }
     } catch (err: unknown) {
@@ -546,7 +552,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 <Text style={styles.reviewAvatarText}>{(item.reviewer?.username || 'A').charAt(0).toUpperCase()}</Text>
               </View>
               <View style={styles.reviewInfo}>
-                <Text style={styles.reviewName} numberOfLines={1}>{item.reviewer?.username ? `@${item.reviewer.username}` : 'Anonymous'}</Text>
+                <Text style={styles.reviewName} numberOfLines={1}>{item.reviewer?.username || 'Anonymous'}</Text>
                 <View style={styles.reviewStars}>
                   {[1, 2, 3, 4, 5].map(s => (
                     <Icon key={s} name={s <= item.rating ? 'rating' : 'rate-this'} size={11} color={s <= item.rating ? COLORS.yellow : COLORS.text2} />

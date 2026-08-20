@@ -10,7 +10,6 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
-import BackButton from '../components/BackButton';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
 import { getConversations, getNotifications, getFollowing, createConversation, getConversationsWithOffers, markNotificationRead, markAllNotificationsRead } from '../api';
@@ -19,6 +18,7 @@ import { store } from '../store';
 import { routeNotification } from '../notificationRouting';
 import type { Conversation, Notification } from '../types';
 import type { RootStackParamList } from '../navigation';
+import { LinearGradient } from 'expo-linear-gradient';
 import UserAvatar from '../components/UserAvatar';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 
@@ -116,17 +116,6 @@ export default function InboxScreen() {
     setRefreshing(false);
   }, []);
 
-  const handleBack = () => {
-    if (route.params?.returnTab) {
-      nav.navigate('Main', { screen: route.params.returnTab });
-      return;
-    }
-    if (nav.canGoBack()) {
-      nav.goBack();
-      return;
-    }
-    nav.navigate('Main', { screen: 'FeedTab' });
-  };
 
   const sortedConversations = conversations
     .slice()
@@ -159,7 +148,7 @@ export default function InboxScreen() {
     });
 
   const renderConversation = ({ item }: { item: Conversation }) => {
-    const otherName = (item as any).other_party_username ? `@${(item as any).other_party_username}` : ((item as any).other_party_name || 'Seller');
+    const otherName = (item as any).other_party_username || ((item as any).other_party_name || 'Seller');
     const hasUnread = (item.unread_count || 0) > 0;
     const storeName = (item as any).other_party_store_name;
     const sellerTier = (item as any).other_party_seller_tier;
@@ -169,13 +158,13 @@ export default function InboxScreen() {
       <View style={styles.convo}>
         <TouchableOpacity
           style={styles.convoMain}
-          onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId, otherUserAvatar: (item as any).other_party_avatar, otherUserTier: sellerTier })}
+          onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId, otherUserAvatar: (item as any).other_party_avatar, otherUserStoreLogoUrl: (item as any).other_party_store_logo_url, otherUserUseStoreIdentity: (item as any).other_party_use_store_identity, otherUserTier: sellerTier })}
           accessibilityLabel={`conversation with ${otherName}`}
           accessibilityRole="button"
           activeOpacity={0.7}
         >
           <View style={{ position: 'relative' }}>
-             <UserAvatar seller={{ avatar_url: (item as any).other_party_avatar, full_name: otherName, username: (item as any).other_party_username, seller_tier: sellerTier } as any} size={44} animated={false} />
+             <UserAvatar seller={{ avatar_url: (item as any).other_party_avatar, full_name: otherName, username: (item as any).other_party_username, seller_tier: sellerTier } as any} size={48} animated={false} />
             {hasUnread && <View style={styles.convoUnreadBadge} />}
           </View>
           <View style={styles.convoBody}>
@@ -188,9 +177,15 @@ export default function InboxScreen() {
             ) : sellerTier && sellerTier !== 'none' ? (
               <Text style={styles.convoTier} numberOfLines={1}>{sellerTier} seller</Text>
             ) : null}
-            <Text style={[styles.convoMsg, hasUnread && styles.convoMsgUnread]} numberOfLines={1}>
-              {item.last_message?.content || (item as any).last_message || 'No messages yet'}
-            </Text>
+            <View style={styles.convoMsgRow}>
+              {(item as any).last_message_type === 'image' && <MaterialCommunityIcons name="image-outline" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
+              {(item as any).last_message_type === 'offer' && <MaterialCommunityIcons name="tag-outline" size={14} color={COLORS.coral} style={{ marginRight: 4 }} />}
+              {((item as any).last_message_type && (item as any).last_message_type !== 'text') ? null : (
+                <Text style={[styles.convoMsg, hasUnread && styles.convoMsgUnread]} numberOfLines={1}>
+                  {item.last_message?.content || (item as any).last_message || 'No messages yet'}
+                </Text>
+              )}
+            </View>
           </View>
         </TouchableOpacity>
         {otherUserId && (
@@ -209,17 +204,17 @@ export default function InboxScreen() {
   };
 
   const SellerBubble = ({ seller }: { seller: any }) => {
-    const displayName = seller.store_name || (seller.username ? `@${seller.username}` : seller.full_name?.split(' ')[0]);
+    const displayName = seller.store_name || seller.username || seller.full_name?.split(' ')[0];
     const handlePress = async () => {
       try {
         const existing = conversations.find(c => c.seller_id === seller.seller_id || c.buyer_id === seller.seller_id);
         if (existing) {
-          nav.navigate('Chat', { conversationId: existing.id, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url, otherUserTier: seller.seller_tier });
+          nav.navigate('Chat', { conversationId: existing.id, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url, otherUserStoreLogoUrl: seller.store_logo_url, otherUserUseStoreIdentity: seller.use_store_identity, otherUserTier: seller.seller_tier });
           return;
         }
         const res = await createConversation({ sellerId: seller.seller_id }) as { conversationId: string };
         if (res.conversationId) {
-          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url, otherUserTier: seller.seller_tier });
+          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url, otherUserStoreLogoUrl: seller.store_logo_url, otherUserUseStoreIdentity: seller.use_store_identity, otherUserTier: seller.seller_tier });
         }
       } catch {
         toast.error(t('feedback.messagesUnavailable'), t('feedback.connectionRetry'), handlePress);
@@ -227,7 +222,10 @@ export default function InboxScreen() {
     };
     return (
       <TouchableOpacity style={styles.sellerBubble} onPress={handlePress} accessibilityLabel={`message ${displayName}`} accessibilityRole="button">
-        <UserAvatar seller={seller} size={44} animated={false} />
+        <View style={{ position: 'relative' }}>
+          <UserAvatar seller={seller} size={64} animated={false} />
+          <View style={styles.sellerOnlineDot} />
+        </View>
         <Text style={styles.sellerBubbleName} numberOfLines={1}>
           {displayName}
         </Text>
@@ -244,11 +242,6 @@ export default function InboxScreen() {
         accessibilityLabel="All messages"
         accessibilityRole="button"
       >
-        <MaterialCommunityIcons
-          name="message-text-outline"
-          size={15}
-          color={activeTab === 'all' ? COLORS.white : COLORS.text2}
-        />
         <Text style={[styles.topTabLabel, activeTab === 'all' && styles.topTabLabelActive]}>
           All
         </Text>
@@ -268,14 +261,17 @@ export default function InboxScreen() {
         accessibilityLabel="Primary messages"
         accessibilityRole="button"
       >
-        <MaterialCommunityIcons
-          name="star-outline"
-          size={15}
-          color={activeTab === 'primary' ? COLORS.white : COLORS.text2}
-        />
+        {activeTab !== 'primary' && followedSellers.length > 0 && <View style={styles.topTabRedDot} />}
         <Text style={[styles.topTabLabel, activeTab === 'primary' && styles.topTabLabelActive]}>
           Primary
         </Text>
+        {followedSellers.length > 0 && (
+          <View style={[styles.topTabCount, activeTab === 'primary' && styles.topTabCountActive]}>
+            <Text style={[styles.topTabCountText, activeTab === 'primary' && styles.topTabCountTextActive]}>
+              {followedSellers.length}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -285,17 +281,12 @@ export default function InboxScreen() {
         accessibilityLabel="Offers"
         accessibilityRole="button"
       >
-        <MaterialCommunityIcons
-          name="tag-outline"
-          size={15}
-          color={activeTab === 'offers' ? COLORS.white : COLORS.coral}
-        />
         <Text style={[styles.topTabLabel, activeTab === 'offers' && styles.topTabLabelActive]}>
           Offers
         </Text>
         {offerConversations.length > 0 && (
-          <View style={[styles.topTabOfferBadge, activeTab === 'offers' && styles.topTabOfferBadgeActive]}>
-            <Text style={[styles.topTabOfferBadgeText, activeTab === 'offers' && styles.topTabOfferBadgeTextActive]}>
+          <View style={[styles.topTabCount, activeTab === 'offers' && styles.topTabCountActive]}>
+            <Text style={[styles.topTabCountText, activeTab === 'offers' && styles.topTabCountTextActive]}>
               {offerConversations.length > 9 ? '9+' : offerConversations.length}
             </Text>
           </View>
@@ -306,53 +297,54 @@ export default function InboxScreen() {
 
   const conversationsListHeader = (
     <>
-      {activeTab === 'primary' && followedSellers.length > 0 && (
-        <View style={styles.bubblesSection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
-            {followedSellers.map((seller: any) => (
-              <SellerBubble key={seller.seller_id} seller={seller} />
-            ))}
-          </ScrollView>
-        </View>
-      )}
+      <View style={styles.bubblesSection}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
+          {followedSellers.map((seller: any) => (
+            <SellerBubble key={seller.seller_id} seller={seller} />
+          ))}
+        </ScrollView>
+      </View>
+      {topSegmentedTabs}
     </>
   );
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={['#121820', '#0D1117', '#0A0E14']}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={styles.container}
+    >
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.xs }]}>
-        <View style={styles.topBarLeft}>
-          {(route.params?.returnTab || nav.canGoBack()) ? (
-            <BackButton onPress={handleBack} />
-          ) : null}
-          <Text style={styles.title}>{t('inbox.title')}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.searchBtn}
-          onPress={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 100); }}
-          accessibilityLabel="search messages"
-          accessibilityRole="button"
-          activeOpacity={0.7}
-        >
-          <MaterialCommunityIcons name="magnify" size={22} color={COLORS.text} />
-        </TouchableOpacity>
+        <Text style={styles.title}>{t('inbox.title')}</Text>
       </View>
 
-      {topSegmentedTabs}
+      <TouchableOpacity
+        style={styles.searchBar}
+        onPress={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 100); }}
+        activeOpacity={0.7}
+        accessibilityLabel="search messages"
+        accessibilityRole="button"
+      >
+        <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
+        <Text style={styles.searchBarPlaceholder}>Search messages...</Text>
+      </TouchableOpacity>
 
       {activeTab === 'offers' ? (
         <FlatList
           data={offerConversations}
           renderItem={({ item }: { item: any }) => {
-            const otherName = item.other_party_username ? `@${item.other_party_username}` : (item.other_party_name || 'Seller');
+            const otherName = item.other_party_username || (item.other_party_name || 'Seller');
             const sellerTier = item.other_party_seller_tier;
             const offerStatus = item.offer_status;
             const isCountered = offerStatus === 'countered';
             const isAccepted = offerStatus === 'accepted';
             const isDeclined = offerStatus === 'declined';
-            const isPending = !isCountered && !isAccepted && !isDeclined;
+            const isExpired = offerStatus === 'expired';
+            const isPending = !isCountered && !isAccepted && !isDeclined && !isExpired;
             const round = item.negotiation_round || 1;
             const expiresIn = item.offer_expires_at ? Math.max(0, Math.floor((new Date(item.offer_expires_at).getTime() - Date.now()) / 3600000)) : null;
+            if (isExpired) return null; // Don't show expired offers at all
             return (
               <TouchableOpacity
                 style={styles.offerCard}
@@ -361,6 +353,12 @@ export default function InboxScreen() {
                 accessibilityRole="button"
                 activeOpacity={0.7}
               >
+                <LinearGradient
+                  colors={['rgba(216,90,48,0.06)', 'rgba(216,90,48,0.01)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{ ...StyleSheet.absoluteFill, borderRadius: RADIUS.media }}
+                />
                 <View style={styles.offerCardHeader}>
                   <View style={styles.offerCardUserRow}>
                     <UserAvatar seller={{ avatar_url: item.other_party_avatar, full_name: otherName, username: item.other_party_username, seller_tier: sellerTier } as any} size={30} animated={false} />
@@ -375,6 +373,7 @@ export default function InboxScreen() {
                     isDeclined && styles.offerStatusBadgeDeclined,
                     isCountered && styles.offerStatusBadgeCountered,
                     isPending && styles.offerStatusBadgePending,
+                    isExpired && styles.offerStatusBadgeDeclined,
                   ]}>
                     <Text style={[
                       styles.offerStatusText,
@@ -382,8 +381,9 @@ export default function InboxScreen() {
                       isDeclined && styles.offerStatusTextDeclined,
                       isCountered && styles.offerStatusTextCountered,
                       isPending && styles.offerStatusTextPending,
+                      isExpired && styles.offerStatusTextDeclined,
                     ]}>
-                      {isAccepted ? '✓ Accepted' : isDeclined ? '✕ Declined' : isCountered ? `🔄 Counter (${round}/3)` : '⏳ Pending'}
+                      {isAccepted ? '✓ Accepted' : isDeclined ? '✕ Declined' : isCountered ? `🔄 Counter (${round}/3)` : isExpired ? '✕ Expired' : '⏳ Pending'}
                     </Text>
                   </View>
                 </View>
@@ -532,60 +532,57 @@ export default function InboxScreen() {
           )}
         </View>
       </Modal>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   topBar: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.xs,
+    paddingBottom: SPACING.sm,
   },
-  topBarLeft: {
+  title: { fontSize: 28, color: COLORS.text, fontWeight: '800', letterSpacing: -0.3, textAlign: 'center' },
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-  },
-  title: { fontSize: 22, color: COLORS.text, fontWeight: '700' },
-  searchBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.sm,
+    paddingHorizontal: 16,
+    height: 48,
+    borderRadius: RADIUS.pill,
     backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
+  },
+  searchBarPlaceholder: {
+    fontSize: 15,
+    color: COLORS.text2,
+    fontWeight: '400',
   },
 
-  /* Top Segmented Tabs */
+  /* Top Tab Pills (WhatsApp style) */
   topTabsWrap: {
     flexDirection: 'row',
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.sm,
-    paddingTop: 4,
+    paddingTop: 6,
     gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
   },
   topTabItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 7,
+    gap: 5,
+    paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: RADIUS.pill,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.border + '60',
   },
   topTabItemActive: {
-    backgroundColor: COLORS.coral,
-    borderColor: COLORS.coral,
+    backgroundColor: COLORS.coral + '15',
+    borderColor: COLORS.coral + '40',
   },
   topTabLabel: {
     fontSize: 13,
@@ -593,8 +590,14 @@ const styles = StyleSheet.create({
     color: COLORS.text2,
   },
   topTabLabelActive: {
-    color: COLORS.white,
+    color: COLORS.coral,
     fontWeight: '700',
+  },
+  topTabRedDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#E53935',
   },
   topTabCount: {
     backgroundColor: COLORS.surface2,
@@ -603,7 +606,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   topTabCountActive: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: COLORS.coral + '20',
   },
   topTabCountText: {
     fontSize: 11,
@@ -611,7 +614,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   topTabCountTextActive: {
-    color: COLORS.white,
+    color: COLORS.coral,
   },
   topTabOfferBadge: {
     backgroundColor: COLORS.coral,
@@ -620,7 +623,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   topTabOfferBadgeActive: {
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.coral,
   },
   topTabOfferBadgeText: {
     fontSize: 10,
@@ -628,16 +631,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   topTabOfferBadgeTextActive: {
-    color: COLORS.coral,
+    color: COLORS.white,
   },
 
   /* Offer Card Styles */
   offerCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.card,
+    borderRadius: RADIUS.media,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 12,
+    borderColor: COLORS.border + '40',
+    padding: 14,
     marginBottom: 10,
   },
   offerCardHeader: {
@@ -751,25 +754,27 @@ const styles = StyleSheet.create({
   },
 
   /* Conversations */
-  convo: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 10 },
+  convo: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border + '30', gap: 10 },
   convoMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  convoUnreadBadge: { position: 'absolute', top: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: '#00C853', borderWidth: 2, borderColor: COLORS.bg },
-  convoBody: { flex: 1 },
+  convoUnreadBadge: { position: 'absolute', top: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: '#1A73E8', borderWidth: 2, borderColor: COLORS.bg },
+  convoBody: { flex: 1, gap: 2 },
   convoNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   convoName: { fontSize: 15, color: COLORS.text, fontWeight: '500', flex: 1 },
-  convoNameBold: { fontWeight: '700' },
-  convoStore: { fontSize: 12, color: COLORS.coral, marginTop: 1 },
-  convoTier: { fontSize: 11, color: COLORS.text2, marginTop: 1, textTransform: 'capitalize' },
-  convoMsg: { fontSize: 13, color: COLORS.text2, marginTop: 2 },
-  convoMsgUnread: { color: COLORS.text, fontWeight: '500' },
-  convoTime: { fontSize: 11, color: COLORS.text2 },
-  convoStoreBtn: { padding: 8, borderRadius: 20, backgroundColor: COLORS.surface },
+  convoNameBold: { fontWeight: '700', color: COLORS.white },
+  convoStore: { fontSize: 12, color: COLORS.coral, fontWeight: '600' },
+  convoTier: { fontSize: 11, color: COLORS.text2, textTransform: 'capitalize' },
+  convoMsgRow: { flexDirection: 'row', alignItems: 'center', marginTop: 1 },
+  convoMsg: { fontSize: 13, color: COLORS.text2, flex: 1 },
+  convoMsgUnread: { color: COLORS.text, fontWeight: '600' },
+  convoTime: { fontSize: 11, color: COLORS.text2, marginLeft: 4 },
+  convoStoreBtn: { padding: 8, borderRadius: 20, backgroundColor: 'transparent' },
 
   /* Bubbles */
-  bubblesSection: { paddingTop: SPACING.xs, paddingBottom: 4 },
-  bubblesRow: { paddingHorizontal: SPACING.md, gap: 14 },
-  sellerBubble: { alignItems: 'center', width: 64 },
-  sellerBubbleName: { fontSize: 11, color: COLORS.text2, marginTop: 4, textAlign: 'center' },
+  bubblesSection: { paddingTop: SPACING.sm, paddingBottom: SPACING.xs },
+  bubblesRow: { paddingHorizontal: SPACING.md, gap: 16 },
+  sellerBubble: { alignItems: 'center', width: 68 },
+  sellerBubbleName: { fontSize: 11, color: COLORS.text2, marginTop: 6, textAlign: 'center', fontWeight: '500' },
+  sellerOnlineDot: { position: 'absolute', bottom: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: '#00C853', borderWidth: 2.5, borderColor: COLORS.bg },
 
   /* Search modal */
   searchModal: { flex: 1, backgroundColor: COLORS.bg },

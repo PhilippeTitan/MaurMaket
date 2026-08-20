@@ -4954,13 +4954,14 @@ app.get('/api/conversations', authRequired, async (req, res) => {
     const result = await pool.query(
       `SELECT c.*, 
               CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
-              u.full_name AS other_party_name, u.username AS other_party_username, u.avatar_url AS other_party_avatar, u.seller_tier AS other_party_seller_tier,
+              u.full_name AS other_party_name, u.username AS other_party_username, u.avatar_url AS other_party_avatar, u.use_store_identity AS other_party_use_store_identity, u.store_logo_url AS other_party_store_logo_url, u.seller_tier AS other_party_seller_tier,
               latest.last_message,
               COUNT(unread.id)::INTEGER AS unread_count
        FROM conversations c
        JOIN users u ON u.id = CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END
        LEFT JOIN LATERAL (
-         SELECT CASE WHEN message_type = 'image' THEN '📷 Photo' WHEN message_type = 'offer' THEN '💰 Offer' ELSE content END AS last_message
+         SELECT CASE WHEN message_type = 'image' THEN 'Photo' WHEN message_type = 'offer' THEN 'Offer' ELSE content END AS last_message,
+              (SELECT message_type FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message_type
          FROM messages WHERE conversation_id = c.id
          ORDER BY created_at DESC, id DESC LIMIT 1
        ) latest ON true
@@ -5196,6 +5197,7 @@ app.get('/api/conversations/with-offers', authRequired, async (req, res) => {
     const result = await pool.query(
       `SELECT DISTINCT c.*,
               u.full_name AS other_party_name, u.username AS other_party_username, u.avatar_url AS other_party_avatar,
+              u.use_store_identity AS other_party_use_store_identity, u.store_logo_url AS other_party_store_logo_url,
               u.store_name AS other_party_store_name,
               u.seller_tier AS other_party_seller_tier,
               CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
@@ -5495,11 +5497,16 @@ app.get('/api/offers/:messageId', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT mo.*, p.name AS product_name,
-              (SELECT image_url FROM product_images WHERE product_id = mo.product_id ORDER BY is_primary DESC, display_order ASC LIMIT 1) AS product_image
+              (SELECT image_url FROM product_images WHERE product_id = mo.product_id ORDER BY is_primary DESC, display_order ASC LIMIT 1) AS product_image,
+              bu.full_name AS buyer_name, bu.avatar_url AS buyer_avatar, bu.seller_tier AS buyer_tier,
+              su.full_name AS seller_name, su.avatar_url AS seller_avatar, su.seller_tier AS seller_tier,
+              su.use_store_identity AS seller_use_store_identity, su.store_logo_url AS seller_store_logo_url
        FROM message_offers mo
        JOIN products p ON p.id = mo.product_id
        JOIN messages m ON m.id = mo.message_id
        JOIN conversations c ON c.id = mo.conversation_id
+       JOIN users bu ON bu.id = mo.buyer_id
+       JOIN users su ON su.id = mo.seller_id
        WHERE mo.message_id = $1 AND (c.buyer_id = $2 OR c.seller_id = $2)`,
       [req.params.messageId, req.user.id]
     );
@@ -5517,6 +5524,13 @@ app.get('/api/offers/:messageId', authRequired, async (req, res) => {
         negotiationRound: o.negotiation_round || 1,
         buyerId: o.buyer_id,
         sellerId: o.seller_id,
+        buyerName: o.buyer_name,
+        buyerAvatar: o.buyer_avatar,
+        sellerName: o.seller_name,
+        sellerAvatar: o.seller_avatar,
+        sellerTier: o.seller_tier,
+        sellerUseStoreIdentity: o.seller_use_store_identity,
+        sellerStoreLogoUrl: o.seller_store_logo_url,
         expiresAt: o.expires_at,
         createdAt: o.created_at,
         respondedAt: o.responded_at,
@@ -7710,6 +7724,26 @@ cron.schedule('*/15 * * * *', async () => {
 // ───── Cron: Clean up old read notifications (daily at 3 AM) ─────
 cron.schedule('0 3 * * *', async () => {
   await cleanupOldNotifications();
+});
+
+// ───── Auto-expire expired offers ─────
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    const result = await pool.query(
+      `UPDATE message_offers SET status = 'expired'
+       WHERE status = 'pending' AND expires_at < NOW()
+       RETURNING id`
+    );
+    const countered = await pool.query(
+      `UPDATE message_offers SET status = 'expired'
+       WHERE status = 'countered' AND expires_at < NOW()
+       RETURNING id`
+    );
+    const total = result.rowCount + countered.rowCount;
+    if (total > 0) console.log(`[OFFER EXPIRY] Auto-expired ${total} offers`);
+  } catch (err) {
+    console.error('[OFFER EXPIRY] Error:', err.message);
+  }
 });
 
 // ───── Auto-Migration: Supabase → Neon (keeps Neon in sync with primary) ─────

@@ -37,7 +37,7 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
     try {
       const res = await updateUsername(clean) as { user: { username: string } };
       await store.setUser({ ...store.user!, username: res.user.username } as any, store.token!);
-      toast.success(t('username.updated'), `@${res.user.username}`);
+      toast.success(t('username.updated'), res.user.username);
       navigation.goBack();
     } catch (err: any) {
       const msg = err?.message || t('username.updateFailed');

@@ -46,6 +46,9 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
         otherUserName: getDisplayName(product.seller),
         otherUserId: product.seller_id,
         otherUserAvatar: product.seller.avatar_url,
+        otherUserStoreLogoUrl: (product.seller as any).store_logo_url,
+        otherUserUseStoreIdentity: (product.seller as any).use_store_identity,
+        otherUserTier: product.seller.seller_tier,
         draftOffer: {
           productId: product.id,
           productName: product.name,

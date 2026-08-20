@@ -17,6 +17,7 @@ import { store } from '../store';
 import * as ImagePicker from 'expo-image-picker';
 import { useToast } from '../components/Toast';
 import UserAvatar from '../components/UserAvatar';
+import { LinearGradient } from 'expo-linear-gradient';
 import BackButton from '../components/BackButton';
 import SellerItemsSheet from '../components/SellerItemsSheet';
 import OfferBuilder from '../components/OfferBuilder';
@@ -29,7 +30,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
-  const { conversationId, otherUserName, otherUserId, otherUserAvatar, otherUserTier, draftOffer } = route.params;
+  const { conversationId, otherUserName, otherUserId, otherUserAvatar, otherUserStoreLogoUrl, otherUserUseStoreIdentity, otherUserTier, draftOffer } = route.params;
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -90,6 +91,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       if (older) setLoadingOlder(false);
     }
     setLoading(false);
+
   };
 
   useEffect(() => {
@@ -148,6 +150,8 @@ startPolling();
     if (!draftOffer) return;
     setOfferDraftVisible(true);
   }, [draftOffer]);
+
+
 
   const handleSend = async () => {
     if (!text.trim() || sendingRef.current) return;
@@ -273,8 +277,10 @@ startPolling();
     const isOffer = item.message_type === 'offer';
 
     if (isOffer) {
-      const offerData = item.offer_data as { productId: string; productName: string; offeredPrice: number; listPrice: number; status: 'pending' | 'accepted' | 'declined' | 'countered'; negotiationRound?: number } | undefined;
+      const offerData = item.offer_data as { productId: string; productName: string; offeredPrice: number; listPrice: number; status: 'pending' | 'accepted' | 'declined' | 'countered' | 'expired'; negotiationRound?: number } | undefined;
       if (!offerData) return null;
+      // Hide expired offers from chat
+      if (offerData.status === 'expired') return null;
       const isPending = offerData.status === 'pending';
       const isAccepted = offerData.status === 'accepted';
       const isDeclined = offerData.status === 'declined';
@@ -304,6 +310,12 @@ startPolling();
             isDeclined && styles.offerMsgCardDeclined,
             isCountered && styles.offerMsgCardCountered,
           ]}>
+            <LinearGradient
+              colors={isAccepted ? ['rgba(29,158,117,0.08)', 'transparent'] : isDeclined ? ['rgba(226,75,74,0.06)', 'transparent'] : isCountered ? ['rgba(59,130,246,0.06)', 'transparent'] : ['rgba(216,90,48,0.07)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ ...StyleSheet.absoluteFill, borderRadius: RADIUS.media }}
+            />
             {/* Header Stripe */}
             <View style={styles.offerMsgHeader}>
               <View style={styles.offerMsgTypeWrap}>
@@ -503,7 +515,12 @@ startPolling();
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={styles.container}>
+      <LinearGradient
+        colors={['#121820', '#0D1117', '#0A0E14']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.container}
+      >
         <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
           <BackButton onPress={() => navigation.goBack()} />
           <TouchableOpacity
@@ -514,8 +531,8 @@ startPolling();
             accessibilityRole="button"
           >
             <UserAvatar
-              seller={{ avatar_url: otherUserAvatar, full_name: otherUserName, seller_tier: otherUserTier } as any}
-              size={34}
+              seller={{ avatar_url: otherUserAvatar, store_logo_url: otherUserStoreLogoUrl, use_store_identity: otherUserUseStoreIdentity, full_name: otherUserName, seller_tier: otherUserTier } as any}
+              size={48}
             />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
@@ -531,34 +548,13 @@ startPolling();
         </View>
 
 {/* Offer Reminder Banner - removed, View button is now on the offer card itself */}
-        {loading ? (
-          <View style={{ flex: 1, padding: SPACING.md, gap: 14, justifyContent: 'flex-end' }}>
-            {[140, 180, 100].map((w, i) => (
-              <View key={`t${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-start' }}>
-                <SkeletonBlock width={24} height={24} radius={12} />
-                <SkeletonBlock width={w} height={36} radius={16} />
-              </View>
-            ))}
-            {[160, 120].map((w, i) => (
-              <View key={`m${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-end' }}>
-                <SkeletonBlock width={w} height={36} radius={16} style={{ backgroundColor: COLORS.coral + '30' }} />
-              </View>
-            ))}
-            {[200, 90].map((w, i) => (
-              <View key={`t2${i}`} style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, alignSelf: 'flex-start' }}>
-                <SkeletonBlock width={24} height={24} radius={12} />
-                <SkeletonBlock width={w} height={36} radius={16} />
-              </View>
-            ))}
-          </View>
-        ) : (
-          <FlatList
+        <FlatList
             data={messages}
             renderItem={renderMessage}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.messageList}
+            style={{ flex: 1 }}
             ref={listRef}
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
             onScroll={({ nativeEvent }) => {
               const distanceFromBottom = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y;
               stickToLatest.current = distanceFromBottom < 96;
@@ -569,19 +565,23 @@ startPolling();
               }
             }}
             scrollEventThrottle={16}
-            ListHeaderComponent={
-              loadingOlder ? <ActivityIndicator size="small" color={COLORS.coral} style={{ paddingVertical: 12 }} /> : null
-            }
             onContentSizeChange={() => {
-              if (listRef.current && stickToLatest.current) {
-                listRef.current.scrollToEnd({ animated: false });
+              if (listRef.current && stickToLatest.current && messages.length > 0) {
+                setTimeout(() => {
+                  listRef.current?.scrollToEnd({ animated: false });
+                }, 100);
               }
             }}
           />
-        )}
 
         {draftOffer && offerDraftVisible && (
           <View style={styles.offerDock}>
+            <LinearGradient
+              colors={['rgba(59,130,246,0.06)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ ...StyleSheet.absoluteFill, borderRadius: RADIUS.media }}
+            />
             <View style={styles.offerIcon}>
               <Icon name="sale-tag" size={18} color={COLORS.white} />
             </View>
@@ -648,8 +648,15 @@ startPolling();
             }} accessibilityLabel="make an offer" accessibilityRole="button">
               <Icon name="sale-tag" size={20} color={COLORS.coral} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.sendBtn, { opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()} accessibilityLabel="send message" accessibilityRole="button">
+            <TouchableOpacity style={[{ opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()} accessibilityLabel="send message" accessibilityRole="button">
+              <LinearGradient
+                colors={['#FF6B81', '#FF4D6A', '#E8365A']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.sendBtn}
+              >
               <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         </View>
@@ -675,7 +682,7 @@ startPolling();
           onClose={() => setOfferBuilderItem(null)}
           onSent={() => { setOfferBuilderItem(null); fetchMessages(); }}
         />
-      </View>
+      </LinearGradient>
     </KeyboardAvoidingView>
   );
 }
@@ -683,16 +690,16 @@ startPolling();
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.bg,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border + '40', backgroundColor: COLORS.bg,
   },
-  headerProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerName: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  headerProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerName: { fontSize: 16, fontWeight: '700', color: COLORS.text, letterSpacing: -0.2 },
   headerOnlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
-  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00C853' },
-  onlineText: { fontSize: 11, color: COLORS.text2 },
-  headerMore: { padding: 8, borderRadius: 20 },
+  onlineDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#00C853' },
+  onlineText: { fontSize: 11, color: COLORS.text2, fontWeight: '500' },
+  headerMore: { padding: 8, borderRadius: 20, backgroundColor: COLORS.surface2 },
   offerReminderBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: 'rgba(216,90,48,0.15)', borderWidth: 1, borderColor: COLORS.coral,
@@ -707,8 +714,8 @@ const styles = StyleSheet.create({
   offerReminderAction: { fontSize: 12, color: COLORS.coral, fontWeight: '700' },
   messageList: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   bubble: {
-    maxWidth: '78%', paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: RADIUS.row, marginBottom: 8,
+    maxWidth: '78%', paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: 20, marginBottom: 4,
   },
   bubbleMe: {
     alignSelf: 'flex-end', backgroundColor: COLORS.coral,
@@ -716,32 +723,33 @@ const styles = StyleSheet.create({
   },
   bubbleThem: {
     alignSelf: 'flex-start', backgroundColor: COLORS.surface,
-    borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border,
+    borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border + '50',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 1,
   },
-  bubbleImage: { padding: 4, backgroundColor: 'transparent', borderWidth: 0 },
-  bubbleText: { fontSize: 15, color: COLORS.text, lineHeight: 20 },
+  bubbleImage: { padding: 3, backgroundColor: 'transparent', borderWidth: 0 },
+  bubbleText: { fontSize: 15, color: COLORS.text, lineHeight: 21 },
   bubbleTextMe: { color: COLORS.white },
-  bubbleTime: { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 4, alignSelf: 'flex-end' },
-  chatImage: { width: 220, height: 220, borderRadius: RADIUS.card },
+  bubbleTime: { fontSize: 10, color: 'rgba(255,255,255,0.65)', marginTop: 4, alignSelf: 'flex-end' },
+  chatImage: { width: 240, height: 240, borderRadius: RADIUS.media },
   bubbleTimeImage: { marginTop: 4 },
   messageState: { fontSize: 10, color: COLORS.text2, marginTop: 3, alignSelf: 'flex-end' },
   messageFailed: { fontSize: 10, color: COLORS.coral, marginTop: 3, alignSelf: 'flex-end', fontWeight: '700' },
 
   /* Rich Offer Message Card */
-  offerMsgWrap: { maxWidth: '95%', width: '95%', marginBottom: 12 },
+  offerMsgWrap: { maxWidth: '95%', width: '95%', marginBottom: 8 },
   offerMsgWrapMe: { alignSelf: 'flex-end' },
   offerMsgWrapThem: { alignSelf: 'flex-start' },
   offerMsgCard: {
     backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.card,
-    padding: 12,
+    borderColor: COLORS.border + '50',
+    borderRadius: RADIUS.media,
+    padding: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.1,
     shadowRadius: 6,
-    elevation: 3,
+    elevation: 2,
   },
   offerMsgCardAccepted: {
     borderColor: 'rgba(29,158,117,0.4)',
@@ -1011,11 +1019,12 @@ const styles = StyleSheet.create({
     gap: 10,
     marginHorizontal: SPACING.md,
     marginBottom: 8,
-    padding: 12,
+    padding: 14,
     borderRadius: RADIUS.media,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.border + '40',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 3,
   },
   offerIcon: {
     width: 34,
@@ -1040,26 +1049,27 @@ const styles = StyleSheet.create({
   offerChipText: { fontSize: 11, color: COLORS.text, fontWeight: '700' },
   offerClose: { padding: 2 },
   typingRow: {
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.md + 4,
     paddingBottom: 4, paddingTop: 2,
   },
   typingText: { fontSize: 12, color: COLORS.text2, fontStyle: 'italic' },
   inputArea: {
-    borderTopWidth: 1, borderTopColor: COLORS.border,
+    borderTopWidth: 1, borderTopColor: COLORS.border + '30',
     backgroundColor: COLORS.bg,
   },
   inputRow: {
-    flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.md,
+    flexDirection: 'row', alignItems: 'flex-end', padding: SPACING.sm,
+    paddingHorizontal: SPACING.md,
     gap: 8,
   },
   input: {
-    flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 19, paddingHorizontal: 14, paddingVertical: 10, color: COLORS.text,
-    fontSize: 14, maxHeight: 100,
+    flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border + '60',
+    borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: COLORS.text,
+    fontSize: 15, maxHeight: 100, lineHeight: 20,
   },
   cameraBtn: {
     width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center',
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surface2,
   },
   offerBtn: {
     width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center',
@@ -1067,6 +1077,7 @@ const styles = StyleSheet.create({
   sendBtn: {
     width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.coral,
     justifyContent: 'center', alignItems: 'center',
+    shadowColor: COLORS.coral, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 2,
   },
   profileOverlay: {
     ...StyleSheet.absoluteFill,

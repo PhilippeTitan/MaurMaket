@@ -62,7 +62,7 @@ export default function EditProfileScreen({ navigation }: Props) {
             <Image source={{ uri: avatarUrl }} style={styles.avatarImg} />
           ) : (
             <Text style={styles.avatarText}>
-              {user?.username ? `@${user.username}`.slice(0, 2).toUpperCase() : (user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?')}
+              {user?.username ? `${user.username}`.slice(0, 2).toUpperCase() : (user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?')}
             </Text>
           )}
           {avatarUploading && (
