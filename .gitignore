@@ -68,3 +68,11 @@ expo-env.d.ts
 Some claude changes/
 for claude.txt
 .agents/
+
+# Knowledge graph tooling (generated, rebuildable)
+.graphify/
+raw/
+api-wrapper.cjs
+ingest-sessions.cjs
+query-graph.cjs
+NATCASH*SCROLL*
