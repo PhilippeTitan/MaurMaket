@@ -167,7 +167,7 @@ export default function ExploreScreen({ navigation }: Props) {
 
   const getItemImageUrl = (p: Product) => {
     const img = p.images?.find(i => i.is_primary) || p.images?.[0];
-    return getImageUrl(img?.image_url);
+    return getImageUrl(img?.thumbnail_url || img?.image_url);
   };
 
   const selectCategory = (categoryName: string) => {
@@ -206,7 +206,7 @@ export default function ExploreScreen({ navigation }: Props) {
       ? item.images
       : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
     const hasMore = images.length > 1;
-    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.image_url || images[0]?.image_url);
+    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.thumbnail_url || images.find(i => i.is_primary)?.image_url || images[0]?.thumbnail_url || images[0]?.image_url);
     return (
       <View>
         <View style={styles.card}>
@@ -237,7 +237,7 @@ export default function ExploreScreen({ navigation }: Props) {
                 scrollEventThrottle={16}
                 getItemLayout={(_, index) => ({ length: CARD_W, offset: CARD_W * index, index })}
                 renderItem={({ item: img }) => {
-                  const url = getImageUrl(img.image_url);
+                  const url = getImageUrl(img.thumbnail_url || img.image_url);
                   return (
                     <TouchableOpacity
                       activeOpacity={0.9}

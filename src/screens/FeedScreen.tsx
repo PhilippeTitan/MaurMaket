@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
   RefreshControl, ActivityIndicator, LayoutChangeEvent, Modal, Pressable, Platform, ScrollView,
 } from 'react-native';
-import { Image as ExpoImage } from 'expo-image';
+import { Image as ExpoImage, prefetch } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -335,7 +335,8 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
       : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
     const activeIdx = feedImageIndices[item.id] || 0;
     const currentImg = allImages[activeIdx] || allImages[0];
-    const imgUrl = getImageUrl(currentImg?.image_url);
+    // Prefer thumbnail for faster loading in feed view
+    const imgUrl = getImageUrl(currentImg?.thumbnail_url || currentImg?.image_url);
     const isOwnProduct = store.user?.id === item.seller_id;
 
     return (
@@ -364,7 +365,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               scrollEventThrottle={16}
             >
               {allImages.map((img, idx) => {
-                const url = getImageUrl(img.image_url);
+                const url = getImageUrl(img.thumbnail_url || img.image_url);
                 return (
                   <View key={String(img.id || idx)} style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}>
                     {url ? (

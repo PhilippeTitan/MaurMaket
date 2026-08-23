@@ -8,6 +8,7 @@ import bcrypt from 'bcrypt';
 import cron from 'node-cron';
 import nodemailer from 'nodemailer';
 import { Expo } from 'expo-server-sdk';
+import sharp from 'sharp';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -856,6 +857,9 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_product_cooccurrences_b ON product_cooccurrences(product_b_id, purchase_count DESC);
     `));
 
+    // ── Thumbnail URL column ──
+    await step('Thumbnail URL column', () => c.query(`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;`));
+
     // ── NatCash phone number separation ──
     await step('NatCash phone separation', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS natcash_phone VARCHAR(20);
@@ -924,6 +928,7 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
     // 1. Try Supabase Storage first
     if (supabaseStorage) {
       try {
+        // Upload full-size image
         await supabaseStorage.send(new PutObjectCommand({
           Bucket: SUPABASE_STORAGE_BUCKET,
           Key: key,
@@ -931,7 +936,27 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
           ContentType: contentType,
         }));
         const url = `${SUPABASE_PUBLIC_BASE}/${key}`;
-        return res.json({ url, deleteUrl: `supabase:${key}`, provider: 'supabase' });
+
+        // Generate thumbnail (400px wide) for faster grid loading
+        let thumbnailUrl = null;
+        try {
+          const thumbKey = key.replace(/\.(\w+)$/, '_thumb.$1');
+          const thumbBuffer = await sharp(buffer)
+            .resize({ width: 400, withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toBuffer();
+          await supabaseStorage.send(new PutObjectCommand({
+            Bucket: SUPABASE_STORAGE_BUCKET,
+            Key: thumbKey,
+            Body: thumbBuffer,
+            ContentType: 'image/webp',
+          }));
+          thumbnailUrl = `${SUPABASE_PUBLIC_BASE}/${thumbKey}`;
+        } catch (thumbErr) {
+          console.warn('[UPLOAD] Thumbnail generation failed:', thumbErr.message);
+        }
+
+        return res.json({ url, thumbnailUrl, deleteUrl: `supabase:${key}`, provider: 'supabase' });
       } catch (s3Err) {
         console.warn('[UPLOAD] Supabase Storage failed, falling back to imgBB:', s3Err.message);
       }
@@ -2952,7 +2977,7 @@ app.get('/api/products', async (req, res) => {
        LEFT JOIN categories c ON p.category_id = c.id
        LEFT JOIN LATERAL (
          SELECT COALESCE(
-           json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC),
+           json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC),
            '[]'::json
          ) AS images
          FROM product_images pi
@@ -3008,7 +3033,7 @@ try {
        JOIN users u ON u.id = p.seller_id
        LEFT JOIN categories c ON c.id = p.category_id
        LEFT JOIN LATERAL (
-         SELECT COALESCE(json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC), '[]'::json) AS images
+         SELECT COALESCE(json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC), '[]'::json) AS images
          FROM product_images pi WHERE pi.product_id = p.id
        ) images ON TRUE
        LEFT JOIN (
@@ -3066,7 +3091,7 @@ app.get('/api/products/:id', async (req, res) => {
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
               COALESCE(like_counts.like_count, 0) AS like_count,
               COALESCE(wishlist_counts.wishlist_count, 0) AS wishlist_count,
-              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
+              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
@@ -3409,7 +3434,7 @@ app.get('/api/orders', authRequired, async (req, res) => {
                 'buyer' AS my_role,
                 (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) AS item_count,
                 (SELECT p.name FROM order_items oi2 JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
-                (SELECT pi.image_url FROM order_items oi3 JOIN product_images pi ON oi3.product_id = pi.product_id WHERE oi3.order_id = o.id AND pi.is_primary = true ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
+                (SELECT COALESCE(pi.thumbnail_url, pi.image_url) FROM order_items oi3 JOIN product_images pi ON oi3.product_id = pi.product_id WHERE oi3.order_id = o.id AND pi.is_primary = true ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
          FROM orders o
          JOIN order_items oi ON o.id = oi.order_id
          JOIN users u ON oi.seller_id = u.id
@@ -3424,7 +3449,7 @@ app.get('/api/orders', authRequired, async (req, res) => {
                 'seller' AS my_role,
                 (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) AS item_count,
                 (SELECT p.name FROM order_items oi2 JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
-                (SELECT pi.image_url FROM order_items oi3 JOIN product_images pi ON oi3.product_id = pi.product_id WHERE oi3.order_id = o.id AND pi.is_primary = true ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
+                (SELECT COALESCE(pi.thumbnail_url, pi.image_url) FROM order_items oi3 JOIN product_images pi ON oi3.product_id = pi.product_id WHERE oi3.order_id = o.id AND pi.is_primary = true ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
          FROM orders o
          JOIN order_items oi ON o.id = oi.order_id
          JOIN users u ON o.buyer_id = u.id
@@ -4603,7 +4628,7 @@ app.get('/api/seller/orders', authRequired, sellerRequired, async (req, res) => 
               'seller' AS my_role,
               (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) AS item_count,
               (SELECT p.name FROM order_items oi2 JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
-              (SELECT pi.image_url FROM order_items oi3 JOIN product_images pi ON oi3.product_id = pi.product_id WHERE oi3.order_id = o.id AND pi.is_primary = true ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
+              (SELECT COALESCE(pi.thumbnail_url, pi.image_url) FROM order_items oi3 JOIN product_images pi ON oi3.product_id = pi.product_id WHERE oi3.order_id = o.id AND pi.is_primary = true ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
        FROM orders o
        JOIN order_items oi ON o.id = oi.order_id
        JOIN users u ON o.buyer_id = u.id

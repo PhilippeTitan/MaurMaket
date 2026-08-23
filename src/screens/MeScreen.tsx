@@ -160,7 +160,7 @@ export default function MeScreen() {
         cacheData.products = products; cacheData.productCount = products.length;
 
         products.forEach((p: Product) => {
-          const url = getImageUrl(p.images?.find(i => i.is_primary)?.image_url || p.images?.[0]?.image_url);
+          const url = getImageUrl(p.images?.find(i => i.is_primary)?.thumbnail_url || p.images?.find(i => i.is_primary)?.image_url || p.images?.[0]?.thumbnail_url || p.images?.[0]?.image_url);
           if (!url) return;
           Image.getSize(url, (w, h) => {
             if (mountedRef.current) setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
@@ -267,7 +267,7 @@ export default function MeScreen() {
       ? item.images
       : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
     const hasMore = images.length > 1;
-    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.image_url || images[0]?.image_url);
+    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.thumbnail_url || images.find(i => i.is_primary)?.image_url || images[0]?.thumbnail_url || images[0]?.image_url);
     const openListing = () => isOwnProduct
       ? nav.navigate('EditListing', { productId: item.id })
       : nav.navigate('ProductDetail', { productId: item.id });
@@ -294,7 +294,7 @@ export default function MeScreen() {
                 scrollEventThrottle={16}
                 getItemLayout={(_, index) => ({ length: CARD_W, offset: CARD_W * index, index })}
                 renderItem={({ item: img }) => {
-                  const url = getImageUrl(img.image_url);
+                  const url = getImageUrl(img.thumbnail_url || img.image_url);
                   return (
                     <TouchableOpacity
                       activeOpacity={0.9}
