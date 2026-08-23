@@ -11,6 +11,8 @@ import { Expo } from 'expo-server-sdk';
 import sharp from 'sharp';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { fileURLToPath } from 'url';
+import https from 'https';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
@@ -64,6 +66,12 @@ const r2Storage = process.env.R2_ACCESS_KEY_ID ? new S3Client({
   forcePathStyle: true,
   requestChecksumCalculation: 'WHEN_REQUIRED',
   responseChecksumValidation: 'WHEN_REQUIRED',
+  requestHandler: new NodeHttpHandler({
+    httpsAgent: new https.Agent({
+      secureProtocol: 'TLSv1_2_method',
+      rejectUnauthorized: true,
+    }),
+  }),
 }) : null;
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'maurmaket-images';
 const R2_PUBLIC_BASE = process.env.R2_PUBLIC_BASE || 'https://pub-' + process.env.R2_ACCOUNT_ID + '.r2.dev';
@@ -95,7 +103,6 @@ const convLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: t
 const verifyLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many verification attempts — try again in 15 minutes' }, skip: testSkip });
 
 // ───── Email Transporter (Gmail API over HTTPS — native https, no extra packages) ─────
-import https from 'https';
 
 const gmailClientId = process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID;
 const gmailClientSecret = process.env.GMAIL_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
