@@ -11,8 +11,6 @@ import { Expo } from 'expo-server-sdk';
 import sharp from 'sharp';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { fileURLToPath } from 'url';
-import https from 'https';
-import { NodeHttpHandler } from '@smithy/node-http-handler';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
@@ -64,14 +62,6 @@ const r2Storage = process.env.R2_ACCESS_KEY_ID ? new S3Client({
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
   },
   forcePathStyle: true,
-  requestChecksumCalculation: 'WHEN_REQUIRED',
-  responseChecksumValidation: 'WHEN_REQUIRED',
-  requestHandler: new NodeHttpHandler({
-    httpsAgent: new https.Agent({
-      secureProtocol: 'TLSv1_2_method',
-      rejectUnauthorized: true,
-    }),
-  }),
 }) : null;
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'maurmaket-images';
 const R2_PUBLIC_BASE = process.env.R2_PUBLIC_BASE || 'https://pub-' + process.env.R2_ACCOUNT_ID + '.r2.dev';
@@ -911,98 +901,6 @@ async function cleanupOldNotifications() {
 }
 
 
-// ───── One-time migration: Supabase Storage → R2 ─────
-app.post('/api/admin/migrate-to-r2', express.json({ limit: '1mb' }), async (req, res) => {
-  const { GetObjectCommand } = await import('@aws-sdk/client-s3');
-  const MIGRATE_SECRET = 'migrate-r2-2026';
-  if (req.body.secret !== MIGRATE_SECRET) {
-    return res.status(403).json({ error: 'Invalid secret' });
-  }
-  if (!r2Storage) {
-    return res.status(503).json({ error: 'R2 not configured' });
-  }
-
-  try {
-    const { rows } = await pool.query(
-      "SELECT id, image_url, thumbnail_url FROM product_images WHERE image_url LIKE '%supabase.co%' ORDER BY id LIMIT 50"
-    );
-
-    if (rows.length === 0) {
-      return res.json({ message: 'No images to migrate', migrated: 0, skipped: 0, failed: 0 });
-    }
-
-    let migrated = 0, skipped = 0, failed = 0;
-    const results = [];
-
-    for (const row of rows) {
-      try {
-        // Extract S3 key from Supabase URL
-        const key = row.image_url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
-        if (!key) { failed++; continue; }
-
-        // Check if already on R2
-        try {
-          const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
-          await r2Storage.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
-          const newUrl = R2_PUBLIC_BASE + '/' + key;
-          const newThumbUrl = row.thumbnail_url?.includes('supabase.co')
-            ? R2_PUBLIC_BASE + '/' + row.thumbnail_url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1]
-            : row.thumbnail_url;
-          await pool.query('UPDATE product_images SET image_url = $1, thumbnail_url = $2 WHERE id = $3', [newUrl, newThumbUrl, row.id]);
-          skipped++;
-          continue;
-        } catch { /* not on R2 yet */ }
-
-        // Download from Supabase
-        const getCmd = new GetObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: key });
-        const response = await supabaseStorage.send(getCmd);
-        const chunks = [];
-        for await (const chunk of response.Body) chunks.push(chunk);
-        const buffer = Buffer.concat(chunks);
-
-        // Upload to R2
-        const { PutObjectCommand } = await import('@aws-sdk/client-s3');
-        await r2Storage.send(new PutObjectCommand({
-          Bucket: R2_BUCKET,
-          Key: key,
-          Body: buffer,
-          ContentType: 'image/' + (key.split('.').pop() === 'jpg' ? 'jpeg' : key.split('.').pop()),
-        }));
-
-        const newUrl = R2_PUBLIC_BASE + '/' + key;
-        let newThumbUrl = row.thumbnail_url;
-        if (row.thumbnail_url?.includes('supabase.co')) {
-          const thumbKey = row.thumbnail_url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
-          if (thumbKey) {
-            const thumbGet = new GetObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: thumbKey });
-            const thumbResp = await supabaseStorage.send(thumbGet);
-            const thumbChunks = [];
-            for await (const chunk of thumbResp.Body) thumbChunks.push(chunk);
-            const thumbBuffer = Buffer.concat(thumbChunks);
-            await r2Storage.send(new PutObjectCommand({
-              Bucket: R2_BUCKET,
-              Key: thumbKey,
-              Body: thumbBuffer,
-              ContentType: 'image/webp',
-            }));
-            newThumbUrl = R2_PUBLIC_BASE + '/' + thumbKey;
-          }
-        }
-
-        await pool.query('UPDATE product_images SET image_url = $1, thumbnail_url = $2 WHERE id = $3', [newUrl, newThumbUrl, row.id]);
-        migrated++;
-        results.push({ id: row.id.slice(0, 8), size: (buffer.length / 1024).toFixed(1) + 'KB' });
-      } catch (err) {
-        failed++;
-        results.push({ id: row.id.slice(0, 8), error: err.message });
-      }
-    }
-
-    res.json({ migrated, skipped, failed, total: rows.length, results });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ───── CORS (production + dev origins) ─────
 const ALLOWED_ORIGINS = [
