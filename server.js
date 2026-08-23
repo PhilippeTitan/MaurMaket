@@ -62,6 +62,8 @@ const r2Storage = process.env.R2_ACCESS_KEY_ID ? new S3Client({
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
   },
   forcePathStyle: true,
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
 }) : null;
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'maurmaket-images';
 const R2_PUBLIC_BASE = process.env.R2_PUBLIC_BASE || 'https://pub-' + process.env.R2_ACCOUNT_ID + '.r2.dev';
@@ -939,7 +941,7 @@ app.post('/api/admin/migrate-to-r2', express.json({ limit: '1mb' }), async (req,
           const newThumbUrl = row.thumbnail_url?.includes('supabase.co')
             ? R2_PUBLIC_BASE + '/' + row.thumbnail_url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1]
             : row.thumbnail_url;
-          await pool.query('UPDATE product_images SET image_url = , thumbnail_url =  WHERE id = ', [newUrl, newThumbUrl, row.id]);
+          await pool.query('UPDATE product_images SET image_url = $1, thumbnail_url = $2 WHERE id = $3', [newUrl, newThumbUrl, row.id]);
           skipped++;
           continue;
         } catch { /* not on R2 yet */ }
@@ -980,7 +982,7 @@ app.post('/api/admin/migrate-to-r2', express.json({ limit: '1mb' }), async (req,
           }
         }
 
-        await pool.query('UPDATE product_images SET image_url = , thumbnail_url =  WHERE id = ', [newUrl, newThumbUrl, row.id]);
+        await pool.query('UPDATE product_images SET image_url = $1, thumbnail_url = $2 WHERE id = $3', [newUrl, newThumbUrl, row.id]);
         migrated++;
         results.push({ id: row.id.slice(0, 8), size: (buffer.length / 1024).toFixed(1) + 'KB' });
       } catch (err) {
