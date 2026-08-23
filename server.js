@@ -53,6 +53,19 @@ const supabaseStorage = process.env.SUPABASE_S3_ACCESS_KEY ? new S3Client({
 const SUPABASE_STORAGE_BUCKET = 'product-images';
 const SUPABASE_PUBLIC_BASE = process.env.SUPABASE_PUBLIC_BASE || 'https://bnnluaqrktnrnnfvmqbt.supabase.co/storage/v1/object/public/product-images';
 
+// ───── Cloudflare R2 Storage (S3 protocol) ─────
+const r2Storage = process.env.R2_ACCESS_KEY_ID ? new S3Client({
+  region: 'auto',
+  endpoint: process.env.R2_ENDPOINT || 'https://cd681939aa37a65e42e73054b572746b.r2.cloudflarestorage.com',
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  },
+  forcePathStyle: true,
+}) : null;
+const R2_BUCKET = process.env.R2_BUCKET_NAME || 'maurmaket-images';
+const R2_PUBLIC_BASE = process.env.R2_PUBLIC_BASE || 'https://pub-' + process.env.R2_ACCOUNT_ID + '.r2.dev';
+
 pool.on('error', (err) => {
   console.error('Unexpected pool error:', err);
 });
@@ -909,7 +922,7 @@ app.use('/api/upload', uploadLimiter);
 
 // Upload config — no secrets exposed
 app.get('/api/upload/config', (req, res) => {
-  res.json({ hasSupabaseStorage: !!supabaseStorage, hasImgbb: !!process.env.IMGBB_KEY });
+  res.json({ hasR2: !!r2Storage, hasSupabaseStorage: !!supabaseStorage, hasImgbb: !!process.env.IMGBB_KEY });
 });
 
 // Upload image — Supabase Storage primary, imgBB fallback
@@ -925,17 +938,22 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
     const contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
     const key = `${req.user.id}/${crypto.randomUUID()}.${ext}`;
 
-    // 1. Try Supabase Storage first
-    if (supabaseStorage) {
+    // 1. Try Cloudflare R2 first (faster CDN), then Supabase Storage
+    const activeStorage = r2Storage || supabaseStorage;
+    const activeBucket = r2Storage ? R2_BUCKET : SUPABASE_STORAGE_BUCKET;
+    const activePublicBase = r2Storage ? R2_PUBLIC_BASE : SUPABASE_PUBLIC_BASE;
+    const storageName = r2Storage ? 'R2' : 'Supabase';
+
+    if (activeStorage) {
       try {
         // Upload full-size image
-        await supabaseStorage.send(new PutObjectCommand({
-          Bucket: SUPABASE_STORAGE_BUCKET,
+        await activeStorage.send(new PutObjectCommand({
+          Bucket: activeBucket,
           Key: key,
           Body: buffer,
           ContentType: contentType,
         }));
-        const url = `${SUPABASE_PUBLIC_BASE}/${key}`;
+        const url = `${activePublicBase}/${key}`;
 
         // Generate thumbnail (400px wide) for faster grid loading
         let thumbnailUrl = null;
@@ -945,20 +963,20 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
             .resize({ width: 400, withoutEnlargement: true })
             .webp({ quality: 80 })
             .toBuffer();
-          await supabaseStorage.send(new PutObjectCommand({
-            Bucket: SUPABASE_STORAGE_BUCKET,
+          await activeStorage.send(new PutObjectCommand({
+            Bucket: activeBucket,
             Key: thumbKey,
             Body: thumbBuffer,
             ContentType: 'image/webp',
           }));
-          thumbnailUrl = `${SUPABASE_PUBLIC_BASE}/${thumbKey}`;
+          thumbnailUrl = `${activePublicBase}/${thumbKey}`;
         } catch (thumbErr) {
           console.warn('[UPLOAD] Thumbnail generation failed:', thumbErr.message);
         }
 
-        return res.json({ url, thumbnailUrl, deleteUrl: `supabase:${key}`, provider: 'supabase' });
+        return res.json({ url, thumbnailUrl, deleteUrl: `${storageName.toLowerCase()}:${key}`, provider: storageName.toLowerCase() });
       } catch (s3Err) {
-        console.warn('[UPLOAD] Supabase Storage failed, falling back to imgBB:', s3Err.message);
+        console.warn(`[UPLOAD] ${storageName} failed, falling back to imgBB:`, s3Err.message);
       }
     }
 
@@ -997,12 +1015,14 @@ app.delete('/api/upload', authRequired, async (req, res) => {
     const target = deleteUrl || url;
     if (!target) return res.status(400).json({ error: 'No URL provided' });
 
-    // Supabase Storage delete
-    if (target.startsWith('supabase:')) {
-      if (!supabaseStorage) return res.status(503).json({ error: 'Supabase Storage not configured' });
-      const key = target.replace('supabase:', '');
-      await supabaseStorage.send(new DeleteObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: key }));
-      return res.json({ deleted: true, provider: 'supabase' });
+    // Supabase/R2 Storage delete
+    if (target.startsWith('supabase:') || target.startsWith('r2:')) {
+      const storage = r2Storage || supabaseStorage;
+      const bucket = r2Storage ? R2_BUCKET : SUPABASE_STORAGE_BUCKET;
+      if (!storage) return res.status(503).json({ error: 'No storage configured' });
+      const key = target.replace(/^(supabase|r2):/, '');
+      await storage.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+      return res.json({ deleted: true, provider: r2Storage ? 'r2' : 'supabase' });
     }
 
     // imgBB delete
@@ -6623,9 +6643,15 @@ app.post('/api/verification/submit', verifyLimiter, authRequired, sellerRequired
   }
 
   async function deleteStorageImage(url) {
-    if (!url || !supabaseStorage) return;
+    if (!url) return;
     try {
-      if (url.includes('supabase.co/storage')) {
+      // R2 URL: pub-xxx.r2.dev/key or bucket.r2.dev/key
+      if (url.includes('r2.dev') && r2Storage) {
+        const key = url.split('.r2.dev/')[1];
+        if (key) await r2Storage.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+      }
+      // Supabase URL
+      else if (url.includes('supabase.co/storage') && supabaseStorage) {
         const key = url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
         if (key) await supabaseStorage.send(new DeleteObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: key }));
       }
@@ -6953,8 +6979,12 @@ app.delete('/api/verification/images/:id', authRequired, async (req, res) => {
     const urls = [row.id_front_url, row.id_back_url, row.selfie_url].filter(Boolean);
     for (const url of urls) {
       try {
-        if (url.includes(SUPABASE_PUBLIC_BASE.replace('https://', '')) || url.includes('supabase.co/storage')) {
-          // Supabase Storage — extract key from public URL
+        if (url.includes('r2.dev') && r2Storage) {
+          // R2 Storage
+          const key = url.split('.r2.dev/')[1];
+          if (key) await r2Storage.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+        } else if (url.includes(SUPABASE_PUBLIC_BASE.replace('https://', '')) || url.includes('supabase.co/storage')) {
+          // Supabase Storage
           const key = url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
           if (key && supabaseStorage) {
             await supabaseStorage.send(new DeleteObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: key }));
