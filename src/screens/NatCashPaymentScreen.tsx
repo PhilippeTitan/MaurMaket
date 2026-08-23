@@ -231,12 +231,7 @@ export default function NatCashPaymentScreen() {
         const smsPerms = await PermissionsAndroid.requestMultiple([
           PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
           PermissionsAndroid.PERMISSIONS.READ_SMS,
-        ], {
-          title: 'SMS Permission',
-          message: 'MaurMaket needs SMS access to detect your NatCash payment confirmation instantly — even without internet.',
-          buttonPositive: 'Allow',
-          buttonNegative: 'Skip (slower detection)',
-        });
+        ]);
         const granted = [
           smsPerms['android.permission.RECEIVE_SMS'],
           smsPerms['android.permission.READ_SMS'],

@@ -265,7 +265,7 @@ export default function MeScreen() {
     const cardH = getCardHeight(item);
     const images = item.images && item.images.length > 0
       ? item.images
-      : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
+      : [{ id: 'empty', image_url: '', thumbnail_url: null, is_primary: true, display_order: 0 }];
     const hasMore = images.length > 1;
     const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.thumbnail_url || images.find(i => i.is_primary)?.image_url || images[0]?.thumbnail_url || images[0]?.image_url);
     const openListing = () => isOwnProduct

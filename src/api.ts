@@ -144,6 +144,7 @@ const normalizeProduct = (product: Product & Record<string, unknown>): Product =
   const normalizedImages = product.images || (product.image_url ? [{
     id: `${product.id}-primary`,
     image_url: product.image_url as string,
+    thumbnail_url: null,
     is_primary: true,
     display_order: 0,
   }] : undefined);
@@ -158,7 +159,7 @@ const normalizeProduct = (product: Product & Record<string, unknown>): Product =
   const sellerTier = withImages.seller_tier as 'none' | 'casual' | 'verified' | 'business' | undefined;
 
   return {
-    ...withImages,
+    ...(withImages as any),
     seller: {
       id: withImages.seller_id,
       full_name: sellerName || 'Seller',
@@ -183,6 +184,8 @@ const normalizeProduct = (product: Product & Record<string, unknown>): Product =
       location_lng: null,
       username: (withImages as any).seller_username || null,
       show_real_name: false,
+      natcash_phone: null,
+      accepted_payment_methods: null,
     },
   };
 };

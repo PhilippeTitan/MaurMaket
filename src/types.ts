@@ -32,6 +32,7 @@ export interface User {
 export interface ProductImage {
   id: string;
   image_url: string;
+  thumbnail_url: string | null;
   is_primary: boolean;
   display_order: number;
 }

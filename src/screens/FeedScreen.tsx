@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
   RefreshControl, ActivityIndicator, LayoutChangeEvent, Modal, Pressable, Platform, ScrollView,
 } from 'react-native';
-import { Image as ExpoImage, prefetch } from 'expo-image';
+import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -332,7 +332,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
   const renderFeedItem = ({ item }: { item: Product }) => {
     const allImages = (item.images && item.images.length > 0)
       ? item.images
-      : [{ id: 'empty', image_url: '', is_primary: true, display_order: 0 }];
+      : [{ id: 'empty', image_url: '', thumbnail_url: null, is_primary: true, display_order: 0 }];
     const activeIdx = feedImageIndices[item.id] || 0;
     const currentImg = allImages[activeIdx] || allImages[0];
     // Prefer thumbnail for faster loading in feed view
