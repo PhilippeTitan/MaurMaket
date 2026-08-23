@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Linking,
   KeyboardAvoidingView, Platform, Image,
@@ -97,19 +97,25 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   useFocusEffect(useCallback(() => { fetchAddresses(); }, [fetchAddresses]));
 
+  const prevUserIdRef = useRef<string | null>(null);
   useEffect(() => {
     const user = store.user;
-    if (user && !name && !phone) {
-      setName(user.full_name || '');
-      setPhone(user.phone || '');
+    const uid = user?.id || null;
+    if (uid !== prevUserIdRef.current) {
+      // User changed (login/switch) — reset checkout fields
+      prevUserIdRef.current = uid;
+      if (user) {
+        setName(user.full_name || '');
+        setPhone(user.phone || '');
+        setAddress(user.location_address || '');
+        setCity(user.location_city || '');
+        setNote('');
+        setPromoCode('');
+        setDiscount(0);
+        setSelectedAddressId(null);
+      }
     }
-    if (user && !address && user.location_address) {
-      setAddress(user.location_address);
-    }
-    if (user && !city && user.location_city) {
-      setCity(user.location_city);
-    }
-  }, []);
+  });
 
   const subtotal = cart.reduce((sum, item) => sum + (item.effective_price ?? item.price) * item.quantity, 0);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
