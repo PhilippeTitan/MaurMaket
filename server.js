@@ -902,7 +902,7 @@ async function cleanupOldNotifications() {
 
 
 // ───── One-time migration: convert all JPG images to WebP ≤300KB ─────
-app.post('/api/admin/convert-to-webp', authRequired, express.json({ limit: '1mb' }), async (req, res) => {
+app.post('/api/admin/convert-to-webp', express.json({ limit: '1mb' }), async (req, res) => {
   const { GetObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
   if (req.body.secret !== 'convert-webp-2026') {
     return res.status(403).json({ error: 'Invalid secret' });
