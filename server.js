@@ -901,6 +901,84 @@ async function cleanupOldNotifications() {
 }
 
 
+// ───── One-time migration: convert all JPG images to WebP ≤300KB ─────
+app.post('/api/admin/convert-to-webp', authRequired, express.json({ limit: '1mb' }), async (req, res) => {
+  const { GetObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  try {
+    const { rows } = await pool.query(
+      "SELECT id, image_url, thumbnail_url FROM product_images WHERE image_url LIKE '%.jpg' OR image_url LIKE '%.jpeg' OR image_url LIKE '%.png' LIMIT 50"
+    );
+    if (rows.length === 0) {
+      return res.json({ message: 'No JPG/PNG images to convert', converted: 0, total: 0 });
+    }
+    let converted = 0, failed = 0, skipped = 0;
+    const results = [];
+    for (const row of rows) {
+      try {
+        // Extract S3 key from URL
+        const key = row.image_url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
+        if (!key) { failed++; continue; }
+        // Skip if already webp
+        if (key.endsWith('.webp')) { skipped++; continue; }
+        // Download original
+        const getCmd = new GetObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: key });
+        const response = await supabaseStorage.send(getCmd);
+        const chunks = [];
+        for await (const chunk of response.Body) chunks.push(chunk);
+        const buffer = Buffer.concat(chunks);
+        // Convert to webp (max 300KB)
+        let webpBuffer = await sharp(buffer).resize({ width: 1200, withoutEnlargement: true }).webp({ quality: 82, effort: 6 }).toBuffer();
+        if (webpBuffer.length > 300 * 1024) {
+          webpBuffer = await sharp(buffer).resize({ width: 1200, withoutEnlargement: true }).webp({ quality: 65, effort: 6 }).toBuffer();
+        }
+        // Upload webp version
+        const newKey = key.replace(/\.(jpg|jpeg|png)$/i, '.webp');
+        await supabaseStorage.send(new PutObjectCommand({
+          Bucket: SUPABASE_STORAGE_BUCKET,
+          Key: newKey,
+          Body: webpBuffer,
+          ContentType: 'image/webp',
+        }));
+        const newUrl = SUPABASE_PUBLIC_BASE + '/' + newKey;
+        // Update thumbnail too if it's also jpg
+        let newThumbUrl = row.thumbnail_url;
+        if (row.thumbnail_url && (row.thumbnail_url.includes('.jpg') || row.thumbnail_url.includes('.jpeg') || row.thumbnail_url.includes('.png'))) {
+          const thumbKey = row.thumbnail_url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
+          if (thumbKey && !thumbKey.endsWith('.webp')) {
+            try {
+              const thumbGet = new GetObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: thumbKey });
+              const thumbResp = await supabaseStorage.send(thumbGet);
+              const thumbChunks = [];
+              for await (const chunk of thumbResp.Body) thumbChunks.push(chunk);
+              const thumbBuffer = Buffer.concat(thumbChunks);
+              const thumbWebp = await sharp(thumbBuffer).resize({ width: 400, withoutEnlargement: true }).webp({ quality: 75, effort: 6 }).toBuffer();
+              const newThumbKey = thumbKey.replace(/\.(jpg|jpeg|png)$/i, '.webp');
+              await supabaseStorage.send(new PutObjectCommand({
+                Bucket: SUPABASE_STORAGE_BUCKET,
+                Key: newThumbKey,
+                Body: thumbWebp,
+                ContentType: 'image/webp',
+              }));
+              newThumbUrl = SUPABASE_PUBLIC_BASE + '/' + newThumbKey;
+            } catch (e) { /* skip thumb conversion */ }
+          }
+        }
+        await pool.query('UPDATE product_images SET image_url = $1, thumbnail_url = $2 WHERE id = $3', [newUrl, newThumbUrl, row.id]);
+        converted++;
+        results.push({ id: row.id.slice(0, 8), from: (buffer.length / 1024).toFixed(0) + 'KB jpg', to: (webpBuffer.length / 1024).toFixed(0) + 'KB webp' });
+      } catch (err) {
+        failed++;
+        results.push({ id: row.id.slice(0, 8), error: err.message });
+      }
+    }
+    res.json({ converted, failed, skipped, total: rows.length, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ───── CORS (production + dev origins) ─────
 const ALLOWED_ORIGINS = [
@@ -932,12 +1010,26 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
     const { image, expiration } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
 
-    // Decode base64 to buffer
+    // Decode base64 to buffer and convert to webp
     const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
-    const ext = (image.match(/^data:image\/(\w+);/)?.[1] || 'jpg').replace('jpeg', 'jpg');
-    const contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
-    const key = `${req.user.id}/${crypto.randomUUID()}.${ext}`;
+
+    // Always convert to webp for smallest size (max ~300KB)
+    let webpBuffer;
+    try {
+      webpBuffer = await sharp(buffer)
+        .resize({ width: 1200, withoutEnlargement: true })
+        .webp({ quality: 82, effort: 6 })
+        .toBuffer();
+      // If still over 300KB, lower quality iteratively
+      if (webpBuffer.length > 300 * 1024) {
+        webpBuffer = await sharp(buffer).resize({ width: 1200, withoutEnlargement: true }).webp({ quality: 65, effort: 6 }).toBuffer();
+      }
+    } catch (convErr) {
+      console.warn('[UPLOAD] WebP conversion failed, storing original:', convErr.message);
+      webpBuffer = buffer;
+    }
+    const key = `${req.user.id}/${crypto.randomUUID()}.webp`;
 
     // 1. Try Cloudflare R2 first (faster CDN), then Supabase Storage
     const activeStorage = r2Storage || supabaseStorage;
@@ -947,22 +1039,22 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
 
     if (activeStorage) {
       try {
-        // Upload full-size image
+        // Upload full-size webp image
         await activeStorage.send(new PutObjectCommand({
           Bucket: activeBucket,
           Key: key,
-          Body: buffer,
-          ContentType: contentType,
+          Body: webpBuffer,
+          ContentType: 'image/webp',
         }));
         const url = `${activePublicBase}/${key}`;
 
-        // Generate thumbnail (400px wide) for faster grid loading
+        // Generate thumbnail (400px wide) for grid views
         let thumbnailUrl = null;
         try {
-          const thumbKey = key.replace(/\.(\w+)$/, '_thumb.$1');
+          const thumbKey = key.replace(/\.webp$/, '_thumb.webp');
           const thumbBuffer = await sharp(buffer)
             .resize({ width: 400, withoutEnlargement: true })
-            .webp({ quality: 80 })
+            .webp({ quality: 75, effort: 6 })
             .toBuffer();
           await activeStorage.send(new PutObjectCommand({
             Bucket: activeBucket,
