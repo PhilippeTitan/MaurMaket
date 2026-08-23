@@ -136,24 +136,29 @@ export default function NotificationScreen() {
   const [sortBy, setSortBy] = useState('date_desc');
   const viewedOrdersRef = useRef<Set<string>>(new Set());
 
-  // Load viewed orders from AsyncStorage
+  // Per-user key for viewed orders (prevents cross-account bleed)
+  const viewedKey = `viewed_orders_${store.user?.id || 'anon'}`;
+
+  // Load viewed orders from AsyncStorage (namespaced per user)
   useEffect(() => {
     (async () => {
+      // Reset on mount to avoid stale data from previous user
+      viewedOrdersRef.current = new Set();
       try {
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        const raw = await AsyncStorage.getItem('viewed_orders');
+        const raw = await AsyncStorage.getItem(viewedKey);
         if (raw) viewedOrdersRef.current = new Set(JSON.parse(raw));
       } catch {}
     })();
-  }, []);
+  }, [viewedKey]);
 
   const markOrderViewed = useCallback(async (orderId: string) => {
     viewedOrdersRef.current.add(orderId);
     try {
       const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      await AsyncStorage.setItem('viewed_orders', JSON.stringify([...viewedOrdersRef.current]));
+      await AsyncStorage.setItem(viewedKey, JSON.stringify([...viewedOrdersRef.current]));
     } catch {}
-  }, []);
+  }, [viewedKey]);
 
   const fetchData = useCallback(async (force = false) => {
     try {
@@ -203,9 +208,9 @@ export default function NotificationScreen() {
     allOrders.forEach(o => viewedOrdersRef.current.add(o.id));
     try {
       const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      await AsyncStorage.setItem('viewed_orders', JSON.stringify([...viewedOrdersRef.current]));
+      await AsyncStorage.setItem(viewedKey, JSON.stringify([...viewedOrdersRef.current]));
     } catch {}
-  }, [allOrders]);
+  }, [allOrders, viewedKey]);
   const historyOrders = (() => {
     let filtered = allOrders.filter(o => {
       if (historyFilter === 'completed') return o.status === 'completed';
