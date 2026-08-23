@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform,
+  View, Text, Image, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform,
   KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS } from '../theme';
+import moncashLogo from '../../assets/MonNatCash/moncash.webp';
+import natcashLogo from '../../assets/MonNatCash/Natcash.png';
 import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
 import { updateProfile, changePassword, updateSellerProfile } from '../api';
@@ -19,6 +21,8 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   name: 'Full name',
   email: 'Email',
   phone: 'Phone',
+  phones: 'Phone numbers',
+  natcash_phone: 'NatCash number',
   bio: 'Bio',
   password: 'New password',
   storeName: 'Store name',
@@ -28,6 +32,8 @@ const FIELD_ICONS: Record<string, string> = {
   name: 'account-outline',
   email: 'email-outline',
   phone: 'phone-outline',
+  phones: 'phone-outline',
+  natcash_phone: 'cellphone',
   bio: 'text-short',
   password: 'lock-outline',
   storeName: 'storefront-outline',
@@ -57,6 +63,8 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
       case 'name': return user?.full_name || '';
       case 'email': return user?.email || '';
       case 'phone': return user?.phone || '';
+      case 'phones': return user?.phone || '';
+      case 'natcash_phone': return user?.natcash_phone || '';
       case 'bio': return user?.bio || '';
       case 'storeName': return user?.store_name || '';
       default: return '';
@@ -64,6 +72,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
   };
 
   const [value, setValue] = useState(getValue());
+  const [natcashValue, setNatcashValue] = useState(user?.natcash_phone || '');
   const [currentPassword, setCurrentPassword] = useState('');
 
   const handleSave = async () => {
@@ -87,7 +96,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
       return;
     }
 
-    if (!value.trim() && field !== 'bio') {
+    if (!value.trim() && field !== 'bio' && field !== 'phones') {
       Alert.alert(t('settingsEdit.required'), t('settingsEdit.cannotBeEmpty'));
       return;
     }
@@ -101,9 +110,20 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
       switch (field) {
         case 'email':
         case 'phone':
+        case 'natcash_phone':
         case 'bio': {
           const payload: Record<string, string> = {};
-          payload[field] = field === 'bio' ? value.trim() : value.trim();
+          // Map natcash_phone to natcashPhone for the API
+          const apiKey = field === 'natcash_phone' ? 'natcashPhone' : field;
+          payload[apiKey] = field === 'bio' ? value.trim() : value.trim();
+          const res = await updateProfile(payload) as { user: typeof user };
+          if (res.user) await store.setUser(res.user, store.token);
+          break;
+        }
+        case 'phones': {
+          const payload: Record<string, string> = {};
+          if (value.trim()) payload.phone = value.trim();
+          if (natcashValue.trim()) payload.natcashPhone = natcashValue.trim();
           const res = await updateProfile(payload) as { user: typeof user };
           if (res.user) await store.setUser(res.user, store.token);
           break;
@@ -144,7 +164,69 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
       />
 
       <View style={styles.fieldCard}>
-        {field === 'name' ? (
+        {field === 'phones' ? (
+          <>
+            {/* MonCash card */}
+            <View style={{ padding: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(0,194,255,0.12)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                  <Image source={moncashLogo} style={{ width: 36, height: 36 }} resizeMode="cover" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.text }}>MonCash</Text>
+                  <Text style={{ fontSize: 11, color: COLORS.text2 }}>Primary payment number</Text>
+                </View>
+                <View style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: 'rgba(0,194,255,0.1)', borderRadius: 6 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: COLORS.blue, textTransform: 'uppercase' }}>Primary</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg, borderWidth: 1.5, borderColor: COLORS.blue + '44', borderRadius: RADIUS.card, paddingHorizontal: 14, paddingVertical: 0, minHeight: 48 }}>
+                <Text style={{ fontSize: 16, color: COLORS.text2, fontWeight: '600', marginRight: 4 }}>+509</Text>
+                <TextInput
+                  style={{ flex: 1, fontSize: 16, color: COLORS.text, paddingVertical: 12, fontWeight: '500' }}
+                  value={value}
+                  onChangeText={setValue}
+                  placeholder="Phone number"
+                  placeholderTextColor={COLORS.text2}
+                  keyboardType="phone-pad"
+                  autoFocus
+                  accessibilityLabel="MonCash phone number"
+                />
+              </View>
+            </View>
+
+            {/* Divider */}
+            <View style={{ height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 }} />
+
+            {/* NatCash card */}
+            <View style={{ padding: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(139,92,246,0.12)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                  <Image source={natcashLogo} style={{ width: 36, height: 36 }} resizeMode="cover" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.text }}>NatCash</Text>
+                  <Text style={{ fontSize: 11, color: COLORS.text2 }}>For direct NatCash transfers</Text>
+                </View>
+                <View style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: 'rgba(139,92,246,0.1)', borderRadius: 6 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: '#8b5cf6', textTransform: 'uppercase' }}>Optional</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg, borderWidth: 1.5, borderColor: '#8b5cf6' + '44', borderRadius: RADIUS.card, paddingHorizontal: 14, paddingVertical: 0, minHeight: 48 }}>
+                <Text style={{ fontSize: 16, color: COLORS.text2, fontWeight: '600', marginRight: 4 }}>+509</Text>
+                <TextInput
+                  style={{ flex: 1, fontSize: 16, color: COLORS.text, paddingVertical: 12, fontWeight: '500' }}
+                  value={natcashValue}
+                  onChangeText={setNatcashValue}
+                  placeholder="Number"
+                  placeholderTextColor={COLORS.text2}
+                  keyboardType="phone-pad"
+                  accessibilityLabel="NatCash phone number"
+                />
+              </View>
+            </View>
+          </>
+        ) : field === 'name' ? (
           <>
             <View style={styles.fieldRow}>
               <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.text2} />

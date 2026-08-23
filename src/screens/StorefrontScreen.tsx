@@ -319,7 +319,8 @@ export default function StorefrontScreen({ route, navigation }: Props) {
 
   if (loading && !seller) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { paddingTop: insets.top + SPACING.md }]}>
+        
         <View style={styles.skeletonTopBar} />
         <View style={styles.skeletonRow}>
           <View style={styles.skeletonAvatar} />

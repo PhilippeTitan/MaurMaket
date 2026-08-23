@@ -3,6 +3,8 @@ export interface User {
   full_name: string;
   email: string;
   phone: string;
+  natcash_phone: string | null;
+  accepted_payment_methods: string[] | null;
   role: 'buyer' | 'seller';
   avatar_url: string | null;
   bio: string | null;
@@ -217,6 +219,8 @@ export interface SellerProfile {
   username: string | null;
   show_real_name: boolean;
   location_city: string | null;
+  natcash_phone: string | null;
+  accepted_payment_methods: string[] | null;
 }
 
 export interface PromoCode {

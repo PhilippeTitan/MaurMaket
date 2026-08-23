@@ -10,6 +10,7 @@ import { Icon } from '../components/icons/Icon';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
 import { validatePromo } from '../api';
 import ScreenHeader from '../components/ScreenHeader';
@@ -30,6 +31,7 @@ import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const toast = useToast();
   const cart = store.cart;
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
@@ -48,41 +50,43 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [meetupLng, setMeetupLng] = useState<number | null>(null);
   const [meetupAddress, setMeetupAddress] = useState<string | null>(null);
 
-  // Button 1: Laser Conic Sweep (Clockwise 3s)
+  // ---- "Laser Conic Sweep" (bar-for-bar port of the HTML mockup) ----
+  // CSS: .laser-bg { conic-gradient(from var(--angle-a), transparent 60%,
+  //   #3b82f6, #8b5cf6, #ec4899); animation: spin-a 3s linear infinite; }
+  // RN has no conic-gradient, so this is faked with a square LinearGradient
+  // large enough to cover the button at any angle, rotated continuously.
+  // Both MonCash and NatCash use this exact same animation — the mockup
+  // has ONE shared laser-bg style applied to both buttons, not two.
   const laserRotation = useSharedValue(0);
-  // Button 5: Dual Counter-Flare (CW 2.5s & CCW 3.25s)
-  const dualRotationCW = useSharedValue(0);
-  const dualRotationCCW = useSharedValue(360);
-
   useEffect(() => {
     laserRotation.value = withRepeat(
       withTiming(360, { duration: 3000, easing: Easing.linear }),
       -1,
       false,
     );
-    dualRotationCW.value = withRepeat(
-      withTiming(360, { duration: 2500, easing: Easing.linear }),
-      -1,
-      false,
-    );
-    dualRotationCCW.value = withRepeat(
-      withTiming(0, { duration: 3250, easing: Easing.linear }),
-      -1,
-      false,
-    );
   }, []);
-
   const animatedLaserStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${laserRotation.value}deg` }],
   }));
 
-  const animatedDualCWStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${dualRotationCW.value}deg` }],
-  }));
-
-  const animatedDualCCWStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${dualRotationCCW.value}deg` }],
-  }));
+  // ---- Glass shimmer sweep (bar-for-bar port of .glass-shimmer::before) ----
+  // CSS: left -160% -> 160% over 0%-45% of a 3.4s cycle, ease-in-out, then
+  // holds at 160% (off-canvas) for the remaining 45%-100% before looping.
+  const shimmerProgress = useSharedValue(0);
+  useEffect(() => {
+    shimmerProgress.value = withRepeat(
+      withTiming(1, { duration: 3400, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      false,
+    );
+  }, []);
+  const animatedShimmerStyle = useAnimatedStyle(() => {
+    // Map the 0-1 driver onto the CSS keyframe: 0%->45% sweeps, 45%->100% holds.
+    const t = shimmerProgress.value <= 0.45 ? shimmerProgress.value / 0.45 : 1;
+    // Button width is 178px; -160%/160% of that width, per the CSS.
+    const left = -160 * 1.78 + (160 * 1.78 - -160 * 1.78) * t;
+    return { left };
+  });
 
   const fetchAddresses = useCallback(async () => {
     try {
@@ -199,9 +203,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
       orderData.paymentMethod = paymentMethod;
       const orderRes = await createOrder(orderData) as { order: { id: string } };
-      await store.clearCart();
-
-      if (paymentMethod === 'moncash') {
+      await store.clearCart();      if (paymentMethod === 'moncash') {
         try {
           const payRes = await createPayment(orderRes.order.id, `maurmaket://payment-return?orderId=${orderRes.order.id}`) as { paymentUrl: string };
           if (payRes.paymentUrl) {
@@ -217,10 +219,18 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           toast.error(t('checkout.orderCreated'), `${msg} ${t('checkout.retryPayment')}`);
         }
       } else {
-        // NatCash — placeholder for now
+        // NatCash — navigate to payment screen
         notifySuccess();
-        toast.success(t('checkout.orderCreated'), 'NatCash payment coming soon!');
-        navigation.navigate('Orders');
+        const sellerData = (orderRes as any).sellerInfo;
+        const firstSeller = sellerGroups[0];
+        // Use natcash_phone if available, fall back to moncash phone
+        const natcashPhone = sellerData?.natcashPhone || sellerData?.phone || '';
+        navigation.navigate('NatCashPayment', {
+          orderId: orderRes.order.id,
+          total: finalTotal,
+          sellerName: sellerData?.name || firstSeller?.sellerName || 'Seller',
+          sellerPhone: natcashPhone,
+        });
       }
     } catch (e: unknown) {
       notifyError();
@@ -242,7 +252,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         title={t('checkout.title')}
         onBack={() => navigation.goBack()}
       />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 16, 40) }]}>
 
       <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
       <View style={[styles.sellerSummary, sellerCount > 1 && styles.sellerSummaryMixed]}>
@@ -412,7 +422,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       </View>
 
       <View style={styles.payBtnRow}>
-        {/* BUTTON 1: Conic Laser Sweep on MonCash */}
         <TouchableOpacity
           style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
           onPress={() => setPaymentMethod('moncash')}
@@ -420,30 +429,85 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           accessibilityLabel="pay with MonCash"
           accessibilityRole="button"
         >
-          <View style={[styles.payBtnOuter, paymentMethod === 'moncash' && styles.payBtnActiveLaser]}>
+          <View style={[styles.payOuter, paymentMethod === 'moncash' && styles.moncashGlow]}>
             {paymentMethod === 'moncash' ? (
-              <Animated.View style={[styles.animGradientSquare, animatedLaserStyle]}>
-                <LinearGradient
-                  colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899', 'transparent']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-              </Animated.View>
+              <>
+                {/* .laser-bg: conic-gradient ring, faked with a rotating
+                    square gradient behind a mask + the logo on top covering
+                    everything but the 3px border ring */}
+                <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
+                  <LinearGradient
+                    colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']}
+                    locations={[0, 0.6, 0.75, 0.87, 1]}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </Animated.View>
+                {/* .pay-logo (z-index:2) — renders BETWEEN the laser-bg
+                    (z-index:1) and the glass layers (z-index:3/4). JSX
+                    order is what actually controls RN stacking here (mixed
+                    zIndex values across siblings was the earlier bug), so
+                    the logo must render right after laser-bg and before
+                    glass-overlay/glass-shimmer — not last. */}
+                <View style={styles.payLogoWrap}>
+                  <Image
+                    source={moncashLogo}
+                    style={styles.payLogo}
+                    resizeMode="cover"
+                  />
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.25)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={styles.payLogoBottomShadow}
+                    pointerEvents="none"
+                  />
+                </View>
+                {/* .glass-overlay: 135deg white gradient + inset highlight/shadow */}
+                <View style={styles.glassOverlay} pointerEvents="none">
+                  <LinearGradient
+                    colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']}
+                    locations={[0, 0.35, 0.6]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.glassOverlayGradient}
+                  />
+                </View>
+                {/* .glass-shimmer / ::before */}
+                <View style={styles.glassShimmerClip} pointerEvents="none">
+                  <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
+                    <LinearGradient
+                      // linear-gradient(75deg, ...): 0deg points up, angle
+                      // increases clockwise. Converted to a unit-box
+                      // start/end vector so the diagonal is baked into the
+                      // gradient itself, not into a rotated container —
+                      // rotating the whole (tall, thin) band was producing
+                      // a spinning bar instead of a soft diagonal flash.
+                      colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']}
+                      locations={[0, 0.35, 0.5, 0.65, 1]}
+                      start={{ x: 0.017, y: 0.629 }}
+                      end={{ x: 0.983, y: 0.371 }}
+                      style={styles.glassShimmerGradient}
+                    />
+                  </Animated.View>
+                </View>
+              </>
             ) : (
-              <View style={styles.inactiveBorder} />
+              <>
+                <View style={styles.inactiveBorder} />
+                <View style={styles.payLogoWrap}>
+                  <Image
+                    source={moncashLogo}
+                    style={styles.payLogo}
+                    resizeMode="cover"
+                  />
+                </View>
+              </>
             )}
-            <View style={styles.payBtnLogoWrap}>
-              <Image
-                source={moncashLogo}
-                style={styles.payBtnLogo}
-                resizeMode="contain"
-              />
-            </View>
           </View>
         </TouchableOpacity>
 
-        {/* BUTTON 5: Dual Counter-Flare Shimmer on NatCash */}
         <TouchableOpacity
           style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
           onPress={() => setPaymentMethod('natcash')}
@@ -451,38 +515,68 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           accessibilityLabel="pay with NatCash"
           accessibilityRole="button"
         >
-          <View style={[styles.payBtnOuter, paymentMethod === 'natcash' && styles.payBtnActiveDual]}>
+          <View style={[styles.payOuter, paymentMethod === 'natcash' && styles.moncashGlow]}>
             {paymentMethod === 'natcash' ? (
+              // Same "Laser Conic Sweep" as MonCash — the mockup applies one
+              // shared .laser-bg + .moncash-glow to both buttons, no separate
+              // NatCash animation exists in the design being ported.
               <>
-                {/* Primary Flare (Clockwise) */}
-                <Animated.View style={[styles.animGradientSquare, animatedDualCWStyle]}>
+                <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
                   <LinearGradient
-                    colors={['#a855f7', 'transparent', '#ec4899', '#a855f7']}
+                    colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']}
+                    locations={[0, 0.6, 0.75, 0.87, 1]}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </Animated.View>
+                <View style={styles.payLogoWrap}>
+                  <Image
+                    source={natcashLogo}
+                    style={styles.payLogo}
+                    resizeMode="cover"
+                  />
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.25)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={styles.payLogoBottomShadow}
+                    pointerEvents="none"
+                  />
+                </View>
+                <View style={styles.glassOverlay} pointerEvents="none">
+                  <LinearGradient
+                    colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']}
+                    locations={[0, 0.35, 0.6]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={StyleSheet.absoluteFill}
+                    style={styles.glassOverlayGradient}
                   />
-                </Animated.View>
-                {/* Secondary Counter-Flare (Counter-Clockwise) */}
-                <Animated.View style={[styles.animGradientSquare, styles.dualInnerBorder, animatedDualCCWStyle]}>
-                  <LinearGradient
-                    colors={['transparent', '#06b6d4', '#3b82f6', 'transparent']}
-                    start={{ x: 1, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                </Animated.View>
+                </View>
+                <View style={styles.glassShimmerClip} pointerEvents="none">
+                  <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
+                    <LinearGradient
+                      colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']}
+                      locations={[0, 0.35, 0.5, 0.65, 1]}
+                      start={{ x: 0.017, y: 0.629 }}
+                      end={{ x: 0.983, y: 0.371 }}
+                      style={styles.glassShimmerGradient}
+                    />
+                  </Animated.View>
+                </View>
               </>
             ) : (
-              <View style={styles.inactiveBorder} />
+              <>
+                <View style={styles.inactiveBorder} />
+                <View style={styles.payLogoWrap}>
+                  <Image
+                    source={natcashLogo}
+                    style={styles.payLogo}
+                    resizeMode="cover"
+                  />
+                </View>
+              </>
             )}
-            <View style={styles.payBtnLogoWrap}>
-              <Image
-                source={natcashLogo}
-                style={styles.payBtnLogo}
-                resizeMode="contain"
-              />
-            </View>
           </View>
         </TouchableOpacity>
       </View>
@@ -508,7 +602,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  content: { paddingBottom: 40 },
+  content: { paddingBottom: 16 },
   subtitle: { fontSize: 11, color: COLORS.text2 },
   sectionLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0, paddingHorizontal: SPACING.md, marginTop: SPACING.md, marginBottom: 8 },
   sellerSummary: {
@@ -597,41 +691,116 @@ const styles = StyleSheet.create({
   totalLabel: { fontSize: 14, color: COLORS.text2 },
   totalValue: { fontSize: 18, color: COLORS.coral, fontWeight: '700' },
   payBtnRow: { flexDirection: 'row', gap: 10, paddingHorizontal: SPACING.md, marginTop: 8 },
+  // .pay-touch { width: 178px; height: 107px; display:flex; align-items:
+  //   center; justify-content:center; }
   payBtnTouch: { width: 178, height: 107, alignItems: 'center', justifyContent: 'center' },
-  payBtnOuter: {
-    width: 178, height: 107, borderRadius: RADIUS.row, overflow: 'hidden',
-    alignItems: 'center', justifyContent: 'center', position: 'relative',
+  // .pay-outer { position:relative; width:178px; height:107px;
+  //   border-radius:14px; overflow:hidden; display:flex; align-items:
+  //   center; justify-content:center; background:#12172a; }
+  payOuter: {
+    position: 'relative', width: 178, height: 107, borderRadius: 14,
+    overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#12172a',
   },
-  payBtnActiveLaser: {
-    shadowColor: '#EC4899',
+  // .laser-bg { position:absolute; inset:0; border-radius:inherit;
+  //   padding:3px; background: conic-gradient(from var(--angle-a),
+  //   transparent 60%, #3b82f6, #8b5cf6, #ec4899); animation: spin-a 3s
+  //   linear infinite; z-index:1; }
+  // RN has no conic-gradient, so this is faked with a square linear
+  // gradient large enough to fully cover the button at any rotation angle
+  // (diagonal of 178x107 ≈ 208px; 230 gives a safety margin), spun behind
+  // the logo. Because the logo (170x99, z-index 2) sits on top and covers
+  // everything but a ~3-4px edge, only that edge ring is ever visible —
+  // same visual result as the CSS `padding: 3px` border technique.
+  laserBgSquare: {
+    position: 'absolute', top: -62, left: -26, width: 230, height: 230,
+  },
+  // .moncash-glow { filter: drop-shadow(0 0 14px rgba(139,92,246,0.55)); }
+  // Applied to .pay-outer on both buttons in the mockup (the "NatCash"
+  // slot literally reuses the `moncash-glow` class — ported as-is).
+  moncashGlow: {
+    shadowColor: '#8b5cf6',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
-    shadowRadius: 10,
-    elevation: 8,
+    shadowOpacity: 0.55,
+    shadowRadius: 14,
+    elevation: 10,
   },
-  payBtnActiveDual: {
-    shadowColor: '#A855F7',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
-    shadowRadius: 12,
-    elevation: 8,
+  // .glass-overlay { position:absolute; inset:0; border-radius:inherit;
+  //   z-index:3; pointer-events:none;
+  //   background: linear-gradient(135deg, rgba(255,255,255,0.28) 0%,
+  //     rgba(255,255,255,0.08) 35%, rgba(255,255,255,0) 60%);
+  //   box-shadow: inset 0 1px 1px rgba(255,255,255,0.45),
+  //     inset 0 -12px 18px rgba(0,0,0,0.25); }
+  // RN's LinearGradient component (not StyleSheet) is used for the 135deg
+  // fade. The top 1px highlight is approximated with a top border here.
+  // The bottom dark falloff moved to payLogoBottomShadow (see below) so it
+  // draws inside the logo's own clipped box instead of as a border on this
+  // outer layer — as a border it was landing right on the button edge/
+  // border-radius seam and reading as a visible seam rather than a soft
+  // shadow sitting "on" the image like the CSS inset shadow does.
+  glassOverlay: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.45)',
   },
-  animGradientSquare: {
-    position: 'absolute', top: -76, left: -41, width: 260, height: 260,
+  glassOverlayGradient: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 14,
   },
-  dualInnerBorder: {
-    opacity: 0.85,
+  // .glass-shimmer { position:absolute; inset:0; border-radius:inherit;
+  //   z-index:4; overflow:hidden; pointer-events:none; }
+  glassShimmerClip: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  // .glass-shimmer::before { position:absolute; top:-60%; left:-160%;
+  //   width:55%; height:220%; background: linear-gradient(75deg,
+  //   transparent 0%, rgba(255,255,255,0) 35%, rgba(255,255,255,0.65) 50%,
+  //   rgba(255,255,255,0) 65%, transparent 100%);
+  //   animation: glass-sweep 3.4s ease-in-out infinite; }
+  // Percentages are relative to .pay-outer's own box (178x107):
+  //   top: -60% of 107 = -64.2   height: 220% of 107 = 235.4
+  //   width: 55% of 178 = 97.9   left is animated (see animatedShimmerStyle)
+  glassShimmerBand: {
+    position: 'absolute',
+    top: -64.2,
+    width: 97.9,
+    height: 235.4,
+  },
+  glassShimmerGradient: {
+    flex: 1,
   },
   inactiveBorder: {
-    ...StyleSheet.absoluteFill, borderRadius: RADIUS.row,
-    borderWidth: 1.5, borderColor: COLORS.border, backgroundColor: COLORS.surface,
+    ...StyleSheet.absoluteFill, borderRadius: 14,
+    borderWidth: 2, borderColor: 'transparent',
   },
-  payBtnLogoWrap: {
-    width: 172, height: 101, borderRadius: RADIUS.row - 2,
-    backgroundColor: COLORS.surface, overflow: 'hidden',
-    alignItems: 'center', justifyContent: 'center',
+  // .pay-logo { width:170px; height:99px; border-radius:12px;
+  //   overflow:hidden; object-fit:contain; background:#0e1322;
+  //   position:relative; z-index:2; }
+  // Source assets are ~1.78-1.79:1 (near 16:9), wider than this box's
+  // 1.717:1 ratio. Using resizeMode="cover" instead of "contain" scales
+  // the image UP until it fills the box on both axes, then the wrapper's
+  // overflow:hidden crops the excess — so the logo fills top-to-bottom AND
+  // side-to-side with zero letterbox, at the cost of a slight horizontal
+  // crop (image is ~1.6% wider than the box once scaled to match height).
+  // Button footprint (payLogoWrap) is untouched at 170x99.
+  payLogoWrap: {
+    width: 170, height: 99, borderRadius: 12, backgroundColor: '#0e1322',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  payBtnLogo: { width: 170, height: 99, borderRadius: RADIUS.row - 2 },
+  payLogo: {
+    width: '100%', height: '100%',
+  },
+  // Bottom depth shadow — ported from the CSS's
+  // `inset 0 -12px 18px rgba(0,0,0,0.25)`, but drawn as a gradient inside
+  // payLogoWrap (clipped to the same rounded 170x99 box as the logo image)
+  // instead of as a border on the outer glass layer, so it reads as a
+  // shadow sitting on the image rather than a hard line on the button edge.
+  payLogoBottomShadow: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, height: 18,
+  },
   ctaBtn: { marginHorizontal: SPACING.md, marginTop: 12, backgroundColor: COLORS.coral, borderRadius: RADIUS.button, padding: 14, alignItems: 'center' },
   ctaBtnDisabled: { opacity: 0.6 },
   ctaText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },

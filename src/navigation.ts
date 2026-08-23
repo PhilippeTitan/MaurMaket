@@ -63,7 +63,7 @@ export type RootStackParamList = {
   Addresses: undefined;
   Payments: undefined;
   EditListing: { productId: string };
-  SettingsEdit: { field: 'name' | 'email' | 'phone' | 'bio' | 'password' | 'storeName'; title: string };
+  SettingsEdit: { field: 'name' | 'email' | 'phone' | 'phones' | 'natcash_phone' | 'bio' | 'password' | 'storeName'; title: string };
   PaymentReturn: { orderId?: string };
   Meetup: { orderId: string };
   Notification: undefined;
@@ -78,4 +78,5 @@ export type RootStackParamList = {
   LanguageSettings: undefined;
   FollowList: { userId: string; kind: 'followers' | 'following'; title: string };
   OfferDetail: { messageId: string; conversationId: string };
+  NatCashPayment: { orderId: string; total: number; sellerName: string; sellerPhone: string };
 };

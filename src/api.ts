@@ -39,13 +39,13 @@ const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
-    ? 'http://10.100.245.105:4000/api'
+    ? `http://${getDevHost()}:4000/api`
     : 'https://maurmaket.onrender.com/api';
 
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
-    ? 'http://10.100.245.105:4000'
+    ? `http://${getDevHost()}:4000`
     : 'https://maurmaket.onrender.com';
 
 let _cachedToken: string | null = null;
@@ -236,7 +236,7 @@ export const updateProfile = (data: Record<string, string>) =>
 export const changePassword = (currentPassword: string, newPassword: string) =>
   request('/auth/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) });
 
-export const becomeSeller = (data?: { storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; tier?: string }) =>
+export const becomeSeller = (data?: { storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; tier?: string; natcashPhone?: string }) =>
   request('/auth/become-seller', { method: 'PUT', body: data ? JSON.stringify(data) : undefined });
 
 export const updateSellerProfile = (data: Record<string, string | boolean>) =>
@@ -247,7 +247,7 @@ export const updateUsername = (username: string) =>
 
 export const getVerificationStatus = () => request('/verification/status');
 
-export const upgradeTier = (data: { tier: string; storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string }) =>
+export const upgradeTier = (data: { tier: string; storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; natcashPhone?: string }) =>
   request('/auth/upgrade-tier', { method: 'PUT', body: JSON.stringify(data) });
 
 // Products

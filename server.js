@@ -856,6 +856,12 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_product_cooccurrences_b ON product_cooccurrences(product_b_id, purchase_count DESC);
     `));
 
+    // ── NatCash phone number separation ──
+    await step('NatCash phone separation', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS natcash_phone VARCHAR(20);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_payment_methods TEXT[] DEFAULT ARRAY['moncash'];
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -1429,7 +1435,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -1441,8 +1447,9 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
 });
 
 app.put('/api/auth/profile', authRequired, async (req, res) => {
-  let { fullName, email, phone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng, showRealName, useStoreIdentity } = req.body;
+  let { fullName, email, phone, natcashPhone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng, showRealName, useStoreIdentity, acceptedPaymentMethods } = req.body;
   if (phone) phone = phone.replace(/^\+?509/, '').replace(/^\+/, '');
+  if (natcashPhone) natcashPhone = natcashPhone.replace(/^\+?509/, '').replace(/^\+/, '');
   if (fullName && fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
   if (bio && bio.length > 500) return res.status(400).json({ error: 'Bio too long (max 500 characters)' });
   if (locationAddress && locationAddress.length > 200) return res.status(400).json({ error: 'Address too long (max 200 characters)' });
@@ -1455,6 +1462,8 @@ app.put('/api/auth/profile', authRequired, async (req, res) => {
         phone = COALESCE($3, phone),
         bio = COALESCE($4, bio),
         avatar_url = COALESCE($5, avatar_url),
+        natcash_phone = COALESCE($13, natcash_phone),
+        accepted_payment_methods = COALESCE($14, accepted_payment_methods),
         location_address = COALESCE($7, location_address),
         location_city = COALESCE($8, location_city),
         location_lat = COALESCE($9, location_lat),
@@ -1464,10 +1473,11 @@ app.put('/api/auth/profile', authRequired, async (req, res) => {
         email_verified = CASE WHEN $2 IS NOT NULL AND $2 != email THEN false ELSE email_verified END,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $6
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,
+       RETURNING id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,
                  location_address, location_city, location_lat, location_lng, username, show_real_name`,
       [fullName, email || null, phone, bio, avatarUrl, req.user.id, locationAddress || null, locationCity || null, locationLat || null, locationLng || null,
-       showRealName !== undefined ? showRealName : null, useStoreIdentity !== undefined ? useStoreIdentity : null]
+       showRealName !== undefined ? showRealName : null, useStoreIdentity !== undefined ? useStoreIdentity : null,
+       natcashPhone || null, acceptedPaymentMethods || null]
     );
     res.json({ user: result.rows[0] });
   } catch (err) {
@@ -2177,7 +2187,7 @@ app.put('/api/auth/become-seller', authRequired, dobRequired, async (req, res) =
       const token = jwt.sign({ id: existing.rows[0].id, email: existing.rows[0].email, role: existing.rows[0].role }, JWT_SECRET, { expiresIn: '7d' });
       return res.json({ success: true, alreadySeller: true, user: existing.rows[0], token });
     }
-    const { storeName, storeLogoUrl, idDocumentUrl } = req.body;
+    const { storeName, storeLogoUrl, idDocumentUrl, natcashPhone } = req.body;
     const sellerTier = 'casual';
     const useStoreIdentity = false;
     const result = await pool.query(
@@ -2188,10 +2198,11 @@ app.put('/api/auth/become-seller', authRequired, dobRequired, async (req, res) =
         store_logo_url = COALESCE($4, store_logo_url),
         id_document_url = COALESCE($5, id_document_url),
         use_store_identity = $6,
+        natcash_phone = $7,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng`,
-      [req.user.id, sellerTier, storeName || null, storeLogoUrl || null, idDocumentUrl || null, useStoreIdentity]
+      [req.user.id, sellerTier, storeName || null, storeLogoUrl || null, idDocumentUrl || null, useStoreIdentity, natcashPhone || null]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
     const token = jwt.sign({ id: result.rows[0].id, email: result.rows[0].email, role: 'seller' }, JWT_SECRET, { expiresIn: '7d' });
@@ -2206,7 +2217,7 @@ app.put('/api/auth/become-seller', authRequired, dobRequired, async (req, res) =
 
 app.put('/api/auth/upgrade-tier', authRequired, sellerRequired, async (req, res) => {
   try {
-    const { tier, storeName, storeLogoUrl, idDocumentUrl } = req.body;
+    const { tier, storeName, storeLogoUrl, idDocumentUrl, natcashPhone } = req.body;
     if (!['verified', 'business'].includes(tier)) {
       return res.status(400).json({ error: 'Invalid tier. Must be verified or business.' });
     }
@@ -2233,6 +2244,9 @@ app.put('/api/auth/upgrade-tier', authRequired, sellerRequired, async (req, res)
       if (storeName) { updates.push('use_store_identity = true'); }
     }
 
+    if (natcashPhone !== undefined) { updates.push(`natcash_phone = $${idx++}`); values.push(natcashPhone || null); }
+
+
     if (idDocumentUrl) {
       updates.push(`id_document_url = $${idx++}`);
       values.push(idDocumentUrl);
@@ -2256,7 +2270,7 @@ app.put('/api/auth/upgrade-tier', authRequired, sellerRequired, async (req, res)
 });
 
 app.put('/api/auth/seller-profile', authRequired, sellerRequired, async (req, res) => {
-  const { storeName, storeLogoUrl, idDocumentUrl, useStoreIdentity } = req.body;
+  const { storeName, storeLogoUrl, idDocumentUrl, useStoreIdentity, natcashPhone, acceptedPaymentMethods } = req.body;
 
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
   const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
@@ -2271,10 +2285,18 @@ app.put('/api/auth/seller-profile', authRequired, sellerRequired, async (req, re
     if (storeName !== undefined) { fields.push(`store_name = $${idx++}`); values.push(storeName || null); }
     if (storeLogoUrl !== undefined) { fields.push(`store_logo_url = $${idx++}`); values.push(storeLogoUrl || null); }
     if (useStoreIdentity !== undefined) { fields.push(`use_store_identity = $${idx++}`); values.push(!!useStoreIdentity); }
+    if (natcashPhone !== undefined) {
+      const clean = natcashPhone ? natcashPhone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
+      fields.push(`natcash_phone = $${idx++}`); values.push(clean);
+    }
+    if (acceptedPaymentMethods !== undefined) { fields.push(`accepted_payment_methods = $${idx++}`); values.push(acceptedPaymentMethods); }
     if (idDocumentUrl !== undefined) {
       fields.push(`id_document_url = $${idx++}`);
       values.push(idDocumentUrl || null);
-      if (idDocumentUrl) {
+    if (natcashPhone !== undefined) { updates.push(`natcash_phone = $${idx++}`); values.push(natcashPhone || null); }
+
+
+    if (idDocumentUrl) {
         fields.push(`id_submitted_at = CURRENT_TIMESTAMP`);
       }
     }
@@ -2282,7 +2304,7 @@ app.put('/api/auth/seller-profile', authRequired, sellerRequired, async (req, re
     values.push(req.user.id);
     const result = await pool.query(
       `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${idx}
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng, username, show_real_name`,
+       RETURNING id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng, username, show_real_name`,
       values
     );
     res.json({ user: result.rows[0] });
@@ -2726,7 +2748,7 @@ app.get('/api/sellers/:id', async (req, res) => {
     const result = await pool.query(
       `SELECT u.id, u.full_name, u.avatar_url, u.bio, u.created_at, u.store_name, u.store_logo_url,
               u.seller_tier, u.id_verified, u.id_verification_result, u.use_store_identity, u.username, u.show_real_name,
-              u.location_city,
+              u.location_city, u.natcash_phone, u.accepted_payment_methods,
               (SELECT COUNT(*) FROM products p WHERE p.seller_id = u.id AND p.is_available = true) AS product_count,
               (SELECT COALESCE(AVG(r.rating)::numeric(3,2), 0) FROM reviews r WHERE r.seller_id = u.id) AS avg_rating,
               (SELECT COUNT(*) FROM reviews r2 WHERE r2.seller_id = u.id) AS review_count,
@@ -3037,6 +3059,7 @@ app.get('/api/products/:id', async (req, res) => {
     const result = await pool.query(
       `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar,
               u.store_name, u.store_logo_url, u.seller_tier, u.id_verified, u.use_store_identity, u.username AS seller_username,
+              u.natcash_phone, u.accepted_payment_methods, u.phone AS seller_phone,
               c.name AS category,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
@@ -3382,7 +3405,7 @@ app.get('/api/orders', authRequired, async (req, res) => {
     const buyerOrders = await pool.query(
       `SELECT * FROM (
         SELECT DISTINCT ON (o.id) o.*,
-                u.full_name AS seller_name, u.phone AS seller_phone,
+                u.full_name AS seller_name, u.phone AS seller_phone, u.natcash_phone,
                 'buyer' AS my_role,
                 (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) AS item_count,
                 (SELECT p.name FROM order_items oi2 JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
@@ -3549,6 +3572,21 @@ app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
     const buyerInfo = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
     const buyerName = buyerInfo.rows[0]?.full_name || 'Someone';
     const sellerIds = [...new Set(orderItems.map(i => i.sellerId))];
+
+    // Include seller info in response for NatCash payment flow
+    let sellerInfo = null;
+    if (req.body.paymentMethod === 'natcash' && sellerIds.length > 0) {
+      const sellerRes = await pool.query(
+        'SELECT full_name, phone, natcash_phone FROM users WHERE id = $1', [sellerIds[0]]
+      );
+      if (sellerRes.rows[0]) {
+        sellerInfo = {
+          name: sellerRes.rows[0].full_name,
+          phone: sellerRes.rows[0].phone,
+          natcashPhone: sellerRes.rows[0].natcash_phone,
+        };
+      }
+    }
     // Get first product image per seller for notification thumbnails
     const orderImages = await pool.query(
       `SELECT DISTINCT ON (oi.seller_id) oi.seller_id, pi.image_url
@@ -3566,7 +3604,7 @@ app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
         createNotification(sid, 'low_stock', 'Low Stock Alert', `"${p.name}" has only ${p.stock} left`, { productId: p.id });
       }
     }
-    res.status(201).json({ order });
+    res.status(201).json({ order, sellerInfo });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (rbErr) { console.error('ROLLBACK failed:', rbErr.message); }
     client.release();

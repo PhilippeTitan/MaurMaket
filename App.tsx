@@ -56,6 +56,7 @@ import UsernameSettingsScreen from './src/screens/UsernameSettingsScreen';
 import LanguageSettingsScreen from './src/screens/LanguageSettingsScreen';
 import OfferDetailScreen from './src/screens/OfferDetailScreen';
 import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
+import NatCashPaymentScreen from './src/screens/NatCashPaymentScreen';
 import PromoManagementScreen from './src/screens/PromoManagementScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
 import DobConfirmModal from './src/components/DobConfirmModal';
@@ -417,6 +418,7 @@ export default function App() {
             <Stack.Screen name="FollowList" component={FollowListScreen} />
             <Stack.Screen name="OfferDetail" component={OfferDetailScreen} />
             <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
+            <Stack.Screen name="NatCashPayment" component={NatCashPaymentScreen} />
             <Stack.Screen name="Meetup" component={LazyMeetupScreen} />
             <Stack.Screen name="PromoManagement" component={PromoManagementScreen} />
             <Stack.Screen name="Notification" component={NotificationScreen} />

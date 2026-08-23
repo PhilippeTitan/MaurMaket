@@ -25,6 +25,8 @@ export const TIER_GRADIENTS: Record<string, [string, string]> = {
   business: ['#FFD700', '#FF4D6A'],
 };
 
+export const BUTTON_GRADIENT: [string, string] = ['#F47A20', '#E41E26'];
+
 export const SPACING = {
   xs: 4,
   sm: 8,

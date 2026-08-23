@@ -1,12 +1,14 @@
 import React from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform,
+  View, Text, Image, TouchableOpacity, ScrollView, StyleSheet, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
+import moncashLogo from '../../assets/MonNatCash/moncash.webp';
+import natcashLogo from '../../assets/MonNatCash/Natcash.png';
 import ScreenHeader from '../components/ScreenHeader';
 import { i18n, useTranslation, type Language } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -60,11 +62,27 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
         </TouchableOpacity>
         <View style={styles.divider} />
-        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SettingsEdit', { field: 'phone', title: t('settings.phone') })}>
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SettingsEdit', { field: 'phones', title: t('settings.phone') })}>
           <MaterialCommunityIcons name="phone-outline" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('settings.phone')}</Text>
           <View style={styles.rowRight}>
-            <Text style={styles.rowValue}>{user?.phone ? `+509 ${user.phone}` : ''}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              {user?.phone ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(0,194,255,0.1)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2 }}>
+                  <Image source={moncashLogo} style={{ width: 12, height: 12 }} resizeMode="cover" />
+                  <Text style={{ fontSize: 9, color: COLORS.blue, fontWeight: '600' }}>MC</Text>
+                </View>
+              ) : null}
+              {user?.natcash_phone ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(139,92,246,0.1)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2 }}>
+                  <Image source={natcashLogo} style={{ width: 12, height: 12 }} resizeMode="cover" />
+                  <Text style={{ fontSize: 9, color: '#8b5cf6', fontWeight: '600' }}>NC</Text>
+                </View>
+              ) : null}
+              {!user?.phone && !user?.natcash_phone ? (
+                <Text style={styles.rowValue}>Not set</Text>
+              ) : null}
+            </View>
             <Icon name="chevron-right" size={16} color={COLORS.text2} />
           </View>
         </TouchableOpacity>

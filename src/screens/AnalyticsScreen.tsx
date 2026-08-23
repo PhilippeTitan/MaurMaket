@@ -103,7 +103,7 @@ export default function AnalyticsScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { paddingTop: insets.top + SPACING.md }]}>
         <View style={styles.skeletonCard} />
         <View style={styles.skeletonCard} />
         <View style={styles.skeletonCard} />
@@ -258,7 +258,7 @@ export default function AnalyticsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  loadingContainer: { flex: 1, backgroundColor: COLORS.bg, paddingTop: 60, paddingHorizontal: SPACING.lg, gap: 12 },
+   loadingContainer: { flex: 1, backgroundColor: COLORS.bg, paddingTop: 80, paddingHorizontal: SPACING.lg, gap: 12 },
   skeletonCard: { height: 100, borderRadius: RADIUS.card, backgroundColor: COLORS.surface2 },
   content: {},
 

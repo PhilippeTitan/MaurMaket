@@ -49,8 +49,14 @@ Next.js author/reading platform for Victoria Christel Maurice (Philippe's sister
 2. If context.md is stale (mentions old work), back up the previous session first:
    - Append session summary to `sessions/source-of-truth.md`
    - Rewrite `context.md` with current state
-3. Check the opencode DB for recent user messages to understand what was being worked on
-4. You are now caught up — proceed with the user's request
+3. **Load the Knowledge Graph** — Run `node query-graph.cjs stats` from project root to verify the graph is accessible. This gives instant context on all code, sessions, decisions, lessons, and features.
+4. **Query the graph for relevant context** — Before any significant work, search the graph:
+   - `node query-graph.cjs search <keyword>` — find related nodes
+   - `node query-graph.cjs touches <file>` — see which sessions touched a file
+   - `node query-graph.cjs session <id>` — see full session details (decisions, features, lessons)
+   - `node query-graph.cjs path <node1> <node2>` — trace connections between code and decisions
+5. Check the opencode DB for recent user messages to understand what was being worked on
+6. You are now caught up — proceed with the user's request
 
 ## Safety Rules
 - **NEVER kill node.exe processes**: OpenCode runs on Node.js. Killing random `node.exe` processes can kill OpenCode itself. Never use `taskkill`, `kill`, or any command that terminates node processes unless explicitly told to kill a specific process you started.
@@ -64,7 +70,29 @@ This project has a persistent knowledge base at `C:\MAURINEX\MAURINEX NOTES\Maur
 | `design-principles.md` | UX rules, self-check, patterns | **Before ANY UI work** |
 | `sessions/source-of-truth.md` | Immutable session log (append-only) | When you need full history |
 | `decisions/` | Architecture Decision Records | When making design choices |
-| `sessions/archive/` | Full session transcripts (233 sessions) | When researching past work |
+| `sessions/archive/` | Full session transcripts (349 sessions) | When researching past work |
+
+## Knowledge Graph (Graphify)
+
+**Location:** `.graphify/graph.json` (project root)
+**Query tool:** `node query-graph.cjs` (project root)
+**Ingest tool:** `node ingest-sessions.cjs` (rebuilds from source-of-truth.md)
+
+| Command | What It Does |
+|---------|--------------|
+| `node query-graph.cjs stats` | Graph statistics (nodes, edges, communities) |
+| `node query-graph.cjs search <kw>` | Find nodes matching keyword |
+| `node query-graph.cjs sessions` | List all sessions |
+| `node query-graph.cjs decisions` | List all architectural decisions |
+| `node query-graph.cjs lessons` | List all lessons learned |
+| `node query-graph.cjs features` | List all features implemented |
+| `node query-graph.cjs touches <file>` | Which sessions touched a file? |
+| `node query-graph.cjs session <id>` | Full session details |
+| `node query-graph.cjs path <a> <b>` | Trace connections between nodes |
+
+**Graph stats:** 1,103 nodes (954 code, 31 sessions, 20 decisions, 37 lessons, 61 features), 3,862 edges, 95 communities
+
+**To ingest new sessions:** Run `node ingest-sessions.cjs` after appending to source-of-truth.md. Safe to rerun (deduplicates).
 
 **Rules:**
 - `source-of-truth.md` is **NEVER rewritten** — only appended to at the bottom
@@ -94,36 +122,37 @@ This project has a persistent knowledge base at `C:\MAURINEX\MAURINEX NOTES\Maur
 
 **Why:** Without this, context is lost between sessions. The previous instance's work disappears. This protocol ensures continuity across 500+ sessions.
 
-### Graph Memory Protocol (MANDATORY)
+### Knowledge Graph Protocol (MANDATORY — replaces old mimo-memory-graph)
 
-**MCP Server:** `mimo-memory-graph` → `@modelcontextprotocol/server-memory`
-**Graph file:** `C:\MAURINEX\MAURINEX NOTES\MaurMaket\sessions\graph.json`
+**Graph:** `.graphify/graph.json` (1,103 nodes, 3,862 edges)
+**Query tool:** `node query-graph.cjs` (project root)
+**Ingest tool:** `node ingest-sessions.cjs` (rebuilds from source-of-truth.md + session archives)
 
 **At session START (after reading context.md):**
-1. Call `read_graph` to load current entities and relations
-2. Verify key entities exist: current session, latest commit, active features
+1. Run `node query-graph.cjs stats` to verify graph is loaded
+2. Search the graph for relevant context before any significant work:
+   ```bash
+   node query-graph.cjs search <keyword>    # Find related nodes
+   node query-graph.cjs touches <file>      # Which sessions touched a file?
+   node query-graph.cjs session <id>        # Full session details
+   node query-graph.cjs decisions           # All architectural decisions
+   node query-graph.cjs lessons             # All lessons learned
+   node query-graph.cjs features            # All features implemented
+   node query-graph.cjs path <a> <b>        # Trace connections between nodes
+   ```
 
 **At compaction (before archiving):**
-1. Call `create_entities` to register the session:
-   ```json
-   [{"name": "Session_NNN", "entityType": "session", "observations": ["Title", "Date", "Commits: hash"]}]
-   ```
-2. Call `add_relations` to link session to features:
-   ```json
-   [{"from": "Session_NNN", "to": "Feature_Name", "relationType": "implemented"}, {"from": "Session_NNN", "to": "BugFix_Name", "relationType": "fixed"}]
-   ```
-3. Call `add_observations` on affected feature entities with new info
+1. Append session summary to `sessions/source-of-truth.md`
+2. Re-run `node ingest-sessions.cjs` to add new decisions, lessons, and features to the graph
+3. The graph automatically deduplicates — safe to run multiple times
 
-**Entity naming convention:** PascalCase with underscores (e.g., `Instagram_Style_Settings`, `ProductDetail_Pinterest_Redesign`, `Username_System`)
-
-**Entity types:** `session`, `feature`, `bugfix`, `screen`, `api_endpoint`, `decision`, `milestone`, `component`
-
-**Available tools:** `create_entities`, `create_relations`, `add_observations`, `read_graph`, `search_nodes`, `open_nodes`, `delete_entities`, `delete_relations`, `delete_observations`
+**Graph node types:** `code` (954), `session` (31), `decision` (20), `lesson` (37), `feature` (61)
+**Graph edge types:** `touches`, `contains`, `imports`, `calls`, `decided`, `learned`, `implemented`, `references`
 
 ### Pre-Flight Tool Execution Protocol (LOOK BEFORE YOU LEAP)
 
 Before executing ANY terminal command, code refactor, or diagnostic:
-1. **Graph Check First** — Call `search_nodes` with keywords matching your intended action (e.g., "IP address", "build command", "git push"). If a matching entity exists with the answer, use it. Skip the tool call.
+1. **Graph Check First** — Run `node query-graph.cjs search <keyword>` with keywords matching your intended action. If a matching node exists with the answer, use it. Skip the redundant tool call.
 2. **Intent Validation Chain:**
    - "Intent: I need to [action]."
    - "Graph Check: Scanning for past results..."
@@ -132,18 +161,16 @@ Before executing ANY terminal command, code refactor, or diagnostic:
 
 ### Error & State Logging Rules (COMPACTION MANDATORY)
 
-If you hit an error, syntax mistake, or discovery during the session, log it to the graph before compaction:
-1. `create_entities` with type `lesson`:
-   ```json
-   [{"name": "Lesson_GitBash_Syntax", "entityType": "lesson", "observations": ["ipconfig fails in MINGW64", "Use: ipconfig | grep IPv4 or check context.md directly"]}]
+If you hit an error, syntax mistake, or discovery during the session, log it to source-of-truth.md before compaction:
+1. Append a lesson to the session block in `sessions/source-of-truth.md`:
    ```
-2. `add_relations` to link lesson to session:
-   ```json
-   [{"from": "Session_Current", "to": "Lesson_GitBash_Syntax", "relationType": "documented_fix"}]
+   **What we fixed:**
+   - Lesson: [description of error] → [solution]
    ```
+2. Re-run `node ingest-sessions.cjs` to add the lesson to the graph
 3. Common lessons to ALWAYS log: syntax errors, wrong paths, build failures, incorrect API calls, environment gotchas
 
-**Entity types (full list):** `session`, `feature`, `bugfix`, `screen`, `api_endpoint`, `decision`, `milestone`, `component`, `lesson`, `date`
+**Old MCP note:** `mimo-memory-graph` has been replaced by Graphify. The old `sessions/graph.json` is deprecated.
 
 ## Post-Deploy Audit Protocol
 

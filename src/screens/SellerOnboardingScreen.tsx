@@ -31,6 +31,7 @@ export default function SellerOnboardingScreen() {
   const [idDocUrl, setIdDocUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pickLoading, setPickLoading] = useState(false);
+  const [natcashPhone, setNatcashPhone] = useState('');
 
   const handlePickLogo = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -66,10 +67,11 @@ export default function SellerOnboardingScreen() {
     if (!chosenTier) return false;
     setLoading(true);
     try {
-      const data: { storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; tier: string } = { tier: chosenTier };
+      const data: { storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; tier: string; natcashPhone?: string } = { tier: chosenTier };
       if (chosenTier === 'business' && storeName.trim()) data.storeName = storeName.trim();
       if (chosenTier === 'business' && storeLogoUrl) data.storeLogoUrl = storeLogoUrl;
       if ((chosenTier === 'verified' || chosenTier === 'business') && idDocUrl) data.idDocumentUrl = idDocUrl;
+      if (natcashPhone.trim()) data.natcashPhone = natcashPhone.trim();
 
       const res = store.isSeller
         ? await upgradeTier(data) as { user: typeof store.user; token: string }
@@ -232,6 +234,22 @@ export default function SellerOnboardingScreen() {
                 maxLength={50}
                 accessibilityLabel="store name"
                
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>NatCash Number (Optional)</Text>
+              <Text style={{ fontSize: 11, color: COLORS.text2, marginBottom: 4 }}>
+                If your NatCash number is different from your MonCash number, add it here.
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="+509 NatCash number (optional)"
+                placeholderTextColor={COLORS.text2}
+                value={natcashPhone}
+                onChangeText={setNatcashPhone}
+                keyboardType="phone-pad"
+                accessibilityLabel="NatCash phone number"
               />
             </View>
 

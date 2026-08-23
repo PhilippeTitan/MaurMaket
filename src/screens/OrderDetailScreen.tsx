@@ -9,6 +9,7 @@ import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup, getImageUrl } from '../api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -92,6 +93,7 @@ setTimeout(function(){map.invalidateSize()},200);
 export default function OrderDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
+  const insets = useSafeAreaInsets();
 
   const { orderId } = route.params;
   const [order, setOrder] = useState<Order | null>(null);
@@ -280,7 +282,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
   if (loading || !order) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.detailSkeletonHeader}><SkeletonBlock width={38} height={38} radius={19} /><SkeletonBlock width="38%" height={16} /></View>
         <View style={styles.detailSkeleton}>
           <SkeletonBlock height={126} radius={RADIUS.card} />
