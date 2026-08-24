@@ -48,6 +48,6 @@ Onboarding should establish defaults such as payment and fulfillment preferences
 2. ✅ Build the shared application shell — DONE (ScreenContainer, ScreenHeader v2, BackButton v2 using design tokens)
 3. ✅ Build reusable screen primitives — DONE (EmptyState, Skeleton, Toast, LoadingState updated with design tokens)
 4. ✅ Standardize navigation transitions — DONE (App.tsx uses DURATION, LAYOUT, RADIUS, SHADOW, ICON_SIZES tokens)
-5. Establish screen archetypes.
+5. ✅ Establish screen archetypes — DONE (ListScreen, FormSheet, CardRow components)
 6. Resolve Map interaction architecture.
 7. Migrate screens group-by-group instead of redesigning routes independently.
