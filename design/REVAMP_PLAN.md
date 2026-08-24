@@ -44,8 +44,8 @@ Onboarding should establish defaults such as payment and fulfillment preferences
 
 ## Migration strategy
 
-1. Formalize design tokens.
-2. Build the shared application shell.
+1. ✅ Formalize design tokens — DONE (src/theme.ts expanded with 26 colors, typography scale, spacing, radii, shadows, icons, touch targets, motion, layout tokens)
+2. ✅ Build the shared application shell — DONE (ScreenContainer, ScreenHeader v2, BackButton v2 using design tokens)
 3. Build reusable screen primitives and components.
 4. Standardize navigation transitions and common states.
 5. Establish screen archetypes.
