@@ -1,10 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity, TextInput, FlatList, Animated, Dimensions, PanResponder } from 'react-native';
+import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity, TextInput, FlatList } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchAreasHybrid, type HaitiArea } from '../data/haiti-areas';
+import { getFastLocation } from '../fast-location';
 
 interface LocationPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
@@ -16,9 +17,6 @@ interface LocationPickerProps {
 function buildPickerHtml(initialLat?: number, initialLng?: number): string {
   const centerLat = initialLat || 18.5944;
   const centerLng = initialLng || -72.3074;
-  const markerJs = initialLat && initialLng
-    ? `var marker = L.marker([${centerLat},${centerLng}],{draggable:true}).addTo(map);`
-    : 'var marker = null;';
 
   return `<!DOCTYPE html>
 <html>
@@ -34,13 +32,13 @@ html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
 .leaflet-control-attribution{display:none!important}
 .pick-marker{width:32px;height:32px;border-radius:50%;background:#FF6B6B;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center}
 .pick-marker-inner{width:10px;height:10px;border-radius:50%;background:#fff}
-
+.user-marker{width:20px;height:20px;border-radius:50%;background:#4A90D9;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4)}
 .hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;z-index:1000;white-space:nowrap}
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="hint" id="hint">Tap anywhere to set meetup spot</div>
+<div class="hint" id="hint">Tap the map to set meetup spot</div>
 <script>
 var mapReady=false;
 var cmdQueue=[];
@@ -48,12 +46,19 @@ var LIGHT_URL="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}
 var map=L.map("map",{zoomControl:false,attributionControl:false,maxBounds:[[16.5,-76],[21,-67]],maxBoundsViscosity:1.0,minZoom:8,maxZoom:18}).setView([${centerLat},${centerLng}],15);
 var currentTile=L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
 var markerIcon=L.divIcon({className:'',html:'<div class="pick-marker"><div class="pick-marker-inner"></div></div>',iconSize:[32,32],iconAnchor:[16,16]});
+var userIcon=L.divIcon({className:'',html:'<div class="user-marker"></div>',iconSize:[20,20],iconAnchor:[10,10]});
 var circle=null;
-${markerJs}
+var userMarker=null;
+var pickMarker=null;
 
 function executeCmd(cmd){
   try{
-    if(cmd.type==='flyTo'){map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.2});}
+    if(cmd.type==='centerOn'){
+      if(userMarker){userMarker.remove();}
+      userMarker=L.marker([cmd.lat,cmd.lng],{icon:userIcon,zIndexOffset:-1000}).addTo(map);
+      map.setView([cmd.lat,cmd.lng],cmd.zoom||14);
+    }
+    else if(cmd.type==='flyTo'){map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.0});}
     else if(cmd.type==='drawCircle'){
       if(circle){map.removeLayer(circle);circle=null;}
       circle=L.circle([cmd.lat,cmd.lng],{radius:cmd.radius||400,color:'#00C2FF',fillColor:'#00C2FF',fillOpacity:0.15,weight:3}).addTo(map);
@@ -61,10 +66,10 @@ function executeCmd(cmd){
     }
     else if(cmd.type==='clearCircle'){if(circle){map.removeLayer(circle);circle=null;}}
     else if(cmd.type==='setMarker'){
-      if(marker){marker.setLatLng([cmd.lat,cmd.lng]);}
-      else{marker=L.marker([cmd.lat,cmd.lng],{draggable:true,icon:markerIcon}).addTo(map);}
+      if(pickMarker){pickMarker.setLatLng([cmd.lat,cmd.lng]);}
+      else{pickMarker=L.marker([cmd.lat,cmd.lng],{icon:markerIcon}).addTo(map);}
     }
-    else if(cmd.type==='setView'){map.setView([cmd.lat,cmd.lng],cmd.zoom||14);}
+    else if(cmd.type==='clearMarker'){if(pickMarker){pickMarker.remove();pickMarker=null;}}
   }catch(err){}
 }
 
@@ -76,31 +81,25 @@ window.addEventListener('message',function(e){
   }catch(err){}
 });
 
-// Process queued commands once map is truly ready
 function onMapReady(){
   mapReady=true;
   while(cmdQueue.length>0){executeCmd(cmdQueue.shift());}
   window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 }
 
-map.whenReady(function(){
-  setTimeout(onMapReady,150);
-});
+map.whenReady(function(){setTimeout(onMapReady,150);});
 
 map.on('click',function(e){
   var lat=e.latlng.lat,lng=e.latlng.lng;
-  if(marker){marker.setLatLng([lat,lng]);}else{marker=L.marker([lat,lng],{draggable:true,icon:markerIcon}).addTo(map);}
+  if(pickMarker){pickMarker.setLatLng([lat,lng]);}else{pickMarker=L.marker([lat,lng],{icon:markerIcon}).addTo(map);}
+  if(circle){map.removeLayer(circle);circle=null;}
   document.getElementById('hint').textContent='Tap again to move';
   window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:lat,lng:lng}));
 });
-if(marker){marker.on('dragend',function(e){var pos=e.target.getLatLng();window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:pos.lat,lng:pos.lng}));});}
 </script>
 </body>
 </html>`;
 }
-
-const COLLAPSED_HEIGHT = 56;
-const HANDLE_HEIGHT = 32;
 
 export default function LocationPicker({ onLocationSelect, initialLat, initialLng, height = 260 }: LocationPickerProps) {
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
@@ -108,92 +107,47 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const [expanded, setExpanded] = useState(false);
   const [expandedLoading, setExpandedLoading] = useState(false);
   const [expandedAddress, setExpandedAddress] = useState<string | null>(null);
-  const [pendingCoords, setPendingCoords] = useState<{lat: number; lng: number} | null>(null);
+  const [pendingCoords, setPendingCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArea, setSelectedArea] = useState<HaitiArea | null>(null);
   const [searchResults, setSearchResults] = useState<HaitiArea[]>([]);
   const [searching, setSearching] = useState(false);
-  const [searchExpanded, setSearchExpanded] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
   const [expandedMapReady, setExpandedMapReady] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const webViewRef = useRef<WebView>(null);
   const expandedWebViewRef = useRef<WebView>(null);
   const searchInputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
-  const SCREEN_H = Dimensions.get('window').height;
-  const EXPANDED_HEIGHT = SCREEN_H * 0.55;
 
-  // Curtain height driven by gesture
-  const curtainHeightAnim = useRef(new Animated.Value(COLLAPSED_HEIGHT)).current;
-  const [curtainH, setCurtainH] = useState(COLLAPSED_HEIGHT);
-
+  // Get user location on mount
   useEffect(() => {
-    const id = curtainHeightAnim.addListener(({ value }) => setCurtainH(value));
-    return () => curtainHeightAnim.removeListener(id);
-  }, [curtainHeightAnim]);
+    getFastLocation()
+      .then(pos => setUserLocation({ lat: pos.lat, lng: pos.lng }))
+      .catch(() => {});
+  }, []);
 
-  const curtainOpacity = curtainHeightAnim.interpolate({
-    inputRange: [COLLAPSED_HEIGHT, COLLAPSED_HEIGHT + 40, EXPANDED_HEIGHT],
-    outputRange: [0, 0.5, 1],
-    extrapolate: 'clamp',
-  });
-  const pillOpacity = curtainHeightAnim.interpolate({
-    inputRange: [COLLAPSED_HEIGHT, COLLAPSED_HEIGHT + 30],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
+  // Center map on user location once both are ready
+  useEffect(() => {
+    if (expanded && expandedMapReady && userLocation) {
+      setTimeout(() => {
+        expandedWebViewRef.current?.postMessage(JSON.stringify({ type: 'centerOn', lat: userLocation.lat, lng: userLocation.lng, zoom: 14 }));
+      }, 300);
+    }
+  }, [expanded, expandedMapReady, userLocation]);
 
-  // PanResponder for drag-to-resize
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5,
-      onPanResponderMove: (_, g) => {
-        const target = searchExpanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT;
-        const raw = target - g.dy;
-        const clamped = Math.max(COLLAPSED_HEIGHT, Math.min(EXPANDED_HEIGHT, raw));
-        curtainHeightAnim.setValue(clamped);
-      },
-      onPanResponderRelease: (_, g) => {
-        const shouldCollapse = g.dy > 80 || g.vy > 0.5;
-        const target = shouldCollapse ? COLLAPSED_HEIGHT : EXPANDED_HEIGHT;
-        Animated.spring(curtainHeightAnim, {
-          toValue: target,
-          useNativeDriver: false,
-          damping: 20,
-          stiffness: 200,
-        }).start(() => {
-          if (shouldCollapse && searchExpanded) {
-            setSearchExpanded(false);
-            setSearchQuery('');
-            setSelectedArea(null);
-            searchInputRef.current?.blur();
-          } else if (!shouldCollapse && !searchExpanded) {
-            setSearchExpanded(true);
-            setTimeout(() => searchInputRef.current?.focus(), 100);
-          }
-        });
-      },
-    })
-  ).current;
-
-  const expandSearch = () => {
-    setSearchExpanded(true);
-    Animated.spring(curtainHeightAnim, { toValue: EXPANDED_HEIGHT, useNativeDriver: false, damping: 18, stiffness: 200 }).start(() => {
-      searchInputRef.current?.focus();
+  // Send a message with retries
+  const postToMap = useCallback((msg: object) => {
+    const wv = expandedWebViewRef.current;
+    if (!wv) return;
+    wv.postMessage(JSON.stringify(msg));
+    [500, 1500].forEach(delay => {
+      setTimeout(() => expandedWebViewRef.current?.postMessage(JSON.stringify(msg)), delay);
     });
-  };
+  }, []);
 
-  const collapseSearch = () => {
-    Animated.spring(curtainHeightAnim, { toValue: COLLAPSED_HEIGHT, useNativeDriver: false, damping: 18, stiffness: 200 }).start(() => {
-      setSearchExpanded(false);
-      setSearchQuery('');
-      setSelectedArea(null);
-      searchInputRef.current?.blur();
-    });
-  };
-
-  // Debounced hybrid search
+  // Debounced search
   useEffect(() => {
     if (searchQuery.length < 1) { setSearchResults([]); return; }
     setSearching(true);
@@ -204,31 +158,6 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     }, 200);
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  // Queue messages to WebView until mapReady, then send immediately + retry
-  const pendingCmdsRef = useRef<object[]>([]);
-  const retriesLeftRef = useRef(3);
-
-  // Flush queued commands when map becomes ready
-  useEffect(() => {
-    if (expandedMapReady && expandedWebViewRef.current) {
-      pendingCmdsRef.current.forEach(cmd => {
-        expandedWebViewRef.current!.postMessage(JSON.stringify(cmd));
-      });
-      pendingCmdsRef.current = [];
-    }
-  }, [expandedMapReady]);
-
-  const postToMap = useCallback((msg: object) => {
-    const wv = expandedWebViewRef.current;
-    if (!wv) return;
-    // Always queue for retry (map.whenReady may not have fired yet)
-    // The WebView's cmdQueue handles dedup if map is already ready
-    wv.postMessage(JSON.stringify(msg));
-    // Extra retries in case first message arrives before WebView JS context processes it
-    setTimeout(() => expandedWebViewRef.current?.postMessage(JSON.stringify(msg)), 500);
-    setTimeout(() => expandedWebViewRef.current?.postMessage(JSON.stringify(msg)), 1500);
-  }, []);
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     try {
@@ -257,9 +186,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const handleExpandedMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'ready') {
-        setExpandedMapReady(true);
-      }
+      if (data.type === 'ready') setExpandedMapReady(true);
       if (data.type === 'location') {
         setExpandedLoading(true);
         setPendingCoords({ lat: data.lat, lng: data.lng });
@@ -273,27 +200,27 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   }, []);
 
   const selectArea = useCallback((area: HaitiArea) => {
-    // Send drawCircle immediately — the WebView's cmdQueue + our retries ensure it arrives
+    // Draw circle + fly to area
     const circleCmd = { type: 'drawCircle', lat: area.lat, lng: area.lng, radius: area.radius, zoom: area.radius < 500 ? 15 : 13 };
     const markerCmd = { type: 'setMarker', lat: area.lat, lng: area.lng };
-
-    // Try posting directly first
-    expandedWebViewRef.current?.postMessage(JSON.stringify(circleCmd));
-    expandedWebViewRef.current?.postMessage(JSON.stringify(markerCmd));
-
-    // Retry at intervals — covers the case where map isn't ready yet
-    [300, 800, 1500, 2500].forEach(delay => {
-      setTimeout(() => {
-        expandedWebViewRef.current?.postMessage(JSON.stringify(circleCmd));
-        expandedWebViewRef.current?.postMessage(JSON.stringify(markerCmd));
-      }, delay);
-    });
+    postToMap(circleCmd);
+    setTimeout(() => postToMap(markerCmd), 200);
 
     setSelectedArea(area);
     setPendingCoords({ lat: area.lat, lng: area.lng });
     setExpandedAddress(area.name);
-    setSearchQuery(area.name);
-  }, []);
+    setSearchFocused(false);
+    searchInputRef.current?.blur();
+  }, [postToMap]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedArea(null);
+    setPendingCoords(null);
+    setExpandedAddress(null);
+    setSearchQuery('');
+    postToMap({ type: 'clearCircle' });
+    postToMap({ type: 'clearMarker' });
+  }, [postToMap]);
 
   const confirmExpanded = useCallback(() => {
     if (pendingCoords && expandedAddress) {
@@ -306,6 +233,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     setExpandedAddress(null);
     setSearchQuery('');
     setSelectedArea(null);
+    setSearchFocused(false);
   }, [pendingCoords, expandedAddress, onLocationSelect]);
 
   if (Platform.OS === 'web') {
@@ -362,121 +290,108 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
             bounces={false}
           />
 
-          {/* Top close button */}
-          <View style={[styles.expandedTopBar, { top: insets.top + 8 }]}>
-            <TouchableOpacity style={styles.expandedCloseBtn} onPress={() => setExpanded(false)} accessibilityLabel="close map" accessibilityRole="button">
+          {/* Close button — right side, top-right */}
+          <View style={[styles.closeBtnRow, { top: insets.top + 8, right: 14 }]}>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setExpanded(false)} accessibilityLabel="close map" accessibilityRole="button">
               <MaterialCommunityIcons name="close" size={22} color={COLORS.text} />
             </TouchableOpacity>
           </View>
 
-          {/* ── Floating search pill (collapsed state) ── */}
-          <Animated.View
-            style={[styles.floatingPill, { bottom: insets.bottom + 16, opacity: pillOpacity }]}
-            pointerEvents={searchExpanded ? 'none' : 'auto'}
-          >
-            <TouchableOpacity style={styles.pillTouch} onPress={expandSearch} accessibilityLabel="search for area" accessibilityRole="button">
-              <MaterialCommunityIcons name="magnify" size={20} color={COLORS.coral} />
-              <Text style={styles.pillText}>{searchQuery || 'Search for an area...'}</Text>
-            </TouchableOpacity>
-          </Animated.View>
+          {/* ── Bottom pill — two states ── */}
+          <View style={[styles.bottomPillContainer, { bottom: insets.bottom + 16 }]}>
+            {searchFocused ? (
+              /* ── Search mode ── */
+              <View style={styles.searchPill}>
+                <View style={styles.searchInputRow}>
+                  <MaterialCommunityIcons name="magnify" size={20} color={COLORS.coral} />
+                  <TextInput
+                    ref={searchInputRef}
+                    style={styles.searchInput}
+                    placeholder="Search area... (e.g. Delmas 33)"
+                    placeholderTextColor={COLORS.text2}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    returnKeyType="search"
+                    autoFocus
+                    accessibilityLabel="search meetup area"
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }} accessibilityLabel="clear search" accessibilityRole="button">
+                      <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.text2} />
+                    </TouchableOpacity>
+                  )}
+                </View>
 
-          {/* ── Draggable search curtain ── */}
-          <Animated.View
-            style={[styles.searchCurtain, {
-              height: curtainHeightAnim,
-              bottom: 0,
-              opacity: curtainOpacity,
-              paddingBottom: insets.bottom + 12,
-            }]}
-            pointerEvents={curtainH > COLLAPSED_HEIGHT + 40 ? 'auto' : 'none'}
-            {...panResponder.panHandlers}
-          >
-            {/* Drag handle */}
-            <View style={styles.dragHandle}>
-              <View style={styles.dragBar} />
-            </View>
-
-            {/* Chevron collapse button */}
-            <TouchableOpacity style={styles.curtainCollapseBtn} onPress={collapseSearch} accessibilityLabel="close search" accessibilityRole="button">
-              <MaterialCommunityIcons name="chevron-down" size={24} color={COLORS.text2} />
-            </TouchableOpacity>
-
-            {/* Search input */}
-            <View style={styles.curtainSearchRow}>
-              <MaterialCommunityIcons name="magnify" size={20} color={COLORS.coral} />
-              <TextInput
-                ref={searchInputRef}
-                style={styles.curtainSearchInput}
-                placeholder="Search area... (e.g. Delmas 33)"
-                placeholderTextColor={COLORS.text2}
-                value={searchQuery}
-                onChangeText={(t) => {
-                  setSearchQuery(t);
-                  expandedWebViewRef.current?.postMessage(JSON.stringify({ type: 'clearCircle' }));
-                  setSelectedArea(null);
-                }}
-                returnKeyType="search"
-                accessibilityLabel="search meetup area"
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => { setSearchQuery(''); setSelectedArea(null); expandedWebViewRef.current?.postMessage(JSON.stringify({ type: 'clearCircle' })); }} accessibilityLabel="clear search" accessibilityRole="button">
-                  <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.text2} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {searching && searchResults.length === 0 && (
-              <View style={styles.curtainLoading}>
-                <ActivityIndicator size="small" color={COLORS.coral} />
-                <Text style={styles.curtainLoadingText}>Searching...</Text>
-              </View>
-            )}
-
-            {searchResults.length > 0 && (
-              <FlatList
-                data={searchResults}
-                keyExtractor={item => item.id}
-                style={styles.curtainResults}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[styles.curtainResultItem, selectedArea?.id === item.id && styles.curtainResultActive]}
-                    onPress={() => { selectArea(item); collapseSearch(); }}
-                    accessibilityLabel={`select ${item.name}`}
-                    accessibilityRole="button"
-                  >
-                    <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.curtainResultName} numberOfLines={1}>{item.name}</Text>
-                      <Text style={styles.curtainResultCity} numberOfLines={1}>{item.city}</Text>
-                    </View>
-                    <Text style={styles.curtainResultArrow}>›</Text>
-                  </TouchableOpacity>
+                {/* Results */}
+                {searching && searchResults.length === 0 && (
+                  <View style={styles.searchLoading}>
+                    <ActivityIndicator size="small" color={COLORS.coral} />
+                    <Text style={styles.searchLoadingText}>Searching...</Text>
+                  </View>
                 )}
-              />
-            )}
 
-            {expandedAddress && (
-              <View style={styles.curtainAddressRow}>
-                <MaterialCommunityIcons name="map-marker" size={16} color={COLORS.coral} />
-                <Text style={styles.curtainAddressText} numberOfLines={2}>{expandedAddress}</Text>
+                {searchResults.length > 0 && (
+                  <FlatList
+                    data={searchResults}
+                    keyExtractor={item => item.id}
+                    style={styles.searchResults}
+                    keyboardShouldPersistTaps="handled"
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={[styles.resultItem, selectedArea?.id === item.id && styles.resultActive]}
+                        onPress={() => selectArea(item)}
+                        accessibilityLabel={`select ${item.name}`}
+                        accessibilityRole="button"
+                      >
+                        <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
+                          <Text style={styles.resultCity} numberOfLines={1}>{item.city}</Text>
+                        </View>
+                        <Text style={styles.resultArrow}>›</Text>
+                      </TouchableOpacity>
+                    )}
+                  />
+                )}
+
+                {/* Address from tap */}
+                {!selectedArea && expandedAddress && (
+                  <View style={styles.addressPreview}>
+                    <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
+                    <Text style={styles.addressPreviewText} numberOfLines={1}>{expandedAddress}</Text>
+                  </View>
+                )}
               </View>
+            ) : selectedArea ? (
+              /* ── Selected mode — area name + confirm ── */
+              <View style={styles.selectedPill}>
+                <MaterialCommunityIcons name="map-marker" size={18} color={COLORS.coral} />
+                <Text style={styles.selectedText} numberOfLines={1}>{selectedArea.name}</Text>
+                <TouchableOpacity style={styles.clearBtn} onPress={clearSelection} accessibilityLabel="clear selection" accessibilityRole="button">
+                  <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmBtn, expandedLoading && { opacity: 0.5 }]}
+                  onPress={confirmExpanded}
+                  disabled={expandedLoading}
+                  accessibilityLabel="confirm location"
+                  accessibilityRole="button"
+                >
+                  {expandedLoading ? (
+                    <ActivityIndicator size="small" color={COLORS.white} />
+                  ) : (
+                    <Text style={styles.confirmText}>Confirm</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              /* ── Default mode — search prompt ── */
+              <TouchableOpacity style={styles.searchPrompt} onPress={() => setSearchFocused(true)} accessibilityLabel="search for area" accessibilityRole="button">
+                <MaterialCommunityIcons name="magnify" size={20} color={COLORS.coral} />
+                <Text style={styles.searchPromptText}>Search for an area...</Text>
+              </TouchableOpacity>
             )}
-
-            <TouchableOpacity
-              style={[styles.curtainConfirmBtn, (!pendingCoords || expandedLoading) && { opacity: 0.5 }]}
-              onPress={() => { collapseSearch(); confirmExpanded(); }}
-              disabled={!pendingCoords || expandedLoading}
-              accessibilityLabel="confirm location"
-              accessibilityRole="button"
-            >
-              {expandedLoading ? (
-                <ActivityIndicator size="small" color={COLORS.white} />
-              ) : (
-                <Text style={styles.curtainConfirmText}>Confirm Location</Text>
-              )}
-            </TouchableOpacity>
-          </Animated.View>
+          </View>
         </View>
       </Modal>
     </>
@@ -496,47 +411,52 @@ const styles = StyleSheet.create({
   /* Expanded modal */
   expandedContainer: { flex: 1, backgroundColor: COLORS.bg },
   expandedWebview: { flex: 1 },
-  expandedTopBar: { position: 'absolute', right: 14, flexDirection: 'row', alignItems: 'center' },
-  expandedCloseBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', elevation: 4 },
 
-  /* Floating pill */
-  floatingPill: { position: 'absolute', left: 16, right: 16, zIndex: 15 },
-  pillTouch: {
+  /* Close button — top right */
+  closeBtnRow: { position: 'absolute', flexDirection: 'row', alignItems: 'center' },
+  closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', elevation: 4 },
+
+  /* Bottom pill container */
+  bottomPillContainer: { position: 'absolute', left: 16, right: 16, zIndex: 15 },
+
+  /* Default search prompt pill */
+  searchPrompt: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: 28, paddingHorizontal: 18, paddingVertical: 14,
     elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
   },
-  pillText: { flex: 1, fontSize: 15, color: COLORS.text2, fontWeight: '500' },
+  searchPromptText: { flex: 1, fontSize: 15, color: COLORS.text2, fontWeight: '500' },
 
-  /* Draggable search curtain */
-  searchCurtain: {
-    position: 'absolute', left: 0, right: 0,
-    backgroundColor: COLORS.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: 16, paddingTop: 0,
-    elevation: 12, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.3, shadowRadius: 12,
-    zIndex: 20,
-    overflow: 'hidden',
+  /* Search mode — expanded card */
+  searchPill: {
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 20, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8,
+    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
+    maxHeight: 360,
   },
-  dragHandle: { alignItems: 'center', paddingTop: 10, paddingBottom: 6 },
-  dragBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.text2 },
-  curtainCollapseBtn: { alignSelf: 'center', padding: 6, marginBottom: 4 },
-  curtainSearchRow: {
+  searchInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  searchInput: { flex: 1, color: COLORS.text, fontSize: 16, padding: 0 },
+  searchLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 },
+  searchLoadingText: { fontSize: 13, color: COLORS.text2 },
+  searchResults: { maxHeight: 200 },
+  resultItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  resultActive: { backgroundColor: COLORS.coral + '10' },
+  resultName: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+  resultCity: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+  resultArrow: { fontSize: 20, color: COLORS.text2, fontWeight: '300' },
+  addressPreview: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, paddingTop: 6 },
+  addressPreviewText: { fontSize: 12, color: COLORS.text2, flex: 1 },
+
+  /* Selected mode pill */
+  selectedPill: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.row, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8,
+    borderRadius: 28, paddingLeft: 18, paddingRight: 6, paddingVertical: 6,
+    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
   },
-  curtainSearchInput: { flex: 1, color: COLORS.text, fontSize: 16, padding: 0 },
-  curtainLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12 },
-  curtainLoadingText: { fontSize: 13, color: COLORS.text2 },
-  curtainResults: { flex: 1, maxHeight: 200, borderRadius: RADIUS.card, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface },
-  curtainResultItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  curtainResultActive: { backgroundColor: COLORS.coral + '10' },
-  curtainResultName: { fontSize: 15, fontWeight: '600', color: COLORS.text },
-  curtainResultCity: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
-  curtainResultArrow: { fontSize: 20, color: COLORS.text2, fontWeight: '300' },
-  curtainAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
-  curtainAddressText: { flex: 1, color: COLORS.text2, fontSize: 13 },
-  curtainConfirmBtn: { backgroundColor: COLORS.coral, borderRadius: RADIUS.button, padding: 14, alignItems: 'center', marginTop: 8 },
-  curtainConfirmText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
+  selectedText: { flex: 1, fontSize: 15, color: COLORS.text, fontWeight: '600' },
+  clearBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  confirmBtn: { backgroundColor: COLORS.coral, borderRadius: 22, paddingHorizontal: 20, paddingVertical: 10, marginLeft: 4 },
+  confirmText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
 });
