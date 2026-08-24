@@ -331,6 +331,7 @@ async function runMigrations() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_city TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_note TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) DEFAULT 'moncash';
     `));
 
     // 5. Order events table
@@ -3504,7 +3505,7 @@ app.get('/api/orders/:id', authRequired, async (req, res) => {
     );
     const otherUserId = myRole === 'buyer' ? (sellerResult.rows[0]?.seller_id) : order.buyer_id;
     const otherParty = await pool.query(
-      `SELECT id, full_name, phone FROM users WHERE id = $1`,
+      `SELECT id, full_name, phone, natcash_phone FROM users WHERE id = $1`,
       [otherUserId]
     );
     const escrowResult = await pool.query(
@@ -3680,10 +3681,11 @@ app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
 
     // Apply promo discount to the order total so buyer is charged the discounted amount
     const finalTotal = discountAmount > 0 ? Math.round((total - discountAmount) * 100) / 100 : total;
+    const paymentMethod = req.body.paymentMethod || 'moncash';
     const orderResult = await client.query(
-      `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_proposed_by)
-       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-      [req.user.id, finalTotal, method, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null,
+      `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, payment_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_proposed_by)
+       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+      [req.user.id, finalTotal, method, paymentMethod, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null,
        meetupLat ? parseFloat(meetupLat) : null, meetupLng ? parseFloat(meetupLng) : null, meetupAddress || null,
        meetupLat && meetupLng ? req.user.id : null]
     );
@@ -4576,6 +4578,11 @@ app.post('/api/payments/retry/:orderId', authRequired, async (req, res) => {
     );
     if (orderResult.rows.length === 0) return res.status(404).json({ error: 'Pending order not found' });
     const order = orderResult.rows[0];
+
+    // If order was NatCash, redirect back to NatCash payment screen instead of calling MonCash
+    if (order.payment_method === 'natcash') {
+      return res.json({ retryMethod: 'natcash', orderId: order.id });
+    }
 
     // Use unique referenceId for each retry attempt (MonCash rejects duplicates)
     const retryReference = `${orderId}_retry_${Date.now()}`;

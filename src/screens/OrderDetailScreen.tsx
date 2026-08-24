@@ -151,8 +151,13 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   const handleRetryPayment = async () => {
     setActionLoading(true);
     try {
-      const res = await retryPayment(orderId) as { paymentUrl: string };
-      if (res.paymentUrl) await Linking.openURL(res.paymentUrl);
+      const res = await retryPayment(orderId) as { paymentUrl?: string; retryMethod?: string; orderId?: string };
+      if (res.retryMethod === 'natcash') {
+        // NatCash order — go back to NatCash payment screen
+        navigation.navigate('NatCashPayment', { orderId: res.orderId || orderId, total: Number((order as any)?.total_amount || 0), sellerName: (order as any)?.other_party?.full_name || '', sellerPhone: (order as any)?.other_party?.natcash_phone || (order as any)?.other_party?.phone || '' });
+      } else if (res.paymentUrl) {
+        await Linking.openURL(res.paymentUrl);
+      }
     } catch (err: unknown) {
       toast.error(t('common.error'), errorMessage(err, 'Could not open payment'));
     }
