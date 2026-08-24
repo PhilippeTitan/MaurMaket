@@ -55,9 +55,9 @@ var pickMarker=null;
 function executeCmd(cmd){
   try{
     if(cmd.type==='centerOn'){
-      if(userMarker){userMarker.remove();}
+      if(userMarker){map.removeLayer(userMarker);userMarker=null;}
       userMarker=L.marker([cmd.lat,cmd.lng],{icon:userIcon,zIndexOffset:1000}).addTo(map);
-      map.setView([cmd.lat,cmd.lng],cmd.zoom||14);
+      if(!map._userLocated){map.setView([cmd.lat,cmd.lng],cmd.zoom||14);map._userLocated=true;}
     }
     else if(cmd.type==='flyTo'){map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.0});}
     else if(cmd.type==='drawCircle'){
@@ -116,6 +116,9 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const [searchFocused, setSearchFocused] = useState(false);
   const [expandedMapReady, setExpandedMapReady] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const mapReadyRef = useRef(false);
+  const userLocRef = useRef<{ lat: number; lng: number } | null>(null);
+  const centeredRef = useRef(false);
 
   const webViewRef = useRef<WebView>(null);
   const expandedWebViewRef = useRef<WebView>(null);
@@ -125,18 +128,18 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   // Get user location on mount
   useEffect(() => {
     getFastLocation()
-      .then(pos => setUserLocation({ lat: pos.lat, lng: pos.lng }))
+      .then(pos => {
+        const loc = { lat: pos.lat, lng: pos.lng };
+        setUserLocation(loc);
+        userLocRef.current = loc;
+        // If map is already ready, center immediately
+        if (mapReadyRef.current && !centeredRef.current) {
+          centeredRef.current = true;
+          expandedWebViewRef.current?.postMessage(JSON.stringify({ type: 'centerOn', lat: loc.lat, lng: loc.lng, zoom: 14 }));
+        }
+      })
       .catch(() => {});
   }, []);
-
-  // Center map on user location once both are ready
-  useEffect(() => {
-    if (expanded && expandedMapReady && userLocation) {
-      setTimeout(() => {
-        expandedWebViewRef.current?.postMessage(JSON.stringify({ type: 'centerOn', lat: userLocation.lat, lng: userLocation.lng, zoom: 14 }));
-      }, 300);
-    }
-  }, [expanded, expandedMapReady, userLocation]);
 
   // Send a message with retries
   const postToMap = useCallback((msg: object) => {
@@ -187,7 +190,16 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const handleExpandedMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'ready') setExpandedMapReady(true);
+      if (data.type === 'ready') {
+        setExpandedMapReady(true);
+        mapReadyRef.current = true;
+        // Center on user location as soon as map is ready
+        const loc = userLocRef.current;
+        if (loc && !centeredRef.current) {
+          centeredRef.current = true;
+          expandedWebViewRef.current?.postMessage(JSON.stringify({ type: 'centerOn', lat: loc.lat, lng: loc.lng, zoom: 14 }));
+        }
+      }
       if (data.type === 'location') {
         setExpandedLoading(true);
         setPendingCoords({ lat: data.lat, lng: data.lng });
@@ -230,6 +242,8 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     }
     setExpanded(false);
     setExpandedMapReady(false);
+    mapReadyRef.current = false;
+    centeredRef.current = false;
     setPendingCoords(null);
     setExpandedAddress(null);
     setSearchQuery('');
