@@ -32,7 +32,8 @@ html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
 .leaflet-control-attribution{display:none!important}
 .pick-marker{width:32px;height:32px;border-radius:50%;background:#FF6B6B;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center}
 .pick-marker-inner{width:10px;height:10px;border-radius:50%;background:#fff}
-.user-marker{width:20px;height:20px;border-radius:50%;background:#4A90D9;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4)}
+.user-dot{width:16px;height:16px;border-radius:50%;border:3px solid #4A9EFF;background:#fff;box-shadow:0 0 8px rgba(74,158,255,0.5)}
+.user-tail{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid #4A9EFF}
 .hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;z-index:1000;white-space:nowrap}
 </style>
 </head>
@@ -46,7 +47,7 @@ var LIGHT_URL="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}
 var map=L.map("map",{zoomControl:false,attributionControl:false,maxBounds:[[16.5,-76],[21,-67]],maxBoundsViscosity:1.0,minZoom:8,maxZoom:18}).setView([${centerLat},${centerLng}],15);
 var currentTile=L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
 var markerIcon=L.divIcon({className:'',html:'<div class="pick-marker"><div class="pick-marker-inner"></div></div>',iconSize:[32,32],iconAnchor:[16,16]});
-var userIcon=L.divIcon({className:'',html:'<div class="user-marker"></div>',iconSize:[20,20],iconAnchor:[10,10]});
+var userIcon=L.divIcon({className:'',iconSize:[20,28],iconAnchor:[10,28],html:'<div style="display:flex;flex-direction:column;align-items:center"><div class="user-dot"></div><div class="user-tail"></div></div>'});
 var circle=null;
 var userMarker=null;
 var pickMarker=null;
@@ -55,7 +56,7 @@ function executeCmd(cmd){
   try{
     if(cmd.type==='centerOn'){
       if(userMarker){userMarker.remove();}
-      userMarker=L.marker([cmd.lat,cmd.lng],{icon:userIcon,zIndexOffset:-1000}).addTo(map);
+      userMarker=L.marker([cmd.lat,cmd.lng],{icon:userIcon,zIndexOffset:1000}).addTo(map);
       map.setView([cmd.lat,cmd.lng],cmd.zoom||14);
     }
     else if(cmd.type==='flyTo'){map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.0});}
