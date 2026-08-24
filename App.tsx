@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { store } from './src/store';
-import { COLORS, SPACING } from './src/theme';
+import { COLORS, SPACING, RADIUS, SHADOW, FONT_SIZES, FONT_WEIGHTS, FONTS, DURATION, ICON_SIZES, TOUCH, LAYOUT } from './src/theme';
 import { i18n } from './src/i18n';
 import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
@@ -115,7 +115,7 @@ if (typeof document !== 'undefined') {
 
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 200, contentStyle: { backgroundColor: COLORS.bg } }}>
+    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: DURATION.screen, contentStyle: { backgroundColor: COLORS.bg } }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Signup" component={SignupScreen} />
       <AuthStack.Screen name="EmailVerification" component={EmailVerificationScreen} />
@@ -142,19 +142,15 @@ function MainTabs() {
           // alignment with the tab bar again.
           tabBarStyle: {
             backgroundColor: COLORS.surface,
-            borderRadius: 28,
+            borderRadius: RADIUS.fab,
             borderWidth: 1,
             borderColor: COLORS.border,
             paddingBottom: 0,
             paddingTop: 0,
-            height: 56,
-            marginBottom: insets.bottom > 0 ? insets.bottom + 8 : 16,
-            marginHorizontal: 16,
-            elevation: 8,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
+            height: LAYOUT.tabBarHeight,
+            marginBottom: insets.bottom > 0 ? insets.bottom + SPACING.xs : LAYOUT.tabBarMarginBottom,
+            marginHorizontal: SPACING.lg,
+            ...SHADOW.lg,
             position: 'absolute',
           },
           tabBarActiveTintColor: COLORS.coral,
@@ -167,7 +163,7 @@ function MainTabs() {
           component={FeedScreen}
           options={{
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="fire" size={26} color={color} />
+              <MaterialCommunityIcons name="fire" size={ICON_SIZES.tab} color={color} />
             ),
           }}
         />
@@ -176,7 +172,7 @@ function MainTabs() {
           component={ExploreScreen}
           options={{
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="magnify" size={26} color={color} />
+              <MaterialCommunityIcons name="magnify" size={ICON_SIZES.tab} color={color} />
             ),
           }}
         />
@@ -192,7 +188,7 @@ function MainTabs() {
                 activeOpacity={0.8}
               >
                   <View style={styles.fab}>
-                    <PaperPlaneIcon size={26} color={COLORS.text} />
+                    <PaperPlaneIcon size={ICON_SIZES.tab} color={COLORS.text} />
                   </View>
               </TouchableOpacity>
             ),
@@ -203,7 +199,7 @@ function MainTabs() {
           component={LazyMapScreen}
           options={{
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="map-marker-radius-outline" size={26} color={color} />
+              <MaterialCommunityIcons name="map-marker-radius-outline" size={ICON_SIZES.tab} color={color} />
             ),
           }}
         />
@@ -212,7 +208,7 @@ function MainTabs() {
           component={MeScreen}
           options={{
             tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="account" size={26} color={color} />
+              <MaterialCommunityIcons name="account" size={ICON_SIZES.tab} color={color} />
             ),
           }}
         />
@@ -384,7 +380,7 @@ export default function App() {
       }
     }}>
       <StatusBar style="light" />
-      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right', animationDuration: 220, contentStyle: { backgroundColor: COLORS.bg } }}>
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right', animationDuration: DURATION.screen, contentStyle: { backgroundColor: COLORS.bg } }}>
         {!isLoggedIn ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
         ) : (
@@ -449,9 +445,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   fab: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: LAYOUT.tabBarHeight,
+    height: LAYOUT.tabBarHeight,
+    borderRadius: RADIUS.fab,
     alignItems: 'center',
     justifyContent: 'center',
   },
