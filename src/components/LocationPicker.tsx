@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity, TextInput, FlatList, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity, TextInput, FlatList, Animated, Dimensions, PanResponder } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
@@ -60,7 +60,7 @@ window.addEventListener('message',function(e){
     else if(cmd.type==='drawCircle'){if(circle)map.removeLayer(circle);circle=L.circle([cmd.lat,cmd.lng],{radius:cmd.radius||400,color:'#00C2FF',fillColor:'#00C2FF',fillOpacity:0.12,weight:2,dashArray:'6 4'}).addTo(map);map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.2});}
     else if(cmd.type==='clearCircle'){if(circle){map.removeLayer(circle);circle=null;}}
     else if(cmd.type==='setMarker'){if(marker){marker.setLatLng([cmd.lat,cmd.lng]);}else{marker=L.marker([cmd.lat,cmd.lng],{draggable:true,icon:markerIcon}).addTo(map);}}
-  }catch(err){}
+  }catch(err){console.log('cmd error',err);}
 });
 map.on('click',function(e){
   var lat=e.latlng.lat,lng=e.latlng.lng;
@@ -76,6 +76,9 @@ window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 </html>`;
 }
 
+const COLLAPSED_HEIGHT = 56;
+const HANDLE_HEIGHT = 32;
+
 export default function LocationPicker({ onLocationSelect, initialLat, initialLng, height = 260 }: LocationPickerProps) {
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,34 +91,85 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const [searchResults, setSearchResults] = useState<HaitiArea[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
 
   const webViewRef = useRef<WebView>(null);
   const expandedWebViewRef = useRef<WebView>(null);
   const searchInputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
   const SCREEN_H = Dimensions.get('window').height;
+  const EXPANDED_HEIGHT = SCREEN_H * 0.55;
 
-  // Curtain animation
-  const curtainAnim = useRef(new Animated.Value(0)).current;
+  // Curtain height driven by gesture
+  const curtainHeightAnim = useRef(new Animated.Value(COLLAPSED_HEIGHT)).current;
+  const [curtainH, setCurtainH] = useState(COLLAPSED_HEIGHT);
+
+  useEffect(() => {
+    const id = curtainHeightAnim.addListener(({ value }) => setCurtainH(value));
+    return () => curtainHeightAnim.removeListener(id);
+  }, [curtainHeightAnim]);
+
+  const curtainOpacity = curtainHeightAnim.interpolate({
+    inputRange: [COLLAPSED_HEIGHT, COLLAPSED_HEIGHT + 40, EXPANDED_HEIGHT],
+    outputRange: [0, 0.5, 1],
+    extrapolate: 'clamp',
+  });
+  const pillOpacity = curtainHeightAnim.interpolate({
+    inputRange: [COLLAPSED_HEIGHT, COLLAPSED_HEIGHT + 30],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  // PanResponder for drag-to-resize
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5,
+      onPanResponderMove: (_, g) => {
+        const target = searchExpanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT;
+        const raw = target - g.dy;
+        const clamped = Math.max(COLLAPSED_HEIGHT, Math.min(EXPANDED_HEIGHT, raw));
+        curtainHeightAnim.setValue(clamped);
+      },
+      onPanResponderRelease: (_, g) => {
+        // If dragged down >80px or velocity is downward → collapse
+        const shouldCollapse = g.dy > 80 || g.vy > 0.5;
+        const target = shouldCollapse ? COLLAPSED_HEIGHT : EXPANDED_HEIGHT;
+        Animated.spring(curtainHeightAnim, {
+          toValue: target,
+          useNativeDriver: false,
+          damping: 20,
+          stiffness: 200,
+        }).start(() => {
+          if (shouldCollapse && searchExpanded) {
+            setSearchExpanded(false);
+            setSearchQuery('');
+            setSelectedArea(null);
+            searchInputRef.current?.blur();
+          } else if (!shouldCollapse && !searchExpanded) {
+            setSearchExpanded(true);
+            setTimeout(() => searchInputRef.current?.focus(), 100);
+          }
+        });
+      },
+    })
+  ).current;
 
   const expandSearch = () => {
     setSearchExpanded(true);
-    Animated.spring(curtainAnim, { toValue: 1, useNativeDriver: false, damping: 18, stiffness: 200 }).start(() => {
+    Animated.spring(curtainHeightAnim, { toValue: EXPANDED_HEIGHT, useNativeDriver: false, damping: 18, stiffness: 200 }).start(() => {
       searchInputRef.current?.focus();
     });
   };
 
   const collapseSearch = () => {
-    Animated.timing(curtainAnim, { toValue: 0, duration: 250, useNativeDriver: false }).start(() => {
+    Animated.spring(curtainHeightAnim, { toValue: COLLAPSED_HEIGHT, useNativeDriver: false, damping: 18, stiffness: 200 }).start(() => {
       setSearchExpanded(false);
       setSearchQuery('');
       setSelectedArea(null);
+      searchInputRef.current?.blur();
     });
   };
-
-  const curtainHeight = curtainAnim.interpolate({ inputRange: [0, 1], outputRange: [56, SCREEN_H * 0.55] });
-  const curtainOpacity = curtainAnim.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 0.5, 1] });
-  const pillOpacity = curtainAnim.interpolate({ inputRange: [0, 0.15], outputRange: [1, 0] });
 
   // Debounced hybrid search
   useEffect(() => {
@@ -128,6 +182,15 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     }, 200);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Send a message to WebView with retry until map is ready
+  const postToMap = useCallback((wv: WebView | null, msg: object, retries = 5) => {
+    if (!wv) return;
+    wv.postMessage(JSON.stringify(msg));
+    if (retries > 0) {
+      setTimeout(() => wv.postMessage(JSON.stringify(msg)), 600);
+    }
+  }, []);
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     try {
@@ -146,6 +209,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const handleMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'ready') { setMapReady(true); }
       if (data.type === 'location') {
         setLoading(true);
         reverseGeocode(data.lat, data.lng).finally(() => setLoading(false));
@@ -156,6 +220,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const handleExpandedMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'ready') { setMapReady(true); }
       if (data.type === 'location') {
         setExpandedLoading(true);
         setPendingCoords({ lat: data.lat, lng: data.lng });
@@ -168,16 +233,17 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     } catch {}
   }, []);
 
-  const selectArea = useCallback((area: HaitiArea, targetWebView?: WebView | null) => {
-    const wv = targetWebView || webViewRef.current;
-    if (!wv) return;
-    wv.postMessage(JSON.stringify({ type: 'drawCircle', lat: area.lat, lng: area.lng, radius: area.radius, zoom: area.radius < 500 ? 15 : 13 }));
-    setTimeout(() => { wv.postMessage(JSON.stringify({ type: 'setMarker', lat: area.lat, lng: area.lng })); }, 300);
+  const selectArea = useCallback((area: HaitiArea) => {
+    const wv = expandedWebViewRef.current;
+    // Draw circle + fly to area
+    postToMap(wv, { type: 'drawCircle', lat: area.lat, lng: area.lng, radius: area.radius, zoom: area.radius < 500 ? 15 : 13 });
+    // Set marker with a delay
+    setTimeout(() => postToMap(wv, { type: 'setMarker', lat: area.lat, lng: area.lng }), 400);
     setSelectedArea(area);
     setPendingCoords({ lat: area.lat, lng: area.lng });
     setExpandedAddress(area.name);
     setSearchQuery(area.name);
-  }, []);
+  }, [postToMap]);
 
   const confirmExpanded = useCallback(() => {
     if (pendingCoords && expandedAddress) {
@@ -263,20 +329,28 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
             </TouchableOpacity>
           </Animated.View>
 
-          {/* ── Expanded search curtain ── */}
+          {/* ── Draggable search curtain ── */}
           <Animated.View
             style={[styles.searchCurtain, {
-              height: curtainHeight,
+              height: curtainHeightAnim,
               bottom: 0,
               opacity: curtainOpacity,
               paddingBottom: insets.bottom + 12,
             }]}
-            pointerEvents={searchExpanded ? 'auto' : 'none'}
+            pointerEvents={curtainH > COLLAPSED_HEIGHT + 40 ? 'auto' : 'none'}
+            {...panResponder.panHandlers}
           >
+            {/* Drag handle */}
+            <View style={styles.dragHandle}>
+              <View style={styles.dragBar} />
+            </View>
+
+            {/* Chevron collapse button */}
             <TouchableOpacity style={styles.curtainCollapseBtn} onPress={collapseSearch} accessibilityLabel="close search" accessibilityRole="button">
               <MaterialCommunityIcons name="chevron-down" size={24} color={COLORS.text2} />
             </TouchableOpacity>
 
+            {/* Search input */}
             <View style={styles.curtainSearchRow}>
               <MaterialCommunityIcons name="magnify" size={20} color={COLORS.coral} />
               <TextInput
@@ -316,7 +390,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={[styles.curtainResultItem, selectedArea?.id === item.id && styles.curtainResultActive]}
-                    onPress={() => { selectArea(item, expandedWebViewRef.current); collapseSearch(); }}
+                    onPress={() => { selectArea(item); collapseSearch(); }}
                     accessibilityLabel={`select ${item.name}`}
                     accessibilityRole="button"
                   >
@@ -384,14 +458,17 @@ const styles = StyleSheet.create({
   },
   pillText: { flex: 1, fontSize: 15, color: COLORS.text2, fontWeight: '500' },
 
-  /* Search curtain */
+  /* Draggable search curtain */
   searchCurtain: {
     position: 'absolute', left: 0, right: 0,
     backgroundColor: COLORS.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: 16, paddingTop: 8,
+    paddingHorizontal: 16, paddingTop: 0,
     elevation: 12, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.3, shadowRadius: 12,
     zIndex: 20,
+    overflow: 'hidden',
   },
+  dragHandle: { alignItems: 'center', paddingTop: 10, paddingBottom: 6 },
+  dragBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.text2 },
   curtainCollapseBtn: { alignSelf: 'center', padding: 6, marginBottom: 4 },
   curtainSearchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
