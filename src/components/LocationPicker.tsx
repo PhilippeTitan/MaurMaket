@@ -45,23 +45,51 @@ html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
 <div class="crosshair"><div class="crosshair-inner"><div class="crosshair-dot"></div></div></div>
 <div class="hint" id="hint">Tap anywhere to set meetup spot</div>
 <script>
+var mapReady=false;
+var cmdQueue=[];
 var LIGHT_URL="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-var DARK_URL="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-var currentTile=null;
 var map=L.map("map",{zoomControl:false,attributionControl:false,maxBounds:[[16.5,-76],[21,-67]],maxBoundsViscosity:1.0,minZoom:8,maxZoom:18}).setView([${centerLat},${centerLng}],15);
-currentTile=L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
-setTimeout(function(){map.invalidateSize()},200);
+var currentTile=L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
 var markerIcon=L.divIcon({className:'',html:'<div class="pick-marker"><div class="pick-marker-inner"></div></div>',iconSize:[32,32],iconAnchor:[16,16]});
 var circle=null;
 ${markerJs}
-window.addEventListener('message',function(e){
-  try{var cmd=JSON.parse(e.data);
+
+function executeCmd(cmd){
+  try{
     if(cmd.type==='flyTo'){map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.2});}
-    else if(cmd.type==='drawCircle'){if(circle)map.removeLayer(circle);circle=L.circle([cmd.lat,cmd.lng],{radius:cmd.radius||400,color:'#00C2FF',fillColor:'#00C2FF',fillOpacity:0.12,weight:2,dashArray:'6 4'}).addTo(map);map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.2});}
+    else if(cmd.type==='drawCircle'){
+      if(circle){map.removeLayer(circle);circle=null;}
+      circle=L.circle([cmd.lat,cmd.lng],{radius:cmd.radius||400,color:'#00C2FF',fillColor:'#00C2FF',fillOpacity:0.15,weight:3}).addTo(map);
+      map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.0});
+    }
     else if(cmd.type==='clearCircle'){if(circle){map.removeLayer(circle);circle=null;}}
-    else if(cmd.type==='setMarker'){if(marker){marker.setLatLng([cmd.lat,cmd.lng]);}else{marker=L.marker([cmd.lat,cmd.lng],{draggable:true,icon:markerIcon}).addTo(map);}}
-  }catch(err){console.log('cmd error',err);}
+    else if(cmd.type==='setMarker'){
+      if(marker){marker.setLatLng([cmd.lat,cmd.lng]);}
+      else{marker=L.marker([cmd.lat,cmd.lng],{draggable:true,icon:markerIcon}).addTo(map);}
+    }
+    else if(cmd.type==='setView'){map.setView([cmd.lat,cmd.lng],cmd.zoom||14);}
+  }catch(err){}
+}
+
+window.addEventListener('message',function(e){
+  try{
+    var cmd=JSON.parse(e.data);
+    if(mapReady){executeCmd(cmd);}
+    else{cmdQueue.push(cmd);}
+  }catch(err){}
 });
+
+// Process queued commands once map is truly ready
+function onMapReady(){
+  mapReady=true;
+  while(cmdQueue.length>0){executeCmd(cmdQueue.shift());}
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
+}
+
+map.whenReady(function(){
+  setTimeout(onMapReady,150);
+});
+
 map.on('click',function(e){
   var lat=e.latlng.lat,lng=e.latlng.lng;
   if(marker){marker.setLatLng([lat,lng]);}else{marker=L.marker([lat,lng],{draggable:true,icon:markerIcon}).addTo(map);}
@@ -70,7 +98,6 @@ map.on('click',function(e){
   window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:lat,lng:lng}));
 });
 if(marker){marker.on('dragend',function(e){var pos=e.target.getLatLng();if(circle){map.removeLayer(circle);circle=null;}window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:pos.lat,lng:pos.lng}));});}
-window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 </script>
 </body>
 </html>`;
@@ -91,7 +118,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const [searchResults, setSearchResults] = useState<HaitiArea[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchExpanded, setSearchExpanded] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
+  const [expandedMapReady, setExpandedMapReady] = useState(false);
 
   const webViewRef = useRef<WebView>(null);
   const expandedWebViewRef = useRef<WebView>(null);
@@ -132,7 +159,6 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
         curtainHeightAnim.setValue(clamped);
       },
       onPanResponderRelease: (_, g) => {
-        // If dragged down >80px or velocity is downward → collapse
         const shouldCollapse = g.dy > 80 || g.vy > 0.5;
         const target = shouldCollapse ? COLLAPSED_HEIGHT : EXPANDED_HEIGHT;
         Animated.spring(curtainHeightAnim, {
@@ -183,13 +209,29 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Send a message to WebView with retry until map is ready
-  const postToMap = useCallback((wv: WebView | null, msg: object, retries = 5) => {
-    if (!wv) return;
-    wv.postMessage(JSON.stringify(msg));
-    if (retries > 0) {
-      setTimeout(() => wv.postMessage(JSON.stringify(msg)), 600);
+  // Queue messages to WebView until mapReady, then send immediately + retry
+  const pendingCmdsRef = useRef<object[]>([]);
+  const retriesLeftRef = useRef(3);
+
+  // Flush queued commands when map becomes ready
+  useEffect(() => {
+    if (expandedMapReady && expandedWebViewRef.current) {
+      pendingCmdsRef.current.forEach(cmd => {
+        expandedWebViewRef.current!.postMessage(JSON.stringify(cmd));
+      });
+      pendingCmdsRef.current = [];
     }
+  }, [expandedMapReady]);
+
+  const postToMap = useCallback((msg: object) => {
+    const wv = expandedWebViewRef.current;
+    if (!wv) return;
+    // Always queue for retry (map.whenReady may not have fired yet)
+    // The WebView's cmdQueue handles dedup if map is already ready
+    wv.postMessage(JSON.stringify(msg));
+    // Extra retries in case first message arrives before WebView JS context processes it
+    setTimeout(() => expandedWebViewRef.current?.postMessage(JSON.stringify(msg)), 500);
+    setTimeout(() => expandedWebViewRef.current?.postMessage(JSON.stringify(msg)), 1500);
   }, []);
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
@@ -209,7 +251,6 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const handleMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'ready') { setMapReady(true); }
       if (data.type === 'location') {
         setLoading(true);
         reverseGeocode(data.lat, data.lng).finally(() => setLoading(false));
@@ -220,7 +261,9 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const handleExpandedMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'ready') { setMapReady(true); }
+      if (data.type === 'ready') {
+        setExpandedMapReady(true);
+      }
       if (data.type === 'location') {
         setExpandedLoading(true);
         setPendingCoords({ lat: data.lat, lng: data.lng });
@@ -234,16 +277,27 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   }, []);
 
   const selectArea = useCallback((area: HaitiArea) => {
-    const wv = expandedWebViewRef.current;
-    // Draw circle + fly to area
-    postToMap(wv, { type: 'drawCircle', lat: area.lat, lng: area.lng, radius: area.radius, zoom: area.radius < 500 ? 15 : 13 });
-    // Set marker with a delay
-    setTimeout(() => postToMap(wv, { type: 'setMarker', lat: area.lat, lng: area.lng }), 400);
+    // Send drawCircle immediately — the WebView's cmdQueue + our retries ensure it arrives
+    const circleCmd = { type: 'drawCircle', lat: area.lat, lng: area.lng, radius: area.radius, zoom: area.radius < 500 ? 15 : 13 };
+    const markerCmd = { type: 'setMarker', lat: area.lat, lng: area.lng };
+
+    // Try posting directly first
+    expandedWebViewRef.current?.postMessage(JSON.stringify(circleCmd));
+    expandedWebViewRef.current?.postMessage(JSON.stringify(markerCmd));
+
+    // Retry at intervals — covers the case where map isn't ready yet
+    [300, 800, 1500, 2500].forEach(delay => {
+      setTimeout(() => {
+        expandedWebViewRef.current?.postMessage(JSON.stringify(circleCmd));
+        expandedWebViewRef.current?.postMessage(JSON.stringify(markerCmd));
+      }, delay);
+    });
+
     setSelectedArea(area);
     setPendingCoords({ lat: area.lat, lng: area.lng });
     setExpandedAddress(area.name);
     setSearchQuery(area.name);
-  }, [postToMap]);
+  }, []);
 
   const confirmExpanded = useCallback(() => {
     if (pendingCoords && expandedAddress) {
@@ -251,6 +305,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
       onLocationSelect(pendingCoords.lat, pendingCoords.lng, expandedAddress);
     }
     setExpanded(false);
+    setExpandedMapReady(false);
     setPendingCoords(null);
     setExpandedAddress(null);
     setSearchQuery('');
