@@ -141,13 +141,14 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
       .catch(() => {});
   }, []);
 
-  // Send a message with retries
+  // Send a message with retries — WebView + Leaflet have unreliable init timing
   const postToMap = useCallback((msg: object) => {
     const wv = expandedWebViewRef.current;
     if (!wv) return;
-    wv.postMessage(JSON.stringify(msg));
-    [500, 1500].forEach(delay => {
-      setTimeout(() => expandedWebViewRef.current?.postMessage(JSON.stringify(msg)), delay);
+    const json = JSON.stringify(msg);
+    wv.postMessage(json);
+    [400, 1000, 2000, 3500].forEach(delay => {
+      setTimeout(() => expandedWebViewRef.current?.postMessage(json), delay);
     });
   }, []);
 
@@ -213,16 +214,18 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   }, []);
 
   const selectArea = useCallback((area: HaitiArea) => {
-    // Draw circle + fly to area
-    const circleCmd = { type: 'drawCircle', lat: area.lat, lng: area.lng, radius: area.radius, zoom: area.radius < 500 ? 15 : 13 };
-    const markerCmd = { type: 'setMarker', lat: area.lat, lng: area.lng };
-    postToMap(circleCmd);
-    setTimeout(() => postToMap(markerCmd), 200);
+    // Pick zoom level so the circle fills the screen
+    // Smaller radius → higher zoom (tighter view)
+    const zoom = area.radius < 300 ? 16 : area.radius < 600 ? 15 : area.radius < 1200 ? 14 : 13;
+    // Draw circle + marker + fly to area
+    postToMap({ type: 'drawCircle', lat: area.lat, lng: area.lng, radius: area.radius, zoom });
+    setTimeout(() => postToMap({ type: 'setMarker', lat: area.lat, lng: area.lng }), 300);
 
     setSelectedArea(area);
     setPendingCoords({ lat: area.lat, lng: area.lng });
     setExpandedAddress(area.name);
     setSearchFocused(false);
+    setSearchResults([]);
     searchInputRef.current?.blur();
   }, [postToMap]);
 
@@ -307,7 +310,16 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
 
           {/* Close button — right side, top-right */}
           <View style={[styles.closeBtnRow, { top: insets.top + 8, right: 14 }]}>
-            <TouchableOpacity style={styles.closeBtn} onPress={() => setExpanded(false)} accessibilityLabel="close map" accessibilityRole="button">
+            <TouchableOpacity style={styles.closeBtn} onPress={() => {
+              setExpanded(false);
+              setExpandedMapReady(false);
+              mapReadyRef.current = false;
+              centeredRef.current = false;
+              setSearchFocused(false);
+              setSearchQuery('');
+              setSearchResults([]);
+              setSelectedArea(null);
+            }} accessibilityLabel="close map" accessibilityRole="button">
               <MaterialCommunityIcons name="close" size={22} color={COLORS.text} />
             </TouchableOpacity>
           </View>
