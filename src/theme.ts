@@ -48,9 +48,6 @@ export const COLORS: Record<string, string> = {
   yellow: '#FFE066',       // Warning, ratings
   yellowMuted: 'rgba(255, 224, 102, 0.15)',
 
-  purple: '#A78BFA',       // Tertiary accent
-  purpleMuted: 'rgba(167, 139, 250, 0.15)',
-
   // Neutrals
   white: '#FFFFFF',
   black: '#000000',
@@ -69,14 +66,14 @@ export const TIER_COLORS: Record<string, string> = {
   business: '#FFD700',
 };
 
-/** Seller tier gradients */
+/** @deprecated Legacy tier gradients — unused, will be removed */
 export const TIER_GRADIENTS: Record<string, [string, string]> = {
   casual: ['#00E5A0', '#00C2FF'],
   verified: ['#1E3A5F', '#FF4D6A'],
   business: ['#FFD700', '#FF4D6A'],
 };
 
-/** Primary CTA button gradient (orange → red) */
+/** @deprecated Legacy CTA gradient — migrate to COLORS.coral solid */
 export const BUTTON_GRADIENT: [string, string] = ['#F47A20', '#E41E26'];
 
 // ─────────────────────────────────────────────────────────────
@@ -352,15 +349,27 @@ export const DURATION = {
   complex: 400,
 } as const;
 
-/** Easing curves */
+/**
+ * Easing curves — NOT for direct use with Animated.timing.
+ *
+ * React Native's Animated API accepts Easing functions from 'react-native',
+ * not CSS strings. These are documented here as design intent only.
+ * When animating, import { Easing } from 'react-native' and use:
+ *   Easing.inOut(Easing.ease)  → equivalent to 'standard'
+ *   Easing.out(Easing.ease)   → equivalent to 'decelerate'
+ *   Easing.in(Easing.ease)    → equivalent to 'accelerate'
+ *   Easing.bezier(...)        → for custom curves like 'spring'
+ *
+ * For Reanimated (withTiming/withSpring), use Reanimated.Easing instead.
+ */
 export const EASING = {
-  /** Standard ease-in-out */
+  /** Standard ease-in-out — use Easing.inOut(Easing.ease) */
   standard: 'ease-in-out' as const,
-  /** Decelerate — entering elements */
+  /** Decelerate — use Easing.out(Easing.ease) */
   decelerate: 'ease-out' as const,
-  /** Accelerate — exiting elements */
+  /** Accelerate — use Easing.in(Easing.ease) */
   accelerate: 'ease-in' as const,
-  /** Spring-like bounce for playful interactions */
+  /** Spring-like bounce — use Easing.bezier(0.34, 1.56, 0.64, 1) */
   spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)' as const,
 } as const;
 

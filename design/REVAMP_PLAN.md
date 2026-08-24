@@ -49,5 +49,6 @@ Onboarding should establish defaults such as payment and fulfillment preferences
 3. ✅ Build reusable screen primitives — DONE (EmptyState, Skeleton, Toast, LoadingState updated with design tokens)
 4. ✅ Standardize navigation transitions — DONE (App.tsx uses DURATION, LAYOUT, RADIUS, SHADOW, ICON_SIZES tokens)
 5. ✅ Establish screen archetypes — DONE (ListScreen, FormSheet, CardRow components)
+5.1 ✅ Harden design system — DONE (Phase 1.1 cleanup: legacy tokens marked, hardcoded values replaced, ScreenHeader symmetry fixed, padding rules established, ListScreen typed with FlatListProps<T>, FormSheet geometry tokenized, EASING tokens fixed for React Native Animated API)
 6. Resolve Map interaction architecture.
 7. Migrate screens group-by-group instead of redesigning routes independently.

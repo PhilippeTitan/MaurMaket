@@ -12,7 +12,7 @@ import {
   type StyleProp,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, SHADOW, TOUCH } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, SHADOW, TOUCH, OPACITY } from '../theme';
 import { Icon } from './icons/Icon';
 
 interface Props {
@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   scrim: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: `rgba(0,0,0,${OPACITY.medium})`,
   },
   dismissArea: {
     flex: 1,
@@ -161,9 +161,9 @@ const styles = StyleSheet.create({
   },
   handleBar: {
     alignSelf: 'center',
-    width: 42,
-    height: 4,
-    borderRadius: 2,
+    width: SPACING.xxxl + SPACING.xl,
+    height: SPACING.xs,
+    borderRadius: SPACING.xs / 2,
     backgroundColor: COLORS.border,
     marginTop: SPACING.sm,
     marginBottom: SPACING.xs,
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  headerSpacer: { width: 40 },
+  headerSpacer: { width: TOUCH.min },
   title: {
     flex: 1,
     textAlign: 'center',

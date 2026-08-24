@@ -1,6 +1,11 @@
 import React from 'react';
-import { View, FlatList, RefreshControl, StyleSheet, type ListRenderItem } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  View,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  type FlatListProps,
+} from 'react-native';
 import { COLORS, SPACING } from '../theme';
 import ScreenHeader from './ScreenHeader';
 import ScreenContainer from './ScreenContainer';
@@ -15,7 +20,7 @@ interface Props<T> {
   /** Key extractor for FlatList */
   keyExtractor: (item: T, index: number) => string;
   /** Render function for each item */
-  renderItem: ListRenderItem<T>;
+  renderItem: FlatListProps<T>['renderItem'];
   /** Called when user pulls to refresh */
   onRefresh?: () => void;
   /** Whether a refresh is in progress */
@@ -35,15 +40,19 @@ interface Props<T> {
     onAction?: () => void;
   };
   /** Additional FlatList props */
-  flatListProps?: Record<string, any>;
+  flatListProps?: Omit<Partial<FlatListProps<T>>, 'data' | 'keyExtractor' | 'renderItem' | 'refreshing' | 'onRefresh'>;
 }
 
 /**
  * Reusable list screen archetype that handles:
  * - Safe-area aware ScreenContainer + ScreenHeader
- * - FlatList with pull-to-refresh
+ * - FlatList with pull-to-refresh and standardized content padding
  * - Loading state (centered spinner)
  * - Empty state (icon + message + optional CTA)
+ *
+ * Extends FlatListProps<T> so all standard FlatList options are available
+ * with full type safety. The `contentContainerStyle` default includes
+ * standard horizontal padding (SPACING.lg).
  *
  * Usage:
  * ```tsx
@@ -120,5 +129,6 @@ export default function ListScreen<T>({
 const styles = StyleSheet.create({
   listContent: {
     flexGrow: 1,
+    paddingHorizontal: SPACING.lg,
   },
 });

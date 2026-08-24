@@ -138,6 +138,6 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: COLORS.border,
-    marginLeft: 44,
+    marginLeft: TOUCH.min,
   },
 });

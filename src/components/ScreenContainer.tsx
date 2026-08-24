@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING } from '../theme';
+import { COLORS } from '../theme';
 
 interface Props {
   children: React.ReactNode;
@@ -13,29 +13,21 @@ interface Props {
   safeAreaTop?: boolean;
   /** Additional style for the outer container */
   style?: StyleProp<ViewStyle>;
-  /** Content goes inside a scrollview-like padded area */
-  padded?: boolean;
 }
 
 /**
- * Shared screen container that handles safe-area insets, background color,
- * and consistent padding across all screens.
+ * Shared screen container that handles safe-area insets and background color.
+ *
+ * **Padding rule:** ScreenContainer controls ONLY structural layout (safe-area
+ * insets, flex: 1, background). Content-level horizontal padding belongs to
+ * the scrollable content (FlatList contentContainerStyle, ScrollView, etc.)
+ * — never stack both.
  *
  * Usage:
  * ```tsx
  * <ScreenContainer>
  *   <ScreenHeader title="Settings" onBack={goBack} />
- *   <FlatList ... />
- * </ScreenContainer>
- * ```
- *
- * For screens with a fixed header + scrollable content:
- * ```tsx
- * <ScreenContainer>
- *   <ScreenHeader title="Settings" onBack={goBack} />
- *   <ScrollView contentContainerStyle={styles.scroll}>
- *     ...content
- *   </ScrollView>
+ *   <FlatList contentContainerStyle={{ paddingHorizontal: SPACING.lg }} ... />
  * </ScreenContainer>
  * ```
  */
@@ -45,7 +37,6 @@ export default function ScreenContainer({
   safeAreaBottom = true,
   safeAreaTop = false,
   style,
-  padded = false,
 }: Props) {
   const insets = useSafeAreaInsets();
 
@@ -56,7 +47,6 @@ export default function ScreenContainer({
         { backgroundColor },
         safeAreaTop && { paddingTop: insets.top },
         safeAreaBottom && { paddingBottom: insets.bottom },
-        padded && styles.padded,
         style,
       ]}
     >
@@ -69,8 +59,5 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bg,
-  },
-  padded: {
-    paddingHorizontal: SPACING.lg,
   },
 });

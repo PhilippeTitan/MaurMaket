@@ -1,7 +1,15 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING, HEADER, FONT_SIZES, FONT_WEIGHTS, FONTS, RADIUS, ICON_SIZES } from '../theme';
+import {
+  COLORS,
+  SPACING,
+  HEADER,
+  FONT_SIZES,
+  FONT_WEIGHTS,
+  FONTS,
+  TOUCH,
+} from '../theme';
 import BackButton from './BackButton';
 
 interface Props {
@@ -20,9 +28,11 @@ interface Props {
 }
 
 /**
- * Shared header used across every non-tab screen: back arrow + centered-ish
- * title + optional right-side action. Handles safe-area top inset itself so
- * screens never need to hand-roll `insets.top + SPACING.md` again.
+ * Shared header with mathematically centered title.
+ *
+ * Uses absolute positioning for the title so it stays centered regardless of
+ * asymmetric left/right action widths. Left and right slots are fixed
+ * TOUCH.min (44px) containers to ensure symmetry.
  */
 export default function ScreenHeader({
   title,
@@ -42,11 +52,12 @@ export default function ScreenHeader({
         bordered && styles.bordered,
       ]}
     >
-      {left || (onBack ? (
-        <BackButton onPress={onBack} />
-      ) : (
-        <View style={styles.backSpacer} />
-      ))}
+      {/* Left slot — fixed width for symmetry */}
+      <View style={styles.sideSlot}>
+        {left || (onBack ? <BackButton onPress={onBack} /> : null)}
+      </View>
+
+      {/* Title — absolutely centered in the full header width */}
       <View style={styles.titleContainer}>
         <Text
           style={variant === 'branded' ? styles.titleBranded : styles.title}
@@ -60,7 +71,9 @@ export default function ScreenHeader({
           </Text>
         )}
       </View>
-      <View style={styles.right}>{right}</View>
+
+      {/* Right slot — fixed width for symmetry */}
+      <View style={styles.sideSlot}>{right}</View>
     </View>
   );
 }
@@ -69,7 +82,6 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
     paddingHorizontal: SPACING.lg,
     paddingBottom: SPACING.md,
     backgroundColor: COLORS.bg,
@@ -78,10 +90,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  backSpacer: { width: ICON_SIZES.xxl + SPACING.sm },
-  titleContainer: {
-    flex: 1,
+  sideSlot: {
+    width: TOUCH.min,
+    height: TOUCH.min,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  titleContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: TOUCH.min + SPACING.sm,
   },
   title: {
     textAlign: 'center',
@@ -102,9 +125,5 @@ const styles = StyleSheet.create({
     fontWeight: FONT_WEIGHTS.medium,
     color: COLORS.text2,
     marginTop: 2,
-  },
-  right: {
-    minWidth: ICON_SIZES.xxl + SPACING.sm,
-    alignItems: 'flex-end',
   },
 });
