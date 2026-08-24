@@ -145,7 +145,7 @@ export default function NatCashPaymentScreen() {
         console.log('[NatCash] Raw SMS from:', sms.sender);
       });
 
-      // ── Fallback: scan inbox after 15s if BroadcastReceiver missed the SMS ──
+      // ── Fallback: scan inbox after 8s if BroadcastReceiver missed the SMS ──
       fallbackScanDone.current = false;
       const fallbackScan = setTimeout(async () => {
         if (confirmedRef.current || fallbackScanDone.current) return;
@@ -203,6 +203,14 @@ export default function NatCashPaymentScreen() {
       setSmsPermsGranted(true); // iOS doesn't need explicit SMS perms
     }
   }, []);
+
+  // ── Auto-dial *202# on mount (user already tapped "Pay with NatCash" on checkout) ──
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleDial();
+    }, 800); // small delay so screen renders first
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Detect when user returns from USSD dialog → auto-advance to detecting ──
   useEffect(() => {
@@ -373,7 +381,7 @@ export default function NatCashPaymentScreen() {
               {smsDetected
                 ? 'Your NatCash confirmation was received instantly. Confirming payment…'
                 : smsPermsGranted
-                  ? 'Listening for your NatCash confirmation SMS (auto-detected instantly). Fallback: scanning inbox in 15s.'
+                  ? 'Listening for your NatCash confirmation SMS (auto-detected instantly). Fallback: scanning inbox in 8s.'
                   : 'Waiting for payment confirmation via server polling. Grant SMS permissions for instant detection.'}
             </Text>
             {parsed && (

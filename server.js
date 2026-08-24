@@ -3738,7 +3738,7 @@ app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
     for (const sid of sellerIds) {
       const notifData = { orderId: order.id };
       if (imageBySeller[sid]) notifData.image = imageBySeller[sid];
-      createNotification(sid, 'order_status', 'New Order', `New order from ${buyerName} — G ${finalTotal.toFixed(0)}`, notifData);
+      createNotification(sid, 'new_order', 'New order', `${buyerName} bought ${orderItems[0]?.name || 'an item'}`, notifData);
       const lowStock = await pool.query('SELECT id, name, stock FROM products WHERE seller_id = $1 AND stock <= 3 AND is_available = true', [sid]);
       for (const p of lowStock.rows) {
         createNotification(sid, 'low_stock', 'Low Stock Alert', `"${p.name}" has only ${p.stock} left`, { productId: p.id });
@@ -4412,8 +4412,8 @@ app.post('/api/orders/:id/escrow/release', authRequired, async (req, res) => {
 
     // Notify sellers
     for (const escrow of escrows.rows) {
-      createNotification(escrow.seller_id, 'order_status', 'Payment Released',
-        `G ${parseFloat(escrow.net_amount).toFixed(0)} has been credited to your balance`, { orderId: req.params.id });
+      createNotification(escrow.seller_id, 'payout_released', 'Payout released',
+        `Order #${req.params.id.slice(0, 8)} is complete`, { orderId: req.params.id, amount: parseFloat(escrow.net_amount) });
     }
 
     res.json({ released: true, escrowCount: escrows.rows.length });
@@ -5122,7 +5122,7 @@ app.post('/api/orders/:id/note', authRequired, sellerRequired, async (req, res) 
     );
     if (check.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     logOrderEvent(req.params.id, 'note_added', req.user.id, null, null, note.trim());
-    createNotification(check.rows[0].buyer_id, 'order_note', 'Seller Note', note.trim(), { orderId: req.params.id });
+    createNotification(check.rows[0].buyer_id, 'note_from_seller', 'Note from seller', note.trim(), { orderId: req.params.id });
     res.json({ updated: true });
   } catch (err) {
     console.error('Order note error:', err);
@@ -5901,7 +5901,7 @@ app.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
                   console.log(`[PAY-STATUS] Order ${order.id} processed (webhook fallback)`);
                   const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
                   for (const sid of sellerIds) {
-                    createNotification(sid, 'order_status', 'Payment Received', 'Payment held in escrow until exchange confirmed', { orderId: order.id });
+                    createNotification(sid, 'escrow_held', 'Payment held in escrow', 'Released to you once the buyer confirms.', { orderId: order.id });
                   }
                   createNotification(order.buyer_id || req.user.id, 'payment_confirmed', 'Payment Confirmed', 'Your payment was successful.', { orderId: order.id });
                 }
@@ -6100,7 +6100,7 @@ app.post('/api/payments/webhook', async (req, res) => {
         client.release();
         const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
         for (const sid of sellerIds) {
-          createNotification(sid, 'order_status', 'Payment Received', `Payment for order is held in escrow until exchange is confirmed`, { orderId: reference });
+          createNotification(sid, 'escrow_held', 'Payment held in escrow', 'Released to you once the buyer confirms.', { orderId: reference });
         }
         // Notify buyer that payment was successful
         const buyerOrder = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [reference]);

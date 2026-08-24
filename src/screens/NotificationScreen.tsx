@@ -46,28 +46,47 @@ function getStatusLabel(status: string): string {
   }
 }
 
-function getNotifIcon(type: string): { icon: string; color: string } {
+function getNotifConfig(type: string): { icon: string; color: string; accent: string; bg: string } {
   switch (type) {
-    case 'new_message': return { icon: 'message-text-outline', color: COLORS.blue };
-    case 'order_status':
+    // ── Order & Payment ──
+    case 'new_order':
+    case 'order_placed': return { icon: 'package-variant', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    case 'escrow_held':
     case 'payment_confirmed':
+    case 'order_status': return { icon: 'bank-outline', color: COLORS.blue, accent: COLORS.blue, bg: COLORS.blue + '18' };
+    case 'payout_released':
+    case 'escrow_released': return { icon: 'check-circle-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
     case 'payment_failed':
-    case 'order_cancelled': return { icon: 'package-variant', color: '#1D9E75' };
+    case 'order_cancelled': return { icon: 'close-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    case 'order_note':
+    case 'note_from_seller': return { icon: 'note-text-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
+    case 'dispute_opened': return { icon: 'alert-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    // ── Meetup ──
     case 'meetup_proposed':
-    case 'meetup_confirmed':
-    case 'meetup_expired': return { icon: 'map-marker-outline', color: COLORS.blue };
-    case 'review_received': return { icon: 'star-outline', color: '#F5A623' };
-    case 'new_follower': return { icon: 'account-plus-outline', color: COLORS.coral };
-    case 'new_product_from_followed': return { icon: 'tag-outline', color: '#1D9E75' };
-    case 'escrow_refunded':
-    case 'payout_failed': return { icon: 'currency-usd', color: COLORS.coral };
-    case 'subscription_expired':
-    case 'subscription_activated': return { icon: 'crown-outline', color: '#F5A623' };
-    case 'verification_approved':
-    case 'verification_rejected': return { icon: 'shield-check-outline', color: '#1D9E75' };
+    case 'meetup_confirmed': return { icon: 'map-marker-outline', color: COLORS.blue, accent: COLORS.blue, bg: COLORS.blue + '18' };
+    case 'meetup_expired': return { icon: 'clock-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
+    // ── Chat & Offers ──
+    case 'new_message':
+    case 'new_offer':
+    case 'counter_offer': return { icon: 'message-text-outline', color: COLORS.blue, accent: COLORS.blue, bg: COLORS.blue + '18' };
+    case 'offer_accepted': return { icon: 'check-circle-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    // ── Reviews ──
+    case 'review_received': return { icon: 'star-outline', color: COLORS.yellow, accent: COLORS.yellow, bg: COLORS.yellow + '18' };
+    // ── Social & Product ──
+    case 'new_follower': return { icon: 'account-plus-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    case 'new_product_from_followed': return { icon: 'tag-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
     case 'low_stock':
-    case 'product_sold_out': return { icon: 'alert-circle-outline', color: COLORS.coral };
-    default: return { icon: 'bell-outline', color: COLORS.text2 };
+    case 'product_sold_out': return { icon: 'alert-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    // ── Escrow / Payout ──
+    case 'escrow_refunded':
+    case 'payout_failed': return { icon: 'currency-usd', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    // ── Account ──
+    case 'subscription_expired': return { icon: 'crown-outline', color: COLORS.yellow, accent: COLORS.yellow, bg: COLORS.yellow + '18' };
+    case 'subscription_activated': return { icon: 'crown-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    case 'verification_approved':
+    case 'verified': return { icon: 'shield-check-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    case 'verification_rejected': return { icon: 'shield-remove-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    default: return { icon: 'bell-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
   }
 }
 
@@ -249,24 +268,109 @@ export default function NotificationScreen() {
       );
     }
     const notif = item.notif;
-    const { icon, color } = getNotifIcon(notif.type);
+    const config = getNotifConfig(notif.type);
+    const data = (notif.data || {}) as Record<string, any>;
+
+    // Extract price from body or data
+    const priceMatch = notif.body?.match(/G\s?([\d,]+)/);
+    const price = priceMatch ? priceMatch[1] : null;
+    const productName = data.productName || notif.body?.match(/"(.+?)"/)?.[1] || null;
+
+    // Action buttons based on type
+    const getActions = () => {
+      switch (notif.type) {
+        case 'new_order':
+          return [
+            { label: 'Ship now', color: COLORS.green, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
+        case 'payment_failed':
+          return [
+            { label: 'Retry payment', color: COLORS.coral, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
+        case 'dispute_opened':
+          return [
+            { label: 'Respond', color: COLORS.coral, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) },
+            { label: 'View order', color: COLORS.text2, primary: false, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
+        case 'meetup_proposed':
+          return [
+            { label: 'Confirm', color: COLORS.blue, primary: true, onPress: () => data.orderId && nav.navigate('Meetup', { orderId: data.orderId }) },
+            { label: 'Propose new spot', color: COLORS.text2, primary: false, onPress: () => data.orderId && nav.navigate('Meetup', { orderId: data.orderId }) }];
+        case 'new_offer':
+        case 'counter_offer':
+          return [
+            { label: 'Accept', color: COLORS.green, primary: true, onPress: () => data.conversationId && nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: data.senderName || 'Chat', otherUserId: data.senderId }) },
+            { label: 'Counter', color: COLORS.text2, primary: false, onPress: () => data.conversationId && nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: data.senderName || 'Chat', otherUserId: data.senderId }) }];
+        case 'offer_accepted':
+          return [
+            { label: 'Checkout', color: COLORS.green, primary: true, onPress: () => nav.navigate('Cart') }];
+        case 'subscription_expired':
+          return [
+            { label: 'Renew now', color: COLORS.yellow, primary: true, onPress: () => nav.navigate('BusinessSubscription') }];
+        case 'verification_rejected':
+          return [
+            { label: 'Resubmit ID', color: COLORS.text2, primary: false, onPress: () => nav.navigate('Verification') }];
+        case 'low_stock':
+        case 'product_sold_out':
+          return [
+            { label: 'Edit listing', color: COLORS.coral, primary: true, onPress: () => data.productId && nav.navigate('EditListing', { productId: data.productId }) }];
+        default:
+          return [];
+      }
+    };
+
+    const actions = getActions();
+    const isUnread = !notif.is_read;
+
     return (
       <TouchableOpacity
-        style={[styles.row, !notif.is_read && styles.rowUnread]}
+        style={[styles.notifCard, isUnread && styles.notifCardUnread]}
         onPress={() => handlePress(notif)}
         activeOpacity={0.7}
         accessibilityLabel={notif.title}
         accessibilityRole="button"
       >
-        <View style={[styles.iconWrap, { backgroundColor: color + '18' }]}>
-          <MaterialCommunityIcons name={icon as any} size={20} color={color} />
+        {/* Unread accent bar */}
+        {isUnread && <View style={[styles.notifAccent, { backgroundColor: config.accent }]} />}
+
+        {/* Icon */}
+        <View style={[styles.notifIcon, { backgroundColor: config.bg }]}>
+          <MaterialCommunityIcons name={config.icon as any} size={18} color={config.color} />
         </View>
-        <View style={styles.rowBody}>
-          <Text style={[styles.rowTitle, !notif.is_read && styles.rowTitleUnread]} numberOfLines={1}>{notif.title}</Text>
-          {notif.body && <Text style={styles.rowBodyText} numberOfLines={2}>{notif.body}</Text>}
-          <Text style={styles.rowTime}>{timeAgo(notif.created_at)}</Text>
+
+        {/* Body */}
+        <View style={styles.notifBody}>
+          <View style={styles.notifRow1}>
+            <Text style={[styles.notifTitle, isUnread && styles.notifTitleUnread]} numberOfLines={1}>{notif.title}</Text>
+            <Text style={styles.notifTime}>{timeAgo(notif.created_at)}</Text>
+          </View>
+          {notif.body && <Text style={styles.notifDesc} numberOfLines={2}>{notif.body}</Text>}
+          {price && (
+            <View style={styles.notifPriceRow}>
+              <Text style={[styles.notifPrice, { color: config.color }]}>G {price}</Text>
+            </View>
+          )}
+          {notif.type === 'escrow_held' && (
+            <View style={styles.notifBarTrack}>
+              <View style={[styles.notifBarFill, { width: '33%', backgroundColor: config.color }]} />
+            </View>
+          )}
+          {actions.length > 0 && (
+            <View style={styles.notifBtnRow}>
+              {actions.map((a, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.notifBtn, a.primary ? { backgroundColor: a.color } : styles.notifBtnGhost]}
+                  onPress={a.onPress}
+                  accessibilityRole="button"
+                  accessibilityLabel={a.label}
+                >
+                  <Text style={[styles.notifBtnText, a.primary && { color: a.primary ? '#fff' : COLORS.text }]}>{a.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
-        {!notif.is_read ? <View style={[styles.rowDot, { backgroundColor: color }]} /> : null}
+
+        {/* Unread dot */}
+        {isUnread && <View style={[styles.notifDot, { backgroundColor: config.accent }]} />}
       </TouchableOpacity>
     );
   };
@@ -606,18 +710,36 @@ const styles = StyleSheet.create({
   bottomNavLabel: { fontSize: 10, color: COLORS.text2, marginTop: 2, fontWeight: '500' },
   bottomNavLabelActive: { color: COLORS.coral, fontWeight: '700' },
 
-  /* Notifications */
+  /* Notifications — redesigned cards */
   sectionHeader: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.xs },
   sectionHeaderText: { fontSize: 13, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', letterSpacing: 0.5 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  rowUnread: { backgroundColor: COLORS.surface },
-  iconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  rowBody: { flex: 1 },
-  rowTitle: { fontSize: 14, fontWeight: '500', color: COLORS.text },
-  rowTitleUnread: { fontWeight: '700' },
-  rowBodyText: { fontSize: 13, color: COLORS.text2, marginTop: 2 },
-  rowTime: { fontSize: 11, color: COLORS.text2, marginTop: 4 },
-  rowDot: { width: 8, height: 8, borderRadius: 4 },
+  notifCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 11,
+    paddingVertical: 13, paddingLeft: 14, paddingRight: SPACING.md,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    position: 'relative', overflow: 'hidden',
+  },
+  notifCardUnread: { backgroundColor: COLORS.surface },
+  notifAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
+  notifIcon: {
+    width: 38, height: 38, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center', flex: 'none' as any,
+  },
+  notifBody: { flex: 1, minWidth: 0 },
+  notifRow1: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  notifTitle: { fontSize: 13.5, fontWeight: '500', color: COLORS.text, flex: 1 },
+  notifTitleUnread: { fontWeight: '700' },
+  notifTime: { fontSize: 10.5, color: COLORS.text2, flex: 'none' as any, fontWeight: '500' },
+  notifDesc: { fontSize: 12.5, color: COLORS.text2, lineHeight: 18, margin: 0 },
+  notifPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 },
+  notifPrice: { fontFamily: 'Syne', fontWeight: '800', fontSize: 14 },
+  notifBarTrack: { height: 5, borderRadius: 3, backgroundColor: COLORS.surface2, overflow: 'hidden', marginTop: 6 },
+  notifBarFill: { height: '100%' as any, borderRadius: 3 },
+  notifBtnRow: { flexDirection: 'row', gap: 8, marginTop: 9 },
+  notifBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 9 },
+  notifBtnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.border },
+  notifBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.text2 },
+  notifDot: { width: 6, height: 6, borderRadius: 3, flex: 'none' as any, marginTop: 5 },
 
   /* Orders */
   orderCard: {
