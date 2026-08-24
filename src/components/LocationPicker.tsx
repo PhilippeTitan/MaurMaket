@@ -351,11 +351,6 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
       {/* Full-screen map modal */}
       <Modal visible={expanded} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setExpanded(false)}>
         <View style={styles.expandedContainer}>
-          {/* Search bar in expanded view */}
-          <View style={[styles.expandedSearchWrap, { paddingTop: insets.top + 8 }]}>
-            {renderSearchBar(true)}
-          </View>
-
           <WebView
             ref={expandedWebViewRef}
             source={{ html: buildPickerHtml(initialLat ?? undefined, initialLng ?? undefined) }}
@@ -374,6 +369,10 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
 
           {/* Bottom bar */}
           <View style={[styles.expandedBottomBar, { paddingBottom: insets.bottom + 12 }]}>
+            {/* Search bar above confirm */}
+            <View style={styles.expandedSearchWrap}>
+              {renderSearchBar(true)}
+            </View>
             {expandedAddress && (
               <View style={styles.expandedAddressRow}>
                 <MaterialCommunityIcons name="map-marker" size={16} color={COLORS.coral} />
@@ -498,9 +497,7 @@ const styles = StyleSheet.create({
   /* Expanded modal */
   expandedContainer: { flex: 1, backgroundColor: COLORS.bg },
   expandedSearchWrap: {
-    position: 'absolute', top: 0, left: 0, right: 0,
-    zIndex: 20, paddingHorizontal: 14, paddingBottom: 8,
-    backgroundColor: 'rgba(13,17,23,0.9)',
+    marginBottom: 10,
   },
   expandedWebview: { flex: 1 },
   expandedTopBar: {
