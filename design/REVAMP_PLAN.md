@@ -46,8 +46,8 @@ Onboarding should establish defaults such as payment and fulfillment preferences
 
 1. ✅ Formalize design tokens — DONE (src/theme.ts expanded with 26 colors, typography scale, spacing, radii, shadows, icons, touch targets, motion, layout tokens)
 2. ✅ Build the shared application shell — DONE (ScreenContainer, ScreenHeader v2, BackButton v2 using design tokens)
-3. Build reusable screen primitives and components.
-4. Standardize navigation transitions and common states.
+3. ✅ Build reusable screen primitives — DONE (EmptyState, Skeleton, Toast, LoadingState updated with design tokens)
+4. ✅ Standardize navigation transitions — DONE (App.tsx uses DURATION, LAYOUT, RADIUS, SHADOW, ICON_SIZES tokens)
 5. Establish screen archetypes.
 6. Resolve Map interaction architecture.
 7. Migrate screens group-by-group instead of redesigning routes independently.
