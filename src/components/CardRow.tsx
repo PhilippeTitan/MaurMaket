@@ -12,7 +12,7 @@ interface Props {
   /** Main label text */
   label: string;
   /** Secondary value text displayed on the right */
-  value?: string;
+  value?: string | null;
   /** Value text color override */
   valueColor?: string;
   /** Optional right chevron */

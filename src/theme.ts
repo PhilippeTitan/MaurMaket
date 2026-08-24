@@ -48,6 +48,9 @@ export const COLORS: Record<string, string> = {
   yellow: '#FFE066',       // Warning, ratings
   yellowMuted: 'rgba(255, 224, 102, 0.15)',
 
+  purple: '#8B5CF6',       // NatCash accent
+  purpleMuted: 'rgba(139, 92, 246, 0.15)',
+
   // Neutrals
   white: '#FFFFFF',
   black: '#000000',
