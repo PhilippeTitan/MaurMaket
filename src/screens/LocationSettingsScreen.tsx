@@ -30,6 +30,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
     if (Platform.OS === 'web') return;
     setLocDetecting(true);
     try {
+      // Request permissions first
       const Location = await import('expo-location');
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -37,11 +38,11 @@ export default function LocationSettingsScreen({ navigation }: Props) {
         setLocDetecting(false);
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-        mayShowUserSettingsDialog: true,
-      });
-      const { latitude: lat, longitude: lng } = pos.coords;
+      // Use native fast location on Android, expo-location on iOS
+      const { getFastLocation } = await import('../fast-location');
+      const pos = await getFastLocation();
+      const lat = pos.lat;
+      const lng = pos.lng;
       let address = '';
       let city = '';
       try {

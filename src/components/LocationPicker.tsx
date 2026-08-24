@@ -1,8 +1,9 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface LocationPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
@@ -88,7 +89,13 @@ window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 export default function LocationPicker({ onLocationSelect, initialLat, initialLng, height = 260 }: LocationPickerProps) {
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [expandedLoading, setExpandedLoading] = useState(false);
+  const [expandedAddress, setExpandedAddress] = useState<string | null>(null);
+  const [pendingCoords, setPendingCoords] = useState<{lat: number; lng: number} | null>(null);
   const webViewRef = useRef<WebView>(null);
+  const expandedWebViewRef = useRef<WebView>(null);
+  const insets = useSafeAreaInsets();
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     try {
@@ -116,6 +123,34 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     } catch {}
   }, [reverseGeocode]);
 
+  const handleExpandedMessage = useCallback((event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'location') {
+        setExpandedLoading(true);
+        setPendingCoords({ lat: data.lat, lng: data.lng });
+        // Reverse geocode in background
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${data.lat}&lon=${data.lng}&zoom=18&addressdetails=1`, {
+          headers: { 'Accept-Language': 'en' },
+        })
+          .then(r => r.json())
+          .then(d => setExpandedAddress(d.display_name || `${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}`))
+          .catch(() => setExpandedAddress(`${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}`))
+          .finally(() => setExpandedLoading(false));
+      }
+    } catch {}
+  }, []);
+
+  const confirmExpanded = useCallback(() => {
+    if (pendingCoords && expandedAddress) {
+      setSelectedAddress(expandedAddress);
+      onLocationSelect(pendingCoords.lat, pendingCoords.lng, expandedAddress);
+    }
+    setExpanded(false);
+    setPendingCoords(null);
+    setExpandedAddress(null);
+  }, [pendingCoords, expandedAddress, onLocationSelect]);
+
   if (Platform.OS === 'web') {
     return (
       <View style={[styles.container, { height }]}>
@@ -128,28 +163,82 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   }
 
   return (
-    <View style={[styles.container, { height }]}>
-      <WebView
-        ref={webViewRef}
-        source={{ html: buildPickerHtml(initialLat ?? undefined, initialLng ?? undefined) }}
-        style={styles.webview}
-        onMessage={handleMessage}
-        scrollEnabled={false}
-        bounces={false}
-      />
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color={COLORS.coral} />
-          <Text style={styles.loadingText}>Getting address...</Text>
+    <>
+      <TouchableOpacity
+        style={[styles.container, { height }]}
+        onPress={() => setExpanded(true)}
+        activeOpacity={0.9}
+        accessibilityLabel="expand map"
+        accessibilityRole="button"
+      >
+        <WebView
+          ref={webViewRef}
+          source={{ html: buildPickerHtml(initialLat ?? undefined, initialLng ?? undefined) }}
+          style={styles.webview}
+          onMessage={handleMessage}
+          scrollEnabled={false}
+          bounces={false}
+          pointerEvents="none"
+        />
+        {/* Expand hint overlay */}
+        <View style={styles.expandHint}>
+          <MaterialCommunityIcons name="fullscreen" size={16} color={COLORS.white} />
+          <Text style={styles.expandHintText}>Tap to expand map</Text>
         </View>
-      )}
-      {selectedAddress && !loading && (
-        <View style={styles.addressBar}>
-          <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
-          <Text style={styles.addressText} numberOfLines={2}>{selectedAddress}</Text>
+        {selectedAddress && (
+          <View style={styles.addressBar}>
+            <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
+            <Text style={styles.addressText} numberOfLines={2}>{selectedAddress}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Full-screen map modal */}
+      <Modal visible={expanded} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setExpanded(false)}>
+        <View style={styles.expandedContainer}>
+          <WebView
+            ref={expandedWebViewRef}
+            source={{ html: buildPickerHtml(initialLat ?? undefined, initialLng ?? undefined) }}
+            style={styles.expandedWebview}
+            onMessage={handleExpandedMessage}
+            scrollEnabled={false}
+            bounces={false}
+          />
+
+          {/* Top bar */}
+          <View style={[styles.expandedTopBar, { paddingTop: insets.top + 8 }]}>  
+            <TouchableOpacity style={styles.expandedCloseBtn} onPress={() => setExpanded(false)} accessibilityLabel="close map" accessibilityRole="button">
+              <MaterialCommunityIcons name="close" size={22} color={COLORS.text} />
+            </TouchableOpacity>
+            <Text style={styles.expandedTitle}>Select meetup spot</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          {/* Bottom bar */}
+          <View style={[styles.expandedBottomBar, { paddingBottom: insets.bottom + 12 }]}>  
+            {expandedAddress && (
+              <View style={styles.expandedAddressRow}>
+                <MaterialCommunityIcons name="map-marker" size={16} color={COLORS.coral} />
+                <Text style={styles.expandedAddressText} numberOfLines={2}>{expandedAddress}</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={[styles.expandedConfirmBtn, (!pendingCoords || expandedLoading) && { opacity: 0.5 }]}
+              onPress={confirmExpanded}
+              disabled={!pendingCoords || expandedLoading}
+              accessibilityLabel="confirm location"
+              accessibilityRole="button"
+            >
+              {expandedLoading ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <Text style={styles.expandedConfirmText}>Confirm Location</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      )}
-    </View>
+      </Modal>
+    </>
   );
 }
 
@@ -212,4 +301,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     flex: 1,
   },
+  expandHint: {
+    position: 'absolute',
+    top: 8, right: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 12,
+  },
+  expandHintText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  /* Expanded modal */
+  expandedContainer: { flex: 1, backgroundColor: COLORS.bg },
+  expandedWebview: { flex: 1 },
+  expandedTopBar: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingBottom: 10,
+    backgroundColor: 'rgba(13,17,23,0.85)',
+  },
+  expandedCloseBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
+  },
+  expandedTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  expandedBottomBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingHorizontal: 16, paddingTop: 12,
+    backgroundColor: 'rgba(13,17,23,0.9)',
+  },
+  expandedAddressRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 12,
+  },
+  expandedAddressText: { flex: 1, color: COLORS.text2, fontSize: 13 },
+  expandedConfirmBtn: {
+    backgroundColor: COLORS.coral, borderRadius: RADIUS.button,
+    padding: 14, alignItems: 'center',
+  },
+  expandedConfirmText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
 });
