@@ -14,7 +14,7 @@ import { getOrder } from '../api';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import { dialUssd } from '../ussd';
-import { onNatCashSms, onSmsReceived } from '../sms-listener';
+import { onNatCashSms, onSmsReceived, scanRecentSms } from '../sms-listener';
 import type { NatCashSms } from '../sms-listener';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -75,16 +75,17 @@ export default function NatCashPaymentScreen() {
 
   const { orderId, total, sellerName, sellerPhone } = route.params;
 
-  const [step, setStep] = useState<'dial' | 'sent' | 'detecting' | 'confirmed' | 'failed'>('dial');
+  const [step, setStep] = useState<'dial' | 'detecting' | 'confirmed' | 'failed'>('dial');
   const [parsed, setParsed] = useState<ParsedSms | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [ussdLoading, setUssdLoading] = useState(false);
   const [smsDetected, setSmsDetected] = useState(false);
-  const [ussdDialed, setUssdDialed] = useState(false);
+  const [smsPermsGranted, setSmsPermsGranted] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef(AppState.currentState);
   const confirmedRef = useRef(false);
+  const fallbackScanDone = useRef(false);
 
   // ── Confirm payment (shared logic — prevents double-fire) ──
   const confirmPayment = useCallback(async (source: string, smsData?: NatCashSms) => {
@@ -144,6 +145,19 @@ export default function NatCashPaymentScreen() {
         console.log('[NatCash] Raw SMS from:', sms.sender);
       });
 
+      // ── Fallback: scan inbox after 15s if BroadcastReceiver missed the SMS ──
+      fallbackScanDone.current = false;
+      const fallbackScan = setTimeout(async () => {
+        if (confirmedRef.current || fallbackScanDone.current) return;
+        fallbackScanDone.current = true;
+        console.log('[NatCash] Fallback: scanning recent SMS inbox...');
+        const found = await scanRecentSms(3);
+        if (found && !confirmedRef.current) {
+          console.log('[NatCash] Fallback scan found NatCash SMS:', found.transcode);
+          confirmPayment('fallback-scan', found);
+        }
+      }, 15_000);
+
       // Timeout after 10 minutes
       const timeout = setTimeout(() => {
         if (!confirmedRef.current) {
@@ -156,6 +170,7 @@ export default function NatCashPaymentScreen() {
       return () => {
         unsubNatCash();
         unsubRaw();
+        clearTimeout(fallbackScan);
         if (pollRef.current) clearInterval(pollRef.current);
         if (timerRef.current) clearInterval(timerRef.current);
         clearTimeout(timeout);
@@ -163,13 +178,39 @@ export default function NatCashPaymentScreen() {
     }
   }, [step, pollOrderStatus, confirmPayment]);
 
-  // ── Detect when user returns from USSD dialog ──
+  // ── Request SMS permissions upfront when screen loads ──
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      (async () => {
+        try {
+          const smsPerms = await PermissionsAndroid.requestMultiple([
+            PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+            PermissionsAndroid.PERMISSIONS.READ_SMS,
+          ]);
+          const granted = [
+            smsPerms['android.permission.RECEIVE_SMS'],
+            smsPerms['android.permission.READ_SMS'],
+          ].every(p => p === PermissionsAndroid.RESULTS.GRANTED);
+          setSmsPermsGranted(granted);
+          if (!granted) {
+            console.log('[NatCash] SMS permissions not granted — will use server polling only');
+          }
+        } catch {
+          // User denied — continue with server polling only
+        }
+      })();
+    } else {
+      setSmsPermsGranted(true); // iOS doesn't need explicit SMS perms
+    }
+  }, []);
+
+  // ── Detect when user returns from USSD dialog → auto-advance to detecting ──
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
       if (appStateRef.current.match(/background|inactive/) && nextState === 'active') {
         if (step === 'dial') {
-          // Auto-advance: user just returned from the USSD dialog
-          setStep('sent');
+          // User just returned from the USSD dialog — start detecting immediately
+          setStep('detecting');
         }
       }
       appStateRef.current = nextState;
@@ -181,6 +222,7 @@ export default function NatCashPaymentScreen() {
   useEffect(() => {
     if (step === 'dial') {
       confirmedRef.current = false;
+      fallbackScanDone.current = false;
       setSmsDetected(false);
       setParsed(null);
       setElapsed(0);
@@ -216,7 +258,7 @@ export default function NatCashPaymentScreen() {
 
       const result = await dialUssd('*202#');
       if (result.success) {
-        setUssdDialed(true);
+        // USSD opened — user will auto-advance to detecting when they return
       } else {
         Alert.alert('Error', result.errorMessage || 'Could not dial USSD code');
       }
@@ -227,44 +269,8 @@ export default function NatCashPaymentScreen() {
     }
   };
 
-  const handleSent = async () => {
-    // Warn if USSD wasn't dialed
-    if (!ussdDialed) {
-      const confirmed = await new Promise<boolean>(resolve => {
-        Alert.alert(
-          'Did you send the payment?',
-          'Make sure you completed the NatCash transfer before confirming. If you haven\'t sent the payment yet, go back and dial *202# first.',
-          [
-            { text: 'Go back', style: 'cancel', onPress: () => resolve(false) },
-            { text: 'Yes, I sent it', onPress: () => resolve(true) },
-          ]
-        );
-      });
-      if (!confirmed) return;
-    }
-    // Request SMS permissions on Android (needed for BroadcastReceiver to read message body)
-    if (Platform.OS === 'android') {
-      try {
-        const smsPerms = await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
-          PermissionsAndroid.PERMISSIONS.READ_SMS,
-        ]);
-        const granted = [
-          smsPerms['android.permission.RECEIVE_SMS'],
-          smsPerms['android.permission.READ_SMS'],
-        ].every(p => p === PermissionsAndroid.RESULTS.GRANTED);
-        if (!granted) {
-          console.log('[NatCash] SMS permissions not granted — falling back to server polling only');
-        }
-      } catch {
-        // User denied — continue with server polling only
-      }
-    }
-    setStep('detecting');
-  };
-
   // ── Step progress bar ──
-  const stepIndex = step === 'dial' ? 0 : step === 'sent' || step === 'detecting' ? 1 : step === 'confirmed' ? 2 : 1;
+  const stepIndex = step === 'dial' ? 0 : step === 'detecting' ? 1 : step === 'confirmed' ? 2 : 1;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -282,7 +288,7 @@ export default function NatCashPaymentScreen() {
         </View>
         <View style={styles.progressLabels}>
           <Text style={[styles.progressLabel, stepIndex === 0 && styles.progressLabelActive]}>Dial</Text>
-          <Text style={[styles.progressLabel, stepIndex === 1 && styles.progressLabelActive]}>Send</Text>
+          <Text style={[styles.progressLabel, stepIndex === 1 && styles.progressLabelActive]}>Detect</Text>
           <Text style={[styles.progressLabel, stepIndex === 2 && styles.progressLabelActive]}>Confirm</Text>
         </View>
 
@@ -329,6 +335,13 @@ export default function NatCashPaymentScreen() {
               </View>
             </View>
 
+            {!smsPermsGranted && (
+              <View style={[styles.infoCard, { borderColor: COLORS.yellow + '33' }]}>
+                <MaterialCommunityIcons name="message-alert-outline" size={20} color={COLORS.yellow} />
+                <Text style={[styles.infoBody, { color: COLORS.yellow }]}>SMS permissions needed for auto-detection. You'll be prompted next.</Text>
+              </View>
+            )}
+
             <TouchableOpacity style={styles.dialBtn} onPress={handleDial} disabled={ussdLoading} accessibilityLabel="dial USSD code" accessibilityRole="button">
               {ussdLoading ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
@@ -339,33 +352,8 @@ export default function NatCashPaymentScreen() {
             </TouchableOpacity>
 
             <Text style={styles.hintText}>
-              The NatCash menu will open on top of this screen. Complete the transfer, then come back here.
+              The NatCash menu will open. Complete the transfer — we'll detect your payment automatically when you return.
             </Text>
-
-            <TouchableOpacity style={styles.secondaryBtn} onPress={handleSent} accessibilityLabel="I sent the payment" accessibilityRole="button">
-              <Text style={styles.secondaryBtnText}>I've Sent the Payment</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {step === 'sent' && (
-          <View style={styles.stepContent}>
-            <View style={styles.infoCard}>
-              <MaterialCommunityIcons name="cellphone-check" size={28} color={COLORS.green} />
-              <Text style={[styles.infoTitle, { color: COLORS.green }]}>Payment Sent?</Text>
-              <Text style={styles.infoBody}>
-                Tap below once you've completed the NatCash transfer. We'll detect your confirmation instantly.
-              </Text>
-            </View>
-
-            <TouchableOpacity style={styles.dialBtn} onPress={handleSent} accessibilityLabel="confirm payment sent" accessibilityRole="button">
-              <MaterialCommunityIcons name="check-circle" size={22} color={COLORS.white} />
-              <Text style={styles.dialBtnText}>Yes, I've Sent It</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setStep('dial')} accessibilityLabel="go back" accessibilityRole="button">
-              <Text style={styles.secondaryBtnText}>← Back to Dial</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -384,7 +372,9 @@ export default function NatCashPaymentScreen() {
             <Text style={styles.detectingBody}>
               {smsDetected
                 ? 'Your NatCash confirmation was received instantly. Confirming payment…'
-                : 'We\'re listening for your NatCash confirmation SMS. This is detected instantly — no internet needed.'}
+                : smsPermsGranted
+                  ? 'Listening for your NatCash confirmation SMS (auto-detected instantly). Fallback: scanning inbox in 15s.'
+                  : 'Waiting for payment confirmation via server polling. Grant SMS permissions for instant detection.'}
             </Text>
             {parsed && (
               <View style={styles.smsCard}>
