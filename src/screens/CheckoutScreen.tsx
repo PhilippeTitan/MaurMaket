@@ -49,6 +49,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [meetupLat, setMeetupLat] = useState<number | null>(null);
   const [meetupLng, setMeetupLng] = useState<number | null>(null);
   const [meetupAddress, setMeetupAddress] = useState<string | null>(null);
+  const [meetupName, setMeetupName] = useState('');
 
   // ---- "Laser Conic Sweep" (bar-for-bar port of the HTML mockup) ----
   // CSS: .laser-bg { conic-gradient(from var(--angle-a), transparent 60%,
@@ -204,6 +205,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         orderData.meetupLat = meetupLat;
         orderData.meetupLng = meetupLng;
         orderData.meetupAddress = meetupAddress;
+        orderData.meetupName = meetupName;
         orderData.deliveryNote = note;
       }
 
@@ -258,7 +260,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         title={t('checkout.title')}
         onBack={() => navigation.goBack()}
       />
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 16, 40) }]}>
+      <ScrollView contentContainerStyle={styles.content}>
 
       <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
       <View style={[styles.sellerSummary, sellerCount > 1 && styles.sellerSummaryMixed]}>
@@ -404,203 +406,122 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               <Text style={styles.meetupAddressText} numberOfLines={2}>{meetupAddress}</Text>
             </View>
           )}
+          <TextInput style={styles.input} placeholder="Your name for pickup" placeholderTextColor={COLORS.text2} value={meetupName} onChangeText={setMeetupName} accessibilityLabel="meetup name" />
           <TextInput style={styles.input} placeholder={t('checkout.meetupNote')} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline accessibilityLabel="meetup note" />
         </View>
       )}
 
       <Text style={styles.sectionLabel}>{t('checkout.payment')}</Text>
 
-      {discount > 0 && (
-        <View style={styles.totalRow}>
-          <Text style={[styles.totalLabel, { color: COLORS.text2 }]}>{t('cart.subtotal')}</Text>
-          <Text style={[styles.totalValue, { color: COLORS.text2, textDecorationLine: 'line-through' }]}>{formatPrice(subtotal)} G</Text>
-        </View>
-      )}
-      {discount > 0 && (
-        <View style={styles.totalRow}>
-          <Text style={[styles.totalLabel, { color: COLORS.green }]}>Discount</Text>
-          <Text style={[styles.totalValue, { color: COLORS.green }]}>-{formatPrice(discount)} G</Text>
-        </View>
-      )}
-      <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>{t('common.total')}</Text>
-        <Text style={styles.totalValue}>{formatPrice(finalTotal)} G</Text>
-      </View>
-
-      <View style={styles.payBtnRow}>
-        <TouchableOpacity
-          style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
-          onPress={() => setPaymentMethod('moncash')}
-          disabled={loading}
-          accessibilityLabel="pay with MonCash"
-          accessibilityRole="button"
-        >
-          <View style={[styles.payOuter, paymentMethod === 'moncash' && styles.moncashGlow]}>
-            {paymentMethod === 'moncash' ? (
-              <>
-                {/* .laser-bg: conic-gradient ring, faked with a rotating
-                    square gradient behind a mask + the logo on top covering
-                    everything but the 3px border ring */}
-                <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
-                  <LinearGradient
-                    colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']}
-                    locations={[0, 0.6, 0.75, 0.87, 1]}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                </Animated.View>
-                {/* .pay-logo (z-index:2) — renders BETWEEN the laser-bg
-                    (z-index:1) and the glass layers (z-index:3/4). JSX
-                    order is what actually controls RN stacking here (mixed
-                    zIndex values across siblings was the earlier bug), so
-                    the logo must render right after laser-bg and before
-                    glass-overlay/glass-shimmer — not last. */}
-                <View style={styles.payLogoWrap}>
-                  <Image
-                    source={moncashLogo}
-                    style={styles.payLogo}
-                    resizeMode="cover"
-                  />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.25)']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={styles.payLogoBottomShadow}
-                    pointerEvents="none"
-                  />
-                </View>
-                {/* .glass-overlay: 135deg white gradient + inset highlight/shadow */}
-                <View style={styles.glassOverlay} pointerEvents="none">
-                  <LinearGradient
-                    colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']}
-                    locations={[0, 0.35, 0.6]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.glassOverlayGradient}
-                  />
-                </View>
-                {/* .glass-shimmer / ::before */}
-                <View style={styles.glassShimmerClip} pointerEvents="none">
-                  <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
-                    <LinearGradient
-                      // linear-gradient(75deg, ...): 0deg points up, angle
-                      // increases clockwise. Converted to a unit-box
-                      // start/end vector so the diagonal is baked into the
-                      // gradient itself, not into a rotated container —
-                      // rotating the whole (tall, thin) band was producing
-                      // a spinning bar instead of a soft diagonal flash.
-                      colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']}
-                      locations={[0, 0.35, 0.5, 0.65, 1]}
-                      start={{ x: 0.017, y: 0.629 }}
-                      end={{ x: 0.983, y: 0.371 }}
-                      style={styles.glassShimmerGradient}
-                    />
-                  </Animated.View>
-                </View>
-              </>
-            ) : (
-              <>
-                <View style={styles.inactiveBorder} />
-                <View style={styles.payLogoWrap}>
-                  <Image
-                    source={moncashLogo}
-                    style={styles.payLogo}
-                    resizeMode="cover"
-                  />
-                </View>
-              </>
-            )}
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
-          onPress={() => setPaymentMethod('natcash')}
-          disabled={loading}
-          accessibilityLabel="pay with NatCash"
-          accessibilityRole="button"
-        >
-          <View style={[styles.payOuter, paymentMethod === 'natcash' && styles.moncashGlow]}>
-            {paymentMethod === 'natcash' ? (
-              // Same "Laser Conic Sweep" as MonCash — the mockup applies one
-              // shared .laser-bg + .moncash-glow to both buttons, no separate
-              // NatCash animation exists in the design being ported.
-              <>
-                <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
-                  <LinearGradient
-                    colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']}
-                    locations={[0, 0.6, 0.75, 0.87, 1]}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                </Animated.View>
-                <View style={styles.payLogoWrap}>
-                  <Image
-                    source={natcashLogo}
-                    style={styles.payLogo}
-                    resizeMode="cover"
-                  />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.25)']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={styles.payLogoBottomShadow}
-                    pointerEvents="none"
-                  />
-                </View>
-                <View style={styles.glassOverlay} pointerEvents="none">
-                  <LinearGradient
-                    colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']}
-                    locations={[0, 0.35, 0.6]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.glassOverlayGradient}
-                  />
-                </View>
-                <View style={styles.glassShimmerClip} pointerEvents="none">
-                  <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
-                    <LinearGradient
-                      colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']}
-                      locations={[0, 0.35, 0.5, 0.65, 1]}
-                      start={{ x: 0.017, y: 0.629 }}
-                      end={{ x: 0.983, y: 0.371 }}
-                      style={styles.glassShimmerGradient}
-                    />
-                  </Animated.View>
-                </View>
-              </>
-            ) : (
-              <>
-                <View style={styles.inactiveBorder} />
-                <View style={styles.payLogoWrap}>
-                  <Image
-                    source={natcashLogo}
-                    style={styles.payLogo}
-                    resizeMode="cover"
-                  />
-                </View>
-              </>
-            )}
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity
-        style={[styles.ctaBtn, loading && styles.ctaBtnDisabled]}
-        onPress={handleCheckout}
-        disabled={loading}
-        accessibilityLabel="place order"
-        accessibilityRole="button"
-      >
-        {loading ? (
-          <ActivityIndicator color={COLORS.white} />
-        ) : (
-          <Text style={styles.ctaText}>Pay {paymentMethod === 'moncash' ? 'MonCash' : 'NatCash'}</Text>
-        )}
-      </TouchableOpacity>
       </ScrollView>
+
+      {/* ── Sticky bottom bar ── */}
+      <View style={[styles.stickyBottom, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        {/* Total */}
+        <View style={styles.stickyTotalRow}>
+          {discount > 0 && (
+            <View style={styles.stickyTotalLine}>
+              <Text style={[styles.stickyTotalLabel, { color: COLORS.text2, textDecorationLine: 'line-through' }]}>{formatPrice(subtotal)} G</Text>
+              <Text style={[styles.stickyTotalDiscount, { color: COLORS.green }]}>-{formatPrice(discount)} G</Text>
+            </View>
+          )}
+          <View style={styles.stickyTotalLine}>
+            <Text style={styles.stickyTotalLabel}>{t('common.total')}</Text>
+            <Text style={styles.stickyTotalValue}>{formatPrice(finalTotal)} G</Text>
+          </View>
+        </View>
+
+        {/* Payment buttons */}
+        <View style={styles.payBtnRow}>
+          <TouchableOpacity
+            style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
+            onPress={() => setPaymentMethod('moncash')}
+            disabled={loading}
+            accessibilityLabel="pay with MonCash"
+            accessibilityRole="button"
+          >
+            <View style={[styles.payOuter, paymentMethod === 'moncash' && styles.moncashGlow]}>
+              {paymentMethod === 'moncash' ? (
+                <>
+                  <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
+                    <LinearGradient colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']} locations={[0, 0.6, 0.75, 0.87, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
+                  </Animated.View>
+                  <View style={styles.payLogoWrap}>
+                    <Image source={moncashLogo} style={styles.payLogo} resizeMode="cover" />
+                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.25)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.payLogoBottomShadow} pointerEvents="none" />
+                  </View>
+                  <View style={styles.glassOverlay} pointerEvents="none">
+                    <LinearGradient colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']} locations={[0, 0.35, 0.6]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.glassOverlayGradient} />
+                  </View>
+                  <View style={styles.glassShimmerClip} pointerEvents="none">
+                    <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
+                      <LinearGradient colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']} locations={[0, 0.35, 0.5, 0.65, 1]} start={{ x: 0.017, y: 0.629 }} end={{ x: 0.983, y: 0.371 }} style={styles.glassShimmerGradient} />
+                    </Animated.View>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.inactiveBorder} />
+                  <View style={styles.payLogoWrap}>
+                    <Image source={moncashLogo} style={styles.payLogo} resizeMode="cover" />
+                  </View>
+                </>
+              )}
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
+            onPress={() => setPaymentMethod('natcash')}
+            disabled={loading}
+            accessibilityLabel="pay with NatCash"
+            accessibilityRole="button"
+          >
+            <View style={[styles.payOuter, paymentMethod === 'natcash' && styles.moncashGlow]}>
+              {paymentMethod === 'natcash' ? (
+                <>
+                  <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
+                    <LinearGradient colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']} locations={[0, 0.6, 0.75, 0.87, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
+                  </Animated.View>
+                  <View style={styles.payLogoWrap}>
+                    <Image source={natcashLogo} style={styles.payLogo} resizeMode="cover" />
+                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.25)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.payLogoBottomShadow} pointerEvents="none" />
+                  </View>
+                  <View style={styles.glassOverlay} pointerEvents="none">
+                    <LinearGradient colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']} locations={[0, 0.35, 0.6]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.glassOverlayGradient} />
+                  </View>
+                  <View style={styles.glassShimmerClip} pointerEvents="none">
+                    <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
+                      <LinearGradient colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']} locations={[0, 0.35, 0.5, 0.65, 1]} start={{ x: 0.017, y: 0.629 }} end={{ x: 0.983, y: 0.371 }} style={styles.glassShimmerGradient} />
+                    </Animated.View>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.inactiveBorder} />
+                  <View style={styles.payLogoWrap}>
+                    <Image source={natcashLogo} style={styles.payLogo} resizeMode="cover" />
+                  </View>
+                </>
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.ctaBtn, loading && styles.ctaBtnDisabled]}
+          onPress={handleCheckout}
+          disabled={loading}
+          accessibilityLabel="place order"
+          accessibilityRole="button"
+        >
+          {loading ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.ctaText}>Pay {paymentMethod === 'moncash' ? 'MonCash' : 'NatCash'}</Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
     </KeyboardAvoidingView>
   );
@@ -807,7 +728,17 @@ const styles = StyleSheet.create({
   payLogoBottomShadow: {
     position: 'absolute', left: 0, right: 0, bottom: 0, height: 18,
   },
-  ctaBtn: { marginHorizontal: SPACING.md, marginTop: 12, backgroundColor: COLORS.coral, borderRadius: RADIUS.button, padding: 14, alignItems: 'center' },
+  ctaBtn: { marginHorizontal: SPACING.md, marginTop: 8, backgroundColor: COLORS.coral, borderRadius: RADIUS.button, padding: 14, alignItems: 'center' },
   ctaBtnDisabled: { opacity: 0.6 },
   ctaText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
+  stickyBottom: {
+    backgroundColor: COLORS.bg,
+    borderTopWidth: 1, borderTopColor: COLORS.border,
+    paddingTop: 8,
+  },
+  stickyTotalRow: { paddingHorizontal: SPACING.md },
+  stickyTotalLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
+  stickyTotalLabel: { fontSize: 13, color: COLORS.text2 },
+  stickyTotalDiscount: { fontSize: 12, fontWeight: '600' },
+  stickyTotalValue: { fontSize: 18, color: COLORS.coral, fontWeight: '800' },
 });

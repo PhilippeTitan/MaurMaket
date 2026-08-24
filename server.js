@@ -332,6 +332,7 @@ async function runMigrations() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_city TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_note TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) DEFAULT 'moncash';
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_name TEXT;
     `));
 
     // 5. Order events table
@@ -3585,7 +3586,7 @@ app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
   if (!evCheck.rows[0]?.email_verified) {
     return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to place orders.' });
   }
-  const { items, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, promoCode, meetupLat, meetupLng, meetupAddress } = req.body;
+  const { items, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, promoCode, meetupLat, meetupLng, meetupAddress, meetupName } = req.body;
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'Cart is empty' });
   }
@@ -3683,10 +3684,10 @@ app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
     const finalTotal = discountAmount > 0 ? Math.round((total - discountAmount) * 100) / 100 : total;
     const paymentMethod = req.body.paymentMethod || 'moncash';
     const orderResult = await client.query(
-      `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, payment_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_proposed_by)
-       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+      `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, payment_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, meetup_proposed_by)
+       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
       [req.user.id, finalTotal, method, paymentMethod, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null,
-       meetupLat ? parseFloat(meetupLat) : null, meetupLng ? parseFloat(meetupLng) : null, meetupAddress || null,
+       meetupLat ? parseFloat(meetupLat) : null, meetupLng ? parseFloat(meetupLng) : null, meetupAddress || null, meetupName || null,
        meetupLat && meetupLng ? req.user.id : null]
     );
     const order = orderResult.rows[0];
