@@ -52,10 +52,10 @@ export default function LocationSettingsScreen({ navigation }: Props) {
         const nominatim = await nominatimRes.json();
         const a = nominatim.address || {};
         const street = [a.road, a.house_number].filter(Boolean).join(' ') || '';
-        const area = a.neighbourhood || a.suburb || a.city_district || a.village || a.town || '';
+        const neighbourhood = a.neighbourhood || a.suburb || a.city_district || '';
         city = a.city || a.municipality || a.county || '';
-        address = street || area || nominatim.display_name?.split(',')[0] || '';
-        city = area || city || '';
+        // Address = street + neighbourhood. City = actual city name.
+        address = [street, neighbourhood].filter(Boolean).join(', ') || nominatim.display_name?.split(',')[0] || '';
       } catch {}
       setLocAddress(address);
       setLocCity(city);
