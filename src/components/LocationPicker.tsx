@@ -1,10 +1,10 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity, TextInput, FlatList } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { searchAreas, type HaitiArea } from '../data/haiti-areas';
+import { searchAreasHybrid, cancelSearch, type HaitiArea } from '../data/haiti-areas';
 
 interface LocationPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
@@ -130,9 +130,19 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const expandedSearchRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
 
-  const searchResults = useMemo(() => {
-    if (searchQuery.length < 1) return [];
-    return searchAreas(searchQuery).slice(0, 8);
+  const [searchResults, setSearchResults] = useState<HaitiArea[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  // Debounced hybrid search (embedded + Nominatim)
+  useEffect(() => {
+    if (searchQuery.length < 1) { setSearchResults([]); return; }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      const results = await searchAreasHybrid(searchQuery);
+      setSearchResults(results);
+      setSearching(false);
+    }, 200); // 200ms debounce for Nominatim
+    return () => clearTimeout(timer);
   }, [searchQuery]);
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
@@ -244,6 +254,12 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
             </TouchableOpacity>
           )}
         </View>
+        {searching && results.length === 0 && (
+          <View style={styles.searchLoading}>
+            <ActivityIndicator size="small" color={COLORS.coral} />
+            <Text style={styles.searchLoadingText}>Searching...</Text>
+          </View>
+        )}
         {results.length > 0 && (
           <FlatList
             data={results}
@@ -470,6 +486,14 @@ const styles = StyleSheet.create({
   searchResultName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   searchResultCity: { fontSize: 11, color: COLORS.text2, marginTop: 1 },
   searchResultParent: { fontSize: 12, color: COLORS.text2 },
+  searchLoading: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1, borderTopWidth: 0, borderColor: COLORS.border,
+    borderBottomLeftRadius: RADIUS.row, borderBottomRightRadius: RADIUS.row,
+  },
+  searchLoadingText: { fontSize: 12, color: COLORS.text2 },
 
   /* Expanded modal */
   expandedContainer: { flex: 1, backgroundColor: COLORS.bg },
