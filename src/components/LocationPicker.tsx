@@ -34,15 +34,12 @@ html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
 .leaflet-control-attribution{display:none!important}
 .pick-marker{width:32px;height:32px;border-radius:50%;background:#FF6B6B;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center}
 .pick-marker-inner{width:10px;height:10px;border-radius:50%;background:#fff}
-.crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:1000}
-.crosshair-inner{width:24px;height:24px;border:2px solid rgba(255,107,107,0.8);border-radius:50%}
-.crosshair-dot{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:6px;height:6px;border-radius:50%;background:#FF6B6B}
+
 .hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;z-index:1000;white-space:nowrap}
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="crosshair"><div class="crosshair-inner"><div class="crosshair-dot"></div></div></div>
 <div class="hint" id="hint">Tap anywhere to set meetup spot</div>
 <script>
 var mapReady=false;
@@ -93,11 +90,10 @@ map.whenReady(function(){
 map.on('click',function(e){
   var lat=e.latlng.lat,lng=e.latlng.lng;
   if(marker){marker.setLatLng([lat,lng]);}else{marker=L.marker([lat,lng],{draggable:true,icon:markerIcon}).addTo(map);}
-  if(circle){map.removeLayer(circle);circle=null;}
   document.getElementById('hint').textContent='Tap again to move';
   window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:lat,lng:lng}));
 });
-if(marker){marker.on('dragend',function(e){var pos=e.target.getLatLng();if(circle){map.removeLayer(circle);circle=null;}window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:pos.lat,lng:pos.lng}));});}
+if(marker){marker.on('dragend',function(e){var pos=e.target.getLatLng();window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:pos.lat,lng:pos.lng}));});}
 </script>
 </body>
 </html>`;
