@@ -10,6 +10,7 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup, getImageUrl } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leaflet-bundle';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -67,8 +68,8 @@ function buildMiniMapHtml(lat: number, lng: number): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>${LEAFLET_CSS}</style>
+<script>${LEAFLET_JS}</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}

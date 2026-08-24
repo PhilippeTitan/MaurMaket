@@ -6,6 +6,7 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchAreasHybrid, type HaitiArea } from '../data/haiti-areas';
 import { getFastLocation } from '../fast-location';
+import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leaflet-bundle';
 
 interface LocationPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
@@ -23,8 +24,8 @@ function buildPickerHtml(initialLat?: number, initialLng?: number): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>${LEAFLET_CSS}</style>
+<script>${LEAFLET_JS}</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
