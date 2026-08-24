@@ -69,7 +69,7 @@ var LIGHT_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{
 var DARK_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 var currentTile = null;
 var map = L.map("map",{zoomControl:false,attributionControl:false,maxBounds:[[16.5,-76],[21,-67]],maxBoundsViscosity:1.0,minZoom:8,maxZoom:20}).setView([18.5944,-72.3074],12);
-currentTile = L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true,keepBuffer:8,updateWhenZooming:false,updateWhenIdle:true}).addTo(map);
+currentTile = L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
 setTimeout(function(){map.invalidateSize()},200);
 setTimeout(function(){map.invalidateSize()},1000);
 window.addEventListener("load",function(){map.invalidateSize()});
@@ -368,6 +368,14 @@ export default function MapScreen() {
       injectMarkers(sellers);
     }
   }, [myLocation]);
+
+  // Re-inject when WebView finishes loading (fixes race condition where fetchSellers
+  // completes before WebView is ready)
+  useEffect(() => {
+    if (mapReady && sellers.length > 0) {
+      injectMarkers(sellers);
+    }
+  }, [mapReady]);
 
   // Progressive crawl: tick up ~1% every 80ms toward a "virtual ceiling"
   // that rises as real milestones hit. Feels smooth, never lies.
