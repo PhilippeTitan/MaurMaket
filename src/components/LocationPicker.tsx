@@ -1,9 +1,10 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity } from 'react-native';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity, TextInput, FlatList } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { searchAreas, type HaitiArea } from '../data/haiti-areas';
 
 interface LocationPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
@@ -53,12 +54,39 @@ setTimeout(function(){map.invalidateSize()},200);
 
 var markerIcon = L.divIcon({className:'',html:'<div class="pick-marker"><div class="pick-marker-inner"></div></div>',iconSize:[32,32],iconAnchor:[16,16]});
 
+var circle = null;
 ${markerJs}
 
 function setDarkMode(isDark){
   if(currentTile) map.removeLayer(currentTile);
   currentTile = L.tileLayer(isDark?DARK_URL:LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
 }
+
+// Listen for commands from React Native
+window.addEventListener('message', function(e) {
+  try {
+    var cmd = JSON.parse(e.data);
+    if (cmd.type === 'flyTo') {
+      map.flyTo([cmd.lat, cmd.lng], cmd.zoom || 14, {duration: 1.2});
+    } else if (cmd.type === 'drawCircle') {
+      if (circle) map.removeLayer(circle);
+      circle = L.circle([cmd.lat, cmd.lng], {
+        radius: cmd.radius || 400,
+        color: '#00C2FF',
+        fillColor: '#00C2FF',
+        fillOpacity: 0.12,
+        weight: 2,
+        dashArray: '6 4'
+      }).addTo(map);
+      map.flyTo([cmd.lat, cmd.lng], cmd.zoom || 14, {duration: 1.2});
+    } else if (cmd.type === 'clearCircle') {
+      if (circle) { map.removeLayer(circle); circle = null; }
+    } else if (cmd.type === 'setMarker') {
+      if (marker) { marker.setLatLng([cmd.lat, cmd.lng]); }
+      else { marker = L.marker([cmd.lat, cmd.lng],{draggable:true,icon:markerIcon}).addTo(map); }
+    }
+  } catch(err) {}
+});
 
 map.on('click',function(e){
   var lat = e.latlng.lat;
@@ -68,6 +96,8 @@ map.on('click',function(e){
   } else {
     marker = L.marker([lat,lng],{draggable:true,icon:markerIcon}).addTo(map);
   }
+  // Clear any search circle when user taps manually
+  if (circle) { map.removeLayer(circle); circle = null; }
   document.getElementById('hint').textContent = 'Tap again to move';
   window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:lat,lng:lng}));
 });
@@ -75,11 +105,11 @@ map.on('click',function(e){
 if(marker){
   marker.on('dragend',function(e){
     var pos = e.target.getLatLng();
+    if (circle) { map.removeLayer(circle); circle = null; }
     window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:pos.lat,lng:pos.lng}));
   });
 }
 
-// Signal ready
 window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 </script>
 </body>
@@ -93,9 +123,17 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const [expandedLoading, setExpandedLoading] = useState(false);
   const [expandedAddress, setExpandedAddress] = useState<string | null>(null);
   const [pendingCoords, setPendingCoords] = useState<{lat: number; lng: number} | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedArea, setSelectedArea] = useState<HaitiArea | null>(null);
   const webViewRef = useRef<WebView>(null);
   const expandedWebViewRef = useRef<WebView>(null);
+  const expandedSearchRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
+
+  const searchResults = useMemo(() => {
+    if (searchQuery.length < 1) return [];
+    return searchAreas(searchQuery).slice(0, 8);
+  }, [searchQuery]);
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     try {
@@ -129,7 +167,6 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
       if (data.type === 'location') {
         setExpandedLoading(true);
         setPendingCoords({ lat: data.lat, lng: data.lng });
-        // Reverse geocode in background
         fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${data.lat}&lon=${data.lng}&zoom=18&addressdetails=1`, {
           headers: { 'Accept-Language': 'en' },
         })
@@ -141,6 +178,26 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     } catch {}
   }, []);
 
+  /** Fly to an area, draw blue circle, set marker */
+  const selectArea = useCallback((area: HaitiArea, targetWebView?: WebView | null) => {
+    const wv = targetWebView || webViewRef.current;
+    if (!wv) return;
+
+    // Fly to center and draw circle
+    const cmd = JSON.stringify({ type: 'drawCircle', lat: area.lat, lng: area.lng, radius: area.radius, zoom: area.radius < 500 ? 15 : 13 });
+    wv.postMessage(cmd);
+
+    // Also place marker at center
+    setTimeout(() => {
+      wv.postMessage(JSON.stringify({ type: 'setMarker', lat: area.lat, lng: area.lng }));
+    }, 300);
+
+    setSelectedArea(area);
+    setPendingCoords({ lat: area.lat, lng: area.lng });
+    setExpandedAddress(area.name);
+    setSearchQuery(area.name);
+  }, []);
+
   const confirmExpanded = useCallback(() => {
     if (pendingCoords && expandedAddress) {
       setSelectedAddress(expandedAddress);
@@ -149,7 +206,79 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     setExpanded(false);
     setPendingCoords(null);
     setExpandedAddress(null);
+    setSearchQuery('');
+    setSelectedArea(null);
   }, [pendingCoords, expandedAddress, onLocationSelect]);
+
+  /** Search bar component — shared between small and expanded views */
+  const renderSearchBar = (isExpanded: boolean) => {
+    const wv = isExpanded ? expandedWebViewRef.current : webViewRef.current;
+    const results = isExpanded ? searchResults : searchResults;
+    return (
+      <View style={styles.searchWrap}>
+        <View style={styles.searchRow}>
+          <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search area... (e.g. Delmas 33)"
+            placeholderTextColor={COLORS.text2}
+            value={searchQuery}
+            onChangeText={(t) => {
+              setSearchQuery(t);
+              if (isExpanded) {
+                // Clear circle when typing new search
+                wv?.postMessage(JSON.stringify({ type: 'clearCircle' }));
+                setSelectedArea(null);
+              }
+            }}
+            ref={isExpanded ? expandedSearchRef : undefined}
+            accessibilityLabel="search meetup area"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => {
+              setSearchQuery('');
+              setSelectedArea(null);
+              wv?.postMessage(JSON.stringify({ type: 'clearCircle' }));
+            }} accessibilityLabel="clear search" accessibilityRole="button">
+              <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text2} />
+            </TouchableOpacity>
+          )}
+        </View>
+        {results.length > 0 && (
+          <FlatList
+            data={results}
+            keyExtractor={item => item.id}
+            style={styles.searchResults}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[styles.searchResultItem, selectedArea?.id === item.id && styles.searchResultActive]}
+                onPress={() => {
+                  selectArea(item, wv);
+                  if (!isExpanded) {
+                    // On small map, also set selected address
+                    setSelectedAddress(item.name);
+                    onLocationSelect(item.lat, item.lng, item.name);
+                  }
+                }}
+                accessibilityLabel={`select ${item.name}`}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons name="map-marker-outline" size={16} color={COLORS.coral} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.searchResultName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.searchResultCity} numberOfLines={1}>{item.city}</Text>
+                </View>
+                {item.parent && (
+                  <Text style={styles.searchResultParent}>↗</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          />
+        )}
+      </View>
+    );
+  };
 
   if (Platform.OS === 'web') {
     return (
@@ -164,38 +293,53 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
 
   return (
     <>
-      <TouchableOpacity
-        style={[styles.container, { height }]}
-        onPress={() => setExpanded(true)}
-        activeOpacity={0.9}
-        accessibilityLabel="expand map"
-        accessibilityRole="button"
-      >
-        <WebView
-          ref={webViewRef}
-          source={{ html: buildPickerHtml(initialLat ?? undefined, initialLng ?? undefined) }}
-          style={styles.webview}
-          onMessage={handleMessage}
-          scrollEnabled={false}
-          bounces={false}
-          pointerEvents="none"
-        />
-        {/* Expand hint overlay */}
-        <View style={styles.expandHint}>
-          <MaterialCommunityIcons name="fullscreen" size={16} color={COLORS.white} />
-          <Text style={styles.expandHintText}>Tap to expand map</Text>
+      <View style={[styles.container, { height }]}>
+        {/* Search bar on small map */}
+        {renderSearchBar(false)}
+
+        <View style={{ flex: 1 }}>
+          <WebView
+            ref={webViewRef}
+            source={{ html: buildPickerHtml(initialLat ?? undefined, initialLng ?? undefined) }}
+            style={styles.webview}
+            onMessage={handleMessage}
+            scrollEnabled={false}
+            bounces={false}
+          />
+          {/* Expand hint */}
+          <TouchableOpacity
+            style={styles.expandHint}
+            onPress={() => setExpanded(true)}
+            accessibilityLabel="expand map"
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons name="fullscreen" size={14} color={COLORS.white} />
+            <Text style={styles.expandHintText}>Full screen</Text>
+          </TouchableOpacity>
         </View>
-        {selectedAddress && (
+
+        {loading && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="small" color={COLORS.coral} />
+            <Text style={styles.loadingText}>Getting address...</Text>
+          </View>
+        )}
+        {selectedAddress && !loading && !searchQuery && (
           <View style={styles.addressBar}>
             <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
             <Text style={styles.addressText} numberOfLines={2}>{selectedAddress}</Text>
           </View>
         )}
-      </TouchableOpacity>
+      </View>
 
       {/* Full-screen map modal */}
       <Modal visible={expanded} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setExpanded(false)}>
         <View style={styles.expandedContainer}>
+          {/* Search bar in expanded view */}
+          <View style={[styles.expandedSearchWrap, { paddingTop: insets.top + 8 }]}>
+            {renderSearchBar(true)}
+          </View>
+
           <WebView
             ref={expandedWebViewRef}
             source={{ html: buildPickerHtml(initialLat ?? undefined, initialLng ?? undefined) }}
@@ -205,17 +349,15 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
             bounces={false}
           />
 
-          {/* Top bar */}
-          <View style={[styles.expandedTopBar, { paddingTop: insets.top + 8 }]}>  
+          {/* Top close button */}
+          <View style={[styles.expandedTopBar, { top: insets.top + 8 }]}>
             <TouchableOpacity style={styles.expandedCloseBtn} onPress={() => setExpanded(false)} accessibilityLabel="close map" accessibilityRole="button">
               <MaterialCommunityIcons name="close" size={22} color={COLORS.text} />
             </TouchableOpacity>
-            <Text style={styles.expandedTitle}>Select meetup spot</Text>
-            <View style={{ width: 40 }} />
           </View>
 
           {/* Bottom bar */}
-          <View style={[styles.expandedBottomBar, { paddingBottom: insets.bottom + 12 }]}>  
+          <View style={[styles.expandedBottomBar, { paddingBottom: insets.bottom + 12 }]}>
             {expandedAddress && (
               <View style={styles.expandedAddressRow}>
                 <MaterialCommunityIcons name="map-marker" size={16} color={COLORS.coral} />
@@ -279,10 +421,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     gap: 8,
   },
-  loadingText: {
-    color: '#fff',
-    fontSize: 12,
-  },
+  loadingText: { color: '#fff', fontSize: 12 },
   addressBar: {
     position: 'absolute',
     bottom: 8,
@@ -296,11 +435,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     gap: 6,
   },
-  addressText: {
-    color: '#fff',
-    fontSize: 12,
-    flex: 1,
-  },
+  addressText: { color: '#fff', fontSize: 12, flex: 1 },
   expandHint: {
     position: 'absolute',
     top: 8, right: 8,
@@ -309,20 +444,50 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   expandHintText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+
+  /* Search */
+  searchWrap: { zIndex: 10 },
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.row, paddingHorizontal: 12, paddingVertical: 8,
+    marginHorizontal: 0,
+  },
+  searchInput: { flex: 1, color: COLORS.text, fontSize: 14, padding: 0 },
+  searchResults: {
+    maxHeight: 240,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1, borderColor: COLORS.border,
+    borderBottomLeftRadius: RADIUS.row, borderBottomRightRadius: RADIUS.row,
+    marginTop: -1,
+  },
+  searchResultItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  searchResultActive: { backgroundColor: COLORS.coral + '12' },
+  searchResultName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  searchResultCity: { fontSize: 11, color: COLORS.text2, marginTop: 1 },
+  searchResultParent: { fontSize: 12, color: COLORS.text2 },
+
   /* Expanded modal */
   expandedContainer: { flex: 1, backgroundColor: COLORS.bg },
+  expandedSearchWrap: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    zIndex: 20, paddingHorizontal: 14, paddingBottom: 8,
+    backgroundColor: 'rgba(13,17,23,0.9)',
+  },
   expandedWebview: { flex: 1 },
   expandedTopBar: {
-    position: 'absolute', top: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 14, paddingBottom: 10,
-    backgroundColor: 'rgba(13,17,23,0.85)',
+    position: 'absolute', right: 14,
+    flexDirection: 'row', alignItems: 'center',
   },
   expandedCloseBtn: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
+    elevation: 4,
   },
-  expandedTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text },
   expandedBottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingTop: 12,
