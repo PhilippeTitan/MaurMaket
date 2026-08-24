@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
-import natcashLogo from '../../assets/MonNatCash/Natcash.png';
+import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
 import { updateProfile, changePassword, updateSellerProfile } from '../api';

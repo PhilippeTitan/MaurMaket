@@ -8,7 +8,7 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
-import natcashLogo from '../../assets/MonNatCash/Natcash.png';
+import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 import ScreenHeader from '../components/ScreenHeader';
 import { i18n, useTranslation, type Language } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -150,6 +150,10 @@ export default function SettingsScreen({ navigation }: Props) {
           <Text style={[styles.rowLabel, { color: COLORS.coral, fontWeight: '600' }]}>Log out</Text>
         </TouchableOpacity>
       </View>
+
+      <Text style={{ textAlign: 'center', fontSize: 11, color: COLORS.text2, marginTop: 20 }}>
+        MaurMaket v1.0.0
+      </Text>
 
       <View style={{ height: 60 }} />
       </ScrollView>

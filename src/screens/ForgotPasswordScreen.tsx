@@ -122,14 +122,16 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               <Text style={styles.emailHighlight}>{email}</Text>
             </Text>
 
-            {/* Code input */}
-            <View style={styles.codeRow}>
-              {[0, 1, 2, 3, 4, 5].map(i => (
-                <View key={i} style={[styles.codeCell, code.length > i && styles.codeCellFilled]}>
-                  <Text style={styles.codeDigit}>{code[i] || ''}</Text>
-                </View>
-              ))}
-            </View>
+            {/* Code input — tap anywhere on the cells to focus the hidden keyboard */}
+            <TouchableOpacity activeOpacity={1} onPress={() => codeInputRef.current?.focus()}>
+              <View style={styles.codeRow}>
+                {[0, 1, 2, 3, 4, 5].map(i => (
+                  <View key={i} style={[styles.codeCell, code.length > i && styles.codeCellFilled]}>
+                    <Text style={styles.codeDigit}>{code[i] || ''}</Text>
+                  </View>
+                ))}
+              </View>
+            </TouchableOpacity>
             <TextInput
               ref={codeInputRef}
               style={styles.hiddenInput}

@@ -402,7 +402,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             const e = (order as any).escrow;
             const rate = e.gross_amount > 0 ? Math.round((e.commission_amount / e.gross_amount) * 100) : 0;
             const moncashFee = Math.round(Number(order.total_amount) * 0.079);
-            const sellerReceives = Math.round(Number(e.net_amount) * 0.95);
+            const sellerReceives = Math.round(Number(e.net_amount));
             return (
               <View style={styles.feeBreakdown}>
                 <View style={styles.feeRow}>

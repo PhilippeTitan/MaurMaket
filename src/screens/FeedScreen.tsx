@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
-  RefreshControl, ActivityIndicator, LayoutChangeEvent, Modal, Pressable, Platform, ScrollView,
+  RefreshControl, ActivityIndicator, LayoutChangeEvent, Modal, Pressable, Platform, ScrollView, Share as RNShare, Alert,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -279,7 +279,19 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
     const product = moreProduct;
     if (!product) return;
     setMoreProduct(null);
-    if (eventType === 'not_relevant') setProducts(prev => prev.filter(item => item.id !== product.id));
+    if (eventType === 'not_relevant') {
+      setProducts(prev => prev.filter(item => item.id !== product.id));
+      toast.show({
+        kind: 'info',
+        title: 'Removed',
+        message: 'This product was hidden from your feed.',
+        actionLabel: 'Undo',
+        onAction: () => {
+          setProducts(prev => [product, ...prev]);
+          trackFeedEvent(product.id, 'relevant').catch(() => {});
+        },
+      });
+    }
     try {
       await trackFeedEvent(product.id, eventType);
       await queryClient.invalidateQueries({ queryKey: ['feed-products', 'forYou'] });
@@ -745,50 +757,103 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           />
           <View style={styles.moreSheet}>
             <View style={styles.sheetHandle} />
-            {moreProduct?.recommendation_reason && (
-              <View style={styles.reasonExplain}>
-                <MaterialCommunityIcons name="information-outline" size={17} color={COLORS.text2} />
-                <Text style={styles.reasonExplainText}>{moreProduct.recommendation_reason}</Text>
-              </View>
+            {moreProduct && moreProduct.seller_id === store.user?.id ? (
+              /* Own product options */
+              <>
+                <TouchableOpacity
+                  style={styles.moreItem}
+                  onPress={() => { const p = moreProduct; setMoreProduct(null); nav.navigate('EditListing', { productId: p.id }); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit listing"
+                >
+                  <MaterialCommunityIcons name="pencil-outline" size={18} color={COLORS.text} />
+                  <Text style={styles.moreItemText}>Edit listing</Text>
+                </TouchableOpacity>
+                <View style={styles.moreDivider} />
+                <TouchableOpacity
+                  style={styles.moreItem}
+                  onPress={() => { const p = moreProduct; setMoreProduct(null); nav.navigate('ProductDetail', { productId: p.id }); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="View product"
+                >
+                  <MaterialCommunityIcons name="eye-outline" size={18} color={COLORS.text} />
+                  <Text style={styles.moreItemText}>View product</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* Other seller options */
+              <>
+                {moreProduct?.recommendation_reason && (
+                  <View style={styles.reasonExplain}>
+                    <MaterialCommunityIcons name="information-outline" size={17} color={COLORS.text2} />
+                    <Text style={styles.reasonExplainText}>{moreProduct.recommendation_reason}</Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={styles.moreItem}
+                  onPress={() => handleFeedback('relevant')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('accessibility.markRelevant')}
+                >
+                  <MaterialCommunityIcons name="thumb-up-outline" size={18} color={COLORS.text} />
+                  <Text style={styles.moreItemText}>Show more like this</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.moreItem}
+                  onPress={() => handleFeedback('not_relevant')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('accessibility.markNotRelevant')}
+                >
+                  <MaterialCommunityIcons name="thumb-down-outline" size={18} color={COLORS.text} />
+                  <Text style={styles.moreItemText}>Not interested</Text>
+                </TouchableOpacity>
+                <View style={styles.moreDivider} />
+                <TouchableOpacity
+                  style={styles.moreItem}
+                  onPress={async () => {
+                    const p = moreProduct;
+                    if (!p) return;
+                    setMoreProduct(null);
+                    try {
+                      await RNShare.share({
+                        message: `Check out ${p.name} on MaurMaket for ${p.price} G!`,
+                        url: `https://maurmaket.com/product/${p.id}`,
+                        title: p.name,
+                      });
+                    } catch {}
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('accessibility.share')}
+                >
+                  <MaterialCommunityIcons name="share-variant-outline" size={18} color={COLORS.text} />
+                  <Text style={styles.moreItemText}>Share</Text>
+                </TouchableOpacity>
+                <View style={styles.moreDivider} />
+                <TouchableOpacity
+                  style={styles.moreItem}
+                  onPress={() => {
+                    const p = moreProduct;
+                    if (!p) return;
+                    setMoreProduct(null);
+                    Alert.alert(
+                      'Report Listing',
+                      'Why are you reporting this?',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Spam', onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
+                        { text: 'Inappropriate', onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
+                        { text: 'Wrong category', onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
+                      ],
+                    );
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('accessibility.report')}
+                >
+                  <MaterialCommunityIcons name="flag-outline" size={18} color={COLORS.coral} />
+                  <Text style={[styles.moreItemText, { color: COLORS.coral }]}>Report</Text>
+                </TouchableOpacity>
+              </>
             )}
-            <TouchableOpacity
-              style={styles.moreItem}
-              onPress={() => handleFeedback('relevant')}
-              accessibilityRole="button"
-              accessibilityLabel={t('accessibility.markRelevant')}
-            >
-              <MaterialCommunityIcons name="thumb-up-outline" size={18} color={COLORS.text} />
-              <Text style={styles.moreItemText}>Show more like this</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.moreItem}
-              onPress={() => handleFeedback('not_relevant')}
-              accessibilityRole="button"
-              accessibilityLabel={t('accessibility.markNotRelevant')}
-            >
-              <MaterialCommunityIcons name="thumb-down-outline" size={18} color={COLORS.text} />
-              <Text style={styles.moreItemText}>Not interested</Text>
-            </TouchableOpacity>
-            <View style={styles.moreDivider} />
-            <TouchableOpacity
-              style={styles.moreItem}
-              onPress={() => { setMoreProduct(null); }}
-              accessibilityRole="button"
-              accessibilityLabel={t('accessibility.share')}
-            >
-              <MaterialCommunityIcons name="share-variant-outline" size={18} color={COLORS.text} />
-              <Text style={styles.moreItemText}>Share</Text>
-            </TouchableOpacity>
-            <View style={styles.moreDivider} />
-            <TouchableOpacity
-              style={styles.moreItem}
-              onPress={() => { setMoreProduct(null); }}
-              accessibilityRole="button"
-              accessibilityLabel={t('accessibility.report')}
-            >
-              <MaterialCommunityIcons name="flag-outline" size={18} color={COLORS.coral} />
-              <Text style={[styles.moreItemText, { color: COLORS.coral }]}>Report</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>

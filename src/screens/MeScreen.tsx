@@ -27,6 +27,7 @@ import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 60_000;
+let _persistedTab: Tab = 'listings';
 
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -53,7 +54,7 @@ export default function MeScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>('listings');
+  const [activeTab, setActiveTab] = useState<Tab>(_persistedTab);
 
   const [followerCount, setFollowerCount] = useState(store.followerCount);
   const [followingCount, setFollowingCount] = useState(store.followingCount);
@@ -96,9 +97,12 @@ export default function MeScreen() {
     const y = e.nativeEvent.contentOffset.y;
     scrollOffset.current = y;
     const opacity = Math.min(1, Math.max(0, (y - 140) / 80));
-    setHeaderBg(opacity);
-  }, []);
+    setHeaderBg(opacity);  }, []);
 
+  const handleTabChange = useCallback((tab: Tab) => {
+    _persistedTab = tab;
+    setActiveTab(tab);
+  }, []);
 
   const fetchData = useCallback(async (force = false) => {
     const uid = user?.id || '';
@@ -540,7 +544,7 @@ export default function MeScreen() {
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'listings' && styles.tabActive]}
-          onPress={() => setActiveTab('listings')}
+          onPress={() => handleTabChange('listings')}
           accessibilityRole="button"
           accessibilityLabel="listings"
           accessibilityState={{ selected: activeTab === 'listings' }}
@@ -553,7 +557,7 @@ export default function MeScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'reviews' && styles.tabActive]}
-          onPress={() => setActiveTab('reviews')}
+          onPress={() => handleTabChange('reviews')}
           accessibilityRole="button"
           accessibilityLabel="reviews"
           accessibilityState={{ selected: activeTab === 'reviews' }}
@@ -562,7 +566,7 @@ export default function MeScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
-          onPress={() => setActiveTab('saved')}
+          onPress={() => handleTabChange('saved')}
           accessibilityRole="button"
           accessibilityLabel="saved"
           accessibilityState={{ selected: activeTab === 'saved' }}

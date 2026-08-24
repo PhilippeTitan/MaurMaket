@@ -58,7 +58,7 @@ export default function PaymentReturnScreen() {
       setStatus('timeout');
       if (pollRef.current) clearInterval(pollRef.current);
       if (elapsedRef.current) clearInterval(elapsedRef.current);
-    }, 30000);
+    }, 90000);
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -125,9 +125,11 @@ export default function PaymentReturnScreen() {
       <Text style={styles.subtitle}>
         {elapsed < 5
           ? t('paymentReturn.connecting')
-          : elapsed < 15
+          : elapsed < 20
             ? t('paymentReturn.fewSeconds')
-            : t('paymentReturn.fewMinutes')}
+            : elapsed < 60
+              ? t('paymentReturn.fewMinutes')
+              : 'Payment may still be processing — please wait.'}
       </Text>
       {orderId && (
         <View style={styles.orderBadge}>

@@ -49,6 +49,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [liked, setLiked] = useState(false);
   const [sellerReviews, setSellerReviews] = useState<Review[]>([]);
   const [productReviews, setProductReviews] = useState<Review[]>([]);
+  const [showAllReviews, setShowAllReviews] = useState(false);
   const [avgRating, setAvgRating] = useState(0);
   const [sellerProducts, setSellerProducts] = useState<Product[]>([]);
   const [categoryProducts, setCategoryProducts] = useState<Product[]>([]);
@@ -61,6 +62,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [storeTick, setStoreTick] = useState(0);
   const mountedRef = useRef(true);
   const flatListRef = useRef<FlatList>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const reviewsSectionRef = useRef<View>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -357,6 +360,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
 
       {/* ── Everything scrolls together ── */}
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
@@ -447,7 +451,13 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={() => {}}
+                    onPress={() => {
+                      reviewsSectionRef.current?.measureLayout(
+                        scrollRef.current as any,
+                        (x, y) => scrollRef.current?.scrollTo({ y: y - 60, animated: true }),
+                        () => {}
+                      );
+                    }}
                     accessibilityRole="button"
                     accessibilityLabel={t('accessibility.viewReviews')}
                   >
@@ -514,7 +524,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
 
           {/* ── Reviews section ── */}
           {productReviews.length > 0 && (
-            <View style={styles.sectionBorder}>
+            <View ref={reviewsSectionRef} style={styles.sectionBorder}>
               <View style={styles.sectionHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={styles.sectionTitle}>{t('productDetail.reviews')}</Text>
@@ -525,7 +535,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   <Text style={styles.reviewCount}>({productReviews.length})</Text>
                 </View>
               </View>
-              {productReviews.slice(0, 5).map(review => (
+              {productReviews.slice(0, showAllReviews ? productReviews.length : 5).map(review => (
                 <View key={review.id} style={styles.reviewCard}>
                   <View style={styles.reviewHeader}>
                     <View style={styles.reviewerRow}>
@@ -567,11 +577,12 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               {productReviews.length > 5 && (
                 <TouchableOpacity
                   style={{ alignItems: 'center', paddingVertical: 10 }}
+                  onPress={() => setShowAllReviews(!showAllReviews)}
                   accessibilityRole="button"
-                  accessibilityLabel={t('accessibility.viewReviews')}
+                  accessibilityLabel={showAllReviews ? 'Show fewer reviews' : t('accessibility.viewReviews')}
                 >
                   <Text style={styles.seeAllReviews}>
-                    {t('productDetail.reviews')} ({productReviews.length})
+                    {showAllReviews ? 'Show fewer reviews' : `${t('productDetail.reviews')} (${productReviews.length})`}
                   </Text>
                 </TouchableOpacity>
               )}

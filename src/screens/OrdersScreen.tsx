@@ -37,10 +37,13 @@ export default function OrdersScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'buying' | 'selling'>('buying');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [buyOrders, setBuyOrders] = useState<Order[]>([]);
   const [sellOrders, setSellOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const STATUS_FILTERS = ['all', 'pending', 'paid', 'processing', 'shipped', 'delivered', 'completed', 'cancelled'];
 
   const fetchOrders = useCallback(async (force = false) => {
     if (!force && _ordersCache && Date.now() - _ordersCache.timestamp < ORDERS_CACHE_TTL) {
@@ -75,7 +78,8 @@ export default function OrdersScreen({ navigation }: Props) {
     setRefreshing(false);
   }, []);
 
-  const orders = tab === 'buying' ? buyOrders : sellOrders;
+  const allOrders = tab === 'buying' ? buyOrders : sellOrders;
+  const orders = statusFilter === 'all' ? allOrders : allOrders.filter(o => o.status === statusFilter);
 
   const getStatusColor = (s: string) => STATUS_COLORS[s] || COLORS.text2;
 
@@ -144,6 +148,30 @@ export default function OrdersScreen({ navigation }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('orders.title')} onBack={() => navigation.goBack()} variant="branded" bordered={false} />
 
+      {/* Status filter chips */}
+      <View style={styles.filterRow}>
+        <FlatList
+          data={STATUS_FILTERS}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={s => s}
+          contentContainerStyle={{ paddingHorizontal: SPACING.lg, gap: 6 }}
+          renderItem={({ item: s }) => (
+            <TouchableOpacity
+              style={[styles.filterChip, statusFilter === s && styles.filterChipActive]}
+              onPress={() => setStatusFilter(s)}
+              accessibilityRole="button"
+              accessibilityLabel={`filter ${s}`}
+              accessibilityState={{ selected: statusFilter === s }}
+            >
+              <Text style={[styles.filterChipText, statusFilter === s && styles.filterChipTextActive]}>
+                {s === 'all' ? t('common.all') : s.charAt(0).toUpperCase() + s.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+      </View>
+
       {store.isSeller && (
         <View style={styles.tabRow}>
           <TouchableOpacity
@@ -189,6 +217,14 @@ export default function OrdersScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  filterRow: { marginBottom: SPACING.sm },
+  filterChip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.row,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+  },
+  filterChipActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
+  filterChipText: { fontSize: 12, fontWeight: '600', color: COLORS.text2 },
+  filterChipTextActive: { color: COLORS.white },
   tabRow: {
     flexDirection: 'row', marginHorizontal: SPACING.lg, marginBottom: SPACING.sm,
     backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',

@@ -134,6 +134,10 @@ export default function EditListingScreen({ route, navigation }: Props) {
       toast.error(t('editListing.missingInfo'), 'Maximum price is 99,999 G');
       return;
     }
+    if (totalImages === 0) {
+      toast.error(t('editListing.missingInfo'), 'At least 1 image is required.');
+      return;
+    }
     setSaving(true);
     try {
       const uploadedUrls: string[] = [];

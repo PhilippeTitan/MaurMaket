@@ -80,6 +80,7 @@ export default function NatCashPaymentScreen() {
   const [elapsed, setElapsed] = useState(0);
   const [ussdLoading, setUssdLoading] = useState(false);
   const [smsDetected, setSmsDetected] = useState(false);
+  const [ussdDialed, setUssdDialed] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef(AppState.currentState);
@@ -214,7 +215,9 @@ export default function NatCashPaymentScreen() {
       }
 
       const result = await dialUssd('*202#');
-      if (!result.success) {
+      if (result.success) {
+        setUssdDialed(true);
+      } else {
         Alert.alert('Error', result.errorMessage || 'Could not dial USSD code');
       }
     } catch {
@@ -225,6 +228,20 @@ export default function NatCashPaymentScreen() {
   };
 
   const handleSent = async () => {
+    // Warn if USSD wasn't dialed
+    if (!ussdDialed) {
+      const confirmed = await new Promise<boolean>(resolve => {
+        Alert.alert(
+          'Did you send the payment?',
+          'Make sure you completed the NatCash transfer before confirming. If you haven\'t sent the payment yet, go back and dial *202# first.',
+          [
+            { text: 'Go back', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Yes, I sent it', onPress: () => resolve(true) },
+          ]
+        );
+      });
+      if (!confirmed) return;
+    }
     // Request SMS permissions on Android (needed for BroadcastReceiver to read message body)
     if (Platform.OS === 'android') {
       try {

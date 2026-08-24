@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
+  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -41,6 +41,7 @@ export default function CartScreen({ navigation }: Props) {
     const ownIds = cart.filter(item => item.seller_id && item.seller_id === store.user?.id).map(item => item.id);
     if (ownIds.length > 0) {
       for (const id of ownIds) store.removeFromCart(id);
+      toast.info('Items removed', `${ownIds.length} item${ownIds.length > 1 ? 's' : ''} from your own store were removed from the cart.`);
     }
   }, []);
 
@@ -238,6 +239,28 @@ export default function CartScreen({ navigation }: Props) {
               <Text style={styles.checkoutBtnText}>{t('cart.proceedCheckout')}</Text>
               <MaterialCommunityIcons name="arrow-right" size={18} color={COLORS.white} />
             </TouchableOpacity>
+            <TouchableOpacity
+              style={{ alignItems: 'center', paddingVertical: 10 }}
+              onPress={() => {
+                if (Platform.OS === 'web') {
+                  if (window.confirm('Remove all items from cart?')) {
+                    for (const item of cart) store.removeFromCart(item.id);
+                  }
+                } else {
+                  toast.show({
+                    kind: 'warning',
+                    title: 'Clear cart?',
+                    message: 'All items will be removed.',
+                    actionLabel: 'Clear all',
+                    onAction: () => { for (const item of cart) store.removeFromCart(item.id); },
+                  });
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="clear cart"
+            >
+              <Text style={{ fontSize: 13, color: COLORS.text2, fontWeight: '500' }}>Clear all items</Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -269,7 +292,7 @@ const styles = StyleSheet.create({
   qtyBtnDisabled: { opacity: 0.45 },
   qtyVal: { fontSize: 13, fontWeight: '600', color: COLORS.text, minWidth: 16, textAlign: 'center' },
   stockLimit: { fontSize: 11, color: COLORS.yellow, marginTop: 3 },
-  removeBtn: { padding: 10 },
+  removeBtn: { padding: 14 },
   sellerSectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingVertical: 8, paddingHorizontal: 4, marginTop: 4, marginBottom: 2,

@@ -9,6 +9,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { getWishlist, toggleWishlist, getImageUrl } from '../api';
+import { store } from '../store';
+import { useToast } from '../components/Toast';
 import type { Product } from '../types';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
@@ -25,6 +27,7 @@ let _wishlistCache: { data: any; timestamp: number } | null = null;
 export default function WishlistScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
+  const toast = useToast();
   const [items, setItems] = useState<Product[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -93,9 +96,43 @@ export default function WishlistScreen() {
                   <StockBadge stock={item.stock} size="sm" />
                 )}
               </View>
-              <TouchableOpacity onPress={() => handleRemove(item.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="remove from wishlist" accessibilityRole="button">
-                <MaterialCommunityIcons name="heart-off" size={18} color={COLORS.coral} />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TouchableOpacity
+                  onPress={async () => {
+                    const result = await store.addToCart({
+                      id: item.id,
+                      name: item.name,
+                      price: item.price,
+                      effective_price: item.effective_price,
+                      is_on_sale: item.is_on_sale,
+                      discount_pct: item.discount_pct,
+                      quantity: 1,
+                      images: item.images,
+                      seller_id: item.seller_id,
+                      seller_name: item.seller?.full_name,
+                      store_name: item.seller?.store_name,
+                      stock: item.stock ?? 0,
+                    } as any);
+                    if (result.added) {
+                      toast.success('Added to cart', `${item.name} added.`);
+                    } else if (result.reason === 'out-of-stock') {
+                      toast.warning('Out of stock', 'This item is no longer available.');
+                    } else if (result.reason === 'max-stock') {
+                      toast.info('Max quantity', 'You already have the maximum quantity in your cart.');
+                    } else if (result.reason === 'own-product') {
+                      toast.warning('Your product', "You can't add your own product to cart.");
+                    }
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityLabel="add to cart"
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons name="cart-plus" size={18} color={COLORS.blue} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleRemove(item.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="remove from wishlist" accessibilityRole="button">
+                  <MaterialCommunityIcons name="heart-off" size={18} color={COLORS.coral} />
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           );
         }}

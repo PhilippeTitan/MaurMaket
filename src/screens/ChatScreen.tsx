@@ -500,7 +500,14 @@ startPolling();
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}>
         {isImage ? (
           <TouchableOpacity onPress={() => setPreviewImage(item.localImageUri || getImageUrl(item.image_url!) || item.image_url!)} accessibilityRole="imagebutton" accessibilityLabel="open photo">
-            <Image source={{ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" />
+            <View>
+              <Image source={{ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" />
+              {item.pending && (
+                <View style={styles.imageOverlay}>
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
         ) : null}
         {item.content ? (
@@ -731,6 +738,7 @@ const styles = StyleSheet.create({
   bubbleTextMe: { color: COLORS.white },
   bubbleTime: { fontSize: 10, color: 'rgba(255,255,255,0.65)', marginTop: 4, alignSelf: 'flex-end' },
   chatImage: { width: 240, height: 240, borderRadius: RADIUS.media },
+  imageOverlay: { ...StyleSheet.absoluteFill, borderRadius: RADIUS.media, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' } as any,
   bubbleTimeImage: { marginTop: 4 },
   messageState: { fontSize: 10, color: COLORS.text2, marginTop: 3, alignSelf: 'flex-end' },
   messageFailed: { fontSize: 10, color: COLORS.coral, marginTop: 3, alignSelf: 'flex-end', fontWeight: '700' },
