@@ -9,7 +9,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH, FONTS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
 import { validatePromo } from '../api';
@@ -26,52 +26,54 @@ import { network } from '../network';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 type DeliveryMethod = 'delivery' | 'meetup';
+type CheckoutStep = 1 | 2 | 3;
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
 import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 
-/* ─── Progress Stepper ─── */
-function StepIndicator({ current }: { current: number }) {
-  const steps = ['Delivery', 'Payment', 'Review'];
+/* ── Progress Indicator ─────────────────────────────────── */
+
+function StepIndicator({ step }: { step: CheckoutStep }) {
+  const { t } = useTranslation();
+  const steps = [
+    { num: 1, label: t('checkout.stepDelivery') },
+    { num: 2, label: t('checkout.stepPayment') },
+    { num: 3, label: t('checkout.stepReview') },
+  ];
   return (
-    <View style={styles.stepper}>
-      {steps.map((label, i) => {
-        const num = i + 1;
-        const active = num === current;
-        const done = num < current;
-        return (
-          <React.Fragment key={num}>
-            {i > 0 && <View style={[styles.stepperLine, done && styles.stepperLineDone]} />}
-            <View style={styles.stepperStep}>
-              <View style={[styles.stepperDot, active && styles.stepperDotActive, done && styles.stepperDotDone]}>
-                {done ? (
-                  <MaterialCommunityIcons name="check" size={12} color={COLORS.white} />
-                ) : (
-                  <Text style={[styles.stepperNum, active && styles.stepperNumActive]}>{num}</Text>
-                )}
-              </View>
-              <Text style={[styles.stepperLabel, active && styles.stepperLabelActive]}>{label}</Text>
+    <View style={styles.stepIndicator}>
+      {steps.map((s, i) => (
+        <React.Fragment key={s.num}>
+          <View style={styles.stepItem}>
+            <View style={[styles.stepCircle, step >= s.num && styles.stepCircleActive]}>
+              <Text style={[styles.stepNum, step >= s.num && styles.stepNumActive]}>{s.num}</Text>
             </View>
-          </React.Fragment>
-        );
-      })}
+            <Text style={[styles.stepLabel, step === s.num && styles.stepLabelActive]} numberOfLines={1}>{s.label}</Text>
+          </View>
+          {i < steps.length - 1 && (
+            <View style={[styles.stepLine, step > s.num && styles.stepLineActive]} />
+          )}
+        </React.Fragment>
+      ))}
     </View>
   );
 }
+
+/* ── Main Component ─────────────────────────────────────── */
 
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const cart = store.cart;
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<CheckoutStep>(1);
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
+  const [paymentMethod, setPaymentMethod] = useState<'moncash' | 'natcash'>('moncash');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'moncash' | 'natcash'>('moncash');
   const [promoCode, setPromoCode] = useState(route.params?.promoCode || '');
   const [discount, setDiscount] = useState(0);
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
@@ -81,40 +83,27 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [meetupAddress, setMeetupAddress] = useState<string | null>(null);
   const [meetupName, setMeetupName] = useState('');
 
-  // ---- "Laser Conic Sweep" (bar-for-bar port of the HTML mockup) ----
-  // CSS: .laser-bg { conic-gradient(from var(--angle-a), transparent 60%,
-  //   #3b82f6, #8b5cf6, #ec4899); animation: spin-a 3s linear infinite; }
-  // RN has no conic-gradient, so this is faked with a square LinearGradient
-  // large enough to cover the button at any angle, rotated continuously.
-  // Both MonCash and NatCash use this exact same animation — the mockup
-  // has ONE shared laser-bg style applied to both buttons, not two.
+  // Laser + shimmer animations (preserved from original)
   const laserRotation = useSharedValue(0);
   useEffect(() => {
     laserRotation.value = withRepeat(
       withTiming(360, { duration: 3000, easing: Easing.linear }),
-      -1,
-      false,
+      -1, false,
     );
   }, []);
   const animatedLaserStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${laserRotation.value}deg` }],
   }));
 
-  // ---- Glass shimmer sweep (bar-for-bar port of .glass-shimmer::before) ----
-  // CSS: left -160% -> 160% over 0%-45% of a 3.4s cycle, ease-in-out, then
-  // holds at 160% (off-canvas) for the remaining 45%-100% before looping.
   const shimmerProgress = useSharedValue(0);
   useEffect(() => {
     shimmerProgress.value = withRepeat(
       withTiming(1, { duration: 3400, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      false,
+      -1, false,
     );
   }, []);
   const animatedShimmerStyle = useAnimatedStyle(() => {
-    // Map the 0-1 driver onto the CSS keyframe: 0%->45% sweeps, 45%->100% holds.
     const t = shimmerProgress.value <= 0.45 ? shimmerProgress.value / 0.45 : 1;
-    // Button width is 178px; -160%/160% of that width, per the CSS.
     const left = -160 * 1.78 + (160 * 1.78 - -160 * 1.78) * t;
     return { left };
   });
@@ -133,7 +122,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     const user = store.user;
     const uid = user?.id || null;
     if (uid !== prevUserIdRef.current) {
-      // User changed (login/switch) — reset checkout fields
       prevUserIdRef.current = uid;
       if (user) {
         setName(user.full_name || '');
@@ -151,7 +139,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const subtotal = cart.reduce((sum, item) => sum + (item.effective_price ?? item.price) * item.quantity, 0);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Validate promo code when it changes
   useEffect(() => {
     if (!promoCode.trim()) { setDiscount(0); return; }
     const timer = setTimeout(async () => {
@@ -173,7 +160,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   };
 
   const finalTotal = Math.max(0, subtotal - discount);
-  const itemLabel = itemCount === 1 ? t('checkout.item') : t('checkout.items');
   const sellerGroups = cart.reduce<Array<{ sellerId: string; sellerName: string; itemCount: number; total: number }>>((groups, item) => {
     const sellerName = item.store_name || item.seller_name || `Seller ${item.seller_id.slice(0, 6)}`;
     const existing = groups.find(group => group.sellerId === item.seller_id);
@@ -187,22 +173,34 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   }, []);
   const sellerCount = sellerGroups.length;
 
-  const canContinueStep1 = method === 'delivery'
+  /* ── Step Navigation ── */
+  const canAdvanceStep1 = method === 'delivery'
     ? !!(name && phone && address && city)
     : !!(meetupLat && meetupLng);
 
+  const advanceStep = () => {
+    if (step === 1) {
+      if (!canAdvanceStep1) {
+        toast.error(t('checkout.missingInfo'), t('checkout.fillRequired'));
+        return;
+      }
+      setStep(2);
+    } else if (step === 2) {
+      setStep(3);
+    }
+  };
+
+  /* ── Handle Checkout (unchanged business logic) ── */
   const handleCheckout = async () => {
     if (network.isOffline) {
       toast.info(t('network.offline'), t('checkout.offlinePayment'));
       return;
     }
-
     if (cart.length === 0) {
       toast.info(t('checkout.cartEmpty'), t('checkout.addBeforeCheckout'));
       navigation.goBack();
       return;
     }
-
     const ownItems = cart.filter(item => item.seller_id && item.seller_id === store.user?.id);
     if (ownItems.length > 0) {
       for (const item of ownItems) {
@@ -211,17 +209,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       toast.error(t('checkout.ownItems'), t('checkout.ownItemsRemoved', { count: ownItems.length }));
       if (cart.length - ownItems.length === 0) return;
     }
-
     if (method === 'delivery' && (!name || !phone || !address || !city)) {
       toast.error(t('checkout.missingInfo'), t('checkout.fillRequired'));
       return;
     }
-
     if (method === 'meetup' && (!meetupLat || !meetupLng)) {
       toast.error(t('checkout.missingInfo'), t('checkout.selectMeetupLocation'));
       return;
     }
-
     setLoading(true);
     try {
       const orderData: Record<string, unknown> = {
@@ -242,10 +237,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         orderData.meetupName = meetupName;
         orderData.deliveryNote = note;
       }
-
       orderData.paymentMethod = paymentMethod;
       const orderRes = await createOrder(orderData) as { order: { id: string } };
-      await store.clearCart();      if (paymentMethod === 'moncash') {
+      await store.clearCart();
+      if (paymentMethod === 'moncash') {
         try {
           const payRes = await createPayment(orderRes.order.id, `maurmaket://payment-return?orderId=${orderRes.order.id}`) as { paymentUrl: string };
           if (payRes.paymentUrl) {
@@ -261,11 +256,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           toast.error(t('checkout.orderCreated'), `${msg} ${t('checkout.retryPayment')}`);
         }
       } else {
-        // NatCash — navigate to payment screen
         notifySuccess();
         const sellerData = (orderRes as any).sellerInfo;
         const firstSeller = sellerGroups[0];
-        // Use natcash_phone if available, fall back to moncash phone
         const natcashPhone = sellerData?.natcashPhone || sellerData?.phone || '';
         navigation.navigate('NatCashPayment', {
           orderId: orderRes.order.id,
@@ -287,72 +280,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     }
   };
 
-  return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-    <View style={styles.container}>        <ScreenHeader
-          title={t('checkout.title')}
-          onBack={() => step > 1 ? setStep(step - 1) : navigation.goBack()}
-        />
+  /* ── Step Content Renderers ── */
 
-        {/* ── Step Indicator ── */}
-        <StepIndicator current={step} />
-
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-
-      <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
-      <View style={[styles.sellerSummary, sellerCount > 1 && styles.sellerSummaryMixed]}>
-        <View style={styles.sellerSummaryTitleRow}>
-          <MaterialCommunityIcons
-            name={sellerCount > 1 ? 'store-alert-outline' : 'storefront-outline'}
-            size={18}
-            color={sellerCount > 1 ? COLORS.yellow : COLORS.blue}
-          />
-          <Text style={styles.sellerSummaryTitle}>
-            {t('checkout.sellersInCheckout', { count: sellerCount, plural: sellerCount === 1 ? t('checkout.seller') : t('checkout.sellers') })}
-          </Text>
-        </View>
-        <Text style={styles.sellerSummaryHint}>
-          {sellerCount > 1
-            ? t('checkout.multiSellerHint')
-            : t('checkout.singleSellerHint')}
-        </Text>
-        {sellerGroups.map(group => (
-          <View key={group.sellerId} style={styles.sellerGroupRow}>
-            <Text style={styles.sellerGroupName} numberOfLines={1}>{group.sellerName}</Text>
-            <Text style={styles.sellerGroupMeta}>
-              {group.itemCount} {group.itemCount === 1 ? t('checkout.item') : t('checkout.items')} - {formatPrice(group.total)} G
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      <Text style={styles.sectionLabel}>{t('checkout.orderSummary')}</Text>
-      <View style={styles.orderSummaryContainer}>
-        {cart.map((item, idx) => {
-          const img = item.images?.find(i => i.is_primary) || item.images?.[0];
-          const imgUrl = getImageUrl(img?.image_url);
-          const sellerName = item.store_name || item.seller_name || `Seller ${item.seller_id.slice(0, 6)}`;
-          return (
-            <View key={item.id} style={[styles.orderItemRow, idx === cart.length - 1 && { borderBottomWidth: 0 }]}>
-              <View style={styles.orderItemThumb}>
-                {imgUrl ? (
-                  <Image source={{ uri: imgUrl }} style={styles.orderItemImg} resizeMode="cover" />
-                ) : (
-                  <Icon name="image-unavailable" size={16} color={COLORS.text2} />
-                )}
-              </View>
-              <View style={styles.orderItemInfo}>
-                <Text style={styles.orderItemName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.orderItemSeller} numberOfLines={1}>{sellerName}</Text>
-              </View>
-              <Text style={styles.orderItemQty}>x{item.quantity}</Text>
-              <Text style={styles.orderItemPrice}>{formatPrice((item.effective_price ?? item.price) * item.quantity)} G</Text>
-            </View>
-          );
-        })}
-      </View>
-
-      <Text style={styles.sectionLabel}>Delivery method</Text>
+  const renderStep1 = () => (
+    <>
+      {/* Delivery Method */}
+      <Text style={styles.sectionLabel}>{t('checkout.deliveryMethod')}</Text>
       <View style={styles.methodRow}>
         <TouchableOpacity
           style={[styles.methodCard, method === 'delivery' && styles.methodActive]}
@@ -360,8 +293,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           accessibilityLabel="select delivery method"
           accessibilityRole="button"
         >
-          <Icon name="delivery" size={20} color={method === 'delivery' ? COLORS.coral : COLORS.text2} />
-          <Text style={[styles.methodText, method === 'delivery' && styles.methodTextActive]}>{t('checkout.delivery')}</Text>
+          <Icon name="delivery" size={24} color={method === 'delivery' ? COLORS.coral : COLORS.text2} />
+          <Text style={[styles.methodTitle, method === 'delivery' && styles.methodTextActive]}>{t('checkout.delivery')}</Text>
+          <Text style={styles.methodHint}>{method === 'delivery' ? 'We\'ll deliver to your address' : ''}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.methodCard, method === 'meetup' && styles.methodActive]}
@@ -369,11 +303,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           accessibilityLabel="select meetup method"
           accessibilityRole="button"
         >
-          <Icon name="location-pin" size={20} color={method === 'meetup' ? COLORS.coral : COLORS.text2} />
-          <Text style={[styles.methodText, method === 'meetup' && styles.methodTextActive]}>{t('checkout.meetup')}</Text>
+          <Icon name="location-pin" size={24} color={method === 'meetup' ? COLORS.coral : COLORS.text2} />
+          <Text style={[styles.methodTitle, method === 'meetup' && styles.methodTextActive]}>{t('checkout.meetup')}</Text>
+          <Text style={styles.methodHint}>{method === 'meetup' ? 'Meet the seller in person' : ''}</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Delivery Details */}
       {method === 'delivery' ? (
         <View style={styles.fields}>
           {savedAddresses.length > 0 && (
@@ -416,7 +352,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               </TouchableOpacity>
             </>
           )}
-
           <Text style={styles.sectionLabel}>{t('checkout.deliveryInfo')}</Text>
           <TextInput style={styles.input} placeholder={t('checkout.fullName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityLabel="full name" />
           <TextInput style={styles.input} placeholder={t('checkout.phone')} placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad" accessibilityLabel="phone number" />
@@ -447,14 +382,224 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <TextInput style={styles.input} placeholder={t('checkout.meetupNote')} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline accessibilityLabel="meetup note" />
         </View>
       )}
+    </>
+  );
 
+  const renderStep2 = () => (
+    <>
       <Text style={styles.sectionLabel}>{t('checkout.payment')}</Text>
+      <View style={styles.payBtnRow}>
+        <TouchableOpacity
+          style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
+          onPress={() => setPaymentMethod('moncash')}
+          disabled={loading}
+          accessibilityLabel="pay with MonCash"
+          accessibilityRole="button"
+        >
+          <View style={[styles.payOuter, paymentMethod === 'moncash' && styles.moncashGlow]}>
+            {paymentMethod === 'moncash' ? (
+              <>
+                <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
+                  <LinearGradient colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']} locations={[0, 0.6, 0.75, 0.87, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
+                </Animated.View>
+                <View style={styles.payLogoWrap}>
+                  <Image source={moncashLogo} style={styles.payLogo} resizeMode="cover" />
+                  <LinearGradient colors={['transparent', 'rgba(0,0,0,0.25)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.payLogoBottomShadow} pointerEvents="none" />
+                </View>
+                <View style={styles.glassOverlay} pointerEvents="none">
+                  <LinearGradient colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']} locations={[0, 0.35, 0.6]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.glassOverlayGradient} />
+                </View>
+                <View style={styles.glassShimmerClip} pointerEvents="none">
+                  <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
+                    <LinearGradient colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']} locations={[0, 0.35, 0.5, 0.65, 1]} start={{ x: 0.017, y: 0.629 }} end={{ x: 0.983, y: 0.371 }} style={styles.glassShimmerGradient} />
+                  </Animated.View>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.inactiveBorder} />
+                <View style={styles.payLogoWrap}>
+                  <Image source={moncashLogo} style={styles.payLogo} resizeMode="cover" />
+                </View>
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
 
-      </ScrollView>
+        <TouchableOpacity
+          style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
+          onPress={() => setPaymentMethod('natcash')}
+          disabled={loading}
+          accessibilityLabel="pay with NatCash"
+          accessibilityRole="button"
+        >
+          <View style={[styles.payOuter, paymentMethod === 'natcash' && styles.moncashGlow]}>
+            {paymentMethod === 'natcash' ? (
+              <>
+                <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
+                  <LinearGradient colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']} locations={[0, 0.6, 0.75, 0.87, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
+                </Animated.View>
+                <View style={styles.payLogoWrap}>
+                  <Image source={natcashLogo} style={styles.payLogo} resizeMode="cover" />
+                  <LinearGradient colors={['transparent', 'rgba(0,0,0,0.25)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.payLogoBottomShadow} pointerEvents="none" />
+                </View>
+                <View style={styles.glassOverlay} pointerEvents="none">
+                  <LinearGradient colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']} locations={[0, 0.35, 0.6]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.glassOverlayGradient} />
+                </View>
+                <View style={styles.glassShimmerClip} pointerEvents="none">
+                  <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
+                    <LinearGradient colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']} locations={[0, 0.35, 0.5, 0.65, 1]} start={{ x: 0.017, y: 0.629 }} end={{ x: 0.983, y: 0.371 }} style={styles.glassShimmerGradient} />
+                  </Animated.View>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.inactiveBorder} />
+                <View style={styles.payLogoWrap}>
+                  <Image source={natcashLogo} style={styles.payLogo} resizeMode="cover" />
+                </View>
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
+      </View>
 
-      {/* ── Sticky bottom bar ── */}
-      <View style={[styles.stickyBottom, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        {/* Total */}
+      {/* Trust signals */}
+      <View style={styles.trustSignals}>
+        <View style={styles.trustRow}>
+          <MaterialCommunityIcons name="shield-check-outline" size={16} color={COLORS.green} />
+          <Text style={styles.trustText}>{t('checkout.securePayment')}</Text>
+        </View>
+        <View style={styles.trustRow}>
+          <MaterialCommunityIcons name="lock-check-outline" size={16} color={COLORS.blue} />
+          <Text style={styles.trustText}>{t('checkout.moneyHeld')}</Text>
+        </View>
+      </View>
+    </>
+  );
+
+  const renderStep3 = () => (
+    <>
+      {/* Order Summary */}
+      <Text style={styles.sectionLabel}>{t('checkout.orderSummary')}</Text>
+      <View style={styles.orderSummaryContainer}>
+        {cart.map((item, idx) => {
+          const img = item.images?.find(i => i.is_primary) || item.images?.[0];
+          const imgUrl = getImageUrl(img?.image_url);
+          const sellerName = item.store_name || item.seller_name || `Seller ${item.seller_id.slice(0, 6)}`;
+          return (
+            <View key={item.id} style={[styles.orderItemRow, idx === cart.length - 1 && { borderBottomWidth: 0 }]}>
+              <View style={styles.orderItemThumb}>
+                {imgUrl ? (
+                  <Image source={{ uri: imgUrl }} style={styles.orderItemImg} resizeMode="cover" />
+                ) : (
+                  <Icon name="image-unavailable" size={16} color={COLORS.text2} />
+                )}
+              </View>
+              <View style={styles.orderItemInfo}>
+                <Text style={styles.orderItemName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.orderItemSeller} numberOfLines={1}>{sellerName}</Text>
+              </View>
+              <Text style={styles.orderItemQty}>x{item.quantity}</Text>
+              <Text style={styles.orderItemPrice}>{formatPrice((item.effective_price ?? item.price) * item.quantity)} G</Text>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Delivery Summary */}
+      <Text style={styles.sectionLabel}>{t('checkout.deliverySummary')}</Text>
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryRow}>
+          <Icon name={method === 'delivery' ? 'delivery' : 'location-pin'} size={16} color={COLORS.coral} />
+          <Text style={styles.summaryLabel}>{method === 'delivery' ? t('checkout.delivery') : t('checkout.meetup')}</Text>
+        </View>
+        {method === 'delivery' ? (
+          <View style={styles.summaryDetails}>
+            <Text style={styles.summaryDetail}>{name}</Text>
+            <Text style={styles.summaryDetail}>{address}, {city}</Text>
+            <Text style={styles.summaryDetail}>{phone}</Text>
+          </View>
+        ) : (
+          <View style={styles.summaryDetails}>
+            <Text style={styles.summaryDetail}>{meetupName || 'Pickup'}</Text>
+            {meetupAddress && <Text style={styles.summaryDetail}>{meetupAddress}</Text>}
+          </View>
+        )}
+      </View>
+
+      {/* Payment Summary */}
+      <Text style={styles.sectionLabel}>{t('checkout.paymentSummary')}</Text>
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryRow}>
+          <Image source={paymentMethod === 'moncash' ? moncashLogo : natcashLogo} style={styles.summaryPayIcon} resizeMode="cover" />
+          <Text style={styles.summaryLabel}>{paymentMethod === 'moncash' ? 'MonCash' : 'NatCash'}</Text>
+          <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.green} />
+        </View>
+      </View>
+
+      {/* Seller Split */}
+      {sellerCount > 1 && (
+        <>
+          <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
+          <View style={[styles.sellerSummary, sellerCount > 1 && styles.sellerSummaryMixed]}>
+            <View style={styles.sellerSummaryTitleRow}>
+              <MaterialCommunityIcons name="store-alert-outline" size={18} color={COLORS.yellow} />
+              <Text style={styles.sellerSummaryTitle}>
+                {t('checkout.sellersInCheckout', { count: sellerCount, plural: t('checkout.sellers') })}
+              </Text>
+            </View>
+            {sellerGroups.map(group => (
+              <View key={group.sellerId} style={styles.sellerGroupRow}>
+                <Text style={styles.sellerGroupName} numberOfLines={1}>{group.sellerName}</Text>
+                <Text style={styles.sellerGroupMeta}>
+                  {group.itemCount} {group.itemCount === 1 ? t('checkout.item') : t('checkout.items')} - {formatPrice(group.total)} G
+                </Text>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+
+      {/* Promo Code */}
+      <Text style={styles.sectionLabel}>Promo Code</Text>
+      <View style={styles.promoRow}>
+        <TextInput
+          style={[styles.input, { flex: 1 }]}
+          placeholder="Enter promo code"
+          placeholderTextColor={COLORS.text2}
+          value={promoCode}
+          onChangeText={setPromoCode}
+          autoCapitalize="characters"
+          accessibilityLabel="promo code"
+        />
+        {discount > 0 && (
+          <View style={styles.discountBadge}>
+            <Text style={styles.discountText}>-{formatPrice(discount)} G</Text>
+          </View>
+        )}
+      </View>
+    </>
+  );
+
+  /* ── Bottom Bar Content ── */
+  const renderBottomBar = () => {
+    if (step < 3) {
+      return (
+        <TouchableOpacity
+          style={styles.ctaBtn}
+          onPress={advanceStep}
+          accessibilityLabel="continue"
+          accessibilityRole="button"
+        >
+          <Text style={styles.ctaText}>{t('checkout.continue')}</Text>
+          <MaterialCommunityIcons name="arrow-right" size={18} color={COLORS.white} />
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <>
         <View style={styles.stickyTotalRow}>
           {discount > 0 && (
             <View style={styles.stickyTotalLine}>
@@ -467,84 +612,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             <Text style={styles.stickyTotalValue}>{formatPrice(finalTotal)} G</Text>
           </View>
         </View>
-
-        {/* Payment buttons */}
-        <View style={styles.payBtnRow}>
-          <TouchableOpacity
-            style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
-            onPress={() => setPaymentMethod('moncash')}
-            disabled={loading}
-            accessibilityLabel="pay with MonCash"
-            accessibilityRole="button"
-          >
-            <View style={[styles.payOuter, paymentMethod === 'moncash' && styles.moncashGlow]}>
-              {paymentMethod === 'moncash' ? (
-                <>
-                  <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
-                    <LinearGradient colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']} locations={[0, 0.6, 0.75, 0.87, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
-                  </Animated.View>
-                  <View style={styles.payLogoWrap}>
-                    <Image source={moncashLogo} style={styles.payLogo} resizeMode="cover" />
-                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.25)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.payLogoBottomShadow} pointerEvents="none" />
-                  </View>
-                  <View style={styles.glassOverlay} pointerEvents="none">
-                    <LinearGradient colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']} locations={[0, 0.35, 0.6]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.glassOverlayGradient} />
-                  </View>
-                  <View style={styles.glassShimmerClip} pointerEvents="none">
-                    <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
-                      <LinearGradient colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']} locations={[0, 0.35, 0.5, 0.65, 1]} start={{ x: 0.017, y: 0.629 }} end={{ x: 0.983, y: 0.371 }} style={styles.glassShimmerGradient} />
-                    </Animated.View>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <View style={styles.inactiveBorder} />
-                  <View style={styles.payLogoWrap}>
-                    <Image source={moncashLogo} style={styles.payLogo} resizeMode="cover" />
-                  </View>
-                </>
-              )}
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.payBtnTouch, loading && styles.ctaBtnDisabled]}
-            onPress={() => setPaymentMethod('natcash')}
-            disabled={loading}
-            accessibilityLabel="pay with NatCash"
-            accessibilityRole="button"
-          >
-            <View style={[styles.payOuter, paymentMethod === 'natcash' && styles.moncashGlow]}>
-              {paymentMethod === 'natcash' ? (
-                <>
-                  <Animated.View style={[styles.laserBgSquare, animatedLaserStyle]}>
-                    <LinearGradient colors={['transparent', 'transparent', '#3b82f6', '#8b5cf6', '#ec4899']} locations={[0, 0.6, 0.75, 0.87, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={StyleSheet.absoluteFill} />
-                  </Animated.View>
-                  <View style={styles.payLogoWrap}>
-                    <Image source={natcashLogo} style={styles.payLogo} resizeMode="cover" />
-                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.25)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.payLogoBottomShadow} pointerEvents="none" />
-                  </View>
-                  <View style={styles.glassOverlay} pointerEvents="none">
-                    <LinearGradient colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)']} locations={[0, 0.35, 0.6]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.glassOverlayGradient} />
-                  </View>
-                  <View style={styles.glassShimmerClip} pointerEvents="none">
-                    <Animated.View style={[styles.glassShimmerBand, animatedShimmerStyle]}>
-                      <LinearGradient colors={['transparent', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.65)', 'rgba(255,255,255,0)', 'transparent']} locations={[0, 0.35, 0.5, 0.65, 1]} start={{ x: 0.017, y: 0.629 }} end={{ x: 0.983, y: 0.371 }} style={styles.glassShimmerGradient} />
-                    </Animated.View>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <View style={styles.inactiveBorder} />
-                  <View style={styles.payLogoWrap}>
-                    <Image source={natcashLogo} style={styles.payLogo} resizeMode="cover" />
-                  </View>
-                </>
-              )}
-            </View>
-          </TouchableOpacity>
-        </View>
-
         <TouchableOpacity
           style={[styles.ctaBtn, loading && styles.ctaBtnDisabled]}
           onPress={handleCheckout}
@@ -555,227 +622,211 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           {loading ? (
             <ActivityIndicator color={COLORS.white} />
           ) : (
-            <Text style={styles.ctaText}>Pay {paymentMethod === 'moncash' ? 'MonCash' : 'NatCash'}</Text>
+            <Text style={styles.ctaText}>Pay {paymentMethod === 'moncash' ? 'MonCash' : 'NatCash'} · {formatPrice(finalTotal)} G</Text>
           )}
         </TouchableOpacity>
+      </>
+    );
+  };
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <View style={styles.container}>
+        <ScreenHeader
+          title={t('checkout.title')}
+          onBack={() => step > 1 ? setStep((step - 1) as CheckoutStep) : navigation.goBack()}
+        />
+        <StepIndicator step={step} />
+        <ScrollView contentContainerStyle={styles.content}>
+          {step === 1 && renderStep1()}
+          {step === 2 && renderStep2()}
+          {step === 3 && renderStep3()}
+        </ScrollView>
+        <View style={[styles.stickyBottom, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          {renderBottomBar()}
+        </View>
       </View>
-    </View>
     </KeyboardAvoidingView>
   );
 }
 
+/* ── Styles ─────────────────────────────────────────────── */
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 16 },
-  subtitle: { fontSize: 11, color: COLORS.text2 },
-  sectionLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0, paddingHorizontal: SPACING.md, marginTop: SPACING.md, marginBottom: 8 },
-  sellerSummary: {
-    marginHorizontal: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.card,
-    padding: 12,
-    gap: 8,
+
+  /* Step Indicator */
+  stepIndicator: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md,
+    backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  sellerSummaryMixed: {
-    borderColor: COLORS.yellow + '66',
-    backgroundColor: COLORS.yellow + '0D',
-  },
-  sellerSummaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sellerSummaryTitle: { fontSize: 13, color: COLORS.text, fontWeight: '800' },
-  sellerSummaryHint: { fontSize: 12, color: COLORS.text2, lineHeight: 17 },
-  sellerGroupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  sellerGroupName: { flex: 1, fontSize: 12, color: COLORS.text, fontWeight: '700' },
-  sellerGroupMeta: { fontSize: 11, color: COLORS.text2 },
-  orderSummaryContainer: {
-    marginHorizontal: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.card,
-    overflow: 'hidden',
-  },
-  orderItemRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 10, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  orderItemThumb: {
-    width: 44, height: 44, borderRadius: 6,
-    backgroundColor: COLORS.surface2, overflow: 'hidden',
+  stepItem: { alignItems: 'center', gap: 4 },
+  stepCircle: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: COLORS.surface2, borderWidth: 1.5, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  orderItemImg: { width: '100%', height: '100%' },
-  orderItemInfo: { flex: 1, minWidth: 0, gap: 2 },
-  orderItemName: { fontSize: 13, fontWeight: '600', color: COLORS.text },
-  orderItemSeller: { fontSize: 10, color: COLORS.text2 },
-  orderItemQty: { fontSize: 12, color: COLORS.text2, fontWeight: '600' },
-  orderItemPrice: { fontSize: 13, color: COLORS.coral, fontWeight: '700' },
+  stepCircleActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
+  stepNum: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text2 },
+  stepNumActive: { color: COLORS.white },
+  stepLabel: { fontSize: 9, color: COLORS.text3, fontWeight: FONT_WEIGHTS.medium, maxWidth: 70, textAlign: 'center' },
+  stepLabelActive: { color: COLORS.coral, fontWeight: FONT_WEIGHTS.bold },
+  stepLine: { width: 32, height: 1.5, backgroundColor: COLORS.border, marginHorizontal: 4, marginBottom: 16 },
+  stepLineActive: { backgroundColor: COLORS.coral },
+
+  /* Section Label */
+  sectionLabel: {
+    fontSize: FONT_SIZES.xs, color: COLORS.text2, fontWeight: FONT_WEIGHTS.bold,
+    textTransform: 'uppercase', letterSpacing: 0.6, paddingHorizontal: SPACING.md,
+    marginTop: SPACING.md, marginBottom: 8,
+  },
+
+  /* Delivery Method */
   methodRow: { flexDirection: 'row', gap: 10, paddingHorizontal: SPACING.md },
-  methodCard: { width: 170, height: 99, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.row, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
-  methodActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
-  methodText: { fontSize: 11, color: COLORS.text2 },
-  methodTextActive: { color: COLORS.coral, fontWeight: '700' },
+  methodCard: {
+    flex: 1, height: 90, alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderRadius: RADIUS.card, backgroundColor: COLORS.surface, borderWidth: 1.5, borderColor: COLORS.border,
+  },
+  methodActive: { borderColor: COLORS.coral, backgroundColor: COLORS.coralMuted },
+  methodTitle: { fontSize: FONT_SIZES.base, color: COLORS.text2, fontWeight: FONT_WEIGHTS.semibold },
+  methodTextActive: { color: COLORS.coral, fontWeight: FONT_WEIGHTS.bold },
+  methodHint: { fontSize: FONT_SIZES.xs, color: COLORS.text3 },
+
+  /* Fields */
   fields: { paddingHorizontal: SPACING.md },
+  input: {
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row,
+    padding: 12, color: COLORS.text, fontSize: FONT_SIZES.base, marginBottom: 8, minHeight: TOUCH.min,
+  },
+
+  /* Addresses */
   addressList: { gap: 8, marginBottom: 12 },
   addressCard: {
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.row, padding: 12,
   },
-  addressCardActive: { borderColor: COLORS.coral, backgroundColor: 'rgba(255,77,106,0.07)' },
+  addressCardActive: { borderColor: COLORS.coral, backgroundColor: COLORS.coralMuted },
   addressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   addressLabel: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  addressLabelText: { fontSize: 11, fontWeight: '700', color: COLORS.blue, textTransform: 'uppercase' },
-  defaultBadge: { backgroundColor: COLORS.green + '20', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-  defaultBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.green },
-  addressName: { fontSize: 13, fontWeight: '600', color: COLORS.text },
-  addressText: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+  addressLabelText: { fontSize: FONT_SIZES.xs, fontWeight: FONT_WEIGHTS.bold, color: COLORS.blue, textTransform: 'uppercase' },
+  defaultBadge: { backgroundColor: COLORS.greenMuted, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  defaultBadgeText: { fontSize: 9, fontWeight: FONT_WEIGHTS.bold, color: COLORS.green },
+  addressName: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text },
+  addressText: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
   addAddressLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
-  addAddressText: { fontSize: 12, color: COLORS.coral, fontWeight: '600' },
-  input: {
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row,
-    padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,
-  },
-  meetupInfo: { flexDirection: 'row', gap: 8, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12 },
-  meetupInfoText: { flex: 1, fontSize: 12, color: COLORS.text2, lineHeight: 18 },
+  addAddressText: { fontSize: FONT_SIZES.sm, color: COLORS.coral, fontWeight: FONT_WEIGHTS.semibold },
+
+  /* Meetup */
   meetupAddressPreview: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, paddingHorizontal: 4 },
-  meetupAddressText: { flex: 1, fontSize: 12, color: COLORS.text2 },
-  moncashBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: SPACING.md, backgroundColor: 'rgba(0,194,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,194,255,0.3)', borderRadius: RADIUS.row, padding: 10 },
-  moncashText: { fontSize: 12, color: COLORS.blue },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', padding: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border, marginTop: SPACING.md },
-  totalLabel: { fontSize: 14, color: COLORS.text2 },
-  totalValue: { fontSize: 18, color: COLORS.coral, fontWeight: '700' },
-  payBtnRow: { flexDirection: 'row', gap: 10, paddingHorizontal: SPACING.md, marginTop: 8 },
-  // .pay-touch { width: 178px; height: 107px; display:flex; align-items:
-  //   center; justify-content:center; }
+  meetupAddressText: { flex: 1, fontSize: FONT_SIZES.sm, color: COLORS.text2 },
+
+  /* Payment Buttons */
+  payBtnRow: { flexDirection: 'row', gap: 10, paddingHorizontal: SPACING.md, justifyContent: 'center' },
   payBtnTouch: { width: 178, height: 107, alignItems: 'center', justifyContent: 'center' },
-  // .pay-outer { position:relative; width:178px; height:107px;
-  //   border-radius:14px; overflow:hidden; display:flex; align-items:
-  //   center; justify-content:center; background:#12172a; }
   payOuter: {
     position: 'relative', width: 178, height: 107, borderRadius: 14,
-    overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#12172a',
+    overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: '#12172a',
   },
-  // .laser-bg { position:absolute; inset:0; border-radius:inherit;
-  //   padding:3px; background: conic-gradient(from var(--angle-a),
-  //   transparent 60%, #3b82f6, #8b5cf6, #ec4899); animation: spin-a 3s
-  //   linear infinite; z-index:1; }
-  // RN has no conic-gradient, so this is faked with a square linear
-  // gradient large enough to fully cover the button at any rotation angle
-  // (diagonal of 178x107 ≈ 208px; 230 gives a safety margin), spun behind
-  // the logo. Because the logo (170x99, z-index 2) sits on top and covers
-  // everything but a ~3-4px edge, only that edge ring is ever visible —
-  // same visual result as the CSS `padding: 3px` border technique.
-  laserBgSquare: {
-    position: 'absolute', top: -62, left: -26, width: 230, height: 230,
-  },
-  // .moncash-glow { filter: drop-shadow(0 0 14px rgba(139,92,246,0.55)); }
-  // Applied to .pay-outer on both buttons in the mockup (the "NatCash"
-  // slot literally reuses the `moncash-glow` class — ported as-is).
+  laserBgSquare: { position: 'absolute', top: -62, left: -26, width: 230, height: 230 },
   moncashGlow: {
-    shadowColor: '#8b5cf6',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.55,
-    shadowRadius: 14,
-    elevation: 10,
+    shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55, shadowRadius: 14, elevation: 10,
   },
-  // .glass-overlay { position:absolute; inset:0; border-radius:inherit;
-  //   z-index:3; pointer-events:none;
-  //   background: linear-gradient(135deg, rgba(255,255,255,0.28) 0%,
-  //     rgba(255,255,255,0.08) 35%, rgba(255,255,255,0) 60%);
-  //   box-shadow: inset 0 1px 1px rgba(255,255,255,0.45),
-  //     inset 0 -12px 18px rgba(0,0,0,0.25); }
-  // RN's LinearGradient component (not StyleSheet) is used for the 135deg
-  // fade. The top 1px highlight is approximated with a top border here.
-  // The bottom dark falloff moved to payLogoBottomShadow (see below) so it
-  // draws inside the logo's own clipped box instead of as a border on this
-  // outer layer — as a border it was landing right on the button edge/
-  // border-radius seam and reading as a visible seam rather than a soft
-  // shadow sitting "on" the image like the CSS inset shadow does.
   glassOverlay: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.45)',
-  },
-  glassOverlayGradient: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: 14,
-  },
-  // .glass-shimmer { position:absolute; inset:0; border-radius:inherit;
-  //   z-index:4; overflow:hidden; pointer-events:none; }
-  glassShimmerClip: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  // .glass-shimmer::before { position:absolute; top:-60%; left:-160%;
-  //   width:55%; height:220%; background: linear-gradient(75deg,
-  //   transparent 0%, rgba(255,255,255,0) 35%, rgba(255,255,255,0.65) 50%,
-  //   rgba(255,255,255,0) 65%, transparent 100%);
-  //   animation: glass-sweep 3.4s ease-in-out infinite; }
-  // Percentages are relative to .pay-outer's own box (178x107):
-  //   top: -60% of 107 = -64.2   height: 220% of 107 = 235.4
-  //   width: 55% of 178 = 97.9   left is animated (see animatedShimmerStyle)
-  glassShimmerBand: {
-    position: 'absolute',
-    top: -64.2,
-    width: 97.9,
-    height: 235.4,
-  },
-  glassShimmerGradient: {
-    flex: 1,
-  },
-  inactiveBorder: {
     ...StyleSheet.absoluteFill, borderRadius: 14,
-    borderWidth: 2, borderColor: 'transparent',
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.45)',
   },
-  // .pay-logo { width:170px; height:99px; border-radius:12px;
-  //   overflow:hidden; object-fit:contain; background:#0e1322;
-  //   position:relative; z-index:2; }
-  // Source assets are ~1.78-1.79:1 (near 16:9), wider than this box's
-  // 1.717:1 ratio. Using resizeMode="cover" instead of "contain" scales
-  // the image UP until it fills the box on both axes, then the wrapper's
-  // overflow:hidden crops the excess — so the logo fills top-to-bottom AND
-  // side-to-side with zero letterbox, at the cost of a slight horizontal
-  // crop (image is ~1.6% wider than the box once scaled to match height).
-  // Button footprint (payLogoWrap) is untouched at 170x99.
+  glassOverlayGradient: { ...StyleSheet.absoluteFill, borderRadius: 14 },
+  glassShimmerClip: { ...StyleSheet.absoluteFill, borderRadius: 14, overflow: 'hidden' },
+  glassShimmerBand: { position: 'absolute', top: -64.2, width: 97.9, height: 235.4 },
+  glassShimmerGradient: { flex: 1 },
+  inactiveBorder: { ...StyleSheet.absoluteFill, borderRadius: 14, borderWidth: 2, borderColor: 'transparent' },
   payLogoWrap: {
     width: 170, height: 99, borderRadius: 12, backgroundColor: '#0e1322',
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  payLogo: {
-    width: '100%', height: '100%',
+  payLogo: { width: '100%', height: '100%' },
+  payLogoBottomShadow: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 18 },
+
+  /* Trust Signals */
+  trustSignals: {
+    gap: 8, paddingHorizontal: SPACING.md, marginTop: SPACING.lg,
+    backgroundColor: COLORS.surface, marginHorizontal: SPACING.md, borderRadius: RADIUS.card,
+    padding: 14, borderWidth: 1, borderColor: COLORS.border,
   },
-  // Bottom depth shadow — ported from the CSS's
-  // `inset 0 -12px 18px rgba(0,0,0,0.25)`, but drawn as a gradient inside
-  // payLogoWrap (clipped to the same rounded 170x99 box as the logo image)
-  // instead of as a border on the outer glass layer, so it reads as a
-  // shadow sitting on the image rather than a hard line on the button edge.
-  payLogoBottomShadow: {
-    position: 'absolute', left: 0, right: 0, bottom: 0, height: 18,
+  trustRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  trustText: { fontSize: FONT_SIZES.sm, color: COLORS.text2, flex: 1 },
+
+  /* Order Summary (Step 3) */
+  orderSummaryContainer: {
+    marginHorizontal: SPACING.md, backgroundColor: COLORS.surface,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, overflow: 'hidden',
   },
-  ctaBtn: { marginHorizontal: SPACING.md, marginTop: 8, backgroundColor: COLORS.coral, borderRadius: RADIUS.button, padding: 14, alignItems: 'center' },
-  ctaBtnDisabled: { opacity: 0.6 },
-  ctaText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
+  orderItemRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  orderItemThumb: {
+    width: 44, height: 44, borderRadius: RADIUS.sm, backgroundColor: COLORS.surface2,
+    overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
+  },
+  orderItemImg: { width: '100%', height: '100%' },
+  orderItemInfo: { flex: 1, minWidth: 0, gap: 2 },
+  orderItemName: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text },
+  orderItemSeller: { fontSize: FONT_SIZES.xs, color: COLORS.text2 },
+  orderItemQty: { fontSize: FONT_SIZES.sm, color: COLORS.text2, fontWeight: FONT_WEIGHTS.semibold },
+  orderItemPrice: { fontSize: FONT_SIZES.base, color: COLORS.coral, fontWeight: FONT_WEIGHTS.bold },
+
+  /* Summary Cards */
+  summaryCard: {
+    marginHorizontal: SPACING.md, backgroundColor: COLORS.surface,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 14, gap: 8,
+  },
+  summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  summaryPayIcon: { width: 20, height: 20, borderRadius: 4 },
+  summaryLabel: { flex: 1, fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text },
+  summaryDetails: { gap: 2, paddingLeft: 24 },
+  summaryDetail: { fontSize: FONT_SIZES.sm, color: COLORS.text2 },
+
+  /* Seller Summary */
+  sellerSummary: {
+    marginHorizontal: SPACING.md, backgroundColor: COLORS.surface,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 12, gap: 8,
+  },
+  sellerSummaryMixed: { borderColor: COLORS.yellow + '66', backgroundColor: COLORS.yellow + '0D' },
+  sellerSummaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sellerSummaryTitle: { fontSize: FONT_SIZES.base, color: COLORS.text, fontWeight: FONT_WEIGHTS.extrabold },
+  sellerGroupRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  sellerGroupName: { flex: 1, fontSize: FONT_SIZES.sm, color: COLORS.text, fontWeight: FONT_WEIGHTS.bold },
+  sellerGroupMeta: { fontSize: FONT_SIZES.xs, color: COLORS.text2 },
+
+  /* Promo */
+  promoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: SPACING.md },
+  discountBadge: {
+    backgroundColor: COLORS.greenMuted, borderRadius: RADIUS.sm,
+    paddingHorizontal: 10, paddingVertical: 6,
+  },
+  discountText: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold, color: COLORS.green },
+
+  /* Bottom Bar */
   stickyBottom: {
-    backgroundColor: COLORS.bg,
-    borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingTop: 8,
+    backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 8,
   },
   stickyTotalRow: { paddingHorizontal: SPACING.md },
   stickyTotalLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
-  stickyTotalLabel: { fontSize: 13, color: COLORS.text2 },
-  stickyTotalDiscount: { fontSize: 12, fontWeight: '600' },
-  stickyTotalValue: { fontSize: 18, color: COLORS.coral, fontWeight: '800' },
+  stickyTotalLabel: { fontSize: FONT_SIZES.base, color: COLORS.text2 },
+  stickyTotalDiscount: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.semibold },
+  stickyTotalValue: { fontSize: 20, color: COLORS.coral, fontWeight: FONT_WEIGHTS.extrabold, fontFamily: FONTS.heading },
+  ctaBtn: {
+    marginHorizontal: SPACING.md, marginTop: 8, backgroundColor: COLORS.coral,
+    borderRadius: RADIUS.button, padding: 14, alignItems: 'center', flexDirection: 'row',
+    justifyContent: 'center', gap: 6, minHeight: TOUCH.min,
+  },
+  ctaBtnDisabled: { opacity: 0.6 },
+  ctaText: { fontSize: FONT_SIZES.md, color: COLORS.white, fontWeight: FONT_WEIGHTS.bold },
 });
