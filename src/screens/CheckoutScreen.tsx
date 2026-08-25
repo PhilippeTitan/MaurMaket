@@ -29,19 +29,49 @@ type DeliveryMethod = 'delivery' | 'meetup';
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
 import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 
+/* ─── Progress Stepper ─── */
+function StepIndicator({ current }: { current: number }) {
+  const steps = ['Delivery', 'Payment', 'Review'];
+  return (
+    <View style={styles.stepper}>
+      {steps.map((label, i) => {
+        const num = i + 1;
+        const active = num === current;
+        const done = num < current;
+        return (
+          <React.Fragment key={num}>
+            {i > 0 && <View style={[styles.stepperLine, done && styles.stepperLineDone]} />}
+            <View style={styles.stepperStep}>
+              <View style={[styles.stepperDot, active && styles.stepperDotActive, done && styles.stepperDotDone]}>
+                {done ? (
+                  <MaterialCommunityIcons name="check" size={12} color={COLORS.white} />
+                ) : (
+                  <Text style={[styles.stepperNum, active && styles.stepperNumActive]}>{num}</Text>
+                )}
+              </View>
+              <Text style={[styles.stepperLabel, active && styles.stepperLabelActive]}>{label}</Text>
+            </View>
+          </React.Fragment>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const cart = store.cart;
+  const [step, setStep] = useState(1);
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
-  const [paymentMethod, setPaymentMethod] = useState<'moncash' | 'natcash'>('moncash');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'moncash' | 'natcash'>('moncash');
   const [promoCode, setPromoCode] = useState(route.params?.promoCode || '');
   const [discount, setDiscount] = useState(0);
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
@@ -157,6 +187,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   }, []);
   const sellerCount = sellerGroups.length;
 
+  const canContinueStep1 = method === 'delivery'
+    ? !!(name && phone && address && city)
+    : !!(meetupLat && meetupLng);
+
   const handleCheckout = async () => {
     if (network.isOffline) {
       toast.info(t('network.offline'), t('checkout.offlinePayment'));
@@ -255,12 +289,15 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-    <View style={styles.container}>
-      <ScreenHeader
-        title={t('checkout.title')}
-        onBack={() => navigation.goBack()}
-      />
-      <ScrollView contentContainerStyle={styles.content}>
+    <View style={styles.container}>        <ScreenHeader
+          title={t('checkout.title')}
+          onBack={() => step > 1 ? setStep(step - 1) : navigation.goBack()}
+        />
+
+        {/* ── Step Indicator ── */}
+        <StepIndicator current={step} />
+
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
       <Text style={styles.sectionLabel}>{t('checkout.sellerSplit')}</Text>
       <View style={[styles.sellerSummary, sellerCount > 1 && styles.sellerSummaryMixed]}>
