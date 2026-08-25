@@ -9,7 +9,10 @@ import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
+import {
+  COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH, FONTS,
+  getDisplayName, formatPrice, TIER_COLORS,
+} from '../theme';
 import { useTranslation } from '../i18n';
 import { useUser } from '../hooks';
 import { store } from '../store';
@@ -23,6 +26,9 @@ import SalePriceTag from '../components/SalePriceTag';
 import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import { SkeletonBlock } from '../components/Skeleton';
+import EmptyState from '../components/EmptyState';
+import SettingsCard from '../components/SettingsCard';
+import CardRow from '../components/CardRow';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
@@ -97,7 +103,8 @@ export default function MeScreen() {
     const y = e.nativeEvent.contentOffset.y;
     scrollOffset.current = y;
     const opacity = Math.min(1, Math.max(0, (y - 140) / 80));
-    setHeaderBg(opacity);  }, []);
+    setHeaderBg(opacity);
+  }, []);
 
   const handleTabChange = useCallback((tab: Tab) => {
     _persistedTab = tab;
@@ -229,7 +236,6 @@ export default function MeScreen() {
   }, [isSeller, user?.id]);
 
   useFocusEffect(useCallback(() => {
-    // Preserve recently loaded profile data on tab return; pull-to-refresh remains explicit.
     fetchData(false);
   }, [fetchData]));
 
@@ -238,10 +244,6 @@ export default function MeScreen() {
     await fetchData(true);
     setRefreshing(false);
   }, [fetchData]);
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
 
   const getCardHeight = (p: Product) => {
     const size = imageSizes[p.id];
@@ -340,11 +342,9 @@ export default function MeScreen() {
                 ))}
               </View>
             )}
-            {/* Price — top right */}
             <View style={styles.cardPriceTop} pointerEvents="none">
               <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
             </View>
-            {/* Stock badge — bottom left */}
             <View style={styles.cardStockBadge} pointerEvents="none">
               <StockBadge stock={item.stock} size="sm" />
             </View>
@@ -355,38 +355,45 @@ export default function MeScreen() {
     );
   };
 
+  /* ── Tier badge ── */
+  const tierColor = tier ? TIER_COLORS[tier] ?? COLORS.text2 : COLORS.text2;
+  const tierLabel =
+    tier === 'business' ? 'Business'
+    : tier === 'verified' ? 'Verified'
+    : '';
+
   return (
     <View style={styles.container}>
-      {/* Sticky header — name centered + sell/settings */}
+      {/* Sticky header */}
       <View style={[styles.stickyHeader, { paddingTop: insets.top + 6, paddingBottom: 8, backgroundColor: `rgba(13,17,23,${headerBg})` }]}>
         <View style={styles.stickyHeaderInner}>
           <TouchableOpacity
-            style={styles.sellBtn}
+            style={styles.headerBtn}
             onPress={() => nav.navigate(store.isSeller ? 'AddListing' : 'SellerOnboarding')}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="add listing"
           >
-            <MaterialCommunityIcons name="plus" size={28} color={COLORS.text} />
+            <MaterialCommunityIcons name="plus" size={26} color={COLORS.text} />
           </TouchableOpacity>
 
           <View style={styles.topBarNameCenter}>
             <View style={styles.topBarNameWrap}>
               <Text style={styles.topBarName} numberOfLines={1}>@{user?.username || 'you'}</Text>
               {(tier === 'verified' || tier === 'business') && (
-                <Icon name="verified" size={18} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
+                <Icon name="verified" size={16} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
               )}
             </View>
           </View>
 
           <TouchableOpacity
-            style={styles.settingsBtn}
+            style={styles.headerBtn}
             onPress={() => nav.navigate('Settings')}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="settings"
           >
-            <MaterialCommunityIcons name="cog-outline" size={26} color={COLORS.text} />
+            <MaterialCommunityIcons name="cog-outline" size={24} color={COLORS.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -400,12 +407,10 @@ export default function MeScreen() {
         onScroll={onScroll}
         scrollEventThrottle={16}
       >
-      {/* Hero */}
+      {/* ── Profile Hero ── */}
       <View style={styles.hero}>
-
-        {/* Avatar with TierRing + Stats row */}
         <View style={[styles.avatarRow, { paddingTop: SPACING.md }]}>
-          <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={76} animated={true} />
+          <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={72} animated={true} />
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
@@ -422,7 +427,7 @@ export default function MeScreen() {
           </View>
         </View>
 
-        {/* Personal / Business toggle — business-tier sellers only */}
+        {/* Identity Toggle — business-tier sellers only */}
         {isSeller && user?.seller_tier === 'business' && (
           <View style={styles.identityToggle}>
             <TouchableOpacity
@@ -448,33 +453,11 @@ export default function MeScreen() {
         {isBusinessMode && user?.username && (
           <View style={styles.trustLine}>
             <Icon name="verified" size={12} color={COLORS.green} />
-            <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: '700' }}>@{user.username}</Text> · Verified identity on file</Text>
+            <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: FONT_WEIGHTS.bold }}>@{user.username}</Text> · Verified identity on file</Text>
           </View>
         )}
 
-        {/* Trust chips */}
-        <View style={styles.trustChipsRow}>
-          {isSeller && tier === 'verified' && (
-            <View style={[styles.trustChip, { backgroundColor: COLORS.blue + '18', borderColor: COLORS.blue + '40' }]}>
-              <Icon name="verified" size={12} color={COLORS.blue} />
-              <Text style={[styles.trustChipText, { color: COLORS.blue }]}>Verified Seller</Text>
-            </View>
-          )}
-          {isSeller && tier === 'business' && (
-            <View style={[styles.trustChip, { backgroundColor: COLORS.coral + '18', borderColor: COLORS.coral + '40' }]}>
-              <Icon name="verified" size={12} color={COLORS.coral} />
-              <Text style={[styles.trustChipText, { color: COLORS.coral }]}>Business</Text>
-            </View>
-          )}
-          {locationCity ? (
-            <View style={[styles.trustChip, { backgroundColor: COLORS.green + '18', borderColor: COLORS.green + '40' }]}>
-              <MaterialCommunityIcons name="map-marker-outline" size={12} color={COLORS.green} />
-              <Text style={[styles.trustChipText, { color: COLORS.green }]}>{locationCity}</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Bio + member since + optional real-name reveal */}
+        {/* Name, bio, member since */}
         <View style={styles.nameBioBlock}>
           {user?.bio ? (
             <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
@@ -482,45 +465,57 @@ export default function MeScreen() {
           {user?.show_real_name && user?.full_name && !isBusinessMode && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
               <Icon name="verified" size={11} color={COLORS.green} />
-              <Text style={{ fontSize: 12, color: COLORS.text }}>{user.full_name}</Text>
+              <Text style={{ fontSize: FONT_SIZES.sm, color: COLORS.text }}>{user.full_name}</Text>
             </View>
           )}
-          {memberSince ? <Text style={styles.memberSince}>{memberSince}</Text> : null}
+          <View style={styles.metaRow}>
+            {locationCity ? (
+              <View style={styles.metaItem}>
+                <MaterialCommunityIcons name="map-marker-outline" size={12} color={COLORS.text3} />
+                <Text style={styles.metaText}>{locationCity}</Text>
+              </View>
+            ) : null}
+            {memberSince ? (
+              <View style={styles.metaItem}>
+                <MaterialCommunityIcons name="calendar-outline" size={12} color={COLORS.text3} />
+                <Text style={styles.metaText}>{memberSince}</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
 
-      {/* Action buttons — inside hero */}
-      <View style={styles.sellerActions}>
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={() => nav.navigate('EditProfile')}
-          accessibilityRole="button"
-          accessibilityLabel="edit profile"
-        >
-          <Icon name="edit" size={16} color={COLORS.text} />
-          <Text style={[styles.actionBtnText, { color: COLORS.text }]}>{t('me.editProfile')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={() => {}}
-          accessibilityRole="button"
-          accessibilityLabel="share profile"
-        >
-          <MaterialCommunityIcons name="share-variant-outline" size={16} color={COLORS.text} />
-          <Text style={[styles.actionBtnText, { color: COLORS.text }]}>Share</Text>
-        </TouchableOpacity>
-        {isSeller && (
+        {/* Action Buttons */}
+        <View style={styles.actionRow}>
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => nav.navigate('Analytics')}
+            onPress={() => nav.navigate('EditProfile')}
             accessibilityRole="button"
-            accessibilityLabel="analytics"
+            accessibilityLabel="edit profile"
           >
-            <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.text} />
-            <Text style={[styles.actionBtnText, { color: COLORS.text }]}>Analytics</Text>
+            <Icon name="edit" size={16} color={COLORS.text} />
+            <Text style={styles.actionBtnText}>{t('me.editProfile')}</Text>
           </TouchableOpacity>
-        )}
-      </View>
-
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => {}}
+            accessibilityRole="button"
+            accessibilityLabel="share profile"
+          >
+            <MaterialCommunityIcons name="share-variant-outline" size={16} color={COLORS.text} />
+            <Text style={styles.actionBtnText}>{t('me.sharedProfile')}</Text>
+          </TouchableOpacity>
+          {isSeller && (
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => nav.navigate('Analytics')}
+              accessibilityRole="button"
+              accessibilityLabel="analytics"
+            >
+              <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.text} />
+              <Text style={styles.actionBtnText}>{t('me.analytics')}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Become a Seller CTA for buyers */}
@@ -528,6 +523,7 @@ export default function MeScreen() {
         <TouchableOpacity
           style={styles.sellBanner}
           onPress={() => nav.navigate('SellerOnboarding')}
+          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="become a seller"
         >
@@ -540,7 +536,7 @@ export default function MeScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Tabs */}
+      {/* ── Tabs ── */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'listings' && styles.tabActive]}
@@ -552,7 +548,7 @@ export default function MeScreen() {
           <MaterialCommunityIcons
             name={isSeller ? 'view-grid-outline' : 'shopping-outline'}
             size={22}
-            color={activeTab === 'listings' ? COLORS.text : COLORS.text2}
+            color={activeTab === 'listings' ? COLORS.coral : COLORS.text2}
           />
         </TouchableOpacity>
         <TouchableOpacity
@@ -562,7 +558,7 @@ export default function MeScreen() {
           accessibilityLabel="reviews"
           accessibilityState={{ selected: activeTab === 'reviews' }}
         >
-          <Icon name="rate-this" size={22} color={activeTab === 'reviews' ? COLORS.text : COLORS.text2} />
+          <Icon name="rate-this" size={22} color={activeTab === 'reviews' ? COLORS.coral : COLORS.text2} />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
@@ -574,12 +570,12 @@ export default function MeScreen() {
           <MaterialCommunityIcons
             name="heart-outline"
             size={22}
-            color={activeTab === 'saved' ? COLORS.text : COLORS.text2}
+            color={activeTab === 'saved' ? COLORS.coral : COLORS.text2}
           />
         </TouchableOpacity>
       </View>
 
-      {/* Tab Content */}
+      {/* ── Tab Content ── */}
       <View style={styles.tabContent}>
         {activeTab === 'listings' && (
           isSeller ? (
@@ -606,22 +602,21 @@ export default function MeScreen() {
                 </View>
               </View>
             ) : (
-              <View style={styles.empty}>
-                <Icon name="storefront" size={32} color={COLORS.text2} />
-                <Text style={styles.emptyText}>{t('me.noListings')}</Text>
-                <Text style={styles.emptyHint}>Add your first product so buyers have something to open from your shop.</Text>
-                <TouchableOpacity style={styles.emptyAction} onPress={() => nav.navigate('AddListing')} accessibilityRole="button" accessibilityLabel="add listing">
-                  <Icon name="plus" size={16} color={COLORS.white} />
-                  <Text style={styles.emptyActionText}>Add listing</Text>
-                </TouchableOpacity>
-              </View>
+              <EmptyState
+                icon="storefront-outline"
+                title={t('me.noListings')}
+                hint="Add your first product so buyers have something to open from your shop."
+                actionLabel="Add listing"
+                onAction={() => nav.navigate('AddListing')}
+              />
             )
           ) : (
-            <View style={styles.empty}>
-              <MaterialCommunityIcons name="shopping-outline" size={32} color={COLORS.text2} />
-              <Text style={styles.emptyText}>No recent orders</Text>
-              <Text style={styles.emptyHint}>Your purchases will appear here</Text>
-            </View>
+            <EmptyState
+              icon="shopping-outline"
+              title="No recent orders"
+              hint="Your purchases will appear here"
+              size={56}
+            />
           )
         )}
 
@@ -641,26 +636,25 @@ export default function MeScreen() {
                         />
                       ))}
                     </View>
-                    <Text style={{ fontSize: 11, color: COLORS.text2 }}>{new Date(rev.created_at).toLocaleDateString()}</Text>
+                    <Text style={{ fontSize: FONT_SIZES.xs, color: COLORS.text3 }}>{new Date(rev.created_at).toLocaleDateString()}</Text>
                   </View>
-                  {rev.comment && <Text style={{ fontSize: 13, color: COLORS.text2 }}>{rev.comment}</Text>}
+                  {rev.comment && <Text style={{ fontSize: FONT_SIZES.base, color: COLORS.text2 }}>{rev.comment}</Text>}
                   {rev.seller_response && (
                     <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border }}>
-                      <Text style={{ fontSize: 11, color: COLORS.blue, fontWeight: '600' }}>Your reply:</Text>
-                      <Text style={{ fontSize: 12, color: COLORS.text2, marginTop: 2 }}>{rev.seller_response}</Text>
+                      <Text style={{ fontSize: FONT_SIZES.xs, color: COLORS.blue, fontWeight: FONT_WEIGHTS.semibold }}>Your reply:</Text>
+                      <Text style={{ fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 }}>{rev.seller_response}</Text>
                     </View>
                   )}
                 </View>
               ))}
             </View>
           ) : (
-            <View style={styles.empty}>
-              <MaterialCommunityIcons name="star-outline" size={32} color={COLORS.text2} />
-              <Text style={styles.emptyText}>No reviews yet</Text>
-              <Text style={styles.emptyHint}>
-                {isSeller ? 'Reviews from buyers will appear here' : 'Reviews you leave will appear here'}
-              </Text>
-            </View>
+            <EmptyState
+              icon="star-outline"
+              title="No reviews yet"
+              hint={isSeller ? 'Reviews from buyers will appear here' : 'Reviews you leave will appear here'}
+              size={56}
+            />
           )
         )}
 
@@ -670,14 +664,55 @@ export default function MeScreen() {
               {wishlist.map(renderGridItem)}
             </View>
           ) : (
-            <View style={styles.empty}>
-              <MaterialCommunityIcons name="heart-outline" size={32} color={COLORS.text2} />
-              <Text style={styles.emptyText}>No saved items</Text>
-              <Text style={styles.emptyHint}>Tap the heart icon on products you like</Text>
-            </View>
+            <EmptyState
+              icon="heart-outline"
+              title="No saved items"
+              hint="Tap the heart icon on products you like"
+              size={56}
+            />
           )
         )}
       </View>
+
+      {/* ── Quick Access ── */}
+      <View style={styles.quickAccessSection}>
+        <Text style={styles.sectionLabel}>{t('me.quickAccess')}</Text>
+        <SettingsCard>
+          <CardRow
+            icon="account-edit-outline"
+            label={t('me.editProfile')}
+            chevron
+            onPress={() => nav.navigate('EditProfile')}
+            divider
+          />
+          <CardRow
+            icon="credit-card-outline"
+            iconColor={COLORS.coral}
+            label={t('me.paymentPreference')}
+            value={user?.phone ? 'MonCash' : undefined}
+            chevron
+            onPress={() => nav.navigate('Settings')}
+            divider
+          />
+          <CardRow
+            icon="map-marker-outline"
+            iconColor={COLORS.green}
+            label={t('me.deliveryAddresses')}
+            chevron
+            onPress={() => nav.navigate('Addresses')}
+            divider
+          />
+          <CardRow
+            icon="translate"
+            label={t('settings.language')}
+            chevron
+            onPress={() => nav.navigate('LanguageSettings')}
+          />
+        </SettingsCard>
+      </View>
+
+      {/* ── Bottom Spacer ── */}
+      <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
@@ -695,17 +730,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.lg,
   },
-  sellBtn: {
-    width: 40, height: 40,
+  headerBtn: {
+    width: TOUCH.min, height: TOUCH.min,
     alignItems: 'center', justifyContent: 'center',
   },
   topBarNameCenter: { flex: 1, alignItems: 'center' },
   topBarNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  topBarName: { fontSize: 18, fontWeight: '800', color: COLORS.text },
-  settingsBtn: {
-    width: 40, height: 40,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  topBarName: { fontSize: FONT_SIZES.title, fontFamily: FONTS.heading, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text },
   scrollView: { flex: 1 },
 
   /* Hero */
@@ -715,43 +746,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg, paddingTop: 60,
   },
   nameBioBlock: { paddingHorizontal: SPACING.lg, paddingTop: 12 },
-  bio: { fontSize: 13, color: COLORS.text2, lineHeight: 20, marginTop: 6 },
-  memberSince: { fontSize: 11, color: COLORS.text2, opacity: 0.65, marginTop: 4 },
+  bio: { fontSize: FONT_SIZES.base, color: COLORS.text2, lineHeight: 20, marginTop: 6 },
+  metaRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  metaItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+  },
+  metaText: { fontSize: FONT_SIZES.xs, color: COLORS.text3 },
 
   /* Identity Toggle */
   identityToggle: {
     flexDirection: 'row', marginHorizontal: SPACING.lg, marginTop: SPACING.md,
-    backgroundColor: COLORS.surface2, borderRadius: 999, padding: 3,
+    backgroundColor: COLORS.surface2, borderRadius: RADIUS.pill, padding: 3,
   },
-  identityBtn: { flex: 1, paddingVertical: 7, borderRadius: 999, alignItems: 'center' },
+  identityBtn: { flex: 1, paddingVertical: 7, borderRadius: RADIUS.pill, alignItems: 'center' },
   identityBtnActive: { backgroundColor: COLORS.coral },
-  identityBtnText: { fontSize: 12.5, fontWeight: '700', color: COLORS.text2 },
-  identityBtnTextActive: { color: '#fff' },
+  identityBtnText: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text2 },
+  identityBtnTextActive: { color: COLORS.white },
 
   /* Trust Line */
   trustLine: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: SPACING.lg, paddingTop: 8,
   },
-  trustLineText: { fontSize: 11.5, color: COLORS.text2 },
-
-  /* Trust Chips */
-  trustChipsRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
-    paddingHorizontal: SPACING.lg, paddingTop: 10,
-  },
-  trustChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6,
-    borderWidth: 1,
-  },
-  trustChipText: { fontSize: 11, fontWeight: '700' },
+  trustLineText: { fontSize: FONT_SIZES.sm, color: COLORS.text2 },
 
   /* Stats */
   statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
   stat: { alignItems: 'center' },
-  statNum: { fontSize: 18, fontWeight: '800', color: COLORS.text, lineHeight: 22 },
-  statLabel: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
+  statNum: { fontSize: FONT_SIZES.title, fontFamily: FONTS.heading, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text, lineHeight: 22 },
+  statLabel: { fontSize: FONT_SIZES.xs, color: COLORS.text2, marginTop: 2 },
+
+  /* Action Buttons */
+  actionRow: {
+    flexDirection: 'row', gap: 8,
+    paddingHorizontal: SPACING.lg, paddingTop: 14,
+  },
+  actionBtn: {
+    flex: 1, minHeight: TOUCH.min, borderRadius: RADIUS.button,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+  },
+  actionBtnText: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text },
 
   /* Tabs */
   tabBar: {
@@ -763,7 +801,7 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     paddingVertical: 11, borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
-  tabActive: { borderBottomColor: COLORS.text },
+  tabActive: { borderBottomColor: COLORS.coral },
 
   /* Tab Content */
   tabContent: { paddingTop: SPACING.md },
@@ -777,14 +815,13 @@ const styles = StyleSheet.create({
   cardImgWrap: {
     width: '100%', backgroundColor: COLORS.surface2, position: 'relative',
   },
-  cardImg: { width: '100%', height: '100%' },
   cardPlaceholder: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
   cardPriceTop: {
     position: 'absolute', top: 6, right: 6, zIndex: 6,
-    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.sm,
     paddingHorizontal: 7, paddingVertical: 3,
   },
   cardStockBadge: {
@@ -799,15 +836,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.7)',
   },
   imgDotActive: { backgroundColor: COLORS.white, width: 14 },
-
   cardName: {
-    fontSize: 12.5, fontWeight: '600', color: COLORS.text,
+    fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text,
     paddingHorizontal: 6, paddingTop: 5, paddingBottom: 2,
   },
-  /* Empty */
-  empty: { alignItems: 'center', paddingVertical: 40, gap: 6 },
-  emptyText: { fontSize: 14, color: COLORS.text2, fontWeight: '600' },
-  emptyHint: { fontSize: 12, color: COLORS.text2, opacity: 0.7, textAlign: 'center', paddingHorizontal: 20 },
 
   /* Reviews */
   reviewCard: {
@@ -819,26 +851,23 @@ const styles = StyleSheet.create({
   sellBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     marginHorizontal: SPACING.lg, marginTop: SPACING.md, padding: 12,
-    backgroundColor: COLORS.green + '10', borderRadius: RADIUS.card,
+    backgroundColor: COLORS.greenMuted, borderRadius: RADIUS.card,
     borderWidth: 1, borderColor: COLORS.green + '30',
   },
-  sellTitle: { fontSize: 13, fontWeight: '700', color: COLORS.green },
-  sellHint: { fontSize: 11, color: COLORS.text2, marginTop: 1 },
+  sellTitle: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.bold, color: COLORS.green },
+  sellHint: { fontSize: FONT_SIZES.xs, color: COLORS.text2, marginTop: 1 },
 
-  /* Seller Actions Bar */
-  sellerActions: {
-    flexDirection: 'row', gap: 8,
-    paddingHorizontal: SPACING.lg, paddingTop: 14,
+  /* Quick Access */
+  quickAccessSection: {
+    marginTop: SPACING.xl,
   },
-  actionBtn: {
-    flex: 1, minHeight: 44, borderRadius: RADIUS.button,
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+  sectionLabel: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: FONT_WEIGHTS.bold,
+    color: COLORS.text2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.sm,
   },
-  actionBtnText: { fontSize: 13, fontWeight: '700' },
-  emptyAction: {
-    marginTop: 8, minHeight: 38, paddingHorizontal: 14, borderRadius: RADIUS.row,
-    backgroundColor: COLORS.coral, flexDirection: 'row', alignItems: 'center', gap: 5,
-  },
-  emptyActionText: { fontSize: 12, color: COLORS.white, fontWeight: '800' },
 });
