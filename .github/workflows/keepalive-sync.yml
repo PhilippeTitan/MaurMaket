@@ -10,11 +10,37 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Ping health endpoint
+      - name: Ping health endpoint (wake Render)
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 15 https://maurmaket.onrender.com/api/health || true)
+          # Attempt 1: quick ping with 45s timeout (handles most cold starts)
+          echo "Attempt 1: Pinging health endpoint..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 45 https://maurmaket.onrender.com/api/health || true)
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -1)
           echo "Status: $HTTP_CODE"
           echo "Body: $BODY"
-          test "$HTTP_CODE" = "200"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Server is alive and healthy"
+            exit 0
+          fi
+
+          # If we got here, server was likely sleeping. The request woke it.
+          # Wait 30s for Render to fully boot, then retry.
+          echo "Server was sleeping (HTTP $HTTP_CODE). Waiting 30s for boot..."
+          sleep 30
+
+          echo "Attempt 2: Re-pinging health endpoint..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 60 https://maurmaket.onrender.com/api/health || true)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "Status: $HTTP_CODE"
+          echo "Body: $BODY"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Server woke up and is healthy"
+            exit 0
+          fi
+
+          echo "❌ Server did not respond after retry"
+          exit 1
