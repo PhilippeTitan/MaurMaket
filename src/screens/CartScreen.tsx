@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Platform,
+  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Platform,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
@@ -142,7 +143,7 @@ export default function CartScreen({ navigation }: Props) {
       <View style={styles.item}>
         <View style={styles.thumb}>
           {imgUrl ? (
-            <Image source={{ uri: imgUrl }} style={styles.thumbImg} resizeMode="cover" />
+            <ExpoImage source={{ uri: imgUrl }} style={styles.thumbImg} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
             <Icon name="image-unavailable" size={24} color={COLORS.text2} />
           )}

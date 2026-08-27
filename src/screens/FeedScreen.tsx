@@ -12,7 +12,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import {
-  getProducts, toggleWishlist, checkWishlist, checkWishlistBatch, createConversation,
+  getProducts, toggleWishlist, checkWishlist, checkWishlistBatch, checkLikedBatch, createConversation,
   getImageUrl, getUnreadCount, getProductReviews, getFollowing,
   trackFeedEvent, getActiveOrderCount,
 } from '../api';
@@ -58,6 +58,7 @@ export default function FeedScreen() {
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const flatListRef = useRef<FlatList>(null);
   const checkedWishlistIds = useRef<Set<string>>(new Set());
+  const checkedLikedIds = useRef<Set<string>>(new Set());
   const viewStartTime = useRef<number>(Date.now());
   const currentProductId = useRef<string | null>(null);
   const scrollOffsetRef = useRef(0);
@@ -70,7 +71,9 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
       const snapshot = await readSnapshot<{ products: Product[]; pages: number }>(cacheKey);
       if (snapshot?.value.products?.length) {
         checkedWishlistIds.current.clear();
+        checkedLikedIds.current.clear();
         setWishlistedIds(new Set());
+        setLikedIds(new Set());
         setProducts(snapshot.value.products);
         setHasMore(1 < snapshot.value.pages);
       }
@@ -90,7 +93,9 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
       });
       if (replace) {
         checkedWishlistIds.current.clear();
+        checkedLikedIds.current.clear();
         setWishlistedIds(new Set());
+        setLikedIds(new Set());
         setProducts(res.products);
         if (p === 1) void writeSnapshot(cacheKey, { products: res.products, pages: res.pages });
       } else {
@@ -168,6 +173,27 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           return next;
         });
       } catch { /* Product cards remain usable even if wishlist state is unavailable. */ }
+    })();
+  }, [products]);
+
+  // Hydrate liked state for heart buttons
+  useEffect(() => {
+    if (!store.isLoggedIn || products.length === 0 || network.isOffline) return;
+    const unchecked = products.filter(p => !checkedLikedIds.current.has(p.id));
+    if (unchecked.length === 0) return;
+    unchecked.forEach(p => checkedLikedIds.current.add(p.id));
+    (async () => {
+      try {
+        const res = await checkLikedBatch(unchecked.map(p => p.id)) as { liked: Record<string, boolean> };
+        setLikedIds(prev => {
+          const next = new Set(prev);
+          for (const p of unchecked) {
+            if (res.liked[p.id]) next.add(p.id);
+            else next.delete(p.id);
+          }
+          return next;
+        });
+      } catch { /* Heart state is cosmetic — feed remains usable. */ }
     })();
   }, [products]);
 

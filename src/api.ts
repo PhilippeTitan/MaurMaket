@@ -274,6 +274,15 @@ export const deleteProduct = (id: string) =>
 export const getCategories = () => request('/categories');
 
 // Orders
+export const createPendingCheckout = (data: Record<string, unknown>) =>
+  request('/checkout/pending', { method: 'POST', body: JSON.stringify(data) });
+
+export const checkPendingStatus = (pendingId: string) =>
+  request(`/checkout/pending/${pendingId}/status`);
+
+export const reportAbandonedPayment = (data: { pendingId?: string; orderId?: string }) =>
+  request('/payments/abandoned', { method: 'POST', body: JSON.stringify(data) });
+
 export const createOrder = (data: Record<string, unknown>) =>
   request('/orders', { method: 'POST', body: JSON.stringify(data) });
 
@@ -350,6 +359,9 @@ export const saveFeedTaste = (categoryIds: string[]) =>
 
 export const skipFeedTaste = () =>
   request('/feed/taste/skip', { method: 'POST' });
+
+export const checkLikedBatch = (ids: string[]) =>
+  request(`/feed/liked-status?ids=${ids.join(',')}`);
 
 // Seller
 export const getSellerProducts = () => request('/seller/products').then(normalizeProductsResponse);

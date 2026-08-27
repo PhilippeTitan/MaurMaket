@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, useWindowDimensions,
+  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, useWindowDimensions, Image,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { Icon } from '../components/icons/Icon';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
@@ -270,7 +271,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                       accessibilityLabel={item.name}
                     >
                       {url ? (
-                        <Image source={{ uri: url }} style={styles.cardImg} resizeMode="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                        <ExpoImage source={{ uri: url }} style={styles.cardImg} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
                       ) : (
                         <View style={styles.cardPlaceholder}>
                           <Icon name="image-unavailable" size={20} color={COLORS.text2} />
@@ -288,7 +289,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={item.name}
               >
-                <Image source={{ uri: primaryUrl }} style={styles.cardImg} resizeMode="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
+                <ExpoImage source={{ uri: primaryUrl }} style={styles.cardImg} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
               </TouchableOpacity>
             ) : (
               <View style={styles.cardPlaceholder}>

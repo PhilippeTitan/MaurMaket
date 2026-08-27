@@ -64,7 +64,7 @@ export type RootStackParamList = {
   Payments: undefined;
   EditListing: { productId: string };
   SettingsEdit: { field: 'name' | 'email' | 'phone' | 'phones' | 'natcash_phone' | 'bio' | 'password' | 'storeName'; title: string };
-  PaymentReturn: { orderId?: string };
+  PaymentReturn: { orderId?: string; pendingId?: string };
   Meetup: { orderId: string };
   Notification: undefined;
   PromoManagement: undefined;

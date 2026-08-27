@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, Component, Suspense } from 'react';
-import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text, AppState } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text, AppState, Modal, Pressable } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -220,6 +220,7 @@ function MainTabs() {
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [pendingDob, setPendingDob] = useState(false);
+  const [paymentFailed, setPaymentFailed] = useState<{ title: string; message: string; onRetry: () => void } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -347,9 +348,44 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (status) => {
+    const sub = AppState.addEventListener('change', async (status) => {
       if (status === 'active' && store.isLoggedIn) {
         invalidateUser();
+        // Check for abandoned payment — user returned to app without completing MonCash
+        try {
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          const raw = await AsyncStorage.getItem('mm_pending_payment');
+          if (!raw) return;
+          const { pendingId, orderId: pendingOrderId, createdAt } = JSON.parse(raw);
+          // Skip if less than 5s ago (user just left, still might be paying)
+          if (Date.now() - createdAt < 5000) return;
+          await AsyncStorage.removeItem('mm_pending_payment');
+          const nav = navigationRef.current;
+          if (!nav) return;
+          if (pendingId) {
+            const { checkPendingStatus, reportAbandonedPayment } = await import('./src/api');
+            const res = await checkPendingStatus(pendingId) as { status: string; orderId?: string };
+            if (res.status === 'pending') {
+              reportAbandonedPayment({ pendingId }).catch(() => {});
+              setPaymentFailed({
+                title: 'Payment not completed',
+                message: 'Your payment was not processed. Your items are still in your cart.',
+                onRetry: () => nav.navigate('Checkout'),
+              });
+            }
+          } else if (pendingOrderId) {
+            const { getOrder, reportAbandonedPayment } = await import('./src/api');
+            const res = await getOrder(pendingOrderId) as { order?: { status: string } };
+            if (res.order?.status === 'pending') {
+              reportAbandonedPayment({ orderId: pendingOrderId }).catch(() => {});
+              setPaymentFailed({
+                title: 'Payment not completed',
+                message: 'Your payment was not processed. You can retry from the order details.',
+                onRetry: () => nav.navigate('OrderDetail', { orderId: pendingOrderId }),
+              });
+            }
+          }
+        } catch {}
       }
     });
     return () => sub.remove();
@@ -426,7 +462,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner />{appContent}<DobConfirmModal visible={pendingDob} onCompleted={() => setPendingDob(false)} />{isLoggedIn && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}</ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner />{appContent}<DobConfirmModal visible={pendingDob} onCompleted={() => setPendingDob(false)} />{isLoggedIn && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}<Modal visible={!!paymentFailed} transparent animationType="fade"><Pressable style={pmStyles.overlay} onPress={() => setPaymentFailed(null)}><Pressable style={pmStyles.card} onPress={() => {}}><View style={pmStyles.iconWrap}><MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} /></View><Text style={pmStyles.title}>{paymentFailed?.title}</Text><Text style={pmStyles.message}>{paymentFailed?.message}</Text><TouchableOpacity style={pmStyles.retryBtn} onPress={() => { paymentFailed?.onRetry(); setPaymentFailed(null); }}><Text style={pmStyles.retryText}>Retry Payment</Text></TouchableOpacity><TouchableOpacity style={pmStyles.cancelBtn} onPress={() => setPaymentFailed(null)}><Text style={pmStyles.cancelText}>Cancel</Text></TouchableOpacity></Pressable></Pressable></Modal></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
 }
 
 const styles = StyleSheet.create({
@@ -451,4 +487,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+});
+
+const pmStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  card: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 28, width: '82%', alignItems: 'center', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12 },
+  iconWrap: { marginBottom: 16 },
+  title: { fontSize: 18, fontWeight: '700', color: COLORS.text, textAlign: 'center', marginBottom: 8 },
+  message: { fontSize: 14, color: COLORS.text2, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  retryBtn: { backgroundColor: COLORS.coral, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 32, width: '100%', alignItems: 'center', marginBottom: 10 },
+  retryText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  cancelBtn: { paddingVertical: 10 },
+  cancelText: { color: COLORS.text2, fontSize: 14, fontWeight: '500' },
 });

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Linking,
-  Modal, TextInput, KeyboardAvoidingView, Platform, Image,
+  Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -157,6 +158,11 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         // NatCash order — go back to NatCash payment screen
         navigation.navigate('NatCashPayment', { orderId: res.orderId || orderId, total: Number((order as any)?.total_amount || 0), sellerName: (order as any)?.other_party?.full_name || '', sellerPhone: (order as any)?.other_party?.natcash_phone || (order as any)?.other_party?.phone || '' });
       } else if (res.paymentUrl) {
+        // Store pending order ID so we can detect abandonment when user returns
+        try {
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          await AsyncStorage.setItem('mm_pending_payment', JSON.stringify({ orderId, createdAt: Date.now() }));
+        } catch {}
         await Linking.openURL(res.paymentUrl);
       }
     } catch (err: unknown) {
@@ -384,7 +390,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             return (
               <View key={item.id || idx} style={[styles.itemRow, idx < (order.items?.length || 0) - 1 && styles.itemRowBorder]}>
                 {imgUrl ? (
-                  <Image source={{ uri: imgUrl }} style={styles.itemImage} />
+                  <ExpoImage source={{ uri: imgUrl }} style={styles.itemImage} contentFit="cover" cachePolicy="memory-disk" />
                 ) : (
                   <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
                     <MaterialCommunityIcons name="package-variant" size={20} color={COLORS.text2} />

@@ -875,7 +875,32 @@ async function runMigrations() {
     await step('Thumbnail URL column', () => c.query(`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;`));
 
     // ── NatCash phone number separation ──
-    await step('NatCash phone separation', () => c.query(`
+    
+    await step('Pending checkouts for deferred order creation', () => c.query(`
+      CREATE TABLE IF NOT EXISTS pending_checkouts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        cart_data JSONB NOT NULL,
+        delivery_method VARCHAR(20),
+        delivery_name TEXT,
+        delivery_phone TEXT,
+        delivery_address TEXT,
+        delivery_city TEXT,
+        delivery_note TEXT,
+        meetup_lat DECIMAL(10,7),
+        meetup_lng DECIMAL(10,7),
+        meetup_address TEXT,
+        meetup_name TEXT,
+        payment_method VARCHAR(20) DEFAULT 'moncash',
+        promo_code TEXT,
+        total_amount DECIMAL(10,2),
+        status VARCHAR(20) DEFAULT 'pending',
+        moncash_reference TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '30 minutes')
+      );
+    `));
+await step('NatCash phone separation', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS natcash_phone VARCHAR(20);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_payment_methods TEXT[] DEFAULT ARRAY['moncash'];
     `));
@@ -943,6 +968,7 @@ app.post('/api/admin/convert-to-webp', express.json({ limit: '1mb' }), async (re
           Key: newKey,
           Body: webpBuffer,
           ContentType: 'image/webp',
+          CacheControl: 'public, max-age=31536000, immutable',
         }));
         const newUrl = SUPABASE_PUBLIC_BASE + '/' + newKey;
         // Update thumbnail too if it's also jpg
@@ -963,6 +989,7 @@ app.post('/api/admin/convert-to-webp', express.json({ limit: '1mb' }), async (re
                 Key: newThumbKey,
                 Body: thumbWebp,
                 ContentType: 'image/webp',
+                CacheControl: 'public, max-age=31536000, immutable',
               }));
               newThumbUrl = SUPABASE_PUBLIC_BASE + '/' + newThumbKey;
             } catch (e) { /* skip thumb conversion */ }
@@ -1041,12 +1068,13 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
 
     if (activeStorage) {
       try {
-        // Upload full-size webp image
+        // Upload full-size webp image — immutable cache (UUID key never changes)
         await activeStorage.send(new PutObjectCommand({
           Bucket: activeBucket,
           Key: key,
           Body: webpBuffer,
           ContentType: 'image/webp',
+          CacheControl: 'public, max-age=31536000, immutable',
         }));
         const url = `${activePublicBase}/${key}`;
 
@@ -1063,6 +1091,7 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
             Key: thumbKey,
             Body: thumbBuffer,
             ContentType: 'image/webp',
+            CacheControl: 'public, max-age=31536000, immutable',
           }));
           thumbnailUrl = `${activePublicBase}/${thumbKey}`;
         } catch (thumbErr) {
@@ -3580,6 +3609,103 @@ app.get('/api/orders', authRequired, async (req, res) => {
   }
 });
 
+// ── Deferred checkout: save cart + create MonCash payment without creating order ──
+app.post('/api/checkout/pending', authRequired, async (req, res) => {
+  const { cart, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, meetupLat, meetupLng, meetupAddress, meetupName, paymentMethod, promoCode, totalAmount } = req.body;
+  if (!cart || !Array.isArray(cart) || cart.length === 0) return res.status(400).json({ error: 'Cart is empty' });
+
+  try {
+    // Save pending checkout
+    const result = await pool.query(
+      `INSERT INTO pending_checkouts (user_id, cart_data, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, payment_method, promo_code, total_amount)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+      [req.user.id, JSON.stringify(cart), deliveryMethod, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null, meetupLat || null, meetupLng || null, meetupAddress || null, meetupName || null, paymentMethod || 'moncash', promoCode || null, totalAmount || 0]
+    );
+    const pendingId = result.rows[0].id;
+
+    if (paymentMethod === 'natcash') {
+      // NatCash: return pending ID so frontend can create order on confirm
+      return res.json({ pendingId, paymentMethod: 'natcash' });
+    }
+
+    // MonCash: create payment with pending checkout ID as reference
+    const referenceId = pendingId;
+    const moncashRes = await fetch(
+      process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: Math.round(parseFloat(totalAmount)),
+          referenceId,
+          returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?pending=${pendingId}`,
+        }),
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+    if (!moncashRes.ok) {
+      const errText = await moncashRes.text();
+      console.error(`MonCashConnect HTTP ${moncashRes.status}:`, errText);
+      return res.status(502).json({ error: 'Payment provider error' });
+    }
+    const data = await moncashRes.json();
+    if (!data.paymentUrl) return res.status(502).json({ error: 'Payment provider error' });
+
+    await pool.query('UPDATE pending_checkouts SET moncash_reference = $1 WHERE id = $2', [referenceId, pendingId]);
+    res.json({ paymentUrl: data.paymentUrl, pendingId });
+  } catch (err) {
+    console.error('Pending checkout error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
+// Check pending checkout status (for PaymentReturnScreen polling)
+app.get('/api/checkout/pending/:id/status', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, status, created_at FROM pending_checkouts WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const pc = result.rows[0];
+    // Check if expired (30 min)
+    const age = Date.now() - new Date(pc.created_at).getTime();
+    if (pc.status === 'pending' && age > 30 * 60 * 1000) {
+      await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [req.params.id]);
+      return res.json({ status: 'expired' });
+    }
+    if (pc.status === 'completed') {
+      // Find the order created from this pending checkout
+      const orderRes = await pool.query(
+        'SELECT id FROM orders WHERE buyer_id = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT 1',
+        [req.user.id, pc.created_at]
+      );
+      return res.json({ status: 'completed', orderId: orderRes.rows[0]?.id });
+    }
+    res.json({ status: pc.status });
+  } catch (err) {
+    console.error('Pending checkout status error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Client-reported abandoned payment — creates a persistent notification
+app.post('/api/payments/abandoned', authRequired, async (req, res) => {
+  try {
+    const { pendingId, orderId } = req.body;
+    await createNotification(
+      req.user.id, 'payment_failed', 'Payment not completed',
+      'Your payment was not processed. Your items are still in your cart.',
+      { orderId: orderId || pendingId }
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Abandoned payment notification error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/orders', authRequired, dobRequired, async (req, res) => {
   // Email verification gate
   const evCheck = await pool.query('SELECT email_verified FROM users WHERE id = $1', [req.user.id]);
@@ -5994,6 +6120,81 @@ app.post('/api/payments/webhook', async (req, res) => {
         return res.json({ received: true, skipped: 'subscription' });
       }
 
+      // Check if this reference is a pending_checkout (deferred order creation)
+      const pendingCheck = await pool.query(
+        "SELECT * FROM pending_checkouts WHERE id = $1 AND status = 'pending'", [reference]
+      );
+      if (pendingCheck.rows.length > 0) {
+        const pc = pendingCheck.rows[0];
+        const client2 = await pool.connect();
+        try {
+          await client2.query('BEGIN');
+          if (eventId) {
+            await client2.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+          }
+          // Create order from pending checkout cart data
+          const cartData = pc.cart_data;
+          const items = cartData.map(i => ({ productId: i.id || i.productId, quantity: i.quantity }));
+          // Calculate total from cart
+          let totalAmount = 0;
+          for (const item of items) {
+            const prodRes = await client2.query('SELECT price, effective_price FROM products WHERE id = $1', [item.productId]);
+            if (prodRes.rows.length > 0) {
+              const price = prodRes.rows[0].effective_price || prodRes.rows[0].price;
+              totalAmount += price * item.quantity;
+            }
+          }
+          // Apply promo discount if present
+          if (pc.promo_code) {
+            try {
+              const promoRes = await client2.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true', [pc.promo_code]);
+              if (promoRes.rows.length > 0) {
+                const promo = promoRes.rows[0];
+                const discount = promo.discount_type === 'percentage' ? totalAmount * (promo.discount_value / 100) : promo.discount_value;
+                totalAmount = Math.max(0, totalAmount - discount);
+              }
+            } catch { /* ignore */ }
+          }
+          // Create the order
+          const orderRes = await client2.query(
+            `INSERT INTO orders (buyer_id, total_amount, status, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
+             VALUES ($1, $2, 'paid', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+            [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
+          );
+          const orderId = orderRes.rows[0].id;
+          // Create order items
+          for (const item of items) {
+            const prodRes = await client2.query('SELECT seller_id, price, effective_price FROM products WHERE id = $1', [item.productId]);
+            if (prodRes.rows.length > 0) {
+              const sellerId = prodRes.rows[0].seller_id;
+              const price = prodRes.rows[0].effective_price || prodRes.rows[0].price;
+              await client2.query(
+                'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
+                [orderId, item.productId, sellerId, item.quantity, price]
+              );
+              // Decrement stock
+              await client2.query('UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1', [item.quantity, item.productId]);
+            }
+          }
+          // Log order event
+          await client2.query(
+            "INSERT INTO order_events (order_id, event_type, note) VALUES ($1, 'payment_received', 'Payment completed via MonCash (deferred)')",
+            [orderId]
+          );
+          // Mark pending checkout as completed
+          await client2.query("UPDATE pending_checkouts SET status = 'completed' WHERE id = $1", [reference]);
+          await client2.query('COMMIT');
+          console.log(`Webhook: created order ${orderId} from pending checkout ${reference}`);
+          return res.json({ received: true, orderId });
+        } catch (err) {
+          await client2.query('ROLLBACK');
+          console.error(`Pending checkout webhook error:`, err);
+          return res.status(500).json({ error: 'Server error' });
+        } finally {
+          client2.release();
+        }
+      }
+
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
@@ -7477,45 +7678,12 @@ app.post('/api/feed/event', authRequired, async (req, res) => {
       return res.status(429).json({ error: 'Too many actions. Please wait.', rateLimited: true });
     }
 
-    await pool.query(
-      `INSERT INTO feed_events (user_id, product_id, event_type, duration_ms)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (user_id, product_id, event_type) DO UPDATE SET
-         duration_ms = COALESCE($4, feed_events.duration_ms),
-         created_at = CURRENT_TIMESTAMP`,
-      [req.user.id, productId, eventType, durationMs || null]
-);
-    // Explicit feedback should improve similar listings too, not only this exact product.
-    if (eventType === 'relevant' || eventType === 'not_relevant') {
-      const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
-      if (category.rows[0]?.category_id) {
-        const delta = eventType === 'relevant' ? 1 : -1;
-        await pool.query(
-          `INSERT INTO user_category_affinities (user_id, category_id, score)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (user_id, category_id) DO UPDATE SET
-             score = GREATEST(-3, LEAST(3, user_category_affinities.score + EXCLUDED.score)),
-             updated_at = CURRENT_TIMESTAMP`,
-          [req.user.id, category.rows[0].category_id, delta]
-        );
-      }
-    }
-    // Likes and saves also boost category affinity (positive signal)
-    if (eventType === 'like' || eventType === 'save') {
-      const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
-      if (category.rows[0]?.category_id) {
-        await pool.query(
-          `INSERT INTO user_category_affinities (user_id, category_id, score)
-           VALUES ($1, $2, 1)
-           ON CONFLICT (user_id, category_id) DO UPDATE SET
-             score = GREATEST(-3, LEAST(3, user_category_affinities.score + 1)),
-             updated_at = CURRENT_TIMESTAMP`,
-          [req.user.id, category.rows[0].category_id]
-        );
-      }
-    }
-    // Unlike removes the positive signal
+    // Unlike: DELETE the like row (not insert an unlike row) so like_count decreases
     if (eventType === 'unlike') {
+      await pool.query(
+        `DELETE FROM feed_events WHERE user_id = $1 AND product_id = $2 AND event_type = 'like'`,
+        [req.user.id, productId]
+      );
       const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
       if (category.rows[0]?.category_id) {
         await pool.query(
@@ -7527,10 +7695,67 @@ app.post('/api/feed/event', authRequired, async (req, res) => {
           [req.user.id, category.rows[0].category_id]
         );
       }
+    } else {
+      // Like, save, relevant, etc — INSERT or update
+      await pool.query(
+        `INSERT INTO feed_events (user_id, product_id, event_type, duration_ms)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_id, product_id, event_type) DO UPDATE SET
+           duration_ms = COALESCE($4, feed_events.duration_ms),
+           created_at = CURRENT_TIMESTAMP`,
+        [req.user.id, productId, eventType, durationMs || null]
+      );
+      // Explicit feedback should improve similar listings too, not only this exact product.
+      if (eventType === 'relevant' || eventType === 'not_relevant') {
+        const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
+        if (category.rows[0]?.category_id) {
+          const delta = eventType === 'relevant' ? 1 : -1;
+          await pool.query(
+            `INSERT INTO user_category_affinities (user_id, category_id, score)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (user_id, category_id) DO UPDATE SET
+               score = GREATEST(-3, LEAST(3, user_category_affinities.score + EXCLUDED.score)),
+               updated_at = CURRENT_TIMESTAMP`,
+            [req.user.id, category.rows[0].category_id, delta]
+          );
+        }
+      }
+      // Likes and saves also boost category affinity (positive signal)
+      if (eventType === 'like' || eventType === 'save') {
+        const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
+        if (category.rows[0]?.category_id) {
+          await pool.query(
+            `INSERT INTO user_category_affinities (user_id, category_id, score)
+             VALUES ($1, $2, 1)
+             ON CONFLICT (user_id, category_id) DO UPDATE SET
+               score = GREATEST(-3, LEAST(3, user_category_affinities.score + 1)),
+               updated_at = CURRENT_TIMESTAMP`,
+            [req.user.id, category.rows[0].category_id]
+          );
+        }
+      }
     }
     res.json({ recorded: true });
   } catch (err) {
     console.error('Feed event error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Batch check which products the user has liked
+app.get('/api/feed/liked-status', authRequired, async (req, res) => {
+  try {
+    const ids = (req.query.ids || '').split(',').filter(Boolean);
+    if (ids.length === 0) return res.json({ liked: {} });
+    const result = await pool.query(
+      `SELECT product_id FROM feed_events WHERE user_id = $1 AND product_id = ANY($2) AND event_type = 'like'`,
+      [req.user.id, ids]
+    );
+    const set = {};
+    for (const row of result.rows) set[row.product_id] = true;
+    res.json({ liked: set });
+  } catch (err) {
+    console.error('Feed liked batch check error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -7882,9 +8107,11 @@ cron.schedule('*/5 * * * *', async () => {
             console.error(`[CRON] Error processing stale order ${order.id}:`, e.message);
           }
         } else if (data.status === 'failed' || data.status === 'expired') {
-          await pool.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [order.id]);
-          console.log(`[CRON] Stale order ${order.id} cancelled (payment ${data.status})`);
-          createNotification(order.buyer_id, 'order_status', 'Payment Failed', 'Your payment could not be processed. The order has been cancelled.', { orderId: order.id });
+          const cancelResult = await pool.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [order.id]);
+          if (cancelResult.rowCount > 0) {
+            console.log(`[CRON] Stale order ${order.id} cancelled (payment ${data.status})`);
+            createNotification(order.buyer_id, 'order_status', 'Payment Failed', 'Your payment could not be processed. The order has been cancelled.', { orderId: order.id });
+          }
         }
       } catch (e) {
         console.error(`[CRON] Pay-status poll error for ${order.id}:`, e.message);

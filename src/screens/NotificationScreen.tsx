@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, Image, Pressable,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, Pressable,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -127,7 +128,7 @@ function groupByDay(notifs: Notification[]): { label: string; data: Notification
   return Object.entries(groups).map(([label, data]) => ({ label, data }));
 }
 
-const ORDER_NOTIF_TYPES = new Set(['order_status', 'payment_confirmed', 'payment_failed', 'order_cancelled']);
+const ORDER_NOTIF_TYPES = new Set(['order_status', 'payment_confirmed', 'order_cancelled']);
 
 const SORT_OPTIONS = [
   { value: 'date_desc', label: 'Newest first' },
@@ -217,8 +218,8 @@ export default function NotificationScreen() {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 
-  const filteredNotifications = notifications.filter(n => !ORDER_NOTIF_TYPES.has(n.type));
-  const unreadCount = filteredNotifications.filter(n => !n.is_read).length;
+  const filteredNotifications = notifications.filter(n => !ORDER_NOTIF_TYPES.has(n.type) && !n.is_read);
+  const unreadCount = filteredNotifications.length;
   const allOrders = [...buyOrders, ...sellOrders];
   const activeOrders = allOrders.filter(o => ['pending', 'paid', 'processing', 'shipped', 'delivered'].includes(o.status));
   const allHistoryOrders = allOrders.filter(o => ['completed', 'cancelled'].includes(o.status));
@@ -401,7 +402,7 @@ export default function NotificationScreen() {
         <View style={styles.orderCardTop}>
           <View>
             {productImageUrl ? (
-              <Image source={{ uri: productImageUrl }} style={styles.orderImage} />
+              <ExpoImage source={{ uri: productImageUrl }} style={styles.orderImage} contentFit="cover" cachePolicy="memory-disk" />
             ) : (
               <View style={[styles.orderImage, styles.orderImagePlaceholder]}>
                 <MaterialCommunityIcons name="package-variant" size={24} color={COLORS.text2} />
@@ -490,10 +491,10 @@ export default function NotificationScreen() {
       </View>
 
       {/* Mark all read row */}
-      {activeTab === 'notifications' && unreadCount > 0 && (
+      {activeTab === 'notifications' && (
         <View style={styles.markAllRow}>
           <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
-            <MaterialCommunityIcons name="check-all" size={14} color={COLORS.blue} />
+            <MaterialCommunityIcons name="check-all" size={16} color={COLORS.white} />
             <Text style={styles.markAllText}>Mark all read</Text>
           </TouchableOpacity>
         </View>
@@ -501,7 +502,7 @@ export default function NotificationScreen() {
       {(activeTab === 'buying' || activeTab === 'selling') && (
         <View style={styles.markAllRow}>
           <TouchableOpacity onPress={markAllOrdersViewed} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
-            <MaterialCommunityIcons name="check-all" size={14} color={COLORS.blue} />
+            <MaterialCommunityIcons name="check-all" size={16} color={COLORS.white} />
             <Text style={styles.markAllText}>Mark all read</Text>
           </TouchableOpacity>
         </View>
@@ -664,10 +665,9 @@ const styles = StyleSheet.create({
   markAllRow: {
     flexDirection: 'row', justifyContent: 'flex-end',
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  markAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, backgroundColor: COLORS.blue + '15' },
-  markAllText: { color: COLORS.blue, fontSize: 12, fontWeight: '600' },
+  markAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 14, borderRadius: 20, backgroundColor: COLORS.coral },
+  markAllText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
   historyBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   historyFilterBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 
