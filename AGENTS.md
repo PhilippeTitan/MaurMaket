@@ -273,6 +273,12 @@ Config at: `C:\Users\drato\.config\opencode\opencode.json`
 | **GitHub** | ✅ | Repo management, PRs, issues |
 | **MonCashConnect** | ✅ (production) | Payment debugging, test payments, balance checks |
 
+### External Services
+| Service | Purpose | Key/Config |
+|---------|---------|------------|
+| **cron-job.org** | Render keep-alive pings (replaces throttled GitHub Actions cron) | API key: `ZhYnvsj66LV9BnAiURgHJa9q/AVND65BnN1tkMBRAmg=` |
+| | Target URL: `https://maurmaket.onrender.com/api/health` | Free tier, 1-min interval |
+
 ### Supabase MCP Tools
 **ALWAYS use these for database queries instead of connecting via `pg` directly.**
 - `supabase_execute_sql` — Run raw SQL against the Supabase Postgres database
