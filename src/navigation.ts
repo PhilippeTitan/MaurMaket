@@ -78,5 +78,5 @@ export type RootStackParamList = {
   LanguageSettings: undefined;
   FollowList: { userId: string; kind: 'followers' | 'following'; title: string };
   OfferDetail: { messageId: string; conversationId: string };
-  NatCashPayment: { orderId: string; total: number; sellerName: string; sellerPhone: string };
+  NatCashPayment: { orderId?: string; pendingId?: string; total: number; sellerName: string; sellerPhone: string };
 };

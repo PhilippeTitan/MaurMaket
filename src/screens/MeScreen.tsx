@@ -27,8 +27,6 @@ import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import { SkeletonBlock } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
-import SettingsCard from '../components/SettingsCard';
-import CardRow from '../components/CardRow';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
@@ -674,43 +672,6 @@ export default function MeScreen() {
         )}
       </View>
 
-      {/* ── Quick Access ── */}
-      <View style={styles.quickAccessSection}>
-        <Text style={styles.sectionLabel}>{t('me.quickAccess')}</Text>
-        <SettingsCard>
-          <CardRow
-            icon="account-edit-outline"
-            label={t('me.editProfile')}
-            chevron
-            onPress={() => nav.navigate('EditProfile')}
-            divider
-          />
-          <CardRow
-            icon="credit-card-outline"
-            iconColor={COLORS.coral}
-            label={t('me.paymentPreference')}
-            value={user?.phone ? 'MonCash' : undefined}
-            chevron
-            onPress={() => nav.navigate('Settings')}
-            divider
-          />
-          <CardRow
-            icon="map-marker-outline"
-            iconColor={COLORS.green}
-            label={t('me.deliveryAddresses')}
-            chevron
-            onPress={() => nav.navigate('Addresses')}
-            divider
-          />
-          <CardRow
-            icon="translate"
-            label={t('settings.language')}
-            chevron
-            onPress={() => nav.navigate('LanguageSettings')}
-          />
-        </SettingsCard>
-      </View>
-
       {/* ── Bottom Spacer ── */}
       <View style={{ height: 40 }} />
       </ScrollView>
@@ -857,17 +818,4 @@ const styles = StyleSheet.create({
   sellTitle: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.bold, color: COLORS.green },
   sellHint: { fontSize: FONT_SIZES.xs, color: COLORS.text2, marginTop: 1 },
 
-  /* Quick Access */
-  quickAccessSection: {
-    marginTop: SPACING.xl,
-  },
-  sectionLabel: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: FONT_WEIGHTS.bold,
-    color: COLORS.text2,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.sm,
-  },
 });

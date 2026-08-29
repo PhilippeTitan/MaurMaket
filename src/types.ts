@@ -35,6 +35,8 @@ export interface ProductImage {
   thumbnail_url: string | null;
   is_primary: boolean;
   display_order: number;
+  image_width?: number;
+  image_height?: number;
 }
 
 export interface Product {
@@ -61,6 +63,8 @@ export interface Product {
   review_count?: number;
   like_count?: number;
   wishlist_count?: number;
+  is_liked?: boolean;
+  is_wishlisted?: boolean;
   recommendation_reason?: string;
 }
 

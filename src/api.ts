@@ -280,6 +280,12 @@ export const createPendingCheckout = (data: Record<string, unknown>) =>
 export const checkPendingStatus = (pendingId: string) =>
   request(`/checkout/pending/${pendingId}/status`);
 
+export const getPendingSellerInfo = (pendingId: string) =>
+  request(`/checkout/pending/${pendingId}/seller-info`);
+
+export const confirmNatCashPayment = (pendingId: string, smsData?: Record<string, unknown>) =>
+  request(`/checkout/pending/${pendingId}/confirm-natcash`, { method: 'POST', body: JSON.stringify({ smsData }) });
+
 export const reportAbandonedPayment = (data: { pendingId?: string; orderId?: string }) =>
   request('/payments/abandoned', { method: 'POST', body: JSON.stringify(data) });
 
@@ -515,6 +521,10 @@ export const createDispute = (data: Record<string, string>) =>
 
 export const getImageUrl = (imageUrl: string | undefined | null): string | null => {
   if (!imageUrl) return null;
+  // Defensive: unwrap JSON-wrapped URLs (e.g. {"url":"https://..."})
+  if (imageUrl.startsWith('{')) {
+    try { const parsed = JSON.parse(imageUrl); if (parsed.url) imageUrl = parsed.url; } catch { /* not JSON */ }
+  }
   if (imageUrl.startsWith('http')) return imageUrl;
   return `${UPLOAD_BASE}${imageUrl}`;
 };

@@ -10,7 +10,7 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
-import { getOrder } from '../api';
+import { confirmNatCashPayment, checkPendingStatus } from '../api';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import { dialUssd } from '../ussd';
@@ -73,7 +73,9 @@ export default function NatCashPaymentScreen() {
   const nav = useNavigation<Nav>();
   const route = useRoute<Props>();
 
-  const { orderId, total, sellerName, sellerPhone } = route.params;
+  const { orderId: directOrderId, pendingId, total, sellerName, sellerPhone } = route.params;
+  // orderId may come from a retry flow (OrderDetailScreen), pendingId from new checkout
+  const [createdOrderId, setCreatedOrderId] = useState<string | undefined>(directOrderId);
 
   const [step, setStep] = useState<'dial' | 'detecting' | 'confirmed' | 'failed'>('dial');
   const [parsed, setParsed] = useState<ParsedSms | null>(null);
@@ -113,20 +115,52 @@ export default function NatCashPaymentScreen() {
       });
     }
 
-    setStep('confirmed');
-    setTimeout(() => nav.replace('OrderDetail', { orderId }), 2500);
-  }, [orderId, nav]);
+    // Create order from pending checkout (deferred flow)
+    let finalOrderId = createdOrderId; // may already be set from direct orderId
+    if (pendingId && !finalOrderId) {
+      try {
+        const smsPayload = smsData ? {
+          transcode: smsData.transcode, amount: smsData.amount,
+          recipientName: smsData.recipientName, recipientNumber: smsData.recipientNumber,
+        } : undefined;
+        const res = await confirmNatCashPayment(pendingId, smsPayload) as { orderId: string; alreadyConfirmed?: boolean };
+        finalOrderId = res.orderId;
+        setCreatedOrderId(res.orderId);
+      } catch (err) {
+        console.error('[NatCash] Failed to create order from pending:', err);
+        // Even if server call fails, show confirmed state — order may have been created
+        // PaymentReturnScreen will handle the fallback via polling
+      }
+    }
 
-  // ── Poll server for order status (backup method) ──
+    setStep('confirmed');
+    setTimeout(() => {
+      if (finalOrderId) nav.replace('OrderDetail', { orderId: finalOrderId });
+      else nav.replace('PaymentReturn', { pendingId }); // fallback
+    }, 2500);
+  }, [pendingId, createdOrderId, nav]);
+
+  // ── Poll server for pending checkout status (backup method) ──
   const pollOrderStatus = useCallback(async () => {
     if (confirmedRef.current) return;
     try {
-      const res = await getOrder(orderId) as { order: { status: string } };
-      if (res.order?.status === 'paid') {
-        confirmPayment('server-poll');
+      if (pendingId) {
+        const res = await checkPendingStatus(pendingId) as { status: string; orderId?: string };
+        if (res.status === 'completed' && res.orderId) {
+          setCreatedOrderId(res.orderId);
+          confirmPayment('server-poll');
+        }
+      } else if (directOrderId) {
+        // Fallback: retry flow with direct orderId (OrderDetailScreen)
+        const { getOrder } = await import('../api');
+        const res = await getOrder(directOrderId) as { order: { status: string } };
+        if (res.order?.status === 'paid') {
+          setCreatedOrderId(directOrderId);
+          confirmPayment('server-poll');
+        }
       }
     } catch { /* keep polling */ }
-  }, [orderId, confirmPayment]);
+  }, [pendingId, directOrderId, confirmPayment]);
 
   // ── Start polling + SMS listener when "detecting" ──
   useEffect(() => {
@@ -404,7 +438,7 @@ export default function NatCashPaymentScreen() {
               <Text style={styles.elapsed}>{elapsed}s</Text>
             )}
             <View style={styles.orderBadge}>
-              <Text style={styles.orderBadgeText}>Order {orderId.slice(0, 8)}</Text>
+              <Text style={styles.orderBadgeText}>{(createdOrderId || directOrderId || pendingId || '').slice(0, 8)}</Text>
             </View>
           </View>
         )}

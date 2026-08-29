@@ -12,7 +12,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import {
-  getProducts, toggleWishlist, checkWishlist, checkWishlistBatch, checkLikedBatch, createConversation,
+  getProducts, createConversation,
   getImageUrl, getUnreadCount, getProductReviews, getFollowing,
   trackFeedEvent, getActiveOrderCount,
 } from '../api';
@@ -28,6 +28,8 @@ import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { SkeletonBlock } from '../components/Skeleton';
 import { tapLight } from '../haptics';
+import FeedLikeButton from '../components/FeedLikeButton';
+import FeedSaveButton from '../components/FeedSaveButton';
 import { useToast } from '../components/Toast';
 import { queryClient } from '../hooks';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
@@ -47,7 +49,6 @@ export default function FeedScreen() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [screenHeight, setScreenHeight] = useState(0);
-  const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
   const [cartCount, setCartCount] = useState(store.cartCount);
   const [unreadCount, setUnreadCount] = useState(0);
   const [commentProduct, setCommentProduct] = useState<Product | null>(null);
@@ -55,10 +56,7 @@ export default function FeedScreen() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [moreProduct, setMoreProduct] = useState<Product | null>(null);
   const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('new');
-  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const flatListRef = useRef<FlatList>(null);
-  const checkedWishlistIds = useRef<Set<string>>(new Set());
-  const checkedLikedIds = useRef<Set<string>>(new Set());
   const viewStartTime = useRef<number>(Date.now());
   const currentProductId = useRef<string | null>(null);
   const scrollOffsetRef = useRef(0);
@@ -70,10 +68,6 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
     if (p === 1 && replace) {
       const snapshot = await readSnapshot<{ products: Product[]; pages: number }>(cacheKey);
       if (snapshot?.value.products?.length) {
-        checkedWishlistIds.current.clear();
-        checkedLikedIds.current.clear();
-        setWishlistedIds(new Set());
-        setLikedIds(new Set());
         setProducts(snapshot.value.products);
         setHasMore(1 < snapshot.value.pages);
       }
@@ -92,10 +86,6 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
         staleTime: 30_000,
       });
       if (replace) {
-        checkedWishlistIds.current.clear();
-        checkedLikedIds.current.clear();
-        setWishlistedIds(new Set());
-        setLikedIds(new Set());
         setProducts(res.products);
         if (p === 1) void writeSnapshot(cacheKey, { products: res.products, pages: res.pages });
       } else {
@@ -157,47 +147,6 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
   }, []));
 
   useEffect(() => {
-    if (!store.isLoggedIn || products.length === 0 || network.isOffline) return;
-    const unchecked = products.filter(p => !checkedWishlistIds.current.has(p.id));
-    if (unchecked.length === 0) return;
-    unchecked.forEach(p => checkedWishlistIds.current.add(p.id));
-    (async () => {
-      try {
-        const res = await checkWishlistBatch(unchecked.map(p => p.id)) as { wishlisted: Record<string, boolean> };
-        setWishlistedIds(prev => {
-          const next = new Set(prev);
-          for (const p of unchecked) {
-            if (res.wishlisted[p.id]) next.add(p.id);
-            else next.delete(p.id);
-          }
-          return next;
-        });
-      } catch { /* Product cards remain usable even if wishlist state is unavailable. */ }
-    })();
-  }, [products]);
-
-  // Hydrate liked state for heart buttons
-  useEffect(() => {
-    if (!store.isLoggedIn || products.length === 0 || network.isOffline) return;
-    const unchecked = products.filter(p => !checkedLikedIds.current.has(p.id));
-    if (unchecked.length === 0) return;
-    unchecked.forEach(p => checkedLikedIds.current.add(p.id));
-    (async () => {
-      try {
-        const res = await checkLikedBatch(unchecked.map(p => p.id)) as { liked: Record<string, boolean> };
-        setLikedIds(prev => {
-          const next = new Set(prev);
-          for (const p of unchecked) {
-            if (res.liked[p.id]) next.add(p.id);
-            else next.delete(p.id);
-          }
-          return next;
-        });
-      } catch { /* Heart state is cosmetic — feed remains usable. */ }
-    })();
-  }, [products]);
-
-  useEffect(() => {
     if (!store.isLoggedIn) return;
     let mounted = true;
     (async () => {
@@ -254,52 +203,6 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
   const onMomentumScrollEnd = useCallback(() => {
     dragStartIndexRef.current = Math.round(scrollOffsetRef.current / screenHeight);
   }, [screenHeight]);
-
-  const handleBookmark = async (product: Product) => {
-    tapLight();
-    const wasWishlisted = wishlistedIds.has(product.id);
-    setWishlistedIds(prev => {
-      const next = new Set(prev);
-      if (wasWishlisted) next.delete(product.id);
-      else next.add(product.id);
-      return next;
-    });
-    try {
-      await toggleWishlist(product.id);
-      if (!wasWishlisted) {
-        // Fire 'save' event when adding to wishlist
-        trackFeedEvent(product.id, 'save').catch(() => {});
-      }
-    } catch {
-      setWishlistedIds(prev => {
-        const next = new Set(prev);
-        if (wasWishlisted) next.add(product.id);
-        else next.delete(product.id);
-        return next;
-      });
-    }
-  };
-
-  const handleLike = async (product: Product) => {
-    tapLight();
-    const wasLiked = likedIds.has(product.id);
-    setLikedIds(prev => {
-      const next = new Set(prev);
-      if (wasLiked) next.delete(product.id);
-      else next.add(product.id);
-      return next;
-    });
-    try {
-      await trackFeedEvent(product.id, wasLiked ? 'unlike' : 'like');
-    } catch {
-      setLikedIds(prev => {
-        const next = new Set(prev);
-        if (wasLiked) next.add(product.id);
-        else next.delete(product.id);
-        return next;
-      });
-    }
-  };
 
   const handleFeedback = async (eventType: 'relevant' | 'not_relevant') => {
     const product = moreProduct;
@@ -430,19 +333,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
 
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => handleLike(item)}
-            accessibilityRole="button"
-            accessibilityLabel={likedIds.has(item.id) ? t('accessibility.unlike') : t('accessibility.like')}
-          >
-            <MaterialCommunityIcons
-              name={likedIds.has(item.id) ? 'heart' : 'heart-outline'}
-              size={35}
-              color={likedIds.has(item.id) ? COLORS.coral : COLORS.white}
-            />
-            <Text style={styles.actionCount}>{item.like_count || 0}</Text>
-          </TouchableOpacity>
+          <FeedLikeButton productId={item.id} />
           {!isOwnProduct && (
             <TouchableOpacity
               style={styles.actionBtn}
@@ -454,19 +345,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               <Text style={styles.actionCount}>{item.review_count || 0}</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => handleBookmark(item)}
-            accessibilityRole="button"
-            accessibilityLabel={wishlistedIds.has(item.id) ? t('accessibility.unbookmark') : t('accessibility.bookmark')}
-          >
-            <MaterialCommunityIcons
-              name={wishlistedIds.has(item.id) ? 'bookmark' : 'bookmark-outline'}
-              size={35}
-              color={wishlistedIds.has(item.id) ? COLORS.coral : COLORS.white}
-            />
-            <Text style={styles.actionCount}>{item.wishlist_count || 0}</Text>
-          </TouchableOpacity>
+          <FeedSaveButton productId={item.id} />
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={() => setMoreProduct(item)}

@@ -15,7 +15,7 @@ import { useTranslation } from '../i18n';
 import { validatePromo } from '../api';
 import ScreenHeader from '../components/ScreenHeader';
 import { store } from '../store';
-import { createPendingCheckout, getAddresses, getImageUrl } from '../api';
+import { createPendingCheckout, getPendingSellerInfo, getAddresses, getImageUrl } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Address } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
@@ -243,10 +243,17 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         } catch {}
         // Redirect to MonCash — cart stays intact until payment confirmed
         await Linking.openURL(res.paymentUrl);
+        navigation.replace('PaymentReturn', { pendingId: res.pendingId });
+      } else {
+        // NatCash: fetch seller info, then navigate to NatCashPayment screen
+        const sellerInfo = await getPendingSellerInfo(res.pendingId) as { sellerName: string; sellerPhone: string };
+        navigation.replace('NatCashPayment', {
+          pendingId: res.pendingId,
+          total: finalTotal,
+          sellerName: sellerInfo.sellerName || 'Seller',
+          sellerPhone: sellerInfo.sellerPhone || '',
+        });
       }
-      // Navigate to PaymentReturn to poll for confirmation
-      // Cart is NOT cleared here — only cleared after webhook confirms payment
-      navigation.replace('PaymentReturn', { pendingId: res.pendingId });
     } catch (e: unknown) {
       notifyError();
       const msg = e instanceof Error ? e.message : '';

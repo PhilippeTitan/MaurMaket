@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
-import { getProduct, getProducts, toggleWishlist, checkWishlist, getSellerReviews, getProductReviews, getImageUrl, getFollowing, getCoPurchaseRecommendations, trackFeedEvent } from '../api';
+import { getProduct, getProducts, getSellerReviews, getProductReviews, getImageUrl, getFollowing, getCoPurchaseRecommendations } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -22,7 +22,8 @@ import UserAvatar from '../components/UserAvatar';
 import BackButton from '../components/BackButton';
 import { SkeletonBlock } from '../components/Skeleton';
 import StockBadge from '../components/StockBadge';
-import { queryClient } from '../hooks';
+import { queryClient, useLike, useWishlist } from '../hooks';
+import ProductActionBar from '../components/ProductActionBar';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -45,8 +46,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const { productId } = route.params;
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
-  const [wishlisted, setWishlisted] = useState(false);
-  const [liked, setLiked] = useState(false);
+  const { liked, likeCount, toggle: toggleLike } = useLike(productId);
+  const { wishlisted, toggle: toggleWishlist } = useWishlist(productId);
   const [sellerReviews, setSellerReviews] = useState<Review[]>([]);
   const [productReviews, setProductReviews] = useState<Review[]>([]);
   const [showAllReviews, setShowAllReviews] = useState(false);
@@ -58,7 +59,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [heroHeight, setHeroHeight] = useState(HERO_DEFAULT_H);
-  const [heartCount, setHeartCount] = useState(0);
   const [storeTick, setStoreTick] = useState(0);
   const mountedRef = useRef(true);
   const flatListRef = useRef<FlatList>(null);
@@ -89,12 +89,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         setProduct(p);
 
         const postProduct: Promise<void>[] = [];
-
-        postProduct.push(
-          checkWishlist(productId).then(wlRes => {
-            if (mountedRef.current) setWishlisted((wlRes as { wishlisted: boolean }).wishlisted);
-          }).catch(() => {})
-        );
 
         if (p.seller_id) {
           postProduct.push(
@@ -200,30 +194,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     }, () => { setHeroHeight(HERO_DEFAULT_H); });
   }, [activeImageIndex, product]);
 
-  const handleWishlist = async () => {
-    try {
-      const res = await toggleWishlist(productId) as { wishlisted: boolean };
-      setWishlisted(res.wishlisted);
-      setHeartCount(prev => res.wishlisted ? prev + 1 : Math.max(0, prev - 1));
-      if (res.wishlisted) {
-        trackFeedEvent(productId, 'save').catch(() => {});
-      }
-    } catch { /* silent */ }
-  };
-
-  const handleLike = async () => {
-    if (!product) return;
-    const newLiked = !liked;
-    setLiked(newLiked);
-    setHeartCount(prev => newLiked ? prev + 1 : Math.max(0, prev - 1));
-    try {
-      await trackFeedEvent(product.id, newLiked ? 'like' : 'unlike');
-    } catch {
-      setLiked(liked);
-      setHeartCount(prev => liked ? prev + 1 : Math.max(0, prev - 1));
-    }
-  };
-
   const handleShare = async () => {
     if (!product) return;
     try {
@@ -241,24 +211,27 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const renderSellerCard = useCallback(({ item }: { item: Product }) => {
     const imgUrl = getItemImageUrl(item);
     return (
-      <TouchableOpacity
-        style={styles.sellerCard}
-        activeOpacity={0.8}
-        onPress={() => navigation.push('ProductDetail', { productId: item.id })}
-        accessibilityRole="button"
-        accessibilityLabel={t('accessibility.viewProduct')}
-      >
-        {imgUrl ? (
-          <ExpoImage source={{ uri: imgUrl }} style={styles.sellerCardImg} contentFit="cover" cachePolicy="memory-disk" />
-        ) : (
-          <View style={styles.sellerCardPlaceholder}>
-            <Icon name="image-unavailable" size={16} color={COLORS.text2} />
+      <View>
+        <TouchableOpacity
+          style={styles.sellerCard}
+          activeOpacity={0.8}
+          onPress={() => navigation.push('ProductDetail', { productId: item.id })}
+          accessibilityRole="button"
+          accessibilityLabel={t('accessibility.viewProduct')}
+        >
+          {imgUrl ? (
+            <ExpoImage source={{ uri: imgUrl }} style={styles.sellerCardImg} contentFit="cover" cachePolicy="memory-disk" />
+          ) : (
+            <View style={styles.sellerCardPlaceholder}>
+              <Icon name="image-unavailable" size={16} color={COLORS.text2} />
+            </View>
+          )}
+          <View style={styles.sellerCardPriceOverlay}>
+            <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
           </View>
-        )}
-        <View style={styles.sellerCardPriceOverlay}>
-          <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+        <ProductActionBar productId={item.id} variant="card" />
+      </View>
     );
   }, [navigation]);
 
@@ -438,7 +411,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                 <View style={styles.actionRow}>
                   <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={handleLike}
+                    onPress={() => toggleLike()}
                     accessibilityRole="button"
                     accessibilityLabel={liked ? t('accessibility.unlike') : t('accessibility.like')}
                   >
@@ -447,7 +420,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                       size={25}
                       color={liked ? COLORS.coral : COLORS.text}
                     />
-                    <Text style={styles.actionCount}>{product.like_count || 0}</Text>
+                    <Text style={styles.actionCount}>{Number(likeCount) || 0}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionBtn}
@@ -466,7 +439,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={handleWishlist}
+                    onPress={() => toggleWishlist()}
                     accessibilityRole="button"
                     accessibilityLabel={wishlisted ? t('accessibility.unbookmark') : t('accessibility.bookmark')}
                   >
@@ -475,7 +448,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                       size={25}
                       color={wishlisted ? COLORS.coral : COLORS.text}
                     />
-                    <Text style={styles.actionCount}>{product.wishlist_count || 0}</Text>
                   </TouchableOpacity>
                   <View style={{ flex: 1 }} />
                   <TouchableOpacity

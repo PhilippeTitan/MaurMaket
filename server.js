@@ -905,6 +905,11 @@ await step('NatCash phone separation', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_payment_methods TEXT[] DEFAULT ARRAY['moncash'];
     `));
 
+    await step('Image dimensions on product_images', () => c.query(`
+      ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_width INTEGER;
+      ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_height INTEGER;
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -2974,21 +2979,24 @@ app.get('/api/products', async (req, res) => {
     params.push(maxPrice);
   }
 
-  // Check if personalized feed is requested and user is authenticated
+  // Extract user ID for engagement state (is_liked/is_wishlisted) and personalized feed
   let usePersonalized = false;
   let userId = null;
-  if (personalized === 'true' || following === 'true') {
-    try {
-      // Extract token from Authorization header
-      const authHeader = req.headers.authorization;
-      if (authHeader?.startsWith('Bearer ')) {
-        const token = authHeader.slice(7);
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        userId = decoded.id;
-        usePersonalized = true;
-      }
-    } catch { /* Not authenticated or invalid token — fall through to default order */ }
-  }
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      userId = decoded.id;
+      if (personalized === 'true' || following === 'true') usePersonalized = true;
+    }
+  } catch { /* Not authenticated or invalid token */ }
+
+  // Engagement param: always push userId (or null) for is_liked/is_wishlisted subqueries
+  const engagementUserId = userId || null;
+  params.push(engagementUserId);
+  const engIdx = paramIndex; // param slot for engagement userId
+  paramIndex++;
 
   let orderBy = 'p.created_at DESC';
   let selectExtra = '';
@@ -3116,12 +3124,14 @@ app.get('/api/products', async (req, res) => {
               ${selectExtra}
               , COALESCE(like_counts.like_count, 0) AS like_count
               , COALESCE(wishlist_counts.wishlist_count, 0) AS wishlist_count
+              , CASE WHEN $${engIdx}::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM feed_events fe WHERE fe.product_id = p.id AND fe.user_id = $${engIdx} AND fe.event_type = 'like') THEN true ELSE false END AS is_liked
+              , CASE WHEN $${engIdx}::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM wishlists w WHERE w.product_id = p.id AND w.user_id = $${engIdx}) THEN true ELSE false END AS is_wishlisted
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
        LEFT JOIN LATERAL (
          SELECT COALESCE(
-           json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC),
+           json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary, 'image_width', pi.image_width, 'image_height', pi.image_height) ORDER BY pi.is_primary DESC, pi.display_order ASC),
            '[]'::json
          ) AS images
          FROM product_images pi
@@ -3225,6 +3235,14 @@ app.get('/api/products/:id', async (req, res) => {
     const id = req.params.id;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(id)) return res.status(404).json({ error: 'Product not found' });
+    let userId = null;
+    try {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        const decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET);
+        userId = decoded.id;
+      }
+    } catch { /* not authenticated */ }
     const result = await pool.query(
       `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar,
               u.store_name, u.store_logo_url, u.seller_tier, u.id_verified, u.use_store_identity, u.username AS seller_username,
@@ -3235,7 +3253,9 @@ app.get('/api/products/:id', async (req, res) => {
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
               COALESCE(like_counts.like_count, 0) AS like_count,
               COALESCE(wishlist_counts.wishlist_count, 0) AS wishlist_count,
-              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
+              CASE WHEN $2::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM feed_events fe WHERE fe.product_id = p.id AND fe.user_id = $2 AND fe.event_type = 'like') THEN true ELSE false END AS is_liked,
+              CASE WHEN $2::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM wishlists w WHERE w.product_id = p.id AND w.user_id = $2) THEN true ELSE false END AS is_wishlisted,
+              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary, 'image_width', pi.image_width, 'image_height', pi.image_height) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
@@ -3251,7 +3271,7 @@ app.get('/api/products/:id', async (req, res) => {
          GROUP BY product_id
        ) wishlist_counts ON wishlist_counts.product_id = p.id
       WHERE p.id = $1 AND p.is_available = TRUE`,
-      [req.params.id]
+      [req.params.id, userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
     res.json({ product: result.rows[0] });
@@ -3686,6 +3706,128 @@ app.get('/api/checkout/pending/:id/status', authRequired, async (req, res) => {
     res.json({ status: pc.status });
   } catch (err) {
     console.error('Pending checkout status error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── NatCash: get seller info from pending checkout (for NatCashPaymentScreen display) ──
+app.get('/api/checkout/pending/:id/seller-info', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT cart_data FROM pending_checkouts WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const cartData = result.rows[0].cart_data;
+    // Get unique seller IDs from cart items
+    const sellerIds = [...new Set(cartData.map(i => i.seller_id).filter(Boolean))];
+    if (sellerIds.length === 0) return res.json({ sellerName: 'Seller', sellerPhone: '' });
+    // Fetch first seller's info (NatCash is single-seller in practice)
+    const sellerRes = await pool.query(
+      'SELECT full_name, phone, natcash_phone FROM users WHERE id = $1', [sellerIds[0]]
+    );
+    if (sellerRes.rows.length === 0) return res.json({ sellerName: 'Seller', sellerPhone: '' });
+    const s = sellerRes.rows[0];
+    res.json({
+      sellerName: s.full_name,
+      sellerPhone: s.natcash_phone || s.phone || '',
+    });
+  } catch (err) {
+    console.error('Pending checkout seller-info error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── NatCash: confirm payment → create order from pending checkout ──
+app.post('/api/checkout/pending/:id/confirm-natcash', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'pending'",
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) {
+      // Check if already completed
+      const done = await pool.query(
+        "SELECT status FROM pending_checkouts WHERE id = $1 AND user_id = $2",
+        [req.params.id, req.user.id]
+      );
+      if (done.rows.length > 0 && done.rows[0].status === 'completed') {
+        // Already confirmed — find the order
+        const orderRes = await pool.query(
+          'SELECT id FROM orders WHERE buyer_id = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT 1',
+          [req.user.id, done.rows[0].created_at || new Date()]
+        );
+        return res.json({ orderId: orderRes.rows[0]?.id, alreadyConfirmed: true });
+      }
+      return res.status(404).json({ error: 'Pending checkout not found or expired' });
+    }
+    const pc = result.rows[0];
+    const { smsData } = req.body || {};
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const cartData = pc.cart_data;
+      const items = cartData.map(i => ({ productId: i.id || i.productId, quantity: i.quantity }));
+      // Calculate total from cart
+      let totalAmount = 0;
+      for (const item of items) {
+        const prodRes = await client.query('SELECT price, effective_price FROM products WHERE id = $1 FOR UPDATE', [item.productId]);
+        if (prodRes.rows.length > 0) {
+          const price = prodRes.rows[0].effective_price || prodRes.rows[0].price;
+          totalAmount += price * item.quantity;
+        }
+      }
+      // Apply promo discount if present
+      if (pc.promo_code) {
+        try {
+          const promoRes = await client.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true', [pc.promo_code]);
+          if (promoRes.rows.length > 0) {
+            const promo = promoRes.rows[0];
+            const discount = promo.discount_type === 'percentage' ? totalAmount * (promo.discount_value / 100) : promo.discount_value;
+            totalAmount = Math.max(0, totalAmount - discount);
+          }
+        } catch { /* ignore */ }
+      }
+      // Create the order
+      const orderRes = await client.query(
+        `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
+         VALUES ($1, $2, 'paid', 'natcash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+        [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
+      );
+      const orderId = orderRes.rows[0].id;
+      // Create order items + decrement stock
+      for (const item of items) {
+        const prodRes = await client.query('SELECT seller_id, price, effective_price FROM products WHERE id = $1', [item.productId]);
+        if (prodRes.rows.length > 0) {
+          const sellerId = prodRes.rows[0].seller_id;
+          const price = prodRes.rows[0].effective_price || prodRes.rows[0].price;
+          await client.query(
+            'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
+            [orderId, item.productId, sellerId, item.quantity, price]
+          );
+          await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1', [item.quantity, item.productId]);
+        }
+      }
+      // Log order event
+      const smsNote = smsData ? `NatCash transfer confirmed (transcode: ${smsData.transcode})` : 'NatCash transfer confirmed (SMS detected)';
+      await client.query(
+        "INSERT INTO order_events (order_id, event_type, actor_id, note) VALUES ($1, 'payment_received', $2, $3)",
+        [orderId, pc.user_id, smsNote]
+      );
+      // Mark pending checkout as completed
+      await client.query("UPDATE pending_checkouts SET status = 'completed' WHERE id = $1", [pc.id]);
+      await client.query('COMMIT');
+      console.log(`NatCash: created order ${orderId} from pending checkout ${pc.id}`);
+      res.json({ orderId });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('NatCash confirm error:', err);
+      res.status(500).json({ error: 'Server error' });
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('NatCash confirm-natcash error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4844,18 +4986,33 @@ app.get('/api/seller/products', authRequired, sellerRequired, async (req, res) =
   try {
     const result = await pool.query(
       `SELECT p.*, c.name AS category,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
+              COALESCE(like_counts.like_count, 0) AS like_count,
+              COALESCE(wishlist_counts.wishlist_count, 0) AS wishlist_count,
               COALESCE((
                 SELECT json_agg(json_build_object(
                   'id', pi.id,
                   'image_url', pi.image_url,
+                  'thumbnail_url', pi.thumbnail_url,
                   'is_primary', pi.is_primary,
-                  'display_order', pi.display_order
+                  'display_order', pi.display_order,
+                  'image_width', pi.image_width,
+                  'image_height', pi.image_height
                 ) ORDER BY pi.is_primary DESC, pi.display_order ASC)
                 FROM product_images pi
                 WHERE pi.product_id = p.id
               ), '[]'::json) AS images
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
+       LEFT JOIN (
+         SELECT product_id, COUNT(*) AS like_count
+         FROM feed_events WHERE event_type = 'like'
+         GROUP BY product_id
+       ) like_counts ON like_counts.product_id = p.id
+       LEFT JOIN (
+         SELECT product_id, COUNT(*) AS wishlist_count
+         FROM wishlists GROUP BY product_id
+       ) wishlist_counts ON wishlist_counts.product_id = p.id
        WHERE p.seller_id = $1
        ORDER BY p.created_at DESC
        LIMIT 100`,
@@ -5787,12 +5944,13 @@ app.post('/api/offers/:messageId/counter', authRequired, msgLimiter, async (req,
 app.get('/api/sellers/:id/items', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT p.id, p.name, p.price, p.stock,
-              (SELECT image_url FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, display_order ASC LIMIT 1) AS image_url
+      `SELECT p.id, p.name, p.price, p.stock, p.sale_price, p.sale_starts_at, p.sale_ends_at,
+              (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
+              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary, 'image_width', pi.image_width, 'image_height', pi.image_height) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
        FROM products p
        WHERE p.seller_id = $1 AND p.is_available = true AND p.stock > 0
        ORDER BY p.created_at DESC
-       LIMIT 20`,
+       LIMIT 50`,
       [req.params.id]
     );
     res.json({ items: result.rows });

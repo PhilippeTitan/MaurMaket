@@ -26,6 +26,7 @@ import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
+import ProductActionBar from '../components/ProductActionBar';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -332,6 +333,7 @@ export default function ExploreScreen({ navigation }: Props) {
           >
             <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
           </TouchableOpacity>
+          <ProductActionBar productId={item.id} variant="card" />
         </View>
       </View>
     );
