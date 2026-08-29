@@ -910,6 +910,30 @@ await step('NatCash phone separation', () => c.query(`
       ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_height INTEGER;
     `));
 
+    // ── Backfill image dimensions for existing images ──
+    await step('Backfill image dimensions', async () => {
+      const { rows } = await c.query(`
+        SELECT id, image_url FROM product_images
+        WHERE (image_width IS NULL OR image_width = 0) AND image_url IS NOT NULL
+        LIMIT 200
+      `);
+      if (rows.length === 0) return;
+      let backfilled = 0;
+      for (const row of rows) {
+        try {
+          const resp = await fetch(row.image_url);
+          if (!resp.ok) continue;
+          const buf = Buffer.from(await resp.arrayBuffer());
+          const meta = await sharp(buf).metadata();
+          if (meta.width && meta.height) {
+            await c.query('UPDATE product_images SET image_width = $1, image_height = $2 WHERE id = $3', [meta.width, meta.height, row.id]);
+            backfilled++;
+          }
+        } catch { /* skip unparseable images */ }
+      }
+      if (backfilled > 0) console.log(`[MIGRATION] Backfilled dimensions for ${backfilled}/${rows.length} images`);
+    });
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -1044,9 +1068,19 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
     const { image, expiration } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
 
-    // Decode base64 to buffer and convert to webp
+    // Decode base64 to buffer and capture original dimensions
     const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
+
+    // Capture original image dimensions before resizing
+    let imgWidth = 0, imgHeight = 0;
+    try {
+      const metadata = await sharp(buffer).metadata();
+      imgWidth = metadata.width || 0;
+      imgHeight = metadata.height || 0;
+    } catch (metaErr) {
+      console.warn('[UPLOAD] Metadata capture failed:', metaErr.message);
+    }
 
     // Always convert to webp for smallest size (max ~300KB)
     let webpBuffer;
@@ -1103,7 +1137,7 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
           console.warn('[UPLOAD] Thumbnail generation failed:', thumbErr.message);
         }
 
-        return res.json({ url, thumbnailUrl, deleteUrl: `${storageName.toLowerCase()}:${key}`, provider: storageName.toLowerCase() });
+        return res.json({ url, thumbnailUrl, width: imgWidth, height: imgHeight, deleteUrl: `${storageName.toLowerCase()}:${key}`, provider: storageName.toLowerCase() });
       } catch (s3Err) {
         console.warn(`[UPLOAD] ${storageName} failed, falling back to imgBB:`, s3Err.message);
       }
@@ -1130,7 +1164,7 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
     if (!imgbbData.success) {
       return res.status(502).json({ error: imgbbData.error?.message || 'imgBB upload failed' });
     }
-    return res.json({ url: imgbbData.data.url, deleteUrl: imgbbData.data.delete_url, provider: 'imgbb' });
+    return res.json({ url: imgbbData.data.url, width: imgWidth, height: imgHeight, deleteUrl: imgbbData.data.delete_url, provider: 'imgbb' });
   } catch (err) {
     console.error('[UPLOAD] Error:', err.message);
     res.status(500).json({ error: 'Upload failed' });
@@ -3363,10 +3397,16 @@ app.post('/api/products', authRequired, verifiedSellerRequired, dobRequired, asy
     const product = productResult.rows[0];
 
     if (images && images.length > 0) {
-      const imageValues = images.map((url, i) => `($1, $${i + 2}, ${i === 0}, ${i})`).join(', ');
-      const imageParams = images.map(url => url);
+      // Support both plain URL strings and { url, width, height } objects
+      const imageValues = images.map((img, i) => {
+        const url = typeof img === 'string' ? img : img.url;
+        const w = typeof img === 'object' ? (img.width || 0) : 0;
+        const h = typeof img === 'object' ? (img.height || 0) : 0;
+        return `($1, $${i + 2}, ${i === 0}, ${i}, ${w}, ${h})`;
+      }).join(', ');
+      const imageParams = images.map(img => typeof img === 'string' ? img : img.url);
       await client.query(
-        `INSERT INTO product_images (product_id, image_url, is_primary, display_order) VALUES ${imageValues}`,
+        `INSERT INTO product_images (product_id, image_url, is_primary, display_order, image_width, image_height) VALUES ${imageValues}`,
         [product.id, ...imageParams]
       );
     }
@@ -3484,10 +3524,15 @@ app.put('/api/products/:id', authRequired, verifiedSellerRequired, async (req, r
     if (images && Array.isArray(images)) {
       await client.query('DELETE FROM product_images WHERE product_id = $1', [req.params.id]);
       if (images.length > 0) {
-        const imageValues = images.map((url, i) => `($1, $${i + 2}, ${i === 0}, ${i})`).join(', ');
-        const imageParams = images.map(url => url);
+        const imageValues = images.map((img, i) => {
+          const url = typeof img === 'string' ? img : img.url;
+          const w = typeof img === 'object' ? (img.width || 0) : 0;
+          const h = typeof img === 'object' ? (img.height || 0) : 0;
+          return `($1, $${i + 2}, ${i === 0}, ${i}, ${w}, ${h})`;
+        }).join(', ');
+        const imageParams = images.map(img => typeof img === 'string' ? img : img.url);
         await client.query(
-          `INSERT INTO product_images (product_id, image_url, is_primary, display_order) VALUES ${imageValues}`,
+          `INSERT INTO product_images (product_id, image_url, is_primary, display_order, image_width, image_height) VALUES ${imageValues}`,
           [req.params.id, ...imageParams]
         );
       }

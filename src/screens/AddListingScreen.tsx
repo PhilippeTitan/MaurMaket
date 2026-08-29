@@ -112,13 +112,13 @@ export default function AddListingScreen() {
 
     setLoading(true);
     try {
-      const uploadedUrls: string[] = [];
+      const uploadedImages: Array<{ url: string; width?: number; height?: number }> = [];
       if (imageUris.length > 0) {
         setUploading(true);
         for (let i = 0; i < imageUris.length; i++) {
           try {
             const r = await uploadImage(imageUris[i]);
-            if (r.url) uploadedUrls.push(r.url);
+            if (r.url) uploadedImages.push({ url: r.url, width: r.width, height: r.height });
           } catch (e: any) {
             toast.error(t('common.error'), `Image ${i + 1} failed: ${e.message}`);
             setLoading(false);
@@ -136,7 +136,7 @@ export default function AddListingScreen() {
         stock: parseInt(stock, 10) || 1,
       };
       if (categoryId) productData.categoryId = categoryId;
-      if (uploadedUrls.length > 0) productData.images = uploadedUrls;
+      if (uploadedImages.length > 0) productData.images = uploadedImages;
 
       if (showSale && salePrice && saleEndDate) {
         const origP = parseFloat(price);

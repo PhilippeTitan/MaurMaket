@@ -69,7 +69,7 @@ export function useLike(productId: string) {
   const product = findProduct(qc, productId);
   return {
     liked: product?.is_liked ?? false,
-    likeCount: product?.like_count ?? 0,
+    likeCount: Number(product?.like_count) || 0,
     toggle: () => mutation.mutate(undefined as any),
     isPending: mutation.isPending,
   };
@@ -113,6 +113,7 @@ export function useWishlist(productId: string) {
   const product = findProduct(qc, productId);
   return {
     wishlisted: product?.is_wishlisted ?? false,
+    wishlistCount: Number(product?.wishlist_count) || 0,
     toggle: () => mutation.mutate(undefined as any),
     isPending: mutation.isPending,
   };

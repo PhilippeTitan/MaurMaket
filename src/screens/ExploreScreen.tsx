@@ -21,7 +21,6 @@ import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
-import ProductActionBar from '../components/ProductActionBar';
 import MasonryGrid from '../components/MasonryGrid';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
@@ -164,7 +163,6 @@ export default function ExploreScreen({ navigation }: Props) {
       <TouchableOpacity style={{ flex: 1, justifyContent: 'center' }} activeOpacity={0.6} onPress={() => navigation.navigate('ProductDetail', { productId: item.id })} accessibilityRole="button" accessibilityLabel={t('accessibility.viewProduct')}>
         <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
       </TouchableOpacity>
-      <ProductActionBar productId={item.id} variant="card" />
     </View>
   ), [navigation, t]);
 
@@ -277,7 +275,6 @@ export default function ExploreScreen({ navigation }: Props) {
       ) : (
         <MasonryGrid
           products={products}
-          contentFit="contain"
           columnGap={COL_GAP}
           sidePad={SIDE_PAD}
           renderCardBottom={renderExploreCardBottom}

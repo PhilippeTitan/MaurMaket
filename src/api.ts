@@ -571,7 +571,7 @@ async function resizeAndConvert(uri: string): Promise<{ base64: string; mimeType
   }
 }
 
-export const uploadImage = async (uri: string, expiration?: number): Promise<{ url: string; deleteUrl?: string }> => {
+export const uploadImage = async (uri: string, expiration?: number): Promise<{ url: string; width?: number; height?: number; deleteUrl?: string }> => {
   console.log(`[UPLOAD-DEBUG] uploadImage called, uri=${uri?.substring(0, 80)}, expiration=${expiration}`);
   let token: string | null = null;
   if (Platform.OS === 'web') {
@@ -597,8 +597,8 @@ export const uploadImage = async (uri: string, expiration?: number): Promise<{ u
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Upload failed');
-  console.log(`[UPLOAD-DEBUG] Upload OK, provider=${data.provider}, url=${data.url?.substring(0, 60)}`);
-  return { url: data.url, deleteUrl: data.deleteUrl };
+  console.log(`[UPLOAD-DEBUG] Upload OK, provider=${data.provider}, url=${data.url?.substring(0, 60)}, dims=${data.width}x${data.height}`);
+  return { url: data.url, width: data.width, height: data.height, deleteUrl: data.deleteUrl };
 };
 
 // Verification

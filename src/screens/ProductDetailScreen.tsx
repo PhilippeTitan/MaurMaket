@@ -24,20 +24,16 @@ import { SkeletonBlock } from '../components/Skeleton';
 import StockBadge from '../components/StockBadge';
 import { queryClient, useLike, useWishlist } from '../hooks';
 import ProductActionBar from '../components/ProductActionBar';
+import MasonryGrid from '../components/MasonryGrid';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const SELLER_CARD = 80;
-const GRID_GAP = 2;
-const GRID_COLS = 2;
 const SIDE_PAD = 2;
-const GRID_CARD_W = (SCREEN_W - GRID_GAP * (GRID_COLS + 1) - SIDE_PAD * 2) / GRID_COLS;
 const HERO_MAX_H = SCREEN_H * 0.65;
 const HERO_MIN_H = SCREEN_H * 0.3;
 const HERO_DEFAULT_H = SCREEN_H * 0.42;
-const GRID_MIN_H = GRID_CARD_W * 0.7;
-const GRID_MAX_H = SCREEN_H * 0.3;
 
 export default function ProductDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
@@ -56,7 +52,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [categoryProducts, setCategoryProducts] = useState<Product[]>([]);
   const [coPurchaseProducts, setCoPurchaseProducts] = useState<Product[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
-  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [heroHeight, setHeroHeight] = useState(HERO_DEFAULT_H);
   const [storeTick, setStoreTick] = useState(0);
@@ -162,15 +157,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           if (catName && results[categoryOffset]) {
             const catProds = results[categoryOffset].products.filter((pp: Product) => pp.id !== p.id).slice(0, 9);
             setCategoryProducts(catProds);
-            catProds.forEach((cp: Product) => {
-              const url = getImageUrl(cp.images?.find(i => i.is_primary)?.image_url || cp.images?.[0]?.image_url);
-              if (!url) return;
-              NativeImage.getSize(url, (w, h) => {
-                if (mountedRef.current) {
-                  setImageSizes(prev => ({ ...prev, [cp.id]: { w, h } }));
-                }
-              }, () => {});
-            });
           }
         } catch { /* silent */ }
         setLoadingRelated(false);
@@ -234,56 +220,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
       </View>
     );
   }, [navigation]);
-
-  const renderCategoryGrid = useCallback((items: Product[]) => {
-    const [leftCol, rightCol] = items.reduce<[Product[], Product[]]>(
-      (acc, item, idx) => { acc[idx % 2 === 0 ? 0 : 1].push(item); return acc; },
-      [[], []]
-    );
-    const getCardH = (item: Product) => {
-      const size = imageSizes[item.id];
-      if (size && size.w > 0) {
-        return Math.max(GRID_MIN_H, Math.min(GRID_MAX_H, GRID_CARD_W * (size.h / size.w)));
-      }
-      return GRID_CARD_W;
-    };
-    const renderCard = (item: Product) => {
-      const imgUrl = getItemImageUrl(item);
-      const cardH = getCardH(item);
-      return (
-        <TouchableOpacity
-          key={item.id}
-          style={[styles.gridCard, { height: cardH }]}
-          activeOpacity={0.82}
-          onPress={() => navigation.push('ProductDetail', { productId: item.id })}
-          accessibilityRole="button"
-          accessibilityLabel={t('accessibility.viewProduct')}
-        >
-          {imgUrl ? (
-            <View style={{ width: '100%', height: '100%' }}>
-              <ExpoImage source={{ uri: imgUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
-            </View>
-          ) : (
-            <View style={styles.gridCardPlaceholder}>
-              <Icon name="image-unavailable" size={18} color={COLORS.text2} />
-            </View>
-          )}
-          <View style={styles.gridPriceTop} pointerEvents="none">
-            <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-          </View>
-          <View style={styles.gridStockBadge} pointerEvents="none">
-            <StockBadge stock={item.stock} size="sm" />
-          </View>
-        </TouchableOpacity>
-      );
-    };
-    return (
-      <View style={styles.gridRow}>
-        <View style={styles.gridCol}>{leftCol.map(renderCard)}</View>
-        <View style={styles.gridCol}>{rightCol.map(renderCard)}</View>
-      </View>
-    );
-  }, [navigation, imageSizes]);
 
   if (loading || !product) {
     const { width: SCREEN_W } = Dimensions.get('window');
@@ -595,7 +531,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* ── More in category — 2-col grid ── */}
+          {/* ── More in category — Pinterest masonry grid ── */}
           {categoryProducts.length > 0 && (
             <View style={styles.sectionBorder}>
               <View style={styles.sectionHeader}>
@@ -603,8 +539,12 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   More in {typeof product.category === 'string' ? product.category : product.category?.name || 'this category'}
                 </Text>
               </View>
-              {renderCategoryGrid(categoryProducts)}
-              <View style={{ height: GRID_GAP }} />
+              <MasonryGrid
+                products={categoryProducts}
+                standalone={false}
+                onPress={(item) => navigation.push('ProductDetail', { productId: item.id })}
+                contentFit="cover"
+              />
             </View>
           )}
 
@@ -757,24 +697,6 @@ const styles = StyleSheet.create({
   sellerCardPriceOverlay: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: 4, paddingVertical: 2,
-  },
-
-  /* Category 2-col grid */
-  gridRow: { flexDirection: 'row', gap: GRID_GAP, paddingHorizontal: SIDE_PAD },
-  gridCol: { flex: 1, gap: GRID_GAP },
-  gridCard: {
-    backgroundColor: COLORS.surface2, overflow: 'hidden',
-    borderRadius: 4,
-  },
-  gridCardImg: { width: '100%', height: '100%' },
-  gridCardPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  gridPriceTop: {
-    position: 'absolute', top: 6, right: 6,
-    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6,
-    paddingHorizontal: 7, paddingVertical: 3,
-  },
-  gridStockBadge: {
-    position: 'absolute', bottom: 6, left: 6,
   },
 
   /* Sticky bottom bar */

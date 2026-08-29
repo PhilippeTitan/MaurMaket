@@ -140,13 +140,13 @@ export default function EditListingScreen({ route, navigation }: Props) {
     }
     setSaving(true);
     try {
-      const uploadedUrls: string[] = [];
+      const uploadedImages: Array<{ url: string; width?: number; height?: number }> = [];
       if (newImageUris.length > 0) {
         setUploading(true);
         for (let i = 0; i < newImageUris.length; i++) {
           try {
             const r = await uploadImage(newImageUris[i]);
-            if (r.url) uploadedUrls.push(r.url);
+            if (r.url) uploadedImages.push({ url: r.url, width: r.width, height: r.height });
           } catch (e: any) {
             toast.error(t('common.error'), `Image ${i + 1} failed: ${e.message}`);
             setSaving(false);
@@ -159,7 +159,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
       const keptExisting = existingImages
         .filter(i => !removedExistingImageIds.includes(i.id))
         .map(i => i.image_url);
-      const allImageUrls = [...keptExisting, ...uploadedUrls];
+      const allImages = [...keptExisting, ...uploadedImages];
       const data: Record<string, unknown> = {
         name,
         description,
@@ -168,7 +168,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
         isAvailable,
       };
       if (categoryId) data.categoryId = categoryId;
-      if (allImageUrls.length > 0) data.images = allImageUrls;
+      if (allImages.length > 0) data.images = allImages;
 
       if (showSale && salePrice && saleEndDate) {
         const origP = parseFloat(price);

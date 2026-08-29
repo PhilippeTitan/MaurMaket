@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, RefreshControl } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, RADIUS } from '../theme';
 import { getImageUrl } from '../api';
-import { getCardHeight as computeCardHeight, resolveImageSizes } from '../utils/imageDimensionCache';
+import { getCardHeight as computeCardHeight, preloadProductDimensions } from '../utils/imageDimensionCache';
 import SalePriceTag from './SalePriceTag';
 import StockBadge from './StockBadge';
 import type { Product } from '../types';
@@ -41,7 +41,7 @@ export default function MasonryGrid({
   renderCard,
   columnGap = COL_GAP,
   sidePad = SIDE_PAD,
-  contentFit = 'contain',
+  contentFit = 'cover',
   contentContainerStyle,
   refreshControl,
   onScroll,
@@ -55,28 +55,48 @@ export default function MasonryGrid({
   renderCardBottom,
 }: MasonryGridProps) {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
-  const CARD_W = (SCREEN_W - sidePad * 2 - columnGap) / 2;
+
+  // ── Pinterest algorithm: dynamic column count from available width ──
+  const COLUMN_COUNT = SCREEN_W < 600 ? 2 : SCREEN_W < 900 ? 3 : 4;
+  const CARD_W = (SCREEN_W - sidePad * 2 - columnGap * (COLUMN_COUNT - 1)) / COLUMN_COUNT;
   useEffect(() => { onCardWidth?.(CARD_W); }, [CARD_W]);
-  const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
   const MIN_H = CARD_W * 0.6;
   const MAX_H = SCREEN_H * 0.52;
+  const NAME_AREA_H = 40;
 
-  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [imageIndices, setImageIndices] = useState<Record<string, number>>({});
 
+  // ── Dim tick: forces re-render when async dimensions arrive ──
+  const [dimTick, setDimTick] = useState(0);
+  useEffect(() => {
+    if (products.length === 0) return;
+    preloadProductDimensions(products);
+    let tick = 0;
+    const interval = setInterval(() => {
+      tick++;
+      setDimTick(t => t + 1);
+      if (tick >= 10) clearInterval(interval);
+    }, 200);
+    return () => clearInterval(interval);
+  }, [products]);
+
   const getCardHeight = (p: Product) => computeCardHeight(p, CARD_W, MIN_H, MAX_H);
 
-  const [leftCol, rightCol] = useMemo(() => {
-    const cols: [Product[], Product[]] = [[], []];
-    const heights = [0, 0];
+  // ── Pinterest algorithm: place each item in shortest column ──
+  const columns = useMemo(() => {
+    const cols: Product[][] = Array.from({ length: COLUMN_COUNT }, () => []);
+    const heights = new Array(COLUMN_COUNT).fill(0);
     for (const item of products) {
-      const target = heights[0] <= heights[1] ? 0 : 1;
-      cols[target].push(item);
-      heights[target] += getCardHeight(item) + columnGap;
+      let minIdx = 0;
+      for (let i = 1; i < COLUMN_COUNT; i++) {
+        if (heights[i] < heights[minIdx]) minIdx = i;
+      }
+      cols[minIdx].push(item);
+      heights[minIdx] += getCardHeight(item) + NAME_AREA_H + columnGap;
     }
     return cols;
-  }, [products, imageSizes]);
+  }, [products, dimTick, CARD_W, COLUMN_COUNT]);
 
   const renderDefaultCard = (item: Product) => {
     const cardH = getCardHeight(item);
@@ -116,6 +136,7 @@ export default function MasonryGrid({
                   onIndexChange={(idx) => setImageIndices(prev => ({ ...prev, [item.id]: idx }))}
                   currentIndex={imageIndices[item.id] ?? 0}
                   onImageError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                  onPress={() => onPress?.(item)}
                 />
               ) : primaryUrl && !imgFailed ? (
                 <>
@@ -156,13 +177,12 @@ export default function MasonryGrid({
   }
 
   const gridContent = (
-    <View style={[styles.grid, { paddingLeft: sidePad, paddingRight: sidePad }]}>
-      <View style={styles.column}>
-        {leftCol.map(item => <React.Fragment key={item.id}>{renderDefaultCard(item)}</React.Fragment>)}
-      </View>
-      <View style={styles.column}>
-        {rightCol.map(item => <React.Fragment key={item.id}>{renderDefaultCard(item)}</React.Fragment>)}
-      </View>
+    <View style={[styles.grid, { paddingLeft: sidePad, paddingRight: sidePad, gap: columnGap }]}>
+      {columns.map((col, colIdx) => (
+        <View key={colIdx} style={[styles.column, { gap: columnGap }]}>
+          {col.map(item => <React.Fragment key={item.id}>{renderDefaultCard(item)}</React.Fragment>)}
+        </View>
+      ))}
     </View>
   );
 
@@ -190,6 +210,7 @@ function FlatListCarousel({
   onIndexChange,
   currentIndex,
   onImageError,
+  onPress,
 }: {
   images: any[];
   cardWidth: number;
@@ -198,6 +219,7 @@ function FlatListCarousel({
   onIndexChange: (idx: number) => void;
   currentIndex: number;
   onImageError: () => void;
+  onPress?: () => void;
 }) {
   const ScrollView = require('react-native').ScrollView;
 
@@ -216,7 +238,7 @@ function FlatListCarousel({
       {images.map((img: any, idx: number) => {
         const url = getImageUrl(img.thumbnail_url || img.image_url);
         return (
-          <TouchableOpacity key={String(img.id || idx)} activeOpacity={1} style={{ width: cardWidth, height: cardHeight }} accessibilityRole="image">
+          <TouchableOpacity key={String(img.id || idx)} activeOpacity={1} onPress={onPress} style={{ width: cardWidth, height: cardHeight }} accessibilityRole="image">
             {url ? (
               <>
                 {contentFit === 'cover' && (
