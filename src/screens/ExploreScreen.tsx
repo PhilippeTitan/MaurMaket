@@ -3,8 +3,6 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, Modal, Pressable, FlatList, RefreshControl,
 } from 'react-native';
-import { Image as ExpoImage } from 'expo-image';
-
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '../components/icons/Icon';
@@ -19,9 +17,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
 import { useTranslation } from '../i18n';
-import SalePriceTag from '../components/SalePriceTag';
-import StockBadge from '../components/StockBadge';
-
 import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
@@ -159,62 +154,19 @@ export default function ExploreScreen({ navigation }: Props) {
     }
   };
 
-  const renderExploreCard = useCallback((item: Product, cardH: number, images: Product['images'], primaryUrl: string | undefined, hasMore: boolean, imgFailed: boolean) => (
-    <View>
-      <View style={styles.card}>
-        {hasMore && (
-          <>
-            <View style={[styles.stackedCard, { height: cardH, transform: [{ rotate: '2.5deg' }, { translateX: 4 }, { translateY: 2 }] }]} />
-            <View style={[styles.stackedCard, { height: cardH, transform: [{ rotate: '1deg' }, { translateX: 2 }, { translateY: 1 }] }]} />
-          </>
-        )}
-        <View style={[styles.cardImgWrap, { height: cardH }]}>
-          {primaryUrl && !imgFailed ? (
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-              onLongPress={() => setQuickProduct(item)}
-              delayLongPress={400}
-              style={StyleSheet.absoluteFill}
-              accessibilityRole="button"
-              accessibilityLabel={t('accessibility.viewProduct')}
-            >
-              <ExpoImage source={{ uri: primaryUrl }} style={styles.cardImg} contentFit="cover" blurRadius={20} cachePolicy="memory-disk" />
-              <ExpoImage source={{ uri: primaryUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.cardPlaceholder}>
-              <Icon name="image-unavailable" size={24} color={COLORS.text2} />
-            </View>
-          )}
-          <View style={styles.cardPriceTop} pointerEvents="none">
-            <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-          </View>
-          {hasMore && (
-            <View style={styles.imgDots} pointerEvents="none">
-              {images.map((_: any, i: number) => (
-                <View key={i} style={[styles.imgDot, i === 0 && styles.imgDotActive]} />
-              ))}
-            </View>
-          )}
-          <View style={styles.cardStockBadge} pointerEvents="none">
-            <StockBadge stock={item.stock} size="sm" />
-          </View>
-        </View>
-      </View>
-      <View style={styles.cardNameRow}>
-        {item.seller && (
-          <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: item.seller_id, preloadedSeller: item.seller })} accessibilityRole="button" accessibilityLabel="view seller profile">
-            <UserAvatar seller={item.seller} size={34} animated={false} />
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity style={{ flex: 1, justifyContent: 'center' }} activeOpacity={0.6} onPress={() => navigation.navigate('ProductDetail', { productId: item.id })} accessibilityRole="button" accessibilityLabel={t('accessibility.viewProduct')}>
-          <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+  const renderExploreCardBottom = useCallback((item: Product) => (
+    <View style={styles.cardNameRow}>
+      {item.seller && (
+        <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: item.seller_id, preloadedSeller: item.seller })} accessibilityRole="button" accessibilityLabel="view seller profile">
+          <UserAvatar seller={item.seller} size={34} animated={false} />
         </TouchableOpacity>
-        <ProductActionBar productId={item.id} variant="card" />
-      </View>
+      )}
+      <TouchableOpacity style={{ flex: 1, justifyContent: 'center' }} activeOpacity={0.6} onPress={() => navigation.navigate('ProductDetail', { productId: item.id })} accessibilityRole="button" accessibilityLabel={t('accessibility.viewProduct')}>
+        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+      </TouchableOpacity>
+      <ProductActionBar productId={item.id} variant="card" />
     </View>
-  ), [navigation, setQuickProduct, t]);
+  ), [navigation, t]);
 
   return (
     <View style={styles.container}>
@@ -328,7 +280,7 @@ export default function ExploreScreen({ navigation }: Props) {
           contentFit="contain"
           columnGap={COL_GAP}
           sidePad={SIDE_PAD}
-          renderCard={renderExploreCard}
+          renderCardBottom={renderExploreCardBottom}
           onLongPress={(item) => setQuickProduct(item)}
           contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshProducts} tintColor={COLORS.coral} />}

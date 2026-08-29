@@ -32,6 +32,8 @@ interface MasonryGridProps {
   onCardWidth?: (cardWidth: number) => void;
   /** Additional content rendered inside each card's image area (for custom overlays like remove/cart buttons) */
   renderCardOverlay?: (item: Product) => React.ReactNode;
+  /** Custom name row rendered below each card image (replaces default cardName text) */
+  renderCardBottom?: (item: Product) => React.ReactNode;
 }
 
 export default function MasonryGrid({
@@ -50,6 +52,7 @@ export default function MasonryGrid({
   standalone = true,
   onCardWidth,
   renderCardOverlay,
+  renderCardBottom,
 }: MasonryGridProps) {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const CARD_W = (SCREEN_W - sidePad * 2 - columnGap) / 2;
@@ -143,7 +146,7 @@ export default function MasonryGrid({
             </View>
           </View>
         </TouchableOpacity>
-        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+        {renderCardBottom ? renderCardBottom(item) : <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>}
       </View>
     );
   };
