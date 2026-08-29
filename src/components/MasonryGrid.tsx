@@ -10,7 +10,7 @@ import StockBadge from './StockBadge';
 import type { Product } from '../types';
 import type { StyleProp, ViewStyle, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 
-const COL_GAP = 3;
+const COL_GAP = 6;
 const SIDE_PAD = 0;
 
 interface MasonryGridProps {
@@ -62,7 +62,7 @@ export default function MasonryGrid({
   useEffect(() => { onCardWidth?.(CARD_W); }, [CARD_W]);
   const MIN_H = CARD_W * 0.6;
   const MAX_H = SCREEN_H * 0.52;
-  const NAME_AREA_H = 40;
+  const NAME_AREA_H = 52;
 
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [imageIndices, setImageIndices] = useState<Record<string, number>>({});
@@ -81,7 +81,17 @@ export default function MasonryGrid({
     return () => clearInterval(interval);
   }, [products]);
 
-  const getCardHeight = (p: Product, overrideW?: number) => computeCardHeight(p, overrideW ?? CARD_W, MIN_H, MAX_H);
+  const getCardHeight = (p: Product, overrideW?: number) => {
+    const w = overrideW ?? CARD_W;
+    const h = computeCardHeight(p, w, MIN_H, MAX_H);
+    // Landscape cards get extra minimum height to reduce gaps in the grid
+    const landscape = isLandscape(p);
+    if (landscape) {
+      const landscapeMinH = CARD_W * 0.85;
+      return Math.max(landscapeMinH, h);
+    }
+    return h;
+  };
 
   /** Landscape images (w > h) get 2-column focus for visual impact */
   const isLandscape = (p: Product) => {
