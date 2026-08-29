@@ -94,40 +94,42 @@ export default function MasonryGrid({
     return false;
   };
 
-  // ── Pinterest algorithm: place each item in shortest column ──
-  // Landscape items (w > h) span 2 adjacent columns for visual impact
-  const columns = useMemo(() => {
-    const cols: Product[][] = Array.from({ length: COLUMN_COUNT }, () => []);
+  // ── Absolute-positioned masonry layout ──
+  // Each item gets { item, x, y, w, h } — landscape items span 2 columns
+  const layoutItems = useMemo(() => {
     const heights = new Array(COLUMN_COUNT).fill(0);
     const LANDSCAPE_W = CARD_W * 2 + columnGap;
-    for (const item of products) {
-      if (isLandscape(item) && COLUMN_COUNT >= 2) {
+    const items: Array<{ item: Product; x: number; y: number; w: number; h: number }> = [];
+    for (const product of products) {
+      if (isLandscape(product) && COLUMN_COUNT >= 2) {
         // Find shortest pair of adjacent columns
         let bestStart = 0, bestSum = Infinity;
         for (let i = 0; i <= COLUMN_COUNT - 2; i++) {
           const pairSum = heights[i] + heights[i + 1];
           if (pairSum < bestSum) { bestSum = pairSum; bestStart = i; }
         }
-        cols[bestStart].push(item);
-        const h = getCardHeight(item, LANDSCAPE_W);
-        heights[bestStart] += h + NAME_AREA_H + columnGap;
+        const h = getCardHeight(product, LANDSCAPE_W);
+        const x = sidePad + bestStart * (CARD_W + columnGap);
+        const y = heights[bestStart];
+        items.push({ item: product, x, y, w: LANDSCAPE_W, h });
+        heights[bestStart] = y + h + NAME_AREA_H + columnGap;
         heights[bestStart + 1] = heights[bestStart];
       } else {
         let minIdx = 0;
         for (let i = 1; i < COLUMN_COUNT; i++) {
           if (heights[i] < heights[minIdx]) minIdx = i;
         }
-        cols[minIdx].push(item);
-        heights[minIdx] += getCardHeight(item) + NAME_AREA_H + columnGap;
+        const h = getCardHeight(product);
+        const x = sidePad + minIdx * (CARD_W + columnGap);
+        const y = heights[minIdx];
+        items.push({ item: product, x, y, w: CARD_W, h });
+        heights[minIdx] = y + h + NAME_AREA_H + columnGap;
       }
     }
-    return cols;
+    return { items, totalHeight: Math.max(0, ...heights) };
   }, [products, dimTick, CARD_W, COLUMN_COUNT]);
 
-  const renderDefaultCard = (item: Product) => {
-    const landscape = isLandscape(item);
-    const cardW = landscape && COLUMN_COUNT >= 2 ? CARD_W * 2 + columnGap : CARD_W;
-    const cardH = getCardHeight(item, cardW);
+  const renderDefaultCard = (item: Product, cardW: number, cardH: number) => {
     const imgFailed = failedImages.has(item.id);
     const images = item.images && item.images.length > 0
       ? item.images
@@ -137,14 +139,14 @@ export default function MasonryGrid({
 
     if (renderCard) {
       return (
-        <View key={item.id} style={landscape && COLUMN_COUNT >= 2 ? { width: cardW } : undefined}>
+        <View key={item.id}>
           {renderCard(item, cardH, images, primaryUrl ?? undefined, hasMore, imgFailed)}
         </View>
       );
     }
 
     return (
-      <View key={item.id} style={landscape && COLUMN_COUNT >= 2 ? { width: cardW } : undefined}>
+      <View key={item.id}>
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={() => onPress?.(item)}
@@ -205,10 +207,10 @@ export default function MasonryGrid({
   }
 
   const gridContent = (
-    <View style={[styles.grid, { paddingLeft: sidePad, paddingRight: sidePad, gap: columnGap }]}>
-      {columns.map((col, colIdx) => (
-        <View key={colIdx} style={[styles.column, { gap: columnGap }]}>
-          {col.map(item => <React.Fragment key={item.id}>{renderDefaultCard(item)}</React.Fragment>)}
+    <View style={[styles.absoluteGrid, { height: layoutItems.totalHeight, paddingLeft: sidePad, paddingRight: sidePad }]}>
+      {layoutItems.items.map(({ item, x, y, w, h }) => (
+        <View key={item.id} style={{ position: 'absolute', left: x, top: y, width: w }}>
+          {renderDefaultCard(item, w, h)}
         </View>
       ))}
     </View>
@@ -289,6 +291,10 @@ function FlatListCarousel({
 export const masonryStyles = StyleSheet.create({
   container: { flex: 1 },
   gridContainer: { paddingBottom: 80 },
+  absoluteGrid: {
+    position: 'relative',
+    width: '100%',
+  },
   grid: {
     flexDirection: 'row',
     gap: COL_GAP,
