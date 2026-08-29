@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Modal, Pressable, FlatList, Dimensions, RefreshControl,
+  ActivityIndicator, Modal, Pressable, FlatList, RefreshControl,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 
@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
-import { getProducts, getCategories, getImageUrl, trackFeedEvent } from '../api';
+import { getProducts, getCategories, trackFeedEvent } from '../api';
 import { store } from '../store';
 import { useQuery } from '@tanstack/react-query';
 import { queryClient } from '../hooks';
@@ -27,6 +27,7 @@ import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
 import ProductActionBar from '../components/ProductActionBar';
+import MasonryGrid from '../components/MasonryGrid';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -52,14 +53,8 @@ const CAT_ICONS: Record<string, string> = {
   other: 'dots-horizontal',
 };
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const NUM_COLS = 2;
 const COL_GAP = 6;
 const SIDE_PAD = 8;
-const CARD_W = (SCREEN_W - SIDE_PAD * 2 - COL_GAP) / NUM_COLS;
-const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
-const MIN_H = CARD_W * 0.6;
-const MAX_H = SCREEN_H * 0.52;
 
 export default function ExploreScreen({ navigation }: Props) {
   const { t } = useTranslation();
@@ -69,9 +64,6 @@ export default function ExploreScreen({ navigation }: Props) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [catModal, setCatModal] = useState(false);
-  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
-  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
-  const [exploreImageIndices, setExploreImageIndices] = useState<Record<string, number>>({});
   const categoryListRef = useRef<FlatList<CategoryFilter>>(null);
   const [sortBy, setSortBy] = useState('newest');
   const [sortModal, setSortModal] = useState(false);
@@ -158,19 +150,6 @@ export default function ExploreScreen({ navigation }: Props) {
     }
   };
 
-  useEffect(() => {
-    const defaults: Record<string, { w: number; h: number }> = {};
-    products.forEach(p => {
-      if (!imageSizes[p.id]) defaults[p.id] = { w: CARD_W, h: CARD_W * 1.25 };
-    });
-    if (Object.keys(defaults).length > 0) setImageSizes(prev => ({ ...prev, ...defaults }));
-  }, [products]);
-
-  const getItemImageUrl = (p: Product) => {
-    const img = p.images?.find(i => i.is_primary) || p.images?.[0];
-    return getImageUrl(img?.thumbnail_url || img?.image_url);
-  };
-
   const selectCategory = (categoryName: string) => {
     setSelectedCat(categoryName);
     if (!categoryName) {
@@ -180,164 +159,62 @@ export default function ExploreScreen({ navigation }: Props) {
     }
   };
 
-  const getCardHeight = (p: Product) => {
-    const size = imageSizes[p.id];
-    if (size && size.w > 0) {
-      const ratio = size.h / size.w;
-      return Math.max(MIN_H, Math.min(MAX_H, CARD_W * ratio));
-    }
-    return DEFAULT_IMG_H;
-  };
-
-  const [leftCol, rightCol] = (() => {
-    const cols: [Product[], Product[]] = [[], []];
-    const heights = [0, 0];
-    for (const item of products) {
-      const target = heights[0] <= heights[1] ? 0 : 1;
-      cols[target].push(item);
-      heights[target] += getCardHeight(item) + COL_GAP;
-    }
-    return cols;
-  })();
-
-  const renderCard = (item: Product) => {
-    const cardH = getCardHeight(item);
-    const imgFailed = failedImages.has(item.id);
-    const images = item.images && item.images.length > 0
-      ? item.images
-      : [{ id: 'empty', image_url: '', thumbnail_url: null, is_primary: true, display_order: 0 }];
-    const hasMore = images.length > 1;
-    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.thumbnail_url || images.find(i => i.is_primary)?.image_url || images[0]?.thumbnail_url || images[0]?.image_url);
-    return (
-      <View>
-        <View style={styles.card}>
-          {/* Stacked card backs — fanned out when multiple images */}
-          {hasMore && (
-            <>
-              <View style={[styles.stackedCard, { height: cardH, transform: [{ rotate: '2.5deg' }, { translateX: 4 }, { translateY: 2 }] }]} />
-              <View style={[styles.stackedCard, { height: cardH, transform: [{ rotate: '1deg' }, { translateX: 2 }, { translateY: 1 }] }]} />
-            </>
+  const renderExploreCard = useCallback((item: Product, cardH: number, images: Product['images'], primaryUrl: string | undefined, hasMore: boolean, imgFailed: boolean) => (
+    <View>
+      <View style={styles.card}>
+        {hasMore && (
+          <>
+            <View style={[styles.stackedCard, { height: cardH, transform: [{ rotate: '2.5deg' }, { translateX: 4 }, { translateY: 2 }] }]} />
+            <View style={[styles.stackedCard, { height: cardH, transform: [{ rotate: '1deg' }, { translateX: 2 }, { translateY: 1 }] }]} />
+          </>
+        )}
+        <View style={[styles.cardImgWrap, { height: cardH }]}>
+          {primaryUrl && !imgFailed ? (
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
+              onLongPress={() => setQuickProduct(item)}
+              delayLongPress={400}
+              style={StyleSheet.absoluteFill}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.viewProduct')}
+            >
+              <ExpoImage source={{ uri: primaryUrl }} style={styles.cardImg} contentFit="cover" blurRadius={20} cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: primaryUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.cardPlaceholder}>
+              <Icon name="image-unavailable" size={24} color={COLORS.text2} />
+            </View>
           )}
-          <View style={[styles.cardImgWrap, { height: cardH }]}>
-            {hasMore && !imgFailed ? (
-              <FlatList
-                data={images}
-                horizontal
-                pagingEnabled
-                nestedScrollEnabled
-                showsHorizontalScrollIndicator={false}
-                windowSize={3}
-                maxToRenderPerBatch={2}
-                keyExtractor={(img, idx) => String(img.id || idx)}
-                onScroll={(e) => {
-                  const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
-                  if (idx !== (exploreImageIndices[item.id] ?? 0)) {
-                    setExploreImageIndices(prev => ({ ...prev, [item.id]: idx }));
-                  }
-                }}
-                scrollEventThrottle={16}
-                getItemLayout={(_, index) => ({ length: CARD_W, offset: CARD_W * index, index })}
-                renderItem={({ item: img }) => {
-                  const url = getImageUrl(img.thumbnail_url || img.image_url);
-                  return (
-                    <TouchableOpacity
-                      activeOpacity={0.9}
-                      onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-                      onLongPress={() => setQuickProduct(item)}
-                      delayLongPress={400}
-                      style={{ width: CARD_W, height: cardH }}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('accessibility.viewProduct')}
-                    >
-                      {url ? (
-                        <>
-                          <ExpoImage source={{ uri: url }} style={styles.cardImg} contentFit="cover" blurRadius={20} onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
-                          <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
-                        </>
-                      ) : (
-                        <View style={styles.cardPlaceholder}>
-                          <Icon name="image-unavailable" size={24} color={COLORS.text2} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            ) : primaryUrl && !imgFailed ? (
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-                onLongPress={() => setQuickProduct(item)}
-                delayLongPress={400}
-                style={StyleSheet.absoluteFill}
-                accessibilityRole="button"
-                accessibilityLabel={t('accessibility.viewProduct')}
-              >
-                <ExpoImage
-                  source={{ uri: primaryUrl }}
-                  style={styles.cardImg}
-                  contentFit="cover"
-                  blurRadius={20}
-                  onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                  cachePolicy="memory-disk"
-                />
-                <ExpoImage
-                  source={{ uri: primaryUrl }}
-                  style={StyleSheet.absoluteFill}
-                  contentFit="contain"
-                  onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                  cachePolicy="memory-disk"
-                />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.cardPlaceholder}>
-                <Icon name="image-unavailable" size={24} color={COLORS.text2} />
-              </View>
-            )}
-            {/* Price — top right */}
-            <View style={styles.cardPriceTop} pointerEvents="none">
-              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+          <View style={styles.cardPriceTop} pointerEvents="none">
+            <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+          </View>
+          {hasMore && (
+            <View style={styles.imgDots} pointerEvents="none">
+              {images.map((_: any, i: number) => (
+                <View key={i} style={[styles.imgDot, i === 0 && styles.imgDotActive]} />
+              ))}
             </View>
-            {/* Dots — bottom left (only if multiple images), reflects the actual swiped-to index */}
-            {hasMore && (
-              <View style={styles.imgDots} pointerEvents="none">
-                {images.map((_: any, i: number) => (
-                  <View key={i} style={[styles.imgDot, i === (exploreImageIndices[item.id] || 0) && styles.imgDotActive]} />
-                ))}
-              </View>
-            )}
-            {/* Stock badge — bottom left */}
-            <View style={styles.cardStockBadge} pointerEvents="none">
-              <StockBadge stock={item.stock} size="sm" />
-            </View>
+          )}
+          <View style={styles.cardStockBadge} pointerEvents="none">
+            <StockBadge stock={item.stock} size="sm" />
           </View>
         </View>
-        {/* Name row — seller avatar + product name */}
-        <View style={styles.cardNameRow}>
-          {item.seller && (
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => navigation.navigate('Storefront', { sellerId: item.seller_id, preloadedSeller: item.seller })}
-              accessibilityRole="button"
-              accessibilityLabel="view seller profile"
-            >
-              <UserAvatar seller={item.seller} size={34} animated={false} />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={{ flex: 1, justifyContent: 'center' }}
-            activeOpacity={0.6}
-            onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-            accessibilityRole="button"
-            accessibilityLabel={t('accessibility.viewProduct')}
-          >
-            <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-          </TouchableOpacity>
-          <ProductActionBar productId={item.id} variant="card" />
-        </View>
       </View>
-    );
-  };
+      <View style={styles.cardNameRow}>
+        {item.seller && (
+          <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: item.seller_id, preloadedSeller: item.seller })} accessibilityRole="button" accessibilityLabel="view seller profile">
+            <UserAvatar seller={item.seller} size={34} animated={false} />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={{ flex: 1, justifyContent: 'center' }} activeOpacity={0.6} onPress={() => navigation.navigate('ProductDetail', { productId: item.id })} accessibilityRole="button" accessibilityLabel={t('accessibility.viewProduct')}>
+          <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+        </TouchableOpacity>
+        <ProductActionBar productId={item.id} variant="card" />
+      </View>
+    </View>
+  ), [navigation, setQuickProduct, t]);
 
   return (
     <View style={styles.container}>
@@ -446,24 +323,14 @@ export default function ExploreScreen({ navigation }: Props) {
           size={64}
         />
       ) : (
-        <FlatList
-          style={{ flex: 1 }}
-          data={[{ id: '__cols__' }]}
-          keyExtractor={() => '__cols__'}
-          maxToRenderPerBatch={1}
-          windowSize={2}
-          removeClippedSubviews={true}
-          renderItem={() => (
-            <View style={styles.grid}>
-              <View style={styles.column}>
-                {leftCol.map(item => <React.Fragment key={item.id}>{renderCard(item)}</React.Fragment>)}
-              </View>
-              <View style={styles.column}>
-                {rightCol.map(item => <React.Fragment key={item.id}>{renderCard(item)}</React.Fragment>)}
-              </View>
-            </View>
-          )}
-          contentContainerStyle={[styles.gridContainer, { paddingBottom: insets.bottom + 80 }]}
+        <MasonryGrid
+          products={products}
+          contentFit="contain"
+          columnGap={COL_GAP}
+          sidePad={SIDE_PAD}
+          renderCard={renderExploreCard}
+          onLongPress={(item) => setQuickProduct(item)}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshProducts} tintColor={COLORS.coral} />}
         />
       )}

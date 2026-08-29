@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, RefreshControl } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ interface MasonryGridProps {
   products: Product[];
   renderCard?: (item: Product, cardH: number, images: Product['images'], primaryUrl: string | undefined, hasMore: boolean, imgFailed: boolean) => React.ReactNode;
   columnGap?: number;
+  sidePad?: number;
   contentFit?: 'cover' | 'contain';
   contentContainerStyle?: StyleProp<ViewStyle>;
   refreshControl?: React.ReactElement<React.ComponentProps<typeof RefreshControl>>;
@@ -25,12 +26,19 @@ interface MasonryGridProps {
   onPress?: (item: Product) => void;
   ListEmptyComponent?: React.ReactNode;
   ListHeaderComponent?: React.ReactNode;
+  /** When false, renders just the grid columns (no ScrollView wrapper) for embedding in parent scroll contexts */
+  standalone?: boolean;
+  /** Expose computed CARD_W to parent */
+  onCardWidth?: (cardWidth: number) => void;
+  /** Additional content rendered inside each card's image area (for custom overlays like remove/cart buttons) */
+  renderCardOverlay?: (item: Product) => React.ReactNode;
 }
 
 export default function MasonryGrid({
   products,
   renderCard,
   columnGap = COL_GAP,
+  sidePad = SIDE_PAD,
   contentFit = 'contain',
   contentContainerStyle,
   refreshControl,
@@ -39,9 +47,13 @@ export default function MasonryGrid({
   onPress,
   ListEmptyComponent,
   ListHeaderComponent,
+  standalone = true,
+  onCardWidth,
+  renderCardOverlay,
 }: MasonryGridProps) {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
-  const CARD_W = (SCREEN_W - SIDE_PAD * 2 - columnGap) / 2;
+  const CARD_W = (SCREEN_W - sidePad * 2 - columnGap) / 2;
+  useEffect(() => { onCardWidth?.(CARD_W); }, [CARD_W]);
   const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
   const MIN_H = CARD_W * 0.6;
   const MAX_H = SCREEN_H * 0.52;
@@ -127,6 +139,7 @@ export default function MasonryGrid({
               <View style={styles.cardStockBadge} pointerEvents="none">
                 <StockBadge stock={item.stock} size="sm" />
               </View>
+              {renderCardOverlay?.(item)}
             </View>
           </View>
         </TouchableOpacity>
@@ -139,6 +152,19 @@ export default function MasonryGrid({
     return <>{ListEmptyComponent}</>;
   }
 
+  const gridContent = (
+    <View style={[styles.grid, { paddingLeft: sidePad, paddingRight: sidePad }]}>
+      <View style={styles.column}>
+        {leftCol.map(item => <React.Fragment key={item.id}>{renderDefaultCard(item)}</React.Fragment>)}
+      </View>
+      <View style={styles.column}>
+        {rightCol.map(item => <React.Fragment key={item.id}>{renderDefaultCard(item)}</React.Fragment>)}
+      </View>
+    </View>
+  );
+
+  if (!standalone) return gridContent;
+
   return (
     <ScrollView
       style={styles.container}
@@ -148,14 +174,7 @@ export default function MasonryGrid({
       showsVerticalScrollIndicator={false}
     >
       {ListHeaderComponent}
-      <View style={styles.grid}>
-        <View style={styles.column}>
-          {leftCol.map(item => <React.Fragment key={item.id}>{renderDefaultCard(item)}</React.Fragment>)}
-        </View>
-        <View style={styles.column}>
-          {rightCol.map(item => <React.Fragment key={item.id}>{renderDefaultCard(item)}</React.Fragment>)}
-        </View>
-      </View>
+      {gridContent}
     </ScrollView>
   );
 }
@@ -219,7 +238,6 @@ export const masonryStyles = StyleSheet.create({
   gridContainer: { paddingBottom: 80 },
   grid: {
     flexDirection: 'row',
-    paddingTop: SIDE_PAD,
     gap: COL_GAP,
   },
   column: {

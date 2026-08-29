@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, useWindowDimensions, FlatList,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
 } from 'react-native';
-import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 
@@ -18,16 +17,15 @@ import { useUser } from '../hooks';
 import { store } from '../store';
 import {
   getOrders, getSellerOrders, getSellerAnalytics, getWishlist,
-  getSellerProducts, getFollowerCount, getFollowing, getImageUrl, getSellerReviews, updateSellerProfile,
+  getSellerProducts, getFollowerCount, getFollowing, getSellerReviews, updateSellerProfile,
 } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Order, Review } from '../types';
-import SalePriceTag from '../components/SalePriceTag';
-import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import { SkeletonBlock } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
+import MasonryGrid from '../components/MasonryGrid';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 60_000;
@@ -74,15 +72,7 @@ export default function MeScreen() {
   const [wishlist, setWishlist] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [analyticsData, setAnalyticsData] = useState<SellerAnalyticsResponse | null>(null);
-  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
-  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
-  const [listingImageIndices, setListingImageIndices] = useState<Record<string, number>>({});
   const mountedRef = useRef(true);
-  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
-  const CARD_W = (SCREEN_W - 3) / 2;
-  const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
-  const MIN_H = CARD_W * 0.6;
-  const MAX_H = SCREEN_H * 0.52;
 
   const tier = user?.seller_tier || 'casual';
   const isBusinessMode = isSeller && user?.seller_tier === 'business' && user?.use_store_identity;
@@ -168,14 +158,6 @@ export default function MeScreen() {
         setProductCount(products.length || 0);
         cacheData.products = products; cacheData.productCount = products.length;
 
-        products.forEach((p: Product) => {
-          const url = getImageUrl(p.images?.find(i => i.is_primary)?.thumbnail_url || p.images?.find(i => i.is_primary)?.image_url || p.images?.[0]?.thumbnail_url || p.images?.[0]?.image_url);
-          if (!url) return;
-          Image.getSize(url, (w, h) => {
-            if (mountedRef.current) setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
-          }, () => {});
-        });
-
         if (user?.seller_tier !== 'casual') {
           try {
             const analytics = await getSellerAnalytics() as SellerAnalyticsResponse;
@@ -243,115 +225,10 @@ export default function MeScreen() {
     setRefreshing(false);
   }, [fetchData]);
 
-  const getCardHeight = (p: Product) => {
-    const size = imageSizes[p.id];
-    if (size && size.w > 0) {
-      const ratio = size.h / size.w;
-      return Math.max(MIN_H, Math.min(MAX_H, CARD_W * ratio));
-    }
-    return DEFAULT_IMG_H;
-  };
-
-  const [leftCol, rightCol] = (() => {
-    const cols: [Product[], Product[]] = [[], []];
-    const heights = [0, 0];
-    for (const item of products) {
-      const target = heights[0] <= heights[1] ? 0 : 1;
-      cols[target].push(item);
-      heights[target] += getCardHeight(item) + 3;
-    }
-    return cols;
-  })();
-
-  const renderGridItem = (item: Product) => {
+  const handleProductPress = useCallback((item: Product) => {
     const isOwnProduct = isSeller && user?.id === item.seller_id;
-    const imgFailed = failedImages.has(item.id);
-    const cardH = getCardHeight(item);
-    const images = item.images && item.images.length > 0
-      ? item.images
-      : [{ id: 'empty', image_url: '', thumbnail_url: null, is_primary: true, display_order: 0 }];
-    const hasMore = images.length > 1;
-    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.thumbnail_url || images.find(i => i.is_primary)?.image_url || images[0]?.thumbnail_url || images[0]?.image_url);
-    const openListing = () => isOwnProduct
-      ? nav.navigate('EditListing', { productId: item.id })
-      : nav.navigate('ProductDetail', { productId: item.id });
-    return (
-      <View key={item.id}>
-        <View style={styles.card}>
-          <View style={[styles.cardImgWrap, { height: cardH }]}>
-            {hasMore && !imgFailed ? (
-              <FlatList
-                data={images}
-                horizontal
-                pagingEnabled
-                nestedScrollEnabled
-                showsHorizontalScrollIndicator={false}
-                windowSize={3}
-                maxToRenderPerBatch={2}
-                keyExtractor={(img, idx) => String(img.id || idx)}
-                onScroll={(e) => {
-                  const index = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
-                  if (index !== (listingImageIndices[item.id] ?? 0)) {
-                    setListingImageIndices(prev => ({ ...prev, [item.id]: index }));
-                  }
-                }}
-                scrollEventThrottle={16}
-                getItemLayout={(_, index) => ({ length: CARD_W, offset: CARD_W * index, index })}
-                renderItem={({ item: img }) => {
-                  const url = getImageUrl(img.thumbnail_url || img.image_url);
-                  return (
-                    <TouchableOpacity
-                      activeOpacity={0.9}
-                      onPress={openListing}
-                      style={{ width: CARD_W, height: cardH }}
-                      accessibilityRole="button"
-                      accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
-                    >
-                      {url ? (
-                        <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
-                      ) : (
-                        <View style={styles.cardPlaceholder}>
-                          <Icon name="image-unavailable" size={20} color={COLORS.text2} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            ) : primaryUrl && !imgFailed ? (
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={openListing}
-                style={StyleSheet.absoluteFill}
-                accessibilityRole="button"
-                accessibilityLabel={isOwnProduct ? `edit ${item.name}` : item.name}
-              >
-                <ExpoImage source={{ uri: primaryUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.cardPlaceholder}>
-                <Icon name="image-unavailable" size={20} color={COLORS.text2} />
-              </View>
-            )}
-            {hasMore && (
-              <View style={styles.imgDots} pointerEvents="none">
-                {images.map((_, index) => (
-                  <View key={index} style={[styles.imgDot, index === (listingImageIndices[item.id] || 0) && styles.imgDotActive]} />
-                ))}
-              </View>
-            )}
-            <View style={styles.cardPriceTop} pointerEvents="none">
-              <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-            </View>
-            <View style={styles.cardStockBadge} pointerEvents="none">
-              <StockBadge stock={item.stock} size="sm" />
-            </View>
-          </View>
-        </View>
-        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-      </View>
-    );
-  };
+    nav.navigate(isOwnProduct ? 'EditListing' : 'ProductDetail', { productId: item.id });
+  }, [isSeller, user?.id, nav]);
 
   /* ── Tier badge ── */
   const tierColor = tier ? TIER_COLORS[tier] ?? COLORS.text2 : COLORS.text2;
@@ -591,14 +468,14 @@ export default function MeScreen() {
                 </View>
               </View>
             ) : products.length > 0 ? (
-              <View style={styles.masonryGrid}>
-                <View style={styles.masonryCol}>
-                  {leftCol.map(renderGridItem)}
-                </View>
-                <View style={styles.masonryCol}>
-                  {rightCol.map(renderGridItem)}
-                </View>
-              </View>
+              <MasonryGrid
+                products={products}
+                standalone={false}
+                contentFit="contain"
+                columnGap={3}
+                sidePad={0}
+                onPress={handleProductPress}
+              />
             ) : (
               <EmptyState
                 icon="storefront-outline"
@@ -658,9 +535,14 @@ export default function MeScreen() {
 
         {activeTab === 'saved' && (
           wishlist.length > 0 ? (
-            <View style={styles.grid}>
-              {wishlist.map(renderGridItem)}
-            </View>
+            <MasonryGrid
+              products={wishlist}
+              standalone={false}
+              contentFit="contain"
+              columnGap={3}
+              sidePad={0}
+              onPress={handleProductPress}
+            />
           ) : (
             <EmptyState
               icon="heart-outline"

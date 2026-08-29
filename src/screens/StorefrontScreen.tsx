@@ -1,12 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, useWindowDimensions, Image,
+  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { Image as ExpoImage } from 'expo-image';
 import { Icon } from '../components/icons/Icon';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
-import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, getImageUrl, createConversation, getConversations } from '../api';
+import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, createConversation, getConversations } from '../api';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,11 +14,10 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Review, SellerProfile } from '../types';
-import SalePriceTag from '../components/SalePriceTag';
 import { useToast } from '../components/Toast';
-import StockBadge from '../components/StockBadge';
 import UserAvatar from '../components/UserAvatar';
 import BackButton from '../components/BackButton';
+import MasonryGrid from '../components/MasonryGrid';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Storefront'>;
 type Tab = 'listings' | 'reviews';
@@ -31,12 +29,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const insets = useSafeAreaInsets();
-  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const GRID_GAP = 3;
-  const CARD_W = (SCREEN_W - GRID_GAP) / 2;
-  const DEFAULT_IMG_H = Math.round(CARD_W * 1.25);
-  const MIN_H = CARD_W * 0.6;
-  const MAX_H = SCREEN_H * 0.52;
 
   const { sellerId, preloadedSeller } = route.params;
   const [seller, setSeller] = useState<SellerProfile | null>(
@@ -64,9 +57,6 @@ export default function StorefrontScreen({ route, navigation }: Props) {
   const [followLoading, setFollowLoading] = useState(false);
   const [messageLoading, setMessageLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('listings');
-  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
-  const [imageSizes, setImageSizes] = useState<Record<string, { w: number; h: number }>>({});
-  const [listingImageIndices, setListingImageIndices] = useState<Record<string, number>>({});
   const mountedRef = useRef(true);
   const [storeTick, setStoreTick] = useState(0);
   const listRef = useRef<FlatList>(null);
@@ -112,13 +102,6 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       setProducts(products);
       setReviews(reviews);
 
-      products.forEach((p: Product) => {
-        const url = getImageUrl(p.images?.find(i => i.is_primary)?.thumbnail_url || p.images?.find(i => i.is_primary)?.image_url || p.images?.[0]?.thumbnail_url || p.images?.[0]?.image_url);
-        if (!url) return;
-        Image.getSize(url, (w, h) => {
-          if (mountedRef.current) setImageSizes(prev => ({ ...prev, [p.id]: { w, h } }));
-        }, () => {});
-      });
       const countRes = await getFollowerCount(sellerId) as { count: number };
       setFollowerCount(countRes.count || 0);
       let fcing = 0;
@@ -208,115 +191,6 @@ export default function StorefrontScreen({ route, navigation }: Props) {
     count: reviews.filter(r => r.rating === s).length,
     pct: reviews.length > 0 ? (reviews.filter(r => r.rating === s).length / reviews.length) * 100 : 0,
   }));
-
-  const getCardHeight = (p: Product) => {
-    const size = imageSizes[p.id];
-    if (size && size.w > 0) {
-      const ratio = size.h / size.w;
-      return Math.max(MIN_H, Math.min(MAX_H, CARD_W * ratio));
-    }
-    return DEFAULT_IMG_H;
-  };
-
-  const [leftCol, rightCol] = (() => {
-    const cols: [Product[], Product[]] = [[], []];
-    const heights = [0, 0];
-    for (const item of products) {
-      const target = heights[0] <= heights[1] ? 0 : 1;
-      cols[target].push(item);
-      heights[target] += getCardHeight(item) + GRID_GAP;
-    }
-    return cols;
-  })();
-
-  const renderGridItem = ({ item }: { item: Product }) => {
-    const imgFailed = failedImages.has(item.id);
-    const cardH = getCardHeight(item);
-    const images = item.images && item.images.length > 0
-      ? item.images
-      : [{ id: 'empty', image_url: '', thumbnail_url: null, is_primary: true, display_order: 0 }];
-    const hasMore = images.length > 1;
-    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.thumbnail_url || images.find(i => i.is_primary)?.image_url || images[0]?.thumbnail_url || images[0]?.image_url);
-    const openProduct = () => navigation.navigate('ProductDetail', { productId: item.id });
-    return (
-      <View key={item.id}>
-        <View style={styles.card}>
-          <View style={[styles.cardImgWrap, { height: cardH }]}>
-            {hasMore && !imgFailed ? (
-              <FlatList
-                data={images}
-                horizontal
-                pagingEnabled
-                nestedScrollEnabled
-                showsHorizontalScrollIndicator={false}
-                windowSize={3}
-                maxToRenderPerBatch={2}
-                keyExtractor={(img, idx) => String(img.id || idx)}
-                onScroll={(e) => {
-                  const index = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
-                  if (index !== (listingImageIndices[item.id] ?? 0)) {
-                    setListingImageIndices(prev => ({ ...prev, [item.id]: index }));
-                  }
-                }}
-                scrollEventThrottle={16}
-                getItemLayout={(_, index) => ({ length: CARD_W, offset: CARD_W * index, index })}
-                renderItem={({ item: img }) => {
-                  const url = getImageUrl(img.thumbnail_url || img.image_url);
-                  return (
-                    <TouchableOpacity
-                      activeOpacity={0.9}
-                      onPress={openProduct}
-                      style={{ width: CARD_W, height: cardH }}
-                      accessibilityRole="button"
-                      accessibilityLabel={item.name}
-                    >
-                      {url ? (
-                        <ExpoImage source={{ uri: url }} style={styles.cardImg} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
-                      ) : (
-                        <View style={styles.cardPlaceholder}>
-                          <Icon name="image-unavailable" size={20} color={COLORS.text2} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            ) : primaryUrl && !imgFailed ? (
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={openProduct}
-                style={StyleSheet.absoluteFill}
-                accessibilityRole="button"
-                accessibilityLabel={item.name}
-              >
-                <ExpoImage source={{ uri: primaryUrl }} style={styles.cardImg} contentFit="contain" cachePolicy="memory-disk" onError={() => setFailedImages(prev => new Set(prev).add(item.id))} />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.cardPlaceholder}>
-                <Icon name="image-unavailable" size={20} color={COLORS.text2} />
-              </View>
-            )}
-            {hasMore && (
-              <View style={styles.imgDots} pointerEvents="none">
-                {images.map((_, index) => (
-                  <View key={index} style={[styles.imgDot, index === (listingImageIndices[item.id] || 0) && styles.imgDotActive]} />
-                ))}
-              </View>
-            )}
-            {/* Price — top right */}
-            <View style={styles.cardPriceTop} pointerEvents="none">
-              <SalePriceTag price={item.price ?? 0} effectivePrice={item.effective_price ?? item.price ?? 0} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-            </View>
-            {/* Stock badge — bottom left */}
-            <View style={styles.cardStockBadge} pointerEvents="none">
-              <StockBadge stock={item.stock} size="sm" />
-            </View>
-          </View>
-        </View>
-        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-      </View>
-    );
-  };
 
   if (loading && !seller) {
     return (
@@ -536,18 +410,18 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 </View>
               </View>
             ) : activeTab === 'listings' && products.length > 0 ? (
-              <View style={styles.masonryGrid}>
-                <View style={styles.masonryCol}>
-                  {leftCol.map(item => <View key={item.id}>{renderGridItem({ item })}</View>)}
-                </View>
-                <View style={styles.masonryCol}>
-                  {rightCol.map(item => <View key={item.id}>{renderGridItem({ item })}</View>)}
-                </View>
-              </View>
+              <MasonryGrid
+                products={products}
+                standalone={false}
+                contentFit="contain"
+                columnGap={GRID_GAP}
+                sidePad={0}
+                onPress={(item) => navigation.navigate('ProductDetail', { productId: item.id })}
+              />
             ) : null}
           </View>
         }
-        renderItem={activeTab === 'listings' ? renderGridItem : (({ item }: { item: Review }) => (
+        renderItem={(({ item }: { item: Review }) => (
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
               <View style={styles.reviewAvatar}>
