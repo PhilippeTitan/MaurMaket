@@ -120,7 +120,7 @@ export default function MasonryGrid({
         }
         const h = getCardHeight(product, LANDSCAPE_W);
         const x = sidePad + bestStart * (CARD_W + columnGap);
-        const y = heights[bestStart];
+        const y = Math.max(heights[bestStart], heights[bestStart + 1]);
         items.push({ item: product, x, y, w: LANDSCAPE_W, h });
         heights[bestStart] = y + h + NAME_AREA_H + columnGap;
         heights[bestStart + 1] = heights[bestStart];
