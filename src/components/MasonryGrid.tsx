@@ -81,25 +81,53 @@ export default function MasonryGrid({
     return () => clearInterval(interval);
   }, [products]);
 
-  const getCardHeight = (p: Product) => computeCardHeight(p, CARD_W, MIN_H, MAX_H);
+  const getCardHeight = (p: Product, overrideW?: number) => computeCardHeight(p, overrideW ?? CARD_W, MIN_H, MAX_H);
+
+  /** Landscape images (w > h) get 2-column focus for visual impact */
+  const isLandscape = (p: Product) => {
+    const img = p.images?.find(i => i.is_primary) || p.images?.[0];
+    if (img?.image_width && img.image_height && img.image_width > 0) {
+      return img.image_width > img.image_height;
+    }
+    const cached = require('../utils/imageDimensionCache').getCachedSize(p.id);
+    if (cached && cached.w > 0) return cached.w > cached.h;
+    return false;
+  };
 
   // ── Pinterest algorithm: place each item in shortest column ──
+  // Landscape items (w > h) span 2 adjacent columns for visual impact
   const columns = useMemo(() => {
     const cols: Product[][] = Array.from({ length: COLUMN_COUNT }, () => []);
     const heights = new Array(COLUMN_COUNT).fill(0);
+    const LANDSCAPE_W = CARD_W * 2 + columnGap;
     for (const item of products) {
-      let minIdx = 0;
-      for (let i = 1; i < COLUMN_COUNT; i++) {
-        if (heights[i] < heights[minIdx]) minIdx = i;
+      if (isLandscape(item) && COLUMN_COUNT >= 2) {
+        // Find shortest pair of adjacent columns
+        let bestStart = 0, bestSum = Infinity;
+        for (let i = 0; i <= COLUMN_COUNT - 2; i++) {
+          const pairSum = heights[i] + heights[i + 1];
+          if (pairSum < bestSum) { bestSum = pairSum; bestStart = i; }
+        }
+        cols[bestStart].push(item);
+        const h = getCardHeight(item, LANDSCAPE_W);
+        heights[bestStart] += h + NAME_AREA_H + columnGap;
+        heights[bestStart + 1] = heights[bestStart];
+      } else {
+        let minIdx = 0;
+        for (let i = 1; i < COLUMN_COUNT; i++) {
+          if (heights[i] < heights[minIdx]) minIdx = i;
+        }
+        cols[minIdx].push(item);
+        heights[minIdx] += getCardHeight(item) + NAME_AREA_H + columnGap;
       }
-      cols[minIdx].push(item);
-      heights[minIdx] += getCardHeight(item) + NAME_AREA_H + columnGap;
     }
     return cols;
   }, [products, dimTick, CARD_W, COLUMN_COUNT]);
 
   const renderDefaultCard = (item: Product) => {
-    const cardH = getCardHeight(item);
+    const landscape = isLandscape(item);
+    const cardW = landscape && COLUMN_COUNT >= 2 ? CARD_W * 2 + columnGap : CARD_W;
+    const cardH = getCardHeight(item, cardW);
     const imgFailed = failedImages.has(item.id);
     const images = item.images && item.images.length > 0
       ? item.images
@@ -109,14 +137,14 @@ export default function MasonryGrid({
 
     if (renderCard) {
       return (
-        <View key={item.id}>
+        <View key={item.id} style={landscape && COLUMN_COUNT >= 2 ? { width: cardW } : undefined}>
           {renderCard(item, cardH, images, primaryUrl ?? undefined, hasMore, imgFailed)}
         </View>
       );
     }
 
     return (
-      <View key={item.id}>
+      <View key={item.id} style={landscape && COLUMN_COUNT >= 2 ? { width: cardW } : undefined}>
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={() => onPress?.(item)}
@@ -126,11 +154,11 @@ export default function MasonryGrid({
           accessibilityLabel={item.name}
         >
           <View style={styles.card}>
-            <View style={[styles.cardImgWrap, { height: cardH }]}>
+            <View style={[styles.cardImgWrap, { height: cardH, width: cardW }]}>
               {hasMore && !imgFailed ? (
                 <FlatListCarousel
                   images={images}
-                  cardWidth={CARD_W}
+                  cardWidth={cardW}
                   cardHeight={cardH}
                   contentFit={contentFit}
                   onIndexChange={(idx) => setImageIndices(prev => ({ ...prev, [item.id]: idx }))}
