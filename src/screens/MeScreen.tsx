@@ -457,12 +457,12 @@ export default function MeScreen() {
             loading && products.length === 0 ? (
               <View style={styles.masonryGrid}>
                 <View style={styles.masonryCol}>
-                  {[CARD_W * 1.1, CARD_W * 0.8, CARD_W * 1.2].map((h, i) => (
+                  {[180, 140, 190].map((h, i) => (
                     <SkeletonBlock key={i} width="100%" height={h} radius={RADIUS.media} />
                   ))}
                 </View>
                 <View style={styles.masonryCol}>
-                  {[CARD_W * 0.9, CARD_W * 1.3, CARD_W * 0.7].map((h, i) => (
+                  {[160, 200, 130].map((h, i) => (
                     <SkeletonBlock key={i} width="100%" height={h} radius={RADIUS.media} />
                   ))}
                 </View>
