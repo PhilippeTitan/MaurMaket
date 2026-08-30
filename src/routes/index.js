@@ -29,7 +29,6 @@ export function registerRoutes(app) {
   app.use(adminRouter);
   app.use(sellerRouter);
   app.use(migrationRouter);
-  app.use(productsRouter);
   app.use(sellerDashboardRouter);
   app.use(promosRouter);
   app.use(analyticsRouter);
@@ -47,6 +46,7 @@ export function registerRoutes(app) {
   app.use('/api', ordersRouter);
   app.use('/api', socialRouter);
   app.use('/api', categoriesRouter);
+  app.use('/api', productsRouter);
 
   // Batch 6: seller, messaging, offers — already have /api prefix
   app.use(sellerDashboardRouter);
