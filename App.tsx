@@ -262,8 +262,13 @@ export default function App() {
               store.setFollowingCount(list.length);
             }).catch(() => {});
           }
-          } catch {
-            await store.logout();
+          } catch (err: any) {
+            const msg = err?.message || '';
+            const isAuthError = msg.includes('Unauthorized') || msg.includes('Invalid token') || msg.includes('User not found');
+            if (isAuthError) {
+              await store.logout();
+            }
+            // Network errors, timeouts, backend down — keep cached session
           }
         };
         if (store.user) {
