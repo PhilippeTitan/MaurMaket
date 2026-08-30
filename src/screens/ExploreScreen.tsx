@@ -17,7 +17,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
 import { useTranslation } from '../i18n';
-import UserAvatar from '../components/UserAvatar';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
@@ -154,16 +153,9 @@ export default function ExploreScreen({ navigation }: Props) {
   };
 
   const renderExploreCardBottom = useCallback((item: Product) => (
-    <View style={styles.cardNameRow}>
-      {item.seller && (
-        <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: item.seller_id, preloadedSeller: item.seller })} accessibilityRole="button" accessibilityLabel="view seller profile">
-          <UserAvatar seller={item.seller} size={34} animated={false} />
-        </TouchableOpacity>
-      )}
-      <TouchableOpacity style={{ flex: 1, justifyContent: 'center' }} activeOpacity={0.6} onPress={() => navigation.navigate('ProductDetail', { productId: item.id })} accessibilityRole="button" accessibilityLabel={t('accessibility.viewProduct')}>
-        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-      </TouchableOpacity>
-    </View>
+    <TouchableOpacity style={styles.cardNameRow} activeOpacity={0.6} onPress={() => navigation.navigate('ProductDetail', { productId: item.id })} accessibilityRole="button" accessibilityLabel={t('accessibility.viewProduct')}>
+      <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+    </TouchableOpacity>
   ), [navigation, t]);
 
   return (
