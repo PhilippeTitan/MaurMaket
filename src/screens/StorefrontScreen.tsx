@@ -413,7 +413,6 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               <MasonryGrid
                 products={products}
                 standalone={false}
-                contentFit="contain"
                 columnGap={GRID_GAP}
                 sidePad={0}
                 onPress={(item) => navigation.navigate('ProductDetail', { productId: item.id })}

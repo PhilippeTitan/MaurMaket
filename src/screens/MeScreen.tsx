@@ -470,7 +470,6 @@ export default function MeScreen() {
               <MasonryGrid
                 products={products}
                 standalone={false}
-                contentFit="contain"
                 columnGap={3}
                 sidePad={0}
                 onPress={handleProductPress}
@@ -550,7 +549,6 @@ export default function MeScreen() {
             <MasonryGrid
               products={wishlist}
               standalone={false}
-              contentFit="contain"
               columnGap={3}
               sidePad={0}
               onPress={handleProductPress}
