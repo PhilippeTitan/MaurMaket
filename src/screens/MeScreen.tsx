@@ -248,7 +248,7 @@ export default function MeScreen() {
             accessibilityRole="button"
             accessibilityLabel="add listing"
           >
-            <MaterialCommunityIcons name="plus" size={26} color={COLORS.text} />
+            <MaterialCommunityIcons name="plus" size={32} color={COLORS.text} />
           </TouchableOpacity>
 
           <View style={styles.topBarNameCenter}>
@@ -267,7 +267,7 @@ export default function MeScreen() {
             accessibilityRole="button"
             accessibilityLabel="settings"
           >
-            <MaterialCommunityIcons name="cog-outline" size={24} color={COLORS.text} />
+            <MaterialCommunityIcons name="cog-outline" size={30} color={COLORS.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -586,7 +586,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
   },
   headerBtn: {
-    width: TOUCH.min, height: TOUCH.min,
+    width: TOUCH.recommended, height: TOUCH.recommended,
     alignItems: 'center', justifyContent: 'center',
   },
   topBarNameCenter: { flex: 1, alignItems: 'center' },
