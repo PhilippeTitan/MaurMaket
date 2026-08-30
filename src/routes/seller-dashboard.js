@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
-import { logOrderEvent, createNotification } from '../utils/helpers.js';
+import { logOrderEvent } from '../utils/helpers.js';
+import { createNotification } from '../utils/notifications.js';
 import { createNotification as createNotif } from '../utils/notifications.js';
 
 const router = Router();
