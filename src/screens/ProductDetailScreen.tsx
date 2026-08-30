@@ -344,7 +344,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
         {/* ── Hero image — scrolls with content ── */}
-        <View style={{ width: SCREEN_W, height: heroHeight, backgroundColor: COLORS.surface2, position: 'relative' }}>
+        <View style={{ width: SCREEN_W, height: heroHeight, backgroundColor: COLORS.surface2, position: 'relative', overflow: 'hidden' }}>
           {allImages.length > 1 ? (
             <FlatList
               ref={flatListRef}
