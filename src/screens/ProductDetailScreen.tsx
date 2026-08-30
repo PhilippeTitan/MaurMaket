@@ -48,7 +48,6 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [productReviews, setProductReviews] = useState<Review[]>([]);
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [avgRating, setAvgRating] = useState(0);
-  const [sellerProducts, setSellerProducts] = useState<Product[]>([]);
   const [categoryProducts, setCategoryProducts] = useState<Product[]>([]);
   const [coPurchaseProducts, setCoPurchaseProducts] = useState<Product[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
@@ -150,12 +149,26 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           const results = await Promise.all(relatedReqs);
           if (results[0]) setCoPurchaseProducts(results[0].products.slice(0, 8));
           const sellerOffset = 1;
-          if (p.seller_id && results[sellerOffset]) {
-            setSellerProducts(results[sellerOffset].products.filter((pp: Product) => pp.id !== p.id).slice(0, 12));
-          }
           const categoryOffset = sellerOffset + (p.seller_id ? 1 : 0);
           if (catName && results[categoryOffset]) {
-            const catProds = results[categoryOffset].products.filter((pp: Product) => pp.id !== p.id).slice(0, 9);
+            let catProds = results[categoryOffset].products.filter((pp: Product) => pp.id !== p.id).slice(0, 12);
+            // Mix in a few of the seller's latest products
+            if (p.seller_id && results[sellerOffset]) {
+              const sellerLatest = results[sellerOffset].products
+                .filter((pp: Product) => pp.id !== p.id && !catProds.some((cp: Product) => cp.id === pp.id))
+                .slice(0, 3);
+              // Interleave: 1 seller item after every 3 category items
+              const mixed: Product[] = [];
+              let si = 0;
+              for (let i = 0; i < catProds.length; i++) {
+                mixed.push(catProds[i]);
+                if ((i + 1) % 3 === 0 && si < sellerLatest.length) {
+                  mixed.push(sellerLatest[si++]);
+                }
+              }
+              while (si < sellerLatest.length) mixed.push(sellerLatest[si++]);
+              catProds = mixed;
+            }
             setCategoryProducts(catProds);
           }
         } catch { /* silent */ }
@@ -510,28 +523,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* ── More from seller ── */}
-          {sellerProducts.length > 0 && (
-            <View style={styles.sectionBorder}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>More from {getDisplayName(product.seller)}</Text>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id, preloadedSeller: product.seller })}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('accessibility.visitStore')}
-                >
-                  <Text style={styles.sectionSeeAll}>See all</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={[styles.sellerScroll, { flexDirection: 'row', gap: 10 }]}>
-                {sellerProducts.map(item => (
-                  <View key={item.id} style={{ width: 130 }}>{renderSellerCard({ item })}</View>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* ── More in category — Pinterest masonry grid ── */}
+          {/* ── More in category — with seller items mixed in ── */}
           {categoryProducts.length > 0 && (
             <View style={styles.sectionBorder}>
               <View style={styles.sectionHeader}>
