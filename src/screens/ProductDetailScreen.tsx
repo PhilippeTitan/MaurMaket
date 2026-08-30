@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, Image as NativeImage, TouchableOpacity, ScrollView, StyleSheet, Alert,
-  ActivityIndicator, Dimensions, Share, FlatList,
+  ActivityIndicator, Dimensions, Share, FlatList, Animated, Modal, Pressable,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
-import { getProduct, getProducts, getSellerReviews, getProductReviews, getImageUrl, getFollowing, getCoPurchaseRecommendations } from '../api';
+import { getProduct, getProducts, getSellerReviews, getProductReviews, getImageUrl, getFollowing, getCoPurchaseRecommendations, trackFeedEvent } from '../api';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -58,6 +58,63 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const flatListRef = useRef<FlatList>(null);
   const scrollRef = useRef<ScrollView>(null);
   const reviewsSectionRef = useRef<View>(null);
+
+  // ── More menu (fanning animation) ──
+  const [menuOpen, setMenuOpen] = useState(false);
+  const fanProgress = useRef(new Animated.Value(0)).current;
+  const iconScales = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
+
+  const openMenu = useCallback(() => {
+    setMenuOpen(true);
+    Animated.spring(fanProgress, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12 }).start();
+    iconScales.forEach((s, i) => {
+      Animated.spring(s, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12, delay: i * 50 }).start();
+    });
+  }, [fanProgress, iconScales]);
+
+  const closeMenu = useCallback(() => {
+    Animated.spring(fanProgress, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
+    iconScales.forEach(s => {
+      Animated.spring(s, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
+    });
+    setTimeout(() => setMenuOpen(false), 200);
+  }, [fanProgress, iconScales]);
+
+  const handleFeedback = async (eventType: 'relevant' | 'not_relevant') => {
+    if (!product) return;
+    closeMenu();
+    try {
+      await trackFeedEvent(product.id, eventType);
+      if (eventType === 'not_relevant') {
+        toast.show({ kind: 'info', title: 'Hidden', message: 'This product was hidden from your feed.' });
+      }
+    } catch {}
+  };
+
+  const handleMenuShare = async () => {
+    if (!product) return;
+    closeMenu();
+    try {
+      await Share.share({
+        message: `Check out "${product.name}" on MaurMaket — ${formatPrice(product.effective_price ?? product.price)} G`,
+      });
+    } catch {}
+  };
+
+  const handleReport = () => {
+    if (!product) return;
+    closeMenu();
+    Alert.alert(
+      'Report Listing',
+      'Why are you reporting this?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Spam', onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
+        { text: 'Inappropriate', onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
+        { text: 'Wrong category', onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
+      ],
+    );
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -401,11 +458,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   <View style={{ flex: 1 }} />
                   <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={handleShare}
+                    onPress={openMenu}
                     accessibilityRole="button"
-                    accessibilityLabel={t('accessibility.shareProduct')}
+                    accessibilityLabel="More options"
                   >
-                    <MaterialCommunityIcons name="share-variant" size={28} color={COLORS.text} />
+                    <MaterialCommunityIcons name="dots-horizontal" size={28} color={COLORS.text} />
                   </TouchableOpacity>
                 </View>
               )}
@@ -552,6 +609,31 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
       <View style={[styles.bottomBar, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>
         <BuyRow product={product} navigation={navigation} />
       </View>
+
+      {/* ── More menu (fanning animation) ── */}
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={closeMenu}>
+        <Pressable style={styles.menuOverlay} onPress={closeMenu}>
+          <Pressable style={styles.menuSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.menuHandle} />
+            {[
+              { icon: 'thumb-up-outline', color: COLORS.green, label: 'Show more like this', action: () => handleFeedback('relevant') },
+              { icon: 'thumb-down-outline', color: COLORS.coral, label: 'Not interested', action: () => handleFeedback('not_relevant') },
+              { icon: 'share-variant-outline', color: COLORS.blue, label: 'Share', action: handleMenuShare },
+              { icon: 'flag-outline', color: COLORS.coral, label: 'Report', action: handleReport },
+            ].map((item, i) => {
+              const ty = iconScales[i].interpolate({ inputRange: [0, 1], outputRange: [30, 0] });
+              return (
+                <Animated.View key={item.label} style={{ opacity: iconScales[i], transform: [{ translateY: ty }] }}>
+                  <TouchableOpacity style={styles.menuItem} onPress={item.action} accessibilityRole="button">
+                    <MaterialCommunityIcons name={item.icon as any} size={20} color={item.color} />
+                    <Text style={[styles.menuItemText, item.label === 'Report' && { color: COLORS.coral }]}>{item.label}</Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -696,5 +778,26 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: 12, paddingTop: 8,
     backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+
+  /* More menu */
+  menuOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  menuSheet: {
+    backgroundColor: COLORS.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: 20, paddingBottom: 36, paddingTop: 12,
+  },
+  menuHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: COLORS.border, alignSelf: 'center', marginBottom: 16,
+  },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 14,
+  },
+  menuItemText: {
+    fontSize: 15, fontWeight: '600', color: COLORS.text,
   },
 });
