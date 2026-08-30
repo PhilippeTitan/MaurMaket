@@ -94,7 +94,7 @@ export default function SettingsScreen({ navigation }: Props) {
           <View style={styles.profileInfo}>
             <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
             {user?.username ? (
-              <Text style={styles.profileUsername}>@{user.username}</Text>
+              <Text style={styles.profileUsername}>{user.username}</Text>
             ) : null}
             <View style={styles.profileMeta}>
               {tierBadge}

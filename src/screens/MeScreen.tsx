@@ -253,7 +253,7 @@ export default function MeScreen() {
 
           <View style={styles.topBarNameCenter}>
             <View style={styles.topBarNameWrap}>
-              <Text style={styles.topBarName} numberOfLines={1}>@{user?.username || 'you'}</Text>
+              <Text style={styles.topBarName} numberOfLines={1}>{user?.username || 'you'}</Text>
               {(tier === 'verified' || tier === 'business') && (
                 <Icon name="verified" size={16} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
               )}
@@ -327,7 +327,7 @@ export default function MeScreen() {
         {isBusinessMode && user?.username && (
           <View style={styles.trustLine}>
             <Icon name="verified" size={12} color={COLORS.green} />
-            <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: FONT_WEIGHTS.bold }}>@{user.username}</Text> · Verified identity on file</Text>
+            <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: FONT_WEIGHTS.bold }}>{user.username}</Text> · Verified identity on file</Text>
           </View>
         )}
 

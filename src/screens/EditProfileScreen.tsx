@@ -81,7 +81,7 @@ export default function EditProfileScreen({ navigation }: Props) {
           <MaterialCommunityIcons name="at" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>Username</Text>
           <View style={styles.rowRight}>
-            <Text style={styles.rowValue}>@{user?.username || ''}</Text>
+            <Text style={styles.rowValue}>{user?.username || ''}</Text>
             <Icon name="chevron-right" size={16} color={COLORS.text2} />
           </View>
         </TouchableOpacity>

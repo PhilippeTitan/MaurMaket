@@ -234,7 +234,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
                 />
 
                 <View style={styles.topBarNameWrap}>
-                  <Text style={styles.topBarName} numberOfLines={1}>@{seller?.username || 'seller'}</Text>
+                  <Text style={styles.topBarName} numberOfLines={1}>{seller?.username || 'seller'}</Text>
                   {(tier === 'verified' || tier === 'business') && (
                     <Icon name="verified" size={18} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
                   )}
@@ -302,7 +302,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
               {isBusinessMode && seller?.username && (
                 <View style={styles.trustLine}>
                   <Icon name="verified" size={11} color={COLORS.green} />
-                  <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: '700' }}>@{seller.username}</Text> · Verified identity on file</Text>
+                  <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: '700' }}>{seller.username}</Text> · Verified identity on file</Text>
                 </View>
               )}
 
