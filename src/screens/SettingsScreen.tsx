@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Image, ScrollView, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH, TIER_COLORS, getDisplayName } from '../theme';
@@ -12,6 +12,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import SettingsCard from '../components/SettingsCard';
 import SectionHeader from '../components/SectionHeader';
 import CardRow from '../components/CardRow';
+import ConfirmModal from '../components/ConfirmModal';
 import { i18n, useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -34,6 +35,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const { t, language } = useTranslation();
   const toast = useToast();
   const { user } = useUser();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const isSeller = user?.role === 'seller';
   const tierLabel =
@@ -56,13 +58,7 @@ export default function SettingsScreen({ navigation }: Props) {
       }
       return;
     }
-    toast.show({
-      kind: 'warning',
-      title: t('settings.logout'),
-      message: t('settings.logoutConfirm'),
-      actionLabel: t('settings.logout'),
-      onAction: () => store.logout(),
-    });
+    setShowLogoutModal(true);
   };
 
   /* ── Tier badge (small pill in profile hero) ──── */
@@ -247,6 +243,20 @@ export default function SettingsScreen({ navigation }: Props) {
         {/* ── Bottom safe area ── */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      <ConfirmModal
+        visible={showLogoutModal}
+        title={t('settings.logout')}
+        message={t('settings.logoutConfirm')}
+        confirmLabel={t('settings.logout')}
+        cancelLabel={t('common.cancel')}
+        kind="warning"
+        onConfirm={() => {
+          setShowLogoutModal(false);
+          store.logout();
+        }}
+        onCancel={() => setShowLogoutModal(false)}
+      />
     </ScreenContainer>
   );
 }
