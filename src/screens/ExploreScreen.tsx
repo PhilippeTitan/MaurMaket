@@ -278,6 +278,7 @@ export default function ExploreScreen({ navigation }: Props) {
           columnGap={COL_GAP}
           sidePad={SIDE_PAD}
           renderCardBottom={renderExploreCardBottom}
+          onPress={(item) => navigation.navigate('ProductDetail', { productId: item.id })}
           onLongPress={(item) => setQuickProduct(item)}
           contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshProducts} tintColor={COLORS.coral} />}

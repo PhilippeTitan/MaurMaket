@@ -105,7 +105,7 @@ export default function MasonryGrid({
     if (img?.image_width && img.image_height && img.image_width > 0) {
       w = img.image_width; h = img.image_height;
     } else {
-      const cached = require('../utils/imageDimensionCache').getCachedSize(p.id);
+      const cached = getCachedSize(p.id);
       if (cached && cached.w > 0) { w = cached.w; h = cached.h; }
     }
     if (w === 0 || h === 0) return 'portrait'; // unknown → default portrait
