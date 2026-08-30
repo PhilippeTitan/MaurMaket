@@ -226,9 +226,8 @@ export default function MeScreen() {
   }, [fetchData]);
 
   const handleProductPress = useCallback((item: Product) => {
-    const isOwnProduct = isSeller && user?.id === item.seller_id;
-    nav.navigate(isOwnProduct ? 'EditListing' : 'ProductDetail', { productId: item.id });
-  }, [isSeller, user?.id, nav]);
+    nav.navigate('ProductDetail', { productId: item.id });
+  }, [nav]);
 
   /* ── Tier badge ── */
   const tierColor = tier ? TIER_COLORS[tier] ?? COLORS.text2 : COLORS.text2;
@@ -477,9 +476,15 @@ export default function MeScreen() {
                 onPress={handleProductPress}
                 renderCardOverlay={(item) => (
                   isSeller && user?.id === item.seller_id ? (
-                    <View style={styles.editPenBtn} pointerEvents="none">
+                    <TouchableOpacity
+                      style={styles.editPenBtn}
+                      onPress={() => nav.navigate('EditListing', { productId: item.id })}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel="edit listing"
+                    >
                       <MaterialCommunityIcons name="pencil" size={14} color={COLORS.white} />
-                    </View>
+                    </TouchableOpacity>
                   ) : null
                 )}
               />
