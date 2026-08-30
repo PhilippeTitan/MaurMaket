@@ -283,13 +283,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
     return (
       <View style={[styles.slide, { height: screenHeight }]}>
         {/* Full-screen image / background — swipeable if multiple images */}
-        <Pressable
-          style={styles.mediaContainer}
-          onLongPress={() => setMoreProduct(item)}
-          delayLongPress={450}
-          accessibilityRole="button"
-          accessibilityLabel="Product image. Long press for feed options."
-        >
+        <View style={styles.mediaContainer}>
           {allImages.length > 1 ? (
             <ScrollView
               horizontal
@@ -308,7 +302,14 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               {allImages.map((img, idx) => {
                 const url = getImageUrl(img.thumbnail_url || img.image_url);
                 return (
-                  <View key={String(img.id || idx)} style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}>
+                  <Pressable
+                    key={String(img.id || idx)}
+                    style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}
+                    onLongPress={() => setMoreProduct(item)}
+                    delayLongPress={450}
+                    accessibilityRole="button"
+                    accessibilityLabel="Product image. Long press for feed options."
+                  >
                     {url ? (
                       <>
                         <ExpoImage source={{ uri: url }} style={styles.mediaFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
@@ -317,19 +318,29 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                     ) : (
                       <Icon name="image-unavailable" size={48} color={COLORS.text2} />
                     )}
-                  </View>
+                  </Pressable>
                 );
               })}
             </ScrollView>
-          ) : imgUrl ? (
-            <>
-              <ExpoImage source={{ uri: imgUrl }} style={styles.mediaFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
-              <ExpoImage source={{ uri: imgUrl }} style={styles.mediaContain} contentFit="contain" cachePolicy="memory-disk" />
-            </>
           ) : (
-            <Icon name="image-unavailable" size={48} color={COLORS.text2} />
+            <Pressable
+              style={{ width: '100%', height: '100%' }}
+              onLongPress={() => setMoreProduct(item)}
+              delayLongPress={450}
+              accessibilityRole="button"
+              accessibilityLabel="Product image. Long press for feed options."
+            >
+              {imgUrl ? (
+                <>
+                  <ExpoImage source={{ uri: imgUrl }} style={styles.mediaFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+                  <ExpoImage source={{ uri: imgUrl }} style={styles.mediaContain} contentFit="contain" cachePolicy="memory-disk" />
+                </>
+              ) : (
+                <Icon name="image-unavailable" size={48} color={COLORS.text2} />
+              )}
+            </Pressable>
           )}
-        </Pressable>
+        </View>
 
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
@@ -403,14 +414,14 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           <View style={styles.productInfoRow}>
             <Text style={styles.productInfo}>{typeof item.category === 'string' ? item.category : item.category?.name || 'Port-au-Prince'}</Text>
             <StockBadge stock={item.stock} size="sm" />
-            {allImages.length > 1 && (
-              <View style={styles.imgDotsInline}>
-                {allImages.map((_: any, i: number) => (
-                  <View key={i} style={[styles.imgDot, i === activeIdx && styles.imgDotActive]} />
-                ))}
-              </View>
-            )}
           </View>
+          {allImages.length > 1 && (
+            <View style={styles.imgDotsCentered}>
+              {allImages.map((_: any, i: number) => (
+                <View key={i} style={[styles.imgDot, i === activeIdx && styles.imgDotActive]} />
+              ))}
+            </View>
+          )}
 
           {/* Buy / Cart buttons */}
           <BuyRow product={item} navigation={nav} />
@@ -860,6 +871,10 @@ const styles = StyleSheet.create({
   },
   imgDotsInline: {
     flexDirection: 'row', gap: 4, alignItems: 'center',
+  },
+  imgDotsCentered: {
+    flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 12,
   },
 
   /* Right-side action rail — TikTok style */
