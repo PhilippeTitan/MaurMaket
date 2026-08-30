@@ -361,9 +361,12 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               {allImages.map((img, idx) => {
                 const url = getImageUrl(img.image_url);
                 return (
-                  <View key={String(img.id || idx)} style={{ width: SCREEN_W, height: heroHeight }}>
+                  <View key={String(img.id || idx)} style={{ width: SCREEN_W, height: heroHeight, backgroundColor: '#000' }}>
                     {url ? (
-                      <ExpoImage source={{ uri: url }} style={{ width: SCREEN_W, height: heroHeight }} contentFit="cover" cachePolicy="memory-disk" />
+                      <>
+                        <ExpoImage source={{ uri: url }} style={styles.mediaFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+                        <ExpoImage source={{ uri: url }} style={styles.mediaContain} contentFit="contain" cachePolicy="memory-disk" />
+                      </>
                     ) : (
                       <View style={styles.heroPlaceholder}>
                         <Icon name="image-unavailable" size={40} color={COLORS.text2} />
@@ -374,7 +377,10 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               })}
             </ScrollView>
           ) : heroUrl ? (
-            <ExpoImage source={{ uri: heroUrl }} style={{ width: SCREEN_W, height: heroHeight }} contentFit="cover" cachePolicy="memory-disk" />
+            <>
+              <ExpoImage source={{ uri: heroUrl }} style={styles.mediaFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: heroUrl }} style={styles.mediaContain} contentFit="contain" cachePolicy="memory-disk" />
+            </>
           ) : (
             <View style={styles.heroPlaceholder}>
               <Icon name="image-unavailable" size={40} color={COLORS.text2} />
@@ -640,6 +646,15 @@ const styles = StyleSheet.create({
   },
   heroImg: { width: '100%', height: '100%' },
   heroPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  mediaFill: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    width: '100%', height: '100%',
+    opacity: 0.4,
+  },
+  mediaContain: {
+    width: '100%', height: '100%',
+  },
   priceOverlay: {
     position: 'absolute', bottom: 10, right: 10,
     backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.row,
