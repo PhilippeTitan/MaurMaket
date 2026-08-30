@@ -208,4 +208,14 @@ async function recordProductCooccurrences(orderId, client) {
   }
 }
 
-export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences };
+async function canAccessOrder(userId, orderId) {
+  const result = await pool.query(
+    `SELECT DISTINCT o.* FROM orders o
+     LEFT JOIN order_items oi ON o.id = oi.order_id
+     WHERE o.id = $1 AND (o.buyer_id = $2 OR oi.seller_id = $2)`,
+    [orderId, userId]
+  );
+  return result.rows[0] || null;
+}
+
+export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences, canAccessOrder };
