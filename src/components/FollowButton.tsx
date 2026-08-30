@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, RADIUS } from '../theme';
-import { toggleFollow } from '../api';
-import { store } from '../store';
+import { useFollow } from '../hooks/useEngagement';
 import { useTranslation } from '../i18n';
 
 interface FollowButtonProps {
@@ -13,44 +12,16 @@ interface FollowButtonProps {
 
 export default function FollowButton({ sellerId, size = 'sm' }: FollowButtonProps) {
   const { t } = useTranslation();
-  const [isFollowing, setIsFollowing] = useState(() => store.isFollowing(sellerId));
+  const { isFollowing, toggle } = useFollow(sellerId);
   const checkAnim = useRef(new Animated.Value(isFollowing ? 1 : 0)).current;
 
   useEffect(() => {
-    const unsub = store.onChange(() => {
-      const next = store.isFollowing(sellerId);
-      setIsFollowing(next);
-      Animated.timing(checkAnim, {
-        toValue: next ? 1 : 0,
-        duration: 200,
-        useNativeDriver: false,
-      }).start();
-    });
-    return unsub;
-  }, [sellerId]);
-
-  const handleFollow = async () => {
-    const wasFollowing = isFollowing;
-    setIsFollowing(!wasFollowing);
     Animated.timing(checkAnim, {
-      toValue: !wasFollowing ? 1 : 0,
+      toValue: isFollowing ? 1 : 0,
       duration: 200,
       useNativeDriver: false,
     }).start();
-    try {
-      const res = (await toggleFollow(sellerId)) as { following?: boolean };
-      if (typeof res.following === 'boolean') {
-        setIsFollowing(res.following);
-      }
-    } catch {
-      setIsFollowing(wasFollowing);
-      Animated.timing(checkAnim, {
-        toValue: wasFollowing ? 1 : 0,
-        duration: 200,
-        useNativeDriver: false,
-      }).start();
-    }
-  };
+  }, [isFollowing]);
 
   const pillSize = size === 'md' ? 28 : 24;
   const iconSize = size === 'md' ? 16 : 14;
@@ -58,7 +29,7 @@ export default function FollowButton({ sellerId, size = 'sm' }: FollowButtonProp
   return (
     <TouchableOpacity
       style={styles.pill}
-      onPress={handleFollow}
+      onPress={() => toggle()}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={isFollowing ? t('accessibility.unfollow') : t('accessibility.follow')}

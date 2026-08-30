@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { trackFeedEvent, toggleWishlist as apiToggleWishlist } from '../api';
+import { trackFeedEvent, toggleWishlist as apiToggleWishlist, toggleFollow as apiToggleFollow } from '../api';
+import { store } from '../store';
 import type { Product } from '../types';
 
 function updateProductInCache(queryClient: any, productId: string, updater: (p: Product) => Product) {
@@ -117,6 +118,81 @@ export function useWishlist(productId: string) {
     toggle: () => mutation.mutate(undefined as any),
     isPending: mutation.isPending,
   };
+}
+
+export function useFollow(sellerId: string) {
+  const qc = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const wasFollowing = store.isFollowing(sellerId);
+      await apiToggleFollow(sellerId);
+      return { wasFollowing };
+    },
+    onMutate: async () => {
+      await qc.cancelQueries();
+      const wasFollowing = store.isFollowing(sellerId);
+      // Optimistically update store
+      const currentIds = [...store.followedSellerIds];
+      if (wasFollowing) {
+        store.setFollowingList(currentIds.filter(id => id !== sellerId));
+      } else {
+        store.setFollowingList([...currentIds, sellerId]);
+      }
+      // Update all cached products from this seller
+      updateSellerFollowInCache(qc, sellerId, !wasFollowing);
+      return { wasFollowing };
+    },
+    onError: (_err: any, _vars: any, context: { wasFollowing: boolean } | undefined) => {
+      if (context?.wasFollowing !== undefined) {
+        // Rollback store
+        const currentIds = [...store.followedSellerIds];
+        if (context.wasFollowing) {
+          store.setFollowingList([...currentIds, sellerId]);
+        } else {
+          store.setFollowingList(currentIds.filter(id => id !== sellerId));
+        }
+        updateSellerFollowInCache(qc, sellerId, context.wasFollowing);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['explore-products'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['seller-related-products'] });
+    },
+  });
+
+  return {
+    isFollowing: store.isFollowing(sellerId),
+    toggle: () => mutation.mutate(undefined as any),
+    isPending: mutation.isPending,
+  };
+}
+
+function updateSellerFollowInCache(qc: any, sellerId: string, isFollowing: boolean) {
+  qc.getQueryCache().getAll().forEach((entry: any) => {
+    const data = qc.getQueryData(entry.queryKey);
+    if (!data) return;
+
+    const updateProduct = (p: Product) => {
+      if (p.seller_id !== sellerId) return p;
+      // Products don't have is_followed, but seller data might
+      return { ...p };
+    };
+
+    if (data && typeof data === 'object' && 'product' in data && (data as any).product?.seller_id === sellerId) {
+      qc.setQueryData(entry.queryKey, { ...data, product: updateProduct((data as any).product) });
+    }
+    if (Array.isArray(data)) {
+      qc.setQueryData(entry.queryKey, data.map(updateProduct));
+    }
+    if (data && typeof data === 'object' && 'products' in data && Array.isArray((data as any).products)) {
+      qc.setQueryData(entry.queryKey, {
+        ...data,
+        products: (data as any).products.map(updateProduct),
+      });
+    }
+  });
 }
 
 function findProduct(qc: any, productId: string): Product | null {
