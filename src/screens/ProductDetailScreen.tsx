@@ -486,6 +486,40 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   </View>
                 </TouchableOpacity>
               </View>
+
+              {/* ── Trust Bar ── */}
+              {product.seller && (
+                <View style={styles.trustBar}>
+                  {(product.seller.id_verification_result === 'verified' || product.seller.id_verified) && (
+                    <View style={styles.trustPill}>
+                      <MaterialCommunityIcons name="shield-check" size={12} color="#1D9E75" />
+                      <Text style={styles.trustPillText}>Verified</Text>
+                    </View>
+                  )}
+                  {product.seller.seller_tier === 'business' && (
+                    <View style={styles.trustPill}>
+                      <MaterialCommunityIcons name="office-building" size={12} color={COLORS.coral} />
+                      <Text style={styles.trustPillText}>Business</Text>
+                    </View>
+                  )}
+                  {avgRating >= 4 && (
+                    <View style={styles.trustPill}>
+                      <MaterialCommunityIcons name="star" size={12} color={COLORS.yellow} />
+                      <Text style={styles.trustPillText}>{avgRating.toFixed(1)} rated</Text>
+                    </View>
+                  )}
+                  <View style={styles.trustPill}>
+                    <MaterialCommunityIcons name="shield-lock" size={12} color={COLORS.coral} />
+                    <Text style={styles.trustPillText}>Protected payment</Text>
+                  </View>
+                  {product.seller.location_address && (
+                    <View style={styles.trustPill}>
+                      <MaterialCommunityIcons name="map-marker" size={12} color={COLORS.coral} />
+                      <Text style={styles.trustPillText}>Meetup</Text>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           )}
 
@@ -707,6 +741,11 @@ const styles = StyleSheet.create({
   sellerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sellerName: { fontSize: 16, fontWeight: '700', color: COLORS.text },
   sellerMeta: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+
+  /* Trust bar */
+  trustBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 10 },
+  trustPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: COLORS.border + '40' },
+  trustPillText: { fontSize: 10, fontWeight: '600', color: COLORS.text2 },
 
   /* Product info */
   infoBlock: {
