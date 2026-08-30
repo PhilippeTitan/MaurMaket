@@ -21,40 +21,41 @@ import subscriptionsRouter from './subscriptions.js';
 import feedRouter from './feed.js';
 
 export function registerRoutes(app) {
-  // Batch 1: low-coupling routes
-  app.use(categoriesRouter);
-  app.use(healthRouter);
-  app.use(adminRouter);
-  app.use(sellerRouter);
-  app.use(migrationRouter);
+  // All route modules define paths like '/orders', '/products', etc.
+  // The client sends requests to '/api/orders', so we mount under '/api'.
+  app.use('/api', categoriesRouter);
+  app.use('/api', healthRouter);
+  app.use('/api', adminRouter);
+  app.use('/api', sellerRouter);
+  app.use('/api', migrationRouter);
 
-  // Auth routes (signup, login, profile, password, Google, email verify, deletion, seller onboarding)
-  app.use(authRouter);
+  // Auth routes
+  app.use('/api', authRouter);
 
-  // Social routes (addresses, reviews, wishlist, follow, notifications, nearby, storefront)
-  app.use(socialRouter);
+  // Social routes
+  app.use('/api', socialRouter);
 
-  // Product routes (list, detail, create, update, delete, co-purchases)
-  app.use(productsRouter);
+  // Product routes
+  app.use('/api', productsRouter);
 
-  // Order routes (CRUD, checkout, meetup, escrow, payment retry)
-  app.use(ordersRouter);
+  // Order routes
+  app.use('/api', ordersRouter);
 
   // Batch 6: seller, messaging, offers
-  app.use(sellerDashboardRouter);
-  app.use(promosRouter);
-  app.use(analyticsRouter);
-  app.use(messagingRouter);
-  app.use(offersRouter);
-  app.use(disputesRouter);
-  app.use(orderNotesRouter);
+  app.use('/api', sellerDashboardRouter);
+  app.use('/api', promosRouter);
+  app.use('/api', analyticsRouter);
+  app.use('/api', messagingRouter);
+  app.use('/api', offersRouter);
+  app.use('/api', disputesRouter);
+  app.use('/api', orderNotesRouter);
 
   // Batch 7: payments, payouts, subscriptions, feed
-  app.use(paymentsRouter);
-  app.use(payoutsRouter);
-  app.use(subscriptionsRouter);
-  app.use(feedRouter);
+  app.use('/api', paymentsRouter);
+  app.use('/api', payoutsRouter);
+  app.use('/api', subscriptionsRouter);
+  app.use('/api', feedRouter);
 
   // Must be last (includes 404 handler)
-  app.use(miscRouter);
+  app.use('/api', miscRouter);
 }
