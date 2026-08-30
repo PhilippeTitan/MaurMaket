@@ -285,7 +285,18 @@ export default function MeScreen() {
       {/* ── Profile Hero ── */}
       <View style={styles.hero}>
         <View style={[styles.avatarRow, { paddingTop: SPACING.md }]}>
-          <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={72} animated={true} />
+          <View style={styles.avatarWrap}>
+            <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={72} animated={true} />
+            <TouchableOpacity
+              style={styles.avatarEditBtn}
+              onPress={() => nav.navigate('EditProfile')}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="edit profile"
+            >
+              <MaterialCommunityIcons name="pencil" size={14} color={COLORS.white} />
+            </TouchableOpacity>
+          </View>
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
@@ -587,6 +598,13 @@ const styles = StyleSheet.create({
   avatarRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.lg, paddingTop: 60,
+  },
+  avatarWrap: { position: 'relative' },
+  avatarEditBtn: {
+    position: 'absolute', bottom: 0, right: -4,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: COLORS.surface,
   },
   nameBioBlock: { paddingHorizontal: SPACING.lg, paddingTop: 12 },
   bio: { fontSize: FONT_SIZES.base, color: COLORS.text2, lineHeight: 20, marginTop: 6 },

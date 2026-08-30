@@ -4,7 +4,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, RADIUS } from '../theme';
 import { getImageUrl } from '../api';
-import { getCardHeight as computeCardHeight, preloadProductDimensions } from '../utils/imageDimensionCache';
+import { getCardHeight as computeCardHeight, getCachedSize, preloadProductDimensions } from '../utils/imageDimensionCache';
 import SalePriceTag from './SalePriceTag';
 import StockBadge from './StockBadge';
 import type { Product } from '../types';
@@ -160,7 +160,7 @@ export default function MasonryGrid({
     const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.thumbnail_url || images.find(i => i.is_primary)?.image_url || images[0]?.thumbnail_url || images[0]?.image_url);
 
     // Flexible mode: contain + blurred background always
-    const useBlurredBg = presentation === 'flexible' || (contentFit === 'cover' && presentation !== 'flexible');
+    const useBlurredBg = presentation === 'flexible' || contentFit === 'cover';
     const imageFit = presentation === 'flexible' ? 'contain' : contentFit;
 
     if (renderCard) {
