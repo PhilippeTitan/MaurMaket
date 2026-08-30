@@ -4,6 +4,10 @@ import adminRouter from './admin.js';
 import miscRouter from './misc.js';
 import sellerRouter from './seller.js';
 import migrationRouter from './migration.js';
+import authRouter from './auth.js';
+import socialRouter from './social.js';
+import productsRouter from './products.js';
+import ordersRouter from './orders.js';
 import sellerDashboardRouter from './seller-dashboard.js';
 import promosRouter from './promos.js';
 import analyticsRouter from './analytics.js';
@@ -23,6 +27,18 @@ export function registerRoutes(app) {
   app.use(adminRouter);
   app.use(sellerRouter);
   app.use(migrationRouter);
+
+  // Auth routes (signup, login, profile, password, Google, email verify, deletion, seller onboarding)
+  app.use(authRouter);
+
+  // Social routes (addresses, reviews, wishlist, follow, notifications, nearby, storefront)
+  app.use(socialRouter);
+
+  // Product routes (list, detail, create, update, delete, co-purchases)
+  app.use(productsRouter);
+
+  // Order routes (CRUD, checkout, meetup, escrow, payment retry)
+  app.use(ordersRouter);
 
   // Batch 6: seller, messaging, offers
   app.use(sellerDashboardRouter);
