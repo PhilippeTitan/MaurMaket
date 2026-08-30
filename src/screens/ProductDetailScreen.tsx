@@ -31,9 +31,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const SELLER_CARD = 80;
 const SIDE_PAD = 2;
-const HERO_MAX_H = SCREEN_H * 0.65;
-const HERO_MIN_H = SCREEN_H * 0.3;
-const HERO_DEFAULT_H = SCREEN_H * 0.42;
+const HERO_MAX_H = SCREEN_H * 0.85;
+const HERO_MIN_H = SCREEN_H * 0.45;
+const HERO_DEFAULT_H = SCREEN_H * 0.65;
 
 export default function ProductDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
@@ -312,7 +312,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   <View style={{ width: SCREEN_W, height: '100%' }}>
                     {url ? (
                       <>
-                        <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
+                        <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
                       </>
                     ) : (
                       <View style={styles.heroPlaceholder}>
@@ -325,7 +325,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             />
           ) : heroUrl ? (
             <>
-              <ExpoImage source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
+              <ExpoImage source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
             </>
           ) : (
             <View style={styles.heroPlaceholder}>
@@ -366,10 +366,10 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   >
                     <MaterialCommunityIcons
                       name={liked ? 'heart' : 'heart-outline'}
-                      size={25}
+                      size={28}
                       color={liked ? COLORS.coral : COLORS.text}
                     />
-                    <Text style={styles.actionCount}>{Number(likeCount) || 0}</Text>
+                    {(Number(likeCount) || 0) > 0 && <Text style={styles.actionCount}>{Number(likeCount) || 0}</Text>}
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionBtn}
@@ -383,8 +383,8 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                     accessibilityRole="button"
                     accessibilityLabel={t('accessibility.viewReviews')}
                   >
-                    <MaterialCommunityIcons name="comment-outline" size={25} color={COLORS.text} />
-                    <Text style={styles.actionCount}>{product.review_count || 0}</Text>
+                    <MaterialCommunityIcons name="comment-outline" size={28} color={COLORS.text} />
+                    {(product.review_count || 0) > 0 && <Text style={styles.actionCount}>{product.review_count || 0}</Text>}
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionBtn}
@@ -394,7 +394,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   >
                     <MaterialCommunityIcons
                       name={wishlisted ? 'bookmark' : 'bookmark-outline'}
-                      size={25}
+                      size={28}
                       color={wishlisted ? COLORS.coral : COLORS.text}
                     />
                   </TouchableOpacity>
@@ -405,7 +405,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                     accessibilityRole="button"
                     accessibilityLabel={t('accessibility.shareProduct')}
                   >
-                    <MaterialCommunityIcons name="share-variant" size={25} color={COLORS.text} />
+                    <MaterialCommunityIcons name="share-variant" size={28} color={COLORS.text} />
                   </TouchableOpacity>
                 </View>
               )}
@@ -597,15 +597,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   actionRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
     paddingHorizontal: 10, paddingTop: 8, paddingBottom: 2,
   },
   actionBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 8, borderRadius: 20,
   },
   actionCount: {
-    fontSize: 13, fontWeight: '600', color: COLORS.text,
+    fontSize: 14, fontWeight: '600', color: COLORS.text,
   },
   /* Seller row */
   sellerRow: {
