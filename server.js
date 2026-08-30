@@ -960,11 +960,8 @@ app.use((_req, res, next) => {
   next();
 });
 
-// ───── Modularized routes (Batch 1: health, categories, admin, seller, misc) ─────
+// ───── All routes registered via src/routes/index.js ─────
 registerRoutes(app);
-
-// Batch 6 routes extracted to src/routes/ (seller-dashboard, promos, analytics, messaging, offers, disputes, order-notes)
-// Batch 7 routes extracted to src/routes/ (payments, payouts, subscriptions, feed)
 
 // ───── Background Jobs (extracted to src/jobs/index.js) ─────
 startJobs();
