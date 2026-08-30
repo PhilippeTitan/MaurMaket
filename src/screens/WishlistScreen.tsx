@@ -119,7 +119,7 @@ export default function WishlistScreen() {
       {loading ? (
         <RowListSkeleton count={6} thumbSize={56} />
       ) : items.length === 0 && !refreshing ? (
-        <EmptyState icon="heart-outline" title={t('wishlist.empty')} size={56} />
+        <EmptyState icon="heart-outline" title={t('wishlist.empty')} hint="Save items you love and they'll appear here" size={56} />
       ) : (
         <MasonryGrid
           products={items}

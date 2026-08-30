@@ -443,7 +443,7 @@ export default function InboxScreen() {
             loading ? (
               <RowListSkeleton count={4} thumbSize={48} />
             ) : (
-              <EmptyState icon="tag-outline" title="No active offers" size={44} />
+              <EmptyState icon="tag-outline" title="No active offers" hint="Send an offer on a product to start negotiating" size={44} />
             )
           }
         />
@@ -484,7 +484,7 @@ export default function InboxScreen() {
             loading ? (
               <RowListSkeleton count={6} thumbSize={48} />
             ) : (
-              <EmptyState icon="bell-outline" title="No notifications yet" size={56} />
+              <EmptyState icon="bell-outline" title="No notifications yet" hint="Updates about your orders and activity will appear here" size={56} />
             )
           }
         />

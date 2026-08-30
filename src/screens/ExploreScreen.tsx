@@ -63,6 +63,7 @@ export default function ExploreScreen({ navigation }: Props) {
   const categoryListRef = useRef<FlatList<CategoryFilter>>(null);
   const [sortBy, setSortBy] = useState(DEFAULT_SORT);
   const [sortModal, setSortModal] = useState(false);
+
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
   const [showPriceFilter, setShowPriceFilter] = useState(false);
@@ -265,6 +266,7 @@ export default function ExploreScreen({ navigation }: Props) {
         <EmptyState
           icon="magnify-close"
           title={t('explore.noProducts')}
+          hint={t('explore.tryAdjust')}
           size={64}
         />
       ) : (
