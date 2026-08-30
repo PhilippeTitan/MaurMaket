@@ -19,6 +19,7 @@ import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dob
 import { createNotification, sendPushNotification } from './src/utils/notifications.js';
 import { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences } from './src/utils/helpers.js';
 import { startJobs } from './src/jobs/index.js';
+import { registerRoutes } from './src/routes/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -775,86 +776,7 @@ await step('NatCash phone separation', () => c.query(`
 
 // cleanupOldNotifications imported from src/utils/helpers.js
 
-// ───── One-time migration: convert all JPG images to WebP ≤300KB ─────
-app.post('/api/admin/convert-to-webp', express.json({ limit: '1mb' }), async (req, res) => {
-  const { GetObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
-  if (req.body.secret !== 'convert-webp-2026') {
-    return res.status(403).json({ error: 'Invalid secret' });
-  }
-  try {
-    const { rows } = await pool.query(
-      "SELECT id, image_url, thumbnail_url FROM product_images WHERE image_url LIKE '%.jpg' OR image_url LIKE '%.jpeg' OR image_url LIKE '%.png' LIMIT 50"
-    );
-    if (rows.length === 0) {
-      return res.json({ message: 'No JPG/PNG images to convert', converted: 0, total: 0 });
-    }
-    let converted = 0, failed = 0, skipped = 0;
-    const results = [];
-    for (const row of rows) {
-      try {
-        // Extract S3 key from URL
-        const key = row.image_url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
-        if (!key) { failed++; continue; }
-        // Skip if already webp
-        if (key.endsWith('.webp')) { skipped++; continue; }
-        // Download original
-        const getCmd = new GetObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: key });
-        const response = await supabaseStorage.send(getCmd);
-        const chunks = [];
-        for await (const chunk of response.Body) chunks.push(chunk);
-        const buffer = Buffer.concat(chunks);
-        // Convert to webp (max 300KB)
-        let webpBuffer = await sharp(buffer).resize({ width: 1200, withoutEnlargement: true }).webp({ quality: 82, effort: 6 }).toBuffer();
-        if (webpBuffer.length > 300 * 1024) {
-          webpBuffer = await sharp(buffer).resize({ width: 1200, withoutEnlargement: true }).webp({ quality: 65, effort: 6 }).toBuffer();
-        }
-        // Upload webp version
-        const newKey = key.replace(/\.(jpg|jpeg|png)$/i, '.webp');
-        await supabaseStorage.send(new PutObjectCommand({
-          Bucket: SUPABASE_STORAGE_BUCKET,
-          Key: newKey,
-          Body: webpBuffer,
-          ContentType: 'image/webp',
-          CacheControl: 'public, max-age=31536000, immutable',
-        }));
-        const newUrl = SUPABASE_PUBLIC_BASE + '/' + newKey;
-        // Update thumbnail too if it's also jpg
-        let newThumbUrl = row.thumbnail_url;
-        if (row.thumbnail_url && (row.thumbnail_url.includes('.jpg') || row.thumbnail_url.includes('.jpeg') || row.thumbnail_url.includes('.png'))) {
-          const thumbKey = row.thumbnail_url.split('/object/public/' + SUPABASE_STORAGE_BUCKET + '/')[1];
-          if (thumbKey && !thumbKey.endsWith('.webp')) {
-            try {
-              const thumbGet = new GetObjectCommand({ Bucket: SUPABASE_STORAGE_BUCKET, Key: thumbKey });
-              const thumbResp = await supabaseStorage.send(thumbGet);
-              const thumbChunks = [];
-              for await (const chunk of thumbResp.Body) thumbChunks.push(chunk);
-              const thumbBuffer = Buffer.concat(thumbChunks);
-              const thumbWebp = await sharp(thumbBuffer).resize({ width: 400, withoutEnlargement: true }).webp({ quality: 75, effort: 6 }).toBuffer();
-              const newThumbKey = thumbKey.replace(/\.(jpg|jpeg|png)$/i, '.webp');
-              await supabaseStorage.send(new PutObjectCommand({
-                Bucket: SUPABASE_STORAGE_BUCKET,
-                Key: newThumbKey,
-                Body: thumbWebp,
-                ContentType: 'image/webp',
-                CacheControl: 'public, max-age=31536000, immutable',
-              }));
-              newThumbUrl = SUPABASE_PUBLIC_BASE + '/' + newThumbKey;
-            } catch (e) { /* skip thumb conversion */ }
-          }
-        }
-        await pool.query('UPDATE product_images SET image_url = $1, thumbnail_url = $2 WHERE id = $3', [newUrl, newThumbUrl, row.id]);
-        converted++;
-        results.push({ id: row.id.slice(0, 8), from: (buffer.length / 1024).toFixed(0) + 'KB jpg', to: (webpBuffer.length / 1024).toFixed(0) + 'KB webp' });
-      } catch (err) {
-        failed++;
-        results.push({ id: row.id.slice(0, 8), error: err.message });
-      }
-    }
-    res.json({ converted, failed, skipped, total: rows.length, results });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// WebP migration extracted to src/routes/migration.js
 
 // ───── CORS (production + dev origins) ─────
 const ALLOWED_ORIGINS = [
@@ -1038,11 +960,8 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Event logging helper
-// Utility functions imported from src/utils/helpers.js and src/utils/notifications.js
-
-// Functions imported from src/utils/helpers.js and src/middleware/auth.js
-
+// ───── Modularized routes (Batch 1: health, categories, admin, seller, misc) ─────
+registerRoutes(app);
 
 // ───── Auth routes ─────
 
@@ -3214,17 +3133,7 @@ app.put('/api/products/:id', authRequired, verifiedSellerRequired, async (req, r
   }
 });
 
-// ───── Category routes ─────
-
-app.get('/api/categories', async (_req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM categories ORDER BY display_order ASC');
-    res.json({ categories: result.rows });
-  } catch (err) {
-    console.error('Categories error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+// ───── Category routes (extracted to src/routes/categories.js) ─────
 
 // ───── Order routes ─────
 
@@ -5004,20 +4913,7 @@ app.get('/api/disputes', authRequired, async (req, res) => {
   }
 });
 
-// ───── Inventory Alerts ─────
-
-app.get('/api/seller/products/low-stock', authRequired, sellerRequired, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT * FROM products WHERE seller_id = $1 AND stock <= 3 AND is_available = true ORDER BY stock ASC`,
-      [req.user.id]
-    );
-    res.json({ products: result.rows });
-  } catch (err) {
-    console.error('Low stock error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+// ───── Inventory Alerts (extracted to src/routes/seller.js) ─────
 
 // ───── Admin ─────
 
@@ -5044,64 +4940,7 @@ function adminRequired(req, res, next) {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   next();
 }
-
-app.get('/api/admin/users', authRequired, adminRequired, async (_req, res) => {
-  try {
-    const result = await pool.query('SELECT id, full_name, email, phone, role, created_at FROM users ORDER BY created_at DESC LIMIT 100');
-    res.json({ users: result.rows });
-  } catch (err) {
-    console.error('Admin users error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-app.get('/api/admin/disputes', authRequired, adminRequired, async (_req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT d.*, u.full_name AS raised_by_name, o.buyer_id
-       FROM disputes d
-       JOIN users u ON d.raised_by = u.id
-       JOIN orders o ON d.order_id = o.id
-       ORDER BY d.created_at DESC`
-    );
-    res.json({ disputes: result.rows });
-  } catch (err) {
-    console.error('Admin disputes error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-app.put('/api/admin/disputes/:id', authRequired, adminRequired, async (req, res) => {
-  const { status, resolution } = req.body;
-  if (!status || !['open', 'under_review', 'resolved', 'closed'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status' });
-  }
-  try {
-    await pool.query(
-      `UPDATE disputes SET status = $1, resolution = COALESCE($2, resolution), updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
-      [status, resolution || null, req.params.id]
-    );
-    // Notify both parties of dispute update
-    const disputeInfo = await pool.query(
-      `SELECT d.order_id, d.raised_by, o.buyer_id FROM disputes d JOIN orders o ON d.order_id = o.id WHERE d.id = $1`,
-      [req.params.id]
-    );
-    if (disputeInfo.rows.length > 0) {
-      const { order_id, raised_by, buyer_id } = disputeInfo.rows[0];
-      const sellerRes = await pool.query('SELECT seller_id FROM order_items WHERE order_id = $1 LIMIT 1', [order_id]);
-      const sellerId = sellerRes.rows[0]?.seller_id;
-      const msg = resolution ? `Your dispute has been ${status}. ${resolution}` : `Your dispute has been ${status}.`;
-      const parties = [buyer_id, sellerId].filter(Boolean);
-      for (const pid of parties) {
-        createNotification(pid, 'dispute_resolved', 'Dispute Updated', msg, { disputeId: req.params.id, orderId: order_id });
-      }
-    }
-    res.json({ updated: true });
-  } catch (err) {
-    console.error('Admin dispute update error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+// Admin users/disputes routes extracted to src/routes/admin.js
 
 // ───── Order Notes (Seller Updates) ─────
 
@@ -6497,8 +6336,6 @@ app.post('/api/products/:id/sale', authRequired, verifiedSellerRequired, async (
   }
 });
 
-// ───── Health check ─────
-
 // ───── ID Verification ─────
 
 // OCR.space API helper
@@ -7641,113 +7478,7 @@ app.post('/api/feed/taste/skip', authRequired, async (req, res) => {
   }
 });
 
-// ───── Root Health Check (Render) ─────
-app.get('/', (_req, res) => res.status(200).json({ status: 'ok' }));
-
-// ───── Map Crash Reports ─────
-app.post('/api/debug/map-report', authRequired, express.json({ limit: '50kb' }), (req, res) => {
-  const { logs, platform, appVersion, timestamp } = req.body;
-  console.error(`\n=== MAP DEBUG REPORT [${timestamp || new Date().toISOString()}] platform=${platform} appVersion=${appVersion} ===`);
-  if (Array.isArray(logs)) {
-    logs.forEach((l) => console.error(`  ${l}`));
-  } else {
-    console.error('  raw:', JSON.stringify(logs).slice(0, 2000));
-  }
-  console.error('=== END MAP DEBUG REPORT ===\n');
-  res.json({ ok: true });
-});
-
-// ───── Map Config (MapTiler key for client, requires auth) ─────
-app.get('/api/map-config', authRequired, (_req, res) => {
-  res.json({ maptilerKey: process.env.MAPTILER_KEY || null });
-});
-
-app.get('/api/health', async (_req, res) => {
-  const result = {
-    status: 'ok',
-    primary: 'unknown',
-    active: isTestMode ? 'test-local' : 'supabase',
-    backupConfigured: Boolean(neonBackupDatabaseUrl),
-  };
-  try {
-    await Promise.race([pool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
-    result.primary = 'connected';
-  } catch { result.primary = 'down'; }
-  result.status = result.primary === 'connected' ? 'ok' : 'error';
-  res.status(result.status === 'ok' ? 200 : 503).json(result);
-});
-app.get('/api/debug', authRequired, adminRequired, async (_req, res) => {
-  try {
-    const mccRes = await fetch(
-      (process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create').replace('pay-create', 'pay-balance'),
-      { headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}` } }
-    );
-    const data = await mccRes.json();
-    res.json({ mccStatus: mccRes.status, mccOk: mccRes.ok, data, hasKey: !!process.env.MCC_KEY });
-  } catch (err) {
-    res.status(500).json({ error: err.message, hasKey: !!process.env.MCC_KEY });
-  }
-});
-
-// ───── Legal Pages (Google OAuth requirement) ─────
-const legalPage = (title, content) => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} - MaurMaket</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1a1a1a;line-height:1.6}h1{font-size:1.8em;margin-bottom:.3em}h2{font-size:1.3em;margin-top:1.5em}p,li{font-size:.95em}a{color:#C0406A}ul{padding-left:1.5em}.meta{color:#666;font-size:.85em;margin-bottom:2em}</style></head><body><h1>${title}</h1><p class="meta">Effective: August 7, 2026 &middot; MaurMaket (maurmaket.onrender.com)</p>${content}<hr><p style="color:#999;font-size:.8em">Questions? Contact us at maurinexus.contact@gmail.com</p></body></html>`;
-
-app.get('/privacy', (_req, res) => {
-  res.type('html').send(legalPage('Privacy Policy', `
-    <h2>Information We Collect</h2>
-    <p>When you use MaurMaket, we collect information you provide directly: name, email, phone number, and profile photo. We also collect transaction data (listings, purchases, messages between buyers and sellers) and device information for app functionality.</p>
-    <h2>How We Use Your Information</h2>
-    <ul>
-      <li>To provide, maintain, and improve MaurMaket services</li>
-      <li>To process transactions and send related information</li>
-      <li>To send technical notices, updates, and security alerts</li>
-      <li>To respond to your comments and customer service requests</li>
-      <li>To detect and prevent fraud or abuse</li>
-    </ul>
-    <h2>Information Sharing</h2>
-    <p>We do not sell your personal information. We share data only with your consent, to comply with laws, or with service providers who assist in operating the platform (hosting, payment processing, analytics).</p>
-    <h2>Data Security</h2>
-    <p>We implement industry-standard security measures including encryption in transit (TLS) and at rest. However, no method of transmission over the Internet is 100% secure.</p>
-    <h2>Data Retention</h2>
-    <p>We retain your information as long as your account is active or as needed to provide services. You may request deletion of your account and data at any time.</p>
-    <h2>Your Rights</h2>
-    <p>You may access, update, or delete your personal information through your account settings or by contacting us at maurinexus.contact@gmail.com.</p>
-    <h2>Changes</h2>
-    <p>We may update this policy from time to time. Continued use of MaurMaket after changes constitutes acceptance of the revised policy.</p>
-  `));
-});
-
-app.get('/terms', (_req, res) => {
-  res.type('html').send(legalPage('Terms of Service', `
-    <h2>Acceptance of Terms</h2>
-    <p>By accessing or using MaurMaket, you agree to be bound by these Terms of Service. If you do not agree, do not use the service.</p>
-    <h2>User Accounts</h2>
-    <p>You must be at least 18 years old to use MaurMaket. You are responsible for maintaining the confidentiality of your account credentials and for all activity under your account.</p>
-    <h2>Marketplace Rules</h2>
-    <ul>
-      <li>Listings must be accurate and not misleading</li>
-      <li>You may not list prohibited items (weapons, drugs, counterfeit goods)</li>
-      <li>Transactions must be completed through MaurMaket's payment system</li>
-      <li>Meetups for exchanges must follow safety guidelines</li>
-    </ul>
-    <h2>Payments &amp; Fees</h2>
-    <p>MaurMaket charges fees for completed transactions. Fees are displayed before you confirm a purchase. All payments are processed securely through MonCash.</p>
-    <h2>Intellectual Property</h2>
-    <p>All content on MaurMaket (logos, text, code) is owned by MaurMaket or its licensors. You may not copy, modify, or distribute any part of the service without written permission.</p>
-    <h2>Limitation of Liability</h2>
-    <p>MaurMaket is not liable for indirect, incidental, or consequential damages arising from your use of the service. Our total liability does not exceed the fees paid by you in the 12 months prior to the claim.</p>
-    <h2>Termination</h2>
-    <p>We may suspend or terminate your account at any time for violation of these terms. You may also delete your account at any time through your settings.</p>
-    <h2>Governing Law</h2>
-    <p>These terms are governed by the laws of Haiti. Disputes shall be resolved in the courts of Port-au-Prince, Haiti.</p>
-    <h2>Changes</h2>
-    <p>We reserve the right to modify these terms at any time. Material changes will be communicated via email or in-app notice.</p>
-  `));
-});
-
-app.get('*', (_req, res) => {
-  res.status(404).json({ error: 'Not found' });
-});
+// Root health, map, health, debug, legal pages, 404 — extracted to src/routes/health.js + src/routes/misc.js
 
 // ───── Background Jobs (extracted to src/jobs/index.js) ─────
 startJobs();
