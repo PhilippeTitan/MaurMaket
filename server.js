@@ -1,10 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcrypt';
 import sharp from 'sharp';
-import https from 'https';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import morgan from 'morgan';
