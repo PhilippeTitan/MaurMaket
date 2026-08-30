@@ -15,7 +15,7 @@ interface BackButtonProps {
  * - standard: for use in ScreenHeader (text-colored icon)
  * - overlay: for use on image/media backgrounds (white icon with dark scrim)
  */
-export default function BackButton({ onPress, variant = 'standard', size = 20, style }: BackButtonProps) {
+export default function BackButton({ onPress, variant = 'standard', size = 24, style }: BackButtonProps) {
   const isOverlay = variant === 'overlay';
   return (
     <TouchableOpacity
