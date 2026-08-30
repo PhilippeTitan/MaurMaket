@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useRef, Component, Suspense } from 'react';
+import React, { useEffect, useState, useRef, Component, Suspense, useCallback } from 'react';
 import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text, AppState, Modal, Pressable } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -13,7 +14,7 @@ import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
 import OfflineBanner from './src/components/OfflineBanner';
 import { PaperPlaneIcon } from './src/components/UserAvatar';
-import { getMe, getFollowerCount, getFollowing } from './src/api';
+import { getMe, getFollowerCount, getFollowing, getConversationUnreadCount } from './src/api';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, invalidateUser } from './src/hooks';
 import { ToastProvider } from './src/components/Toast';
@@ -126,6 +127,23 @@ function AuthNavigator() {
 
 function MainTabs() {
   const insets = require('react-native-safe-area-context').useSafeAreaInsets();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const poll = async () => {
+        try {
+          const res = await getConversationUnreadCount() as { count: number };
+          if (active) setUnreadCount(res.count || 0);
+        } catch {}
+      };
+      poll();
+      const interval = setInterval(poll, 20000);
+      return () => { active = false; clearInterval(interval); };
+    }, [])
+  );
+
   return (
     <View style={styles.mainShell}>
       <Tab.Navigator
@@ -190,6 +208,7 @@ function MainTabs() {
                   <View style={styles.fab}>
                     <PaperPlaneIcon size={ICON_SIZES.tab} color={COLORS.text} />
                   </View>
+                  {unreadCount > 0 && <View style={styles.inboxDot} />}
               </TouchableOpacity>
             ),
           }}
@@ -486,6 +505,15 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.fab,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  inboxDot: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.coral,
   },
 });
 

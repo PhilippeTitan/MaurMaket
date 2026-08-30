@@ -129,6 +129,7 @@ function groupByDay(notifs: Notification[]): { label: string; data: Notification
 }
 
 const ORDER_NOTIF_TYPES = new Set(['order_status', 'payment_confirmed', 'order_cancelled']);
+const CHAT_NOTIF_TYPES = new Set(['new_message', 'new_offer', 'counter_offer', 'offer_accepted']);
 
 const SORT_OPTIONS = [
   { value: 'date_desc', label: 'Newest first' },
@@ -218,7 +219,7 @@ export default function NotificationScreen() {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 
-  const filteredNotifications = notifications.filter(n => !ORDER_NOTIF_TYPES.has(n.type) && !n.is_read);
+  const filteredNotifications = notifications.filter(n => !ORDER_NOTIF_TYPES.has(n.type) && !CHAT_NOTIF_TYPES.has(n.type) && !n.is_read);
   const unreadCount = filteredNotifications.length;
   const allOrders = [...buyOrders, ...sellOrders];
   const activeOrders = allOrders.filter(o => ['pending', 'paid', 'processing', 'shipped', 'delivered'].includes(o.status));
