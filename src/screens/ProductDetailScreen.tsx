@@ -48,6 +48,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [productReviews, setProductReviews] = useState<Review[]>([]);
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [avgRating, setAvgRating] = useState(0);
+  const [sellerExpanded, setSellerExpanded] = useState(false);
   const [categoryProducts, setCategoryProducts] = useState<Product[]>([]);
   const [coPurchaseProducts, setCoPurchaseProducts] = useState<Product[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
@@ -487,38 +488,66 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                 </TouchableOpacity>
               </View>
 
-              {/* ── Trust Bar ── */}
+              {/* ── Trust Bar (collapsible) ── */}
               {product.seller && (
-                <View style={styles.trustBar}>
-                  {(product.seller.id_verification_result === 'verified' || product.seller.id_verified) && (
-                    <View style={styles.trustPill}>
-                      <MaterialCommunityIcons name="shield-check" size={12} color="#1D9E75" />
-                      <Text style={styles.trustPillText}>Verified</Text>
+                <TouchableOpacity
+                  style={styles.trustBarWrap}
+                  onPress={() => setSellerExpanded(!sellerExpanded)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="seller details"
+                >
+                  {!sellerExpanded ? (
+                    <View style={styles.trustBarCompact}>
+                      {(product.seller.id_verification_result === 'verified' || product.seller.id_verified) && (
+                        <MaterialCommunityIcons name="shield-check" size={12} color="#1D9E75" />
+                      )}
+                      <Text style={styles.trustBarCompactText} numberOfLines={1}>
+                        {[
+                          (product.seller.id_verification_result === 'verified' || product.seller.id_verified) ? 'Verified' : null,
+                          avgRating >= 4 ? `${avgRating.toFixed(1)} ★` : null,
+                          'Protected payment',
+                          product.seller.location_address ? 'Meetup' : null,
+                        ].filter(Boolean).join('  ·  ')}
+                      </Text>
+                      <MaterialCommunityIcons name="chevron-down" size={14} color={COLORS.text2} />
+                    </View>
+                  ) : (
+                    <View style={styles.trustBar}>
+                      {(product.seller.id_verification_result === 'verified' || product.seller.id_verified) && (
+                        <View style={styles.trustPill}>
+                          <MaterialCommunityIcons name="shield-check" size={12} color="#1D9E75" />
+                          <Text style={styles.trustPillText}>Verified</Text>
+                        </View>
+                      )}
+                      {product.seller.seller_tier === 'business' && (
+                        <View style={styles.trustPill}>
+                          <MaterialCommunityIcons name="office-building" size={12} color={COLORS.coral} />
+                          <Text style={styles.trustPillText}>Business</Text>
+                        </View>
+                      )}
+                      {avgRating >= 4 && (
+                        <View style={styles.trustPill}>
+                          <MaterialCommunityIcons name="star" size={12} color={COLORS.yellow} />
+                          <Text style={styles.trustPillText}>{avgRating.toFixed(1)} rated</Text>
+                        </View>
+                      )}
+                      <View style={styles.trustPill}>
+                        <MaterialCommunityIcons name="shield-lock" size={12} color={COLORS.coral} />
+                        <Text style={styles.trustPillText}>Protected payment</Text>
+                      </View>
+                      {product.seller.location_address && (
+                        <View style={styles.trustPill}>
+                          <MaterialCommunityIcons name="map-marker" size={12} color={COLORS.coral} />
+                          <Text style={styles.trustPillText}>Meetup</Text>
+                        </View>
+                      )}
+                      <View style={{ alignSelf: 'flex-end', marginTop: 4 }}>
+                        <MaterialCommunityIcons name="chevron-up" size={14} color={COLORS.text2} />
+                      </View>
                     </View>
                   )}
-                  {product.seller.seller_tier === 'business' && (
-                    <View style={styles.trustPill}>
-                      <MaterialCommunityIcons name="office-building" size={12} color={COLORS.coral} />
-                      <Text style={styles.trustPillText}>Business</Text>
-                    </View>
-                  )}
-                  {avgRating >= 4 && (
-                    <View style={styles.trustPill}>
-                      <MaterialCommunityIcons name="star" size={12} color={COLORS.yellow} />
-                      <Text style={styles.trustPillText}>{avgRating.toFixed(1)} rated</Text>
-                    </View>
-                  )}
-                  <View style={styles.trustPill}>
-                    <MaterialCommunityIcons name="shield-lock" size={12} color={COLORS.coral} />
-                    <Text style={styles.trustPillText}>Protected payment</Text>
-                  </View>
-                  {product.seller.location_address && (
-                    <View style={styles.trustPill}>
-                      <MaterialCommunityIcons name="map-marker" size={12} color={COLORS.coral} />
-                      <Text style={styles.trustPillText}>Meetup</Text>
-                    </View>
-                  )}
-                </View>
+                </TouchableOpacity>
               )}
             </View>
           )}
@@ -743,7 +772,10 @@ const styles = StyleSheet.create({
   sellerMeta: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
 
   /* Trust bar */
-  trustBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 10 },
+  trustBarWrap: { paddingHorizontal: 14, paddingTop: 4, paddingBottom: 10 },
+  trustBarCompact: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.surface, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border + '40' },
+  trustBarCompactText: { flex: 1, fontSize: 11, color: COLORS.text2, fontWeight: '500' },
+  trustBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   trustPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: COLORS.border + '40' },
   trustPillText: { fontSize: 10, fontWeight: '600', color: COLORS.text2 },
 
