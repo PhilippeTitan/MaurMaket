@@ -353,6 +353,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               pagingEnabled
               nestedScrollEnabled
               showsHorizontalScrollIndicator={false}
+              style={{ overflow: 'hidden' }}
               keyExtractor={(img, idx) => String(img.id || idx)}
               onMomentumScrollEnd={(e) => {
                 const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
