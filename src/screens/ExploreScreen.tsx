@@ -27,11 +27,14 @@ type CategoryFilter = Pick<Category, 'id' | 'name'>;
 type SortOption = { label: string; value: string };
 
 const SORT_OPTIONS: SortOption[] = [
+  { label: 'explore.sortForYou', value: 'foryou' },
   { label: 'explore.sortNewest', value: 'newest' },
   { label: 'explore.sortPriceLow', value: 'price_asc' },
   { label: 'explore.sortPriceHigh', value: 'price_desc' },
   { label: 'explore.sortOldest', value: 'oldest' },
 ];
+
+const DEFAULT_SORT = 'foryou';
 
 const CAT_ICONS: Record<string, string> = {
   electronics: 'cellphone',
@@ -58,7 +61,7 @@ export default function ExploreScreen({ navigation }: Props) {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [catModal, setCatModal] = useState(false);
   const categoryListRef = useRef<FlatList<CategoryFilter>>(null);
-  const [sortBy, setSortBy] = useState('newest');
+  const [sortBy, setSortBy] = useState(DEFAULT_SORT);
   const [sortModal, setSortModal] = useState(false);
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
@@ -94,7 +97,7 @@ export default function ExploreScreen({ navigation }: Props) {
     if (store.isLoggedIn) params.personalized = 'true';
     if (selectedCat) params.category = selectedCat;
     if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
-    if (sortBy) params.sort = sortBy;
+    if (sortBy && sortBy !== DEFAULT_SORT) params.sort = sortBy;
     if (minPrice.trim()) params.minPrice = minPrice.trim();
     if (maxPrice.trim()) params.maxPrice = maxPrice.trim();
     return params;
@@ -188,10 +191,10 @@ export default function ExploreScreen({ navigation }: Props) {
               </TouchableOpacity>
             )}
           </View>
-          {(sortBy !== 'newest' || minPrice || maxPrice) && (
+          {(sortBy !== DEFAULT_SORT || minPrice || maxPrice) && (
             <TouchableOpacity
               style={styles.clearFilterBtn}
-              onPress={() => { setSortBy('newest'); setMinPrice(''); setMaxPrice(''); }}
+              onPress={() => { setSortBy(DEFAULT_SORT); setMinPrice(''); setMaxPrice(''); }}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.clearFilters')}
             >
@@ -204,7 +207,7 @@ export default function ExploreScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.sortFilter')}
           >
-            <MaterialCommunityIcons name="tune-variant" size={30} color={COLORS.text} />
+            <MaterialCommunityIcons name="tune-variant" size={30} color={(sortBy !== DEFAULT_SORT || minPrice || maxPrice) ? COLORS.coral : COLORS.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -299,9 +302,9 @@ export default function ExploreScreen({ navigation }: Props) {
 
       <Modal visible={catModal} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setCatModal(false)}>
-          <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Categories</Text>
+          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Categories</Text>
               <TouchableOpacity
                 onPress={() => setCatModal(false)}
                 accessibilityRole="button"
@@ -343,37 +346,39 @@ export default function ExploreScreen({ navigation }: Props) {
 
       <Modal visible={sortModal} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>
-          <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Sort by</Text>
+          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
+            {/* Header */}
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Filters</Text>
               <TouchableOpacity
                 onPress={() => setSortModal(false)}
                 accessibilityRole="button"
                 accessibilityLabel={t('accessibility.close')}
               >
-                <Icon name="close" size={18} color={COLORS.text2} />
+                <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
-            {SORT_OPTIONS.map(option => (
-              <TouchableOpacity
-                key={option.value}
-                style={[styles.modalItem, sortBy === option.value && styles.modalItemActive]}
-                onPress={() => { setSortBy(option.value); setSortModal(false); }}
-                accessibilityRole="button"
-                accessibilityLabel={t(option.label)}
-              >
-                <MaterialCommunityIcons
-                  name={sortBy === option.value ? 'radiobox-marked' : 'radiobox-blank'}
-                  size={18}
-                  color={sortBy === option.value ? COLORS.coral : COLORS.text2}
-                />
-                <Text style={[styles.modalItemText, sortBy === option.value && styles.modalItemTextActive]}>
-                  {t(option.label)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            <View style={styles.modalDivider} />
-            <Text style={[styles.modalTitle, { marginBottom: 6 }]}>Price range</Text>
+
+            {/* Sort section */}
+            <Text style={styles.sheetSectionTitle}>Sort by</Text>
+            <View style={styles.sortGrid}>
+              {SORT_OPTIONS.map(option => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[styles.sortPill, sortBy === option.value && styles.sortPillActive]}
+                  onPress={() => setSortBy(option.value)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(option.label)}
+                >
+                  <Text style={[styles.sortPillText, sortBy === option.value && styles.sortPillTextActive]}>
+                    {t(option.label)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Price section */}
+            <Text style={styles.sheetSectionTitle}>Price range</Text>
             <View style={styles.priceRow}>
               <TextInput
                 style={styles.priceInputModal}
@@ -382,10 +387,9 @@ export default function ExploreScreen({ navigation }: Props) {
                 value={minPrice}
                 onChangeText={setMinPrice}
                 keyboardType="numeric"
-               
                 accessibilityLabel="minimum price"
               />
-              <Text style={styles.priceDashModal}>-</Text>
+              <Text style={styles.priceDashModal}>–</Text>
               <TextInput
                 style={styles.priceInputModal}
                 placeholder="Max"
@@ -393,10 +397,11 @@ export default function ExploreScreen({ navigation }: Props) {
                 value={maxPrice}
                 onChangeText={setMaxPrice}
                 keyboardType="numeric"
-               
                 accessibilityLabel="maximum price"
               />
             </View>
+
+            {/* Apply */}
             <TouchableOpacity
               style={styles.modalApplyBtn}
               onPress={() => { setSortModal(false); refetch(); }}
@@ -559,11 +564,20 @@ const styles = StyleSheet.create({
   quickActionRight: { right: 0, bottom: 0 },
   quickLabel: { color: COLORS.text, fontSize: 10, fontWeight: '700', textAlign: 'center' },
   quickHint: { color: 'rgba(255,255,255,0.76)', fontSize: 12, marginTop: 12, textAlign: 'center' },
-  modalContent: {
-    width: 240, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 10, gap: 2, overflow: 'hidden',
+  modalSheet: {
+    width: 280, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 14, gap: 0, overflow: 'hidden',
   },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, marginLeft: 4 },
-  modalTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sheetTitle: { fontSize: 15, fontWeight: '800', color: COLORS.text },
+  sheetSectionTitle: { fontSize: 11, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 12, marginBottom: 8 },
+  sortGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  sortPill: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
+  },
+  sortPillActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
+  sortPillText: { fontSize: 12, color: COLORS.text2, fontWeight: '600' },
+  sortPillTextActive: { color: COLORS.white, fontWeight: '700' },
   modalItem: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 8, paddingHorizontal: 8, borderRadius: 6,

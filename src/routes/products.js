@@ -87,7 +87,12 @@ router.get('/products', async (req, res) => {
   let selectExtra = '';
   let joinExtra = '';
 
-  if (usePersonalized && userId) {
+  // Explicit sort overrides personalization — user's choice wins.
+  // 'foryou' (or no sort + logged in) = personalized scoring.
+  // Anything else = deterministic sort, skip the recommendation CTE.
+  const usePersonalizedRanking = usePersonalized && userId && (!sort || sort === 'foryou');
+
+  if (usePersonalizedRanking) {
     selectExtra = `, COALESCE(score.total_score, 0) AS feed_score, score.recommendation_reason`;
     joinExtra = `LEFT JOIN (
       WITH user_follows AS (
@@ -262,14 +267,14 @@ router.get('/products', async (req, res) => {
     params.push(userId);
     paramIndex++;
     orderBy = 'COALESCE(score.total_score, 0) DESC, p.created_at DESC';
-  } else if (!sort) {
-    orderBy = 'p.created_at DESC';
   } else if (sort === 'price_asc') {
     orderBy = '(CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END) ASC';
   } else if (sort === 'price_desc') {
     orderBy = '(CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END) DESC';
   } else if (sort === 'oldest') {
     orderBy = 'p.created_at ASC';
+  } else {
+    orderBy = 'p.created_at DESC';
   }
 
   if (following === 'true' && userId) {
