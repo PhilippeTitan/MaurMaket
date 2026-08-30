@@ -64,6 +64,10 @@ export default function ExploreScreen({ navigation }: Props) {
   const [sortModal, setSortModal] = useState(false);
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
+  // Staging state — only committed on Apply
+  const [pendingSortBy, setPendingSortBy] = useState(DEFAULT_SORT);
+  const [pendingMinPrice, setPendingMinPrice] = useState('');
+  const [pendingMaxPrice, setPendingMaxPrice] = useState('');
   const filtersRestored = useRef(false);
   const [showPriceFilter, setShowPriceFilter] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -224,7 +228,7 @@ export default function ExploreScreen({ navigation }: Props) {
           {(sortBy !== DEFAULT_SORT || minPrice || maxPrice) && (
             <TouchableOpacity
               style={styles.clearFilterBtn}
-              onPress={() => { setSortBy(DEFAULT_SORT); setMinPrice(''); setMaxPrice(''); }}
+              onPress={() => { setSortBy(DEFAULT_SORT); setMinPrice(''); setMaxPrice(''); setPendingSortBy(DEFAULT_SORT); setPendingMinPrice(''); setPendingMaxPrice(''); }}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.clearFilters')}
             >
@@ -233,7 +237,7 @@ export default function ExploreScreen({ navigation }: Props) {
           )}
           <TouchableOpacity
             style={styles.filterBtn}
-            onPress={() => setSortModal(true)}
+            onPress={() => { setPendingSortBy(sortBy); setPendingMinPrice(minPrice); setPendingMaxPrice(maxPrice); setSortModal(true); }}
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.sortFilter')}
           >
@@ -376,8 +380,7 @@ export default function ExploreScreen({ navigation }: Props) {
       </Modal>
 
       <Modal visible={sortModal} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>
-          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
+        <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>            <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
             {/* Header */}
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Filters</Text>
@@ -396,12 +399,12 @@ export default function ExploreScreen({ navigation }: Props) {
               {SORT_OPTIONS.map(option => (
                 <TouchableOpacity
                   key={option.value}
-                  style={[styles.sortPill, sortBy === option.value && styles.sortPillActive]}
-                  onPress={() => setSortBy(option.value)}
+                  style={[styles.sortPill, pendingSortBy === option.value && styles.sortPillActive]}
+                  onPress={() => setPendingSortBy(option.value)}
                   accessibilityRole="button"
                   accessibilityLabel={t(option.label)}
                 >
-                  <Text style={[styles.sortPillText, sortBy === option.value && styles.sortPillTextActive]}>
+                  <Text style={[styles.sortPillText, pendingSortBy === option.value && styles.sortPillTextActive]}>
                     {t(option.label)}
                   </Text>
                 </TouchableOpacity>
@@ -415,8 +418,8 @@ export default function ExploreScreen({ navigation }: Props) {
                 style={styles.priceInputModal}
                 placeholder="Min"
                 placeholderTextColor={COLORS.text2}
-                value={minPrice}
-                onChangeText={setMinPrice}
+                value={pendingMinPrice}
+                onChangeText={setPendingMinPrice}
                 keyboardType="numeric"
                 accessibilityLabel="minimum price"
               />
@@ -425,8 +428,8 @@ export default function ExploreScreen({ navigation }: Props) {
                 style={styles.priceInputModal}
                 placeholder="Max"
                 placeholderTextColor={COLORS.text2}
-                value={maxPrice}
-                onChangeText={setMaxPrice}
+                value={pendingMaxPrice}
+                onChangeText={setPendingMaxPrice}
                 keyboardType="numeric"
                 accessibilityLabel="maximum price"
               />
@@ -435,7 +438,13 @@ export default function ExploreScreen({ navigation }: Props) {
             {/* Apply */}
             <TouchableOpacity
               style={styles.modalApplyBtn}
-              onPress={() => { setSortModal(false); refetch(); }}
+              onPress={() => {
+                setSortBy(pendingSortBy);
+                setMinPrice(pendingMinPrice);
+                setMaxPrice(pendingMaxPrice);
+                setSortModal(false);
+                refetch();
+              }}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.apply')}
             >
