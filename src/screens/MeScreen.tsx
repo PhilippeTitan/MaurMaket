@@ -285,18 +285,7 @@ export default function MeScreen() {
       {/* ── Profile Hero ── */}
       <View style={styles.hero}>
         <View style={[styles.avatarRow, { paddingTop: SPACING.md }]}>
-          <View style={styles.avatarWrap}>
-            <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={72} animated={true} />
-            <TouchableOpacity
-              style={styles.avatarEditBtn}
-              onPress={() => nav.navigate('EditProfile')}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="edit profile"
-            >
-              <MaterialCommunityIcons name="pencil" size={14} color={COLORS.white} />
-            </TouchableOpacity>
-          </View>
+          <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={72} animated={true} />
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
@@ -486,6 +475,13 @@ export default function MeScreen() {
                 columnGap={3}
                 sidePad={0}
                 onPress={handleProductPress}
+                renderCardOverlay={(item) => (
+                  isSeller && user?.id === item.seller_id ? (
+                    <View style={styles.editPenBtn} pointerEvents="none">
+                      <MaterialCommunityIcons name="pencil" size={14} color={COLORS.white} />
+                    </View>
+                  ) : null
+                )}
               />
             ) : (
               <EmptyState
@@ -599,12 +595,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.lg, paddingTop: 60,
   },
-  avatarWrap: { position: 'relative' },
-  avatarEditBtn: {
-    position: 'absolute', bottom: 0, right: -4,
-    width: 26, height: 26, borderRadius: 13,
-    backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: COLORS.surface,
+  editPenBtn: {
+    position: 'absolute', top: 8, left: 8,
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
   nameBioBlock: { paddingHorizontal: SPACING.lg, paddingTop: 12 },
   bio: { fontSize: FONT_SIZES.base, color: COLORS.text2, lineHeight: 20, marginTop: 6 },
