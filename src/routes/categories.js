@@ -3,7 +3,7 @@ import { pool } from '../config/database.js';
 
 const router = Router();
 
-router.get('/', async (_req, res) => {
+router.get('/categories', async (_req, res) => {
   try {
     const result = await pool.query('SELECT * FROM categories ORDER BY display_order ASC');
     res.json({ categories: result.rows });
