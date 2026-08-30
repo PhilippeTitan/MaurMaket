@@ -23,7 +23,7 @@ import UserAvatar from '../components/UserAvatar';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type InboxTab = 'all' | 'primary' | 'offers';
+type InboxTab = 'messages' | 'offers' | 'notifications';
 
 const INBOX_CACHE_TTL = 15_000;
 let _inboxCache: { data: any; timestamp: number } | null = null;
@@ -46,7 +46,7 @@ export default function InboxScreen() {
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'Inbox'>>();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<InboxTab>('all');
+  const [activeTab, setActiveTab] = useState<InboxTab>('messages');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -138,9 +138,7 @@ export default function InboxScreen() {
 
   const filteredConversations = sortedConversations
     .filter(c => {
-      const otherId = (c as any).other_party_id;
-      if (activeTab === 'all') return true;
-      if (activeTab === 'primary') return otherId && followedIds.has(otherId);
+      if (activeTab !== 'messages') return true; // offers/notifications have their own data
       return true;
     })
     .filter(c => {
@@ -251,42 +249,23 @@ export default function InboxScreen() {
     );
   };
 
+  const unreadNotifCount = notifications.filter(n => !n.is_read).length;
   const topSegmentedTabs = (
     <View style={styles.topTabsWrap}>
       <TouchableOpacity
-        style={[styles.topTabItem, activeTab === 'all' && styles.topTabItemActive]}
-        onPress={() => setActiveTab('all')}
+        style={[styles.topTabItem, activeTab === 'messages' && styles.topTabItemActive]}
+        onPress={() => setActiveTab('messages')}
         activeOpacity={0.7}
-        accessibilityLabel="All messages"
+        accessibilityLabel="Messages"
         accessibilityRole="button"
       >
-        <Text style={[styles.topTabLabel, activeTab === 'all' && styles.topTabLabelActive]}>
-          All
+        <Text style={[styles.topTabLabel, activeTab === 'messages' && styles.topTabLabelActive]}>
+          Messages
         </Text>
         {conversations.length > 0 && (
-          <View style={[styles.topTabCount, activeTab === 'all' && styles.topTabCountActive]}>
-            <Text style={[styles.topTabCountText, activeTab === 'all' && styles.topTabCountTextActive]}>
+          <View style={[styles.topTabCount, activeTab === 'messages' && styles.topTabCountActive]}>
+            <Text style={[styles.topTabCountText, activeTab === 'messages' && styles.topTabCountTextActive]}>
               {conversations.length}
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.topTabItem, activeTab === 'primary' && styles.topTabItemActive]}
-        onPress={() => setActiveTab('primary')}
-        activeOpacity={0.7}
-        accessibilityLabel="Primary messages"
-        accessibilityRole="button"
-      >
-        {activeTab !== 'primary' && followedSellers.length > 0 && <View style={styles.topTabRedDot} />}
-        <Text style={[styles.topTabLabel, activeTab === 'primary' && styles.topTabLabelActive]}>
-          Primary
-        </Text>
-        {followedSellers.length > 0 && (
-          <View style={[styles.topTabCount, activeTab === 'primary' && styles.topTabCountActive]}>
-            <Text style={[styles.topTabCountText, activeTab === 'primary' && styles.topTabCountTextActive]}>
-              {followedSellers.length}
             </Text>
           </View>
         )}
@@ -299,6 +278,7 @@ export default function InboxScreen() {
         accessibilityLabel="Offers"
         accessibilityRole="button"
       >
+        {activeTab !== 'offers' && offerConversations.length > 0 && <View style={styles.topTabRedDot} />}
         <Text style={[styles.topTabLabel, activeTab === 'offers' && styles.topTabLabelActive]}>
           Offers
         </Text>
@@ -306,6 +286,26 @@ export default function InboxScreen() {
           <View style={[styles.topTabCount, activeTab === 'offers' && styles.topTabCountActive]}>
             <Text style={[styles.topTabCountText, activeTab === 'offers' && styles.topTabCountTextActive]}>
               {offerConversations.length > 9 ? '9+' : offerConversations.length}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.topTabItem, activeTab === 'notifications' && styles.topTabItemActive]}
+        onPress={() => setActiveTab('notifications')}
+        activeOpacity={0.7}
+        accessibilityLabel="Notifications"
+        accessibilityRole="button"
+      >
+        {activeTab !== 'notifications' && unreadNotifCount > 0 && <View style={styles.topTabRedDot} />}
+        <Text style={[styles.topTabLabel, activeTab === 'notifications' && styles.topTabLabelActive]}>
+          Notifications
+        </Text>
+        {unreadNotifCount > 0 && (
+          <View style={[styles.topTabCount, activeTab === 'notifications' && styles.topTabCountActive]}>
+            <Text style={[styles.topTabCountText, activeTab === 'notifications' && styles.topTabCountTextActive]}>
+              {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
             </Text>
           </View>
         )}
@@ -447,6 +447,47 @@ export default function InboxScreen() {
             )
           }
         />
+      ) : activeTab === 'notifications' ? (
+        <FlatList
+          data={notifications}
+          renderItem={({ item }: { item: Notification }) => {
+            const notifIcon = item.type === 'new_message' ? 'message-text-outline'
+              : item.type === 'order_status' ? 'package-variant'
+              : item.type === 'review_received' ? 'star-outline'
+              : item.type === 'offer_received' ? 'tag-outline'
+              : 'bell-outline';
+            return (
+              <TouchableOpacity
+                style={[styles.notifCard, !item.is_read && styles.notifCardUnread]}
+                onPress={() => { markNotificationRead(item.id).catch(() => {}); routeNotification(nav, item.type, item.data); }}
+                accessibilityLabel={item.title}
+                accessibilityRole="button"
+                activeOpacity={0.7}
+              >
+                <View style={[styles.notifIconWrap, !item.is_read && styles.notifIconWrapUnread]}>
+                  <MaterialCommunityIcons name={notifIcon as any} size={18} color={!item.is_read ? COLORS.coral : COLORS.text2} />
+                </View>
+                <View style={styles.notifBody}>
+                  <Text style={[styles.notifTitle, !item.is_read && styles.notifTitleUnread]} numberOfLines={1}>{item.title}</Text>
+                  {item.body && <Text style={styles.notifBodyText} numberOfLines={2}>{item.body}</Text>}
+                  <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
+                </View>
+                {!item.is_read && <View style={styles.notifUnreadDot} />}
+              </TouchableOpacity>
+            );
+          }}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={conversationsListHeader}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
+          ListEmptyComponent={
+            loading ? (
+              <RowListSkeleton count={6} thumbSize={48} />
+            ) : (
+              <EmptyState icon="bell-outline" title="No notifications yet" size={56} />
+            )
+          }
+        />
       ) : (
         <FlatList
           data={filteredConversations as any}
@@ -461,7 +502,7 @@ export default function InboxScreen() {
             ) : (
               <EmptyState
                 icon="message-outline"
-                title={activeTab === 'primary' ? 'No conversations with followed sellers' : t('inbox.noMessages')}
+                title={t('inbox.noMessages')}
                 size={56}
               />
             )
@@ -788,6 +829,18 @@ const styles = StyleSheet.create({
   offerBadge: { backgroundColor: COLORS.coral, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, marginLeft: 6 },
   offerBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
   convoStoreBtn: { padding: 8, borderRadius: 20, backgroundColor: 'transparent' },
+
+  /* Notifications */
+  notifCard: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: SPACING.md, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border + '20' },
+  notifCardUnread: { backgroundColor: COLORS.surface },
+  notifIconWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  notifIconWrapUnread: { backgroundColor: COLORS.coral + '15' },
+  notifBody: { flex: 1, minWidth: 0 },
+  notifTitle: { fontSize: 13, color: COLORS.text2, fontWeight: '500' },
+  notifTitleUnread: { color: COLORS.text, fontWeight: '700' },
+  notifBodyText: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+  notifTime: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
+  notifUnreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.coral },
 
   /* Bubbles */
   bubblesSection: { paddingTop: SPACING.sm, paddingBottom: SPACING.xs },
