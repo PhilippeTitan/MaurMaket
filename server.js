@@ -2986,33 +2986,24 @@ app.get('/api/sellers/:id', async (req, res) => {
 
 // ───── Product routes ─────
 
-// Diversity reranker: ensures no single seller or category dominates the personalized feed.
-// Applied server-side after scoring to give users variety without losing relevance.
+// Diversity reranker: hard cap on seller/category representation in the personalized feed.
+// Items that exceed caps are dropped — no re-appending. The feed may be slightly shorter
+// but never repetitive. FlatList's onEndReached loads more naturally.
 function diversifyFeed(products, { maxPerSeller = 3, maxPerCategory = 5 } = {}) {
   if (!products || products.length <= 1) return products;
   const sellerCounts = {};
   const categoryCounts = {};
-  const accepted = [];
-  const deferred = [];
+  const result = [];
   for (const p of products) {
     const sid = p.seller_id;
     const cid = p.category_id;
-    const sellerOk = !sid || (sellerCounts[sid] || 0) < maxPerSeller;
-    const catOk = !cid || (categoryCounts[cid] || 0) < maxPerCategory;
-    if (sellerOk && catOk) {
-      accepted.push(p);
-      if (sid) sellerCounts[sid] = (sellerCounts[sid] || 0) + 1;
-      if (cid) categoryCounts[cid] = (categoryCounts[cid] || 0) + 1;
-    } else {
-      deferred.push(p);
-    }
+    if (sid && (sellerCounts[sid] || 0) >= maxPerSeller) continue;
+    if (cid && (categoryCounts[cid] || 0) >= maxPerCategory) continue;
+    result.push(p);
+    if (sid) sellerCounts[sid] = (sellerCounts[sid] || 0) + 1;
+    if (cid) categoryCounts[cid] = (categoryCounts[cid] || 0) + 1;
   }
-  // Fill remaining slots from deferred (score-ordered, just over cap)
-  for (const p of deferred) {
-    if (accepted.length >= products.length) break;
-    accepted.push(p);
-  }
-  return accepted;
+  return result;
 }
 
 app.get('/api/products', async (req, res) => {
@@ -3118,20 +3109,77 @@ app.get('/api/products', async (req, res) => {
         WHERE user_id = $${paramIndex} AND event_type = 'dwell'
         GROUP BY product_id
       ),
-      -- Trending: products with high engagement in the last 24 hours
+      -- Trending: weighted engagement in the last 24h, deduped per user to prevent gaming.
+      -- save=5, like=3, dwell(viewed 5s+)=2, view=1. Min threshold: 3 unique users or 10 weighted points.
       trending_products AS (
-        SELECT fe.product_id, COUNT(*) AS trend_count
+        SELECT product_id, SUM(weight) AS trend_score, COUNT(DISTINCT user_id) AS unique_users
+        FROM (
+          SELECT user_id, product_id,
+            CASE
+              WHEN event_type = 'save' THEN 5.0
+              WHEN event_type = 'like' THEN 3.0
+              WHEN event_type = 'dwell' AND duration_ms >= 5000 THEN 2.0
+              WHEN event_type = 'view' THEN 1.0
+              ELSE 0
+            END AS weight
+          FROM feed_events
+          WHERE event_type IN ('view', 'dwell', 'like', 'save')
+            AND created_at > NOW() - INTERVAL '24 hours'
+        ) weighted
+        GROUP BY product_id
+        HAVING COUNT(DISTINCT user_id) >= 3 OR SUM(weight) >= 10
+        ORDER BY trend_score DESC
+        LIMIT 100
+      ),
+      -- What the user has already seen/engaged with (dedup source for collaborative + similarity)
+      user_product_views AS (
+        SELECT DISTINCT product_id FROM feed_events WHERE user_id = $${paramIndex}
+        UNION
+        SELECT product_id FROM wishlists WHERE user_id = $${paramIndex}
+      ),
+      -- Product similarity: products co-purchased with products this user engaged with.
+      -- Uses the existing product_cooccurrences table (actual purchase data = strongest signal).
+      product_similar AS (
+        SELECT CASE WHEN pc.product_a_id = upv.product_id THEN pc.product_b_id ELSE pc.product_a_id END AS product_id,
+               SUM(pc.purchase_count) AS similarity_score
+        FROM product_cooccurrences pc
+        JOIN user_product_views upv ON pc.product_a_id = upv.product_id OR pc.product_b_id = upv.product_id
+        GROUP BY 1
+        HAVING SUM(pc.purchase_count) >= 1
+        ORDER BY similarity_score DESC
+        LIMIT 100
+      ),
+      -- Collaborative filtering: users who behave like you also engage with...
+      -- Step 1: find users with overlapping likes/saves (min 2 overlap)
+      similar_users AS (
+        SELECT fe.user_id, COUNT(*) AS overlap_count
         FROM feed_events fe
-        WHERE fe.event_type IN ('view', 'dwell', 'like', 'save')
-          AND fe.created_at > NOW() - INTERVAL '24 hours'
-        GROUP BY fe.product_id
-        HAVING COUNT(*) >= 3
+        WHERE fe.product_id IN (SELECT product_id FROM user_product_views)
+          AND fe.user_id != $${paramIndex}
+          AND fe.event_type IN ('like', 'save')
+        GROUP BY fe.user_id
+        HAVING COUNT(*) >= 2
         ORDER BY COUNT(*) DESC
+        LIMIT 50
+      ),
+      -- Step 2: products those users engaged with that this user hasn't seen
+      collaborative_products AS (
+        SELECT fe.product_id, COUNT(DISTINCT fe.user_id) AS recommender_count
+        FROM feed_events fe
+        WHERE fe.user_id IN (SELECT user_id FROM similar_users)
+          AND fe.event_type IN ('like', 'save')
+          AND fe.product_id NOT IN (SELECT product_id FROM user_product_views)
+        GROUP BY fe.product_id
+        ORDER BY COUNT(DISTINCT fe.user_id) DESC
         LIMIT 100
       )
       SELECT
         p2.id AS product_id,
         CASE
+          WHEN EXISTS (SELECT 1 FROM collaborative_products cp WHERE cp.product_id = p2.id AND cp.recommender_count >= 3)
+            THEN 'People like you also liked this'
+          WHEN EXISTS (SELECT 1 FROM product_similar ps WHERE ps.product_id = p2.id)
+            THEN 'Similar to what you\'ve browsed'
           WHEN EXISTS (SELECT 1 FROM user_session_intent si WHERE si.category_id = p2.category_id AND si.recent_views >= 2)
             AND EXISTS (SELECT 1 FROM user_category_affinities a WHERE a.category_id = p2.category_id AND a.score > 0)
             THEN 'Browsing ' || COALESCE(c2.name, 'this category') || ' — more like this'
@@ -3157,16 +3205,21 @@ app.get('/api/products', async (req, res) => {
           + 1.5 * exp(-0.1 * EXTRACT(EPOCH FROM (NOW() - p2.created_at)) / 86400)
           + COALESCE((SELECT CASE WHEN avg_rating > 4 THEN 0.5 ELSE 0 END FROM seller_ratings WHERE seller_id = p2.seller_id), 0)
           - COALESCE((SELECT 3.0 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_not_relevant WHERE product_id = p2.id LIMIT 1), 0)
-          -- NEW: Session intent boost (+2.0 for categories you're actively browsing right now)
+          -- Session intent: categories browsed in last 30 min
           + COALESCE((SELECT 2.0 * LEAST(si.recent_views::numeric / 5.0, 1.0)
             FROM user_session_intent si WHERE si.category_id = p2.category_id LIMIT 1), 0)
-          -- NEW: Dwell signal — time spent viewing a product is a strong interest indicator
-          -- Full boost at 30s, scaled linearly below that
+          -- Dwell: time spent viewing (max at 30s)
           + COALESCE((SELECT 1.5 * LEAST(ud.max_dwell_ms::numeric / 30000.0, 1.0)
             FROM user_dwell ud WHERE ud.product_id = p2.id LIMIT 1), 0)
-          -- NEW: Trending boost — popular products get visibility even from new/cold users
-          + COALESCE((SELECT 1.0 * LEAST(tp.trend_count::numeric / 20.0, 1.5)
+          -- Trending: weighted engagement from unique users (max at 20 points)
+          + COALESCE((SELECT 1.0 * LEAST(tp.trend_score::numeric / 20.0, 1.5)
             FROM trending_products tp WHERE tp.product_id = p2.id LIMIT 1), 0)
+          -- Phase 2: Product similarity (co-purchased with user's engaged products)
+          + COALESCE((SELECT 2.0 * LEAST(ps.similarity_score::numeric / 5.0, 1.5)
+            FROM product_similar ps WHERE ps.product_id = p2.id LIMIT 1), 0)
+          -- Phase 2: Collaborative filtering (users like you also engage with this)
+          + COALESCE((SELECT 2.5 * LEAST(cp.recommender_count::numeric / 5.0, 1.0)
+            FROM collaborative_products cp WHERE cp.product_id = p2.id LIMIT 1), 0)
         ) AS total_score
       FROM products p2
       LEFT JOIN categories c2 ON c2.id = p2.category_id
@@ -3187,6 +3240,10 @@ app.get('/api/products', async (req, res) => {
           SELECT 1 FROM user_purchases WHERE seller_id = p2.seller_id OR category_id = p2.category_id
           UNION ALL
           SELECT 1 FROM trending_products WHERE product_id = p2.id
+          UNION ALL
+          SELECT 1 FROM product_similar WHERE product_id = p2.id
+          UNION ALL
+          SELECT 1 FROM collaborative_products WHERE product_id = p2.id
         )
       ORDER BY total_score DESC, p2.created_at DESC
     ) score ON score.product_id = p.id`;
