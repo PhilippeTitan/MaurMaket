@@ -367,11 +367,9 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               renderItem={({ item: img }) => {
                 const url = getImageUrl(img.image_url);
                 return (
-                  <View style={{ width: SCREEN_W, height: '100%' }}>
+                  <View style={{ width: SCREEN_W, height: '100%', overflow: 'hidden' }}>
                     {url ? (
-                      <>
-                        <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
-                      </>
+                      <ExpoImage source={{ uri: url }} style={{ width: SCREEN_W, height: '100%' }} contentFit="cover" cachePolicy="memory-disk" />
                     ) : (
                       <View style={styles.heroPlaceholder}>
                         <Icon name="image-unavailable" size={40} color={COLORS.text2} />
@@ -382,9 +380,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               }}
             />
           ) : heroUrl ? (
-            <>
-              <ExpoImage source={{ uri: heroUrl }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
-            </>
+            <ExpoImage source={{ uri: heroUrl }} style={{ width: SCREEN_W, height: '100%' }} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
             <View style={styles.heroPlaceholder}>
               <Icon name="image-unavailable" size={40} color={COLORS.text2} />
