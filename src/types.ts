@@ -192,6 +192,17 @@ export interface Message {
     listPrice: number;
     status: 'pending' | 'accepted' | 'declined' | 'countered';
   };
+  reply_to?: {
+    id: string;
+    content: string;
+    senderId: string;
+    senderName: string;
+    type?: string;
+  };
+  reactions?: { emoji: string; userId: string; userName: string }[];
+  delivery_status?: 'sent' | 'delivered' | 'read';
+  is_edited?: boolean;
+  is_deleted?: boolean;
   is_read: boolean;
   created_at: string;
 }

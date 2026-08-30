@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage, getImageUrl, uploadImage, sendTyping, getTypingStatus } from '../api';
+import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, sendTyping, getTypingStatus, markConversationRead } from '../api';
 import { useTranslation } from '../i18n';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -24,7 +24,7 @@ import OfferBuilder from '../components/OfferBuilder';
 import { SkeletonBlock } from '../components/Skeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
-type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string };
+type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string; reactions?: { emoji: string; userId: string; userName: string }[]; delivery_status?: 'sent' | 'delivered' | 'read'; reply_to?: Message['reply_to'] };
 
 export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -47,6 +47,9 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [otherTyping, setOtherTyping] = useState(false);
   const [sellerItemsVisible, setSellerItemsVisible] = useState(false);
   const [offerBuilderItem, setOfferBuilderItem] = useState<{ id: string; name: string; price: number; image_url?: string | null } | null>(null);
+  const [replyTo, setReplyTo] = useState<LocalMessage | null>(null);
+  const [actionMenuMessage, setActionMenuMessage] = useState<LocalMessage | null>(null);
+  const [actionMenuVisible, setActionMenuVisible] = useState(false);
   const listRef = useRef<FlatList>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appState = useRef(AppState.currentState);
@@ -99,6 +102,8 @@ export default function ChatScreen({ route, navigation }: Props) {
     fetchMessages(0, false);
     setPage(0);
     setOtherTyping(false);
+    // Mark conversation as read (update delivery states)
+    markConversationRead(conversationId).catch(() => {});
 
     const checkTyping = async () => {
       try {
@@ -159,12 +164,13 @@ startPolling();
     setSending(true);
     const msg = text.trim();
     const tempId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimistic: LocalMessage = { id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '', content: msg, message_type: 'text', is_read: true, created_at: new Date().toISOString(), pending: true };
+    const optimistic: LocalMessage = { id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '', content: msg, message_type: 'text', is_read: true, created_at: new Date().toISOString(), pending: true, reply_to: replyTo ? { id: replyTo.id, content: replyTo.content, senderId: replyTo.sender_id, senderName: replyTo.sender_id === store.user?.id ? 'You' : otherUserName, type: replyTo.message_type } : undefined } as any;
     setText('');
     stickToLatest.current = true;
     setMessages(prev => [...prev, optimistic]);
     try {
-      const result = await apiSendMessage(conversationId, msg) as { message: Message };
+      const result = await sendMessageWithReply(conversationId, msg, replyTo?.id) as { message: Message };
+      setReplyTo(null);
       setMessages(prev => prev.map(m => m.id === tempId ? result.message : m));
       lastMessageCursor.current = { time: result.message.created_at, id: result.message.id };
     } catch {
@@ -269,6 +275,90 @@ startPolling();
     } catch {
       toast.error('Counter offer not sent', 'Please try again.');
     }
+  };
+
+  // ───── Message Actions ─────
+
+  const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '🙏'];
+
+  const handleMessageLongPress = (msg: LocalMessage) => {
+    if (msg.is_deleted || msg.pending) return;
+    setActionMenuMessage(msg);
+    setActionMenuVisible(true);
+  };
+
+  const handleReact = async (emoji: string) => {
+    if (!actionMenuMessage) return;
+    setActionMenuVisible(false);
+    const msgId = actionMenuMessage.id;
+    // Optimistic update
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId) return m;
+      const existing = m.reactions || [];
+      const hasReaction = existing.find(r => r.emoji === emoji && r.userId === store.user?.id);
+      const newReactions = hasReaction
+        ? existing.filter(r => !(r.emoji === emoji && r.userId === store.user?.id))
+        : [...existing, { emoji, userId: store.user?.id || '', userName: 'You' }];
+      return { ...m, reactions: newReactions };
+    }));
+    try {
+      const { reactToMessage } = await import('../api');
+      await reactToMessage(msgId, emoji);
+    } catch {
+      // revert on failure
+      setMessages(prev => prev.map(m => {
+        if (m.id !== msgId) return m;
+        const existing = m.reactions || [];
+        const hasReaction = existing.find(r => r.emoji === emoji && r.userId === store.user?.id);
+        const newReactions = hasReaction
+          ? existing.filter(r => !(r.emoji === emoji && r.userId === store.user?.id))
+          : [...existing, { emoji, userId: store.user?.id || '', userName: 'You' }];
+        return { ...m, reactions: newReactions };
+      }));
+    }
+    setActionMenuMessage(null);
+  };
+
+  const handleReply = () => {
+    if (!actionMenuMessage) return;
+    setReplyTo(actionMenuMessage);
+    setActionMenuVisible(false);
+  };
+
+  const handleCopy = () => {
+    if (!actionMenuMessage?.content) { setActionMenuVisible(false); return; }
+    // Use Clipboard API — works on web + native
+    try {
+      const Clipboard = require('expo-clipboard');
+      Clipboard.setStringAsync(actionMenuMessage.content);
+      toast.success('Copied');
+    } catch {
+      // fallback: do nothing silently
+    }
+    setActionMenuVisible(false);
+  };
+
+  const handleDelete = async () => {
+    if (!actionMenuMessage) return;
+    setActionMenuVisible(false);
+    const msgId = actionMenuMessage.id;
+    // Optimistic: hide message
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, is_deleted: true, content: 'Message deleted', image_url: undefined } : m));
+    try {
+      const { deleteMessage } = await import('../api');
+      await deleteMessage(msgId);
+    } catch {
+      toast.error('Failed to delete');
+    }
+    setActionMenuMessage(null);
+  };
+
+  const handleEdit = async () => {
+    if (!actionMenuMessage?.content) { setActionMenuVisible(false); return; }
+    setActionMenuVisible(false);
+    setText(actionMenuMessage.content);
+    setReplyTo(null);
+    // TODO: switch to edit mode (reuse input for now)
   };
 
   const renderMessage = ({ item }: { item: LocalMessage }) => {
@@ -497,7 +587,20 @@ startPolling();
     }
 
     return (
-      <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}>
+      <Pressable
+        style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}
+        onLongPress={() => handleMessageLongPress(item)}
+      >
+        {/* Reply-to quote */}
+        {item.reply_to && (
+          <View style={styles.replyQuote}>
+            <View style={styles.replyAccent} />
+            <View style={styles.replyContent}>
+              <Text style={styles.replySender} numberOfLines={1}>{item.reply_to.senderName || 'Message'}</Text>
+              <Text style={styles.replyText} numberOfLines={2}>{item.reply_to.content || (item.reply_to.type === 'image' ? '📷 Photo' : 'Message')}</Text>
+            </View>
+          </View>
+        )}
         {isImage ? (
           <TouchableOpacity onPress={() => setPreviewImage(item.localImageUri || getImageUrl(item.image_url!) || item.image_url!)} accessibilityRole="imagebutton" accessibilityLabel="open photo">
             <View>
@@ -513,10 +616,27 @@ startPolling();
         {item.content ? (
           <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.content}</Text>
         ) : null}
-        <Text style={[styles.bubbleTime, isImage && styles.bubbleTimeImage]}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-        {item.pending && <Text style={styles.messageState}>Sending…</Text>}
-        {item.failed && <Text style={styles.messageFailed}>Not sent</Text>}
-      </View>
+        {item.is_edited && !isImage && <Text style={styles.editedLabel}>edited</Text>}
+        <View style={styles.bubbleFooter}>
+          <Text style={[styles.bubbleTime, isImage && styles.bubbleTimeImage]}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+          {item.is_edited && isImage && <Text style={styles.editedLabel}>edited</Text>}
+          {/* Delivery indicator for own messages */}
+          {isMe && !item.pending && !item.failed && (
+            <Text style={[styles.deliveryCheck, item.delivery_status === 'read' && styles.deliveryRead]}>
+              {item.delivery_status === 'read' ? '✓✓' : item.delivery_status === 'delivered' ? '✓✓' : '✓'}
+            </Text>
+          )}
+          {item.failed && <Text style={styles.messageFailed}> !</Text>}
+        </View>
+        {/* Reactions */}
+        {item.reactions && item.reactions.length > 0 && (
+          <View style={[styles.reactionsRow, isMe ? styles.reactionsRowMe : styles.reactionsRowThem]}>
+            {item.reactions.map((r, i) => (
+              <Text key={i} style={styles.reactionEmoji}>{r.emoji}</Text>
+            ))}
+          </View>
+        )}
+      </Pressable>
     );
   };
 
@@ -625,6 +745,20 @@ startPolling();
           </View>
         )}
 
+        {/* Reply-to preview bar */}
+        {replyTo && (
+          <View style={styles.replyBar}>
+            <View style={styles.replyBarAccent} />
+            <View style={styles.replyBarContent}>
+              <Text style={styles.replyBarSender} numberOfLines={1}>Replying to {replyTo.sender_id === store.user?.id ? 'yourself' : otherUserName}</Text>
+              <Text style={styles.replyBarText} numberOfLines={1}>{replyTo.content || (replyTo.message_type === 'image' ? '📷 Photo' : 'Message')}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyBarClose} accessibilityLabel="cancel reply" accessibilityRole="button">
+              <Icon name="close" size={16} color={COLORS.text2} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
           <View style={styles.inputRow}>
             <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending} accessibilityLabel="attach photo" accessibilityRole="button">
@@ -689,6 +823,45 @@ startPolling();
           onClose={() => setOfferBuilderItem(null)}
           onSent={() => { setOfferBuilderItem(null); fetchMessages(); }}
         />
+
+        {/* Message Action Menu (long-press) */}
+        <Modal visible={actionMenuVisible} transparent animationType="fade" onRequestClose={() => { setActionMenuVisible(false); setActionMenuMessage(null); }}>
+          <Pressable style={styles.actionMenuOverlay} onPress={() => { setActionMenuVisible(false); setActionMenuMessage(null); }}>
+            <Pressable style={styles.actionMenu} onPress={e => e.stopPropagation()}>
+              {/* Reaction picker */}
+              <View style={styles.reactionPicker}>
+                {REACTION_EMOJIS.map(emoji => (
+                  <TouchableOpacity key={emoji} style={styles.reactionBtn} onPress={() => handleReact(emoji)} accessibilityLabel={`react with ${emoji}`} accessibilityRole="button">
+                    <Text style={styles.reactionBtnText}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.actionMenuDivider} />
+              {/* Action buttons */}
+              <TouchableOpacity style={styles.actionMenuItem} onPress={handleReply} accessibilityRole="button">
+                <MaterialCommunityIcons name="reply" size={18} color={COLORS.text} />
+                <Text style={styles.actionMenuText}>Reply</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionMenuItem} onPress={handleCopy} accessibilityRole="button">
+                <MaterialCommunityIcons name="content-copy" size={18} color={COLORS.text} />
+                <Text style={styles.actionMenuText}>Copy</Text>
+              </TouchableOpacity>
+              {actionMenuMessage?.sender_id === store.user?.id && actionMenuMessage?.message_type === 'text' && (
+                <TouchableOpacity style={styles.actionMenuItem} onPress={handleEdit} accessibilityRole="button">
+                  <MaterialCommunityIcons name="pencil" size={18} color={COLORS.text} />
+                  <Text style={styles.actionMenuText}>Edit</Text>
+                </TouchableOpacity>
+              )}
+              {actionMenuMessage?.sender_id === store.user?.id && (
+                <TouchableOpacity style={[styles.actionMenuItem, { borderBottomWidth: 0 }]} onPress={handleDelete} accessibilityRole="button">
+                  <MaterialCommunityIcons name="delete-outline" size={18} color="#FF4D6A" />
+                  <Text style={[styles.actionMenuText, { color: '#FF4D6A' }]}>Delete</Text>
+                </TouchableOpacity>
+              )}
+            </Pressable>
+          </Pressable>
+        </Modal>
+
       </LinearGradient>
     </KeyboardAvoidingView>
   );
@@ -742,6 +915,43 @@ const styles = StyleSheet.create({
   bubbleTimeImage: { marginTop: 4 },
   messageState: { fontSize: 10, color: COLORS.text2, marginTop: 3, alignSelf: 'flex-end' },
   messageFailed: { fontSize: 10, color: COLORS.coral, marginTop: 3, alignSelf: 'flex-end', fontWeight: '700' },
+
+  /* Delivery indicators */
+  bubbleFooter: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginTop: 4 },
+  deliveryCheck: { fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: '600' },
+  deliveryRead: { color: '#53BDEB' },
+  editedLabel: { fontSize: 9, color: 'rgba(255,255,255,0.45)', fontStyle: 'italic', marginLeft: 4 },
+
+  /* Reply quote */
+  replyQuote: { flexDirection: 'row', marginBottom: 4, opacity: 0.85 },
+  replyAccent: { width: 3, borderRadius: 2, backgroundColor: COLORS.coral, marginRight: 6 },
+  replyContent: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8 },
+  replySender: { fontSize: 10, fontWeight: '700', color: COLORS.coral, marginBottom: 1 },
+  replyText: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
+
+  /* Reactions */
+  reactionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginTop: 4 },
+  reactionsRowMe: { alignSelf: 'flex-end' },
+  reactionsRowThem: { alignSelf: 'flex-start' },
+  reactionEmoji: { fontSize: 16, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 10, paddingHorizontal: 5, paddingVertical: 1, overflow: 'hidden' },
+
+  /* Reply-to bar */
+  replyBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 8, paddingBottom: 4, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border + '40' },
+  replyBarAccent: { width: 3, borderRadius: 2, backgroundColor: COLORS.coral, marginRight: 8, alignSelf: 'stretch' },
+  replyBarContent: { flex: 1 },
+  replyBarSender: { fontSize: 11, fontWeight: '700', color: COLORS.coral },
+  replyBarText: { fontSize: 11, color: COLORS.text2, marginTop: 1 },
+  replyBarClose: { padding: 6 },
+
+  /* Action menu (long-press) */
+  actionMenuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  actionMenu: { width: 220, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 },
+  reactionPicker: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 8, paddingHorizontal: 4 },
+  reactionBtn: { padding: 6, borderRadius: 20 },
+  reactionBtnText: { fontSize: 22 },
+  actionMenuDivider: { height: 1, backgroundColor: COLORS.border + '40', marginVertical: 4 },
+  actionMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border + '20' },
+  actionMenuText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
 
   /* Rich Offer Message Card */
   offerMsgWrap: { maxWidth: '95%', width: '95%', marginBottom: 8 },

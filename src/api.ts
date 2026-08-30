@@ -498,6 +498,24 @@ export const getConversationsWithOffers = () =>
 export const getOfferDetail = (messageId: string) =>
   request(`/offers/${messageId}`);
 
+// Messaging maturity
+export const reactToMessage = (messageId: string, emoji: string) =>
+  request(`/messages/${messageId}/react`, { method: 'POST', body: JSON.stringify({ emoji }) });
+export const editMessage = (messageId: string, content: string) =>
+  request(`/messages/${messageId}`, { method: 'PUT', body: JSON.stringify({ content }) });
+export const deleteMessage = (messageId: string) =>
+  request(`/messages/${messageId}`, { method: 'DELETE' });
+export const sendMessageWithReply = (conversationId: string, content: string, replyToId?: string, imageUrl?: string) =>
+  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text', replyToId }) });
+export const markConversationRead = (conversationId: string) =>
+  request(`/conversations/${conversationId}/read`, { method: 'PUT' });
+export const pinConversation = (conversationId: string) =>
+  request(`/conversations/${conversationId}/pin`, { method: 'PUT' });
+export const muteConversation = (conversationId: string, hours?: number) =>
+  request(`/conversations/${conversationId}/mute`, { method: 'PUT', body: JSON.stringify({ hours: hours ?? 8 }) });
+export const blockUser = (userId: string) =>
+  request(`/users/${userId}/block`, { method: 'POST' });
+
 // Promos
 export const validatePromo = (code: string, orderTotal: number) =>
   request('/promos/validate', { method: 'POST', body: JSON.stringify({ code, orderTotal }) });

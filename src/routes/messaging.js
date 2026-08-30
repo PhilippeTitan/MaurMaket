@@ -15,8 +15,16 @@ router.get('/api/conversations', authRequired, async (req, res) => {
               CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
               u.full_name AS other_party_name, u.username AS other_party_username, u.avatar_url AS other_party_avatar,
               u.use_store_identity AS other_party_use_store_identity, u.store_logo_url AS other_party_store_logo_url, u.seller_tier AS other_party_seller_tier,
-              latest.last_message,
-              COUNT(unread.id)::INTEGER AS unread_count
+              latest.last_message, latest.last_message_type,
+              COUNT(unread.id)::INTEGER AS unread_count,
+              -- Check for active pending offers
+              EXISTS (
+                SELECT 1 FROM message_offers mo
+                JOIN messages om ON om.id = mo.message_id
+                WHERE om.conversation_id = c.id AND mo.status IN ('pending', 'countered')
+              ) AS has_active_offer,
+              -- Mute status
+              c.muted_until, c.is_pinned
        FROM conversations c
        JOIN users u ON u.id = CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END
        LEFT JOIN LATERAL (
@@ -25,11 +33,22 @@ router.get('/api/conversations', authRequired, async (req, res) => {
          FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1
        ) latest ON true
        LEFT JOIN messages unread ON unread.conversation_id = c.id AND unread.sender_id != $1 AND unread.is_read = false
-       WHERE c.buyer_id = $1 OR c.seller_id = $1
-       GROUP BY c.id, u.id, latest.last_message ORDER BY c.last_message_at DESC`,
+       WHERE (c.buyer_id = $1 OR c.seller_id = $1)
+         AND (c.muted_until IS NULL OR c.muted_until > NOW())
+       GROUP BY c.id, u.id, latest.last_message, latest.last_message_type
+       ORDER BY c.is_pinned DESC, c.last_message_at DESC`,
       [req.user.id]
     );
-    res.json({ conversations: result.rows });
+    // Split into sections
+    const pinned = [];
+    const active = [];
+    const offers = [];
+    for (const conv of result.rows) {
+      if (conv.has_active_offer) offers.push(conv);
+      else if (conv.is_pinned) pinned.push(conv);
+      else active.push(conv);
+    }
+    res.json({ conversations: result.rows, pinned, active, offers });
   } catch (err) {
     console.error('Conversations fetch error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -61,6 +80,12 @@ router.post('/api/conversations', authRequired, convLimiter, dobRequired, async 
       sellerId = p.rows[0].seller_id;
     }
     if (req.user.id === sellerId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Cannot message yourself' }); }
+    // Check if blocked
+    const blocked = await client.query(
+      'SELECT id FROM blocked_users WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) LIMIT 1',
+      [req.user.id, sellerId]
+    );
+    if (blocked.rows.length > 0) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Cannot message this user' }); }
     const existing = await client.query(
       `SELECT id FROM conversations WHERE ((buyer_id = $1 AND seller_id = $2) OR (buyer_id = $2 AND seller_id = $1)) AND ($3::uuid IS NULL OR order_id = $3) FOR SHARE`,
       [req.user.id, sellerId, orderId || null]
@@ -107,10 +132,16 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
        mo.product_id AS offer_product_id, mo.offered_price AS offer_offered_price, mo.list_price AS offer_list_price,
        mo.status AS offer_status, mo.negotiation_round AS offer_negotiation_round,
        mo.buyer_id AS offer_buyer_id, mo.seller_id AS offer_seller_id, mo.expires_at AS offer_expires_at,
-       p.name AS offer_product_name
+       p.name AS offer_product_name,
+       -- Reply context
+       rm.id AS reply_to_msg_id, rm.content AS reply_to_content, rm.sender_id AS reply_to_sender_id,
+       rm.message_type AS reply_to_type,
+       ru.full_name AS reply_to_sender_name
        FROM messages m JOIN users u ON m.sender_id = u.id
        LEFT JOIN message_offers mo ON mo.message_id = m.id
        LEFT JOIN products p ON p.id = mo.product_id
+       LEFT JOIN messages rm ON rm.id = m.reply_to_id
+       LEFT JOIN users ru ON ru.id = rm.sender_id
        WHERE m.conversation_id = $1`;
     const params = [req.params.id];
     if (since) {
@@ -129,10 +160,45 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
       if (msg.offer_product_id) {
         msg.offer_data = { productId: msg.offer_product_id, productName: msg.offer_product_name, offeredPrice: parseFloat(msg.offer_offered_price), listPrice: parseFloat(msg.offer_list_price), status: msg.offer_status, negotiationRound: msg.offer_negotiation_round || 1, buyerId: msg.offer_buyer_id, sellerId: msg.offer_seller_id, expiresAt: msg.offer_expires_at };
       }
-      delete msg.offer_product_id; delete msg.offer_product_name; delete msg.offer_offered_price; delete msg.offer_list_price;
-      delete msg.offer_status; delete msg.offer_negotiation_round; delete msg.offer_buyer_id; delete msg.offer_seller_id; delete msg.offer_expires_at;
+      // Reply context
+      if (msg.reply_to_msg_id) {
+        msg.reply_to = { id: msg.reply_to_msg_id, content: msg.reply_to_content, senderId: msg.reply_to_sender_id, senderName: msg.reply_to_sender_name, type: msg.reply_to_type };
+      }
+      // Clean up joined fields
+      for (const key of ['offer_product_id','offer_product_name','offer_offered_price','offer_list_price','offer_status','offer_negotiation_round','offer_buyer_id','offer_seller_id','offer_expires_at','reply_to_msg_id','reply_to_content','reply_to_sender_id','reply_to_type','reply_to_sender_name']) {
+        delete msg[key];
+      }
+      msg.reactions = []; // will be batch-filled below
+      msg.delivery_status = null;
       return msg;
     });
+    // Batch-fetch reactions for all messages
+    if (messages.length > 0) {
+      const msgIds = messages.map(m => m.id);
+      const reactionsResult = await pool.query(
+        `SELECT mr.message_id, mr.emoji, mr.user_id, u.full_name AS user_name
+         FROM message_reactions mr JOIN users u ON u.id = mr.user_id
+         WHERE mr.message_id = ANY($1)`,
+        [msgIds]
+      );
+      const reactionsMap = {};
+      for (const r of reactionsResult.rows) {
+        if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
+        reactionsMap[r.message_id].push({ emoji: r.emoji, userId: r.user_id, userName: r.user_name });
+      }
+      // Batch-fetch delivery states for outgoing messages
+      const deliveriesResult = await pool.query(
+        `SELECT message_id, status FROM message_deliveries
+         WHERE message_id = ANY($1) AND recipient_id = $2`,
+        [msgIds, req.user.id]
+      );
+      const deliveriesMap = {};
+      for (const d of deliveriesResult.rows) deliveriesMap[d.message_id] = d.status;
+      for (const msg of messages) {
+        msg.reactions = reactionsMap[msg.id] || [];
+        if (msg.sender_id === req.user.id) msg.delivery_status = deliveriesMap[msg.id] || 'sent';
+      }
+    }
     let product = null;
     if (conv.rows[0].product_id) {
       const productResult = await pool.query(`SELECT p.id, p.name, p.price, p.stock, (SELECT image_url FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, display_order ASC LIMIT 1) AS image_url FROM products p WHERE p.id = $1`, [conv.rows[0].product_id]);
@@ -150,7 +216,7 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
     return res.status(404).json({ error: 'Conversation not found' });
   }
-  const { content, imageUrl, messageType } = req.body;
+  const { content, imageUrl, messageType, replyToId } = req.body;
   const msgType = messageType || 'text';
   if (!['text', 'image', 'offer'].includes(msgType)) return res.status(400).json({ error: 'Invalid message type' });
   if (msgType === 'image' && !imageUrl) return res.status(400).json({ error: 'Image URL required for image messages' });
@@ -159,13 +225,24 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
   try {
     const conv = await pool.query('SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    // Validate reply_to message exists in same conversation
+    let validatedReplyToId = null;
+    if (replyToId) {
+      const replyMsg = await pool.query('SELECT id FROM messages WHERE id = $1 AND conversation_id = $2', [replyToId, req.params.id]);
+      if (replyMsg.rows.length > 0) validatedReplyToId = replyToId;
+    }
     const storedContent = msgType === 'image' ? null : content?.trim() || null;
     const result = await pool.query(
-      `INSERT INTO messages (conversation_id, sender_id, content, message_type, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [req.params.id, req.user.id, storedContent, msgType, imageUrl || null]
+      `INSERT INTO messages (conversation_id, sender_id, content, message_type, image_url, reply_to_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [req.params.id, req.user.id, storedContent, msgType, imageUrl || null, validatedReplyToId]
+    );
+    // Create delivery record for recipient
+    const recipientId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
+    await pool.query(
+      `INSERT INTO message_deliveries (message_id, recipient_id, status) VALUES ($1, $2, 'sent') ON CONFLICT DO NOTHING`,
+      [result.rows[0].id, recipientId]
     );
     await pool.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
-    const recipientId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
     const senderInfo = (await pool.query('SELECT full_name, avatar_url FROM users WHERE id = $1', [req.user.id])).rows[0];
     const senderName = senderInfo?.full_name || 'Someone';
     const preview = content?.trim() ? (content.trim().length > 80 ? content.trim().substring(0, 80) + '...' : content.trim()) : '\ud83d\udcf7 Photo';
@@ -244,6 +321,140 @@ router.get('/api/conversations/:id/typing', authRequired, async (req, res) => {
   } catch (err) {
     console.error('Typing status error:', err);
     res.json({ typing: false });
+  }
+});
+
+// ───── Message Reactions ─────
+
+router.post('/api/messages/:id/react', authRequired, async (req, res) => {
+  const { emoji } = req.body;
+  if (!emoji || typeof emoji !== 'string' || emoji.length > 10) return res.status(400).json({ error: 'Valid emoji required' });
+  try {
+    const msg = await pool.query('SELECT conversation_id FROM messages WHERE id = $1', [req.params.id]);
+    if (msg.rows.length === 0) return res.status(404).json({ error: 'Message not found' });
+    const conv = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [msg.rows[0].conversation_id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(403).json({ error: 'Not a participant' });
+    // Toggle: if exists, remove; else, add
+    const existing = await pool.query('SELECT id FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3', [req.params.id, req.user.id, emoji]);
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3', [req.params.id, req.user.id, emoji]);
+      return res.json({ action: 'removed', emoji });
+    }
+    await pool.query('INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)', [req.params.id, req.user.id, emoji]);
+    res.json({ action: 'added', emoji });
+  } catch (err) {
+    console.error('Reaction error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Edit / Delete Message ─────
+
+router.put('/api/messages/:id', authRequired, async (req, res) => {
+  const { content } = req.body;
+  if (!content || !content.trim() || content.length > 5000) return res.status(400).json({ error: 'Valid content required (max 5000 chars)' });
+  try {
+    const msg = await pool.query('SELECT * FROM messages WHERE id = $1 AND sender_id = $2', [req.params.id, req.user.id]);
+    if (msg.rows.length === 0) return res.status(404).json({ error: 'Message not found or not yours' });
+    if (msg.rows[0].message_type !== 'text') return res.status(400).json({ error: 'Can only edit text messages' });
+    const result = await pool.query(
+      'UPDATE messages SET content = $1, is_edited = true, edited_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+      [content.trim(), req.params.id]
+    );
+    res.json({ message: result.rows[0] });
+  } catch (err) {
+    console.error('Message edit error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/api/messages/:id', authRequired, async (req, res) => {
+  try {
+    const msg = await pool.query('SELECT * FROM messages WHERE id = $1 AND sender_id = $2', [req.params.id, req.user.id]);
+    if (msg.rows.length === 0) return res.status(404).json({ error: 'Message not found or not yours' });
+    await pool.query('UPDATE messages SET is_deleted = true, content = NULL, image_url = NULL WHERE id = $1', [req.params.id]);
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error('Message delete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Conversation Pin / Mute / Block ─────
+
+router.put('/api/conversations/:id/pin', authRequired, async (req, res) => {
+  try {
+    const conv = await pool.query('SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    const newPinned = !conv.rows[0].is_pinned;
+    await pool.query('UPDATE conversations SET is_pinned = $1 WHERE id = $2', [newPinned, req.params.id]);
+    res.json({ pinned: newPinned });
+  } catch (err) {
+    console.error('Pin error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/api/conversations/:id/mute', authRequired, async (req, res) => {
+  const { hours } = req.body;
+  try {
+    const conv = await pool.query('SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    if (hours === 0 || hours === null) {
+      await pool.query('UPDATE conversations SET muted_until = NULL WHERE id = $1', [req.params.id]);
+      return res.json({ muted: false });
+    }
+    const mutedUntil = new Date(Date.now() + (hours || 8) * 3600 * 1000);
+    await pool.query('UPDATE conversations SET muted_until = $1 WHERE id = $2', [mutedUntil, req.params.id]);
+    res.json({ muted: true, mutedUntil });
+  } catch (err) {
+    console.error('Mute error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/api/users/:id/block', authRequired, async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot block yourself' });
+  try {
+    const existing = await pool.query('SELECT id FROM blocked_users WHERE blocker_id = $1 AND blocked_id = $2', [req.user.id, req.params.id]);
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM blocked_users WHERE blocker_id = $1 AND blocked_id = $2', [req.user.id, req.params.id]);
+      return res.json({ blocked: false });
+    }
+    await pool.query('INSERT INTO blocked_users (blocker_id, blocked_id) VALUES ($1, $2)', [req.user.id, req.params.id]);
+    res.json({ blocked: true });
+  } catch (err) {
+    console.error('Block error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Mark Messages Delivered / Read ─────
+
+router.put('/api/conversations/:id/read', authRequired, async (req, res) => {
+  try {
+    const conv = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    // Mark all unread incoming messages as read
+    const result = await pool.query(
+      `UPDATE messages SET is_read = true
+       WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false
+       RETURNING id`,
+      [req.params.id, req.user.id]
+    );
+    // Update delivery states
+    if (result.rows.length > 0) {
+      const ids = result.rows.map(r => r.id);
+      await pool.query(
+        `UPDATE message_deliveries SET status = 'read', read_at = CURRENT_TIMESTAMP
+         WHERE message_id = ANY($1) AND recipient_id = $2 AND status != 'read'`,
+        [ids, req.user.id]
+      );
+    }
+    res.json({ marked: result.rows.length });
+  } catch (err) {
+    console.error('Mark read error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

@@ -120,10 +120,21 @@ export default function InboxScreen() {
   const sortedConversations = conversations
     .slice()
     .sort((a, b) => {
+      // Pinned first, then by time
+      if ((a as any).is_pinned && !(b as any).is_pinned) return -1;
+      if (!(a as any).is_pinned && (b as any).is_pinned) return 1;
+      // Active offers before regular
+      if ((a as any).has_active_offer && !(b as any).has_active_offer) return -1;
+      if (!(a as any).has_active_offer && (b as any).has_active_offer) return 1;
       const ta = new Date(a.last_message_at || a.created_at || 0).getTime();
       const tb = new Date(b.last_message_at || b.created_at || 0).getTime();
       return tb - ta;
     });
+
+  // Split into sections for the inbox
+  const pinnedConversations = sortedConversations.filter(c => (c as any).is_pinned && !((c as any).has_active_offer));
+  const offerConversationsList = sortedConversations.filter(c => (c as any).has_active_offer);
+  const regularConversations = sortedConversations.filter(c => !(c as any).is_pinned && !((c as any).has_active_offer));
 
   const filteredConversations = sortedConversations
     .filter(c => {
@@ -169,7 +180,13 @@ export default function InboxScreen() {
           </View>
           <View style={styles.convoBody}>
             <View style={styles.convoNameRow}>
+              {(item as any).is_pinned && <MaterialCommunityIcons name="pin" size={10} color={COLORS.coral} style={{ marginRight: 4 }} />}
               <Text style={[styles.convoName, hasUnread && styles.convoNameBold]} numberOfLines={1}>{otherName}</Text>
+              {(item as any).has_active_offer && (
+                <View style={styles.offerBadge}>
+                  <Text style={styles.offerBadgeText}>Offer</Text>
+                </View>
+              )}
               <Text style={styles.convoTime}>{timeAgo(item.last_message_at || item.created_at)}</Text>
             </View>
             {storeName ? (
@@ -179,7 +196,8 @@ export default function InboxScreen() {
             ) : null}
             <View style={styles.convoMsgRow}>
               {(item as any).last_message_type === 'image' && <MaterialCommunityIcons name="image-outline" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
-              {(item as any).last_message_type === 'offer' && <MaterialCommunityIcons name="tag-outline" size={14} color={COLORS.coral} style={{ marginRight: 4 }} />}
+              {(item as any).has_active_offer && <MaterialCommunityIcons name="tag-outline" size={14} color={COLORS.coral} style={{ marginRight: 4 }} />}
+            {!(item as any).has_active_offer && (item as any).last_message_type === 'offer' && <MaterialCommunityIcons name="tag-outline" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
               {((item as any).last_message_type && (item as any).last_message_type !== 'text') ? null : (
                 <Text style={[styles.convoMsg, hasUnread && styles.convoMsgUnread]} numberOfLines={1}>
                   {item.last_message?.content || (item as any).last_message || 'No messages yet'}
@@ -767,6 +785,8 @@ const styles = StyleSheet.create({
   convoMsg: { fontSize: 13, color: COLORS.text2, flex: 1 },
   convoMsgUnread: { color: COLORS.text, fontWeight: '600' },
   convoTime: { fontSize: 11, color: COLORS.text2, marginLeft: 4 },
+  offerBadge: { backgroundColor: COLORS.coral, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, marginLeft: 6 },
+  offerBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
   convoStoreBtn: { padding: 8, borderRadius: 20, backgroundColor: 'transparent' },
 
   /* Bubbles */

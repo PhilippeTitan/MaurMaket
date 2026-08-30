@@ -761,6 +761,67 @@ await step('NatCash phone separation', () => c.query(`
       if (backfilled > 0) console.log(`[MIGRATION] Backfilled dimensions for ${backfilled}/${rows.length} images`);
     });
 
+    // 44. Messaging maturity — message states, reactions, reply, edit/delete, pin, mute, block
+    await step('Messaging maturity schema', () => c.query(`
+      -- Message type, reply, edit/delete support
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type VARCHAR(20) DEFAULT 'text';
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id UUID REFERENCES messages(id);
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT false;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP;
+
+      -- Conversation pin and mute
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT false;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS muted_until TIMESTAMP;
+
+      -- Message reactions
+      CREATE TABLE IF NOT EXISTS message_reactions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        message_id UUID REFERENCES messages(id) ON DELETE CASCADE NOT NULL,
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        emoji VARCHAR(10) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(message_id, user_id, emoji)
+      );
+      CREATE INDEX IF NOT EXISTS idx_message_reactions_message ON message_reactions(message_id);
+
+      -- Message delivery/read states per recipient
+      CREATE TABLE IF NOT EXISTS message_deliveries (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        message_id UUID REFERENCES messages(id) ON DELETE CASCADE NOT NULL,
+        recipient_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        status VARCHAR(20) DEFAULT 'sent' CHECK (status IN ('sent', 'delivered', 'read')),
+        delivered_at TIMESTAMP,
+        read_at TIMESTAMP,
+        UNIQUE(message_id, recipient_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_message_deliveries_msg ON message_deliveries(message_id);
+      CREATE INDEX IF NOT EXISTS idx_message_deliveries_recipient ON message_deliveries(recipient_id, status);
+
+      -- Block users
+      CREATE TABLE IF NOT EXISTS blocked_users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        blocker_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        blocked_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(blocker_id, blocked_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_blocked_users_blocker ON blocked_users(blocker_id);
+    `));
+
+    // 45. Backfill delivery states for existing messages
+    await step('Backfill message deliveries', () => c.query(`
+      INSERT INTO message_deliveries (message_id, recipient_id, status, delivered_at, read_at)
+      SELECT m.id,
+        CASE WHEN m.sender_id = c.buyer_id THEN c.seller_id ELSE c.buyer_id END,
+        CASE WHEN m.is_read THEN 'read' ELSE 'delivered' END,
+        m.created_at,
+        CASE WHEN m.is_read THEN m.created_at ELSE NULL END
+      FROM messages m
+      JOIN conversations c ON c.id = m.conversation_id
+      ON CONFLICT (message_id, recipient_id) DO NOTHING;
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
