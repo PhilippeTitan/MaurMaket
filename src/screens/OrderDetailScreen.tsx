@@ -9,6 +9,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
+import ConfirmModal from '../components/ConfirmModal';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup, getImageUrl } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leaflet-bundle';
@@ -112,6 +113,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [declineLoading, setDeclineLoading] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showDeclineModal, setShowDeclineModal] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -130,17 +133,13 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
   useEffect(() => { fetchData(); }, [orderId]);
 
+  const handleCancelConfirmed = async () => {
+    try { await cancelOrder(orderId); fetchData(); }
+    catch (err: unknown) { toast.error(t('common.error'), errorMessage(err)); }
+  };
+
   const handleCancel = () => {
-    toast.show({
-      kind: 'warning',
-      title: t('orderDetail.cancelOrder'),
-      message: t('orderDetail.cancelConfirm'),
-      actionLabel: 'Yes, cancel',
-      onAction: async () => {
-        try { await cancelOrder(orderId); fetchData(); }
-        catch (err: unknown) { toast.error(t('common.error'), errorMessage(err)); }
-      },
-    });
+    setShowCancelModal(true);
   };
 
   const handleComplete = async () => {
@@ -272,24 +271,20 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
     setConfirmLoading(false);
   };
 
+  const handleDeclineMeetupConfirmed = async () => {
+    setDeclineLoading(true);
+    try {
+      await cancelOrder(orderId);
+      toast.success(t('orderDetail.orderCancelled'));
+      fetchData();
+    } catch (err: unknown) {
+      toast.error(t('common.error'), errorMessage(err, 'Could not decline meetup'));
+    }
+    setDeclineLoading(false);
+  };
+
   const handleDeclineMeetup = () => {
-    toast.show({
-      kind: 'warning',
-      title: t('orderDetail.declineMeetup'),
-      message: t('orderDetail.declineMeetupConfirm'),
-      actionLabel: 'Yes, decline',
-      onAction: async () => {
-        setDeclineLoading(true);
-        try {
-          await cancelOrder(orderId);
-          toast.success(t('orderDetail.orderCancelled'));
-          fetchData();
-        } catch (err: unknown) {
-          toast.error(t('common.error'), errorMessage(err, 'Could not decline meetup'));
-        }
-        setDeclineLoading(false);
-      },
-    });
+    setShowDeclineModal(true);
   };
 
   if (loading || !order) {
@@ -768,6 +763,34 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <ConfirmModal
+        visible={showCancelModal}
+        title={t('orderDetail.cancelOrder')}
+        message={t('orderDetail.cancelConfirm')}
+        confirmLabel="Yes, cancel"
+        cancelLabel={t('common.cancel')}
+        kind="danger"
+        onConfirm={() => {
+          setShowCancelModal(false);
+          handleCancelConfirmed();
+        }}
+        onCancel={() => setShowCancelModal(false)}
+      />
+
+      <ConfirmModal
+        visible={showDeclineModal}
+        title={t('orderDetail.declineMeetup')}
+        message={t('orderDetail.declineMeetupConfirm')}
+        confirmLabel="Yes, decline"
+        cancelLabel={t('common.cancel')}
+        kind="danger"
+        onConfirm={() => {
+          setShowDeclineModal(false);
+          handleDeclineMeetupConfirmed();
+        }}
+        onCancel={() => setShowDeclineModal(false)}
+      />
     </View>
   );
 }

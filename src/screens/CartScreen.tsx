@@ -8,6 +8,7 @@ import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
+import ConfirmModal from '../components/ConfirmModal';
 import { store } from '../store';
 import { validatePromo, getImageUrl } from '../api';
 import { useTranslation } from '../i18n';
@@ -32,6 +33,7 @@ export default function CartScreen({ navigation }: Props) {
   const [promoCode, setPromoCode] = useState('');
   const [discount, setDiscount] = useState(0);
   const [promoLoading, setPromoLoading] = useState(false);
+  const [showClearCartModal, setShowClearCartModal] = useState(false);
 
   useEffect(() => {
     const unsub = store.onChange(() => setCart([...store.cart]));
@@ -248,13 +250,7 @@ export default function CartScreen({ navigation }: Props) {
                     for (const item of cart) store.removeFromCart(item.id);
                   }
                 } else {
-                  toast.show({
-                    kind: 'warning',
-                    title: 'Clear cart?',
-                    message: 'All items will be removed.',
-                    actionLabel: 'Clear all',
-                    onAction: () => { for (const item of cart) store.removeFromCart(item.id); },
-                  });
+                  setShowClearCartModal(true);
                 }
               }}
               accessibilityRole="button"
@@ -265,6 +261,20 @@ export default function CartScreen({ navigation }: Props) {
           </View>
         </View>
       )}
+
+      <ConfirmModal
+        visible={showClearCartModal}
+        title="Clear cart?"
+        message="All items will be removed."
+        confirmLabel="Clear all"
+        cancelLabel={t('common.cancel')}
+        kind="danger"
+        onConfirm={() => {
+          setShowClearCartModal(false);
+          for (const item of cart) store.removeFromCart(item.id);
+        }}
+        onCancel={() => setShowClearCartModal(false)}
+      />
     </View>
   );
 }

@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
+import ConfirmModal from '../components/ConfirmModal';
 import { getProduct, updateProduct, deleteProduct, getCategories, uploadImage, getImageUrl } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -43,6 +44,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showSale, setShowSale] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [salePrice, setSalePrice] = useState('');
   const [saleEndDate, setSaleEndDate] = useState('');
   const [currentlyOnSale, setCurrentlyOnSale] = useState(false);
@@ -197,32 +199,27 @@ export default function EditListingScreen({ route, navigation }: Props) {
     setSaving(false);
   };
 
+  const handleDeleteConfirmed = async () => {
+    setDeleting(true);
+    try {
+      await deleteProduct(productId);
+      toast.success(t('editListing.deleted'), t('editListing.productRemoved'));
+      navigation.goBack();
+    } catch (e: any) {
+      toast.error(t('common.error'), e.message);
+    }
+    setDeleting(false);
+  };
+
   const handleDelete = () => {
     if (network.isOffline) {
       toast.error(t('network.offline'), 'Deleting a listing requires an internet connection.');
       return;
     }
-    const doDelete = async () => {
-      setDeleting(true);
-      try {
-        await deleteProduct(productId);
-        toast.success(t('editListing.deleted'), t('editListing.productRemoved'));
-        navigation.goBack();
-      } catch (e: any) {
-        toast.error(t('common.error'), e.message);
-      }
-      setDeleting(false);
-    };
     if (Platform.OS === 'web') {
-      if (window.confirm(t('editListing.deleteConfirm'))) doDelete();
+      if (window.confirm(t('editListing.deleteConfirm'))) handleDeleteConfirmed();
     } else {
-      toast.show({
-        kind: 'warning',
-        title: t('editListing.deleteTitle'),
-        message: t('editListing.deleteConfirm'),
-        actionLabel: t('common.delete'),
-        onAction: doDelete,
-      });
+      setShowDeleteModal(true);
     }
   };
 
@@ -403,6 +400,20 @@ export default function EditListingScreen({ route, navigation }: Props) {
         )}
       </TouchableOpacity>
     </ScrollView>
+
+    <ConfirmModal
+      visible={showDeleteModal}
+      title={t('editListing.deleteTitle')}
+      message={t('editListing.deleteConfirm')}
+      confirmLabel={t('common.delete')}
+      cancelLabel={t('common.cancel')}
+      kind="danger"
+      onConfirm={() => {
+        setShowDeleteModal(false);
+        handleDeleteConfirmed();
+      }}
+      onCancel={() => setShowDeleteModal(false)}
+    />
     </View>
     </KeyboardAvoidingView>
   );
