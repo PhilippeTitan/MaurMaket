@@ -21,41 +21,48 @@ import subscriptionsRouter from './subscriptions.js';
 import feedRouter from './feed.js';
 
 export function registerRoutes(app) {
-  // All route modules define paths like '/orders', '/products', etc.
-  // The client sends requests to '/api/orders', so we mount under '/api'.
-  app.use('/api', categoriesRouter);
-  app.use('/api', healthRouter);
-  app.use('/api', adminRouter);
-  app.use('/api', sellerRouter);
-  app.use('/api', migrationRouter);
+  // Routes WITH /api in their path → mount at root
+  // Routes WITHOUT /api in their path → mount under '/api'
 
-  // Auth routes
+  // Root-mounted (paths already include /api)
+  app.use(healthRouter);
+  app.use(adminRouter);
+  app.use(sellerRouter);
+  app.use(migrationRouter);
+  app.use(productsRouter);
+  app.use(sellerDashboardRouter);
+  app.use(promosRouter);
+  app.use(analyticsRouter);
+  app.use(messagingRouter);
+  app.use(offersRouter);
+  app.use(disputesRouter);
+  app.use(orderNotesRouter);
+  app.use(paymentsRouter);
+  app.use(payoutsRouter);
+  app.use(subscriptionsRouter);
+  app.use(feedRouter);
+
+  // Mounted under /api (paths don't include /api)
   app.use('/api', authRouter);
-
-  // Social routes
-  app.use('/api', socialRouter);
-
-  // Product routes
-  app.use('/api', productsRouter);
-
-  // Order routes
   app.use('/api', ordersRouter);
+  app.use('/api', socialRouter);
+  app.use('/api', categoriesRouter);
 
-  // Batch 6: seller, messaging, offers
-  app.use('/api', sellerDashboardRouter);
-  app.use('/api', promosRouter);
-  app.use('/api', analyticsRouter);
-  app.use('/api', messagingRouter);
-  app.use('/api', offersRouter);
-  app.use('/api', disputesRouter);
-  app.use('/api', orderNotesRouter);
+  // Batch 6: seller, messaging, offers — already have /api prefix
+  app.use(sellerDashboardRouter);
+  app.use(promosRouter);
+  app.use(analyticsRouter);
+  app.use(messagingRouter);
+  app.use(offersRouter);
+  app.use(disputesRouter);
+  app.use(orderNotesRouter);
 
-  // Batch 7: payments, payouts, subscriptions, feed
-  app.use('/api', paymentsRouter);
-  app.use('/api', payoutsRouter);
-  app.use('/api', subscriptionsRouter);
-  app.use('/api', feedRouter);
+  // Batch 7: payments, payouts, subscriptions, feed — already have /api prefix
+  app.use(paymentsRouter);
+  app.use(payoutsRouter);
+  app.use(subscriptionsRouter);
+  app.use(feedRouter);
 
   // Must be last (includes 404 handler)
-  app.use('/api', miscRouter);
+  app.use(miscRouter);
 }
