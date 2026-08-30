@@ -800,6 +800,8 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows(follower_id);
       CREATE INDEX IF NOT EXISTS idx_follows_seller_id ON follows(seller_id);
       CREATE INDEX IF NOT EXISTS idx_feed_events_user_rate ON feed_events(user_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_feed_events_user_type_time ON feed_events(user_id, event_type, created_at);
+      CREATE INDEX IF NOT EXISTS idx_feed_events_type_time ON feed_events(event_type, created_at);
       CREATE INDEX IF NOT EXISTS idx_order_escrow_order_id_status ON order_escrow(order_id, status);
       CREATE INDEX IF NOT EXISTS idx_meetup_checkins_order_id ON meetup_checkins(order_id);
       CREATE INDEX IF NOT EXISTS idx_order_events_order_id ON order_events(order_id);
@@ -2984,6 +2986,35 @@ app.get('/api/sellers/:id', async (req, res) => {
 
 // ───── Product routes ─────
 
+// Diversity reranker: ensures no single seller or category dominates the personalized feed.
+// Applied server-side after scoring to give users variety without losing relevance.
+function diversifyFeed(products, { maxPerSeller = 3, maxPerCategory = 5 } = {}) {
+  if (!products || products.length <= 1) return products;
+  const sellerCounts = {};
+  const categoryCounts = {};
+  const accepted = [];
+  const deferred = [];
+  for (const p of products) {
+    const sid = p.seller_id;
+    const cid = p.category_id;
+    const sellerOk = !sid || (sellerCounts[sid] || 0) < maxPerSeller;
+    const catOk = !cid || (categoryCounts[cid] || 0) < maxPerCategory;
+    if (sellerOk && catOk) {
+      accepted.push(p);
+      if (sid) sellerCounts[sid] = (sellerCounts[sid] || 0) + 1;
+      if (cid) categoryCounts[cid] = (categoryCounts[cid] || 0) + 1;
+    } else {
+      deferred.push(p);
+    }
+  }
+  // Fill remaining slots from deferred (score-ordered, just over cap)
+  for (const p of deferred) {
+    if (accepted.length >= products.length) break;
+    accepted.push(p);
+  }
+  return accepted;
+}
+
 app.get('/api/products', async (req, res) => {
   const { category, search, seller, minPrice, maxPrice, sort, page = 1, limit = 20, personalized, following } = req.query;
   const offset = (Math.max(1, page) - 1) * Math.min(limit, 50);
@@ -3037,7 +3068,7 @@ app.get('/api/products', async (req, res) => {
   let joinExtra = '';
 
   if (usePersonalized && userId) {
-    // Personalized scoring using CTE for efficiency
+    // Personalized scoring: Phase 1 — session intent, trending pool, dwell signal, diversity
     selectExtra = `, COALESCE(score.total_score, 0) AS feed_score, score.recommendation_reason`;
     joinExtra = `LEFT JOIN (
       WITH user_follows AS (
@@ -3068,16 +3099,54 @@ app.get('/api/products', async (req, res) => {
       seller_ratings AS (
         SELECT seller_id, AVG(rating) AS avg_rating
         FROM reviews GROUP BY seller_id
+      ),
+      -- Session intent: what categories has this user been browsing in the last 30 minutes?
+      user_session_intent AS (
+        SELECT p4.category_id, COUNT(*) AS recent_views,
+               COALESCE(AVG(fe.duration_ms), 0) AS avg_dwell_ms
+        FROM feed_events fe
+        JOIN products p4 ON p4.id = fe.product_id
+        WHERE fe.user_id = $${paramIndex}
+          AND fe.event_type IN ('view', 'dwell')
+          AND fe.created_at > NOW() - INTERVAL '30 minutes'
+        GROUP BY p4.category_id
+      ),
+      -- Dwell signal: how long has the user spent looking at each product?
+      user_dwell AS (
+        SELECT product_id, MAX(duration_ms) AS max_dwell_ms
+        FROM feed_events
+        WHERE user_id = $${paramIndex} AND event_type = 'dwell'
+        GROUP BY product_id
+      ),
+      -- Trending: products with high engagement in the last 24 hours
+      trending_products AS (
+        SELECT fe.product_id, COUNT(*) AS trend_count
+        FROM feed_events fe
+        WHERE fe.event_type IN ('view', 'dwell', 'like', 'save')
+          AND fe.created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY fe.product_id
+        HAVING COUNT(*) >= 3
+        ORDER BY COUNT(*) DESC
+        LIMIT 100
       )
       SELECT
         p2.id AS product_id,
         CASE
-          WHEN EXISTS (SELECT 1 FROM user_category_affinities a WHERE a.category_id = p2.category_id AND a.score > 0) THEN 'Because you like ' || COALESCE(c2.name, 'this category')
-          WHEN EXISTS (SELECT 1 FROM user_follows WHERE seller_id = p2.seller_id) THEN 'From a seller you follow'
-          WHEN EXISTS (SELECT 1 FROM user_purchases WHERE category_id = p2.category_id) THEN 'Based on your purchases'
+          WHEN EXISTS (SELECT 1 FROM user_session_intent si WHERE si.category_id = p2.category_id AND si.recent_views >= 2)
+            AND EXISTS (SELECT 1 FROM user_category_affinities a WHERE a.category_id = p2.category_id AND a.score > 0)
+            THEN 'Browsing ' || COALESCE(c2.name, 'this category') || ' — more like this'
+          WHEN EXISTS (SELECT 1 FROM trending_products tp WHERE tp.product_id = p2.id)
+            THEN 'Trending right now'
+          WHEN EXISTS (SELECT 1 FROM user_category_affinities a WHERE a.category_id = p2.category_id AND a.score > 0)
+            THEN 'Because you like ' || COALESCE(c2.name, 'this category')
+          WHEN EXISTS (SELECT 1 FROM user_follows WHERE seller_id = p2.seller_id)
+            THEN 'From a seller you follow'
+          WHEN EXISTS (SELECT 1 FROM user_purchases WHERE category_id = p2.category_id)
+            THEN 'Based on your purchases'
           ELSE 'Picked for you'
         END AS recommendation_reason,
         (
+          -- Existing signals (unchanged weights)
           COALESCE((SELECT 3.0 FROM user_follows WHERE seller_id = p2.seller_id LIMIT 1), 0)
           + COALESCE((SELECT 2.0 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_wishlists WHERE product_id = p2.id LIMIT 1), 0)
           + COALESCE((SELECT 2.0 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_likes WHERE product_id = p2.id LIMIT 1), 0)
@@ -3088,6 +3157,16 @@ app.get('/api/products', async (req, res) => {
           + 1.5 * exp(-0.1 * EXTRACT(EPOCH FROM (NOW() - p2.created_at)) / 86400)
           + COALESCE((SELECT CASE WHEN avg_rating > 4 THEN 0.5 ELSE 0 END FROM seller_ratings WHERE seller_id = p2.seller_id), 0)
           - COALESCE((SELECT 3.0 * exp(-0.05 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) FROM user_not_relevant WHERE product_id = p2.id LIMIT 1), 0)
+          -- NEW: Session intent boost (+2.0 for categories you're actively browsing right now)
+          + COALESCE((SELECT 2.0 * LEAST(si.recent_views::numeric / 5.0, 1.0)
+            FROM user_session_intent si WHERE si.category_id = p2.category_id LIMIT 1), 0)
+          -- NEW: Dwell signal — time spent viewing a product is a strong interest indicator
+          -- Full boost at 30s, scaled linearly below that
+          + COALESCE((SELECT 1.5 * LEAST(ud.max_dwell_ms::numeric / 30000.0, 1.0)
+            FROM user_dwell ud WHERE ud.product_id = p2.id LIMIT 1), 0)
+          -- NEW: Trending boost — popular products get visibility even from new/cold users
+          + COALESCE((SELECT 1.0 * LEAST(tp.trend_count::numeric / 20.0, 1.5)
+            FROM trending_products tp WHERE tp.product_id = p2.id LIMIT 1), 0)
         ) AS total_score
       FROM products p2
       LEFT JOIN categories c2 ON c2.id = p2.category_id
@@ -3106,6 +3185,8 @@ app.get('/api/products', async (req, res) => {
           SELECT 1 FROM user_category_affinities WHERE category_id = p2.category_id
           UNION ALL
           SELECT 1 FROM user_purchases WHERE seller_id = p2.seller_id OR category_id = p2.category_id
+          UNION ALL
+          SELECT 1 FROM trending_products WHERE product_id = p2.id
         )
       ORDER BY total_score DESC, p2.created_at DESC
     ) score ON score.product_id = p.id`;
@@ -3190,7 +3271,11 @@ app.get('/api/products', async (req, res) => {
     );
 
     const total = result.rows.length > 0 ? Number(result.rows[0].total_count) : 0;
-    const products = result.rows.map(({ total_count, ...product }) => product);
+    let products = result.rows.map(({ total_count, ...product }) => product);
+    // Phase 1: diversity reranker — prevent same seller/category from dominating the feed
+    if (usePersonalized && products.length > 1) {
+      products = diversifyFeed(products);
+    }
     res.json({ products, total, page: +page, pages: Math.ceil(total / Math.min(limit, 50)) });
   } catch (err) {
     console.error('Products fetch error:', err);
