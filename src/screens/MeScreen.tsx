@@ -152,7 +152,7 @@ export default function MeScreen() {
       cacheData.products = products; cacheData.productCount = 0;
       if (isSeller) {
         let sellerProds: { products: Product[] } | null = null;
-        try { sellerProds = await getSellerProducts() as { products: Product[] }; } catch { /* ignore */ }
+        try { sellerProds = await getSellerProducts() as { products: Product[] }; } catch (e: any) { console.error('[MeScreen] seller products error:', e?.message); }
         products = sellerProds?.products || [];
         setProducts(products);
         setProductCount(products.length || 0);
