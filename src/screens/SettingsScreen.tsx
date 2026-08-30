@@ -74,7 +74,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer>
-      <ScreenHeader title={t('settings.title')} onBack={() => navigation.goBack()} titleSize={20} backSize={24} />
+      <ScreenHeader title={t('settings.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 

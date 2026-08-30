@@ -13,7 +13,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Order, Product } from '../types';
 import { Icon } from '../components/icons/Icon';
 import StockBadge from '../components/StockBadge';
-import BackButton from '../components/BackButton';
+import ScreenHeader from '../components/ScreenHeader';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -114,12 +114,8 @@ export default function AnalyticsScreen() {
   return (
     <View style={styles.container}>
       {/* Sticky header */}
-      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm, paddingBottom: SPACING.sm, zIndex: 10 }]}>
-        <BackButton
-          onPress={() => nav.goBack()}
-          style={{ position: 'absolute', left: SPACING.lg, top: insets.top + SPACING.sm }}
-        />
-        <Text style={styles.topBarTitle}>Dashboard</Text>
+      <View style={{ zIndex: 10 }}>
+        <ScreenHeader title="Dashboard" onBack={() => nav.goBack()} />
       </View>
 
       <ScrollView

@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
-import BackButton from '../components/BackButton';
+import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
 import { getNotifications, markNotificationRead, markAllNotificationsRead, getImageUrl, getOrders, getSellerOrders } from '../api';
@@ -481,15 +481,15 @@ export default function NotificationScreen() {
   return (
     <View style={styles.container}>
       {/* Top bar */}
-      <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
-        <BackButton onPress={() => nav.goBack()} />
-        <Text style={styles.title}>
-          {activeTab === 'notifications' ? 'Notifications' : activeTab === 'buying' ? 'Buying' : 'Selling'}
-        </Text>
-        <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
-          <MaterialCommunityIcons name="clock-outline" size={26} color={COLORS.text} />
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader
+        title={activeTab === 'notifications' ? 'Notifications' : activeTab === 'buying' ? 'Buying' : 'Selling'}
+        onBack={() => nav.goBack()}
+        right={
+          <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
+            <MaterialCommunityIcons name="clock-outline" size={26} color={COLORS.text} />
+          </TouchableOpacity>
+        }
+      />
 
       {/* Mark all read row */}
       {activeTab === 'notifications' && (
@@ -577,18 +577,20 @@ export default function NotificationScreen() {
       {/* History modal */}
       <Modal visible={showHistory} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowHistory(false)}>
         <View style={styles.container}>
-          <View style={[styles.topBar, { paddingTop: insets.top + SPACING.md }]}>
-            <BackButton onPress={() => setShowHistory(false)} />
-            <Text style={styles.title}>Order History</Text>
-            <TouchableOpacity
-              onPress={() => setSortModal(true)}
-              style={styles.historyFilterBtn}
-              accessibilityLabel="sort and filter"
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons name="tune-variant" size={30} color={COLORS.text} />
-            </TouchableOpacity>
-          </View>
+          <ScreenHeader
+            title="Order History"
+            onBack={() => setShowHistory(false)}
+            right={
+              <TouchableOpacity
+                onPress={() => setSortModal(true)}
+                style={styles.historyFilterBtn}
+                accessibilityLabel="sort and filter"
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons name="tune-variant" size={30} color={COLORS.text} />
+              </TouchableOpacity>
+            }
+          />
           {historyOrders.length === 0 ? (
             <EmptyState icon="clock-outline" title="No order history yet" size={56} />
           ) : (

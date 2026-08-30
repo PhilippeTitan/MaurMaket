@@ -60,7 +60,7 @@ export default function ScreenHeader({
     >
       {/* Left slot — fixed width for symmetry */}
       <View style={styles.sideSlot}>
-        {left || (onBack ? <BackButton onPress={onBack} size={backSize} /> : null)}
+        {left || (onBack ? <BackButton onPress={onBack} size={backSize ?? 24} /> : null)}
       </View>
 
       {/* Title — absolutely centered in the full header width */}
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
   },
   title: {
     textAlign: 'center',
-    fontSize: FONT_SIZES.xl,
+    fontSize: 20,
     fontWeight: FONT_WEIGHTS.bold,
     color: COLORS.text,
   },

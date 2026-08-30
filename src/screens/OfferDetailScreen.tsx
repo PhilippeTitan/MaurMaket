@@ -11,7 +11,7 @@ import type { RootStackParamList } from '../navigation';
 import { getOfferDetail, respondToOffer, counterOffer, getImageUrl } from '../api';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
-import BackButton from '../components/BackButton';
+import ScreenHeader from '../components/ScreenHeader';
 import { SkeletonBlock } from '../components/Skeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OfferDetail'>;
@@ -132,10 +132,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
   if (!offer) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
-          <BackButton onPress={() => navigation.goBack()} />
-          <Text style={styles.headerTitle}>Offer</Text>
-        </View>
+        <ScreenHeader title="Offer" onBack={() => navigation.goBack()} bordered={false} />
         <View style={styles.emptyWrap}>
           <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.text2} />
           <Text style={styles.emptyText}>Offer not found</Text>
@@ -148,10 +145,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <BackButton onPress={() => navigation.goBack()} />
-        <Text style={styles.headerTitle}>Offer</Text>
-      </View>
+      <ScreenHeader title="Offer" onBack={() => navigation.goBack()} bordered={false} />
 
       <ScrollView contentContainerStyle={styles.content}>
         {offer.productImage ? (
