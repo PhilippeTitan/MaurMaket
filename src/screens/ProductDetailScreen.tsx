@@ -344,7 +344,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
         {/* ── Hero image — scrolls with content ── */}
-        <View style={{ width: SCREEN_W, height: heroHeight, backgroundColor: COLORS.surface2 }}>
+        <View style={{ width: SCREEN_W, height: heroHeight, backgroundColor: COLORS.surface2, overflow: 'hidden' }}>
           {allImages.length > 1 ? (
             <ScrollView
               ref={flatListRef as any}
@@ -352,21 +352,18 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               pagingEnabled
               nestedScrollEnabled
               showsHorizontalScrollIndicator={false}
-              decelerationRate="fast"
-              snapToInterval={SCREEN_W}
-              snapToAlignment="start"
+              style={{ width: SCREEN_W, height: heroHeight }}
               onMomentumScrollEnd={(e: any) => {
                 const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
                 setActiveImageIndex(idx);
               }}
-              contentContainerStyle={{ width: SCREEN_W * allImages.length }}
             >
               {allImages.map((img, idx) => {
                 const url = getImageUrl(img.image_url);
                 return (
-                  <View key={String(img.id || idx)} style={{ width: SCREEN_W, height: heroHeight, overflow: 'hidden' }}>
+                  <View key={String(img.id || idx)} style={{ width: SCREEN_W, height: heroHeight }}>
                     {url ? (
-                      <NativeImage source={{ uri: url }} style={{ width: SCREEN_W, height: heroHeight }} resizeMode="cover" />
+                      <ExpoImage source={{ uri: url }} style={{ width: SCREEN_W, height: heroHeight }} contentFit="cover" cachePolicy="memory-disk" />
                     ) : (
                       <View style={styles.heroPlaceholder}>
                         <Icon name="image-unavailable" size={40} color={COLORS.text2} />
@@ -377,7 +374,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               })}
             </ScrollView>
           ) : heroUrl ? (
-            <NativeImage source={{ uri: heroUrl }} style={{ width: SCREEN_W, height: heroHeight }} resizeMode="cover" />
+            <ExpoImage source={{ uri: heroUrl }} style={{ width: SCREEN_W, height: heroHeight }} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
             <View style={styles.heroPlaceholder}>
               <Icon name="image-unavailable" size={40} color={COLORS.text2} />
