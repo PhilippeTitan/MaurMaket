@@ -11,6 +11,10 @@ import messagingRouter from './messaging.js';
 import offersRouter from './offers.js';
 import disputesRouter from './disputes.js';
 import orderNotesRouter from './order-notes.js';
+import paymentsRouter from './payments.js';
+import payoutsRouter from './payouts.js';
+import subscriptionsRouter from './subscriptions.js';
+import feedRouter from './feed.js';
 
 export function registerRoutes(app) {
   // Batch 1: low-coupling routes
@@ -28,6 +32,12 @@ export function registerRoutes(app) {
   app.use(offersRouter);
   app.use(disputesRouter);
   app.use(orderNotesRouter);
+
+  // Batch 7: payments, payouts, subscriptions, feed
+  app.use(paymentsRouter);
+  app.use(payoutsRouter);
+  app.use(subscriptionsRouter);
+  app.use(feedRouter);
 
   // Must be last (includes 404 handler)
   app.use(miscRouter);
