@@ -202,7 +202,7 @@ router.get('/products', async (req, res) => {
           WHEN EXISTS (SELECT 1 FROM collaborative_products cp WHERE cp.product_id = p2.id AND cp.recommender_count >= 3)
             THEN 'People like you also liked this'
           WHEN EXISTS (SELECT 1 FROM product_similar ps WHERE ps.product_id = p2.id)
-            THEN 'Similar to what you\\'ve browsed'
+            THEN 'Similar to what you''ve browsed'
           WHEN EXISTS (SELECT 1 FROM user_session_intent si WHERE si.category_id = p2.category_id AND si.recent_views >= 2)
             AND EXISTS (SELECT 1 FROM user_category_affinities a WHERE a.category_id = p2.category_id AND a.score > 0)
             THEN 'Browsing ' || COALESCE(c2.name, 'this category') || ' — more like this'
