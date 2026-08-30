@@ -60,12 +60,11 @@ export default function ExploreScreen({ navigation }: Props) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [catModal, setCatModal] = useState(false);
-  const categoryListRef = useRef<FlatList<CategoryFilter>>(null);
-  const [sortBy, setSortBy] = useState(DEFAULT_SORT);
+  const categoryListRef = useRef<FlatList<CategoryFilter>>(null);  const [sortBy, setSortBy] = useState(DEFAULT_SORT);
   const [sortModal, setSortModal] = useState(false);
-
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
+  const filtersRestored = useRef(false);
   const [showPriceFilter, setShowPriceFilter] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [quickProduct, setQuickProduct] = useState<Product | null>(null);
@@ -92,6 +91,36 @@ export default function ExploreScreen({ navigation }: Props) {
     }, 350);
     return () => clearTimeout(handle);
   }, [search]);
+
+  // Restore persisted filters on mount
+  useEffect(() => {
+    if (filtersRestored.current) return;
+    filtersRestored.current = true;
+    (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const raw = await AsyncStorage.getItem('mm_explore_filters');
+        if (raw) {
+          const saved = JSON.parse(raw);
+          if (saved.sortBy) setSortBy(saved.sortBy);
+          if (saved.selectedCat) setSelectedCat(saved.selectedCat);
+          if (saved.minPrice) setMinPrice(saved.minPrice);
+          if (saved.maxPrice) setMaxPrice(saved.maxPrice);
+        }
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
+  // Persist filters when they change
+  useEffect(() => {
+    if (!filtersRestored.current) return;
+    (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        await AsyncStorage.setItem('mm_explore_filters', JSON.stringify({ sortBy, selectedCat, minPrice, maxPrice }));
+      } catch { /* ignore */ }
+    })();
+  }, [sortBy, selectedCat, minPrice, maxPrice]);
 
   const productParams = useMemo(() => {
     const params: Record<string, string> = { limit: '50' };
