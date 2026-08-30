@@ -25,6 +25,10 @@ interface Props {
   subtitle?: string;
   /** Optional left element that replaces the back button area */
   left?: React.ReactNode;
+  /** Override the default title font size (default: FONT_SIZES.xl = 16) */
+  titleSize?: number;
+  /** Override the default back arrow icon size (default: 20) */
+  backSize?: number;
 }
 
 /**
@@ -42,6 +46,8 @@ export default function ScreenHeader({
   variant = 'default',
   subtitle,
   left,
+  titleSize,
+  backSize,
 }: Props) {
   const insets = useSafeAreaInsets();
   return (
@@ -54,13 +60,13 @@ export default function ScreenHeader({
     >
       {/* Left slot — fixed width for symmetry */}
       <View style={styles.sideSlot}>
-        {left || (onBack ? <BackButton onPress={onBack} /> : null)}
+        {left || (onBack ? <BackButton onPress={onBack} size={backSize} /> : null)}
       </View>
 
       {/* Title — absolutely centered in the full header width */}
       <View style={styles.titleContainer}>
         <Text
-          style={variant === 'branded' ? styles.titleBranded : styles.title}
+          style={variant === 'branded' ? styles.titleBranded : [styles.title, titleSize ? { fontSize: titleSize } : undefined]}
           numberOfLines={1}
         >
           {title}
