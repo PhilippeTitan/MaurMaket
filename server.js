@@ -922,6 +922,27 @@ await step('NatCash phone separation', () => c.query(`
         UNIQUE(checkout_id, seller_id)
       );
       CREATE INDEX IF NOT EXISTS idx_pending_fulfillment_agreements_seller ON pending_fulfillment_agreements(seller_id, status, created_at DESC);
+
+      -- Provider-neutral payment lifecycle for one seller's locked agreement.
+      -- NatCash may use SMS verification, while MonCash uses a provider webhook.
+      CREATE TABLE IF NOT EXISTS fulfillment_payment_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        checkout_id UUID NOT NULL REFERENCES pending_checkouts(id) ON DELETE CASCADE,
+        order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+        seller_id UUID NOT NULL REFERENCES users(id),
+        provider VARCHAR(20) NOT NULL CHECK (provider IN ('moncash', 'natcash')),
+        provider_reference VARCHAR(100) UNIQUE,
+        amount DECIMAL(10,2) NOT NULL CHECK (amount >= 0),
+        status VARCHAR(20) NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'expired', 'refunded')),
+        completed_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '30 minutes'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(checkout_id, seller_id, provider)
+      );
+      CREATE INDEX IF NOT EXISTS idx_fulfillment_payment_sessions_reference ON fulfillment_payment_sessions(provider_reference);
+      CREATE INDEX IF NOT EXISTS idx_fulfillment_payment_sessions_checkout ON fulfillment_payment_sessions(checkout_id, status);
     `));
 
     // stock_reservations: temporary holds during checkout

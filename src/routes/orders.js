@@ -383,7 +383,7 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
   try {
     await client.query('BEGIN');
     const proposal = await client.query(
-      `SELECT a.*, pc.user_id, pc.status AS checkout_status FROM pending_fulfillment_agreements a
+      `SELECT a.*, pc.user_id, pc.payment_method, pc.status AS checkout_status FROM pending_fulfillment_agreements a
        JOIN pending_checkouts pc ON pc.id = a.checkout_id
        WHERE a.checkout_id = $1 AND a.seller_id = $2 FOR UPDATE`, [req.params.id, req.user.id]
     );
@@ -395,18 +395,24 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
       `UPDATE pending_fulfillment_agreements SET status = $1, seller_accepted_at = CASE WHEN $1 = 'accepted' THEN CURRENT_TIMESTAMP ELSE NULL END
        WHERE id = $2`, [status, agreement.id]
     );
-    const all = await client.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'accepted')::int AS accepted, COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected FROM pending_fulfillment_agreements WHERE checkout_id = $1`, [req.params.id]);
-    const counts = all.rows[0];
-    let paymentReady = false;
-    if (counts.rejected > 0) {
-      await client.query("UPDATE pending_checkouts SET status = 'failed' WHERE id = $1", [req.params.id]);
-    } else if (counts.total > 0 && counts.total === counts.accepted) {
-      await client.query("UPDATE pending_fulfillment_agreements SET terms_locked_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'accepted'", [req.params.id]);
-      await client.query("UPDATE pending_checkouts SET status = 'agreement_locked' WHERE id = $1", [req.params.id]);
-      paymentReady = true;
+    const paymentReady = decision === 'accept';
+    if (paymentReady) {
+      // Lock only this seller's accepted terms. Other sellers remain entirely
+      // independent: a delayed or rejected response cannot block this one.
+      await client.query("UPDATE pending_fulfillment_agreements SET terms_locked_at = CURRENT_TIMESTAMP WHERE id = $1", [agreement.id]);
+      const existingOrder = await client.query('SELECT order_id FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND order_id IS NOT NULL LIMIT 1', [req.params.id]);
+      if (existingOrder.rows[0]?.order_id) {
+        const locked = await client.query('SELECT * FROM pending_fulfillment_agreements WHERE id = $1', [agreement.id]);
+        const term = locked.rows[0].terms;
+        await client.query(
+          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, seller_accepted_at, terms_locked_at)
+           VALUES ($1,$2,'pending','pending',$3,$4,$5,$6,$7,$8,$9,'locked',$10,$11,CURRENT_TIMESTAMP) ON CONFLICT (order_id,seller_id) DO NOTHING`,
+          [existingOrder.rows[0].order_id, req.user.id, agreement.payment_method || 'moncash', term.method, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, locked.rows[0].buyer_accepted_at, locked.rows[0].seller_accepted_at]
+        );
+      }
     }
     await client.query('COMMIT');
-    createNotification(agreement.user_id, decision === 'accept' ? 'fulfillment_accepted' : 'fulfillment_rejected', decision === 'accept' ? 'Fulfillment accepted' : 'Fulfillment declined', paymentReady ? 'All sellers accepted. Your payment is ready.' : 'A seller responded to your fulfillment proposal.', { pendingId: req.params.id });
+    createNotification(agreement.user_id, decision === 'accept' ? 'fulfillment_accepted' : 'fulfillment_rejected', decision === 'accept' ? 'Fulfillment accepted' : 'Fulfillment declined', paymentReady ? 'This seller’s payment is ready.' : 'A seller responded to your fulfillment proposal.', { pendingId: req.params.id, sellerId: req.user.id });
     res.json({ status, paymentReady });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -417,14 +423,39 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
 
 router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res) => {
   try {
-    const checkout = await pool.query("SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'agreement_locked'", [req.params.id, req.user.id]);
+    const { sellerId } = req.body || {};
+    if (!sellerId) return res.status(400).json({ error: 'sellerId is required' });
+    const checkout = await pool.query("SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'pending'", [req.params.id, req.user.id]);
     const pc = checkout.rows[0];
-    if (!pc) return res.status(409).json({ error: 'All seller agreements must be accepted before payment' });
-    const accepted = await pool.query("SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'accepted' AND terms_locked_at IS NOT NULL)::int AS locked FROM pending_fulfillment_agreements WHERE checkout_id = $1", [pc.id]);
-    if (accepted.rows[0].total === 0 || accepted.rows[0].total !== accepted.rows[0].locked) return res.status(409).json({ error: 'Fulfillment terms are not locked yet' });
-    if (pc.payment_method === 'natcash') return res.json({ pendingId: pc.id, paymentMethod: 'natcash' });
-    const paymentUrl = await createPendingMonCashPayment(pc);
-    res.json({ pendingId: pc.id, paymentUrl, paymentMethod: 'moncash' });
+    if (!pc) return res.status(404).json({ error: 'Pending checkout not found or expired' });
+    const agreementResult = await pool.query(
+      `SELECT terms FROM pending_fulfillment_agreements
+       WHERE checkout_id = $1 AND seller_id = $2 AND status = 'accepted' AND terms_locked_at IS NOT NULL`, [pc.id, sellerId]
+    );
+    const agreement = agreementResult.rows[0];
+    if (!agreement) return res.status(409).json({ error: 'This seller’s fulfillment terms are not locked yet' });
+    const cartSubtotal = pc.cart_data.filter(item => item.seller_id === sellerId).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
+    const amount = cartSubtotal + Number(agreement.terms?.deliveryFee || 0);
+    const provider = pc.payment_method === 'natcash' ? 'natcash' : 'moncash';
+    const existing = await pool.query("SELECT * FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND seller_id = $2 AND provider = $3 AND status IN ('pending','processing')", [pc.id, sellerId, provider]);
+    let session = existing.rows[0];
+    if (!session) {
+      const reference = `fps_${crypto.randomUUID().replaceAll('-', '')}`;
+      const created = await pool.query(
+        `INSERT INTO fulfillment_payment_sessions (checkout_id, seller_id, provider, provider_reference, amount)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`, [pc.id, sellerId, provider, reference, amount]
+      );
+      session = created.rows[0];
+    }
+    if (provider === 'natcash') return res.json({ pendingId: pc.id, sellerId, paymentMethod: 'natcash', session });
+    const moncashRes = await fetch(process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create', {
+      method: 'POST', headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: Math.round(Number(session.amount)), referenceId: session.provider_reference, returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?session=${session.id}` }), signal: AbortSignal.timeout(15000),
+    });
+    if (!moncashRes.ok) throw new Error('Payment provider error');
+    const data = await moncashRes.json();
+    if (!data.paymentUrl) throw new Error('Payment provider error');
+    res.json({ pendingId: pc.id, sellerId, paymentUrl: data.paymentUrl, paymentMethod: 'moncash', session });
   } catch (err) {
     console.error('Begin payment error:', err);
     res.status(502).json({ error: err.message || 'Payment provider error' });

@@ -283,8 +283,8 @@ export const checkPendingStatus = (pendingId: string) =>
 export const getSellerFulfillmentProposals = () => request('/seller/fulfillment-proposals');
 export const decideFulfillmentProposal = (pendingId: string, sellerId: string, decision: 'accept' | 'reject') =>
   request(`/checkout/pending/${pendingId}/agreements/${sellerId}`, { method: 'PUT', body: JSON.stringify({ decision }) });
-export const beginPendingPayment = (pendingId: string) =>
-  request(`/checkout/pending/${pendingId}/begin-payment`, { method: 'POST' });
+export const beginPendingPayment = (pendingId: string, sellerId: string) =>
+  request(`/checkout/pending/${pendingId}/begin-payment`, { method: 'POST', body: JSON.stringify({ sellerId }) });
 
 export const getPendingSellerInfo = (pendingId: string) =>
   request(`/checkout/pending/${pendingId}/seller-info`);

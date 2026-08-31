@@ -123,6 +123,67 @@ router.post('/api/payments/webhook', async (req, res) => {
   try {
     if (event === 'payment.completed') {
       if (reference && reference.startsWith('sub_')) return res.json({ received: true, skipped: 'subscription' });
+      // New fulfillment-level MonCash session. A reference resolves to exactly
+      // one seller, while the first paid session materializes the shared order.
+      const sessionResult = await pool.query('SELECT * FROM fulfillment_payment_sessions WHERE provider_reference = $1 AND provider = \'moncash\'', [reference]);
+      if (sessionResult.rows.length > 0) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const sessionLock = await client.query('SELECT * FROM fulfillment_payment_sessions WHERE id = $1 FOR UPDATE', [sessionResult.rows[0].id]);
+          const session = sessionLock.rows[0];
+          if (session.status === 'completed') { await client.query('ROLLBACK'); return res.json({ received: true, idempotent: true, orderId: session.order_id }); }
+          const checkoutRes = await client.query('SELECT * FROM pending_checkouts WHERE id = $1 FOR UPDATE', [session.checkout_id]);
+          const pc = checkoutRes.rows[0];
+          if (!pc) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Checkout not found' }); }
+          let orderId = session.order_id;
+          if (!orderId) {
+            const prior = await client.query('SELECT order_id FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND order_id IS NOT NULL LIMIT 1', [pc.id]);
+            orderId = prior.rows[0]?.order_id;
+          }
+          if (!orderId) {
+            const createdOrder = await client.query(
+              `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
+               VALUES ($1, $2, 'partially_paid', 'moncash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+              [pc.user_id, pc.total_amount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
+            );
+            orderId = createdOrder.rows[0].id;
+            for (const item of pc.cart_data) {
+              const product = await client.query('SELECT seller_id FROM products WHERE id = $1', [item.id || item.productId]);
+              if (product.rows[0]) await client.query('INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)', [orderId, item.id || item.productId, product.rows[0].seller_id, item.quantity || 1, item.price || 0]);
+            }
+            const agreements = await client.query("SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND status = 'accepted' AND terms_locked_at IS NOT NULL", [pc.id]);
+            for (const agreement of agreements.rows) {
+              const term = agreement.terms;
+              await client.query(
+                `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, seller_accepted_at, terms_locked_at)
+                 VALUES ($1, $2, 'pending', 'pending', 'moncash', $3, $4, $5, $6, $7, $8, 'locked', $9, $10, $11) ON CONFLICT (order_id, seller_id) DO NOTHING`,
+                [orderId, agreement.seller_id, term.method, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, agreement.buyer_accepted_at, agreement.seller_accepted_at, agreement.terms_locked_at]
+              );
+            }
+            await client.query('UPDATE fulfillment_payment_sessions SET order_id = $1 WHERE checkout_id = $2', [orderId, pc.id]);
+          }
+          await client.query("UPDATE fulfillment_payment_sessions SET status = 'completed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1", [session.id]);
+          await client.query("UPDATE seller_fulfillments SET payment_status = 'verified', fulfillment_status = 'processing', payment_reference = $1, payment_method = 'moncash', updated_at = CURRENT_TIMESTAMP WHERE order_id = $2 AND seller_id = $3", [reference, orderId, session.seller_id]);
+          await client.query("UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND seller_id = $2 AND status = 'active'", [pc.id, session.seller_id]);
+          const balance = await client.query('SELECT SUM(price * quantity) AS gross FROM order_items WHERE order_id = $1 AND seller_id = $2', [orderId, session.seller_id]);
+          const gross = Number(balance.rows[0]?.gross || 0) + Number((await client.query('SELECT delivery_fee FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2', [orderId, session.seller_id])).rows[0]?.delivery_fee || 0);
+          const tier = await client.query('SELECT seller_tier FROM users WHERE id = $1', [session.seller_id]);
+          const commission = Math.round(gross * getCommissionRate(tier.rows[0]?.seller_tier || 'none') * 100) / 100;
+          await client.query("INSERT INTO order_escrow (order_id, seller_id, gross_amount, commission_amount, net_amount, status) VALUES ($1,$2,$3,$4,$5,'held') ON CONFLICT (order_id,seller_id) DO NOTHING", [orderId, session.seller_id, gross, commission, gross - commission]);
+          const unpaid = await client.query("SELECT COUNT(*)::int AS count FROM seller_fulfillments WHERE order_id = $1 AND payment_status <> 'verified'", [orderId]);
+          await client.query("UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [unpaid.rows[0].count === 0 ? 'paid' : 'partially_paid', orderId]);
+          await logOrderEvent(orderId, 'payment_received', null, null, 'verified', `MonCash payment completed for seller ${session.seller_id}`, client);
+          await client.query('COMMIT');
+          createNotification(session.seller_id, 'payment_received', 'Payment confirmed', 'Your fulfillment is now active.', { orderId, sellerId: session.seller_id });
+          createNotification(pc.user_id, 'payment_confirmed', 'Payment confirmed', 'One seller fulfillment is now active.', { orderId, sellerId: session.seller_id });
+          return res.json({ received: true, orderId, fulfillmentSellerId: session.seller_id });
+        } catch (err) {
+          try { await client.query('ROLLBACK'); } catch {}
+          console.error('Fulfillment payment webhook error:', err);
+          return res.status(500).json({ error: 'Server error' });
+        } finally { client.release(); }
+      }
       const pendingCheck = await pool.query("SELECT * FROM pending_checkouts WHERE id = $1 AND status = 'pending'", [reference]);
       if (pendingCheck.rows.length > 0) {
         const pc = pendingCheck.rows[0]; const client2 = await pool.connect();
