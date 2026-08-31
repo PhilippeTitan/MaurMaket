@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Linking, Platform, ScrollView, Alert, TextInput, KeyboardAvoidingView,
+  Platform, ScrollView, Alert, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,14 +12,18 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import {
   createNatCashSessions, verifyNatCashSession, getNatCashSessions,
-  confirmAllNatCashSessions,
+  confirmAllNatCashSessions, getSimPreferences, saveSimPreference,
 } from '../api';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
-import { dialUssd } from '../ussd';
+import { dialUssdOnSubscription, getSimSubscriptions, findMatchingSims } from '../ussd';
+import type { SimSubscription } from '../ussd';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Props = RouteProp<RootStackParamList, 'NatCashPayment'>;
+
+// ─── Carrier mapping (NatCash = Natcom, MonCash = Digicel) ─────
+const NATCASH_CARRIER = 'natcom';
 
 // ─── Session type ──────────────────────────────────────────────
 interface NatCashSession {
@@ -60,7 +64,8 @@ export default function NatCashPaymentScreen() {
   const { pendingId, total, sellerName, sellerPhone, sellers: routeSellers } = route.params;
   const isMultiSeller = !!(routeSellers && routeSellers.length > 1);
 
-  const [step, setStep] = useState<'dial' | 'paste' | 'verifying' | 'confirmed' | 'failed'>('dial');
+  // Flow steps: sim → dial → paste → verifying → confirmed → failed
+  const [step, setStep] = useState<'sim' | 'dial' | 'paste' | 'verifying' | 'confirmed' | 'failed'>('sim');
   const [sessions, setSessions] = useState<NatCashSession[]>([]);
   const [currentSellerIdx, setCurrentSellerIdx] = useState(0);
   const [pastedText, setPastedText] = useState('');
@@ -69,33 +74,78 @@ export default function NatCashPaymentScreen() {
   const [loading, setLoading] = useState(true);
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // SIM state
+  const [allSims, setAllSims] = useState<SimSubscription[]>([]);
+  const [natcomSims, setNatcomSims] = useState<SimSubscription[]>([]);
+  const [selectedSim, setSelectedSim] = useState<SimSubscription | null>(null);
+  const [simBlocked, setSimBlocked] = useState(false);
+
   const currentSeller = isMultiSeller ? routeSellers![currentSellerIdx] : null;
   const currentSession = sessions.find(s =>
     currentSeller ? s.seller_id === currentSeller.sellerId : true
   );
 
-  // ── Create sessions on mount ──
+  // ── Step 1: Enumerate SIMs on mount ──
   useEffect(() => {
-    if (!pendingId || !routeSellers?.length) {
-      setLoading(false);
-      return;
-    }
+    (async () => {
+      try {
+        const sims = await getSimSubscriptions();
+        setAllSims(sims);
+        const { matches, autoSelect } = findMatchingSims(sims, NATCASH_CARRIER);
+        setNatcomSims(matches);
+
+        if (matches.length === 0) {
+          setSimBlocked(true);
+          setLoading(false);
+          return;
+        }
+
+        // Check saved preference
+        try {
+          const prefs = await getSimPreferences() as { natcashSubId?: number | null };
+          if (prefs.natcashSubId != null) {
+            const saved = matches.find(m => m.subscriptionId === prefs.natcashSubId);
+            if (saved) {
+              setSelectedSim(saved);
+              setStep('dial');
+              setLoading(false);
+              return;
+            }
+          }
+        } catch { /* no saved preference */ }
+
+        // No saved preference: auto-select if exactly 1 match
+        if (autoSelect) {
+          setSelectedSim(autoSelect);
+          setStep('dial');
+        }
+        // else: show SIM selector (step stays 'sim')
+      } catch {
+        // SIM enumeration failed — allow fallback without SIM targeting
+        setStep('dial');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // ── Create sessions after SIM is resolved ──
+  useEffect(() => {
+    if (step === 'sim' || !pendingId || !routeSellers?.length) return;
     (async () => {
       try {
         const res = await createNatCashSessions(pendingId, routeSellers) as { sessions: NatCashSession[] };
         setSessions(res.sessions || []);
       } catch (err) {
         console.error('[NatCash] Failed to create sessions:', err);
-        Alert.alert('Error', 'Failed to initialize payment sessions. Please try again.');
-      } finally {
-        setLoading(false);
       }
     })();
-  }, [pendingId]);
+  }, [step, pendingId]);
 
   // ── Session expiry timer (polls every 30s) ──
   useEffect(() => {
-    if (!pendingId) return;
+    if (!pendingId || step === 'sim') return;
     timerRef.current = setInterval(async () => {
       try {
         const res = await getNatCashSessions(pendingId) as { sessions: NatCashSession[] };
@@ -103,7 +153,7 @@ export default function NatCashPaymentScreen() {
       } catch { /* keep trying */ }
     }, 30_000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [pendingId]);
+  }, [pendingId, step]);
 
   // ── Session expiry countdown ──
   useEffect(() => {
@@ -112,13 +162,38 @@ export default function NatCashPaymentScreen() {
     return () => clearInterval(countdown);
   }, [step]);
 
-  // ── Dial USSD ──
+  // ── Select SIM and persist preference ──
+  const handleSelectSim = async (sim: SimSubscription) => {
+    setSelectedSim(sim);
+    try {
+      await saveSimPreference('natcash', sim.subscriptionId);
+    } catch { /* best effort */ }
+    setStep('dial');
+  };
+
+  // ── Dial USSD on selected SIM ──
   const handleDial = async () => {
     setUssdLoading(true);
     try {
-      const result = await dialUssd('*202#');
-      if (!result.success) {
-        Alert.alert('Error', result.errorMessage || 'Could not open dialer. Please dial *202# manually.');
+      if (selectedSim) {
+        // Carrier-aware: target the specific SIM subscription
+        const result = await dialUssdOnSubscription('*202#', selectedSim.subscriptionId);
+        if (!result.success) {
+          Alert.alert('Error', result.errorMessage || 'Could not open NatCash menu. Please dial *202# manually.');
+        }
+      } else {
+        // No SIM selected — open system dialer (no subscription targeting)
+        Alert.alert(
+          'Select SIM',
+          'Your phone has a Natcom SIM for NatCash. The system dialer will open — select your Natcom SIM when prompted.',
+          [
+            { text: 'Open Dialer', onPress: async () => {
+              const { dialUssd } = await import('../ussd');
+              await dialUssd('*202#');
+            }},
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
       }
     } catch {
       Alert.alert('Error', 'Could not dial USSD code. Please dial *202# manually.');
@@ -136,15 +211,12 @@ export default function NatCashPaymentScreen() {
     try {
       const res = await verifyNatCashSession(currentSession.id, pastedText.trim()) as { verified?: boolean; error?: string };
       if (res.verified) {
-        // Refresh sessions to get updated status
         const refreshRes = await getNatCashSessions(pendingId!) as { sessions: NatCashSession[] };
         setSessions(refreshRes.sessions || []);
 
-        // Check if all sessions are now verified
         const allVerified = refreshRes.sessions?.every((s: NatCashSession) => s.status === 'verified');
 
         if (allVerified) {
-          // All sellers paid — create order
           setStep('confirmed');
           try {
             const orderRes = await confirmAllNatCashSessions(pendingId!) as { orderId: string };
@@ -153,10 +225,8 @@ export default function NatCashPaymentScreen() {
             }, 2500);
           } catch (err) {
             console.error('[NatCash] confirm-all failed:', err);
-            // Show confirmed anyway — sessions are verified, order can be retried
           }
         } else {
-          // More sellers to pay
           if (isMultiSeller && currentSellerIdx < routeSellers!.length - 1) {
             setCurrentSellerIdx(prev => prev + 1);
             setPastedText('');
@@ -178,8 +248,8 @@ export default function NatCashPaymentScreen() {
   const isExpired = !!(currentSession?.status === 'expired' ||
     (currentSession?.expires_at && new Date(currentSession.expires_at) < new Date()));
 
-  // ── Step progress bar ──
-  const stepIndex = step === 'dial' ? 0 : step === 'paste' || step === 'verifying' ? 1 : step === 'confirmed' ? 2 : 1;
+  // ── Step progress bar (5 steps: sim, dial, paste, confirm) ──
+  const stepIndex = step === 'sim' ? 0 : step === 'dial' ? 1 : step === 'paste' || step === 'verifying' ? 2 : step === 'confirmed' ? 3 : 2;
 
   if (loading) {
     return (
@@ -187,8 +257,41 @@ export default function NatCashPaymentScreen() {
         <ScreenHeader title="NatCash Payment" onBack={() => nav.goBack()} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.coral} />
-          <Text style={styles.loadingText}>Setting up payment…</Text>
+          <Text style={styles.loadingText}>Checking SIM cards…</Text>
         </View>
+      </View>
+    );
+  }
+
+  // ── BLOCKED: No Natcom SIM found ──
+  if (simBlocked) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <ScreenHeader title="NatCash Payment" onBack={() => nav.goBack()} />
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.stepContent}>
+            <View style={[styles.infoCard, { borderColor: COLORS.coral + '33' }]}>
+              <MaterialCommunityIcons name="sim-alert" size={32} color={COLORS.coral} />
+              <Text style={[styles.infoTitle, { color: COLORS.coral }]}>Natcom SIM Required</Text>
+              <Text style={styles.infoBody}>
+                NatCash requires a Natcom SIM card. No Natcom SIM was detected in your phone.
+              </Text>
+              <View style={styles.stepsList}>
+                <View style={styles.stepItem}>
+                  <View style={styles.stepNum}><Text style={styles.stepNumText}>!</Text></View>
+                  <Text style={styles.stepItemText}>Insert a Natcom SIM card</Text>
+                </View>
+                <View style={styles.stepItem}>
+                  <View style={styles.stepNum}><Text style={styles.stepNumText}>!</Text></View>
+                  <Text style={styles.stepItemText}>Or use MonCash (Digicel) instead</Text>
+                </View>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => nav.goBack()} accessibilityLabel="go back" accessibilityRole="button">
+              <Text style={styles.secondaryBtnText}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -208,9 +311,9 @@ export default function NatCashPaymentScreen() {
           <StepDot done={stepIndex >= 3} active={stepIndex === 2} />
         </View>
         <View style={styles.progressLabels}>
-          <Text style={[styles.progressLabel, stepIndex === 0 && styles.progressLabelActive]}>Dial</Text>
-          <Text style={[styles.progressLabel, stepIndex === 1 && styles.progressLabelActive]}>Paste SMS</Text>
-          <Text style={[styles.progressLabel, stepIndex === 2 && styles.progressLabelActive]}>Confirm</Text>
+          <Text style={[styles.progressLabel, stepIndex === 0 && styles.progressLabelActive]}>SIM</Text>
+          <Text style={[styles.progressLabel, stepIndex === 1 && styles.progressLabelActive]}>Dial</Text>
+          <Text style={[styles.progressLabel, stepIndex === 2 && styles.progressLabelActive]}>Paste SMS</Text>
         </View>
 
         {/* ── Order Summary Card ── */}
@@ -256,8 +359,56 @@ export default function NatCashPaymentScreen() {
         </View>
 
         {/* ── Step Content ── */}
+
+        {/* ── SIM SELECTOR ── */}
+        {step === 'sim' && natcomSims.length > 1 && (
+          <View style={styles.stepContent}>
+            <View style={styles.infoCard}>
+              <MaterialCommunityIcons name="sim" size={28} color={COLORS.blue} />
+              <Text style={styles.infoTitle}>Select Natcom SIM</Text>
+              <Text style={styles.infoBody}>
+                Multiple Natcom SIMs detected. Choose which one to use for this NatCash payment.
+              </Text>
+            </View>
+
+            {natcomSims.map((sim) => (
+              <TouchableOpacity
+                key={sim.subscriptionId}
+                style={styles.simCard}
+                onPress={() => handleSelectSim(sim)}
+                accessibilityLabel={`select ${sim.carrier} SIM ${sim.simSlotIndex + 1}`}
+                accessibilityRole="button"
+              >
+                <View style={styles.simCardInner}>
+                  <MaterialCommunityIcons name="sim" size={24} color={COLORS.coral} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.simCarrier}>{sim.carrier || 'Unknown Carrier'}</Text>
+                    <Text style={styles.simNumber}>{sim.number || `SIM ${sim.simSlotIndex + 1}`}</Text>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />
+                </View>
+              </TouchableOpacity>
+            ))}
+
+            <Text style={styles.hintText}>
+              Your preference is saved for next time. You can change it before each payment.
+            </Text>
+          </View>
+        )}
+
+        {/* ── DIAL STEP ── */}
         {step === 'dial' && (
           <View style={styles.stepContent}>
+            {selectedSim && (
+              <View style={styles.simBadge}>
+                <MaterialCommunityIcons name="sim" size={14} color={COLORS.green} />
+                <Text style={styles.simBadgeText}>Using {selectedSim.carrier} ••••{selectedSim.number?.slice(-4) || `SIM ${selectedSim.simSlotIndex + 1}`}</Text>
+                <TouchableOpacity onPress={() => setStep('sim')} accessibilityLabel="change SIM">
+                  <Text style={styles.simChangeText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={styles.infoCard}>
               <MaterialCommunityIcons name="cellphone" size={28} color={COLORS.blue} />
               <Text style={styles.infoTitle}>Dial *202#</Text>
@@ -325,6 +476,7 @@ export default function NatCashPaymentScreen() {
           </View>
         )}
 
+        {/* ── PASTE STEP ── */}
         {step === 'paste' && (
           <View style={styles.stepContent}>
             <View style={styles.infoCard}>
@@ -384,6 +536,7 @@ export default function NatCashPaymentScreen() {
           </View>
         )}
 
+        {/* ── VERIFYING ── */}
         {step === 'verifying' && (
           <View style={styles.stepContent}>
             <View style={styles.spinnerCircle}>
@@ -396,6 +549,7 @@ export default function NatCashPaymentScreen() {
           </View>
         )}
 
+        {/* ── CONFIRMED ── */}
         {step === 'confirmed' && (
           <View style={styles.stepContent}>
             <View style={styles.successCircle}>
@@ -410,6 +564,7 @@ export default function NatCashPaymentScreen() {
           </View>
         )}
 
+        {/* ── FAILED ── */}
         {step === 'failed' && (
           <View style={styles.stepContent}>
             <View style={[styles.spinnerCircle, { borderColor: COLORS.yellow }]}>
@@ -433,7 +588,7 @@ export default function NatCashPaymentScreen() {
         <View style={styles.disclaimer}>
           <MaterialCommunityIcons name="information-outline" size={14} color={COLORS.text2} />
           <Text style={styles.disclaimerText}>
-            NatCash payments are sent directly from you to the seller. MaurMaket does not hold or process your money — we only verify the confirmation.
+            NatCash payments are sent directly from you to the seller via your Natcom SIM. MaurMaket does not hold or process your money — we only verify the confirmation.
           </Text>
         </View>
       </ScrollView>
@@ -456,7 +611,7 @@ const styles = StyleSheet.create({
   stepDotActive: { borderColor: COLORS.coral },
   stepLine: { width: 48, height: 2, backgroundColor: COLORS.border, marginHorizontal: 4 },
   stepLineDone: { backgroundColor: COLORS.green },
-  progressLabels: { flexDirection: 'row', justifyContent: 'center', gap: 40, marginBottom: SPACING.xl },
+  progressLabels: { flexDirection: 'row', justifyContent: 'center', gap: 32, marginBottom: SPACING.xl },
   progressLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '600' },
   progressLabelActive: { color: COLORS.coral },
 
@@ -482,7 +637,7 @@ const styles = StyleSheet.create({
   // Step content
   stepContent: { alignItems: 'center', gap: SPACING.md },
 
-  // Info card (dial step)
+  // Info card
   infoCard: { backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.blue + '33', padding: SPACING.lg, alignItems: 'center', gap: 8, width: '100%' },
   infoTitle: { fontSize: 18, fontWeight: '800', color: COLORS.blue },
   infoBody: { fontSize: 13, color: COLORS.text2, textAlign: 'center', lineHeight: 20 },
@@ -494,6 +649,17 @@ const styles = StyleSheet.create({
   stepNum: { width: 22, height: 22, borderRadius: 11, backgroundColor: COLORS.coral + '20', alignItems: 'center', justifyContent: 'center' },
   stepNumText: { fontSize: 11, fontWeight: '800', color: COLORS.coral },
   stepItemText: { fontSize: 13, color: COLORS.text2, flex: 1 },
+
+  // SIM selector
+  simCard: { width: '100%', backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, padding: SPACING.md, marginBottom: SPACING.sm },
+  simCardInner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  simCarrier: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  simNumber: { fontSize: 12, color: COLORS.text2, marginTop: 2 },
+
+  // SIM badge (shown during dial/paste)
+  simBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.green + '10', borderRadius: RADIUS.pill, borderWidth: 1, borderColor: COLORS.green + '33', paddingHorizontal: 12, paddingVertical: 8 },
+  simBadgeText: { fontSize: 12, color: COLORS.green, fontWeight: '600', flex: 1 },
+  simChangeText: { fontSize: 12, color: COLORS.coral, fontWeight: '700' },
 
   // Paste input
   pasteInputContainer: { width: '100%', position: 'relative' },

@@ -190,6 +190,64 @@ router.put('/auth/profile', authRequired, async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SIM PREFERENCE (carrier-aware payment routing)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /auth/sim-preferences — Get user's preferred SIM subscription IDs
+ * Returns: { natcashSubId, moncashSubId }
+ * These are mutable preferences — validated against active SIMs before each use.
+ */
+router.get('/auth/sim-preferences', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT preferred_natcash_sub_id, preferred_moncash_sub_id FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const row = result.rows[0];
+    res.json({
+      natcashSubId: row.preferred_natcash_sub_id || null,
+      moncashSubId: row.preferred_moncash_sub_id || null,
+    });
+  } catch (err) {
+    console.error('Get SIM preferences error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * PUT /auth/sim-preferences — Save user's preferred SIM subscription ID
+ * Body: { provider: 'natcash' | 'moncash', subscriptionId: number | null }
+ * Pass subscriptionId=null to clear preference.
+ * The subscriptionId is a runtime routing preference, NOT a permanent identity.
+ */
+router.put('/auth/sim-preferences', authRequired, async (req, res) => {
+  try {
+    const { provider, subscriptionId } = req.body || {};
+    if (provider !== 'natcash' && provider !== 'moncash') {
+      return res.status(400).json({ error: 'provider must be "natcash" or "moncash"' });
+    }
+    const col = provider === 'natcash' ? 'preferred_natcash_sub_id' : 'preferred_moncash_sub_id';
+    // Validate subscriptionId is a non-negative integer or null
+    const subId = subscriptionId === null || subscriptionId === undefined
+      ? null
+      : parseInt(subscriptionId);
+    if (subId !== null && (isNaN(subId) || subId < 0)) {
+      return res.status(400).json({ error: 'Invalid subscriptionId' });
+    }
+    await pool.query(
+      `UPDATE users SET ${col} = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [subId, req.user.id]
+    );
+    res.json({ ok: true, provider, subscriptionId: subId });
+  } catch (err) {
+    console.error('Save SIM preference error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.put('/auth/username', authRequired, async (req, res) => {
   const { username } = req.body;
   if (!username) return res.status(400).json({ error: 'Username required' });

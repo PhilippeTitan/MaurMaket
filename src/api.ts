@@ -302,6 +302,13 @@ export const getNatCashSessions = (pendingId: string) =>
 export const confirmAllNatCashSessions = (pendingId: string) =>
   request('/orders/natcash/sessions/confirm-all', { method: 'POST', body: JSON.stringify({ pendingId }) });
 
+// ── SIM preference (carrier-aware payment routing) ──
+export const getSimPreferences = () =>
+  request('/auth/sim-preferences');
+
+export const saveSimPreference = (provider: 'natcash' | 'moncash', subscriptionId: number | null) =>
+  request('/auth/sim-preferences', { method: 'PUT', body: JSON.stringify({ provider, subscriptionId }) });
+
 export const reportAbandonedPayment = (data: { pendingId?: string; orderId?: string }) =>
   request('/payments/abandoned', { method: 'POST', body: JSON.stringify(data) });
 

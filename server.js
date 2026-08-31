@@ -732,6 +732,14 @@ await step('NatCash phone separation', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_payment_methods TEXT[] DEFAULT ARRAY['moncash'];
     `));
 
+    // SIM preference columns for carrier-aware payment routing
+    // Stores the user's preferred Android subscription ID per payment provider.
+    // These are mutable routing preferences — validated against active SIMs before each use.
+    await step('SIM preference columns', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_natcash_sub_id INTEGER;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_moncash_sub_id INTEGER;
+    `));
+
     await step('Image dimensions on product_images', () => c.query(`
       ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_width INTEGER;
       ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_height INTEGER;

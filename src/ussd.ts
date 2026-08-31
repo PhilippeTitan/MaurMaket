@@ -14,7 +14,56 @@ interface UssdSupport {
   apiLevel: number;
 }
 
+export interface SimSubscription {
+  subscriptionId: number;
+  carrier: string;
+  displayName: string;
+  number: string;      // masked: "••••1234"
+  simSlotIndex: number;
+  carrierKey: string;  // lowercase carrier for matching
+}
+
 const { UssdModule } = NativeModules;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SIM SUBSCRIPTION ENUMERATION (carrier-aware payment routing)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Enumerate active SIM subscriptions.
+ * Returns carrier info for each SIM (no sensitive data — numbers are masked).
+ */
+export async function getSimSubscriptions(): Promise<SimSubscription[]> {
+  if (Platform.OS !== 'android' || !UssdModule) {
+    return [];
+  }
+  try {
+    return await UssdModule.getSimSubscriptions();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Find SIMs matching a required carrier.
+ * carrierName: "natcom" or "digicel" (case-insensitive).
+ * Returns: { matches: SimSubscription[], autoSelect: SimSubscription | null }
+ */
+export function findMatchingSims(subs: SimSubscription[], carrierName: string): {
+  matches: SimSubscription[];
+  autoSelect: SimSubscription | null;
+} {
+  const key = carrierName.toLowerCase().trim();
+  const matches = subs.filter(s => s.carrierKey.includes(key) || key.includes(s.carrierKey));
+  return {
+    matches,
+    autoSelect: matches.length === 1 ? matches[0] : null,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// USSD (existing methods)
+// ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * Dial a USSD code using ACTION_CALL intent.
@@ -34,18 +83,18 @@ export async function dialUssd(code: string): Promise<UssdResult> {
 }
 
 /**
- * Send a USSD code in-app (Android 8.0+).
- * Uses TelephonyManager.sendUssdRequest — many carriers block this.
- * Prefer dialUssd() for reliable operation.
+ * Dial USSD on a specific SIM subscription (carrier-aware routing).
+ * Targets the specified subscriptionId via TelephonyManager.createForSubscriptionId().
+ * Falls back to system dialer if in-app USSD fails.
  */
-export async function sendUssd(code: string, subscriptionId: number = -1): Promise<UssdResult> {
+export async function dialUssdOnSubscription(code: string, subscriptionId: number): Promise<UssdResult> {
   if (Platform.OS !== 'android' || !UssdModule) {
     return { success: false, errorMessage: 'USSD only supported on Android' };
   }
   try {
-    return await UssdModule.sendUssd(code, subscriptionId);
+    return await UssdModule.dialUssdOnSubscription(code, subscriptionId);
   } catch (e: any) {
-    return { success: false, errorMessage: e?.message || 'USSD failed' };
+    return { success: false, errorMessage: e?.message || 'Failed to dial USSD' };
   }
 }
 
