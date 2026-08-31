@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Linking,
-  KeyboardAvoidingView, Platform, Image,
+  KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -263,6 +263,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       // Save pending checkout server-side (no order created yet)
       const res = await createPendingCheckout(checkoutData) as { paymentUrl?: string; pendingId: string; paymentMethod?: string; fulfillmentFee?: number };
       const payableTotal = finalTotal + Number(res.fulfillmentFee || 0);
+      if ((res as any).agreementStatus === 'awaiting_seller_acceptance') {
+        Alert.alert('Proposal sent', 'Each seller must accept their delivery or meetup terms before payment becomes available. We’ll notify you when every agreement is ready.');
+        navigation.goBack();
+        return;
+      }
       if (paymentMethod === 'moncash' && res.paymentUrl) {
         // Store pending ID so we can detect abandonment when user returns
         try {

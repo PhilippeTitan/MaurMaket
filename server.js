@@ -907,6 +907,21 @@ await step('NatCash phone separation', () => c.query(`
       CREATE INDEX IF NOT EXISTS idx_fulfillment_events_fulfillment ON seller_fulfillment_events(fulfillment_id, created_at);
       ALTER TABLE seller_fulfillment_profiles ALTER COLUMN delivery_enabled SET DEFAULT false;
       ALTER TABLE seller_fulfillment_profiles ALTER COLUMN meetup_enabled SET DEFAULT false;
+
+      CREATE TABLE IF NOT EXISTS pending_fulfillment_agreements (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        checkout_id UUID NOT NULL REFERENCES pending_checkouts(id) ON DELETE CASCADE,
+        seller_id UUID NOT NULL REFERENCES users(id),
+        terms JSONB NOT NULL,
+        buyer_accepted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        seller_accepted_at TIMESTAMPTZ,
+        terms_locked_at TIMESTAMPTZ,
+        status VARCHAR(20) NOT NULL DEFAULT 'proposed'
+          CHECK (status IN ('proposed', 'accepted', 'rejected', 'expired', 'cancelled')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(checkout_id, seller_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pending_fulfillment_agreements_seller ON pending_fulfillment_agreements(seller_id, status, created_at DESC);
     `));
 
     // stock_reservations: temporary holds during checkout

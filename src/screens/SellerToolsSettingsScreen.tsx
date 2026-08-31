@@ -13,7 +13,7 @@ import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '..
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
 import { useFocusEffect } from '@react-navigation/native';
-import { getSellerFulfillmentProfile, updateSellerFulfillmentProfile, type SellerFulfillmentProfile } from '../api';
+import { getSellerFulfillmentProfile, updateSellerFulfillmentProfile, getSellerFulfillmentProposals, decideFulfillmentProposal, type SellerFulfillmentProfile } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -27,10 +27,18 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [storeLogoUploading, setStoreLogoUploading] = useState(false);
   const [fulfillmentProfile, setFulfillmentProfile] = useState<SellerFulfillmentProfile | null>(null);
+  const [proposals, setProposals] = useState<any[]>([]);
 
   const loadFulfillmentProfile = useCallback(async () => {
     if (!isSeller) return;
-    try { setFulfillmentProfile(await getSellerFulfillmentProfile() as SellerFulfillmentProfile); } catch { /* profile is optional until migration runs */ }
+    try {
+      const [profile, proposalResult] = await Promise.all([
+        getSellerFulfillmentProfile() as Promise<SellerFulfillmentProfile>,
+        getSellerFulfillmentProposals() as Promise<{ proposals?: any[] }>,
+      ]);
+      setFulfillmentProfile(profile);
+      setProposals(proposalResult.proposals || []);
+    } catch { /* profile is optional until migration runs */ }
   }, [isSeller]);
 
   useFocusEffect(useCallback(() => { loadFulfillmentProfile(); }, [loadFulfillmentProfile]));
@@ -40,6 +48,16 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
     try {
       const next = await updateSellerFulfillmentProfile(patch) as SellerFulfillmentProfile;
       setFulfillmentProfile(next);
+    } catch (err: unknown) {
+      toast.error(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
+    } finally { setLoading(false); }
+  };
+
+  const decideProposal = async (proposal: any, decision: 'accept' | 'reject') => {
+    setLoading(true);
+    try {
+      await decideFulfillmentProposal(proposal.checkout_id, user!.id, decision);
+      setProposals(current => current.filter(item => item.id !== proposal.id));
     } catch (err: unknown) {
       toast.error(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
     } finally { setLoading(false); }
@@ -190,6 +208,18 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
+      {proposals.length > 0 && <>
+        <Text style={styles.sectionHeader}>Awaiting your approval</Text>
+        <View style={styles.card}>{proposals.map((proposal, index) => {
+          const term = proposal.terms || {};
+          return <View key={proposal.id} style={[styles.proposal, index < proposals.length - 1 && styles.reviewDivider]}>
+            <Text style={styles.proposalTitle}>{proposal.buyer_name || 'Buyer'} requests {term.method === 'meetup' ? 'a meetup' : 'delivery'}</Text>
+            <Text style={styles.settingHint}>{term.location?.address || 'Location selected'} · {term.distanceMeters ? `${Math.round(term.distanceMeters / 1000 * 10) / 10} km` : 'location verified'}{term.method === 'delivery' ? ` · G ${term.deliveryFee || 0}` : ''}</Text>
+            <View style={styles.proposalActions}><TouchableOpacity style={styles.rejectBtn} onPress={() => decideProposal(proposal, 'reject')} disabled={loading} accessibilityRole="button"><Text style={styles.rejectText}>Decline</Text></TouchableOpacity><TouchableOpacity style={styles.acceptBtn} onPress={() => decideProposal(proposal, 'accept')} disabled={loading} accessibilityRole="button"><Text style={styles.acceptText}>Accept terms</Text></TouchableOpacity></View>
+          </View>;
+        })}</View>
+      </>}
+
       {/* ── Tier Progression ── */}
       <Text style={styles.sectionHeader}>Tier</Text>
       <View style={styles.card}>
@@ -287,6 +317,14 @@ const styles = StyleSheet.create({
   rowLabel: { flex: 1, fontSize: 14, color: COLORS.text },
   settingCopy: { flex: 1, gap: 2 },
   settingHint: { fontSize: 11, color: COLORS.text2, lineHeight: 15 },
+  proposal: { padding: 14, gap: 8 },
+  proposalTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  proposalActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
+  rejectBtn: { minHeight: 44, paddingHorizontal: 14, borderWidth: 1, borderColor: COLORS.coral, borderRadius: RADIUS.row, justifyContent: 'center', alignItems: 'center' },
+  rejectText: { color: COLORS.coral, fontSize: 12, fontWeight: '700' },
+  acceptBtn: { flex: 1, minHeight: 44, borderRadius: RADIUS.row, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.green },
+  acceptText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
+  reviewDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rowValue: { fontSize: 13, color: COLORS.text2, maxWidth: 140 },
   divider: { height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 },

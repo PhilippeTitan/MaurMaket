@@ -20,6 +20,27 @@ function generateMeetupCode() {
   return String(crypto.randomInt(1000, 10000));
 }
 
+async function createPendingMonCashPayment(checkout) {
+  const referenceId = checkout.id;
+  const moncashRes = await fetch(
+    process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
+    {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount: Math.round(Number(checkout.total_amount)), referenceId,
+        returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?pending=${checkout.id}`,
+      }),
+      signal: AbortSignal.timeout(15000),
+    }
+  );
+  if (!moncashRes.ok) throw new Error('Payment provider error');
+  const data = await moncashRes.json();
+  if (!data.paymentUrl) throw new Error('Payment provider error');
+  await pool.query('UPDATE pending_checkouts SET moncash_reference = $1 WHERE id = $2', [referenceId, checkout.id]);
+  return data.paymentUrl;
+}
+
 function haversineDistance(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -318,38 +339,95 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
       stockClient.release();
     }
 
-    if (paymentMethod === 'natcash') {
-      return res.json({ pendingId, paymentMethod: 'natcash', fulfillmentTerms, fulfillmentFee });
+    // Payment is intentionally unavailable until every seller accepts exactly
+    // the terms the buyer just accepted. This is the agreement gate.
+    for (const term of fulfillmentTerms) {
+      await pool.query(
+        `INSERT INTO pending_fulfillment_agreements (checkout_id, seller_id, terms)
+         VALUES ($1, $2, $3) ON CONFLICT (checkout_id, seller_id) DO NOTHING`,
+        [pendingId, term.sellerId, JSON.stringify(term)]
+      );
+      createNotification(term.sellerId, 'fulfillment_proposed', 'Fulfillment proposal', 'Review and accept the buyer’s delivery or meetup terms before payment.', { pendingId, sellerId: term.sellerId });
     }
-
-    const referenceId = pendingId;
-    const moncashRes = await fetch(
-      process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
-      {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: Math.round(Number(totalAmount || 0) + fulfillmentFee),
-          referenceId,
-          returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?pending=${pendingId}`,
-        }),
-        signal: AbortSignal.timeout(15000),
-      }
-    );
-    if (!moncashRes.ok) {
-      const errText = await moncashRes.text();
-      console.error(`MonCashConnect HTTP ${moncashRes.status}:`, errText);
-      return res.status(502).json({ error: 'Payment provider error' });
-    }
-    const data = await moncashRes.json();
-    if (!data.paymentUrl) return res.status(502).json({ error: 'Payment provider error' });
-
-    await pool.query('UPDATE pending_checkouts SET moncash_reference = $1 WHERE id = $2', [referenceId, pendingId]);
-    res.json({ paymentUrl: data.paymentUrl, pendingId, fulfillmentTerms, fulfillmentFee });
+    res.status(201).json({ pendingId, paymentMethod, fulfillmentTerms, fulfillmentFee, agreementStatus: 'awaiting_seller_acceptance' });
   } catch (err) {
     console.error('Pending checkout error:', err);
     const message = err.message || 'Server error';
     res.status(message.includes('seller') || message.includes('location') || message.includes('delivery') ? 400 : 500).json({ error: message });
+  }
+});
+
+router.get('/seller/fulfillment-proposals', authRequired, async (req, res) => {
+  try {
+    const proposals = await pool.query(
+      `SELECT a.*, pc.total_amount, pc.payment_method, pc.created_at AS checkout_created_at,
+              u.full_name AS buyer_name, u.phone AS buyer_phone
+       FROM pending_fulfillment_agreements a
+       JOIN pending_checkouts pc ON pc.id = a.checkout_id
+       JOIN users u ON u.id = pc.user_id
+       WHERE a.seller_id = $1 AND a.status = 'proposed' AND pc.status = 'pending'
+       ORDER BY a.created_at DESC`, [req.user.id]
+    );
+    res.json({ proposals: proposals.rows });
+  } catch (err) {
+    console.error('Fulfillment proposals error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (req, res) => {
+  const { decision } = req.body || {};
+  if (!['accept', 'reject'].includes(decision)) return res.status(400).json({ error: 'decision must be accept or reject' });
+  if (req.params.sellerId !== req.user.id) return res.status(403).json({ error: 'You can only decide your own fulfillment proposal' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const proposal = await client.query(
+      `SELECT a.*, pc.user_id, pc.status AS checkout_status FROM pending_fulfillment_agreements a
+       JOIN pending_checkouts pc ON pc.id = a.checkout_id
+       WHERE a.checkout_id = $1 AND a.seller_id = $2 FOR UPDATE`, [req.params.id, req.user.id]
+    );
+    const agreement = proposal.rows[0];
+    if (!agreement) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Fulfillment proposal not found' }); }
+    if (agreement.checkout_status !== 'pending' || agreement.status !== 'proposed') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This proposal is no longer available' }); }
+    const status = decision === 'accept' ? 'accepted' : 'rejected';
+    await client.query(
+      `UPDATE pending_fulfillment_agreements SET status = $1, seller_accepted_at = CASE WHEN $1 = 'accepted' THEN CURRENT_TIMESTAMP ELSE NULL END
+       WHERE id = $2`, [status, agreement.id]
+    );
+    const all = await client.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'accepted')::int AS accepted, COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected FROM pending_fulfillment_agreements WHERE checkout_id = $1`, [req.params.id]);
+    const counts = all.rows[0];
+    let paymentReady = false;
+    if (counts.rejected > 0) {
+      await client.query("UPDATE pending_checkouts SET status = 'failed' WHERE id = $1", [req.params.id]);
+    } else if (counts.total > 0 && counts.total === counts.accepted) {
+      await client.query("UPDATE pending_fulfillment_agreements SET terms_locked_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'accepted'", [req.params.id]);
+      await client.query("UPDATE pending_checkouts SET status = 'agreement_locked' WHERE id = $1", [req.params.id]);
+      paymentReady = true;
+    }
+    await client.query('COMMIT');
+    createNotification(agreement.user_id, decision === 'accept' ? 'fulfillment_accepted' : 'fulfillment_rejected', decision === 'accept' ? 'Fulfillment accepted' : 'Fulfillment declined', paymentReady ? 'All sellers accepted. Your payment is ready.' : 'A seller responded to your fulfillment proposal.', { pendingId: req.params.id });
+    res.json({ status, paymentReady });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Fulfillment proposal decision error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
+});
+
+router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res) => {
+  try {
+    const checkout = await pool.query("SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'agreement_locked'", [req.params.id, req.user.id]);
+    const pc = checkout.rows[0];
+    if (!pc) return res.status(409).json({ error: 'All seller agreements must be accepted before payment' });
+    const accepted = await pool.query("SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'accepted' AND terms_locked_at IS NOT NULL)::int AS locked FROM pending_fulfillment_agreements WHERE checkout_id = $1", [pc.id]);
+    if (accepted.rows[0].total === 0 || accepted.rows[0].total !== accepted.rows[0].locked) return res.status(409).json({ error: 'Fulfillment terms are not locked yet' });
+    if (pc.payment_method === 'natcash') return res.json({ pendingId: pc.id, paymentMethod: 'natcash' });
+    const paymentUrl = await createPendingMonCashPayment(pc);
+    res.json({ pendingId: pc.id, paymentUrl, paymentMethod: 'moncash' });
+  } catch (err) {
+    console.error('Begin payment error:', err);
+    res.status(502).json({ error: err.message || 'Payment provider error' });
   }
 });
 
@@ -361,8 +439,12 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const pc = result.rows[0];
+    const agreements = await pool.query(
+      `SELECT seller_id, status, buyer_accepted_at, seller_accepted_at, terms_locked_at
+       FROM pending_fulfillment_agreements WHERE checkout_id = $1 ORDER BY created_at`, [pc.id]
+    );
     const age = Date.now() - new Date(pc.created_at).getTime();
-    if (pc.status === 'pending' && age > 30 * 60 * 1000) {
+    if ((pc.status === 'pending' || pc.status === 'agreement_locked') && age > 30 * 60 * 1000) {
       const relClient = await pool.connect();
       try {
         await relClient.query('BEGIN');
@@ -381,16 +463,16 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
       } finally {
         relClient.release();
       }
-      return res.json({ status: 'expired' });
+      return res.json({ status: 'expired', agreements: agreements.rows });
     }
     if (pc.status === 'completed') {
       const orderRes = await pool.query(
         'SELECT id FROM orders WHERE buyer_id = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT 1',
         [req.user.id, pc.created_at]
       );
-      return res.json({ status: 'completed', orderId: orderRes.rows[0]?.id });
+      return res.json({ status: 'completed', orderId: orderRes.rows[0]?.id, agreements: agreements.rows });
     }
-    res.json({ status: pc.status });
+    res.json({ status: pc.status, agreements: agreements.rows });
   } catch (err) {
     console.error('Pending checkout status error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -449,7 +531,7 @@ router.get('/checkout/pending/:id/seller-info', authRequired, async (req, res) =
 router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'pending'",
+      "SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'agreement_locked'",
       [req.params.id, req.user.id]
     );
     if (result.rows.length === 0) {

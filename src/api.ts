@@ -280,6 +280,12 @@ export const createPendingCheckout = (data: Record<string, unknown>) =>
 export const checkPendingStatus = (pendingId: string) =>
   request(`/checkout/pending/${pendingId}/status`);
 
+export const getSellerFulfillmentProposals = () => request('/seller/fulfillment-proposals');
+export const decideFulfillmentProposal = (pendingId: string, sellerId: string, decision: 'accept' | 'reject') =>
+  request(`/checkout/pending/${pendingId}/agreements/${sellerId}`, { method: 'PUT', body: JSON.stringify({ decision }) });
+export const beginPendingPayment = (pendingId: string) =>
+  request(`/checkout/pending/${pendingId}/begin-payment`, { method: 'POST' });
+
 export const getPendingSellerInfo = (pendingId: string) =>
   request(`/checkout/pending/${pendingId}/seller-info`);
 
