@@ -192,27 +192,51 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
     );
     const pendingId = result.rows[0].id;
 
-    // Reserve stock for each item (expires in 15 minutes)
-    const reservationExpiry = new Date(Date.now() + 15 * 60 * 1000);
-    for (const item of cart) {
-      const productId = item.id || item.productId;
-      if (!productId) continue;
-      try {
-        const stockCheck = await pool.query('SELECT stock FROM products WHERE id = $1 FOR UPDATE', [productId]);
-        if (stockCheck.rows.length > 0 && stockCheck.rows[0].stock < (item.quantity || 1)) {
-          // Insufficient stock — roll back the checkout
+    // Reserve stock for each item — ALL-OR-NOTHING in a single transaction
+    const reservationExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30min, matches checkout expiry
+    const stockClient = await pool.connect();
+    try {
+      await stockClient.query('BEGIN');
+
+      // Lock ALL products first (consistent ordering to prevent deadlocks)
+      const productIds = cart.map(i => i.id || i.productId).filter(Boolean).sort();
+      for (const pid of productIds) {
+        await stockClient.query('SELECT stock FROM products WHERE id = $1 FOR UPDATE', [pid]);
+      }
+
+      // Validate all stock in one pass
+      for (const item of cart) {
+        const productId = item.id || item.productId;
+        if (!productId) continue;
+        const stockCheck = await stockClient.query('SELECT stock FROM products WHERE id = $1', [productId]);
+        if (stockCheck.rows.length === 0 || stockCheck.rows[0].stock < (item.quantity || 1)) {
+          await stockClient.query('ROLLBACK');
+          // Mark checkout as failed (stock unavailable)
           await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [pendingId]);
           return res.status(400).json({ error: `Insufficient stock for "${item.name || productId}"` });
         }
-        await pool.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [item.quantity || 1, productId]);
-        await pool.query(
+      }
+
+      // All stock valid — decrement and create reservations
+      for (const item of cart) {
+        const productId = item.id || item.productId;
+        if (!productId) continue;
+        await stockClient.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [item.quantity || 1, productId]);
+        await stockClient.query(
           `INSERT INTO stock_reservations (checkout_id, product_id, quantity, expires_at, status)
            VALUES ($1, $2, $3, $4, 'active')`,
           [pendingId, productId, item.quantity || 1, reservationExpiry]
         );
-      } catch (e) {
-        console.error(`Stock reservation failed for ${productId}:`, e.message);
       }
+
+      await stockClient.query('COMMIT');
+    } catch (e) {
+      await stockClient.query('ROLLBACK');
+      console.error('Stock reservation transaction failed:', e.message);
+      await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [pendingId]);
+      return res.status(500).json({ error: 'Stock reservation failed' });
+    } finally {
+      stockClient.release();
     }
 
     if (paymentMethod === 'natcash') {
@@ -259,13 +283,24 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
     const pc = result.rows[0];
     const age = Date.now() - new Date(pc.created_at).getTime();
     if (pc.status === 'pending' && age > 30 * 60 * 1000) {
-      await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [req.params.id]);
-      // Release reserved stock
-      const reservations = await pool.query('SELECT product_id, quantity FROM stock_reservations WHERE checkout_id = $1 AND status = $2', [req.params.id, 'active']);
-      for (const r of reservations.rows) {
-        await pool.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
+      const relClient = await pool.connect();
+      try {
+        await relClient.query('BEGIN');
+        await relClient.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [req.params.id]);
+        // Idempotent release: mark released first, then increment stock
+        const released = await relClient.query(
+          "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity",
+          [req.params.id]
+        );
+        for (const r of released.rows) {
+          await relClient.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
+        }
+        await relClient.query('COMMIT');
+      } catch (e) {
+        await relClient.query('ROLLBACK');
+      } finally {
+        relClient.release();
       }
-      await pool.query("UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active'", [req.params.id]);
       return res.json({ status: 'expired' });
     }
     if (pc.status === 'completed') {

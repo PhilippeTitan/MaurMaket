@@ -251,19 +251,32 @@ export function startJobs() {
   // ───── Cron: Release expired stock reservations (every 5 minutes) ─────
   cron.schedule('*/5 * * * *', async () => {
     try {
-      const expired = await pool.query(`
-        SELECT sr.id, sr.product_id, sr.quantity, sr.checkout_id
-        FROM stock_reservations sr
-        JOIN pending_checkouts pc ON sr.checkout_id = pc.id
-        WHERE sr.status = 'active'
-          AND (pc.status IN ('expired', 'failed') OR sr.expires_at < NOW())
-        LIMIT 50
-      `);
-      for (const r of expired.rows) {
-        await pool.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
-        await pool.query("UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE id = $1", [r.id]);
+      // Idempotent: mark as released first (atomic), then increment stock only if row was returned
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const expired = await client.query(`
+          UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP
+          WHERE id IN (
+            SELECT sr.id FROM stock_reservations sr
+            LEFT JOIN pending_checkouts pc ON sr.checkout_id = pc.id
+            WHERE sr.status = 'active'
+              AND (pc.status IN ('expired', 'failed') OR sr.expires_at < NOW())
+            LIMIT 50
+          )
+          RETURNING product_id, quantity
+        `);
+        for (const r of expired.rows) {
+          await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
+        }
+        await client.query('COMMIT');
+        if (expired.rows.length > 0) console.log(`[CRON] Released ${expired.rows.length} expired stock reservations`);
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
       }
-      if (expired.rows.length > 0) console.log(`[CRON] Released ${expired.rows.length} expired stock reservations`);
     } catch (err) {
       console.error('[STOCK RELEASE] Error:', err.message);
     }

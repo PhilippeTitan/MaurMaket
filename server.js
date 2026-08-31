@@ -842,9 +842,10 @@ await step('NatCash phone separation', () => c.query(`
         idempotency_key TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(order_id, seller_id),
-        UNIQUE(idempotency_key) WHERE idempotency_key IS NOT NULL
+        UNIQUE(order_id, seller_id)
       );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_fulfillments_idempotency
+        ON seller_fulfillments(idempotency_key) WHERE idempotency_key IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_order ON seller_fulfillments(order_id);
       CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_seller ON seller_fulfillments(seller_id);
       CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_payment ON seller_fulfillments(payment_status);
@@ -863,10 +864,12 @@ await step('NatCash phone separation', () => c.query(`
         released_at TIMESTAMP,
         status VARCHAR(20) DEFAULT 'active'
           CHECK (status IN ('active','confirmed','released')),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(product_id, checkout_id) WHERE checkout_id IS NOT NULL,
-        UNIQUE(product_id, order_id) WHERE order_id IS NOT NULL
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_reservations_checkout_product
+        ON stock_reservations(product_id, checkout_id) WHERE checkout_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_reservations_order_product
+        ON stock_reservations(product_id, order_id) WHERE order_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_stock_reservations_product ON stock_reservations(product_id, status);
       CREATE INDEX IF NOT EXISTS idx_stock_reservations_expires ON stock_reservations(expires_at) WHERE status = 'active';
     `));

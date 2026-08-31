@@ -279,12 +279,14 @@ router.post('/api/payments/webhook', async (req, res) => {
           await client.query('BEGIN');
           if (eventId) await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
           await client.query("UPDATE pending_checkouts SET status = 'failed' WHERE id = $1", [reference]);
-          // Release reserved stock
-          const reservations = await client.query('SELECT product_id, quantity FROM stock_reservations WHERE checkout_id = $1 AND status = $2', [reference, 'active']);
-          for (const r of reservations.rows) {
+          // Idempotent release: mark released first, then increment stock
+          const released = await client.query(
+            "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity",
+            [reference]
+          );
+          for (const r of released.rows) {
             await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
           }
-          await client.query("UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active'", [reference]);
           await client.query('COMMIT');
           createNotification(pendingFail.rows[0].user_id, 'payment_failed', 'Payment Failed', 'Your payment could not be processed. Please try again.', { orderId: reference });
         } catch (e) { try { await client.query('ROLLBACK'); } catch {} } finally { client.release(); }
