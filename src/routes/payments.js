@@ -129,16 +129,101 @@ router.post('/api/payments/webhook', async (req, res) => {
         try {
           await client2.query('BEGIN');
           if (eventId) await client2.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
-          const cartData = pc.cart_data; const items = cartData.map(i => ({ productId: i.id || i.productId, quantity: i.quantity }));
+          const cartData = pc.cart_data;
+
+          // Use cart_data prices (locked at checkout) — NOT DB prices
           let totalAmount = 0;
-          for (const item of items) { const prodRes = await client2.query('SELECT price, effective_price FROM products WHERE id = $1', [item.productId]); if (prodRes.rows.length > 0) { const price = prodRes.rows[0].effective_price || prodRes.rows[0].price; totalAmount += price * item.quantity; } }
-          if (pc.promo_code) { try { const promoRes = await client2.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true', [pc.promo_code]); if (promoRes.rows.length > 0) { const promo = promoRes.rows[0]; const discount = promo.discount_type === 'percentage' ? totalAmount * (promo.discount_value / 100) : promo.discount_value; totalAmount = Math.max(0, totalAmount - discount); } } catch {} }
-          const orderRes = await client2.query(`INSERT INTO orders (buyer_id, total_amount, status, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name) VALUES ($1, $2, 'paid', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`, [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]);
+          for (const item of cartData) {
+            const price = item.price || 0;
+            totalAmount += price * (item.quantity || 1);
+          }
+
+          // Apply promo if present (also from cart snapshot)
+          if (pc.promo_code) {
+            try {
+              const promoRes = await client2.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true FOR UPDATE', [pc.promo_code]);
+              if (promoRes.rows.length > 0) {
+                const promo = promoRes.rows[0];
+                const discount = promo.discount_type === 'percentage' ? totalAmount * (promo.discount_value / 100) : Math.min(promo.discount_value, totalAmount);
+                totalAmount = Math.max(0, totalAmount - discount);
+              }
+            } catch { /* ignore */ }
+          }
+
+          const orderRes = await client2.query(
+            `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
+             VALUES ($1, $2, 'paid', 'moncash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+            [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
+          );
           const orderId = orderRes.rows[0].id;
-          for (const item of items) { const prodRes = await client2.query('SELECT seller_id, price, effective_price FROM products WHERE id = $1', [item.productId]); if (prodRes.rows.length > 0) { await client2.query('INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)', [orderId, item.productId, prodRes.rows[0].seller_id, item.quantity, prodRes.rows[0].effective_price || prodRes.rows[0].price]); await client2.query('UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1', [item.quantity, item.productId]); } }
-          await client2.query("INSERT INTO order_events (order_id, event_type, note) VALUES ($1, 'payment_received', 'Payment completed via MonCash (deferred)')", [orderId]);
+
+          // Create order_items with LOCKED prices from cart_data
+          // Stock was already decremented at checkout creation — just confirm reservations
+          const sellerIds = new Set();
+          for (const item of cartData) {
+            const productId = item.id || item.productId;
+            const prodRes = await client2.query('SELECT seller_id FROM products WHERE id = $1 FOR UPDATE', [productId]);
+            if (prodRes.rows.length > 0) {
+              const sellerId = prodRes.rows[0].seller_id;
+              sellerIds.add(sellerId);
+              const lockedPrice = item.price || 0;
+              const qty = item.quantity || 1;
+              await client2.query(
+                'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
+                [orderId, productId, sellerId, qty, lockedPrice]
+              );
+              // Confirm the stock reservation (stock already decremented at checkout creation)
+              await client2.query(
+                "UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND product_id = $2 AND status = 'active'",
+                [reference, productId]
+              );
+            }
+          }
+
+          // Escrow + platform revenue for each seller
+          for (const sid of sellerIds) {
+            const sellerItems = await client2.query(
+              `SELECT SUM(quantity) AS total_qty, SUM(price * quantity) AS paid_total
+               FROM order_items WHERE order_id = $1 AND seller_id = $2`,
+              [orderId, sid]
+            );
+            if (sellerItems.rows.length > 0 && sellerItems.rows[0].paid_total) {
+              const grossAmount = parseFloat(sellerItems.rows[0].paid_total);
+              const tierRes = await client2.query('SELECT seller_tier FROM users WHERE id = $1', [sid]);
+              const sellerTier = tierRes.rows[0]?.seller_tier || 'none';
+              const rate = getCommissionRate(sellerTier);
+              const commission = Math.round(grossAmount * rate * 100) / 100;
+              const net = Math.round((grossAmount - commission) * 100) / 100;
+              await client2.query(
+                `INSERT INTO order_escrow (order_id, seller_id, gross_amount, commission_amount, net_amount, status) VALUES ($1, $2, $3, $4, $5, 'held') ON CONFLICT (order_id, seller_id) DO UPDATE SET gross_amount = $3, commission_amount = $4, net_amount = $5, status = 'held'`,
+                [orderId, sid, grossAmount, commission, net]
+              );
+              await client2.query(
+                `INSERT INTO platform_revenue (order_id, seller_id, seller_tier, gross_amount, commission_rate, commission_amount, platform_fee, net_to_seller) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [orderId, sid, sellerTier, grossAmount, rate, commission, commission, net]
+              );
+            }
+
+            // Create seller_fulfillment per seller
+            await client2.query(
+              `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference)
+               VALUES ($1, $2, 'verified', 'pending', 'moncash', $3)
+               ON CONFLICT (order_id, seller_id) DO NOTHING`,
+              [orderId, sid, reference]
+            );
+          }
+
+          await client2.query("INSERT INTO order_events (order_id, event_type, note) VALUES ($1, 'payment_received', 'Payment completed via MonCash')", [orderId]);
           await client2.query("UPDATE pending_checkouts SET status = 'completed' WHERE id = $1", [reference]);
-          await client2.query('COMMIT'); return res.json({ received: true, orderId });
+          await recordProductCooccurrences(orderId, client2);
+          await client2.query('COMMIT');
+
+          // Notify sellers (outside transaction)
+          for (const sid of sellerIds) {
+            createNotification(sid, 'escrow_held', 'Payment held in escrow', 'Released to you once the buyer confirms receipt.', { orderId });
+          }
+          createNotification(pc.user_id, 'payment_confirmed', 'Payment Confirmed', `Your payment of G ${totalAmount.toFixed(0)} was successful.`, { orderId });
+          return res.json({ received: true, orderId });
         } catch (err) { await client2.query('ROLLBACK'); return res.status(500).json({ error: 'Server error' }); } finally { client2.release(); }
       }
       const client = await pool.connect();
@@ -170,7 +255,15 @@ router.post('/api/payments/webhook', async (req, res) => {
         const items = { rows: await getSellerPaymentAllocations(client, reference) };
         for (const item of items.rows) { if (item.seller_id) { const grossAmount = parseFloat(item.paid_total); const tierRes = await client.query('SELECT seller_tier FROM users WHERE id = $1', [item.seller_id]); const sellerTier = tierRes.rows[0]?.seller_tier || 'none'; const rate = getCommissionRate(sellerTier); const commission = Math.round(grossAmount * rate * 100) / 100; const net = Math.round((grossAmount - commission) * 100) / 100;
           await client.query(`INSERT INTO order_escrow (order_id, seller_id, gross_amount, commission_amount, net_amount, status) VALUES ($1, $2, $3, $4, $5, 'held') ON CONFLICT (order_id, seller_id) DO UPDATE SET gross_amount = $3, commission_amount = $4, net_amount = $5, status = 'held'`, [reference, item.seller_id, grossAmount, commission, net]);
-          await client.query(`INSERT INTO platform_revenue (order_id, seller_id, seller_tier, gross_amount, commission_rate, commission_amount, platform_fee, net_to_seller) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [reference, item.seller_id, sellerTier, grossAmount, rate, commission, commission, net]); } }
+          await client.query(`INSERT INTO platform_revenue (order_id, seller_id, seller_tier, gross_amount, commission_rate, commission_amount, platform_fee, net_to_seller) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [reference, item.seller_id, sellerTier, grossAmount, rate, commission, commission, net]);
+          // Create seller_fulfillment per seller
+          await client.query(
+            `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference)
+             VALUES ($1, $2, 'verified', 'pending', 'moncash', $3)
+             ON CONFLICT (order_id, seller_id) DO NOTHING`,
+            [reference, item.seller_id, reference]
+          );
+        } }
         await client.query('COMMIT'); client.release();
         const sellerIds = items.rows.map(r => r.seller_id).filter(Boolean);
         for (const sid of sellerIds) createNotification(sid, 'escrow_held', 'Payment held in escrow', 'Released to you once the buyer confirms.', { orderId: reference });
@@ -178,10 +271,30 @@ router.post('/api/payments/webhook', async (req, res) => {
         if (buyerOrder.rows.length > 0) { const totalPaid = items.rows.reduce((sum, r) => sum + parseFloat(r.paid_total), 0); createNotification(buyerOrder.rows[0].buyer_id, 'payment_confirmed', 'Payment Confirmed', `Your payment of G ${totalPaid.toFixed(0)} was successful.`, { orderId: reference }); }
       } catch (e) { try { await client.query('ROLLBACK'); } catch {} client.release(); throw e; }
     } else if (event === 'payment.failed') {
-      const client = await pool.connect();
-      try { await client.query('BEGIN'); await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [reference]); await logOrderEvent(reference, 'status_change', null, 'pending', 'cancelled', 'Payment failed', client); await client.query('COMMIT'); } catch (e) { try { await client.query('ROLLBACK'); } catch {} } finally { client.release(); }
-      const failedOrder = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [reference]);
-      if (failedOrder.rows.length > 0) createNotification(failedOrder.rows[0].buyer_id, 'payment_failed', 'Payment Failed', 'Your payment could not be processed. Please try again.', { orderId: reference });
+      // Check if this is a pending checkout (not yet an order)
+      const pendingFail = await pool.query("SELECT id, user_id FROM pending_checkouts WHERE id = $1 AND status = 'pending'", [reference]);
+      if (pendingFail.rows.length > 0) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          if (eventId) await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+          await client.query("UPDATE pending_checkouts SET status = 'failed' WHERE id = $1", [reference]);
+          // Release reserved stock
+          const reservations = await client.query('SELECT product_id, quantity FROM stock_reservations WHERE checkout_id = $1 AND status = $2', [reference, 'active']);
+          for (const r of reservations.rows) {
+            await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
+          }
+          await client.query("UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active'", [reference]);
+          await client.query('COMMIT');
+          createNotification(pendingFail.rows[0].user_id, 'payment_failed', 'Payment Failed', 'Your payment could not be processed. Please try again.', { orderId: reference });
+        } catch (e) { try { await client.query('ROLLBACK'); } catch {} } finally { client.release(); }
+      } else {
+        // Existing order
+        const client = await pool.connect();
+        try { await client.query('BEGIN'); await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [reference]); await logOrderEvent(reference, 'status_change', null, 'pending', 'cancelled', 'Payment failed', client); await client.query('COMMIT'); } catch (e) { try { await client.query('ROLLBACK'); } catch {} } finally { client.release(); }
+        const failedOrder = await pool.query('SELECT buyer_id FROM orders WHERE id = $1', [reference]);
+        if (failedOrder.rows.length > 0) createNotification(failedOrder.rows[0].buyer_id, 'payment_failed', 'Payment Failed', 'Your payment could not be processed. Please try again.', { orderId: reference });
+      }
     } else if (event === 'payout.completed') {
       const client = await pool.connect();
       try { await client.query('BEGIN'); if (eventId) { await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]); } await client.query(`UPDATE payouts SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE moncash_reference = $1`, [reference]); await client.query('COMMIT'); } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }

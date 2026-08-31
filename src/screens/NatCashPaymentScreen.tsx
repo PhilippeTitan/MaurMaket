@@ -10,7 +10,7 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
-import { confirmNatCashPayment, checkPendingStatus } from '../api';
+import { confirmNatCashPayment, confirmNatCashSeller, checkPendingStatus } from '../api';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import { dialUssd } from '../ussd';
@@ -73,9 +73,15 @@ export default function NatCashPaymentScreen() {
   const nav = useNavigation<Nav>();
   const route = useRoute<Props>();
 
-  const { orderId: directOrderId, pendingId, total, sellerName, sellerPhone } = route.params;
+  const { orderId: directOrderId, pendingId, total, sellerName, sellerPhone, sellers: routeSellers } = route.params;
   // orderId may come from a retry flow (OrderDetailScreen), pendingId from new checkout
   const [createdOrderId, setCreatedOrderId] = useState<string | undefined>(directOrderId);
+  const isMultiSeller = !!(routeSellers && routeSellers.length > 1);
+
+  // Multi-seller state
+  const [currentSellerIdx, setCurrentSellerIdx] = useState(0);
+  const [sellerPaymentStates, setSellerPaymentStates] = useState<Record<string, 'pending' | 'dialing' | 'detecting' | 'confirmed' | 'failed'>>({});
+  const currentSeller = isMultiSeller ? routeSellers![currentSellerIdx] : null;
 
   const [step, setStep] = useState<'dial' | 'detecting' | 'confirmed' | 'failed'>('dial');
   const [parsed, setParsed] = useState<ParsedSms | null>(null);
@@ -115,7 +121,43 @@ export default function NatCashPaymentScreen() {
       });
     }
 
-    // Create order from pending checkout (deferred flow)
+    // Multi-seller: confirm THIS seller, then move to next
+    if (isMultiSeller && currentSeller && createdOrderId) {
+      try {
+        const smsPayload = smsData ? {
+          transcode: smsData.transcode, amount: smsData.amount,
+          recipientName: smsData.recipientName, recipientNumber: smsData.recipientNumber,
+        } : undefined;
+        await confirmNatCashSeller(createdOrderId, currentSeller.sellerId, smsPayload);
+        setSellerPaymentStates(prev => ({ ...prev, [currentSeller.sellerId]: 'confirmed' }));
+
+        // Check if there are more sellers to pay
+        if (routeSellers && currentSellerIdx < routeSellers.length - 1) {
+          // Move to next seller after brief delay
+          setTimeout(() => {
+            setCurrentSellerIdx(prev => prev + 1);
+            confirmedRef.current = false;
+            setSmsDetected(false);
+            setParsed(null);
+            setElapsed(0);
+            setStep('dial');
+          }, 2000);
+        } else {
+          // All sellers paid — done!
+          setStep('confirmed');
+          setTimeout(() => {
+            nav.replace('OrderDetail', { orderId: createdOrderId });
+          }, 2500);
+        }
+      } catch (err) {
+        console.error('[NatCash] Failed to confirm seller payment:', err);
+        setSellerPaymentStates(prev => ({ ...prev, [currentSeller.sellerId]: 'failed' }));
+        setStep('failed');
+      }
+      return;
+    }
+
+    // Single-seller: create order from pending checkout (deferred flow)
     let finalOrderId = createdOrderId; // may already be set from direct orderId
     if (pendingId && !finalOrderId) {
       try {
@@ -138,7 +180,7 @@ export default function NatCashPaymentScreen() {
       if (finalOrderId) nav.replace('OrderDetail', { orderId: finalOrderId });
       else nav.replace('PaymentReturn', { pendingId }); // fallback
     }, 2500);
-  }, [pendingId, createdOrderId, nav]);
+  }, [pendingId, createdOrderId, nav, isMultiSeller, currentSeller, currentSellerIdx, routeSellers]);
 
   // ── Poll server for pending checkout status (backup method) ──
   const pollOrderStatus = useCallback(async () => {
@@ -238,13 +280,15 @@ export default function NatCashPaymentScreen() {
     }
   }, []);
 
-  // ── Auto-dial *202# on mount (user already tapped "Pay with NatCash" on checkout) ──
+  // ── Auto-dial *202# on mount (single-seller only — multi-seller shows seller list) ──
   useEffect(() => {
-    const timer = setTimeout(() => {
-      handleDial();
-    }, 800); // small delay so screen renders first
-    return () => clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!isMultiSeller) {
+      const timer = setTimeout(() => {
+        handleDial();
+      }, 800); // small delay so screen renders first
+      return () => clearTimeout(timer);
+    }
+  }, [isMultiSeller]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Detect when user returns from USSD dialog → auto-advance to detecting ──
   useEffect(() => {
@@ -311,6 +355,18 @@ export default function NatCashPaymentScreen() {
     }
   };
 
+  // ── Handle retry for failed multi-seller payment ──
+  const handleSellerRetry = () => {
+    if (currentSeller) {
+      setSellerPaymentStates(prev => ({ ...prev, [currentSeller.sellerId]: 'pending' }));
+    }
+    confirmedRef.current = false;
+    setSmsDetected(false);
+    setParsed(null);
+    setElapsed(0);
+    setStep('dial');
+  };
+
   // ── Step progress bar ──
   const stepIndex = step === 'dial' ? 0 : step === 'detecting' ? 1 : step === 'confirmed' ? 2 : 1;
 
@@ -341,11 +397,38 @@ export default function NatCashPaymentScreen() {
             <Text style={styles.cardLabel}>Order Total</Text>
           </View>
           <Text style={styles.cardAmount}>G {total.toFixed(0)}</Text>
-          <View style={styles.cardDivider} />
-          <View style={styles.cardRow}>
-            <MaterialCommunityIcons name="account-outline" size={16} color={COLORS.text2} />
-            <Text style={styles.cardSeller}>{sellerName}</Text>
-          </View>
+          {isMultiSeller && routeSellers ? (
+            <>
+              <View style={styles.cardDivider} />
+              {routeSellers.map((s, idx) => {
+                const payState = sellerPaymentStates[s.sellerId] || 'pending';
+                const isCurrent = idx === currentSellerIdx;
+                return (
+                  <View key={s.sellerId} style={[styles.sellerRow, isCurrent && styles.sellerRowActive]}>
+                    <View style={[styles.sellerStatus, payState === 'confirmed' && styles.sellerStatusDone, payState === 'detecting' && styles.sellerStatusActive]}>
+                      {payState === 'confirmed' ? <MaterialCommunityIcons name="check" size={12} color={COLORS.white} /> : <Text style={styles.sellerIdx}>{idx + 1}</Text>}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.sellerName} numberOfLines={1}>{s.name}</Text>
+                      {s.items.map((item, i) => (
+                        <Text key={i} style={styles.sellerItem} numberOfLines={1}>{item.quantity}x {item.name} — G {item.price.toFixed(0)}</Text>
+                      ))}
+                    </View>
+                    <Text style={styles.sellerTotal}>G {s.total.toFixed(0)}</Text>
+                    {isCurrent && step === 'detecting' && <ActivityIndicator size="small" color={COLORS.coral} style={{ marginLeft: 8 }} />}
+                  </View>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <View style={styles.cardDivider} />
+              <View style={styles.cardRow}>
+                <MaterialCommunityIcons name="account-outline" size={16} color={COLORS.text2} />
+                <Text style={styles.cardSeller}>{sellerName}</Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* ── Step Content ── */}
@@ -355,7 +438,9 @@ export default function NatCashPaymentScreen() {
               <MaterialCommunityIcons name="cellphone" size={28} color={COLORS.blue} />
               <Text style={styles.infoTitle}>Dial *202#</Text>
               <Text style={styles.infoBody}>
-                Tap below to open the NatCash menu. Then:
+                {isMultiSeller && currentSeller
+                  ? `Pay ${currentSeller.name} (seller ${(currentSellerIdx + 1)} of ${routeSellers!.length}). Tap below to open the NatCash menu. Then:`
+                  : 'Tap below to open the NatCash menu. Then:'}
               </Text>
               <View style={styles.stepsList}>
                 <View style={styles.stepItem}>
@@ -364,11 +449,11 @@ export default function NatCashPaymentScreen() {
                 </View>
                 <View style={styles.stepItem}>
                   <View style={styles.stepNum}><Text style={styles.stepNumText}>2</Text></View>
-                  <Text style={styles.stepItemText}>Enter <Text style={styles.bold}>{sellerPhone}</Text></Text>
+                  <Text style={styles.stepItemText}>Enter <Text style={styles.bold}>{isMultiSeller && currentSeller ? currentSeller.phone : sellerPhone}</Text></Text>
                 </View>
                 <View style={styles.stepItem}>
                   <View style={styles.stepNum}><Text style={styles.stepNumText}>3</Text></View>
-                  <Text style={styles.stepItemText}>Enter amount: <Text style={styles.bold}>G {total.toFixed(0)}</Text></Text>
+                  <Text style={styles.stepItemText}>Enter amount: <Text style={styles.bold}>G {(isMultiSeller && currentSeller ? currentSeller.total : total).toFixed(0)}</Text></Text>
                 </View>
                 <View style={styles.stepItem}>
                   <View style={styles.stepNum}><Text style={styles.stepNumText}>4</Text></View>
@@ -413,9 +498,13 @@ export default function NatCashPaymentScreen() {
             </Text>
             <Text style={styles.detectingBody}>
               {smsDetected
-                ? 'Your NatCash confirmation was received instantly. Confirming payment…'
+                ? isMultiSeller && currentSeller
+                  ? `NatCash payment to ${currentSeller.name} detected. Confirming…`
+                  : 'Your NatCash confirmation was received instantly. Confirming payment…'
                 : smsPermsGranted
-                  ? 'Listening for your NatCash confirmation SMS (auto-detected instantly). Fallback: scanning inbox in 8s.'
+                  ? isMultiSeller && currentSeller
+                    ? `Listening for NatCash SMS for ${currentSeller.name} (auto-detected). Fallback: inbox scan in 15s.`
+                    : 'Listening for your NatCash confirmation SMS (auto-detected instantly). Fallback: scanning inbox in 8s.'
                   : 'Waiting for payment confirmation via server polling. Grant SMS permissions for instant detection.'}
             </Text>
             {parsed && (
@@ -451,8 +540,12 @@ export default function NatCashPaymentScreen() {
             <Text style={styles.confirmedTitle}>Payment Detected!</Text>
             <Text style={styles.confirmedBody}>
               {smsDetected
-                ? `NatCash transfer confirmed (${parsed?.transcode || 'SMS detected'}). Redirecting to your order…`
-                : 'Payment confirmed. Redirecting to your order…'}
+                ? isMultiSeller && currentSeller
+                  ? `NatCash transfer to ${currentSeller.name} confirmed (${parsed?.transcode || 'SMS detected'}). ${currentSellerIdx < (routeSellers?.length || 0) - 1 ? 'Next seller…' : 'All payments received!'}`
+                  : `NatCash transfer confirmed (${parsed?.transcode || 'SMS detected'}). Redirecting to your order…`
+                : isMultiSeller
+                  ? 'All payments confirmed. Redirecting to your order…'
+                  : 'Payment confirmed. Redirecting to your order…'}
             </Text>
           </View>
         )}
@@ -464,9 +557,11 @@ export default function NatCashPaymentScreen() {
             </View>
             <Text style={styles.failedTitle}>Payment Not Detected</Text>
             <Text style={styles.failedBody}>
-              We couldn't detect a NatCash confirmation SMS. This can happen if the SMS was delayed by the carrier. You can retry or check your orders.
+              {isMultiSeller && currentSeller
+                ? `We couldn't detect a NatCash confirmation SMS for ${currentSeller.name}. You can retry or check your orders.`
+                : 'We couldn\'t detect a NatCash confirmation SMS. This can happen if the SMS was delayed by the carrier. You can retry or check your orders.'}
             </Text>
-            <TouchableOpacity style={styles.dialBtn} onPress={() => { setStep('dial'); setElapsed(0); }} accessibilityLabel="retry" accessibilityRole="button">
+            <TouchableOpacity style={styles.dialBtn} onPress={isMultiSeller ? handleSellerRetry : () => { setStep('dial'); setElapsed(0); }} accessibilityLabel="retry" accessibilityRole="button">
               <MaterialCommunityIcons name="refresh" size={20} color={COLORS.white} />
               <Text style={styles.dialBtnText}>Try Again</Text>
             </TouchableOpacity>
@@ -511,6 +606,17 @@ const styles = StyleSheet.create({
   cardAmount: { fontSize: 28, fontWeight: '800', color: COLORS.coral, marginTop: 6, marginBottom: 10 },
   cardDivider: { height: 1, backgroundColor: COLORS.border, marginBottom: 10 },
   cardSeller: { fontSize: 14, color: COLORS.text, fontWeight: '600' },
+
+  // Multi-seller rows
+  sellerRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' },
+  sellerRowActive: { backgroundColor: COLORS.coral + '08', marginHorizontal: -SPACING.lg, paddingHorizontal: SPACING.lg, borderRadius: 8 },
+  sellerStatus: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg },
+  sellerStatusDone: { backgroundColor: COLORS.green, borderColor: COLORS.green },
+  sellerStatusActive: { borderColor: COLORS.coral, backgroundColor: COLORS.coral + '20' },
+  sellerIdx: { fontSize: 10, fontWeight: '800', color: COLORS.text2 },
+  sellerName: { fontSize: 13, color: COLORS.text, fontWeight: '700' },
+  sellerItem: { fontSize: 11, color: COLORS.text2, lineHeight: 16 },
+  sellerTotal: { fontSize: 14, fontWeight: '800', color: COLORS.coral },
 
   // Step content
   stepContent: { alignItems: 'center', gap: SPACING.md },

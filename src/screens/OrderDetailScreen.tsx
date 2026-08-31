@@ -155,7 +155,23 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       const res = await retryPayment(orderId) as { paymentUrl?: string; retryMethod?: string; orderId?: string };
       if (res.retryMethod === 'natcash') {
         // NatCash order — go back to NatCash payment screen
-        navigation.navigate('NatCashPayment', { orderId: res.orderId || orderId, total: Number((order as any)?.total_amount || 0), sellerName: (order as any)?.other_party?.full_name || '', sellerPhone: (order as any)?.other_party?.natcash_phone || (order as any)?.other_party?.phone || '' });
+        const otherSellers = (order as any)?.other_sellers;
+        if (otherSellers && otherSellers.length > 1) {
+          // Multi-seller: pass all sellers
+          navigation.navigate('NatCashPayment', {
+            orderId: res.orderId || orderId,
+            total: Number((order as any)?.total_amount || 0),
+            sellers: otherSellers.map((s: any) => ({
+              sellerId: s.id,
+              name: s.full_name || 'Seller',
+              phone: s.natcash_phone || s.phone || '',
+              total: 0, // Will be calculated from escrow
+              items: [],
+            })),
+          });
+        } else {
+          navigation.navigate('NatCashPayment', { orderId: res.orderId || orderId, total: Number((order as any)?.total_amount || 0), sellerName: (order as any)?.other_party?.full_name || '', sellerPhone: (order as any)?.other_party?.natcash_phone || (order as any)?.other_party?.phone || '' });
+        }
       } else if (res.paymentUrl) {
         // Store pending order ID so we can detect abandonment when user returns
         try {
@@ -406,27 +422,68 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           </View>
           {/* Fee breakdown */}
           {(order as any).escrow && (() => {
-            const e = (order as any).escrow;
-            const rate = e.gross_amount > 0 ? Math.round((e.commission_amount / e.gross_amount) * 100) : 0;
+            const escrows = Array.isArray((order as any).escrow) ? (order as any).escrow : [(order as any).escrow];
             const moncashFee = Math.round(Number(order.total_amount) * 0.079);
-            const sellerReceives = Math.round(Number(e.net_amount));
             return (
               <View style={styles.feeBreakdown}>
-                <View style={styles.feeRow}>
-                  <Text style={styles.feeLabel}>MaurMaket fee ({rate}%)</Text>
-                  <Text style={styles.feeValue}>-{formatPrice(Math.round(Number(e.commission_amount)))} G</Text>
-                </View>
-                <View style={styles.feeRow}>
-                  <Text style={styles.feeLabel}>MonCash fee (~7.9%)</Text>
-                  <Text style={styles.feeValue}>~-{formatPrice(moncashFee)} G</Text>
-                </View>
-                <View style={[styles.feeRow, { marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: COLORS.border + '40' }]}>
-                  <Text style={[styles.feeLabel, { fontWeight: '700', color: COLORS.text }]}>Seller receives</Text>
-                  <Text style={[styles.feeValue, { color: COLORS.green, fontWeight: '700' }]}>{formatPrice(sellerReceives)} G</Text>
-                </View>
+                {escrows.map((e: any, idx: number) => {
+                  if (!e || !e.gross_amount) return null;
+                  const rate = e.gross_amount > 0 ? Math.round((e.commission_amount / e.gross_amount) * 100) : 0;
+                  const sellerReceives = Math.round(Number(e.net_amount));
+                  return (
+                    <View key={idx} style={{ marginBottom: idx < escrows.length - 1 ? 8 : 0 }}>
+                      {escrows.length > 1 && (
+                        <Text style={[styles.feeLabel, { fontWeight: '700', marginBottom: 4 }]}>Seller {idx + 1}</Text>
+                      )}
+                      <View style={styles.feeRow}>
+                        <Text style={styles.feeLabel}>MaurMaket fee ({rate}%)</Text>
+                        <Text style={styles.feeValue}>-{formatPrice(Math.round(Number(e.commission_amount)))} G</Text>
+                      </View>
+                      <View style={styles.feeRow}>
+                        <Text style={styles.feeLabel}>MonCash fee (~7.9%)</Text>
+                        <Text style={styles.feeValue}>~-{formatPrice(moncashFee)} G</Text>
+                      </View>
+                      <View style={[styles.feeRow, { marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: COLORS.border + '40' }]}>
+                        <Text style={[styles.feeLabel, { fontWeight: '700', color: COLORS.text }]}>Seller receives</Text>
+                        <Text style={[styles.feeValue, { color: COLORS.green, fontWeight: '700' }]}>{formatPrice(sellerReceives)} G</Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             );
           })()}
+        </View>
+      )}
+
+      {/* ── Seller Fulfillment Status (multi-seller) ── */}
+      {(order as any).seller_fulfillments && (order as any).seller_fulfillments.length > 1 && (
+        <View style={styles.card}>
+          <View style={styles.infoHeader}>
+            <View style={[styles.infoIconWrap, { backgroundColor: COLORS.coral + '18' }]}>
+              <MaterialCommunityIcons name="account-group-outline" size={18} color={COLORS.coral} />
+            </View>
+            <Text style={styles.sectionTitle}>Seller Status</Text>
+          </View>
+          {(order as any).seller_fulfillments.map((sf: any) => (
+            <View key={sf.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.text }}>{sf.seller_id.slice(0, 8)}…</Text>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <View style={[styles.miniBadge, { backgroundColor: sf.payment_status === 'verified' ? COLORS.green + '20' : sf.payment_status === 'buyer_claimed' ? COLORS.yellow + '20' : COLORS.border + '20' }]}>
+                    <Text style={[styles.miniBadgeText, { color: sf.payment_status === 'verified' ? COLORS.green : sf.payment_status === 'buyer_claimed' ? COLORS.yellow : COLORS.text2 }]}>
+                      {sf.payment_status === 'verified' ? 'Paid' : sf.payment_status === 'buyer_claimed' ? 'Claimed' : sf.payment_status}
+                    </Text>
+                  </View>
+                  <View style={[styles.miniBadge, { backgroundColor: sf.fulfillment_status === 'completed' ? COLORS.green + '20' : COLORS.blue + '20' }]}>
+                    <Text style={[styles.miniBadgeText, { color: sf.fulfillment_status === 'completed' ? COLORS.green : COLORS.blue }]}>
+                      {sf.fulfillment_status}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          ))}
         </View>
       )}
 
@@ -892,6 +949,8 @@ const styles = StyleSheet.create({
   totalLabel: { fontSize: 14, fontWeight: '700', color: COLORS.text },
   totalValue: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.coral },
   feeBreakdown: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border + '60' },
+  miniBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.pill },
+  miniBadgeText: { fontSize: 11, fontWeight: '700' },
   feeRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   feeLabel: { fontSize: 12, color: COLORS.text2 },
   feeValue: { fontSize: 12, fontWeight: '600', color: COLORS.text2 },

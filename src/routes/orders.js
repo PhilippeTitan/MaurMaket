@@ -62,21 +62,57 @@ router.get('/orders/:id', authRequired, async (req, res) => {
       [req.params.id]
     );
     const myRole = order.buyer_id === req.user.id ? 'buyer' : 'seller';
-    const sellerResult = await pool.query(
-      `SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1 LIMIT 1`,
+
+    // Get ALL sellers in this order (not just the first one)
+    const sellersResult = await pool.query(
+      `SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1`,
       [req.params.id]
     );
-    const otherUserId = myRole === 'buyer' ? (sellerResult.rows[0]?.seller_id) : order.buyer_id;
-    const otherParty = await pool.query(
-      `SELECT id, full_name, phone, natcash_phone FROM users WHERE id = $1`,
-      [otherUserId]
-    );
+    const sellerIds = sellersResult.rows.map(r => r.seller_id);
+
+    // Get other party info — for buyer show all sellers, for seller show buyer
+    let otherParty = null;
+    let otherSellers = [];
+    if (myRole === 'buyer') {
+      const sellerUsers = await pool.query(
+        `SELECT id, full_name, phone, natcash_phone FROM users WHERE id = ANY($1)`,
+        [sellerIds]
+      );
+      otherSellers = sellerUsers.rows;
+      otherParty = otherSellers[0] || null; // backward compat: first seller
+    } else {
+      const buyerRes = await pool.query(
+        `SELECT id, full_name, phone FROM users WHERE id = $1`,
+        [order.buyer_id]
+      );
+      otherParty = buyerRes.rows[0] || null;
+    }
+
+    // Get escrow for ALL sellers (not just the first one)
     const escrowResult = await pool.query(
-      `SELECT gross_amount, commission_amount, net_amount
-       FROM order_escrow WHERE order_id = $1 LIMIT 1`,
+      `SELECT seller_id, gross_amount, commission_amount, net_amount, status AS escrow_status
+       FROM order_escrow WHERE order_id = $1`,
       [req.params.id]
     );
-    res.json({ order: { ...order, items: items.rows, my_role: myRole, other_party: otherParty.rows[0] || null, escrow: escrowResult.rows[0] || null } });
+
+    // Get seller fulfillments (payment + fulfillment status per seller)
+    const fulfillmentsResult = await pool.query(
+      `SELECT * FROM seller_fulfillments WHERE order_id = $1`,
+      [req.params.id]
+    );
+
+    res.json({
+      order: {
+        ...order,
+        items: items.rows,
+        my_role: myRole,
+        other_party: otherParty,
+        other_sellers: otherSellers.length > 0 ? otherSellers : undefined,
+        seller_count: sellerIds.length,
+        escrow: escrowResult.rows,
+        seller_fulfillments: fulfillmentsResult.rows,
+      }
+    });
   } catch (err) {
     console.error('Order fetch error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -156,6 +192,29 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
     );
     const pendingId = result.rows[0].id;
 
+    // Reserve stock for each item (expires in 15 minutes)
+    const reservationExpiry = new Date(Date.now() + 15 * 60 * 1000);
+    for (const item of cart) {
+      const productId = item.id || item.productId;
+      if (!productId) continue;
+      try {
+        const stockCheck = await pool.query('SELECT stock FROM products WHERE id = $1 FOR UPDATE', [productId]);
+        if (stockCheck.rows.length > 0 && stockCheck.rows[0].stock < (item.quantity || 1)) {
+          // Insufficient stock — roll back the checkout
+          await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [pendingId]);
+          return res.status(400).json({ error: `Insufficient stock for "${item.name || productId}"` });
+        }
+        await pool.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [item.quantity || 1, productId]);
+        await pool.query(
+          `INSERT INTO stock_reservations (checkout_id, product_id, quantity, expires_at, status)
+           VALUES ($1, $2, $3, $4, 'active')`,
+          [pendingId, productId, item.quantity || 1, reservationExpiry]
+        );
+      } catch (e) {
+        console.error(`Stock reservation failed for ${productId}:`, e.message);
+      }
+    }
+
     if (paymentMethod === 'natcash') {
       return res.json({ pendingId, paymentMethod: 'natcash' });
     }
@@ -201,6 +260,12 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
     const age = Date.now() - new Date(pc.created_at).getTime();
     if (pc.status === 'pending' && age > 30 * 60 * 1000) {
       await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [req.params.id]);
+      // Release reserved stock
+      const reservations = await pool.query('SELECT product_id, quantity FROM stock_reservations WHERE checkout_id = $1 AND status = $2', [req.params.id, 'active']);
+      for (const r of reservations.rows) {
+        await pool.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
+      }
+      await pool.query("UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active'", [req.params.id]);
       return res.json({ status: 'expired' });
     }
     if (pc.status === 'completed') {
@@ -225,15 +290,39 @@ router.get('/checkout/pending/:id/seller-info', authRequired, async (req, res) =
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const cartData = result.rows[0].cart_data;
-    const sellerIds = [...new Set(cartData.map(i => i.seller_id).filter(Boolean))];
-    if (sellerIds.length === 0) return res.json({ sellerName: 'Seller', sellerPhone: '' });
+
+    // Group cart items by seller
+    const sellerMap = new Map();
+    for (const item of cartData) {
+      const sid = item.seller_id;
+      if (!sid) continue;
+      if (!sellerMap.has(sid)) {
+        sellerMap.set(sid, { sellerId: sid, items: [], total: 0, name: item.store_name || item.seller_name || 'Seller' });
+      }
+      const entry = sellerMap.get(sid);
+      entry.items.push({ name: item.name, price: item.price, quantity: item.quantity });
+      entry.total += (item.price || 0) * (item.quantity || 1);
+    }
+    const sellerIds = [...sellerMap.keys()];
+    if (sellerIds.length === 0) return res.json({ sellers: [], sellerCount: 0 });
+
     const sellerRes = await pool.query(
-      'SELECT full_name, phone, natcash_phone FROM users WHERE id = $1',
-      [sellerIds[0]]
+      'SELECT id, full_name, phone, natcash_phone FROM users WHERE id = ANY($1)',
+      [sellerIds]
     );
-    if (sellerRes.rows.length === 0) return res.json({ sellerName: 'Seller', sellerPhone: '' });
-    const s = sellerRes.rows[0];
-    res.json({ sellerName: s.full_name, sellerPhone: s.natcash_phone || s.phone || '' });
+    for (const s of sellerRes.rows) {
+      const entry = sellerMap.get(s.id);
+      if (entry) {
+        entry.name = s.full_name;
+        entry.phone = s.natcash_phone || s.phone || '';
+      }
+    }
+
+    res.json({
+      sellers: [...sellerMap.values()],
+      sellerCount: sellerMap.size,
+      totalAmount: cartData.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0),
+    });
   } catch (err) {
     console.error('Pending checkout seller-info error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -264,47 +353,83 @@ router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, r
     }
     const pc = result.rows[0];
     const { smsData } = req.body || {};
+
+    // Idempotency: if already confirmed by this exact SMS transcode, skip
+    const idempotencyKey = smsData?.transcode ? `natcash_${pc.id}_${smsData.transcode}` : null;
+    if (idempotencyKey) {
+      const existing = await pool.query(
+        "SELECT order_id FROM seller_fulfillments WHERE idempotency_key = $1",
+        [idempotencyKey]
+      );
+      if (existing.rows.length > 0) {
+        return res.json({ orderId: existing.rows[0].order_id, alreadyConfirmed: true });
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
       const cartData = pc.cart_data;
-      const items = cartData.map(i => ({ productId: i.id || i.productId, quantity: i.quantity }));
+
+      // Use cart_data prices (locked at checkout time) — do NOT re-fetch from DB
       let totalAmount = 0;
-      for (const item of items) {
-        const prodRes = await client.query('SELECT price, effective_price FROM products WHERE id = $1 FOR UPDATE', [item.productId]);
-        if (prodRes.rows.length > 0) {
-          const price = prodRes.rows[0].effective_price || prodRes.rows[0].price;
-          totalAmount += price * item.quantity;
-        }
+      for (const item of cartData) {
+        const price = item.price || 0;
+        totalAmount += price * (item.quantity || 1);
       }
+
+      // Apply promo if present
+      let discountAmount = 0;
       if (pc.promo_code) {
         try {
-          const promoRes = await client.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true', [pc.promo_code]);
+          const promoRes = await client.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true FOR UPDATE', [pc.promo_code]);
           if (promoRes.rows.length > 0) {
             const promo = promoRes.rows[0];
-            const discount = promo.discount_type === 'percentage' ? totalAmount * (promo.discount_value / 100) : promo.discount_value;
-            totalAmount = Math.max(0, totalAmount - discount);
+            discountAmount = promo.discount_type === 'percentage' ? totalAmount * (promo.discount_value / 100) : Math.min(promo.discount_value, totalAmount);
+            totalAmount = Math.max(0, totalAmount - discountAmount);
           }
         } catch { /* ignore */ }
       }
+
       const orderRes = await client.query(
         `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
          VALUES ($1, $2, 'paid', 'natcash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
         [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
       );
       const orderId = orderRes.rows[0].id;
-      for (const item of items) {
-        const prodRes = await client.query('SELECT seller_id, price, effective_price FROM products WHERE id = $1', [item.productId]);
+
+      // Create order_items with LOCKED prices from cart_data
+      const sellerIds = new Set();
+      for (const item of cartData) {
+        const prodRes = await client.query('SELECT seller_id FROM products WHERE id = $1', [item.productId || item.id]);
         if (prodRes.rows.length > 0) {
           const sellerId = prodRes.rows[0].seller_id;
-          const price = prodRes.rows[0].effective_price || prodRes.rows[0].price;
+          sellerIds.add(sellerId);
+          const lockedPrice = item.price || 0;
           await client.query(
             'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
-            [orderId, item.productId, sellerId, item.quantity, price]
+            [orderId, item.productId || item.id, sellerId, item.quantity || 1, lockedPrice]
           );
-          await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1', [item.quantity, item.productId]);
+          // Stock was already decremented at checkout creation — confirm the reservation
+          await client.query(
+            "UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND product_id = $2 AND status = 'active'",
+            [pc.id, item.productId || item.id]
+          );
         }
       }
+
+      // Create seller_fulfillments for each seller
+      for (const sellerId of sellerIds) {
+        await client.query(
+          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference, idempotency_key)
+           VALUES ($1, $2, 'verified', 'pending', 'natcash', $3, $4)
+           ON CONFLICT (order_id, seller_id) DO NOTHING`,
+          [orderId, sellerId, smsData?.transcode || null, idempotencyKey]
+        );
+      }
+
+      // Record payment event
       const smsNote = smsData ? `NatCash transfer confirmed (transcode: ${smsData.transcode})` : 'NatCash transfer confirmed (SMS detected)';
       await client.query(
         "INSERT INTO order_events (order_id, event_type, actor_id, note) VALUES ($1, 'payment_received', $2, $3)",
@@ -312,7 +437,7 @@ router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, r
       );
       await client.query("UPDATE pending_checkouts SET status = 'completed' WHERE id = $1", [pc.id]);
       await client.query('COMMIT');
-      console.log(`NatCash: created order ${orderId} from pending checkout ${pc.id}`);
+      console.log(`NatCash: created order ${orderId} from pending checkout ${pc.id} (${sellerIds.size} sellers)`);
       res.json({ orderId });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -323,6 +448,100 @@ router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, r
     }
   } catch (err) {
     console.error('NatCash confirm-natcash error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── NatCash per-seller confirm ─────────────────────────────────────────────
+// For multi-seller orders: buyer pays each seller individually via USSD
+router.post('/orders/:id/confirm-natcash-seller', authRequired, async (req, res) => {
+  try {
+    const { sellerId, smsData } = req.body || {};
+    if (!sellerId) return res.status(400).json({ error: 'sellerId required' });
+
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.buyer_id !== req.user.id) return res.status(403).json({ error: 'Only buyer can confirm' });
+    if (order.payment_method !== 'natcash') return res.status(400).json({ error: 'Not a NatCash order' });
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Lock the seller_fulfillment row
+      const sfRes = await client.query(
+        "SELECT * FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2 FOR UPDATE",
+        [req.params.id, sellerId]
+      );
+      if (sfRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Seller fulfillment not found' });
+      }
+      const sf = sfRes.rows[0];
+      if (sf.payment_status !== 'pending') {
+        await client.query('ROLLBACK');
+        return res.json({ success: true, alreadyClaimed: true, paymentStatus: sf.payment_status });
+      }
+
+      // Idempotency check
+      const idempotencyKey = smsData?.transcode ? `natcash_${req.params.id}_${sellerId}_${smsData.transcode}` : null;
+      if (idempotencyKey && sf.idempotency_key === idempotencyKey) {
+        await client.query('ROLLBACK');
+        return res.json({ success: true, alreadyClaimed: true });
+      }
+
+      const smsNote = smsData
+        ? `NatCash payment claimed (transcode: ${smsData.transcode}, seller: ${sellerId})`
+        : `NatCash payment claimed by buyer (seller: ${sellerId})`;
+
+      await client.query(
+        `UPDATE seller_fulfillments
+         SET payment_status = 'buyer_claimed',
+             payment_reference = $3,
+             claimed_at = CURRENT_TIMESTAMP,
+             idempotency_key = COALESCE($4, idempotency_key),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE order_id = $1 AND seller_id = $2 AND payment_status = 'pending'`,
+        [req.params.id, sellerId, smsData?.transcode || null, idempotencyKey]
+      );
+
+      await client.query(
+        "INSERT INTO order_events (order_id, event_type, actor_id, note) VALUES ($1, 'payment_received', $2, $3)",
+        [req.params.id, req.user.id, smsNote]
+      );
+
+      // Check if all sellers have claimed payment
+      const allClaimed = await client.query(
+        `SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE payment_status = 'buyer_claimed' OR payment_status = 'verified') AS claimed
+         FROM seller_fulfillments WHERE order_id = $1`,
+        [req.params.id]
+      );
+      const { total, claimed } = allClaimed.rows[0];
+      if (parseInt(total) === parseInt(claimed) && parseInt(total) > 0) {
+        // All sellers claimed → move order to active
+        await client.query("UPDATE orders SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [req.params.id]);
+      } else if (parseInt(claimed) > 0) {
+        // At least one seller claimed → order is active
+        await client.query("UPDATE orders SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [req.params.id]);
+      }
+
+      await client.query('COMMIT');
+
+      // Notify the seller
+      createNotification(sellerId, 'payment_received', 'Payment Claimed', 'A buyer has confirmed they sent payment. Verify and process the order.', { orderId: req.params.id });
+
+      // Get updated fulfillment status
+      const updated = await pool.query('SELECT * FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2', [req.params.id, sellerId]);
+      res.json({ success: true, fulfillment: updated.rows[0] });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('NatCash per-seller confirm error:', err);
+      res.status(500).json({ error: 'Server error' });
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('NatCash per-seller confirm error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

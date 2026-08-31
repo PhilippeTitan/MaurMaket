@@ -822,6 +822,83 @@ await step('NatCash phone separation', () => c.query(`
       ON CONFLICT (message_id, recipient_id) DO NOTHING;
     `));
 
+    // ────── Checkout v2: Multi-seller entity model ──────
+    // seller_fulfillments: per-seller payment + fulfillment tracking
+    await step('seller_fulfillments table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS seller_fulfillments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES orders(id) ON DELETE CASCADE NOT NULL,
+        seller_id UUID REFERENCES users(id) NOT NULL,
+        payment_status VARCHAR(20) DEFAULT 'pending'
+          CHECK (payment_status IN ('pending','buyer_claimed','verified','failed','expired','disputed')),
+        fulfillment_status VARCHAR(20) DEFAULT 'pending'
+          CHECK (fulfillment_status IN ('pending','processing','shipped','delivered','completed','cancelled')),
+        payment_method VARCHAR(20),
+        payment_reference TEXT,
+        net_amount DECIMAL(10,2),
+        claimed_at TIMESTAMP,
+        verified_at TIMESTAMP,
+        verification_method VARCHAR(50),
+        idempotency_key TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(order_id, seller_id),
+        UNIQUE(idempotency_key) WHERE idempotency_key IS NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_order ON seller_fulfillments(order_id);
+      CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_seller ON seller_fulfillments(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_payment ON seller_fulfillments(payment_status);
+    `));
+
+    // stock_reservations: temporary holds during checkout
+    await step('stock_reservations table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS stock_reservations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        checkout_id UUID REFERENCES pending_checkouts(id) ON DELETE CASCADE,
+        order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+        product_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
+        quantity INTEGER NOT NULL CHECK (quantity > 0),
+        reserved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL,
+        released_at TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'active'
+          CHECK (status IN ('active','confirmed','released')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(product_id, checkout_id) WHERE checkout_id IS NOT NULL,
+        UNIQUE(product_id, order_id) WHERE order_id IS NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_stock_reservations_product ON stock_reservations(product_id, status);
+      CREATE INDEX IF NOT EXISTS idx_stock_reservations_expires ON stock_reservations(expires_at) WHERE status = 'active';
+    `));
+
+    // Migrate existing orders: create seller_fulfillments rows for each unique seller
+    await step('Migrate existing orders to seller_fulfillments', async () => {
+      const { rows: existingOrders } = await c.query(`
+        SELECT DISTINCT o.id AS order_id, oi.seller_id, o.payment_method, o.status
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        LEFT JOIN seller_fulfillments sf ON sf.order_id = o.id AND sf.seller_id = oi.seller_id
+        WHERE sf.id IS NULL
+      `);
+      for (const row of existingOrders) {
+        const paymentStatus = row.status === 'paid' || row.status === 'completed' ? 'verified'
+          : row.status === 'cancelled' ? 'expired'
+          : 'pending';
+        const fulfillmentStatus = row.status === 'completed' ? 'completed'
+          : row.status === 'cancelled' ? 'cancelled'
+          : row.status === 'delivered' ? 'delivered'
+          : row.status === 'shipped' ? 'shipped'
+          : row.status === 'processing' ? 'processing'
+          : 'pending';
+        await c.query(`
+          INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (order_id, seller_id) DO NOTHING
+        `, [row.order_id, row.seller_id, paymentStatus, fulfillmentStatus, row.payment_method]);
+      }
+      if (existingOrders.length > 0) console.log(`[MIGRATION] Created ${existingOrders.length} seller_fulfillments rows from existing orders`);
+    });
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

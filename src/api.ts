@@ -286,6 +286,9 @@ export const getPendingSellerInfo = (pendingId: string) =>
 export const confirmNatCashPayment = (pendingId: string, smsData?: Record<string, unknown>) =>
   request(`/checkout/pending/${pendingId}/confirm-natcash`, { method: 'POST', body: JSON.stringify({ smsData }) });
 
+export const confirmNatCashSeller = (orderId: string, sellerId: string, smsData?: Record<string, unknown>) =>
+  request(`/orders/${orderId}/confirm-natcash-seller`, { method: 'POST', body: JSON.stringify({ sellerId, smsData }) });
+
 export const reportAbandonedPayment = (data: { pendingId?: string; orderId?: string }) =>
   request('/payments/abandoned', { method: 'POST', body: JSON.stringify(data) });
 

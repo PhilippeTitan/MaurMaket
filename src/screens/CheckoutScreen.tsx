@@ -246,13 +246,30 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         navigation.replace('PaymentReturn', { pendingId: res.pendingId });
       } else {
         // NatCash: fetch seller info, then navigate to NatCashPayment screen
-        const sellerInfo = await getPendingSellerInfo(res.pendingId) as { sellerName: string; sellerPhone: string };
-        navigation.replace('NatCashPayment', {
-          pendingId: res.pendingId,
-          total: finalTotal,
-          sellerName: sellerInfo.sellerName || 'Seller',
-          sellerPhone: sellerInfo.sellerPhone || '',
-        });
+        const sellerInfo = await getPendingSellerInfo(res.pendingId) as { sellers?: Array<{ sellerId: string; name: string; phone: string; total: number; items: Array<{ name: string; price: number; quantity: number }> }>; sellerName?: string; sellerPhone?: string; sellerCount?: number };
+        const sellers = sellerInfo.sellers || [];
+        if (sellers.length > 1) {
+          // Multi-seller: pass all seller data
+          navigation.replace('NatCashPayment', {
+            pendingId: res.pendingId,
+            total: finalTotal,
+            sellers: sellers.map(s => ({
+              sellerId: s.sellerId,
+              name: s.name || 'Seller',
+              phone: s.phone || '',
+              total: s.total,
+              items: s.items,
+            })),
+          });
+        } else {
+          // Single seller: legacy format
+          navigation.replace('NatCashPayment', {
+            pendingId: res.pendingId,
+            total: finalTotal,
+            sellerName: sellerInfo.sellerName || sellers[0]?.name || 'Seller',
+            sellerPhone: sellerInfo.sellerPhone || sellers[0]?.phone || '',
+          });
+        }
       }
     } catch (e: unknown) {
       notifyError();

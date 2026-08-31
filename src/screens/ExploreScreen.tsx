@@ -380,7 +380,8 @@ export default function ExploreScreen({ navigation }: Props) {
       </Modal>
 
       <Modal visible={sortModal} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>            <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
+        <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>
+          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
             {/* Header */}
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Filters</Text>
