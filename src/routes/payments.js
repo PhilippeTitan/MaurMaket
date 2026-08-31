@@ -182,6 +182,7 @@ router.post('/api/payments/webhook', async (req, res) => {
 
           // Escrow + platform revenue for each seller
           for (const sid of sellerIds) {
+            const term = (pc.fulfillment_terms || []).find(item => item.sellerId === sid);
             const sellerItems = await client2.query(
               `SELECT SUM(quantity) AS total_qty, SUM(price * quantity) AS paid_total
                FROM order_items WHERE order_id = $1 AND seller_id = $2`,
@@ -206,10 +207,10 @@ router.post('/api/payments/webhook', async (req, res) => {
 
             // Create seller_fulfillment per seller
             await client2.query(
-              `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference)
-               VALUES ($1, $2, 'verified', 'pending', 'moncash', $3)
+              `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at)
+               VALUES ($1, $2, 'verified', 'pending', 'moncash', $3, $4, $5, $6, $7, $8, $9, 'proposed', CURRENT_TIMESTAMP)
                ON CONFLICT (order_id, seller_id) DO NOTHING`,
-              [orderId, sid, reference]
+              [orderId, sid, reference, term?.method || pc.delivery_method, Number(term?.deliveryFee || 0), term?.location?.lat || null, term?.location?.lng || null, term?.location?.address || null, term?.location?.note || null]
             );
           }
 

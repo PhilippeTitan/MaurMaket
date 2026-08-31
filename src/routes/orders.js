@@ -39,7 +39,7 @@ function deliveryFeeFor(profile, distanceMeters) {
   return matchingRule ? matchingRule.fee : null;
 }
 
-async function buildFulfillmentTerms(client, cart, deliveryMethod, location) {
+async function buildFulfillmentTerms(client, cart, fulfillmentSelections) {
   const productIds = [...new Set(cart.map(item => item.id || item.productId).filter(Boolean))];
   const productRows = await client.query(
     'SELECT id, seller_id FROM products WHERE id = ANY($1)',
@@ -51,8 +51,8 @@ async function buildFulfillmentTerms(client, cart, deliveryMethod, location) {
   const sellerIds = [...new Set(productRows.rows.map(row => row.seller_id))];
   const profiles = await client.query(
     `SELECT u.id AS seller_id, sl.lat, sl.lng,
-            COALESCE(fp.delivery_enabled, true) AS delivery_enabled,
-            COALESCE(fp.meetup_enabled, true) AS meetup_enabled,
+            COALESCE(fp.delivery_enabled, false) AS delivery_enabled,
+            COALESCE(fp.meetup_enabled, false) AS meetup_enabled,
             COALESCE(fp.delivery_radius_meters, 5000) AS delivery_radius_meters,
             COALESCE(fp.meetup_radius_meters, 12000) AS meetup_radius_meters,
             COALESCE(fp.delivery_fee_type, 'flat') AS delivery_fee_type,
@@ -68,20 +68,24 @@ async function buildFulfillmentTerms(client, cart, deliveryMethod, location) {
   const terms = [];
   for (const sellerId of sellerIds) {
     const profile = profileBySeller.get(sellerId);
-    const enabled = deliveryMethod === 'delivery' ? profile.delivery_enabled : profile.meetup_enabled;
-    if (!enabled) throw new Error(`This seller does not offer ${deliveryMethod}`);
-    let distanceMeters = null;
-    if (location?.lat != null && location?.lng != null && profile.lat != null && profile.lng != null) {
-      distanceMeters = Math.round(haversineDistance(Number(profile.lat), Number(profile.lng), Number(location.lat), Number(location.lng)));
-      const radius = deliveryMethod === 'delivery' ? Number(profile.delivery_radius_meters) : Number(profile.meetup_radius_meters);
-      if (distanceMeters > radius) throw new Error(`Your selected ${deliveryMethod} location is outside this seller's service area`);
+    const selection = fulfillmentSelections.find(item => item?.sellerId === sellerId);
+    if (!selection || !['delivery', 'meetup'].includes(selection.method)) throw new Error('Choose delivery or meetup for every seller');
+    const { method, location } = selection;
+    const enabled = method === 'delivery' ? profile.delivery_enabled : profile.meetup_enabled;
+    if (!enabled) throw new Error(`This seller does not offer ${method}`);
+    if (profile.lat == null || profile.lng == null) throw new Error('This seller has not configured a fulfillment location yet');
+    if (!location || !Number.isFinite(Number(location.lat)) || !Number.isFinite(Number(location.lng))) {
+      throw new Error('A precise buyer location is required to calculate fulfillment eligibility');
     }
-    if (deliveryMethod === 'meetup' && distanceMeters === null) throw new Error('A seller location is required before a meetup can be proposed');
-    const fee = deliveryMethod === 'delivery'
+    let distanceMeters = null;
+    distanceMeters = Math.round(haversineDistance(Number(profile.lat), Number(profile.lng), Number(location.lat), Number(location.lng)));
+    const radius = method === 'delivery' ? Number(profile.delivery_radius_meters) : Number(profile.meetup_radius_meters);
+    if (distanceMeters > radius) throw new Error(`Your selected ${method} location is outside this seller's service area`);
+    const fee = method === 'delivery'
       ? deliveryFeeFor(profile, distanceMeters ?? 0)
       : 0;
     if (fee === null) throw new Error('This delivery address is outside the seller’s delivery pricing area');
-    terms.push({ sellerId, method: deliveryMethod, deliveryFee: fee, distanceMeters, location: location || null });
+    terms.push({ sellerId, method, deliveryFee: fee, distanceMeters, location: { lat: Number(location.lat), lng: Number(location.lng), address: location.address || null, note: location.note || null } });
   }
   return terms;
 }
@@ -241,16 +245,21 @@ router.get('/orders', authRequired, async (req, res) => {
 // ── Deferred checkout ──────────────────────────────────────────────────────
 
 router.post('/checkout/pending', authRequired, async (req, res) => {
-  const { cart, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, meetupLat, meetupLng, meetupAddress, meetupName, paymentMethod, promoCode, totalAmount } = req.body;
+  const { cart, fulfillmentSelections, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, meetupLat, meetupLng, meetupAddress, meetupName, paymentMethod, promoCode, totalAmount } = req.body;
   if (!cart || !Array.isArray(cart) || cart.length === 0) return res.status(400).json({ error: 'Cart is empty' });
 
   try {
-    const fulfillmentLocation = deliveryMethod === 'meetup'
+    // `fulfillmentSelections` is authoritative.  The legacy order-wide fields
+    // below are retained only to render historic orders during the migration.
+    const legacyLocation = deliveryMethod === 'meetup'
       ? { lat: meetupLat, lng: meetupLng, address: meetupAddress || null, note: deliveryNote || null }
-      : null;
+      : { lat: req.user.location_lat, lng: req.user.location_lng, address: deliveryAddress || null, note: deliveryNote || null };
+    const selections = Array.isArray(fulfillmentSelections) && fulfillmentSelections.length > 0
+      ? fulfillmentSelections
+      : [...new Set(cart.map(item => item.seller_id))].filter(Boolean).map(sellerId => ({ sellerId, method: deliveryMethod, location: legacyLocation }));
     // Validate seller capability and calculate seller-owned fees server-side.
     // The resulting snapshot is immutable input to the later agreement.
-    const fulfillmentTerms = await buildFulfillmentTerms(pool, cart, deliveryMethod, fulfillmentLocation);
+    const fulfillmentTerms = await buildFulfillmentTerms(pool, cart, selections);
     const fulfillmentFee = fulfillmentTerms.reduce((sum, term) => sum + Number(term.deliveryFee || 0), 0);
     const result = await pool.query(
       `INSERT INTO pending_checkouts (user_id, cart_data, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, payment_method, promo_code, total_amount, fulfillment_terms)
@@ -527,11 +536,12 @@ router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, r
 
       // Create seller_fulfillments for each seller
       for (const sellerId of sellerIds) {
+        const term = (pc.fulfillment_terms || []).find(item => item.sellerId === sellerId);
         await client.query(
-          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference, idempotency_key)
-           VALUES ($1, $2, 'verified', 'pending', 'natcash', $3, $4)
+          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference, idempotency_key, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at)
+           VALUES ($1, $2, 'verified', 'pending', 'natcash', $3, $4, $5, $6, $7, $8, $9, $10, 'proposed', CURRENT_TIMESTAMP)
            ON CONFLICT (order_id, seller_id) DO NOTHING`,
-          [orderId, sellerId, smsData?.transcode || null, idempotencyKey]
+          [orderId, sellerId, smsData?.transcode || null, idempotencyKey, term?.method || pc.delivery_method, Number(term?.deliveryFee || 0), term?.location?.lat || null, term?.location?.lng || null, term?.location?.address || null, term?.location?.note || null]
         );
       }
 

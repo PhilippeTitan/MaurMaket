@@ -885,8 +885,8 @@ await step('NatCash phone separation', () => c.query(`
 
       CREATE TABLE IF NOT EXISTS seller_fulfillment_profiles (
         seller_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-        delivery_enabled BOOLEAN NOT NULL DEFAULT true,
-        meetup_enabled BOOLEAN NOT NULL DEFAULT true,
+        delivery_enabled BOOLEAN NOT NULL DEFAULT false,
+        meetup_enabled BOOLEAN NOT NULL DEFAULT false,
         delivery_radius_meters INTEGER NOT NULL DEFAULT 5000 CHECK (delivery_radius_meters BETWEEN 100 AND 50000),
         meetup_radius_meters INTEGER NOT NULL DEFAULT 12000 CHECK (meetup_radius_meters BETWEEN 100 AND 50000),
         delivery_fee_type VARCHAR(20) NOT NULL DEFAULT 'flat' CHECK (delivery_fee_type IN ('free', 'flat', 'distance')),
@@ -905,6 +905,8 @@ await step('NatCash phone separation', () => c.query(`
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS idx_fulfillment_events_fulfillment ON seller_fulfillment_events(fulfillment_id, created_at);
+      ALTER TABLE seller_fulfillment_profiles ALTER COLUMN delivery_enabled SET DEFAULT false;
+      ALTER TABLE seller_fulfillment_profiles ALTER COLUMN meetup_enabled SET DEFAULT false;
     `));
 
     // stock_reservations: temporary holds during checkout

@@ -55,6 +55,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [meetupLng, setMeetupLng] = useState<number | null>(null);
   const [meetupAddress, setMeetupAddress] = useState<string | null>(null);
   const [meetupName, setMeetupName] = useState('');
+  const [fulfillmentMethods, setFulfillmentMethods] = useState<Record<string, DeliveryMethod>>({});
 
   // ---- "Laser Conic Sweep" (bar-for-bar port of the HTML mockup) ----
   // CSS: .laser-bg { conic-gradient(from var(--angle-a), transparent 60%,
@@ -180,6 +181,19 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   }, []);
   const sellerCount = sellerGroups.length;
 
+  useEffect(() => {
+    setFulfillmentMethods(current => {
+      const next = { ...current };
+      for (const seller of sellerGroups) if (!next[seller.sellerId]) next[seller.sellerId] = method;
+      return next;
+    });
+  }, [sellerGroups.map(group => group.sellerId).join(','), method]);
+
+  const setAllFulfillmentMethods = (nextMethod: DeliveryMethod) => {
+    setMethod(nextMethod);
+    setFulfillmentMethods(Object.fromEntries(sellerGroups.map(seller => [seller.sellerId, nextMethod])));
+  };
+
   const handleCheckout = async () => {
     if (network.isOffline) {
       toast.info(t('network.offline'), t('checkout.offlinePayment'));
@@ -201,13 +215,20 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       if (cart.length - ownItems.length === 0) return;
     }
 
-    if (method === 'delivery' && (!name || !phone || !address || !city)) {
+    const selectedMethods = sellerGroups.map(seller => fulfillmentMethods[seller.sellerId] || method);
+    if (selectedMethods.includes('delivery') && (!name || !phone || !address || !city)) {
       toast.error(t('checkout.missingInfo'), t('checkout.fillRequired'));
       return;
     }
 
-    if (method === 'meetup' && (!meetupLat || !meetupLng)) {
+    if (selectedMethods.includes('meetup') && (!meetupLat || !meetupLng)) {
       toast.error(t('checkout.missingInfo'), t('checkout.selectMeetupLocation'));
+      return;
+    }
+    const buyerLat = Number(store.user?.location_lat);
+    const buyerLng = Number(store.user?.location_lng);
+    if (selectedMethods.includes('delivery') && (!Number.isFinite(buyerLat) || !Number.isFinite(buyerLng))) {
+      toast.error('Location needed', 'Set your precise delivery location in Settings before choosing delivery.');
       return;
     }
 
@@ -223,6 +244,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       const checkoutData: Record<string, unknown> = {
         cart: cartData, deliveryMethod: method, paymentMethod,
         totalAmount: finalTotal, promoCode: promoCode.trim() || undefined,
+        fulfillmentSelections: sellerGroups.map(seller => {
+          const sellerMethod = fulfillmentMethods[seller.sellerId] || method;
+          return sellerMethod === 'delivery'
+            ? { sellerId: seller.sellerId, method: 'delivery', location: { lat: buyerLat, lng: buyerLng, address, note } }
+            : { sellerId: seller.sellerId, method: 'meetup', location: { lat: meetupLat, lng: meetupLng, address: meetupAddress, note } };
+        }),
       };
       if (method === 'delivery') {
         checkoutData.deliveryName = name; checkoutData.deliveryPhone = phone;
@@ -286,7 +313,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   };
 
   const canContinue = (): boolean => {
-    if (step === 1) return method === "delivery" ? !!(name && phone && address && city) : !!(meetupLat && meetupLng);
+    if (step === 1) {
+      const methods = sellerGroups.map(seller => fulfillmentMethods[seller.sellerId] || method);
+      const deliveryReady = !methods.includes('delivery') || !!(name && phone && address && city && Number.isFinite(Number(store.user?.location_lat)) && Number.isFinite(Number(store.user?.location_lng)));
+      const meetupReady = !methods.includes('meetup') || !!(meetupLat && meetupLng);
+      return deliveryReady && meetupReady;
+    }
     return true;
   };
 
@@ -297,21 +329,23 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const renderStep1 = () => (<ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
     <Text style={styles.stepLabel}>{t("checkout.delivery")}</Text>
     <View style={styles.methodRow}>
-      <TouchableOpacity style={[styles.methodCard, method==="delivery"&&styles.methodActive]} onPress={()=>setMethod("delivery")} accessibilityRole="button"><Icon name="delivery" size={22} color={method==="delivery"?COLORS.coral:COLORS.text2}/><Text style={[styles.methodTitle,method==="delivery"&&styles.methodTitleActive]}>{t("checkout.delivery")}</Text><Text style={styles.methodSub}>{t("checkout.deliverySubtitle")}</Text></TouchableOpacity>
-      <TouchableOpacity style={[styles.methodCard, method==="meetup"&&styles.methodActive]} onPress={()=>setMethod("meetup")} accessibilityRole="button"><Icon name="location-pin" size={22} color={method==="meetup"?COLORS.coral:COLORS.text2}/><Text style={[styles.methodTitle,method==="meetup"&&styles.methodTitleActive]}>{t("checkout.meetup")}</Text><Text style={styles.methodSub}>{t("checkout.meetupSubtitle")}</Text></TouchableOpacity>
+      <TouchableOpacity style={[styles.methodCard, method==="delivery"&&styles.methodActive]} onPress={()=>setAllFulfillmentMethods("delivery")} accessibilityRole="button"><Icon name="delivery" size={22} color={method==="delivery"?COLORS.coral:COLORS.text2}/><Text style={[styles.methodTitle,method==="delivery"&&styles.methodTitleActive]}>{t("checkout.delivery")}</Text><Text style={styles.methodSub}>{t("checkout.deliverySubtitle")}</Text></TouchableOpacity>
+      <TouchableOpacity style={[styles.methodCard, method==="meetup"&&styles.methodActive]} onPress={()=>setAllFulfillmentMethods("meetup")} accessibilityRole="button"><Icon name="location-pin" size={22} color={method==="meetup"?COLORS.coral:COLORS.text2}/><Text style={[styles.methodTitle,method==="meetup"&&styles.methodTitleActive]}>{t("checkout.meetup")}</Text><Text style={styles.methodSub}>{t("checkout.meetupSubtitle")}</Text></TouchableOpacity>
     </View>
-    {method==="delivery"?(<><Text style={styles.stepLabel}>{t("checkout.deliveryInfo")}</Text>
+    {sellerCount > 1 && <><Text style={styles.stepLabel}>Choose for each seller</Text><View style={styles.fulfillmentCard}>{sellerGroups.map((seller, index) => { const sellerMethod = fulfillmentMethods[seller.sellerId] || method; return <View key={seller.sellerId} style={[styles.sellerFulfillmentRow, index < sellerGroups.length - 1 && styles.reviewItemBorder]}><View style={styles.sellerFulfillmentCopy}><Text style={styles.sellerFulfillmentName} numberOfLines={1}>{seller.sellerName}</Text><Text style={styles.sellerFulfillmentMeta}>{seller.itemCount} {seller.itemCount === 1 ? t('checkout.item') : t('checkout.items')}</Text></View><View style={styles.fulfillmentChoices}><TouchableOpacity style={[styles.choiceChip, sellerMethod === 'delivery' && styles.choiceChipActive]} onPress={() => setFulfillmentMethods(current => ({ ...current, [seller.sellerId]: 'delivery' }))} accessibilityRole="button"><Text style={[styles.choiceChipText, sellerMethod === 'delivery' && styles.choiceChipTextActive]}>Delivery</Text></TouchableOpacity><TouchableOpacity style={[styles.choiceChip, sellerMethod === 'meetup' && styles.choiceChipActive]} onPress={() => setFulfillmentMethods(current => ({ ...current, [seller.sellerId]: 'meetup' }))} accessibilityRole="button"><Text style={[styles.choiceChipText, sellerMethod === 'meetup' && styles.choiceChipTextActive]}>Meetup</Text></TouchableOpacity></View></View>; })}</View></>}
+    {sellerGroups.some(seller => (fulfillmentMethods[seller.sellerId] || method) === 'delivery') && <><Text style={styles.stepLabel}>{t("checkout.deliveryInfo")}</Text>
       <TextInput style={styles.input} placeholder={t("checkout.fullName")} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName}/>
       <TextInput style={styles.input} placeholder={t("checkout.phone")} placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad"/>
       <TextInput style={styles.input} placeholder={t("checkout.address")} placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress}/>
       <TextInput style={styles.input} placeholder={t("checkout.city")} placeholderTextColor={COLORS.text2} value={city} onChangeText={setCity}/>
       <TextInput style={styles.input} placeholder={t("checkout.note")} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline/>
-    </>):(<><Text style={styles.stepLabel}>{t("checkout.meetupLocation")}</Text>
+    </>}
+    {sellerGroups.some(seller => (fulfillmentMethods[seller.sellerId] || method) === 'meetup') && <><Text style={styles.stepLabel}>{t("checkout.meetupLocation")}</Text>
       <LocationPicker onLocationSelect={(la,lo,a)=>{setMeetupLat(la);setMeetupLng(lo);setMeetupAddress(a);}} initialLat={meetupLat} initialLng={meetupLng} height={220}/>
       {meetupAddress&&<View style={styles.meetupPreview}><MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral}/><Text style={styles.meetupPreviewText} numberOfLines={2}>{meetupAddress}</Text></View>}
       <TextInput style={styles.input} placeholder="Your name for pickup" placeholderTextColor={COLORS.text2} value={meetupName} onChangeText={setMeetupName}/>
       <TextInput style={styles.input} placeholder={t("checkout.meetupNote")} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline/>
-    </>)}
+    </>}
   </ScrollView>);
   const renderStep2 = () => (<ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
     <Text style={styles.stepLabel}>{t("checkout.payment")}</Text>
@@ -362,6 +396,16 @@ const styles = StyleSheet.create({
   input: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8, marginHorizontal: SPACING.lg },
   meetupPreview: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, paddingHorizontal: SPACING.lg },
   meetupPreviewText: { flex: 1, fontSize: 12, color: COLORS.text2 },
+  fulfillmentCard: { marginHorizontal: SPACING.lg, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, overflow: 'hidden' },
+  sellerFulfillmentRow: { padding: 12, gap: 10 },
+  sellerFulfillmentCopy: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  sellerFulfillmentName: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.text },
+  sellerFulfillmentMeta: { fontSize: 11, color: COLORS.text2 },
+  fulfillmentChoices: { flexDirection: 'row', gap: 8 },
+  choiceChip: { flex: 1, minHeight: 44, borderRadius: RADIUS.row, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
+  choiceChipActive: { backgroundColor: COLORS.coral + '16', borderColor: COLORS.coral },
+  choiceChipText: { fontSize: 12, fontWeight: '700', color: COLORS.text2 },
+  choiceChipTextActive: { color: COLORS.coral },
   paymentOptions: { gap: 10, paddingHorizontal: SPACING.lg },
   paymentCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: COLORS.surface, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 14 },
   paymentCardActive: { borderColor: COLORS.coral, backgroundColor: COLORS.coral + "08" },

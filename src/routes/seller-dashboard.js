@@ -53,8 +53,8 @@ router.get('/api/seller/fulfillment-profile', authRequired, sellerRequired, asyn
     const result = await pool.query('SELECT * FROM seller_fulfillment_profiles WHERE seller_id = $1', [req.user.id]);
     const row = result.rows[0] || {};
     res.json({
-      deliveryEnabled: row.delivery_enabled ?? true,
-      meetupEnabled: row.meetup_enabled ?? true,
+      deliveryEnabled: row.delivery_enabled ?? false,
+      meetupEnabled: row.meetup_enabled ?? false,
       deliveryRadiusMeters: row.delivery_radius_meters ?? 5000,
       meetupRadiusMeters: row.meetup_radius_meters ?? 12000,
       deliveryFeeType: row.delivery_fee_type ?? 'flat',
