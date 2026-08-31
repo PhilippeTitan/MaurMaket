@@ -872,6 +872,30 @@ await step('NatCash phone separation', () => c.query(`
         ON stock_reservations(product_id, order_id) WHERE order_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_stock_reservations_product ON stock_reservations(product_id, status);
       CREATE INDEX IF NOT EXISTS idx_stock_reservations_expires ON stock_reservations(expires_at) WHERE status = 'active';
+      -- seller_id for per-seller stock release on NatCash expiry
+      ALTER TABLE stock_reservations ADD COLUMN IF NOT EXISTS seller_id UUID REFERENCES users(id);
+      CREATE INDEX IF NOT EXISTS idx_stock_reservations_seller ON stock_reservations(seller_id) WHERE status = 'active';
+    `));
+
+    // NatCash payment sessions: paste-verification flow (no SMS permissions)
+    await step('natcash_payment_sessions table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS natcash_payment_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        checkout_id UUID REFERENCES pending_checkouts(id) ON DELETE CASCADE NOT NULL,
+        seller_id UUID REFERENCES users(id) NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        recipient_phone VARCHAR(20) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending'
+          CHECK (status IN ('pending','verified','expired')),
+        sms_transcode TEXT,
+        sms_raw TEXT,
+        verified_at TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '15 minutes'),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ncps_checkout_seller
+        ON natcash_payment_sessions(checkout_id, seller_id);
+      CREATE INDEX IF NOT EXISTS idx_ncps_expires ON natcash_payment_sessions(expires_at) WHERE status = 'pending';
     `));
 
     // Migrate existing orders: create seller_fulfillments rows for each unique seller

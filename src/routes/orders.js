@@ -581,6 +581,369 @@ router.post('/orders/:id/confirm-natcash-seller', authRequired, async (req, res)
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// NatCash PASTE-VERIFICATION SESSIONS (no SMS permissions)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// NatCash SMS regex — same pattern as SmsReceiver.kt and sms-listener.ts
+const NATCASH_SMS_REGEX = /Ou transfere ([\d,.]+) HTG a (.+?) (\d{8,}) nan (\d{2}:\d{2}) (\d{2}\/\d{2}\/\d{4}), fre: ([\d,.]+) HTG\. Balans ou: ([\d,.]+) HTG\. Transcode: (\d+)\./i;
+
+/**
+ * POST /natcash/sessions — Create payment sessions for each seller in a NatCash checkout
+ * Body: { pendingId, sellers: [{ sellerId, phone, total }] }
+ * Returns: { sessions: [{ id, sellerId, amount, recipientPhone, expiresAt }] }
+ */
+router.post('/natcash/sessions', authRequired, async (req, res) => {
+  try {
+    const { pendingId, sellers } = req.body || {};
+    if (!pendingId || !sellers?.length) {
+      return res.status(400).json({ error: 'pendingId and sellers required' });
+    }
+
+    // Verify checkout exists and belongs to this user
+    const pcRes = await pool.query(
+      "SELECT id, user_id, status FROM pending_checkouts WHERE id = $1 AND user_id = $2",
+      [pendingId, req.user.id]
+    );
+    if (pcRes.rows.length === 0 || pcRes.rows[0].status !== 'pending') {
+      return res.status(404).json({ error: 'Pending checkout not found or expired' });
+    }
+
+    // Idempotent: return existing sessions if any
+    const existing = await pool.query(
+      'SELECT id, seller_id, amount, recipient_phone, status, expires_at FROM natcash_payment_sessions WHERE checkout_id = $1 ORDER BY created_at',
+      [pendingId]
+    );
+    if (existing.rows.length > 0) {
+      return res.json({ sessions: existing.rows });
+    }
+
+    // Create one session per seller
+    const sessions = [];
+    for (const s of sellers) {
+      const sessRes = await pool.query(
+        `INSERT INTO natcash_payment_sessions (checkout_id, seller_id, amount, recipient_phone, expires_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '15 minutes')
+         ON CONFLICT (checkout_id, seller_id) DO NOTHING
+         RETURNING id, seller_id, amount, recipient_phone, status, expires_at`,
+        [pendingId, s.sellerId, s.total, s.phone]
+      );
+      if (sessRes.rows.length > 0) {
+        sessions.push(sessRes.rows[0]);
+      }
+    }
+
+    // If all were ON CONFLICT DO NOTHING, fetch them
+    if (sessions.length === 0) {
+      const fetched = await pool.query(
+        'SELECT id, seller_id, amount, recipient_phone, status, expires_at FROM natcash_payment_sessions WHERE checkout_id = $1 ORDER BY created_at',
+        [pendingId]
+      );
+      return res.json({ sessions: fetched.rows });
+    }
+
+    res.json({ sessions });
+  } catch (err) {
+    console.error('Create NatCash sessions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * POST /natcash/sessions/:sessionId/verify — Verify pasted SMS against a session
+ * Body: { smsText }
+ * Validates: amount, recipient phone, transcode uniqueness, timestamp ±5min
+ * Returns: { verified: true, status: 'verified' } or error
+ */
+router.post('/natcash/sessions/:sessionId/verify', authRequired, async (req, res) => {
+  try {
+    const { smsText } = req.body || {};
+    if (!smsText?.trim()) {
+      return res.status(400).json({ error: 'Paste the NatCash confirmation SMS' });
+    }
+
+    // Fetch session
+    const sessRes = await pool.query(
+      'SELECT * FROM natcash_payment_sessions WHERE id = $1',
+      [req.params.sessionId]
+    );
+    if (sessRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Payment session not found' });
+    }
+    const session = sessRes.rows[0];
+
+    // Verify ownership via checkout
+    const pcRes = await pool.query(
+      'SELECT user_id, status FROM pending_checkouts WHERE id = $1',
+      [session.checkout_id]
+    );
+    if (pcRes.rows.length === 0 || pcRes.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    if (pcRes.rows[0].status !== 'pending') {
+      return res.status(400).json({ error: 'Checkout is no longer pending' });
+    }
+
+    // Check expiry
+    if (session.status === 'expired' || new Date(session.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Session expired. Go back and retry payment.' });
+    }
+    if (session.status === 'verified') {
+      return res.json({ verified: true, status: 'already_verified' });
+    }
+
+    // Parse SMS using NatCash-specific regex
+    const match = NATCASH_SMS_REGEX.exec(smsText.trim());
+    if (!match) {
+      return res.status(400).json({
+        error: 'Could not parse NatCash SMS. Make sure you paste the full confirmation message.',
+        hint: 'Expected format: "Ou transfere {amount} HTG a {name} {phone} nan ... Transcode: {code}."'
+      });
+    }
+
+    const smsAmount = parseFloat(match[1].replace(/,/g, ''));
+    const recipientPhone = match[3]; // e.g. "40401234"
+    const transcode = match[8];
+
+    // Validate amount (within 1 HTG tolerance for rounding)
+    const expectedAmount = parseFloat(session.amount);
+    if (Math.abs(smsAmount - expectedAmount) > 1) {
+      return res.status(400).json({
+        error: `Amount mismatch: SMS shows G ${smsAmount}, expected G ${expectedAmount}.`,
+      });
+    }
+
+    // Validate recipient phone (last 8 digits of session recipient_phone)
+    const sessionPhone = session.recipient_phone.replace(/\D/g, '');
+    const last8Session = sessionPhone.slice(-8);
+    const last8Sms = recipientPhone.slice(-8);
+    if (last8Session !== last8Sms) {
+      // Get seller name for error message
+      const sellerRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [session.seller_id]);
+      const sellerName = sellerRes.rows[0]?.full_name || 'the seller';
+      return res.status(400).json({
+        error: `This SMS is for a different recipient (${recipientPhone}). Send to ${sellerName} (${session.recipient_phone}).`,
+      });
+    }
+
+    // Validate transcode uniqueness (provider-scoped: natcash only)
+    const existingTranscode = await pool.query(
+      `SELECT id FROM seller_fulfillments
+       WHERE payment_reference = $1 AND payment_method = 'natcash'`,
+      [transcode]
+    );
+    if (existingTranscode.rows.length > 0) {
+      return res.status(400).json({
+        error: 'This transcode has already been used. Each confirmation can only be used once.',
+      });
+    }
+
+    // Also check natcash_payment_sessions for duplicate transcode
+    const sessTranscode = await pool.query(
+      "SELECT id FROM natcash_payment_sessions WHERE sms_transcode = $1 AND id != $2",
+      [transcode, req.params.sessionId]
+    );
+    if (sessTranscode.rows.length > 0) {
+      return res.status(400).json({
+        error: 'This transcode has already been used for another payment.',
+      });
+    }
+
+    // All checks passed — mark verified
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE natcash_payment_sessions
+         SET status = 'verified', sms_transcode = $2, sms_raw = $3, verified_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND status = 'pending'`,
+        [req.params.sessionId, transcode, smsText.trim().slice(0, 1000)]
+      );
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    console.log(`NatCash session ${req.params.sessionId} verified (transcode: ${transcode})`);
+    res.json({ verified: true, status: 'verified', transcode });
+  } catch (err) {
+    console.error('Verify NatCash session error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * GET /natcash/sessions?pendingId=... — Get all session statuses for a checkout
+ * Returns: { sessions: [...], allVerified: bool }
+ */
+router.get('/natcash/sessions', authRequired, async (req, res) => {
+  try {
+    const { pendingId } = req.query;
+    if (!pendingId) return res.status(400).json({ error: 'pendingId required' });
+
+    const pcRes = await pool.query(
+      'SELECT user_id FROM pending_checkouts WHERE id = $1',
+      [pendingId]
+    );
+    if (pcRes.rows.length === 0 || pcRes.rows[0].user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Checkout not found' });
+    }
+
+    const sessRes = await pool.query(
+      `SELECT n.id, n.seller_id, n.amount, n.recipient_phone, n.status, n.sms_transcode, n.verified_at, n.expires_at,
+              u.full_name AS seller_name
+       FROM natcash_payment_sessions n
+       JOIN users u ON u.id = n.seller_id
+       WHERE n.checkout_id = $1 ORDER BY n.created_at`,
+      [pendingId]
+    );
+
+    const sessions = sessRes.rows;
+    const allVerified = sessions.length > 0 && sessions.every(s => s.status === 'verified');
+
+    res.json({ sessions, allVerified });
+  } catch (err) {
+    console.error('Get NatCash sessions error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * POST /natcash/sessions/confirm-all — Create order after all sessions verified
+ * Body: { pendingId }
+ * Creates order + order_items + seller_fulfillments in a single transaction.
+ */
+router.post('/natcash/sessions/confirm-all', authRequired, async (req, res) => {
+  try {
+    const { pendingId } = req.body || {};
+    if (!pendingId) return res.status(400).json({ error: 'pendingId required' });
+
+    // Fetch checkout
+    const pcRes = await pool.query(
+      "SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'pending'",
+      [pendingId, req.user.id]
+    );
+    if (pcRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Pending checkout not found or expired' });
+    }
+    const pc = pcRes.rows[0];
+
+    // Fetch all sessions — must all be verified
+    const sessRes = await pool.query(
+      "SELECT * FROM natcash_payment_sessions WHERE checkout_id = $1 AND status = 'verified'",
+      [pendingId]
+    );
+    const verifiedSessions = sessRes.rows;
+
+    // Check total sessions vs verified
+    const totalRes = await pool.query(
+      "SELECT COUNT(*) AS total FROM natcash_payment_sessions WHERE checkout_id = $1",
+      [pendingId]
+    );
+    if (parseInt(totalRes.rows[0].total) !== verifiedSessions.length) {
+      return res.status(400).json({ error: 'Not all seller payments have been verified yet.' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const cartData = pc.cart_data;
+
+      // Calculate total from cart_data (immutable prices)
+      let totalAmount = 0;
+      for (const item of cartData) {
+        totalAmount += (item.price || 0) * (item.quantity || 1);
+      }
+
+      // Apply promo if present
+      let discountAmount = 0;
+      if (pc.promo_code) {
+        try {
+          const promoRes = await client.query(
+            'SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true FOR UPDATE',
+            [pc.promo_code]
+          );
+          if (promoRes.rows.length > 0) {
+            const promo = promoRes.rows[0];
+            discountAmount = promo.discount_type === 'percentage'
+              ? totalAmount * (promo.discount_value / 100)
+              : Math.min(promo.discount_value, totalAmount);
+            totalAmount = Math.max(0, totalAmount - discountAmount);
+          }
+        } catch { /* ignore */ }
+      }
+
+      // Create order
+      const orderRes = await client.query(
+        `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method,
+          delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note,
+          meetup_lat, meetup_lng, meetup_address, meetup_name)
+         VALUES ($1, $2, 'paid', 'natcash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING id`,
+        [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone,
+         pc.delivery_address, pc.delivery_city, pc.delivery_note,
+         pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
+      );
+      const orderId = orderRes.rows[0].id;
+
+      // Create order_items + seller_fulfillments
+      const sellerIds = new Set();
+      for (const item of cartData) {
+        const prodRes = await client.query('SELECT seller_id FROM products WHERE id = $1', [item.productId || item.id]);
+        if (prodRes.rows.length > 0) {
+          const sellerId = prodRes.rows[0].seller_id;
+          sellerIds.add(sellerId);
+          await client.query(
+            'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
+            [orderId, item.productId || item.id, sellerId, item.quantity || 1, item.price || 0]
+          );
+          // Confirm stock reservation
+          await client.query(
+            "UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND product_id = $2 AND status = 'active'",
+            [pc.id, item.productId || item.id]
+          );
+        }
+      }
+
+      // Create seller_fulfillments with verified transcodes
+      for (const sess of verifiedSessions) {
+        await client.query(
+          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference, idempotency_key)
+           VALUES ($1, $2, 'verified', 'pending', 'natcash', $3, $4)
+           ON CONFLICT (order_id, seller_id) DO NOTHING`,
+          [orderId, sess.seller_id, sess.sms_transcode, `natcash_session_${sess.id}`]
+        );
+      }
+
+      // Record payment event
+      const transcodes = verifiedSessions.map(s => s.sms_transcode).filter(Boolean).join(', ');
+      await client.query(
+        "INSERT INTO order_events (order_id, event_type, actor_id, note) VALUES ($1, 'payment_received', $2, $3)",
+        [orderId, pc.user_id, `NatCash payments verified (transcodes: ${transcodes || 'N/A'})`]
+      );
+
+      // Mark checkout completed
+      await client.query("UPDATE pending_checkouts SET status = 'completed' WHERE id = $1", [pc.id]);
+
+      await client.query('COMMIT');
+      console.log(`NatCash confirm-all: created order ${orderId} from checkout ${pendingId} (${verifiedSessions.length} sellers)`);
+      res.json({ orderId });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('NatCash confirm-all error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.post('/payments/abandoned', authRequired, async (req, res) => {
   try {
     const { pendingId, orderId } = req.body;

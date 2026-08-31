@@ -289,6 +289,19 @@ export const confirmNatCashPayment = (pendingId: string, smsData?: Record<string
 export const confirmNatCashSeller = (orderId: string, sellerId: string, smsData?: Record<string, unknown>) =>
   request(`/orders/${orderId}/confirm-natcash-seller`, { method: 'POST', body: JSON.stringify({ sellerId, smsData }) });
 
+// ── NatCash paste-verification sessions ──
+export const createNatCashSessions = (pendingId: string, sellers: Array<{ sellerId: string; phone: string; total: number }>) =>
+  request('/orders/natcash/sessions', { method: 'POST', body: JSON.stringify({ pendingId, sellers }) });
+
+export const verifyNatCashSession = (sessionId: string, smsText: string) =>
+  request(`/orders/natcash/sessions/${sessionId}/verify`, { method: 'POST', body: JSON.stringify({ smsText }) });
+
+export const getNatCashSessions = (pendingId: string) =>
+  request(`/orders/natcash/sessions?pendingId=${pendingId}`);
+
+export const confirmAllNatCashSessions = (pendingId: string) =>
+  request('/orders/natcash/sessions/confirm-all', { method: 'POST', body: JSON.stringify({ pendingId }) });
+
 export const reportAbandonedPayment = (data: { pendingId?: string; orderId?: string }) =>
   request('/payments/abandoned', { method: 'POST', body: JSON.stringify(data) });
 

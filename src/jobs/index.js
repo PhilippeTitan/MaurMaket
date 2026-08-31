@@ -282,5 +282,64 @@ export function startJobs() {
     }
   });
 
-  console.log('[JOBS] All cron jobs started: meetup timeout, refund retry, stale orders, offer expiry, notification cleanup, stock release');
+  // ───── Cron: Expire NatCash payment sessions (every 1 minute) ─────
+  // Releases stock ONLY for the specific seller whose session expired
+  cron.schedule('* * * * *', async () => {
+    try {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        // Find expired pending sessions
+        const expired = await client.query(`
+          UPDATE natcash_payment_sessions
+          SET status = 'expired'
+          WHERE status = 'pending' AND expires_at < NOW()
+          RETURNING id, checkout_id, seller_id
+        `);
+
+        for (const sess of expired.rows) {
+          // Release stock for THIS seller's products only
+          const released = await client.query(`
+            UPDATE stock_reservations sr SET status = 'released', released_at = CURRENT_TIMESTAMP
+            FROM products p
+            WHERE sr.product_id = p.id
+              AND sr.checkout_id = $1
+              AND p.seller_id = $2
+              AND sr.status = 'active'
+            RETURNING sr.product_id, sr.quantity
+          `, [sess.checkout_id, sess.seller_id]);
+
+          for (const r of released.rows) {
+            await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
+          }
+
+          // Notify buyer that this seller's session expired
+          const pcRes = await client.query('SELECT user_id FROM pending_checkouts WHERE id = $1', [sess.checkout_id]);
+          if (pcRes.rows.length > 0) {
+            const { createNotification } = await import('../utils/notifications.js');
+            createNotification(
+              pcRes.rows[0].user_id, 'payment_failed', 'NatCash Payment Expired',
+              'A seller payment window expired. Retry payment for that seller.',
+              { pendingId: sess.checkout_id }
+            );
+          }
+        }
+
+        await client.query('COMMIT');
+        if (expired.rows.length > 0) {
+          console.log(`[NATCASH CRON] Expired ${expired.rows.length} NatCash sessions, released per-seller stock`);
+        }
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      console.error('[NATCASH CRON] Error:', err.message);
+    }
+  });
+
+  console.log('[JOBS] All cron jobs started: meetup timeout, refund retry, stale orders, offer expiry, notification cleanup, stock release, natcash session expiry');
 }

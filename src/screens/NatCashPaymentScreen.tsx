@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Linking, Platform, ScrollView, PermissionsAndroid, Alert, AppState,
+  Linking, Platform, ScrollView, Alert, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,43 +10,28 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
-import { confirmNatCashPayment, confirmNatCashSeller, checkPendingStatus } from '../api';
+import {
+  createNatCashSessions, verifyNatCashSession, getNatCashSessions,
+  confirmAllNatCashSessions,
+} from '../api';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import { dialUssd } from '../ussd';
-import { onNatCashSms, onSmsReceived, scanRecentSms } from '../sms-listener';
-import type { NatCashSms } from '../sms-listener';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Props = RouteProp<RootStackParamList, 'NatCashPayment'>;
 
-// ─── SMS Parsing (kept for server-side verification) ─────────────
-const SEND_REGEX = /Ou transfere ([\d,.]+) HTG a (.+?) (\d{8,}) nan (\d{2}:\d{2}) (\d{2}\/\d{2}\/\d{4}), fre: ([\d,.]+) HTG\. Balans ou: ([\d,.]+) HTG\. Transcode: (\d+)\./;
-
-interface ParsedSms {
+// ─── Session type ──────────────────────────────────────────────
+interface NatCashSession {
+  id: string;
+  seller_id: string;
   amount: number;
-  recipientName: string;
-  recipientNumber: string;
-  time: string;
-  date: string;
-  fee: number;
-  balance: number;
-  transcode: string;
-}
-
-function parseNatCashSms(body: string): ParsedSms | null {
-  const m = body.match(SEND_REGEX);
-  if (!m) return null;
-  return {
-    amount: parseFloat(m[1].replace(/,/g, '')),
-    recipientName: m[2].trim(),
-    recipientNumber: m[3],
-    time: m[4],
-    date: m[5],
-    fee: parseFloat(m[6].replace(/,/g, '')),
-    balance: parseFloat(m[7].replace(/,/g, '')),
-    transcode: m[8],
-  };
+  recipient_phone: string;
+  status: 'pending' | 'verified' | 'expired';
+  sms_transcode: string | null;
+  verified_at: string | null;
+  expires_at: string;
+  seller_name: string;
 }
 
 // ─── Step indicator ───────────────────────────────────────────
@@ -68,285 +53,72 @@ function StepLine({ done }: { done?: boolean }) {
 
 // ─── Main Component ──────────────────────────────────────────
 export default function NatCashPaymentScreen() {
-  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<Props>();
 
-  const { orderId: directOrderId, pendingId, total, sellerName, sellerPhone, sellers: routeSellers } = route.params;
-  // orderId may come from a retry flow (OrderDetailScreen), pendingId from new checkout
-  const [createdOrderId, setCreatedOrderId] = useState<string | undefined>(directOrderId);
+  const { pendingId, total, sellerName, sellerPhone, sellers: routeSellers } = route.params;
   const isMultiSeller = !!(routeSellers && routeSellers.length > 1);
 
-  // Multi-seller state
+  const [step, setStep] = useState<'dial' | 'paste' | 'verifying' | 'confirmed' | 'failed'>('dial');
+  const [sessions, setSessions] = useState<NatCashSession[]>([]);
   const [currentSellerIdx, setCurrentSellerIdx] = useState(0);
-  const [sellerPaymentStates, setSellerPaymentStates] = useState<Record<string, 'pending' | 'dialing' | 'detecting' | 'confirmed' | 'failed'>>({});
-  const currentSeller = isMultiSeller ? routeSellers![currentSellerIdx] : null;
-
-  const [step, setStep] = useState<'dial' | 'detecting' | 'confirmed' | 'failed'>('dial');
-  const [parsed, setParsed] = useState<ParsedSms | null>(null);
-  const [elapsed, setElapsed] = useState(0);
+  const [pastedText, setPastedText] = useState('');
+  const [verifyError, setVerifyError] = useState('');
   const [ussdLoading, setUssdLoading] = useState(false);
-  const [smsDetected, setSmsDetected] = useState(false);
-  const [smsPermsGranted, setSmsPermsGranted] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const appStateRef = useRef(AppState.currentState);
-  const confirmedRef = useRef(false);
-  const fallbackScanDone = useRef(false);
+  const currentSeller = isMultiSeller ? routeSellers![currentSellerIdx] : null;
+  const currentSession = sessions.find(s =>
+    currentSeller ? s.seller_id === currentSeller.sellerId : true
+  );
 
-  // ── Confirm payment (shared logic — prevents double-fire) ──
-  const confirmPayment = useCallback(async (source: string, smsData?: NatCashSms) => {
-    if (confirmedRef.current) return; // already confirmed
-    confirmedRef.current = true;
-
-    console.log(`[NatCash] Payment confirmed via ${source}`, smsData ? JSON.stringify(smsData) : '');
-    setSmsDetected(true);
-
-    // Stop polling and timer immediately
-    if (pollRef.current) clearInterval(pollRef.current);
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    // If we got SMS data, show it briefly before confirming
-    if (smsData) {
-      setParsed({
-        amount: parseFloat(smsData.amount),
-        recipientName: smsData.recipientName,
-        recipientNumber: smsData.recipientNumber,
-        time: smsData.time,
-        date: smsData.date,
-        fee: parseFloat(smsData.fee),
-        balance: parseFloat(smsData.balance),
-        transcode: smsData.transcode,
-      });
-    }
-
-    // Multi-seller: confirm THIS seller, then move to next
-    if (isMultiSeller && currentSeller && createdOrderId) {
-      try {
-        const smsPayload = smsData ? {
-          transcode: smsData.transcode, amount: smsData.amount,
-          recipientName: smsData.recipientName, recipientNumber: smsData.recipientNumber,
-        } : undefined;
-        await confirmNatCashSeller(createdOrderId, currentSeller.sellerId, smsPayload);
-        setSellerPaymentStates(prev => ({ ...prev, [currentSeller.sellerId]: 'confirmed' }));
-
-        // Check if there are more sellers to pay
-        if (routeSellers && currentSellerIdx < routeSellers.length - 1) {
-          // Move to next seller after brief delay
-          setTimeout(() => {
-            setCurrentSellerIdx(prev => prev + 1);
-            confirmedRef.current = false;
-            setSmsDetected(false);
-            setParsed(null);
-            setElapsed(0);
-            setStep('dial');
-          }, 2000);
-        } else {
-          // All sellers paid — done!
-          setStep('confirmed');
-          setTimeout(() => {
-            nav.replace('OrderDetail', { orderId: createdOrderId });
-          }, 2500);
-        }
-      } catch (err) {
-        console.error('[NatCash] Failed to confirm seller payment:', err);
-        setSellerPaymentStates(prev => ({ ...prev, [currentSeller.sellerId]: 'failed' }));
-        setStep('failed');
-      }
+  // ── Create sessions on mount ──
+  useEffect(() => {
+    if (!pendingId || !routeSellers?.length) {
+      setLoading(false);
       return;
     }
-
-    // Single-seller: create order from pending checkout (deferred flow)
-    let finalOrderId = createdOrderId; // may already be set from direct orderId
-    if (pendingId && !finalOrderId) {
+    (async () => {
       try {
-        const smsPayload = smsData ? {
-          transcode: smsData.transcode, amount: smsData.amount,
-          recipientName: smsData.recipientName, recipientNumber: smsData.recipientNumber,
-        } : undefined;
-        const res = await confirmNatCashPayment(pendingId, smsPayload) as { orderId: string; alreadyConfirmed?: boolean };
-        finalOrderId = res.orderId;
-        setCreatedOrderId(res.orderId);
+        const res = await createNatCashSessions(pendingId, routeSellers) as { sessions: NatCashSession[] };
+        setSessions(res.sessions || []);
       } catch (err) {
-        console.error('[NatCash] Failed to create order from pending:', err);
-        // Even if server call fails, show confirmed state — order may have been created
-        // PaymentReturnScreen will handle the fallback via polling
+        console.error('[NatCash] Failed to create sessions:', err);
+        Alert.alert('Error', 'Failed to initialize payment sessions. Please try again.');
+      } finally {
+        setLoading(false);
       }
-    }
+    })();
+  }, [pendingId]);
 
-    setStep('confirmed');
-    setTimeout(() => {
-      if (finalOrderId) nav.replace('OrderDetail', { orderId: finalOrderId });
-      else nav.replace('PaymentReturn', { pendingId }); // fallback
-    }, 2500);
-  }, [pendingId, createdOrderId, nav, isMultiSeller, currentSeller, currentSellerIdx, routeSellers]);
-
-  // ── Poll server for pending checkout status (backup method) ──
-  const pollOrderStatus = useCallback(async () => {
-    if (confirmedRef.current) return;
-    try {
-      if (pendingId) {
-        const res = await checkPendingStatus(pendingId) as { status: string; orderId?: string };
-        if (res.status === 'completed' && res.orderId) {
-          setCreatedOrderId(res.orderId);
-          confirmPayment('server-poll');
-        }
-      } else if (directOrderId) {
-        // Fallback: retry flow with direct orderId (OrderDetailScreen)
-        const { getOrder } = await import('../api');
-        const res = await getOrder(directOrderId) as { order: { status: string } };
-        if (res.order?.status === 'paid') {
-          setCreatedOrderId(directOrderId);
-          confirmPayment('server-poll');
-        }
-      }
-    } catch { /* keep polling */ }
-  }, [pendingId, directOrderId, confirmPayment]);
-
-  // ── Start polling + SMS listener when "detecting" ──
+  // ── Session expiry timer (polls every 30s) ──
   useEffect(() => {
-    if (step === 'detecting') {
-      timerRef.current = setInterval(() => setElapsed(p => p + 1), 1000);
-      pollRef.current = setInterval(pollOrderStatus, 4000);
+    if (!pendingId) return;
+    timerRef.current = setInterval(async () => {
+      try {
+        const res = await getNatCashSessions(pendingId) as { sessions: NatCashSession[] };
+        setSessions(res.sessions || []);
+      } catch { /* keep trying */ }
+    }, 30_000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [pendingId]);
 
-      // ── Listen for NatCash SMS (instant confirmation!) ──
-      const unsubNatCash = onNatCashSms((sms) => {
-        console.log('[NatCash] SMS received:', sms.transcode);
-        confirmPayment('sms-listener', sms);
-      });
-
-      // ── Also listen for raw SMS (for logging/debugging) ──
-      const unsubRaw = onSmsReceived((sms) => {
-        console.log('[NatCash] Raw SMS from:', sms.sender);
-      });
-
-      // ── Fallback: scan inbox after 8s if BroadcastReceiver missed the SMS ──
-      fallbackScanDone.current = false;
-      const fallbackScan = setTimeout(async () => {
-        if (confirmedRef.current || fallbackScanDone.current) return;
-        fallbackScanDone.current = true;
-        console.log('[NatCash] Fallback: scanning recent SMS inbox...');
-        const found = await scanRecentSms(3);
-        if (found && !confirmedRef.current) {
-          console.log('[NatCash] Fallback scan found NatCash SMS:', found.transcode);
-          confirmPayment('fallback-scan', found);
-        }
-      }, 15_000);
-
-      // Timeout after 10 minutes
-      const timeout = setTimeout(() => {
-        if (!confirmedRef.current) {
-          setStep('failed');
-          if (pollRef.current) clearInterval(pollRef.current);
-          if (timerRef.current) clearInterval(timerRef.current);
-        }
-      }, 600_000);
-
-      return () => {
-        unsubNatCash();
-        unsubRaw();
-        clearTimeout(fallbackScan);
-        if (pollRef.current) clearInterval(pollRef.current);
-        if (timerRef.current) clearInterval(timerRef.current);
-        clearTimeout(timeout);
-      };
-    }
-  }, [step, pollOrderStatus, confirmPayment]);
-
-  // ── Request SMS permissions upfront when screen loads ──
+  // ── Session expiry countdown ──
   useEffect(() => {
-    if (Platform.OS === 'android') {
-      (async () => {
-        try {
-          const smsPerms = await PermissionsAndroid.requestMultiple([
-            PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
-            PermissionsAndroid.PERMISSIONS.READ_SMS,
-          ]);
-          const granted = [
-            smsPerms['android.permission.RECEIVE_SMS'],
-            smsPerms['android.permission.READ_SMS'],
-          ].every(p => p === PermissionsAndroid.RESULTS.GRANTED);
-          setSmsPermsGranted(granted);
-          if (!granted) {
-            console.log('[NatCash] SMS permissions not granted — will use server polling only');
-          }
-        } catch {
-          // User denied — continue with server polling only
-        }
-      })();
-    } else {
-      setSmsPermsGranted(true); // iOS doesn't need explicit SMS perms
-    }
-  }, []);
-
-  // ── Auto-dial *202# on mount (single-seller only — multi-seller shows seller list) ──
-  useEffect(() => {
-    if (!isMultiSeller) {
-      const timer = setTimeout(() => {
-        handleDial();
-      }, 800); // small delay so screen renders first
-      return () => clearTimeout(timer);
-    }
-  }, [isMultiSeller]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Detect when user returns from USSD dialog → auto-advance to detecting ──
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState) => {
-      if (appStateRef.current.match(/background|inactive/) && nextState === 'active') {
-        if (step === 'dial') {
-          // User just returned from the USSD dialog — start detecting immediately
-          setStep('detecting');
-        }
-      }
-      appStateRef.current = nextState;
-    });
-    return () => sub.remove();
+    if (step !== 'dial' && step !== 'paste') return;
+    const countdown = setInterval(() => setElapsed(p => p + 1), 1000);
+    return () => clearInterval(countdown);
   }, [step]);
 
-  // ── Reset confirmedRef when going back to dial ──
-  useEffect(() => {
-    if (step === 'dial') {
-      confirmedRef.current = false;
-      fallbackScanDone.current = false;
-      setSmsDetected(false);
-      setParsed(null);
-      setElapsed(0);
-    }
-  }, [step]);
-
-  // ── Dial USSD via system intent ──
+  // ── Dial USSD ──
   const handleDial = async () => {
     setUssdLoading(true);
     try {
-      if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.CALL_PHONE,
-          {
-            title: 'Phone Permission',
-            message: 'MaurMaket needs phone access to dial the NatCash USSD code.',
-            buttonPositive: 'Allow',
-            buttonNegative: 'Deny',
-          },
-        );
-
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          const result = await dialUssd('*202#');
-          if (!result.success) {
-            Alert.alert('Error', 'Could not open dialer. Please dial *202# manually.');
-            setUssdLoading(false);
-            return;
-          }
-          setUssdLoading(false);
-          return;
-        }
-      }
-
       const result = await dialUssd('*202#');
-      if (result.success) {
-        // USSD opened — user will auto-advance to detecting when they return
-      } else {
-        Alert.alert('Error', result.errorMessage || 'Could not dial USSD code');
+      if (!result.success) {
+        Alert.alert('Error', result.errorMessage || 'Could not open dialer. Please dial *202# manually.');
       }
     } catch {
       Alert.alert('Error', 'Could not dial USSD code. Please dial *202# manually.');
@@ -355,23 +127,74 @@ export default function NatCashPaymentScreen() {
     }
   };
 
-  // ── Handle retry for failed multi-seller payment ──
-  const handleSellerRetry = () => {
-    if (currentSeller) {
-      setSellerPaymentStates(prev => ({ ...prev, [currentSeller.sellerId]: 'pending' }));
+  // ── Verify pasted SMS ──
+  const handleVerify = async () => {
+    if (!pastedText.trim() || !currentSession) return;
+    setStep('verifying');
+    setVerifyError('');
+
+    try {
+      const res = await verifyNatCashSession(currentSession.id, pastedText.trim()) as { verified?: boolean; error?: string };
+      if (res.verified) {
+        // Refresh sessions to get updated status
+        const refreshRes = await getNatCashSessions(pendingId!) as { sessions: NatCashSession[] };
+        setSessions(refreshRes.sessions || []);
+
+        // Check if all sessions are now verified
+        const allVerified = refreshRes.sessions?.every((s: NatCashSession) => s.status === 'verified');
+
+        if (allVerified) {
+          // All sellers paid — create order
+          setStep('confirmed');
+          try {
+            const orderRes = await confirmAllNatCashSessions(pendingId!) as { orderId: string };
+            setTimeout(() => {
+              nav.replace('OrderDetail', { orderId: orderRes.orderId });
+            }, 2500);
+          } catch (err) {
+            console.error('[NatCash] confirm-all failed:', err);
+            // Show confirmed anyway — sessions are verified, order can be retried
+          }
+        } else {
+          // More sellers to pay
+          if (isMultiSeller && currentSellerIdx < routeSellers!.length - 1) {
+            setCurrentSellerIdx(prev => prev + 1);
+            setPastedText('');
+            setStep('dial');
+          }
+        }
+      } else {
+        setVerifyError(res.error || 'Verification failed. Check the SMS and try again.');
+        setStep('paste');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Verification failed';
+      setVerifyError(msg);
+      setStep('paste');
     }
-    confirmedRef.current = false;
-    setSmsDetected(false);
-    setParsed(null);
-    setElapsed(0);
-    setStep('dial');
   };
 
+  // ── Check session expiry ──
+  const isExpired = !!(currentSession?.status === 'expired' ||
+    (currentSession?.expires_at && new Date(currentSession.expires_at) < new Date()));
+
   // ── Step progress bar ──
-  const stepIndex = step === 'dial' ? 0 : step === 'detecting' ? 1 : step === 'confirmed' ? 2 : 1;
+  const stepIndex = step === 'dial' ? 0 : step === 'paste' || step === 'verifying' ? 1 : step === 'confirmed' ? 2 : 1;
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <ScreenHeader title="NatCash Payment" onBack={() => nav.goBack()} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.coral} />
+          <Text style={styles.loadingText}>Setting up payment…</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <KeyboardAvoidingView style={[styles.container, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScreenHeader title="NatCash Payment" onBack={() => nav.goBack()} />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -386,7 +209,7 @@ export default function NatCashPaymentScreen() {
         </View>
         <View style={styles.progressLabels}>
           <Text style={[styles.progressLabel, stepIndex === 0 && styles.progressLabelActive]}>Dial</Text>
-          <Text style={[styles.progressLabel, stepIndex === 1 && styles.progressLabelActive]}>Detect</Text>
+          <Text style={[styles.progressLabel, stepIndex === 1 && styles.progressLabelActive]}>Paste SMS</Text>
           <Text style={[styles.progressLabel, stepIndex === 2 && styles.progressLabelActive]}>Confirm</Text>
         </View>
 
@@ -401,12 +224,13 @@ export default function NatCashPaymentScreen() {
             <>
               <View style={styles.cardDivider} />
               {routeSellers.map((s, idx) => {
-                const payState = sellerPaymentStates[s.sellerId] || 'pending';
+                const sess = sessions.find(ss => ss.seller_id === s.sellerId);
+                const isVerified = sess?.status === 'verified';
                 const isCurrent = idx === currentSellerIdx;
                 return (
                   <View key={s.sellerId} style={[styles.sellerRow, isCurrent && styles.sellerRowActive]}>
-                    <View style={[styles.sellerStatus, payState === 'confirmed' && styles.sellerStatusDone, payState === 'detecting' && styles.sellerStatusActive]}>
-                      {payState === 'confirmed' ? <MaterialCommunityIcons name="check" size={12} color={COLORS.white} /> : <Text style={styles.sellerIdx}>{idx + 1}</Text>}
+                    <View style={[styles.sellerStatus, isVerified && styles.sellerStatusDone, isCurrent && !isVerified && styles.sellerStatusActive]}>
+                      {isVerified ? <MaterialCommunityIcons name="check" size={12} color={COLORS.white} /> : <Text style={styles.sellerIdx}>{idx + 1}</Text>}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.sellerName} numberOfLines={1}>{s.name}</Text>
@@ -415,7 +239,7 @@ export default function NatCashPaymentScreen() {
                       ))}
                     </View>
                     <Text style={styles.sellerTotal}>G {s.total.toFixed(0)}</Text>
-                    {isCurrent && step === 'detecting' && <ActivityIndicator size="small" color={COLORS.coral} style={{ marginLeft: 8 }} />}
+                    {isCurrent && step === 'verifying' && <ActivityIndicator size="small" color={COLORS.coral} style={{ marginLeft: 8 }} />}
                   </View>
                 );
               })}
@@ -439,7 +263,7 @@ export default function NatCashPaymentScreen() {
               <Text style={styles.infoTitle}>Dial *202#</Text>
               <Text style={styles.infoBody}>
                 {isMultiSeller && currentSeller
-                  ? `Pay ${currentSeller.name} (seller ${(currentSellerIdx + 1)} of ${routeSellers!.length}). Tap below to open the NatCash menu. Then:`
+                  ? `Pay ${currentSeller.name} (seller ${currentSellerIdx + 1} of ${routeSellers!.length}). Tap below to open the NatCash menu. Then:`
                   : 'Tap below to open the NatCash menu. Then:'}
               </Text>
               <View style={styles.stepsList}>
@@ -462,14 +286,20 @@ export default function NatCashPaymentScreen() {
               </View>
             </View>
 
-            {!smsPermsGranted && (
-              <View style={[styles.infoCard, { borderColor: COLORS.yellow + '33' }]}>
-                <MaterialCommunityIcons name="message-alert-outline" size={20} color={COLORS.yellow} />
-                <Text style={[styles.infoBody, { color: COLORS.yellow }]}>SMS permissions needed for auto-detection. You'll be prompted next.</Text>
+            {isExpired && (
+              <View style={[styles.infoCard, { borderColor: COLORS.coral + '33' }]}>
+                <MaterialCommunityIcons name="clock-alert-outline" size={20} color={COLORS.coral} />
+                <Text style={[styles.infoBody, { color: COLORS.coral }]}>Payment window expired for this seller. Go back and retry.</Text>
               </View>
             )}
 
-            <TouchableOpacity style={styles.dialBtn} onPress={handleDial} disabled={ussdLoading} accessibilityLabel="dial USSD code" accessibilityRole="button">
+            <TouchableOpacity
+              style={[styles.dialBtn, isExpired && styles.dialBtnDisabled]}
+              onPress={handleDial}
+              disabled={ussdLoading || isExpired}
+              accessibilityLabel="dial USSD code"
+              accessibilityRole="button"
+            >
               {ussdLoading ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
@@ -478,57 +308,91 @@ export default function NatCashPaymentScreen() {
               <Text style={styles.dialBtnText}>{ussdLoading ? 'Connecting…' : 'Open NatCash Menu'}</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={styles.pasteBtn}
+              onPress={() => { setStep('paste'); setPastedText(''); setVerifyError(''); }}
+              disabled={isExpired}
+              accessibilityLabel="I have sent the payment"
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="content-paste" size={20} color={COLORS.coral} />
+              <Text style={styles.pasteBtnText}>I've Sent — Paste SMS</Text>
+            </TouchableOpacity>
+
             <Text style={styles.hintText}>
-              The NatCash menu will open. Complete the transfer — we'll detect your payment automatically when you return.
+              After completing the transfer, copy the confirmation SMS and paste it here.
             </Text>
           </View>
         )}
 
-        {step === 'detecting' && (
+        {step === 'paste' && (
           <View style={styles.stepContent}>
-            <View style={[styles.spinnerCircle, smsDetected && { borderColor: COLORS.green + '44' }]}>
-              {smsDetected ? (
-                <MaterialCommunityIcons name="check-circle" size={32} color={COLORS.green} />
-              ) : (
-                <ActivityIndicator size="large" color={COLORS.coral} />
+            <View style={styles.infoCard}>
+              <MaterialCommunityIcons name="clipboard-text-outline" size={28} color={COLORS.blue} />
+              <Text style={styles.infoTitle}>Paste Confirmation SMS</Text>
+              <Text style={styles.infoBody}>
+                Copy the full NatCash confirmation SMS you received, then paste it below.
+              </Text>
+            </View>
+
+            <View style={styles.pasteInputContainer}>
+              <TextInput
+                style={styles.pasteInput}
+                placeholder="Paste NatCash SMS here…"
+                placeholderTextColor={COLORS.text2}
+                value={pastedText}
+                onChangeText={setPastedText}
+                multiline
+                numberOfLines={5}
+                textAlignVertical="top"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {pastedText.length > 0 && (
+                <TouchableOpacity style={styles.clearBtn} onPress={() => setPastedText('')} accessibilityLabel="clear">
+                  <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.text2} />
+                </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.detectingTitle}>
-              {smsDetected ? 'SMS Detected!' : 'Waiting for payment…'}
-            </Text>
-            <Text style={styles.detectingBody}>
-              {smsDetected
-                ? isMultiSeller && currentSeller
-                  ? `NatCash payment to ${currentSeller.name} detected. Confirming…`
-                  : 'Your NatCash confirmation was received instantly. Confirming payment…'
-                : smsPermsGranted
-                  ? isMultiSeller && currentSeller
-                    ? `Listening for NatCash SMS for ${currentSeller.name} (auto-detected). Fallback: inbox scan in 15s.`
-                    : 'Listening for your NatCash confirmation SMS (auto-detected instantly). Fallback: scanning inbox in 8s.'
-                  : 'Waiting for payment confirmation via server polling. Grant SMS permissions for instant detection.'}
-            </Text>
-            {parsed && (
-              <View style={styles.smsCard}>
-                <View style={styles.smsRow}>
-                  <Text style={styles.smsLabel}>Amount</Text>
-                  <Text style={styles.smsValue}>G {parsed.amount.toFixed(0)}</Text>
-                </View>
-                <View style={styles.smsRow}>
-                  <Text style={styles.smsLabel}>To</Text>
-                  <Text style={styles.smsValue}>{parsed.recipientName}</Text>
-                </View>
-                <View style={styles.smsRow}>
-                  <Text style={styles.smsLabel}>Transcode</Text>
-                  <Text style={styles.smsValue}>{parsed.transcode}</Text>
-                </View>
+
+            {verifyError ? (
+              <View style={styles.errorCard}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={16} color={COLORS.coral} />
+                <Text style={styles.errorText}>{verifyError}</Text>
               </View>
-            )}
-            {elapsed > 0 && !smsDetected && (
-              <Text style={styles.elapsed}>{elapsed}s</Text>
-            )}
-            <View style={styles.orderBadge}>
-              <Text style={styles.orderBadgeText}>{(createdOrderId || directOrderId || pendingId || '').slice(0, 8)}</Text>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.dialBtn, !pastedText.trim() && styles.dialBtnDisabled]}
+              onPress={handleVerify}
+              disabled={!pastedText.trim()}
+              accessibilityLabel="verify payment"
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="check-circle-outline" size={22} color={COLORS.white} />
+              <Text style={styles.dialBtnText}>Verify Payment</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => { setStep('dial'); setVerifyError(''); }}
+              accessibilityLabel="go back"
+              accessibilityRole="button"
+            >
+              <Text style={styles.secondaryBtnText}>Back to Dial</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {step === 'verifying' && (
+          <View style={styles.stepContent}>
+            <View style={styles.spinnerCircle}>
+              <ActivityIndicator size="large" color={COLORS.coral} />
             </View>
+            <Text style={styles.detectingTitle}>Verifying Payment…</Text>
+            <Text style={styles.detectingBody}>
+              Checking your NatCash confirmation with the server.
+            </Text>
           </View>
         )}
 
@@ -537,15 +401,11 @@ export default function NatCashPaymentScreen() {
             <View style={styles.successCircle}>
               <MaterialCommunityIcons name="check-circle" size={56} color={COLORS.green} />
             </View>
-            <Text style={styles.confirmedTitle}>Payment Detected!</Text>
+            <Text style={styles.confirmedTitle}>Payment Verified!</Text>
             <Text style={styles.confirmedBody}>
-              {smsDetected
-                ? isMultiSeller && currentSeller
-                  ? `NatCash transfer to ${currentSeller.name} confirmed (${parsed?.transcode || 'SMS detected'}). ${currentSellerIdx < (routeSellers?.length || 0) - 1 ? 'Next seller…' : 'All payments received!'}`
-                  : `NatCash transfer confirmed (${parsed?.transcode || 'SMS detected'}). Redirecting to your order…`
-                : isMultiSeller
-                  ? 'All payments confirmed. Redirecting to your order…'
-                  : 'Payment confirmed. Redirecting to your order…'}
+              {isMultiSeller
+                ? 'All seller payments confirmed. Creating your order…'
+                : 'NatCash transfer confirmed. Creating your order…'}
             </Text>
           </View>
         )}
@@ -555,13 +415,11 @@ export default function NatCashPaymentScreen() {
             <View style={[styles.spinnerCircle, { borderColor: COLORS.yellow }]}>
               <MaterialCommunityIcons name="clock-alert-outline" size={40} color={COLORS.yellow} />
             </View>
-            <Text style={styles.failedTitle}>Payment Not Detected</Text>
+            <Text style={styles.failedTitle}>Verification Failed</Text>
             <Text style={styles.failedBody}>
-              {isMultiSeller && currentSeller
-                ? `We couldn't detect a NatCash confirmation SMS for ${currentSeller.name}. You can retry or check your orders.`
-                : 'We couldn\'t detect a NatCash confirmation SMS. This can happen if the SMS was delayed by the carrier. You can retry or check your orders.'}
+              We couldn't verify your payment. Please check the SMS and try again.
             </Text>
-            <TouchableOpacity style={styles.dialBtn} onPress={isMultiSeller ? handleSellerRetry : () => { setStep('dial'); setElapsed(0); }} accessibilityLabel="retry" accessibilityRole="button">
+            <TouchableOpacity style={styles.dialBtn} onPress={() => { setStep('paste'); setPastedText(''); setVerifyError(''); }} accessibilityLabel="retry" accessibilityRole="button">
               <MaterialCommunityIcons name="refresh" size={20} color={COLORS.white} />
               <Text style={styles.dialBtnText}>Try Again</Text>
             </TouchableOpacity>
@@ -575,11 +433,11 @@ export default function NatCashPaymentScreen() {
         <View style={styles.disclaimer}>
           <MaterialCommunityIcons name="information-outline" size={14} color={COLORS.text2} />
           <Text style={styles.disclaimerText}>
-            NatCash payments are processed directly between you and the seller. SMS detection is automatic — no internet needed during the transfer.
+            NatCash payments are sent directly from you to the seller. MaurMaket does not hold or process your money — we only verify the confirmation.
           </Text>
         </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -588,6 +446,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 40, paddingHorizontal: SPACING.lg },
 
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.md },
+  loadingText: { fontSize: 14, color: COLORS.text2 },
+
   // Progress
   progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: SPACING.xl, marginBottom: SPACING.xs },
   stepDot: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
@@ -595,7 +456,7 @@ const styles = StyleSheet.create({
   stepDotActive: { borderColor: COLORS.coral },
   stepLine: { width: 48, height: 2, backgroundColor: COLORS.border, marginHorizontal: 4 },
   stepLineDone: { backgroundColor: COLORS.green },
-  progressLabels: { flexDirection: 'row', justifyContent: 'center', gap: 56, marginBottom: SPACING.xl },
+  progressLabels: { flexDirection: 'row', justifyContent: 'center', gap: 40, marginBottom: SPACING.xl },
   progressLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '600' },
   progressLabelActive: { color: COLORS.coral },
 
@@ -634,28 +495,35 @@ const styles = StyleSheet.create({
   stepNumText: { fontSize: 11, fontWeight: '800', color: COLORS.coral },
   stepItemText: { fontSize: 13, color: COLORS.text2, flex: 1 },
 
+  // Paste input
+  pasteInputContainer: { width: '100%', position: 'relative' },
+  pasteInput: {
+    width: '100%', minHeight: 120, backgroundColor: COLORS.surface, borderRadius: RADIUS.card,
+    borderWidth: 1, borderColor: COLORS.border, padding: SPACING.md, fontSize: 13, color: COLORS.text,
+    lineHeight: 20,
+  },
+  clearBtn: { position: 'absolute', top: 10, right: 10 },
+
+  // Error card
+  errorCard: { flexDirection: 'row', gap: 6, backgroundColor: COLORS.coral + '10', borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.coral + '33', padding: SPACING.md, width: '100%' },
+  errorText: { flex: 1, fontSize: 12, color: COLORS.coral, lineHeight: 18 },
+
   // Hint
   hintText: { fontSize: 11, color: COLORS.text2, textAlign: 'center', fontStyle: 'italic', paddingHorizontal: 10 },
 
   // Buttons
   dialBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: COLORS.coral, borderRadius: RADIUS.button, paddingVertical: 14, paddingHorizontal: 24, width: '100%' },
+  dialBtnDisabled: { opacity: 0.5 },
   dialBtnText: { fontSize: 15, color: COLORS.white, fontWeight: '700' },
+  pasteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: COLORS.surface, borderRadius: RADIUS.button, paddingVertical: 14, paddingHorizontal: 24, width: '100%', borderWidth: 1, borderColor: COLORS.coral + '33' },
+  pasteBtnText: { fontSize: 14, color: COLORS.coral, fontWeight: '700' },
   secondaryBtn: { paddingVertical: 14, borderRadius: RADIUS.button, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface, alignItems: 'center', width: '100%' },
   secondaryBtnText: { fontSize: 14, color: COLORS.text2, fontWeight: '600' },
 
-  // Detecting
+  // Detecting / Verifying
   spinnerCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.surface, borderWidth: 2, borderColor: COLORS.coral + '44', alignItems: 'center', justifyContent: 'center', marginTop: SPACING.md },
   detectingTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
   detectingBody: { fontSize: 13, color: COLORS.text2, textAlign: 'center', lineHeight: 20, paddingHorizontal: 10 },
-  elapsed: { fontSize: 12, color: COLORS.text2, fontWeight: '600', marginTop: 4 },
-  orderBadge: { marginTop: SPACING.sm, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: COLORS.surface, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: COLORS.border },
-  orderBadgeText: { fontSize: 12, color: COLORS.text2, fontWeight: '600' },
-
-  // SMS card (shown when SMS is detected)
-  smsCard: { width: '100%', backgroundColor: COLORS.green + '10', borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.green + '33', padding: SPACING.md, marginTop: SPACING.sm },
-  smsRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  smsLabel: { fontSize: 12, color: COLORS.text2, fontWeight: '600' },
-  smsValue: { fontSize: 13, color: COLORS.text, fontWeight: '700' },
 
   // Confirmed
   successCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: COLORS.green + '15', alignItems: 'center', justifyContent: 'center', marginTop: SPACING.md },
