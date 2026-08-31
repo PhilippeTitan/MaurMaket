@@ -12,6 +12,85 @@ function sellerRequired(req, res, next) {
   next();
 }
 
+const MAX_RADIUS_METERS = 50000;
+
+function normalizeFulfillmentProfile(body = {}) {
+  const profile = {};
+  if (body.deliveryEnabled !== undefined) profile.delivery_enabled = Boolean(body.deliveryEnabled);
+  if (body.meetupEnabled !== undefined) profile.meetup_enabled = Boolean(body.meetupEnabled);
+  for (const [input, column] of [['deliveryRadiusMeters', 'delivery_radius_meters'], ['meetupRadiusMeters', 'meetup_radius_meters']]) {
+    if (body[input] !== undefined) {
+      const value = Number(body[input]);
+      if (!Number.isInteger(value) || value < 100 || value > MAX_RADIUS_METERS) throw new Error(`${input} must be between 100 and ${MAX_RADIUS_METERS}`);
+      profile[column] = value;
+    }
+  }
+  if (body.deliveryFeeType !== undefined) {
+    if (!['free', 'flat', 'distance'].includes(body.deliveryFeeType)) throw new Error('deliveryFeeType must be free, flat, or distance');
+    profile.delivery_fee_type = body.deliveryFeeType;
+  }
+  if (body.flatDeliveryFee !== undefined) {
+    const value = Number(body.flatDeliveryFee);
+    if (!Number.isFinite(value) || value < 0) throw new Error('flatDeliveryFee must be a non-negative number');
+    profile.flat_delivery_fee = value;
+  }
+  if (body.distanceFeeRules !== undefined) {
+    if (!Array.isArray(body.distanceFeeRules) || body.distanceFeeRules.some(rule => !Number.isFinite(Number(rule?.maxDistanceMeters)) || Number(rule.maxDistanceMeters) <= 0 || !Number.isFinite(Number(rule?.fee)) || Number(rule.fee) < 0)) {
+      throw new Error('distanceFeeRules must contain positive distance limits and non-negative fees');
+    }
+    profile.distance_fee_rules = body.distanceFeeRules
+      .map(rule => ({ maxDistanceMeters: Math.round(Number(rule.maxDistanceMeters)), fee: Number(rule.fee) }))
+      .sort((a, b) => a.maxDistanceMeters - b.maxDistanceMeters);
+  }
+  return profile;
+}
+
+// Seller-controlled fulfillment availability and pricing.  These terms are
+// copied into an agreement at checkout, so later profile changes cannot alter
+// a buyer's accepted commitment.
+router.get('/api/seller/fulfillment-profile', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM seller_fulfillment_profiles WHERE seller_id = $1', [req.user.id]);
+    const row = result.rows[0] || {};
+    res.json({
+      deliveryEnabled: row.delivery_enabled ?? true,
+      meetupEnabled: row.meetup_enabled ?? true,
+      deliveryRadiusMeters: row.delivery_radius_meters ?? 5000,
+      meetupRadiusMeters: row.meetup_radius_meters ?? 12000,
+      deliveryFeeType: row.delivery_fee_type ?? 'flat',
+      flatDeliveryFee: Number(row.flat_delivery_fee ?? 0),
+      distanceFeeRules: row.distance_fee_rules ?? [],
+    });
+  } catch (err) {
+    console.error('Fulfillment profile fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/api/seller/fulfillment-profile', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const profile = normalizeFulfillmentProfile(req.body);
+    if (Object.keys(profile).length === 0) return res.status(400).json({ error: 'No fulfillment settings supplied' });
+    const columns = Object.keys(profile);
+    const values = Object.values(profile).map(value => typeof value === 'object' ? JSON.stringify(value) : value);
+    const insertColumns = ['seller_id', ...columns];
+    const placeholders = insertColumns.map((_, index) => `$${index + 1}`);
+    const updates = columns.map(column => `${column} = EXCLUDED.${column}`).concat('updated_at = CURRENT_TIMESTAMP');
+    await pool.query(
+      `INSERT INTO seller_fulfillment_profiles (${insertColumns.join(', ')}) VALUES (${placeholders.join(', ')})
+       ON CONFLICT (seller_id) DO UPDATE SET ${updates.join(', ')}`,
+      [req.user.id, ...values]
+    );
+    const result = await pool.query('SELECT * FROM seller_fulfillment_profiles WHERE seller_id = $1', [req.user.id]);
+    const row = result.rows[0];
+    res.json({ deliveryEnabled: row.delivery_enabled, meetupEnabled: row.meetup_enabled, deliveryRadiusMeters: row.delivery_radius_meters, meetupRadiusMeters: row.meetup_radius_meters, deliveryFeeType: row.delivery_fee_type, flatDeliveryFee: Number(row.flat_delivery_fee), distanceFeeRules: row.distance_fee_rules });
+  } catch (err) {
+    const status = err.message?.includes('must be') || err.message?.includes('settings') ? 400 : 500;
+    if (status === 500) console.error('Fulfillment profile update error:', err);
+    res.status(status).json({ error: err.message || 'Server error' });
+  }
+});
+
 // Seller location
 router.get('/api/seller/location', authRequired, sellerRequired, async (req, res) => {
   try {

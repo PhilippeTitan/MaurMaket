@@ -100,6 +100,7 @@ async function runMigrations() {
         meetup_lat DECIMAL(10,7), meetup_lng DECIMAL(10,7), meetup_address TEXT, meetup_note TEXT,
         meetup_confirmed BOOLEAN DEFAULT false, meetup_proposed_by UUID REFERENCES users(id),
         meetup_started_at TIMESTAMP,
+        meetup_expires_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE IF NOT EXISTS order_items (
@@ -143,6 +144,7 @@ async function runMigrations() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_confirmed BOOLEAN DEFAULT false;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_proposed_by UUID REFERENCES users(id);
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_started_at TIMESTAMP;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_expires_at TIMESTAMP;
     `));
 
     // 3. Drop legacy orders status check
@@ -726,6 +728,7 @@ async function runMigrations() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '30 minutes')
       );
+      ALTER TABLE pending_checkouts ADD COLUMN IF NOT EXISTS fulfillment_terms JSONB NOT NULL DEFAULT '[]'::jsonb;
     `));
 await step('NatCash phone separation', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS natcash_phone VARCHAR(20);
@@ -857,6 +860,51 @@ await step('NatCash phone separation', () => c.query(`
       CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_order ON seller_fulfillments(order_id);
       CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_seller ON seller_fulfillments(seller_id);
       CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_payment ON seller_fulfillments(payment_status);
+    `));
+
+    // ────── Fulfillment agreements: immutable, seller-specific terms ──────
+    // An order may contain multiple sellers.  Each seller gets an independent
+    // commitment, rather than inheriting mutable order-wide delivery fields.
+    await step('Fulfillment agreement state', () => c.query(`
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS fulfillment_method VARCHAR(20)
+        CHECK (fulfillment_method IN ('delivery', 'meetup'));
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS agreement_status VARCHAR(20) NOT NULL DEFAULT 'draft'
+        CHECK (agreement_status IN ('draft', 'proposed', 'accepted', 'locked', 'rejected', 'cancelled', 'disputed', 'completed'));
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS buyer_accepted_at TIMESTAMPTZ;
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS seller_accepted_at TIMESTAMPTZ;
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS terms_locked_at TIMESTAMPTZ;
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS fulfillment_lat DECIMAL(10,7);
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS fulfillment_lng DECIMAL(10,7);
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS fulfillment_address TEXT;
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS fulfillment_note TEXT;
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS meetup_started_at TIMESTAMPTZ;
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS meetup_expires_at TIMESTAMPTZ;
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS dispute_id UUID REFERENCES disputes(id);
+      CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_agreement ON seller_fulfillments(order_id, agreement_status);
+
+      CREATE TABLE IF NOT EXISTS seller_fulfillment_profiles (
+        seller_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        delivery_enabled BOOLEAN NOT NULL DEFAULT true,
+        meetup_enabled BOOLEAN NOT NULL DEFAULT true,
+        delivery_radius_meters INTEGER NOT NULL DEFAULT 5000 CHECK (delivery_radius_meters BETWEEN 100 AND 50000),
+        meetup_radius_meters INTEGER NOT NULL DEFAULT 12000 CHECK (meetup_radius_meters BETWEEN 100 AND 50000),
+        delivery_fee_type VARCHAR(20) NOT NULL DEFAULT 'flat' CHECK (delivery_fee_type IN ('free', 'flat', 'distance')),
+        flat_delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (flat_delivery_fee >= 0),
+        distance_fee_rules JSONB NOT NULL DEFAULT '[]'::jsonb,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS seller_fulfillment_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        fulfillment_id UUID NOT NULL REFERENCES seller_fulfillments(id) ON DELETE CASCADE,
+        actor_id UUID REFERENCES users(id),
+        event_type VARCHAR(50) NOT NULL,
+        note TEXT,
+        metadata JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_fulfillment_events_fulfillment ON seller_fulfillment_events(fulfillment_id, created_at);
     `));
 
     // stock_reservations: temporary holds during checkout

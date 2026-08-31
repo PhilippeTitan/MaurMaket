@@ -13,6 +13,8 @@ const router = Router();
 
 const MEETUP_CODE_TTL_MS = 30 * 60 * 1000;
 const MAX_MEETUP_CODE_ATTEMPTS = 5;
+const MEETUP_SESSION_MS = 90 * 60 * 1000;
+const MEETUP_EXTENSION_MS = 30 * 60 * 1000;
 
 function generateMeetupCode() {
   return String(crypto.randomInt(1000, 10000));
@@ -24,6 +26,64 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   const dLng = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function deliveryFeeFor(profile, distanceMeters) {
+  if (profile.delivery_fee_type === 'free') return 0;
+  if (profile.delivery_fee_type === 'flat') return Number(profile.flat_delivery_fee || 0);
+  const rules = Array.isArray(profile.distance_fee_rules) ? profile.distance_fee_rules : [];
+  const matchingRule = rules
+    .map(rule => ({ maxDistanceMeters: Number(rule.maxDistanceMeters), fee: Number(rule.fee) }))
+    .sort((a, b) => a.maxDistanceMeters - b.maxDistanceMeters)
+    .find(rule => Number.isFinite(rule.maxDistanceMeters) && distanceMeters <= rule.maxDistanceMeters);
+  return matchingRule ? matchingRule.fee : null;
+}
+
+async function buildFulfillmentTerms(client, cart, deliveryMethod, location) {
+  const productIds = [...new Set(cart.map(item => item.id || item.productId).filter(Boolean))];
+  const productRows = await client.query(
+    'SELECT id, seller_id FROM products WHERE id = ANY($1)',
+    [productIds]
+  );
+  const sellerByProduct = new Map(productRows.rows.map(row => [row.id, row.seller_id]));
+  if (sellerByProduct.size !== productIds.length) throw new Error('One or more products are unavailable');
+
+  const sellerIds = [...new Set(productRows.rows.map(row => row.seller_id))];
+  const profiles = await client.query(
+    `SELECT u.id AS seller_id, sl.lat, sl.lng,
+            COALESCE(fp.delivery_enabled, true) AS delivery_enabled,
+            COALESCE(fp.meetup_enabled, true) AS meetup_enabled,
+            COALESCE(fp.delivery_radius_meters, 5000) AS delivery_radius_meters,
+            COALESCE(fp.meetup_radius_meters, 12000) AS meetup_radius_meters,
+            COALESCE(fp.delivery_fee_type, 'flat') AS delivery_fee_type,
+            COALESCE(fp.flat_delivery_fee, 0) AS flat_delivery_fee,
+            COALESCE(fp.distance_fee_rules, '[]'::jsonb) AS distance_fee_rules
+       FROM users u
+       LEFT JOIN seller_locations sl ON sl.seller_id = u.id
+       LEFT JOIN seller_fulfillment_profiles fp ON fp.seller_id = u.id
+       WHERE u.id = ANY($1)`,
+    [sellerIds]
+  );
+  const profileBySeller = new Map(profiles.rows.map(row => [row.seller_id, row]));
+  const terms = [];
+  for (const sellerId of sellerIds) {
+    const profile = profileBySeller.get(sellerId);
+    const enabled = deliveryMethod === 'delivery' ? profile.delivery_enabled : profile.meetup_enabled;
+    if (!enabled) throw new Error(`This seller does not offer ${deliveryMethod}`);
+    let distanceMeters = null;
+    if (location?.lat != null && location?.lng != null && profile.lat != null && profile.lng != null) {
+      distanceMeters = Math.round(haversineDistance(Number(profile.lat), Number(profile.lng), Number(location.lat), Number(location.lng)));
+      const radius = deliveryMethod === 'delivery' ? Number(profile.delivery_radius_meters) : Number(profile.meetup_radius_meters);
+      if (distanceMeters > radius) throw new Error(`Your selected ${deliveryMethod} location is outside this seller's service area`);
+    }
+    if (deliveryMethod === 'meetup' && distanceMeters === null) throw new Error('A seller location is required before a meetup can be proposed');
+    const fee = deliveryMethod === 'delivery'
+      ? deliveryFeeFor(profile, distanceMeters ?? 0)
+      : 0;
+    if (fee === null) throw new Error('This delivery address is outside the seller’s delivery pricing area');
+    terms.push({ sellerId, method: deliveryMethod, deliveryFee: fee, distanceMeters, location: location || null });
+  }
+  return terms;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -185,10 +245,17 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
   if (!cart || !Array.isArray(cart) || cart.length === 0) return res.status(400).json({ error: 'Cart is empty' });
 
   try {
+    const fulfillmentLocation = deliveryMethod === 'meetup'
+      ? { lat: meetupLat, lng: meetupLng, address: meetupAddress || null, note: deliveryNote || null }
+      : null;
+    // Validate seller capability and calculate seller-owned fees server-side.
+    // The resulting snapshot is immutable input to the later agreement.
+    const fulfillmentTerms = await buildFulfillmentTerms(pool, cart, deliveryMethod, fulfillmentLocation);
+    const fulfillmentFee = fulfillmentTerms.reduce((sum, term) => sum + Number(term.deliveryFee || 0), 0);
     const result = await pool.query(
-      `INSERT INTO pending_checkouts (user_id, cart_data, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, payment_method, promo_code, total_amount)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
-      [req.user.id, JSON.stringify(cart), deliveryMethod, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null, meetupLat || null, meetupLng || null, meetupAddress || null, meetupName || null, paymentMethod || 'moncash', promoCode || null, totalAmount || 0]
+      `INSERT INTO pending_checkouts (user_id, cart_data, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, payment_method, promo_code, total_amount, fulfillment_terms)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
+      [req.user.id, JSON.stringify(cart), deliveryMethod, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null, meetupLat || null, meetupLng || null, meetupAddress || null, meetupName || null, paymentMethod || 'moncash', promoCode || null, Number(totalAmount || 0) + fulfillmentFee, JSON.stringify(fulfillmentTerms)]
     );
     const pendingId = result.rows[0].id;
 
@@ -243,7 +310,7 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
     }
 
     if (paymentMethod === 'natcash') {
-      return res.json({ pendingId, paymentMethod: 'natcash' });
+      return res.json({ pendingId, paymentMethod: 'natcash', fulfillmentTerms, fulfillmentFee });
     }
 
     const referenceId = pendingId;
@@ -253,7 +320,7 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: Math.round(parseFloat(totalAmount)),
+          amount: Math.round(Number(totalAmount || 0) + fulfillmentFee),
           referenceId,
           returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?pending=${pendingId}`,
         }),
@@ -269,10 +336,11 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
     if (!data.paymentUrl) return res.status(502).json({ error: 'Payment provider error' });
 
     await pool.query('UPDATE pending_checkouts SET moncash_reference = $1 WHERE id = $2', [referenceId, pendingId]);
-    res.json({ paymentUrl: data.paymentUrl, pendingId });
+    res.json({ paymentUrl: data.paymentUrl, pendingId, fulfillmentTerms, fulfillmentFee });
   } catch (err) {
     console.error('Pending checkout error:', err);
-    res.status(500).json({ error: 'Server error' });
+    const message = err.message || 'Server error';
+    res.status(message.includes('seller') || message.includes('location') || message.includes('delivery') ? 400 : 500).json({ error: message });
   }
 });
 
@@ -1330,6 +1398,10 @@ router.post('/orders/:id/meetup/checkin', authRequired, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Order must be paid to check in' });
     }
+    if (order.meetup_expires_at && new Date(order.meetup_expires_at).getTime() <= Date.now()) {
+      await client.query('ROLLBACK');
+      return res.status(410).json({ error: 'This meetup session has expired. Open a dispute if the exchange was not completed.' });
+    }
 
     const sellerMembership = await client.query(
       'SELECT 1 FROM order_items WHERE order_id = $1 AND seller_id = $2 LIMIT 1',
@@ -1363,26 +1435,35 @@ router.post('/orders/:id/meetup/checkin', authRequired, async (req, res) => {
       proximityConfirmed = distance <= 150;
 
       if (proximityConfirmed) {
-        if (!order.meetup_started_at) {
+        if (!order.meetup_started_at || !order.meetup_expires_at) {
           await client.query(
-            'UPDATE orders SET meetup_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+            `UPDATE orders
+             SET meetup_started_at = COALESCE(meetup_started_at, CURRENT_TIMESTAMP),
+                 meetup_expires_at = COALESCE(meetup_expires_at, CURRENT_TIMESTAMP + INTERVAL '90 minutes'),
+                 updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
             [req.params.id]
           );
         }
-        const meetupCode = generateMeetupCode();
-        await client.query(
-          `UPDATE meetup_checkins
-           SET meetup_code = $1, meetup_code_expires_at = CURRENT_TIMESTAMP + INTERVAL '30 minutes',
-               meetup_code_attempts = 0, qr_scanned = false
-           WHERE order_id = $2 AND user_id = $3`,
-          [meetupCode, req.params.id, order.buyer_id]
+        // Re-checking in must not invalidate a valid buyer code.  A new code
+        // is issued only on the first proximity match or after expiry.
+        const buyerCode = await client.query(
+          'SELECT meetup_code, meetup_code_expires_at FROM meetup_checkins WHERE order_id = $1 AND user_id = $2 FOR UPDATE',
+          [req.params.id, order.buyer_id]
         );
+        if (!buyerCode.rows[0]?.meetup_code || new Date(buyerCode.rows[0].meetup_code_expires_at || 0).getTime() <= Date.now()) {
+          const meetupCode = generateMeetupCode();
+          await client.query(
+            `UPDATE meetup_checkins SET meetup_code = $1, meetup_code_expires_at = CURRENT_TIMESTAMP + INTERVAL '30 minutes',
+                    meetup_code_attempts = 0, qr_scanned = false
+             WHERE order_id = $2 AND user_id = $3`,
+            [meetupCode, req.params.id, order.buyer_id]
+          );
+        }
         await logOrderEvent(req.params.id, 'meetup_arrived', req.user.id, null, null, `Buyer and seller within ${Math.round(distance)}m`, client);
       }
     }
 
     await client.query('COMMIT');
-    client.release();
 
     const response = {
       checkedIn: true, role,
@@ -1390,6 +1471,7 @@ router.post('/orders/:id/meetup/checkin', authRequired, async (req, res) => {
       proximityConfirmed,
       distance: distance ? Math.round(distance) : null,
       meetupStartedAt: order.meetup_started_at || (proximityConfirmed ? new Date().toISOString() : null),
+      meetupExpiresAt: order.meetup_expires_at || (proximityConfirmed ? new Date(Date.now() + MEETUP_SESSION_MS).toISOString() : null),
     };
 
     if (isBuyer) {
@@ -1424,6 +1506,10 @@ router.post('/orders/:id/meetup/scan', authRequired, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
     const order = orderResult.rows[0];
+    if (order.meetup_expires_at && new Date(order.meetup_expires_at).getTime() <= Date.now()) {
+      await client.query('ROLLBACK');
+      return res.status(410).json({ error: 'This meetup session has expired. Open a dispute if the exchange was not completed.' });
+    }
 
     const sellerItem = await pool.query(
       'SELECT seller_id FROM order_items WHERE order_id = $1 AND seller_id = $2',
@@ -1497,21 +1583,29 @@ router.post('/orders/:id/meetup/scan', authRequired, async (req, res) => {
 // ── Meetup Extend ─────────────────────────────────────────────────────────
 
 router.put('/orders/:id/meetup/extend', authRequired, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const order = await canAccessOrder(req.user.id, req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.status !== 'paid') return res.status(400).json({ error: 'Order must be active' });
-
-    await pool.query(
-      `UPDATE meetup_checkins SET checked_in_at = checked_in_at + INTERVAL '30 minutes'
-       WHERE order_id = $1 AND user_id = $2`,
-      [req.params.id, req.user.id]
+    await client.query('BEGIN');
+    const result = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const order = result.rows[0];
+    if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
+    const membership = order.buyer_id === req.user.id || (await client.query('SELECT 1 FROM order_items WHERE order_id = $1 AND seller_id = $2', [req.params.id, req.user.id])).rows.length > 0;
+    if (!membership) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Not a party to this order' }); }
+    if (order.status !== 'paid' || !order.meetup_expires_at) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'An active meetup is required before extending it' }); }
+    if (new Date(order.meetup_expires_at).getTime() <= Date.now()) { await client.query('ROLLBACK'); return res.status(410).json({ error: 'This meetup has already expired' }); }
+    const updated = await client.query(
+      `UPDATE orders SET meetup_expires_at = meetup_expires_at + INTERVAL '30 minutes', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 RETURNING meetup_expires_at`, [req.params.id]
     );
-    await logOrderEvent(req.params.id, 'meetup_extended', req.user.id, null, null, 'Timer extended by 30 minutes');
-    res.json({ extended: true });
+    await logOrderEvent(req.params.id, 'meetup_extended', req.user.id, null, null, 'Meetup deadline extended by 30 minutes', client);
+    await client.query('COMMIT');
+    res.json({ extended: true, meetupExpiresAt: updated.rows[0].meetup_expires_at });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('Meetup extend error:', err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1532,7 +1626,7 @@ router.get('/orders/:id/meetup/status', authRequired, async (req, res) => {
        WHERE mc.order_id = $1`,
       [req.params.id, req.user.id]
     );
-    res.json({ checkins: checkins.rows, meetupStartedAt: order.meetup_started_at });
+    res.json({ checkins: checkins.rows, meetupStartedAt: order.meetup_started_at, meetupExpiresAt: order.meetup_expires_at });
   } catch (err) {
     console.error('Meetup status error:', err);
     res.status(500).json({ error: 'Server error' });

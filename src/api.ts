@@ -477,6 +477,20 @@ export const setSellerLocation = (lat: number, lng: number, isVisible?: boolean)
 
 export const getSellerLocation = () => request('/seller/location');
 
+export type SellerFulfillmentProfile = {
+  deliveryEnabled: boolean;
+  meetupEnabled: boolean;
+  deliveryRadiusMeters: number;
+  meetupRadiusMeters: number;
+  deliveryFeeType: 'free' | 'flat' | 'distance';
+  flatDeliveryFee: number;
+  distanceFeeRules: Array<{ maxDistanceMeters: number; fee: number }>;
+};
+
+export const getSellerFulfillmentProfile = () => request('/seller/fulfillment-profile');
+export const updateSellerFulfillmentProfile = (data: Partial<SellerFulfillmentProfile>) =>
+  request('/seller/fulfillment-profile', { method: 'PUT', body: JSON.stringify(data) });
+
 export const toggleSellerVisibility = (isVisible: boolean) =>
   request('/seller/location', { method: 'PUT', body: JSON.stringify({ isVisible }) });
 

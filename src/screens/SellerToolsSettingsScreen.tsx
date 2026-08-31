@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image,
 } from 'react-native';
@@ -12,6 +12,8 @@ import ScreenHeader from '../components/ScreenHeader';
 import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '../api';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
+import { useFocusEffect } from '@react-navigation/native';
+import { getSellerFulfillmentProfile, updateSellerFulfillmentProfile, type SellerFulfillmentProfile } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -24,6 +26,24 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
   const isSeller = user?.role === 'seller';
   const [loading, setLoading] = useState(false);
   const [storeLogoUploading, setStoreLogoUploading] = useState(false);
+  const [fulfillmentProfile, setFulfillmentProfile] = useState<SellerFulfillmentProfile | null>(null);
+
+  const loadFulfillmentProfile = useCallback(async () => {
+    if (!isSeller) return;
+    try { setFulfillmentProfile(await getSellerFulfillmentProfile() as SellerFulfillmentProfile); } catch { /* profile is optional until migration runs */ }
+  }, [isSeller]);
+
+  useFocusEffect(useCallback(() => { loadFulfillmentProfile(); }, [loadFulfillmentProfile]));
+
+  const updateFulfillment = async (patch: Partial<SellerFulfillmentProfile>) => {
+    setLoading(true);
+    try {
+      const next = await updateSellerFulfillmentProfile(patch) as SellerFulfillmentProfile;
+      setFulfillmentProfile(next);
+    } catch (err: unknown) {
+      toast.error(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
+    } finally { setLoading(false); }
+  };
 
   const goEdit = (field: 'storeName', title: string) => {
     navigation.navigate('SettingsEdit', { field, title });
@@ -142,6 +162,34 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
         )}
       </View>
 
+      {/* ── Fulfillment policy ── */}
+      <Text style={styles.sectionHeader}>Delivery & meetup</Text>
+      <View style={styles.card}>
+        <View style={styles.toggleRow}>
+          <MaterialCommunityIcons name="truck-delivery-outline" size={18} color={COLORS.blue} />
+          <View style={styles.settingCopy}><Text style={styles.rowLabel}>Offer delivery</Text><Text style={styles.settingHint}>Set the area and fee buyers see before payment.</Text></View>
+          <TouchableOpacity style={[styles.toggle, fulfillmentProfile?.deliveryEnabled && styles.toggleActive]} onPress={() => updateFulfillment({ deliveryEnabled: !fulfillmentProfile?.deliveryEnabled })} disabled={loading} accessibilityRole="switch" accessibilityLabel="Offer delivery" accessibilityState={{ checked: fulfillmentProfile?.deliveryEnabled }}><View style={[styles.toggleKnob, fulfillmentProfile?.deliveryEnabled && styles.toggleKnobActive]} /></TouchableOpacity>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.toggleRow}>
+          <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
+          <View style={styles.settingCopy}><Text style={styles.rowLabel}>Offer meetups</Text><Text style={styles.settingHint}>Buyers can only propose spots in your meetup area.</Text></View>
+          <TouchableOpacity style={[styles.toggle, fulfillmentProfile?.meetupEnabled && styles.toggleActive]} onPress={() => updateFulfillment({ meetupEnabled: !fulfillmentProfile?.meetupEnabled })} disabled={loading} accessibilityRole="switch" accessibilityLabel="Offer meetups" accessibilityState={{ checked: fulfillmentProfile?.meetupEnabled }}><View style={[styles.toggleKnob, fulfillmentProfile?.meetupEnabled && styles.toggleKnobActive]} /></TouchableOpacity>
+        </View>
+        <View style={styles.divider} />
+        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ deliveryRadiusMeters: fulfillmentProfile?.deliveryRadiusMeters === 5000 ? 10000 : 5000 })} disabled={loading} accessibilityRole="button" accessibilityLabel="Change delivery radius">
+          <MaterialCommunityIcons name="radius-outline" size={18} color={COLORS.text2} /><Text style={styles.rowLabel}>Delivery radius</Text><Text style={styles.rowValue}>{((fulfillmentProfile?.deliveryRadiusMeters ?? 5000) / 1000).toFixed(0)} km</Text>
+        </TouchableOpacity>
+        <View style={styles.divider} />
+        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ meetupRadiusMeters: fulfillmentProfile?.meetupRadiusMeters === 12000 ? 5000 : 12000 })} disabled={loading} accessibilityRole="button" accessibilityLabel="Change meetup radius">
+          <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={COLORS.text2} /><Text style={styles.rowLabel}>Meetup radius</Text><Text style={styles.rowValue}>{((fulfillmentProfile?.meetupRadiusMeters ?? 12000) / 1000).toFixed(0)} km</Text>
+        </TouchableOpacity>
+        <View style={styles.divider} />
+        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ deliveryFeeType: fulfillmentProfile?.deliveryFeeType === 'free' ? 'flat' : 'free', flatDeliveryFee: fulfillmentProfile?.deliveryFeeType === 'free' ? 250 : 0 })} disabled={loading} accessibilityRole="button" accessibilityLabel="Change delivery fee">
+          <MaterialCommunityIcons name="cash" size={18} color={COLORS.green} /><Text style={styles.rowLabel}>Delivery fee</Text><Text style={styles.rowValue}>{fulfillmentProfile?.deliveryFeeType === 'free' ? 'Free' : `G ${fulfillmentProfile?.flatDeliveryFee ?? 0}`}</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* ── Tier Progression ── */}
       <Text style={styles.sectionHeader}>Tier</Text>
       <View style={styles.card}>
@@ -237,6 +285,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 13,
   },
   rowLabel: { flex: 1, fontSize: 14, color: COLORS.text },
+  settingCopy: { flex: 1, gap: 2 },
+  settingHint: { fontSize: 11, color: COLORS.text2, lineHeight: 15 },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rowValue: { fontSize: 13, color: COLORS.text2, maxWidth: 140 },
   divider: { height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 },

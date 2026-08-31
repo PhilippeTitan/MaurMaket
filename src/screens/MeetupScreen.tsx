@@ -58,6 +58,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
   const [refunding, setRefunding] = useState(false);
   const [timeLeft, setTimeLeft] = useState(MEETUP_TIMEOUT_MS);
   const [meetupStartedAt, setMeetupStartedAt] = useState<string | null>(null);
+  const [meetupExpiresAt, setMeetupExpiresAt] = useState<string | null>(null);
   const [checkins, setCheckins] = useState<any[]>([]);
   const locationWatcher = useRef<any>(null);
 
@@ -70,7 +71,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
     try {
       const [orderRes, statusRes] = await Promise.all([
         getOrder(orderId) as Promise<{ order: Order }>,
-        getMeetupStatus(orderId) as Promise<{ checkins: any[]; meetupStartedAt: string | null }>,
+        getMeetupStatus(orderId) as Promise<{ checkins: any[]; meetupStartedAt: string | null; meetupExpiresAt: string | null }>,
       ]);
       setOrder(orderRes.order);
       setCheckins(statusRes.checkins || []);
@@ -86,6 +87,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
       if (startedAt) {
         setMeetupStartedAt(startedAt);
       }
+      setMeetupExpiresAt(statusRes.meetupExpiresAt || orderRes.order.meetup_expires_at || null);
 
       if (myCheckin?.meetup_code) {
         setMeetupCode(myCheckin.meetup_code);
@@ -105,7 +107,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (!meetupStartedAt) return;
     const startedMs = new Date(meetupStartedAt).getTime();
-    const endMs = startedMs + MEETUP_TIMEOUT_MS;
+    const endMs = meetupExpiresAt ? new Date(meetupExpiresAt).getTime() : startedMs + MEETUP_TIMEOUT_MS;
     // Calculate initial remaining time
     const initial = Math.max(0, endMs - Date.now());
     setTimeLeft(initial);
@@ -116,7 +118,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
       if (remaining <= 0) clearInterval(interval);
     }, 1000);
     return () => clearInterval(interval);
-  }, [meetupStartedAt]);
+  }, [meetupStartedAt, meetupExpiresAt]);
 
   useEffect(() => {
     if (Platform.OS === 'web' || !ExpoLocation) return;
@@ -163,6 +165,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
       setProximityConfirmed(res.proximityConfirmed);
       if (res.distance) setDistance(res.distance);
       if (res.meetupStartedAt) setMeetupStartedAt(res.meetupStartedAt);
+      if (res.meetupExpiresAt) setMeetupExpiresAt(res.meetupExpiresAt);
       if (res.meetupCode) {
         setMeetupCode(res.meetupCode);
         setProximityConfirmed(true);
@@ -250,8 +253,10 @@ export default function MeetupScreen({ route, navigation }: Props) {
         text: 'Exit', style: 'destructive',
         onPress: async () => {
           try {
-            await refundEscrow(orderId);
-            Alert.alert('Meetup frozen', 'Refund processed. Support will review within 48 hours.', [
+            // Emergency exit is deliberately a dispute, not an irreversible
+            // refund.  The open dispute freezes escrow server-side.
+            await createDispute({ orderId, reason: 'meetup_emergency', description: 'Emergency exit requested during meetup. Please freeze this fulfillment for review.' });
+            Alert.alert('Meetup frozen', 'Your payment remains protected while support reviews the situation.', [
               { text: 'OK', onPress: () => navigation.goBack() },
             ]);
           } catch (err: any) {
@@ -264,7 +269,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
   const handleExtend = async () => {
     try {
-      await extendMeetup(orderId);
+      const result = await extendMeetup(orderId) as { meetupExpiresAt?: string };
+      if (result.meetupExpiresAt) setMeetupExpiresAt(result.meetupExpiresAt);
       setTimeLeft(prev => prev + 30 * 60 * 1000);
       Alert.alert('Extended', 'Timer extended by 30 minutes.');
     } catch (err: any) {

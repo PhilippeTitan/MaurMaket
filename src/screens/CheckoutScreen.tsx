@@ -234,7 +234,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         checkoutData.deliveryNote = note;
       }
       // Save pending checkout server-side (no order created yet)
-      const res = await createPendingCheckout(checkoutData) as { paymentUrl?: string; pendingId: string; paymentMethod?: string };
+      const res = await createPendingCheckout(checkoutData) as { paymentUrl?: string; pendingId: string; paymentMethod?: string; fulfillmentFee?: number };
+      const payableTotal = finalTotal + Number(res.fulfillmentFee || 0);
       if (paymentMethod === 'moncash' && res.paymentUrl) {
         // Store pending ID so we can detect abandonment when user returns
         try {
@@ -252,7 +253,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           // Multi-seller: pass all seller data
           navigation.replace('NatCashPayment', {
             pendingId: res.pendingId,
-            total: finalTotal,
+            total: payableTotal,
             sellers: sellers.map(s => ({
               sellerId: s.sellerId,
               name: s.name || 'Seller',
@@ -265,7 +266,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           // Single seller: legacy format
           navigation.replace('NatCashPayment', {
             pendingId: res.pendingId,
-            total: finalTotal,
+            total: payableTotal,
             sellerName: sellerInfo.sellerName || sellers[0]?.name || 'Seller',
             sellerPhone: sellerInfo.sellerPhone || sellers[0]?.phone || '',
           });
