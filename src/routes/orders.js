@@ -409,6 +409,13 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
            VALUES ($1,$2,'pending','pending',$3,$4,$5,$6,$7,$8,$9,'locked',$10,$11,CURRENT_TIMESTAMP) ON CONFLICT (order_id,seller_id) DO NOTHING`,
           [existingOrder.rows[0].order_id, req.user.id, agreement.payment_method || 'moncash', term.method, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, locked.rows[0].buyer_accepted_at, locked.rows[0].seller_accepted_at]
         );
+        const remaining = await client.query(
+          `SELECT COUNT(*)::int AS count FROM pending_fulfillment_agreements a
+           LEFT JOIN seller_fulfillments sf ON sf.order_id = $2 AND sf.seller_id = a.seller_id
+           WHERE a.checkout_id = $1 AND (a.status = 'proposed' OR (a.status = 'accepted' AND COALESCE(sf.payment_status, 'pending') <> 'verified'))`,
+          [req.params.id, existingOrder.rows[0].order_id]
+        );
+        await client.query("UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [remaining.rows[0].count === 0 ? 'paid' : 'partially_paid', existingOrder.rows[0].order_id]);
       }
     }
     await client.query('COMMIT');

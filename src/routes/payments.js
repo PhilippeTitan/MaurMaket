@@ -163,7 +163,9 @@ router.post('/api/payments/webhook', async (req, res) => {
             }
             await client.query('UPDATE fulfillment_payment_sessions SET order_id = $1 WHERE checkout_id = $2', [orderId, pc.id]);
           }
-          await client.query("UPDATE fulfillment_payment_sessions SET status = 'completed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1", [session.id]);
+          // A later session can discover the order created by an earlier
+          // session; persist that linkage in the same transaction.
+          await client.query("UPDATE fulfillment_payment_sessions SET order_id = $1, status = 'completed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [orderId, session.id]);
           await client.query("UPDATE seller_fulfillments SET payment_status = 'verified', fulfillment_status = 'processing', payment_reference = $1, payment_method = 'moncash', updated_at = CURRENT_TIMESTAMP WHERE order_id = $2 AND seller_id = $3", [reference, orderId, session.seller_id]);
           await client.query("UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND seller_id = $2 AND status = 'active'", [pc.id, session.seller_id]);
           const balance = await client.query('SELECT SUM(price * quantity) AS gross FROM order_items WHERE order_id = $1 AND seller_id = $2', [orderId, session.seller_id]);
@@ -171,8 +173,18 @@ router.post('/api/payments/webhook', async (req, res) => {
           const tier = await client.query('SELECT seller_tier FROM users WHERE id = $1', [session.seller_id]);
           const commission = Math.round(gross * getCommissionRate(tier.rows[0]?.seller_tier || 'none') * 100) / 100;
           await client.query("INSERT INTO order_escrow (order_id, seller_id, gross_amount, commission_amount, net_amount, status) VALUES ($1,$2,$3,$4,$5,'held') ON CONFLICT (order_id,seller_id) DO NOTHING", [orderId, session.seller_id, gross, commission, gross - commission]);
-          const unpaid = await client.query("SELECT COUNT(*)::int AS count FROM seller_fulfillments WHERE order_id = $1 AND payment_status <> 'verified'", [orderId]);
-          await client.query("UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [unpaid.rows[0].count === 0 ? 'paid' : 'partially_paid', orderId]);
+          // Aggregate status is derived from the agreement ledger: rejected
+          // sellers do not invalidate paid siblings, but a proposed/accepted
+          // unpaid agreement keeps the parent order partially paid.
+          const outstanding = await client.query(
+            `SELECT COUNT(*)::int AS count
+             FROM pending_fulfillment_agreements a
+             LEFT JOIN seller_fulfillments sf ON sf.order_id = $2 AND sf.seller_id = a.seller_id
+             WHERE a.checkout_id = $1
+               AND (a.status = 'proposed' OR (a.status = 'accepted' AND COALESCE(sf.payment_status, 'pending') <> 'verified'))`,
+            [pc.id, orderId]
+          );
+          await client.query("UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [outstanding.rows[0].count === 0 ? 'paid' : 'partially_paid', orderId]);
           await logOrderEvent(orderId, 'payment_received', null, null, 'verified', `MonCash payment completed for seller ${session.seller_id}`, client);
           await client.query('COMMIT');
           createNotification(session.seller_id, 'payment_received', 'Payment confirmed', 'Your fulfillment is now active.', { orderId, sellerId: session.seller_id });
