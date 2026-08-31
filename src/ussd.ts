@@ -85,7 +85,8 @@ export async function dialUssd(code: string): Promise<UssdResult> {
 /**
  * Dial USSD on a specific SIM subscription (carrier-aware routing).
  * Targets the specified subscriptionId via TelephonyManager.createForSubscriptionId().
- * Falls back to system dialer if in-app USSD fails.
+ * Returns failure if targeted USSD cannot be established — never falls back to
+ * an untargeted system dialer, because *202# is ambiguous between carriers.
  */
 export async function dialUssdOnSubscription(code: string, subscriptionId: number): Promise<UssdResult> {
   if (Platform.OS !== 'android' || !UssdModule) {
