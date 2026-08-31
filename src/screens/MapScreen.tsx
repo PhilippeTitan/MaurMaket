@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Image, Animated, PanResponder,
-} from 'react-native';
-import { Map, Camera, Marker, UserLocation } from '@maplibre/maplibre-react-native';
+  TextInput} from 'react-native';
+import { Map, Camera, Marker, UserLocation, OfflineManager } from '@maplibre/maplibre-react-native';
 import type { MapRef, CameraRef } from '@maplibre/maplibre-react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice, TIER_COLORS } from '../theme';
@@ -27,6 +27,12 @@ const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.
 
 /* ─── Haiti center ─── */
 const HAITI_CENTER: [number, number] = [-72.3074, 18.5944] as const;
+
+/* ─── Offline tile regions ─── */
+type LngLatBounds = [number, number, number, number];
+const HAITI_BOUNDS: LngLatBounds = [-74.5, 17.9, -71.6, 20.1]; // full country
+const CAP_HAITIEN_BOUNDS: LngLatBounds = [-72.35, 19.65, -72.15, 19.85]; // Cap-Haïtien metro
+const LES_CAYES_BOUNDS: LngLatBounds = [-73.85, 18.15, -73.65, 18.35]; // Les Cayes metro
 
 interface NearbySeller {
   id: string;
@@ -71,6 +77,10 @@ export default function MapScreen() {
   const [visibilityLoading, setVisibilityLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [offlineProgress, setOfflineProgress] = useState<Record<string, number>>({});
+  const [offlineComplete, setOfflineComplete] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<TextInput>(null);
   const [, setStoreTick] = useState(0);
 
   useEffect(() => {
@@ -222,6 +232,57 @@ export default function MapScreen() {
       } catch {}
     })();
   }, []);
+
+
+  /* ─── Offline tile download ─── */
+  useEffect(() => {
+    if (!mapReady || offlineComplete) return;
+    const regions = [
+      { name: 'Haiti', bounds: HAITI_BOUNDS, minZoom: 5, maxZoom: 14 },
+      { name: 'Cap-Haitien', bounds: CAP_HAITIEN_BOUNDS, minZoom: 12, maxZoom: 18 },
+      { name: 'Les Cayes', bounds: LES_CAYES_BOUNDS, minZoom: 12, maxZoom: 18 },
+    ];
+
+    (async () => {
+      try {
+        for (const region of regions) {
+          const pack = await OfflineManager.createPack(
+            {
+              mapStyle: LIGHT_STYLE,
+              bounds: region.bounds,
+              minZoom: region.minZoom,
+              maxZoom: region.maxZoom,
+              metadata: { name: region.name },
+            },
+            (_pack: any, status: any) => {
+              setOfflineProgress((prev: any) => ({
+                ...prev,
+                [region.name]: status.percentage,
+              }));
+            },
+            (_pack: any, error: any) => {
+              console.warn('Offline tile error:', region.name, error.message);
+            }
+          );
+          await pack.resume();
+        }
+        setOfflineComplete(true);
+      } catch {
+        setOfflineComplete(true);
+      }
+    })();
+  }, [mapReady, offlineComplete]);
+
+  /* ─── Seller search filter ─── */
+  const filteredSellers = useMemo(() => {
+    if (!searchQuery.trim()) return sellers;
+    const q = searchQuery.toLowerCase().trim();
+    return sellers.filter((s: NearbySeller) => {
+      const name = (s.use_store_identity ? (s.store_name || '') : (s.full_name || '') || '').toLowerCase();
+      const store = (s.store_name || '').toLowerCase();
+      return name.includes(q) || store.includes(q);
+    });
+  }, [sellers, searchQuery]);
 
   /* ─── Handler callbacks ─── */
   const handleRefreshLocation = useCallback(async () => {
@@ -472,7 +533,7 @@ export default function MapScreen() {
         <UserLocation animated />
 
         {/* Seller markers */}
-        {sellers.map(seller => {
+        {filteredSellers.map(seller => {
           const isMe = store.user && seller.id === store.user.id;
           const lat = (isMe && myLocation) ? myLocation.lat : seller.lat;
           const lng = (isMe && myLocation) ? myLocation.lng : seller.lng;
@@ -540,6 +601,30 @@ export default function MapScreen() {
           );
         })}
       </Map>
+
+      {/* ── Search bar ── */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
+          <TextInput
+            ref={searchInputRef}
+            style={styles.searchInput}
+            placeholder="Search sellers..."
+            placeholderTextColor={COLORS.text2}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => { setSearchQuery(''); searchInputRef.current?.blur(); }}>
+              <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.text2} />
+            </TouchableOpacity>
+          )}
+        </View>
+        {searchQuery.length > 0 && (
+          <Text style={styles.searchCount}>{filteredSellers.length} seller{filteredSellers.length !== 1 ? 's' : ''}</Text>
+        )}
+      </View>
 
       {/* ── Radial FAB ── */}
       {fanOpen && (
@@ -735,4 +820,25 @@ const styles = StyleSheet.create({
   itemImgFallback: { backgroundColor: COLORS.surface2 || '#21262D', alignItems: 'center', justifyContent: 'center' },
   itemPrice: { color: COLORS.text, fontSize: 11, fontWeight: '700', marginTop: 4 },
   itemName: { color: COLORS.text2, fontSize: 10 },
+
+  /* Search */
+  searchContainer: {
+    position: 'absolute', top: 50, left: 16, right: 16,
+    zIndex: 100, elevation: 10,
+  },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.surface + 'EE', borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: COLORS.border,
+    elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25, shadowRadius: 4,
+  },
+  searchInput: {
+    flex: 1, marginLeft: 8, color: COLORS.text, fontSize: 14,
+  },
+  searchCount: {
+    color: COLORS.text2, fontSize: 11, textAlign: 'center',
+    marginTop: 6, fontWeight: '600',
+  },
 });
