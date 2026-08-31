@@ -122,8 +122,8 @@ export default function NatCashPaymentScreen() {
         }
         // else: show SIM selector (step stays 'sim')
       } catch {
-        // SIM enumeration failed — allow fallback without SIM targeting
-        setStep('dial');
+        // SIM enumeration failed — block payment (don't risk launching wrong carrier)
+        setSimBlocked(true);
       } finally {
         setLoading(false);
       }
@@ -182,17 +182,11 @@ export default function NatCashPaymentScreen() {
           Alert.alert('Error', result.errorMessage || 'Could not open NatCash menu. Please dial *202# manually.');
         }
       } else {
-        // No SIM selected — open system dialer (no subscription targeting)
+        // No SIM selected — never launch ambiguous *202#
         Alert.alert(
-          'Select SIM',
-          'Your phone has a Natcom SIM for NatCash. The system dialer will open — select your Natcom SIM when prompted.',
-          [
-            { text: 'Open Dialer', onPress: async () => {
-              const { dialUssd } = await import('../ussd');
-              await dialUssd('*202#');
-            }},
-            { text: 'Cancel', style: 'cancel' },
-          ]
+          'No SIM Selected',
+          'NatCash requires a Natcom SIM. Please go back and select a Natcom SIM, or use MonCash instead.',
+          [{ text: 'Select SIM', onPress: () => setStep('sim') }]
         );
       }
     } catch {
