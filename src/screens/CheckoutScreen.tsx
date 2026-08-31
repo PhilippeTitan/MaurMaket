@@ -320,7 +320,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     </View>
     <View style={styles.trustBox}><MaterialCommunityIcons name="information-outline" size={16} color={COLORS.blue}/><Text style={styles.trustText}>{t("checkout.secureNote")}</Text></View>
     <View style={styles.trustRow}><MaterialCommunityIcons name="shield-check" size={16} color={COLORS.green}/><Text style={styles.trustItem}>{t("checkout.trustProtected")}</Text></View>
-    <View style={styles.trustRow}><MaterialCommunityIcons name="lock-check" size={16} color={COLORS.green}/><Text style={styles.trustItem}>{t("checkout.trustHeld")}</Text></View>
+    {paymentMethod==="moncash"&&<View style={styles.trustRow}><MaterialCommunityIcons name="lock-check" size={16} color={COLORS.green}/><Text style={styles.trustItem}>{t("checkout.trustHeld")}</Text></View>}
+    {paymentMethod==="natcash"&&<View style={styles.trustRow}><MaterialCommunityIcons name="swap-horizontal" size={16} color={COLORS.blue}/><Text style={styles.trustItem}>NatCash sends payment directly from you to the seller</Text></View>}
   </ScrollView>);
   const renderStep3 = () => (<ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
     <Text style={styles.stepLabel}>{t("checkout.orderSummary")}</Text>
@@ -332,7 +333,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     </View>
     <Text style={styles.stepLabel}>{t("checkout.payment")}</Text>
     <View style={styles.paySummary}><Image source={paymentMethod==="moncash"?moncashLogo:natcashLogo} style={styles.paySummaryLogo} resizeMode="cover"/><View style={styles.paySummaryInfo}><Text style={styles.paySummaryName}>{paymentMethod==="moncash"?"MonCash":"NatCash"}</Text><Text style={styles.paySummarySub}>{t("checkout.securePayment")}</Text></View><TouchableOpacity onPress={()=>setStep(2)}><Text style={styles.changeLink}>{t("checkout.change")}</Text></TouchableOpacity></View>
-    <View style={styles.trustBadges}><View style={styles.trustBadge}><MaterialCommunityIcons name="shield-lock" size={18} color={COLORS.green}/><Text style={styles.trustBadgeText}>{t("checkout.trustProtected")}</Text></View><View style={styles.trustBadge}><MaterialCommunityIcons name="clock-check" size={18} color={COLORS.blue}/><Text style={styles.trustBadgeText}>{t("checkout.trustHeld")}</Text></View></View>
+    <View style={styles.trustBadges}><View style={styles.trustBadge}><MaterialCommunityIcons name="shield-lock" size={18} color={COLORS.green}/><Text style={styles.trustBadgeText}>{t("checkout.trustProtected")}</Text></View>{paymentMethod==="moncash"?<View style={styles.trustBadge}><MaterialCommunityIcons name="clock-check" size={18} color={COLORS.blue}/><Text style={styles.trustBadgeText}>{t("checkout.trustHeld")}</Text></View>:<View style={styles.trustBadge}><MaterialCommunityIcons name="swap-horizontal" size={18} color={COLORS.blue}/><Text style={styles.trustBadgeText}>Direct peer-to-peer transfer</Text></View>}</View>
   </ScrollView>);
   return (<KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":"height"}><View style={styles.container}>
     <ScreenHeader title={step===1?t("checkout.step1Title"):step===2?t("checkout.step2Title"):t("checkout.step3Title")} onBack={()=>step>1?setStep((step-1)as Step):navigation.goBack()}/>
