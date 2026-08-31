@@ -1129,7 +1129,7 @@ router.post('/natcash/sessions/confirm-all', authRequired, async (req, res) => {
     const staleRes = await pool.query(
       `SELECT fps.id FROM fulfillment_payment_sessions fps
        JOIN natcash_payment_sessions nps ON nps.checkout_id = fps.checkout_id AND nps.seller_id = fps.seller_id
-       WHERE fps.checkout_id = $1 AND fps.provider = 'natcash' AND nps.expires_at < CURRENT_TIMESTAMP`,
+       WHERE fps.checkout_id = $1 AND fps.provider = 'natcash' AND fps.status != 'completed' AND nps.expires_at < CURRENT_TIMESTAMP`,
       [pendingId]
     );
     if (staleRes.rows.length > 0) {
