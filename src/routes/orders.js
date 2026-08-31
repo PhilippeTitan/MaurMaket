@@ -1014,26 +1014,31 @@ router.post('/natcash/sessions/:sessionId/verify', authRequired, async (req, res
       });
     }
 
-    // All checks passed — mark verified
+    // All checks passed — mark verified AND bridge into fulfillment_payment_sessions
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      // 1. Mark legacy natcash_payment_sessions as verified
       await client.query(
         `UPDATE natcash_payment_sessions
          SET status = 'verified', sms_transcode = $2, verified_at = CURRENT_TIMESTAMP
          WHERE id = $1 AND status = 'pending'`,
         [req.params.sessionId, transcode]
       );
+
+      // 2. Bridge into fulfillment_payment_sessions (creates order + escrow if first seller)
+      const orderId = await activateNatCashSellerPayment(client, session, transcode);
+
       await client.query('COMMIT');
+      console.log(`NatCash session ${req.params.sessionId} verified (transcode: ${transcode}, order: ${orderId})`);
+      res.json({ verified: true, status: 'verified', transcode, orderId });
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
     } finally {
       client.release();
     }
-
-    console.log(`NatCash session ${req.params.sessionId} verified (transcode: ${transcode})`);
-    res.json({ verified: true, status: 'verified', transcode });
   } catch (err) {
     console.error('Verify NatCash session error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -1096,122 +1101,48 @@ router.post('/natcash/sessions/confirm-all', authRequired, async (req, res) => {
     }
     const pc = pcRes.rows[0];
 
-    // Fetch all sessions — must all be verified
-    const sessRes = await pool.query(
-      "SELECT * FROM natcash_payment_sessions WHERE checkout_id = $1 AND status = 'verified'",
+    // Check all sellers have completed fulfillment_payment_sessions
+    // (order was already created during the first seller's verify via activateNatCashSellerPayment)
+    const fpsRes = await pool.query(
+      `SELECT fps.id, fps.seller_id, fps.status, fps.order_id
+       FROM fulfillment_payment_sessions fps
+       WHERE fps.checkout_id = $1 AND fps.provider = 'natcash'`,
       [pendingId]
     );
-    const verifiedSessions = sessRes.rows;
 
-    // Check total sessions vs verified
-    const totalRes = await pool.query(
-      "SELECT COUNT(*) AS total FROM natcash_payment_sessions WHERE checkout_id = $1",
-      [pendingId]
-    );
-    if (parseInt(totalRes.rows[0].total) !== verifiedSessions.length) {
+    if (fpsRes.rows.length === 0) {
+      return res.status(400).json({ error: 'No NatCash payment sessions found.' });
+    }
+
+    const allCompleted = fpsRes.rows.every(r => r.status === 'completed');
+    if (!allCompleted) {
       return res.status(400).json({ error: 'Not all seller payments have been verified yet.' });
     }
 
-    // Safety: ensure no verified session has expired (race: verified then expired between verify and confirm-all)
-    const now = new Date();
-    const staleSession = verifiedSessions.find(s => new Date(s.expires_at) < now);
-    if (staleSession) {
+    // Get order ID from any completed session
+    const orderId = fpsRes.rows[0].order_id;
+    if (!orderId) {
+      return res.status(500).json({ error: 'Order not yet created. Please retry.' });
+    }
+
+    // Check for stale sessions (verified but expired between verify and confirm-all)
+    const staleRes = await pool.query(
+      `SELECT fps.id FROM fulfillment_payment_sessions fps
+       JOIN natcash_payment_sessions nps ON nps.checkout_id = fps.checkout_id AND nps.seller_id = fps.seller_id
+       WHERE fps.checkout_id = $1 AND fps.provider = 'natcash' AND nps.expires_at < CURRENT_TIMESTAMP`,
+      [pendingId]
+    );
+    if (staleRes.rows.length > 0) {
       return res.status(400).json({
         error: 'One or more seller payment windows have expired since verification. Please re-verify all sellers.',
       });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
+    // Mark checkout completed
+    await pool.query("UPDATE pending_checkouts SET status = 'completed' WHERE id = $1", [pc.id]);
 
-      const cartData = pc.cart_data;
-
-      // Calculate total from cart_data (immutable prices)
-      let totalAmount = 0;
-      for (const item of cartData) {
-        totalAmount += (item.price || 0) * (item.quantity || 1);
-      }
-
-      // Apply promo if present
-      let discountAmount = 0;
-      if (pc.promo_code) {
-        try {
-          const promoRes = await client.query(
-            'SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true FOR UPDATE',
-            [pc.promo_code]
-          );
-          if (promoRes.rows.length > 0) {
-            const promo = promoRes.rows[0];
-            discountAmount = promo.discount_type === 'percentage'
-              ? totalAmount * (promo.discount_value / 100)
-              : Math.min(promo.discount_value, totalAmount);
-            totalAmount = Math.max(0, totalAmount - discountAmount);
-          }
-        } catch { /* ignore */ }
-      }
-
-      // Create order
-      const orderRes = await client.query(
-        `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method,
-          delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note,
-          meetup_lat, meetup_lng, meetup_address, meetup_name)
-         VALUES ($1, $2, 'paid', 'natcash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         RETURNING id`,
-        [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone,
-         pc.delivery_address, pc.delivery_city, pc.delivery_note,
-         pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
-      );
-      const orderId = orderRes.rows[0].id;
-
-      // Create order_items + seller_fulfillments
-      const sellerIds = new Set();
-      for (const item of cartData) {
-        const prodRes = await client.query('SELECT seller_id FROM products WHERE id = $1', [item.productId || item.id]);
-        if (prodRes.rows.length > 0) {
-          const sellerId = prodRes.rows[0].seller_id;
-          sellerIds.add(sellerId);
-          await client.query(
-            'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
-            [orderId, item.productId || item.id, sellerId, item.quantity || 1, item.price || 0]
-          );
-          // Confirm stock reservation
-          await client.query(
-            "UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND product_id = $2 AND status = 'active'",
-            [pc.id, item.productId || item.id]
-          );
-        }
-      }
-
-      // Create seller_fulfillments with verified transcodes
-      for (const sess of verifiedSessions) {
-        await client.query(
-          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference, idempotency_key)
-           VALUES ($1, $2, 'verified', 'pending', 'natcash', $3, $4)
-           ON CONFLICT (order_id, seller_id) DO NOTHING`,
-          [orderId, sess.seller_id, sess.sms_transcode, `natcash_session_${sess.id}`]
-        );
-      }
-
-      // Record payment event
-      const transcodes = verifiedSessions.map(s => s.sms_transcode).filter(Boolean).join(', ');
-      await client.query(
-        "INSERT INTO order_events (order_id, event_type, actor_id, note) VALUES ($1, 'payment_received', $2, $3)",
-        [orderId, pc.user_id, `NatCash payments verified (transcodes: ${transcodes || 'N/A'})`]
-      );
-
-      // Mark checkout completed
-      await client.query("UPDATE pending_checkouts SET status = 'completed' WHERE id = $1", [pc.id]);
-
-      await client.query('COMMIT');
-      console.log(`NatCash confirm-all: created order ${orderId} from checkout ${pendingId} (${verifiedSessions.length} sellers)`);
-      res.json({ orderId });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    console.log(`NatCash confirm-all: checkout ${pendingId} confirmed, order ${orderId} (${fpsRes.rows.length} sellers)`);
+    res.json({ orderId });
   } catch (err) {
     console.error('NatCash confirm-all error:', err);
     res.status(500).json({ error: 'Server error' });
