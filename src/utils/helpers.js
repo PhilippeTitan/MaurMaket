@@ -218,4 +218,29 @@ async function canAccessOrder(userId, orderId) {
   return result.rows[0] || null;
 }
 
-export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences, canAccessOrder };
+// ─── Canonical NatCash SMS Parser ─────────────────────────────────────────────
+// Haitian Creole format: "Ou transfere {amount} HTG a {name} {phone} nan {time} {date}, fre: {fee} HTG. Balans ou: {balance} HTG. Transcode: {code}."
+const NATCASH_SMS_REGEX = /Ou transfere ([\d,.]+) HTG a (.+?) (\d{8,}) nan (\d{2}:\d{2}) (\d{2}\/\d{2}\/\d{4}), fre: ([\d,.]+) HTG\. Balans ou: ([\d,.]+) HTG\. Transcode: (\d+)\./i;
+
+/**
+ * Parse a NatCash confirmation SMS.
+ * Returns { amount, recipientName, recipientNumber, time, date, fee, balance, transcode } or null.
+ * Canonical — use this everywhere instead of inline regex.
+ */
+function parseNatCashSms(smsText) {
+  if (!smsText || typeof smsText !== 'string') return null;
+  const m = NATCASH_SMS_REGEX.exec(smsText.trim());
+  if (!m) return null;
+  return {
+    amount: parseFloat(m[1].replace(/,/g, '')),
+    recipientName: m[2].trim(),
+    recipientNumber: m[3],
+    time: m[4],
+    date: m[5],
+    fee: parseFloat(m[6].replace(/,/g, '')),
+    balance: parseFloat(m[7].replace(/,/g, '')),
+    transcode: m[8],
+  };
+}
+
+export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences, canAccessOrder, parseNatCashSms };

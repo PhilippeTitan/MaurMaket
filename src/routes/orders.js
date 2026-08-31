@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { pool } from '../config/database.js';
 import { authRequired, dobRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
-import { logOrderEvent, canAccessOrder, processRefundPayout } from '../utils/helpers.js';
+import { logOrderEvent, canAccessOrder, processRefundPayout, parseNatCashSms } from '../utils/helpers.js';
 
 const router = Router();
 
@@ -217,15 +217,18 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
         }
       }
 
-      // All stock valid — decrement and create reservations
+      // All stock valid — decrement and create reservations (with seller_id for per-seller expiry)
       for (const item of cart) {
         const productId = item.id || item.productId;
         if (!productId) continue;
         await stockClient.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [item.quantity || 1, productId]);
+        // Fetch seller_id for per-seller NatCash stock release
+        const sellerRes = await stockClient.query('SELECT seller_id FROM products WHERE id = $1', [productId]);
+        const sellerId = sellerRes.rows[0]?.seller_id || null;
         await stockClient.query(
-          `INSERT INTO stock_reservations (checkout_id, product_id, quantity, expires_at, status)
-           VALUES ($1, $2, $3, $4, 'active')`,
-          [pendingId, productId, item.quantity || 1, reservationExpiry]
+          `INSERT INTO stock_reservations (checkout_id, product_id, quantity, expires_at, status, seller_id)
+           VALUES ($1, $2, $3, $4, 'active', $5)`,
+          [pendingId, productId, item.quantity || 1, reservationExpiry, sellerId]
         );
       }
 
@@ -585,9 +588,6 @@ router.post('/orders/:id/confirm-natcash-seller', authRequired, async (req, res)
 // NatCash PASTE-VERIFICATION SESSIONS (no SMS permissions)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// NatCash SMS regex — same pattern as SmsReceiver.kt and sms-listener.ts
-const NATCASH_SMS_REGEX = /Ou transfere ([\d,.]+) HTG a (.+?) (\d{8,}) nan (\d{2}:\d{2}) (\d{2}\/\d{2}\/\d{4}), fre: ([\d,.]+) HTG\. Balans ou: ([\d,.]+) HTG\. Transcode: (\d+)\./i;
-
 /**
  * POST /natcash/sessions — Create payment sessions for each seller in a NatCash checkout
  * Body: { pendingId, sellers: [{ sellerId, phone, total }] }
@@ -684,26 +684,30 @@ router.post('/natcash/sessions/:sessionId/verify', authRequired, async (req, res
       return res.status(400).json({ error: 'Checkout is no longer pending' });
     }
 
-    // Check expiry
+    // Check expiry (also catches cron lag — session expired but cron hasn't marked it yet)
     if (session.status === 'expired' || new Date(session.expires_at) < new Date()) {
+      // Best-effort: mark as expired if still pending (cron may be delayed)
+      if (session.status === 'pending') {
+        pool.query("UPDATE natcash_payment_sessions SET status = 'expired' WHERE id = $1 AND status = 'pending'", [req.params.sessionId]).catch(() => {});
+      }
       return res.status(400).json({ error: 'Session expired. Go back and retry payment.' });
     }
     if (session.status === 'verified') {
       return res.json({ verified: true, status: 'already_verified' });
     }
 
-    // Parse SMS using NatCash-specific regex
-    const match = NATCASH_SMS_REGEX.exec(smsText.trim());
-    if (!match) {
+    // Parse SMS using canonical NatCash parser
+    const parsed = parseNatCashSms(smsText);
+    if (!parsed) {
       return res.status(400).json({
         error: 'Could not parse NatCash SMS. Make sure you paste the full confirmation message.',
         hint: 'Expected format: "Ou transfere {amount} HTG a {name} {phone} nan ... Transcode: {code}."'
       });
     }
 
-    const smsAmount = parseFloat(match[1].replace(/,/g, ''));
-    const recipientPhone = match[3]; // e.g. "40401234"
-    const transcode = match[8];
+    const smsAmount = parsed.amount;
+    const recipientPhone = parsed.recipientNumber;
+    const transcode = parsed.transcode;
 
     // Validate amount (within 1 HTG tolerance for rounding)
     const expectedAmount = parseFloat(session.amount);
@@ -755,9 +759,9 @@ router.post('/natcash/sessions/:sessionId/verify', authRequired, async (req, res
       await client.query('BEGIN');
       await client.query(
         `UPDATE natcash_payment_sessions
-         SET status = 'verified', sms_transcode = $2, sms_raw = $3, verified_at = CURRENT_TIMESTAMP
+         SET status = 'verified', sms_transcode = $2, verified_at = CURRENT_TIMESTAMP
          WHERE id = $1 AND status = 'pending'`,
-        [req.params.sessionId, transcode, smsText.trim().slice(0, 1000)]
+        [req.params.sessionId, transcode]
       );
       await client.query('COMMIT');
     } catch (e) {
@@ -845,6 +849,15 @@ router.post('/natcash/sessions/confirm-all', authRequired, async (req, res) => {
     );
     if (parseInt(totalRes.rows[0].total) !== verifiedSessions.length) {
       return res.status(400).json({ error: 'Not all seller payments have been verified yet.' });
+    }
+
+    // Safety: ensure no verified session has expired (race: verified then expired between verify and confirm-all)
+    const now = new Date();
+    const staleSession = verifiedSessions.find(s => new Date(s.expires_at) < now);
+    if (staleSession) {
+      return res.status(400).json({
+        error: 'One or more seller payment windows have expired since verification. Please re-verify all sellers.',
+      });
     }
 
     const client = await pool.connect();

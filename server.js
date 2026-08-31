@@ -888,7 +888,6 @@ await step('NatCash phone separation', () => c.query(`
         status VARCHAR(20) DEFAULT 'pending'
           CHECK (status IN ('pending','verified','expired')),
         sms_transcode TEXT,
-        sms_raw TEXT,
         verified_at TIMESTAMP,
         expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '15 minutes'),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
