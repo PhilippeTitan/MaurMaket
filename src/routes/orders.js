@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { pool } from '../config/database.js';
 import { authRequired, dobRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
-import { logOrderEvent, canAccessOrder, processRefundPayout, parseNatCashSms } from '../utils/helpers.js';
+import { logOrderEvent, canAccessOrder, processRefundPayout, parseNatCashSms, getCommissionRate } from '../utils/helpers.js';
 
 const router = Router();
 
@@ -47,6 +47,69 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   const dLng = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function activateNatCashSellerPayment(client, legacySession, transcode) {
+  const checkoutResult = await client.query('SELECT * FROM pending_checkouts WHERE id = $1 FOR UPDATE', [legacySession.checkout_id]);
+  const checkout = checkoutResult.rows[0];
+  if (!checkout) throw new Error('Checkout not found');
+  const agreementResult = await client.query(
+    `SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND seller_id = $2
+     AND status = 'accepted' AND terms_locked_at IS NOT NULL FOR UPDATE`, [checkout.id, legacySession.seller_id]
+  );
+  const agreement = agreementResult.rows[0];
+  if (!agreement) throw new Error('This seller’s fulfillment agreement is not locked');
+  const term = agreement.terms;
+  let paymentSession = await client.query("SELECT * FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND seller_id = $2 AND provider = 'natcash' FOR UPDATE", [checkout.id, legacySession.seller_id]);
+  let session = paymentSession.rows[0];
+  if (!session) {
+    const created = await client.query(
+      `INSERT INTO fulfillment_payment_sessions (checkout_id, seller_id, provider, provider_reference, amount, sms_transcode)
+       VALUES ($1, $2, 'natcash', $3, $4, $5) RETURNING *`,
+      [checkout.id, legacySession.seller_id, `natcash_${legacySession.id}`, legacySession.amount, transcode]
+    );
+    session = created.rows[0];
+  }
+  if (session.status === 'completed') return session.order_id;
+  let orderId = session.order_id;
+  if (!orderId) {
+    const prior = await client.query('SELECT order_id FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND order_id IS NOT NULL LIMIT 1', [checkout.id]);
+    orderId = prior.rows[0]?.order_id;
+  }
+  if (!orderId) {
+    const createdOrder = await client.query(
+      `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
+       VALUES ($1,$2,'partially_paid','natcash',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+      [checkout.user_id, checkout.total_amount, checkout.delivery_method, checkout.delivery_name, checkout.delivery_phone, checkout.delivery_address, checkout.delivery_city, checkout.delivery_note, checkout.meetup_lat, checkout.meetup_lng, checkout.meetup_address, checkout.meetup_name]
+    );
+    orderId = createdOrder.rows[0].id;
+    for (const item of checkout.cart_data) {
+      const product = await client.query('SELECT seller_id FROM products WHERE id = $1', [item.id || item.productId]);
+      if (product.rows[0]) await client.query('INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1,$2,$3,$4,$5)', [orderId, item.id || item.productId, product.rows[0].seller_id, item.quantity || 1, item.price || 0]);
+    }
+    const locked = await client.query("SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND status = 'accepted' AND terms_locked_at IS NOT NULL", [checkout.id]);
+    for (const row of locked.rows) {
+      const lockedTerm = row.terms;
+      await client.query(
+        `INSERT INTO seller_fulfillments (order_id,seller_id,payment_status,fulfillment_status,payment_method,fulfillment_method,delivery_fee,fulfillment_lat,fulfillment_lng,fulfillment_address,fulfillment_note,agreement_status,buyer_accepted_at,seller_accepted_at,terms_locked_at)
+         VALUES ($1,$2,'pending','pending','natcash',$3,$4,$5,$6,$7,$8,'locked',$9,$10,$11) ON CONFLICT (order_id,seller_id) DO NOTHING`,
+        [orderId,row.seller_id,lockedTerm.method,Number(lockedTerm.deliveryFee || 0),lockedTerm.location?.lat || null,lockedTerm.location?.lng || null,lockedTerm.location?.address || null,lockedTerm.location?.note || null,row.buyer_accepted_at,row.seller_accepted_at,row.terms_locked_at]
+      );
+    }
+    await client.query('UPDATE fulfillment_payment_sessions SET order_id = $1 WHERE checkout_id = $2', [orderId, checkout.id]);
+  }
+  await client.query("UPDATE fulfillment_payment_sessions SET order_id = $1, status = 'completed', sms_transcode = $2, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $3", [orderId, transcode, session.id]);
+  await client.query("UPDATE seller_fulfillments SET payment_status = 'verified', fulfillment_status = 'processing', payment_method = 'natcash', payment_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE order_id = $2 AND seller_id = $3", [transcode, orderId, legacySession.seller_id]);
+  await client.query("UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND seller_id = $2 AND status = 'active'", [checkout.id, legacySession.seller_id]);
+  const items = await client.query('SELECT SUM(price * quantity) AS gross FROM order_items WHERE order_id = $1 AND seller_id = $2', [orderId, legacySession.seller_id]);
+  const gross = Number(items.rows[0]?.gross || 0) + Number(term.deliveryFee || 0);
+  const sellerTier = await client.query('SELECT seller_tier FROM users WHERE id = $1', [legacySession.seller_id]);
+  const commission = Math.round(gross * getCommissionRate(sellerTier.rows[0]?.seller_tier || 'none') * 100) / 100;
+  await client.query("INSERT INTO order_escrow (order_id,seller_id,gross_amount,commission_amount,net_amount,status) VALUES ($1,$2,$3,$4,$5,'held') ON CONFLICT (order_id,seller_id) DO NOTHING", [orderId,legacySession.seller_id,gross,commission,gross - commission]);
+  const outstanding = await client.query(`SELECT COUNT(*)::int AS count FROM pending_fulfillment_agreements a LEFT JOIN seller_fulfillments sf ON sf.order_id = $2 AND sf.seller_id = a.seller_id WHERE a.checkout_id = $1 AND (a.status = 'proposed' OR (a.status = 'accepted' AND COALESCE(sf.payment_status,'pending') <> 'verified'))`, [checkout.id,orderId]);
+  await client.query("UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [outstanding.rows[0].count === 0 ? 'paid' : 'partially_paid',orderId]);
+  await logOrderEvent(orderId, 'payment_received', null, null, 'verified', `NatCash payment verified for seller ${legacySession.seller_id}`, client);
+  return orderId;
 }
 
 function deliveryFeeFor(profile, distanceMeters) {

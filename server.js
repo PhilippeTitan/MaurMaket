@@ -943,6 +943,9 @@ await step('NatCash phone separation', () => c.query(`
       );
       CREATE INDEX IF NOT EXISTS idx_fulfillment_payment_sessions_reference ON fulfillment_payment_sessions(provider_reference);
       CREATE INDEX IF NOT EXISTS idx_fulfillment_payment_sessions_checkout ON fulfillment_payment_sessions(checkout_id, status);
+      ALTER TABLE fulfillment_payment_sessions ADD COLUMN IF NOT EXISTS sms_transcode TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_fulfillment_payment_sessions_natcash_transcode
+        ON fulfillment_payment_sessions(sms_transcode) WHERE sms_transcode IS NOT NULL;
     `));
 
     // stock_reservations: temporary holds during checkout
