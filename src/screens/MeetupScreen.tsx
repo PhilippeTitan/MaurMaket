@@ -7,16 +7,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
+import NativeMap from '../components/NativeMap';
 
-let MapView: any = null;
-let Marker: any = null;
-let Circle: any = null;
 let ExpoLocation: any = null;
 if (Platform.OS !== 'web') {
-  const maps = require('react-native-maps');
-  MapView = maps.default;
-  Marker = maps.Marker;
-  Circle = maps.Circle;
   ExpoLocation = require('expo-location');
 }
 import { store } from '../store';
@@ -297,41 +291,22 @@ export default function MeetupScreen({ route, navigation }: Props) {
     );
   }
 
-  const region = meetupLat && meetupLng ? {
-    latitude: meetupLat,
-    longitude: meetupLng,
-    latitudeDelta: 0.005,
-    longitudeDelta: 0.005,
-  } : undefined;
-
   return (
     <View style={styles.container}>
       <ScreenHeader title="Meetup" onBack={() => navigation.goBack()} variant="branded" bordered={false} />
 
-      {region && (
+      {meetupLat && meetupLng && (
         <View style={styles.mapContainer}>
-          {Platform.OS !== 'web' && MapView ? (
-            <MapView
-              ref={mapRef}
+          {Platform.OS !== 'web' ? (
+            <NativeMap
               style={styles.map}
-              initialRegion={region}
-              showsUserLocation
-            >
-              <Marker coordinate={{ latitude: meetupLat!, longitude: meetupLng! }} title="Meetup spot">
-                <View style={styles.meetupPin}>
-                  <Icon name="location-pin" size={28} color={COLORS.coral} />
-                </View>
-              </Marker>
-              {myCheckedIn && (
-                <Circle
-                  center={{ latitude: meetupLat!, longitude: meetupLng! }}
-                  radius={PROXIMITY_THRESHOLD}
-                  fillColor="rgba(0,229,160,0.12)"
-                  strokeColor={COLORS.green}
-                  strokeWidth={2}
-                />
-              )}
-            </MapView>
+              center={[meetupLng, meetupLat]}
+              zoom={16}
+              showUserLocation={true}
+              selectedLat={meetupLat}
+              selectedLng={meetupLng}
+              selectedColor={COLORS.coral}
+            />
           ) : (
             <View style={[styles.map, { backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
               <Icon name="map" size={48} color={COLORS.coral} />

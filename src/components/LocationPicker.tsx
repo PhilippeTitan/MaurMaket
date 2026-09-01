@@ -1,106 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity, TextInput, FlatList } from 'react-native';
-import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchAreasHybrid, type HaitiArea } from '../data/haiti-areas';
 import { getFastLocation } from '../fast-location';
-import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leaflet-bundle';
+import NativeMap, { MAP_STYLE_LIGHT, type NativeMapRef } from './NativeMap';
 
 interface LocationPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
   initialLat?: number | null;
   initialLng?: number | null;
   height?: number;
-}
-
-function buildPickerHtml(initialLat?: number, initialLng?: number): string {
-  const centerLat = initialLat || 18.5944;
-  const centerLng = initialLng || -72.3074;
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<style>${LEAFLET_CSS}</style>
-<script>${LEAFLET_JS}</script>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
-.leaflet-control-zoom{display:none}
-.leaflet-control-attribution{display:none!important}
-.pick-marker{width:32px;height:32px;border-radius:50%;background:#FF6B6B;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center}
-.pick-marker-inner{width:10px;height:10px;border-radius:50%;background:#fff}
-.user-dot{width:16px;height:16px;border-radius:50%;border:3px solid #4A9EFF;background:#fff;box-shadow:0 0 8px rgba(74,158,255,0.5)}
-.user-tail{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid #4A9EFF}
-.hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;z-index:1000;white-space:nowrap}
-</style>
-</head>
-<body>
-<div id="map"></div>
-<div class="hint" id="hint">Tap the map to set meetup spot</div>
-<script>
-var mapReady=false;
-var cmdQueue=[];
-var LIGHT_URL="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-var map=L.map("map",{zoomControl:false,attributionControl:false,maxBounds:[[16.5,-76],[21,-67]],maxBoundsViscosity:1.0,minZoom:8,maxZoom:18}).setView([${centerLat},${centerLng}],15);
-var currentTile=L.tileLayer(LIGHT_URL,{maxZoom:20,subdomains:"abcd",crossOrigin:true}).addTo(map);
-var markerIcon=L.divIcon({className:'',html:'<div class="pick-marker"><div class="pick-marker-inner"></div></div>',iconSize:[32,32],iconAnchor:[16,16]});
-var userIcon=L.divIcon({className:'',iconSize:[20,28],iconAnchor:[10,28],html:'<div style="display:flex;flex-direction:column;align-items:center"><div class="user-dot"></div><div class="user-tail"></div></div>'});
-var circle=null;
-var userMarker=null;
-var pickMarker=null;
-
-function executeCmd(cmd){
-  try{
-    if(cmd.type==='centerOn'){
-      if(userMarker){map.removeLayer(userMarker);userMarker=null;}
-      userMarker=L.marker([cmd.lat,cmd.lng],{icon:userIcon,zIndexOffset:1000}).addTo(map);
-      if(!map._userLocated){map.setView([cmd.lat,cmd.lng],cmd.zoom||14);map._userLocated=true;}
-    }
-    else if(cmd.type==='flyTo'){map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.0});}
-    else if(cmd.type==='drawCircle'){
-      if(circle){map.removeLayer(circle);circle=null;}
-      circle=L.circle([cmd.lat,cmd.lng],{radius:cmd.radius||400,color:'#00C2FF',fillColor:'#00C2FF',fillOpacity:0.15,weight:3}).addTo(map);
-      map.flyTo([cmd.lat,cmd.lng],cmd.zoom||14,{duration:1.0});
-    }
-    else if(cmd.type==='clearCircle'){if(circle){map.removeLayer(circle);circle=null;}}
-    else if(cmd.type==='setMarker'){
-      if(pickMarker){pickMarker.setLatLng([cmd.lat,cmd.lng]);}
-      else{pickMarker=L.marker([cmd.lat,cmd.lng],{icon:markerIcon}).addTo(map);}
-    }
-    else if(cmd.type==='clearMarker'){if(pickMarker){pickMarker.remove();pickMarker=null;}}
-  }catch(err){}
-}
-
-window.addEventListener('message',function(e){
-  try{
-    var cmd=JSON.parse(e.data);
-    if(mapReady){executeCmd(cmd);}
-    else{cmdQueue.push(cmd);}
-  }catch(err){}
-});
-
-function onMapReady(){
-  mapReady=true;
-  while(cmdQueue.length>0){executeCmd(cmdQueue.shift());}
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
-}
-
-map.whenReady(function(){setTimeout(onMapReady,150);});
-
-map.on('click',function(e){
-  var lat=e.latlng.lat,lng=e.latlng.lng;
-  if(pickMarker){pickMarker.setLatLng([lat,lng]);}else{pickMarker=L.marker([lat,lng],{icon:markerIcon}).addTo(map);}
-  if(circle){map.removeLayer(circle);circle=null;}
-  document.getElementById('hint').textContent='Tap again to move';
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:'location',lat:lat,lng:lng}));
-});
-</script>
-</body>
-</html>`;
 }
 
 export default function LocationPicker({ onLocationSelect, initialLat, initialLng, height = 260 }: LocationPickerProps) {
@@ -117,12 +28,10 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   const [searchFocused, setSearchFocused] = useState(false);
   const [expandedMapReady, setExpandedMapReady] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const mapReadyRef = useRef(false);
-  const userLocRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [selectedLat, setSelectedLat] = useState<number | null>(null);
+  const [selectedLng, setSelectedLng] = useState<number | null>(null);
+  const expandedMapRef = useRef<NativeMapRef>(null);
   const centeredRef = useRef(false);
-
-  const webViewRef = useRef<WebView>(null);
-  const expandedWebViewRef = useRef<WebView>(null);
   const searchInputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
 
@@ -132,26 +41,22 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
       .then(pos => {
         const loc = { lat: pos.lat, lng: pos.lng };
         setUserLocation(loc);
-        userLocRef.current = loc;
-        // If map is already ready, center immediately
-        if (mapReadyRef.current && !centeredRef.current) {
+        // Center map once ready
+        if (expandedMapReady && !centeredRef.current) {
           centeredRef.current = true;
-          expandedWebViewRef.current?.postMessage(JSON.stringify({ type: 'centerOn', lat: loc.lat, lng: loc.lng, zoom: 14 }));
+          expandedMapRef.current?.centerOn(loc.lat, loc.lng, 14);
         }
       })
       .catch(() => {});
   }, []);
 
-  // Send a message with retries — WebView + Leaflet have unreliable init timing
-  const postToMap = useCallback((msg: object) => {
-    const wv = expandedWebViewRef.current;
-    if (!wv) return;
-    const json = JSON.stringify(msg);
-    wv.postMessage(json);
-    [400, 1000, 2000, 3500].forEach(delay => {
-      setTimeout(() => expandedWebViewRef.current?.postMessage(json), delay);
-    });
-  }, []);
+  // Center map when it becomes ready and user location is available
+  useEffect(() => {
+    if (expandedMapReady && userLocation && !centeredRef.current) {
+      centeredRef.current = true;
+      expandedMapRef.current?.centerOn(userLocation.lat, userLocation.lng, 14);
+    }
+  }, [expandedMapReady, userLocation]);
 
   // Debounced search
   useEffect(() => {
@@ -179,65 +84,40 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     }
   }, [onLocationSelect]);
 
-  const handleMessage = useCallback((event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'location') {
-        setLoading(true);
-        reverseGeocode(data.lat, data.lng).finally(() => setLoading(false));
-      }
-    } catch {}
-  }, [reverseGeocode]);
-
-  const handleExpandedMessage = useCallback((event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'ready') {
-        setExpandedMapReady(true);
-        mapReadyRef.current = true;
-        // Center on user location as soon as map is ready
-        const loc = userLocRef.current;
-        if (loc && !centeredRef.current) {
-          centeredRef.current = true;
-          expandedWebViewRef.current?.postMessage(JSON.stringify({ type: 'centerOn', lat: loc.lat, lng: loc.lng, zoom: 14 }));
-        }
-      }
-      if (data.type === 'location') {
-        setExpandedLoading(true);
-        setPendingCoords({ lat: data.lat, lng: data.lng });
-        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${data.lat}&lon=${data.lng}&zoom=18&addressdetails=1`, { headers: { 'Accept-Language': 'en' } })
-          .then(r => r.json())
-          .then(d => setExpandedAddress(d.display_name || `${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}`))
-          .catch(() => setExpandedAddress(`${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}`))
-          .finally(() => setExpandedLoading(false));
-      }
-    } catch {}
+  const handleMapPress = useCallback((lat: number, lng: number) => {
+    // Update the selected marker immediately
+    setSelectedLat(lat);
+    setSelectedLng(lng);
+    setExpandedLoading(true);
+    setPendingCoords({ lat, lng });
+    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, { headers: { 'Accept-Language': 'en' } })
+      .then(r => r.json())
+      .then(d => setExpandedAddress(d.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`))
+      .catch(() => setExpandedAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`))
+      .finally(() => setExpandedLoading(false));
   }, []);
 
   const selectArea = useCallback((area: HaitiArea) => {
-    // Pick zoom level so the circle fills the screen
-    // Smaller radius → higher zoom (tighter view)
-    const zoom = area.radius < 300 ? 16 : area.radius < 600 ? 15 : area.radius < 1200 ? 14 : 13;
-    // Draw circle + marker + fly to area
-    postToMap({ type: 'drawCircle', lat: area.lat, lng: area.lng, radius: area.radius, zoom });
-    setTimeout(() => postToMap({ type: 'setMarker', lat: area.lat, lng: area.lng }), 300);
-
-    setSelectedArea(area);
+    setSelectedLat(area.lat);
+    setSelectedLng(area.lng);
     setPendingCoords({ lat: area.lat, lng: area.lng });
     setExpandedAddress(area.name);
     setSearchFocused(false);
     setSearchResults([]);
     searchInputRef.current?.blur();
-  }, [postToMap]);
+    // Fly to area
+    const zoom = area.radius < 300 ? 16 : area.radius < 600 ? 15 : area.radius < 1200 ? 14 : 13;
+    expandedMapRef.current?.flyTo(area.lat, area.lng, zoom);
+  }, []);
 
   const clearSelection = useCallback(() => {
     setSelectedArea(null);
+    setSelectedLat(null);
+    setSelectedLng(null);
     setPendingCoords(null);
     setExpandedAddress(null);
     setSearchQuery('');
-    postToMap({ type: 'clearCircle' });
-    postToMap({ type: 'clearMarker' });
-  }, [postToMap]);
+  }, []);
 
   const confirmExpanded = useCallback(() => {
     if (pendingCoords && expandedAddress) {
@@ -246,12 +126,13 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     }
     setExpanded(false);
     setExpandedMapReady(false);
-    mapReadyRef.current = false;
     centeredRef.current = false;
     setPendingCoords(null);
     setExpandedAddress(null);
     setSearchQuery('');
     setSelectedArea(null);
+    setSelectedLat(null);
+    setSelectedLng(null);
     setSearchFocused(false);
   }, [pendingCoords, expandedAddress, onLocationSelect]);
 
@@ -268,7 +149,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
 
   return (
     <>
-      {/* ── Small map (tappable to expand) ── */}
+      {/* ── Small map preview (tappable to expand) ── */}
       <TouchableOpacity
         style={[styles.container, { height }]}
         onPress={() => setExpanded(true)}
@@ -276,14 +157,13 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
         accessibilityLabel="expand map"
         accessibilityRole="button"
       >
-        <WebView
-          ref={webViewRef}
-          source={{ html: buildPickerHtml(initialLat ?? undefined, initialLng ?? undefined) }}
-          style={styles.webview}
-          onMessage={handleMessage}
-          scrollEnabled={false}
-          bounces={false}
-          pointerEvents="none"
+        <NativeMap
+          style={styles.previewMap}
+          center={initialLat && initialLng ? [initialLng, initialLat] : undefined}
+          zoom={15}
+          showUserLocation={false}
+          selectedLat={selectedLat ?? initialLat ?? null}
+          selectedLng={selectedLng ?? initialLng ?? null}
         />
         <View style={styles.expandHint}>
           <MaterialCommunityIcons name="fullscreen" size={14} color={COLORS.white} />
@@ -300,26 +180,30 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
       {/* ── Full-screen map modal ── */}
       <Modal visible={expanded} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setExpanded(false)}>
         <View style={styles.expandedContainer}>
-          <WebView
-            ref={expandedWebViewRef}
-            source={{ html: buildPickerHtml(initialLat ?? undefined, initialLng ?? undefined) }}
-            style={styles.expandedWebview}
-            onMessage={handleExpandedMessage}
-            scrollEnabled={false}
-            bounces={false}
+          <NativeMap
+            ref={expandedMapRef}
+            style={styles.expandedMap}
+            center={initialLat && initialLng ? [initialLng, initialLat] : undefined}
+            zoom={15}
+            showUserLocation={true}
+            selectedLat={selectedLat}
+            selectedLng={selectedLng}
+            onPress={handleMapPress}
+            onMapReady={() => setExpandedMapReady(true)}
           />
 
-          {/* Close button — right side, top-right */}
+          {/* Close button — top right */}
           <View style={[styles.closeBtnRow, { top: insets.top + 8, right: 14 }]}>
             <TouchableOpacity style={styles.closeBtn} onPress={() => {
               setExpanded(false);
               setExpandedMapReady(false);
-              mapReadyRef.current = false;
               centeredRef.current = false;
               setSearchFocused(false);
               setSearchQuery('');
               setSearchResults([]);
               setSelectedArea(null);
+              setSelectedLat(null);
+              setSelectedLng(null);
             }} accessibilityLabel="close map" accessibilityRole="button">
               <MaterialCommunityIcons name="close" size={22} color={COLORS.text} />
             </TouchableOpacity>
@@ -428,7 +312,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
 
 const styles = StyleSheet.create({
   container: { borderRadius: RADIUS.card, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface },
-  webview: { flex: 1 },
+  previewMap: { flex: 1 },
   webFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.surface, padding: 20 },
   webFallbackText: { color: COLORS.text2, fontSize: 14, marginTop: 8, textAlign: 'center' },
   expandHint: { position: 'absolute', top: 8, right: 8, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
@@ -438,7 +322,7 @@ const styles = StyleSheet.create({
 
   /* Expanded modal */
   expandedContainer: { flex: 1, backgroundColor: COLORS.bg },
-  expandedWebview: { flex: 1 },
+  expandedMap: { flex: 1 },
 
   /* Close button — top right */
   closeBtnRow: { position: 'absolute', flexDirection: 'row', alignItems: 'center' },

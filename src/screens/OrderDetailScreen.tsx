@@ -4,15 +4,14 @@ import {
   Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import ConfirmModal from '../components/ConfirmModal';
+import NativeMap from '../components/NativeMap';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup, getImageUrl } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LEAFLET_CSS, LEAFLET_JS } from '../lib/leaflet-bundle';
 import { store } from '../store';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -63,35 +62,6 @@ function getStatusIcon(status: string): string {
 }
 
 const errorMessage = (err: unknown, fallback = 'Failed') => err instanceof Error ? err.message : fallback;
-
-function buildMiniMapHtml(lat: number, lng: number): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<style>${LEAFLET_CSS}</style>
-<script>${LEAFLET_JS}</script>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body,#map{width:100%;height:100%;background:#0D1117;overflow:hidden}
-.leaflet-control-zoom{display:none}
-.leaflet-control-attribution{display:none!important}
-.meetup-pin{width:24px;height:24px;border-radius:50%;background:#FF6B6B;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
-</style>
-</head>
-<body>
-<div id="map"></div>
-<script>
-var map = L.map("map",{zoomControl:false,attributionControl:false}).setView([${lat},${lng}],15);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{maxZoom:20,subdomains:"abcd"}).addTo(map);
-var icon = L.divIcon({className:'',iconSize:[24,24],iconAnchor:[12,12],html:'<div class="meetup-pin"></div>'});
-L.marker([${lat},${lng}],{icon:icon}).addTo(map);
-setTimeout(function(){map.invalidateSize()},200);
-</script>
-</body>
-</html>`;
-}
 
 export default function OrderDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
@@ -528,12 +498,13 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               {/* Mini map preview */}
               {order.meetup_lat && order.meetup_lng && (
                 <View style={styles.miniMapContainer}>
-                  <WebView
-                    source={{ html: buildMiniMapHtml(order.meetup_lat, order.meetup_lng) }}
+                  <NativeMap
                     style={styles.miniMap}
-                    scrollEnabled={false}
-                    showsHorizontalScrollIndicator={false}
-                    showsVerticalScrollIndicator={false}
+                    center={[order.meetup_lng, order.meetup_lat]}
+                    zoom={15}
+                    showUserLocation={false}
+                    selectedLat={order.meetup_lat}
+                    selectedLng={order.meetup_lng}
                   />
                 </View>
               )}
