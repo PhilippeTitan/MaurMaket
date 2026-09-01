@@ -12,6 +12,7 @@ import { useTranslation } from '../i18n';
 import { checkPaymentStatus, checkPendingStatus } from '../api';
 import type { RootStackParamList } from '../navigation';
 import { store } from '../store';
+import { CheckoutSection, CheckoutSurface } from '../components/CheckoutPrimitives';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -97,82 +98,62 @@ export default function PaymentReturnScreen() {
   if (status === 'confirmed') {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.iconCircle}>
-          <Icon name="check-circle" size={64} color={COLORS.green} />
-        </View>
-        <Text style={styles.title}>{t('paymentReturn.confirmed')}</Text>
-        <Text style={styles.subtitle}>{t('paymentReturn.confirmedSubtitle')}</Text>
-        <Text style={styles.hint}>{t('paymentReturn.redirecting')}</Text>
+        <CheckoutSurface tone="success" style={styles.stateCard}>
+          <View style={styles.iconCircle}>
+            <Icon name="check-circle" size={64} color={COLORS.green} />
+          </View>
+          <Text style={styles.title}>{t('paymentReturn.confirmed')}</Text>
+          <Text style={styles.subtitle}>{t('paymentReturn.confirmedSubtitle')}</Text>
+          <Text style={styles.hint}>{t('paymentReturn.redirecting')}</Text>
+        </CheckoutSurface>
       </View>
     );
   }
 
-  if (status === 'timeout' || !orderId) {
+  if (status === 'timeout' || (!orderId && !pendingId)) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={[styles.iconCircle, { borderColor: COLORS.yellow }]}>
-          <Icon name="time" size={56} color={COLORS.yellow} />
-        </View>
-        <Text style={styles.title}>{t('paymentReturn.processing')}</Text>
-        <Text style={styles.subtitle}>
-          {orderId
-            ? t('paymentReturn.processingHint')
-            : t('paymentReturn.noOrderId')}
-        </Text>
-        <View style={styles.actions}>
-          {orderId && (
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => nav.replace('OrderDetail', { orderId })}
-              accessibilityLabel="view order"
-              accessibilityRole="button"
-            >
-              <Text style={styles.primaryBtnText}>{t('paymentReturn.viewOrder')}</Text>
+        <CheckoutSurface tone="warning" style={styles.stateCard}>
+          <View style={[styles.iconCircle, { borderColor: COLORS.yellow }]}>
+            <Icon name="time" size={56} color={COLORS.yellow} />
+          </View>
+          <Text style={styles.title}>{t('paymentReturn.processing')}</Text>
+          <Text style={styles.subtitle}>
+            {orderId ? t('paymentReturn.processingHint') : t('paymentReturn.noOrderId')}
+          </Text>
+          <View style={styles.actions}>
+            {orderId && (
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => nav.replace('OrderDetail', { orderId })} accessibilityLabel="view order" accessibilityRole="button">
+                <Text style={styles.primaryBtnText}>{t('paymentReturn.viewOrder')}</Text>
+              </TouchableOpacity>
+            )}
+            {pendingId && !orderId && (
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => nav.popToTop()} accessibilityLabel="back to checkout" accessibilityRole="button">
+                <Text style={styles.primaryBtnText}>{t('paymentReturn.backToCheckout')}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => nav.popToTop()} accessibilityLabel="back to home" accessibilityRole="button">
+              <Text style={styles.secondaryBtnText}>{t('paymentReturn.backToHome')}</Text>
             </TouchableOpacity>
-          )}
-          {pendingId && !orderId && (
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => nav.popToTop()}
-              accessibilityLabel="back to checkout"
-              accessibilityRole="button"
-            >
-              <Text style={styles.primaryBtnText}>{t('paymentReturn.backToCheckout')}</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={() => nav.popToTop()}
-            accessibilityLabel="back to home"
-            accessibilityRole="button"
-          >
-            <Text style={styles.secondaryBtnText}>{t('paymentReturn.backToHome')}</Text>
-          </TouchableOpacity>
-        </View>
+          </View>
+        </CheckoutSurface>
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.iconCircle}>
-        <ActivityIndicator size="large" color={COLORS.coral} />
-      </View>
-      <Text style={styles.title}>{t('paymentReturn.confirming')}</Text>
-      <Text style={styles.subtitle}>
-        {elapsed < 5
-          ? t('paymentReturn.connecting')
-          : elapsed < 20
-            ? t('paymentReturn.fewSeconds')
-            : elapsed < 60
-              ? t('paymentReturn.fewMinutes')
-              : 'Payment may still be processing — please wait.'}
-      </Text>
-      {orderId && (
-        <View style={styles.orderBadge}>
-          <Text style={styles.orderBadgeText}>{t('paymentReturn.orderLabel', { id: orderId.slice(0, 8) })}</Text>
+      <CheckoutSurface tone="info" style={styles.stateCard}>
+        <View style={styles.iconCircle}>
+          <ActivityIndicator size="large" color={COLORS.coral} />
         </View>
-      )}
+        <Text style={styles.title}>{t('paymentReturn.confirming')}</Text>
+        <Text style={styles.subtitle}>
+          {elapsed < 5 ? t('paymentReturn.connecting') : elapsed < 20 ? t('paymentReturn.fewSeconds') : elapsed < 60 ? t('paymentReturn.fewMinutes') : t('paymentReturn.stillProcessing')}
+        </Text>
+        <CheckoutSection icon="shield-check-outline" title={pendingId ? t('paymentReturn.waitingMoncash') : t('paymentReturn.secureCheck')} />
+        {orderId && <View style={styles.orderBadge}><Text style={styles.orderBadgeText}>{t('paymentReturn.orderLabel', { id: orderId.slice(0, 8) })}</Text></View>}
+      </CheckoutSurface>
     </View>
   );
 }
@@ -182,6 +163,7 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: COLORS.bg,
     justifyContent: 'center', alignItems: 'center', padding: SPACING.xl,
   },
+  stateCard: { width: '100%', maxWidth: 420, alignItems: 'center' },
   iconCircle: {
     width: 100, height: 100, borderRadius: 50,
     backgroundColor: COLORS.surface, borderWidth: 2, borderColor: COLORS.border,
@@ -207,7 +189,7 @@ const styles = StyleSheet.create({
     fontSize: 13, color: COLORS.text2, fontWeight: '600',
   },
   actions: {
-    marginTop: 32, gap: 12, width: '100%', paddingHorizontal: 20,
+    marginTop: 24, gap: 12, width: '100%',
   },
   primaryBtn: {
     paddingVertical: 14, borderRadius: RADIUS.button,

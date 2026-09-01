@@ -161,13 +161,13 @@ const styles = StyleSheet.create({
   },
   removeBtn: {
     position: 'absolute', top: 6, left: 6, zIndex: 6,
-    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10,
-    width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
   },
   cartBtn: {
     position: 'absolute', bottom: 6, right: 6, zIndex: 6,
-    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10,
-    width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
   },
   imgDots: {
     position: 'absolute', bottom: 8, alignSelf: 'center', zIndex: 6,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Platform,
+  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -18,6 +18,7 @@ import type { RootStackParamList } from '../navigation';
 import type { CartItem } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
 import { useToast } from '../components/Toast';
+import { CheckoutSection, CheckoutSurface } from '../components/CheckoutPrimitives';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Cart'>;
 
@@ -189,7 +190,15 @@ export default function CartScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title={`${t('cart.title')} (${itemCount})`} onBack={() => navigation.goBack()} />
+      <ScreenHeader
+        title={`${t('cart.title')} (${itemCount})`}
+        onBack={() => navigation.goBack()}
+        right={cart.length > 0 ? (
+          <TouchableOpacity style={styles.clearHeaderBtn} onPress={() => setShowClearCartModal(true)} accessibilityRole="button" accessibilityLabel="clear cart">
+            <Icon name="close" size={18} color={COLORS.text2} />
+          </TouchableOpacity>
+        ) : undefined}
+      />
 
       {cart.length === 0 ? (
         <EmptyState icon="cart-outline" title={t('cart.empty')} hint={t('cart.browseHint')} />
@@ -200,6 +209,12 @@ export default function CartScreen({ navigation }: Props) {
             renderItem={renderItem}
             keyExtractor={item => item.key}
             contentContainerStyle={styles.list}
+            ListHeaderComponent={
+              <CheckoutSurface style={styles.cartOverview}>
+                <CheckoutSection icon="cart-outline" title={`${itemCount} ${itemCount === 1 ? t('common.item') : t('common.items')}`} detail={`${sellerCount} ${sellerCount === 1 ? t('checkout.seller') : t('checkout.sellers')}`} />
+                <Text style={styles.cartOverviewCopy}>{t('cart.reviewBeforeCheckout')}</Text>
+              </CheckoutSurface>
+            }
           />
           <View style={[styles.footer, { paddingBottom: insets.bottom + SPACING.md }]}>
             <View style={styles.promoRow}>
@@ -242,22 +257,6 @@ export default function CartScreen({ navigation }: Props) {
               <Text style={styles.checkoutBtnText}>{t('cart.proceedCheckout')}</Text>
               <MaterialCommunityIcons name="arrow-right" size={18} color={COLORS.white} />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={{ alignItems: 'center', paddingVertical: 10 }}
-              onPress={() => {
-                if (Platform.OS === 'web') {
-                  if (window.confirm('Remove all items from cart?')) {
-                    for (const item of cart) store.removeFromCart(item.id);
-                  }
-                } else {
-                  setShowClearCartModal(true);
-                }
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="clear cart"
-            >
-              <Text style={{ fontSize: 13, color: COLORS.text2, fontWeight: '500' }}>Clear all items</Text>
-            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -282,20 +281,23 @@ export default function CartScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   cartBody: { flex: 1 },
-  list: { padding: SPACING.md, paddingBottom: 220 },
+  list: { padding: SPACING.md, paddingBottom: 210 },
+  clearHeaderBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  cartOverview: { marginBottom: SPACING.md },
+  cartOverviewCopy: { color: COLORS.text2, fontSize: 13, lineHeight: 19 },
   item: {
     flexDirection: 'row', backgroundColor: COLORS.surface, borderWidth: 1,
-    borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 10, marginBottom: 8, alignItems: 'center', gap: 10,
+    borderColor: COLORS.border, borderRadius: RADIUS.card, padding: SPACING.md, marginBottom: SPACING.sm, alignItems: 'center', gap: SPACING.md,
   },
   thumb: {
-    width: 52, height: 52, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2,
+    width: 68, height: 68, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2,
     justifyContent: 'center', alignItems: 'center', overflow: 'hidden',
   },
   thumbImg: { width: '100%', height: '100%' },
   info: { flex: 1 },
-  itemName: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  itemName: { fontSize: 14, fontWeight: '700', color: COLORS.text },
   itemPrice: { fontSize: 12, color: COLORS.coral, fontWeight: '700', marginTop: 2 },
-  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   qtyBtn: {
     width: 44, height: 44, borderRadius: RADIUS.card, backgroundColor: COLORS.surface2,
     borderWidth: 1, borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center',
@@ -306,7 +308,7 @@ const styles = StyleSheet.create({
   removeBtn: { padding: 14 },
   sellerSectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: 8, paddingHorizontal: 4, marginTop: 4, marginBottom: 2,
+    paddingVertical: 10, paddingHorizontal: 4, marginTop: 4, marginBottom: 2,
   },
   sellerSectionName: { flex: 1, fontSize: 12, fontWeight: '700', color: COLORS.text },
   sellerSectionMeta: { fontSize: 11, color: COLORS.text2 },
@@ -326,7 +328,7 @@ const styles = StyleSheet.create({
   promoBtnText: { color: COLORS.text2, fontSize: 13, fontWeight: '500' },
   discountText: { fontSize: 12, color: COLORS.green, fontWeight: '600', marginBottom: 4 },
   discountHint: { fontSize: 12, color: COLORS.text2, marginBottom: 4 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md, marginTop: SPACING.xs },
   totalLabel: { fontSize: 14, color: COLORS.text2 },
   totalValue: { fontSize: 18, color: COLORS.coral, fontWeight: '700' },
   checkoutBtn: {

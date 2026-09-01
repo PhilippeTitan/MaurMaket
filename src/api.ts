@@ -582,12 +582,16 @@ export const createDispute = (data: Record<string, string>) =>
 
 export const getImageUrl = (imageUrl: string | undefined | null): string | null => {
   if (!imageUrl) return null;
+  let normalizedUrl = imageUrl;
   // Defensive: unwrap JSON-wrapped URLs (e.g. {"url":"https://..."})
-  if (imageUrl.startsWith('{')) {
-    try { const parsed = JSON.parse(imageUrl); if (parsed.url) imageUrl = parsed.url; } catch { /* not JSON */ }
+  if (normalizedUrl.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(normalizedUrl);
+      if (typeof parsed.url === 'string') normalizedUrl = parsed.url;
+    } catch { /* not JSON */ }
   }
-  if (imageUrl.startsWith('http')) return imageUrl;
-  return `${UPLOAD_BASE}${imageUrl}`;
+  if (normalizedUrl.startsWith('http')) return normalizedUrl;
+  return `${UPLOAD_BASE}${normalizedUrl}`;
 };
 
 async function resizeAndConvert(uri: string): Promise<{ base64: string; mimeType: string }> {

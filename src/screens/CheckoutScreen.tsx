@@ -251,11 +251,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             : { sellerId: seller.sellerId, method: 'meetup', location: { lat: meetupLat, lng: meetupLng, address: meetupAddress, note } };
         }),
       };
-      if (method === 'delivery') {
+      if (selectedMethods.includes('delivery')) {
         checkoutData.deliveryName = name; checkoutData.deliveryPhone = phone;
         checkoutData.deliveryAddress = address; checkoutData.deliveryCity = city;
         checkoutData.deliveryNote = note;
-      } else {
+      }
+      if (selectedMethods.includes('meetup')) {
         checkoutData.meetupLat = meetupLat; checkoutData.meetupLng = meetupLng;
         checkoutData.meetupAddress = meetupAddress; checkoutData.meetupName = meetupName;
         checkoutData.deliveryNote = note;
@@ -339,6 +340,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     </View>
     {sellerCount > 1 && <><Text style={styles.stepLabel}>Choose for each seller</Text><View style={styles.fulfillmentCard}>{sellerGroups.map((seller, index) => { const sellerMethod = fulfillmentMethods[seller.sellerId] || method; return <View key={seller.sellerId} style={[styles.sellerFulfillmentRow, index < sellerGroups.length - 1 && styles.reviewItemBorder]}><View style={styles.sellerFulfillmentCopy}><Text style={styles.sellerFulfillmentName} numberOfLines={1}>{seller.sellerName}</Text><Text style={styles.sellerFulfillmentMeta}>{seller.itemCount} {seller.itemCount === 1 ? t('checkout.item') : t('checkout.items')}</Text></View><View style={styles.fulfillmentChoices}><TouchableOpacity style={[styles.choiceChip, sellerMethod === 'delivery' && styles.choiceChipActive]} onPress={() => setFulfillmentMethods(current => ({ ...current, [seller.sellerId]: 'delivery' }))} accessibilityRole="button"><Text style={[styles.choiceChipText, sellerMethod === 'delivery' && styles.choiceChipTextActive]}>Delivery</Text></TouchableOpacity><TouchableOpacity style={[styles.choiceChip, sellerMethod === 'meetup' && styles.choiceChipActive]} onPress={() => setFulfillmentMethods(current => ({ ...current, [seller.sellerId]: 'meetup' }))} accessibilityRole="button"><Text style={[styles.choiceChipText, sellerMethod === 'meetup' && styles.choiceChipTextActive]}>Meetup</Text></TouchableOpacity></View></View>; })}</View></>}
     {sellerGroups.some(seller => (fulfillmentMethods[seller.sellerId] || method) === 'delivery') && <><Text style={styles.stepLabel}>{t("checkout.deliveryInfo")}</Text>
+      {savedAddresses.length > 0 && <><View style={styles.savedAddressHeading}><Text style={styles.savedAddressTitle}>{t('checkout.savedAddresses')}</Text><TouchableOpacity onPress={() => navigation.navigate('Addresses')} accessibilityRole="button" accessibilityLabel={t('checkout.manageAddresses')}><Text style={styles.savedAddressLink}>{t('checkout.manageAddresses')}</Text></TouchableOpacity></View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.addressChoices}>{savedAddresses.map(addr => <TouchableOpacity key={addr.id} style={[styles.addressChoice, selectedAddressId === addr.id && styles.addressChoiceActive]} onPress={() => selectAddress(addr)} accessibilityRole="button" accessibilityLabel={`${addr.label}: ${addr.address}`}><Text style={[styles.addressChoiceLabel, selectedAddressId === addr.id && styles.addressChoiceLabelActive]}>{addr.label}{addr.is_default ? ` · ${t('checkout.default')}` : ''}</Text><Text style={styles.addressChoiceText} numberOfLines={2}>{addr.address}, {addr.city}</Text></TouchableOpacity>)}</ScrollView>
+      </>}
       <TextInput style={styles.input} placeholder={t("checkout.fullName")} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName}/>
       <TextInput style={styles.input} placeholder={t("checkout.phone")} placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad"/>
       <TextInput style={styles.input} placeholder={t("checkout.address")} placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress}/>
@@ -399,6 +403,15 @@ const styles = StyleSheet.create({
   methodTitleActive: { color: COLORS.coral },
   methodSub: { fontSize: 11, color: COLORS.text2, textAlign: "center" },
   input: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8, marginHorizontal: SPACING.lg },
+  savedAddressHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: SPACING.lg, marginBottom: 8 },
+  savedAddressTitle: { color: COLORS.text2, fontSize: 12, fontWeight: '600' },
+  savedAddressLink: { color: COLORS.coral, fontSize: 12, fontWeight: '700' },
+  addressChoices: { gap: 8, paddingHorizontal: SPACING.lg, paddingBottom: 12 },
+  addressChoice: { width: 184, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 12 },
+  addressChoiceActive: { borderColor: COLORS.coral, backgroundColor: COLORS.coral + '0D' },
+  addressChoiceLabel: { color: COLORS.text, fontSize: 13, fontWeight: '700', marginBottom: 4 },
+  addressChoiceLabelActive: { color: COLORS.coral },
+  addressChoiceText: { color: COLORS.text2, fontSize: 11, lineHeight: 16 },
   meetupPreview: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, paddingHorizontal: SPACING.lg },
   meetupPreviewText: { flex: 1, fontSize: 12, color: COLORS.text2 },
   fulfillmentCard: { marginHorizontal: SPACING.lg, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, overflow: 'hidden' },

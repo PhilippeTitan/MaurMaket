@@ -18,6 +18,7 @@ import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import { dialUssdOnSubscription, getSimSubscriptions, findMatchingSims } from '../ussd';
 import type { SimSubscription } from '../ussd';
+import { CheckoutSurface } from '../components/CheckoutPrimitives';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Props = RouteProp<RootStackParamList, 'NatCashPayment'>;
@@ -579,12 +580,12 @@ export default function NatCashPaymentScreen() {
         )}
 
         {/* ── Disclaimer ── */}
-        <View style={styles.disclaimer}>
+        <CheckoutSurface tone="info" style={styles.disclaimer}>
           <MaterialCommunityIcons name="information-outline" size={14} color={COLORS.text2} />
           <Text style={styles.disclaimerText}>
             NatCash payments are sent directly from you to the seller via your Natcom SIM. MaurMaket does not hold or process your money — we only verify the confirmation.
           </Text>
-        </View>
+        </CheckoutSurface>
       </ScrollView>
     </KeyboardAvoidingView>
   );
