@@ -3,14 +3,24 @@ import { pool, isTestMode, neonBackupDatabaseUrl } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
 
 const router = Router();
+const startedAt = Date.now();
 
 // Health check
 router.get('/api/health', async (_req, res) => {
+  const uptimeMs = Date.now() - startedAt;
+  const uptimeSec = Math.floor(uptimeMs / 1000);
   const result = {
     status: 'ok',
     primary: 'unknown',
     active: isTestMode ? 'test-local' : 'supabase',
     backupConfigured: Boolean(neonBackupDatabaseUrl),
+    uptime: uptimeSec,
+    uptimeHuman: uptimeSec < 60 ? `${uptimeSec}s`
+      : uptimeSec < 3600 ? `${Math.floor(uptimeSec / 60)}m ${uptimeSec % 60}s`
+      : `${Math.floor(uptimeSec / 3600)}h ${Math.floor((uptimeSec % 3600) / 60)}m`,
+    startedAt: new Date(startedAt).toISOString(),
+    node: process.version,
+    memMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
   };
   try {
     await Promise.race([pool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
