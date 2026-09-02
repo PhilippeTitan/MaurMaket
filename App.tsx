@@ -39,7 +39,7 @@ import StorefrontScreen from './src/screens/StorefrontScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import OrdersScreen from './src/screens/OrdersScreen';
 import ChatScreen from './src/screens/ChatScreen';
-import VerificationScreen from './src/screens/VerificationScreen';
+// VerificationScreen lazy-loaded to avoid expo-camera/ML Kit native modules crashing in Expo Go
 import BusinessSubscriptionScreen from './src/screens/BusinessSubscriptionScreen';
 import OrderDetailScreen from './src/screens/OrderDetailScreen';
 import WishlistScreen from './src/screens/WishlistScreen';
@@ -65,12 +65,16 @@ import TasteOnboarding from './src/components/TasteOnboarding';
 import FollowListScreen from './src/screens/FollowListScreen';
 
 const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
+const LazyVerificationScreen = React.lazy(() => import('./src/screens/VerificationScreen'));
 
 function LazyMapScreen(props: any) {
   return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><MapScreen {...props} /></Suspense>;
 }
 function LazyMeetupScreen(props: any) {
   return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><MeetupScreen {...props} /></Suspense>;
+}
+function LazyVerificationScreenWrapper(props: any) {
+  return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><LazyVerificationScreen {...props} /></Suspense>;
 }
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -457,7 +461,7 @@ export default function App() {
             <Stack.Screen name="Orders" component={OrdersScreen} />
             <Stack.Screen name="Inbox" component={InboxScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
-            <Stack.Screen name="Verification" component={VerificationScreen} />
+            <Stack.Screen name="Verification" component={LazyVerificationScreenWrapper} />
             <Stack.Screen name="BusinessSubscription" component={BusinessSubscriptionScreen} />
             <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
             <Stack.Screen name="Wishlist" component={WishlistScreen} />
