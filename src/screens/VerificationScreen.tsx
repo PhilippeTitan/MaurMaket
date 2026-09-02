@@ -19,14 +19,14 @@ import type { RootStackParamList } from '../navigation';
 
 let CameraView: any = null;
 let useCameraPermissions: any = () => [null, () => {}];
-let FaceDetection: any = null;
 let ImageManipulator: any = null;
 let WebView: any = null;
 if (Platform.OS !== 'web') {
   const cam = require('expo-camera');
   CameraView = cam.CameraView;
   useCameraPermissions = cam.useCameraPermissions;
-  try { FaceDetection = require('@react-native-ml-kit/face-detection').default; } catch {}
+  // Keep Expo Go on Expo modules only. ML Kit modules are native custom-build
+  // dependencies and cannot be loaded by the Expo Go binary.
   try { ImageManipulator = require('expo-image-manipulator'); } catch {}
   try { WebView = require('react-native-webview').WebView; } catch {}
 }
