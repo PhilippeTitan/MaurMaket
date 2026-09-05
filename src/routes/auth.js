@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { pool } from '../config/database.js';
+import { supabaseAdmin } from '../config/supabase.js';
 import { JWT_SECRET, BCRYPT_ROUNDS } from '../config/security.js';
 import { authRequired, sellerRequired, dobRequired, verifiedSellerRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
@@ -11,26 +12,45 @@ import { gmailConfigured, sendViaGmailApi, emailTransporter, gmailSenderEmail } 
 
 const router = Router();
 
+const supabaseOnly = (_req, res) => res.status(410).json({
+  error: 'This authentication flow has been retired. Use Supabase Auth.',
+  code: 'LEGACY_AUTH_DISABLED',
+});
+
+router.use([
+  '/auth/signup',
+  '/auth/login',
+  '/auth/google',
+  '/auth/google-code',
+  '/auth/verify/send',
+  '/auth/verify/check',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/password',
+], supabaseOnly);
+
 router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
-  const { fullName, email, phone, dateOfBirth } = req.body;
-  if (!fullName || !email) return res.status(400).json({ error: 'Full name and email required' });
+  if (!req.supabaseUser) return res.status(401).json({ error: 'Supabase authentication required' });
+  const metadata = req.supabaseUser.user_metadata || {};
+  const fullName = String(req.body.fullName || metadata.full_name || metadata.name || '').trim();
+  const phone = String(req.body.phone || metadata.phone || '').trim();
+  const dateOfBirth = req.body.dateOfBirth || metadata.date_of_birth || null;
+  const email = String(req.supabaseUser.email || '').trim().toLowerCase();
+  if (!fullName || !email) return res.status(400).json({ error: 'Authenticated profile is missing name or email' });
   if (fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
   try {
+    const existing = await pool.query('SELECT id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified, taste_onboarding_completed FROM users WHERE id = $1', [req.supabaseUser.id]);
+    if (existing.rows.length > 0) return res.json({ user: existing.rows[0], isNewProfile: false });
+
     const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
     const username = await generateUsername(fullName);
     const result = await pool.query(
-      `INSERT INTO users (id, full_name, email, phone, role, username, date_of_birth, taste_onboarding_completed, email_verified)
-       VALUES ($1, $2, $3, $4, 'buyer', $5, $6, false, true)
-       ON CONFLICT (id) DO UPDATE SET
-         full_name = EXCLUDED.full_name,
-         email = EXCLUDED.email,
-         phone = COALESCE(EXCLUDED.phone, users.phone),
-         date_of_birth = COALESCE(EXCLUDED.date_of_birth, users.date_of_birth),
-         updated_at = CURRENT_TIMESTAMP
-       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified, taste_onboarding_completed`,
-      [req.user.id, fullName, String(email).trim().toLowerCase(), cleanPhone, username, dateOfBirth || null]
+      `INSERT INTO users (id, full_name, email, phone, role, username, date_of_birth, pending_dob, taste_onboarding_completed, email_verified)
+       VALUES ($1, $2, $3, $4, 'buyer', $5, $6, $7, false, $8)
+       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified, pending_dob, taste_onboarding_completed`,
+      [req.supabaseUser.id, fullName, email, cleanPhone, username, dateOfBirth, !dateOfBirth, !!req.supabaseUser.email_confirmed_at]
     );
-    res.status(201).json({ user: result.rows[0] });
+    res.status(201).json({ user: result.rows[0], isNewProfile: true });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Email already registered' });
     console.error('Profile bootstrap error:', err);
@@ -63,8 +83,7 @@ router.post('/auth/signup', async (req, res) => {
       [fullName, email, passwordHash, cleanPhone, username, dateOfBirth]
     );
     const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ user, token });
+    res.status(201).json({ user });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Email already registered' });
@@ -154,8 +173,7 @@ router.post('/auth/login', async (req, res) => {
         createNotification(user.id, 'subscription_expired', 'Business Subscription Expired', 'Your Business subscription has expired. You have been demoted to Verified Seller.', {}, pool);
       }
     }
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user, token });
+    res.json({ user });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -351,6 +369,23 @@ router.put('/auth/password', authRequired, async (req, res) => {
 // ACCOUNT DELETION (GDPR / App Store Compliance)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+router.get('/auth/export-data', authRequired, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [profile, orders, messages, notifications, reviews] = await Promise.all([
+      pool.query('SELECT id, full_name, email, phone, bio, role, seller_tier, created_at FROM users WHERE id = $1', [userId]),
+      pool.query('SELECT * FROM orders WHERE buyer_id = $1 ORDER BY created_at DESC', [userId]),
+      pool.query('SELECT m.* FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.buyer_id = $1 OR c.seller_id = $1 ORDER BY m.created_at DESC', [userId]),
+      pool.query('SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC', [userId]),
+      pool.query('SELECT * FROM reviews WHERE reviewer_id = $1 OR seller_id = $1 ORDER BY created_at DESC', [userId]),
+    ]);
+    res.json({ exportedAt: new Date().toISOString(), profile: profile.rows[0] || null, orders: orders.rows, messages: messages.rows, notifications: notifications.rows, reviews: reviews.rows });
+  } catch (err) {
+    console.error('Account export error:', err);
+    res.status(500).json({ error: 'Failed to export account data' });
+  }
+});
+
 router.delete('/auth/delete-account', authRequired, async (req, res) => {
   const userId = req.user.id;
   const client = await pool.connect();
@@ -471,6 +506,10 @@ router.delete('/auth/delete-account', authRequired, async (req, res) => {
     );
 
     await client.query('COMMIT');
+    if (supabaseAdmin) {
+      const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+      if (authDeleteError) console.error('Supabase Auth deletion error:', authDeleteError.message);
+    }
     res.json({ success: true, message: 'Account deleted successfully' });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -782,7 +821,7 @@ router.post('/auth/google-code', async (req, res) => {
         code,
         client_id: clientId,
         client_secret: clientSecret,
-        redirect_uri: 'https://auth.expo.io/@maurinex/MaurMaketMobile',
+        redirect_uri: `${process.env.SUPABASE_URL}/auth/v1/callback`,
         grant_type: 'authorization_code',
       }).toString(),
     });
@@ -836,8 +875,7 @@ router.post('/auth/google-code', async (req, res) => {
     }
 
     const needsDob = isNewUser || userRow.pending_dob;
-    const token = jwt.sign({ id: userRow.id, email: userRow.email, role: userRow.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: userRow, token, needs_dob: needsDob });
+    res.json({ user: userRow, needs_dob: needsDob });
   } catch (err) {
     console.error('Google code exchange error:', err);
     res.status(500).json({ error: 'Google authentication failed' });
@@ -900,8 +938,7 @@ router.post('/auth/google', async (req, res) => {
     }
 
     const needsDob = isNewUser || userRow.pending_dob;
-    const token = jwt.sign({ id: userRow.id, email: userRow.email, role: userRow.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: userRow, token, needs_dob: needsDob });
+    res.json({ user: userRow, needs_dob: needsDob });
   } catch (err) {
     console.error('Google auth error:', err);
     res.status(500).json({ error: 'Google authentication failed' });
@@ -919,7 +956,7 @@ router.post('/auth/complete-dob', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE users SET date_of_birth = $1, pending_dob = false, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2 AND pending_dob = true
+      WHERE id = $2 AND pending_dob = true
        RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob`,
       [dateOfBirth, req.user.id]
     );
@@ -927,10 +964,25 @@ router.post('/auth/complete-dob', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'DOB already set or user not found' });
     }
     const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user, token });
+    res.json({ user });
   } catch (err) {
     console.error('complete-dob error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/auth/skip-dob', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE users SET pending_dob = false, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND pending_dob = true
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed`,
+      [req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(400).json({ error: 'DOB onboarding already completed' });
+    res.json({ user: result.rows[0] });
+  } catch (err) {
+    console.error('skip-dob error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -946,8 +998,7 @@ router.put('/auth/become-seller', authRequired, dobRequired, async (req, res) =>
         `SELECT id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng, username, show_real_name FROM users WHERE id = $1`,
         [req.user.id]
       );
-      const token = jwt.sign({ id: existing.rows[0].id, email: existing.rows[0].email, role: existing.rows[0].role }, JWT_SECRET, { expiresIn: '7d' });
-      return res.json({ success: true, alreadySeller: true, user: existing.rows[0], token });
+      return res.json({ success: true, alreadySeller: true, user: existing.rows[0] });
     }
     const { storeName, storeLogoUrl, idDocumentUrl, natcashPhone } = req.body;
     const sellerTier = 'casual';
@@ -963,8 +1014,7 @@ router.put('/auth/become-seller', authRequired, dobRequired, async (req, res) =>
       [req.user.id, sellerTier, storeName || null, storeLogoUrl || null, idDocumentUrl || null, useStoreIdentity, natcashPhone || null]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    const token = jwt.sign({ id: result.rows[0].id, email: result.rows[0].email, role: 'seller' }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: result.rows[0], token });
+    res.json({ user: result.rows[0] });
   } catch (err) {
     console.error('Become seller error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -1020,8 +1070,7 @@ router.put('/auth/upgrade-tier', authRequired, sellerRequired, async (req, res) 
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    const token = jwt.sign({ id: result.rows[0].id, email: result.rows[0].email, role: 'seller' }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: result.rows[0], token });
+    res.json({ user: result.rows[0] });
   } catch (err) {
     console.error('Upgrade tier error:', err);
     res.status(500).json({ error: 'Server error' });

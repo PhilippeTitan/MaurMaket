@@ -195,29 +195,52 @@ const normalizeProductsResponse = (data: unknown) => {
 
 // Auth
 export const signup = async (fullName: string, email: string, password: string, phone: string, dateOfBirth?: string) => {
+  const normalizedEmail = email.trim().toLowerCase();
   const { data, error } = await supabase.auth.signUp({
-    email: email.trim().toLowerCase(),
+    email: normalizedEmail,
     password,
     options: { data: { full_name: fullName, phone, date_of_birth: dateOfBirth || null } },
   });
   if (error) throw new Error(error.message);
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    throw new Error('An account with this email already exists. Please sign in instead.');
+  }
   if (!data.session) throw new Error('Account created. Check your email to confirm your account before signing in.');
   setCachedToken(data.session.access_token);
   return request('/auth/profile/bootstrap', {
     method: 'POST',
-    body: JSON.stringify({ fullName, email, phone, dateOfBirth }),
-  });
+    body: JSON.stringify({ fullName, email: normalizedEmail, phone, dateOfBirth }),
+  }).then((response: any) => ({ ...response, token: data.session?.access_token }));
 };
 
 export const login = async (email: string, password: string) => {
-  const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
-  if (error || !data.session) throw new Error(error?.message || 'Invalid email or password');
-  setCachedToken(data.session.access_token);
-  return getMe();
+  const normalizedEmail = email.trim().toLowerCase();
+  const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+  if (data.session) {
+    setCachedToken(data.session.access_token);
+    try {
+      return { ...(await getMe() as any), token: data.session.access_token };
+    } catch (profileError: any) {
+      if (!String(profileError?.message || '').includes('User not found')) throw profileError;
+      return request('/auth/profile/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify({
+          fullName: data.user?.user_metadata?.full_name || normalizedEmail.split('@')[0],
+          email: normalizedEmail,
+          phone: data.user?.user_metadata?.phone || '',
+          dateOfBirth: data.user?.user_metadata?.date_of_birth || undefined,
+        }),
+      }).then((response: any) => ({ ...response, token: data.session?.access_token }));
+    }
+  }
+
+  throw new Error(error?.message || 'Invalid email or password');
 };
 
 export const completeDob = (dateOfBirth: string) =>
   request('/auth/complete-dob', { method: 'POST', body: JSON.stringify({ dateOfBirth }) });
+
+export const skipDob = () => request('/auth/skip-dob', { method: 'POST' });
 
 export const getMe = () => request('/auth/me');
 export const savePushToken = (pushToken: string) =>
@@ -232,6 +255,38 @@ export const checkVerifyCode = (code: string) =>
 
 // Google Sign-In through Supabase OAuth
 export const googleAuth = async () => {
+  if (Platform.OS !== 'web') {
+    const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+    GoogleSignin.configure({
+      webClientId: '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com',
+    });
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const result = await GoogleSignin.signIn();
+    if (result.type !== 'success' || !result.data.idToken) {
+      throw new Error('Google sign-in was cancelled or did not return an ID token');
+    }
+
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: 'google',
+      token: result.data.idToken,
+    });
+    if (error || !data.session) throw new Error(error?.message || 'Google sign-in failed');
+    setCachedToken(data.session.access_token);
+    try {
+      return { ...(await getMe() as any), token: data.session.access_token };
+    } catch (profileError: any) {
+      if (!String(profileError?.message || '').includes('User not found')) throw profileError;
+      return request('/auth/profile/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify({
+          fullName: data.user?.user_metadata?.full_name || data.user?.user_metadata?.name || 'New User',
+          email: data.user?.email,
+          phone: data.user?.user_metadata?.phone || '',
+        }),
+      }).then((response: any) => ({ ...response, token: data.session.access_token }));
+    }
+  }
+
   const redirectTo = Platform.OS === 'web'
     ? `${window.location.origin}/`
     : 'maurmaket://auth/callback';
@@ -264,7 +319,7 @@ export const googleAuth = async () => {
   if (!sessionData.session) throw new Error('Google sign-in did not return a Supabase session');
   setCachedToken(sessionData.session.access_token);
   try {
-    return await getMe();
+    return { ...(await getMe() as any), token: sessionData.session.access_token };
   } catch (err: any) {
     if (!String(err?.message || '').includes('User not found')) throw err;
     const authUser = sessionData.session.user;
@@ -275,7 +330,7 @@ export const googleAuth = async () => {
         email: authUser?.email,
         phone: authUser?.user_metadata?.phone || '',
       }),
-    });
+    }).then((response: any) => ({ ...response, token: sessionData.session.access_token }));
   }
 };
 
@@ -298,8 +353,17 @@ export const resetPassword = async (_email: string, _code: string, newPassword: 
 export const updateProfile = (data: Record<string, string>) =>
   request('/auth/profile', { method: 'PUT', body: JSON.stringify(data) });
 
-export const changePassword = (currentPassword: string, newPassword: string) =>
-  request('/auth/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) });
+export const exportAccountData = () => request('/auth/export-data');
+
+export const changePassword = async (currentPassword: string, newPassword: string) => {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user?.email) throw new Error('Your session has expired. Please sign in again.');
+  const { error: reauthError } = await supabase.auth.signInWithPassword({ email: userData.user.email, password: currentPassword });
+  if (reauthError) throw new Error('Current password is incorrect');
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw new Error(error.message);
+  return { updated: true };
+};
 
 export const becomeSeller = (data?: { storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; tier?: string; natcashPhone?: string }) =>
   request('/auth/become-seller', { method: 'PUT', body: data ? JSON.stringify(data) : undefined });

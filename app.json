@@ -40,7 +40,8 @@
       ],
       "expo-web-browser",
       "expo-asset",
-      "expo-image"
+      "expo-image",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "eas": {

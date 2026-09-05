@@ -1,8 +1,6 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import { pool } from '../config/database.js';
-import { JWT_SECRET } from '../config/security.js';
-import { authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from '../middleware/auth.js';
+import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { checkSubscriptionStatus } from '../utils/helpers.js';
 
@@ -36,7 +34,7 @@ function diversifyFeed(products, { maxPerSeller = 3, maxPerCategory = 5 } = {}) 
 // PRODUCT LIST (with personalization)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get('/products', async (req, res) => {
+router.get('/products', optionalAuth, async (req, res) => {
   const { category, search, seller, minPrice, maxPrice, sort, page = 1, limit = 20, personalized, following } = req.query;
   const offset = (Math.max(1, page) - 1) * Math.min(limit, 50);
 
@@ -68,15 +66,10 @@ router.get('/products', async (req, res) => {
 
   let usePersonalized = false;
   let userId = null;
-  try {
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.slice(7);
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      userId = decoded.id;
-      if (personalized === 'true' || following === 'true') usePersonalized = true;
-    }
-  } catch { /* Not authenticated or invalid token */ }
+  if (req.user && (personalized === 'true' || following === 'true')) {
+    userId = req.user.id;
+    usePersonalized = true;
+  }
 
   const engagementUserId = userId || null;
   params.push(engagementUserId);
@@ -406,19 +399,12 @@ router.get('/products/:id/co-purchases', async (req, res) => {
 // PRODUCT DETAIL
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get('/products/:id', async (req, res) => {
+router.get('/products/:id', optionalAuth, async (req, res) => {
   try {
     const id = req.params.id;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(id)) return res.status(404).json({ error: 'Product not found' });
-    let userId = null;
-    try {
-      const authHeader = req.headers.authorization;
-      if (authHeader?.startsWith('Bearer ')) {
-        const decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET);
-        userId = decoded.id;
-      }
-    } catch { /* not authenticated */ }
+    const userId = req.user?.id || null;
     const result = await pool.query(
       `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar,
               u.store_name, u.store_logo_url, u.seller_tier, u.id_verified, u.use_store_identity, u.username AS seller_username,

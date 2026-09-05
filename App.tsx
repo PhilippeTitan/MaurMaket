@@ -12,6 +12,7 @@ import { COLORS, SPACING, RADIUS, SHADOW, FONT_SIZES, FONT_WEIGHTS, FONTS, DURAT
 import { i18n } from './src/i18n';
 import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
+import { restoreSessionFromUrl } from './src/supabase';
 import OfflineBanner from './src/components/OfflineBanner';
 import { PaperPlaneIcon } from './src/components/UserAvatar';
 import { getMe, getFollowerCount, getFollowing, getConversationUnreadCount } from './src/api';
@@ -308,6 +309,11 @@ export default function App() {
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
       const url = event.url;
+      void restoreSessionFromUrl(url).then((restored) => {
+        if (restored && navigationRef.isReady()) {
+          navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code: 'supabase-recovery' } });
+        }
+      }).catch(() => {});
       if (url.includes('payment-return')) {
         const match = url.match(/orderId=([^&]+)/);
         const orderId = match?.[1];
@@ -342,6 +348,11 @@ export default function App() {
 
     Linking.getInitialURL().then((url) => {
       if (!url) return;
+      void restoreSessionFromUrl(url).then((restored) => {
+        if (restored && navigationRef.isReady()) {
+          navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code: 'supabase-recovery' } });
+        }
+      }).catch(() => {});
       if (url.includes('payment-return')) {
         const match = url.match(/orderId=([^&]+)/);
         const orderId = match?.[1];
@@ -497,7 +508,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner />{appContent}<DobConfirmModal visible={pendingDob} onCompleted={() => setPendingDob(false)} />{isLoggedIn && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}<Modal visible={!!paymentFailed} transparent animationType="fade"><Pressable style={pmStyles.overlay} onPress={() => setPaymentFailed(null)}><Pressable style={pmStyles.card} onPress={() => {}}><View style={pmStyles.iconWrap}><MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} /></View><Text style={pmStyles.title}>{paymentFailed?.title}</Text><Text style={pmStyles.message}>{paymentFailed?.message}</Text><TouchableOpacity style={pmStyles.retryBtn} onPress={() => { paymentFailed?.onRetry(); setPaymentFailed(null); }}><Text style={pmStyles.retryText}>Retry Payment</Text></TouchableOpacity><TouchableOpacity style={pmStyles.cancelBtn} onPress={() => setPaymentFailed(null)}><Text style={pmStyles.cancelText}>Cancel</Text></TouchableOpacity></Pressable></Pressable></Modal></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner />{appContent}<DobConfirmModal visible={pendingDob} allowSkip onCompleted={() => setPendingDob(false)} />{isLoggedIn && !pendingDob && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}<Modal visible={!!paymentFailed} transparent animationType="fade"><Pressable style={pmStyles.overlay} onPress={() => setPaymentFailed(null)}><Pressable style={pmStyles.card} onPress={() => {}}><View style={pmStyles.iconWrap}><MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} /></View><Text style={pmStyles.title}>{paymentFailed?.title}</Text><Text style={pmStyles.message}>{paymentFailed?.message}</Text><TouchableOpacity style={pmStyles.retryBtn} onPress={() => { paymentFailed?.onRetry(); setPaymentFailed(null); }}><Text style={pmStyles.retryText}>Retry Payment</Text></TouchableOpacity><TouchableOpacity style={pmStyles.cancelBtn} onPress={() => setPaymentFailed(null)}><Text style={pmStyles.cancelText}>Cancel</Text></TouchableOpacity></Pressable></Pressable></Modal></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider>;
 }
 
 const styles = StyleSheet.create({

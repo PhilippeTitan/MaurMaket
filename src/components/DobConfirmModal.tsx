@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
-import { completeDob } from '../api';
+import { completeDob, skipDob } from '../api';
 import { store } from '../store';
 import type { User } from '../types';
 
@@ -13,9 +13,10 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 interface Props {
   visible: boolean;
   onCompleted: () => void;
+  allowSkip?: boolean;
 }
 
-export default function DobConfirmModal({ visible, onCompleted }: Props) {
+export default function DobConfirmModal({ visible, onCompleted, allowSkip = false }: Props) {
   const [birthMonth, setBirthMonth] = useState<number | null>(null);
   const [birthDay, setBirthDay] = useState<number | null>(null);
   const [birthYear, setBirthYear] = useState<number | null>(null);
@@ -40,8 +41,8 @@ export default function DobConfirmModal({ visible, onCompleted }: Props) {
     setError('');
     try {
       const dobStr = `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`;
-      const res = await completeDob(dobStr) as { user: User; token: string };
-      await store.setUser(res.user, res.token);
+      const res = await completeDob(dobStr) as { user: User };
+      await store.setUser(res.user, store.token);
       onCompleted();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to save date of birth';
@@ -53,6 +54,20 @@ export default function DobConfirmModal({ visible, onCompleted }: Props) {
 
   const canSubmit = birthMonth && birthDay && birthYear && !loading;
 
+  const handleSkip = async () => {
+    if (!allowSkip || loading) return;
+    setLoading(true);
+    try {
+      const res = await skipDob() as { user: User };
+      await store.setUser(res.user, store.token);
+      onCompleted();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to skip onboarding');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={() => {}}>
       <View style={styles.overlay}>
@@ -62,7 +77,7 @@ export default function DobConfirmModal({ visible, onCompleted }: Props) {
           </View>
           <Text style={styles.title}>Confirm your age</Text>
           <Text style={styles.subtitle}>
-            MaurMaket is for ages 18 and up. Please enter your date of birth to continue.
+            MaurMaket is for ages 18 and up. {allowSkip ? 'You can add your date of birth now or later.' : 'Please enter your date of birth to continue.'}
           </Text>
 
           <View style={styles.dobRow}>
@@ -119,6 +134,11 @@ export default function DobConfirmModal({ visible, onCompleted }: Props) {
           >
             <Text style={styles.submitBtnText}>{loading ? 'Saving…' : 'Continue'}</Text>
           </TouchableOpacity>
+          {allowSkip && (
+            <TouchableOpacity style={styles.skipBtn} onPress={handleSkip} disabled={loading}>
+              <Text style={styles.skipText}>Not now</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </Modal>
@@ -205,4 +225,6 @@ const styles = StyleSheet.create({
   },
   submitBtnDisabled: { opacity: 0.5 },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  skipBtn: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  skipText: { color: COLORS.text2, fontSize: 14, fontWeight: '700' },
 });

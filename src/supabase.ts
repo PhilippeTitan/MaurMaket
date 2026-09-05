@@ -17,3 +17,14 @@ export const supabase = createClient(supabaseUrl || 'https://placeholder.supabas
     detectSessionInUrl: Platform.OS === 'web',
   },
 });
+
+export async function restoreSessionFromUrl(url: string) {
+  const fragment = url.includes('#') ? url.slice(url.indexOf('#') + 1) : '';
+  const params = new URLSearchParams(fragment);
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  if (!accessToken || !refreshToken) return false;
+  const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+  if (error) throw error;
+  return true;
+}

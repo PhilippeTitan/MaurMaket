@@ -76,8 +76,8 @@ export default function SellerOnboardingScreen() {
       const res = store.isSeller
         ? await upgradeTier(data) as { user: typeof store.user; token: string }
         : await becomeSeller(data) as { user: typeof store.user; token: string };
-      if (res.user && res.token) {
-        await store.setUser(res.user, res.token);
+      if (res.user) {
+        await store.setUser(res.user, store.token);
       }
       if (navigateBack) setTimeout(() => nav.goBack(), 100);
       return true;
@@ -116,8 +116,8 @@ export default function SellerOnboardingScreen() {
       const res = store.isSeller
         ? await upgradeTier(data) as { user: typeof store.user; token: string }
         : await becomeSeller(data) as { user: typeof store.user; token: string };
-      if (res.user && res.token) {
-        await store.setUser(res.user, res.token);
+      if (res.user) {
+        await store.setUser(res.user, store.token);
       }
       return true;
     } catch (err: unknown) {
