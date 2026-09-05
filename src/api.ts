@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import type { Conversation, Product } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
+import { supabase } from './supabase';
 
 export class OfflineError extends Error {
   constructor(message = 'No internet connection') {
@@ -52,13 +53,8 @@ let _cachedToken: string | null = null;
 let _tokenRead = false;
 
 async function getToken(): Promise<string | null> {
-  if (_tokenRead) return _cachedToken;
-  if (Platform.OS === 'web') {
-    _cachedToken = localStorage.getItem('mm_token');
-  } else {
-    const SecureStore = require('expo-secure-store');
-    _cachedToken = await SecureStore.getItemAsync('mm_token');
-  }
+  const { data } = await supabase.auth.getSession();
+  _cachedToken = data.session?.access_token || null;
   _tokenRead = true;
   return _cachedToken;
 }
@@ -198,11 +194,27 @@ const normalizeProductsResponse = (data: unknown) => {
 };
 
 // Auth
-export const signup = (fullName: string, email: string, password: string, phone: string, dateOfBirth?: string) =>
-  request('/auth/signup', { method: 'POST', body: JSON.stringify({ fullName, email, password, phone, dateOfBirth }) });
+export const signup = async (fullName: string, email: string, password: string, phone: string, dateOfBirth?: string) => {
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim().toLowerCase(),
+    password,
+    options: { data: { full_name: fullName, phone, date_of_birth: dateOfBirth || null } },
+  });
+  if (error) throw new Error(error.message);
+  if (!data.session) throw new Error('Account created. Check your email to confirm your account before signing in.');
+  setCachedToken(data.session.access_token);
+  return request('/auth/profile/bootstrap', {
+    method: 'POST',
+    body: JSON.stringify({ fullName, email, phone, dateOfBirth }),
+  });
+};
 
-export const login = (email: string, password: string) =>
-  request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+export const login = async (email: string, password: string) => {
+  const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+  if (error || !data.session) throw new Error(error?.message || 'Invalid email or password');
+  setCachedToken(data.session.access_token);
+  return getMe();
+};
 
 export const completeDob = (dateOfBirth: string) =>
   request('/auth/complete-dob', { method: 'POST', body: JSON.stringify({ dateOfBirth }) });
@@ -218,20 +230,70 @@ export const sendVerifyCode = (language?: string) =>
 export const checkVerifyCode = (code: string) =>
   request('/auth/verify/check', { method: 'POST', body: JSON.stringify({ code }) });
 
-// Google Sign-In (authorization code flow)
-export const googleAuthCode = (code: string) =>
-  request('/auth/google-code', { method: 'POST', body: JSON.stringify({ code }) });
+// Google Sign-In through Supabase OAuth
+export const googleAuth = async () => {
+  const redirectTo = Platform.OS === 'web'
+    ? `${window.location.origin}/`
+    : 'maurmaket://auth/callback';
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo, skipBrowserRedirect: true },
+  });
+  if (error || !data.url) throw new Error(error?.message || 'Google sign-in failed');
 
-// Google Sign-In (legacy implicit flow)
-export const googleAuth = (idToken: string) =>
-  request('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) });
+  const WebBrowser = require('expo-web-browser');
+  WebBrowser.maybeCompleteAuthSession();
+  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  if (result.type !== 'success' || !result.url) {
+    throw new Error('Google sign-in was cancelled');
+  }
+
+  const hash = result.url.includes('#') ? result.url.split('#')[1] : '';
+  const params = new URLSearchParams(hash);
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  if (accessToken && refreshToken) {
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (sessionError) throw new Error(sessionError.message);
+  }
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) throw new Error('Google sign-in did not return a Supabase session');
+  setCachedToken(sessionData.session.access_token);
+  try {
+    return await getMe();
+  } catch (err: any) {
+    if (!String(err?.message || '').includes('User not found')) throw err;
+    const authUser = sessionData.session.user;
+    return request('/auth/profile/bootstrap', {
+      method: 'POST',
+      body: JSON.stringify({
+        fullName: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || 'New User',
+        email: authUser?.email,
+        phone: authUser?.user_metadata?.phone || '',
+      }),
+    });
+  }
+};
 
 // Forgot / Reset Password
-export const forgotPassword = (email: string, language?: string) =>
-  request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email, language }) });
+export const forgotPassword = async (email: string, _language?: string) => {
+  const redirectTo = typeof window !== 'undefined'
+    ? `${window.location.origin}/reset-password`
+    : 'maurmaket://reset-password';
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo });
+  if (error) throw new Error(error.message);
+  return { sent: true };
+};
 
-export const resetPassword = (email: string, code: string, newPassword: string) =>
-  request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, code, newPassword }) });
+export const resetPassword = async (_email: string, _code: string, newPassword: string) => {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw new Error(error.message);
+  return { updated: true };
+};
 
 export const updateProfile = (data: Record<string, string>) =>
   request('/auth/profile', { method: 'PUT', body: JSON.stringify(data) });

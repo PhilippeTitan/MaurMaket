@@ -29,11 +29,10 @@ import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import FeedScreen from './src/screens/FeedScreen';
 import ExploreScreen from './src/screens/ExploreScreen';
 import InboxScreen from './src/screens/InboxScreen';
-const MapScreen = React.lazy(() => import('./src/screens/MapScreen'));
 import MeScreen from './src/screens/MeScreen';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import CartScreen from './src/screens/CartScreen';
-import CheckoutScreen from './src/screens/CheckoutScreen';
+// CheckoutScreen + OrderDetailScreen lazy-loaded to avoid NativeMap/MapLibre crashing in Expo Go
 import AddListingScreen from './src/screens/AddListingScreen';
 import StorefrontScreen from './src/screens/StorefrontScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
@@ -41,7 +40,6 @@ import OrdersScreen from './src/screens/OrdersScreen';
 import ChatScreen from './src/screens/ChatScreen';
 // VerificationScreen lazy-loaded to avoid expo-camera/ML Kit native modules crashing in Expo Go
 import BusinessSubscriptionScreen from './src/screens/BusinessSubscriptionScreen';
-import OrderDetailScreen from './src/screens/OrderDetailScreen';
 import WishlistScreen from './src/screens/WishlistScreen';
 import AddressesScreen from './src/screens/AddressesScreen';
 import PaymentsScreen from './src/screens/PaymentsScreen';
@@ -64,8 +62,11 @@ import DobConfirmModal from './src/components/DobConfirmModal';
 import TasteOnboarding from './src/components/TasteOnboarding';
 import FollowListScreen from './src/screens/FollowListScreen';
 
+const MapScreen = React.lazy(() => import('./src/screens/MapScreen'));
 const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
 const LazyVerificationScreen = React.lazy(() => import('./src/screens/VerificationScreen'));
+const LazyCheckoutScreen = React.lazy(() => import('./src/screens/CheckoutScreen'));
+const LazyOrderDetailScreen = React.lazy(() => import('./src/screens/OrderDetailScreen'));
 
 function LazyMapScreen(props: any) {
   return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><MapScreen {...props} /></Suspense>;
@@ -75,6 +76,12 @@ function LazyMeetupScreen(props: any) {
 }
 function LazyVerificationScreenWrapper(props: any) {
   return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><LazyVerificationScreen {...props} /></Suspense>;
+}
+function LazyCheckoutScreenWrapper(props: any) {
+  return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><LazyCheckoutScreen {...props} /></Suspense>;
+}
+function LazyOrderDetailScreenWrapper(props: any) {
+  return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><LazyOrderDetailScreen {...props} /></Suspense>;
 }
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -452,7 +459,7 @@ export default function App() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
             <Stack.Screen name="Cart" component={CartScreen} />
-            <Stack.Screen name="Checkout" component={CheckoutScreen} />
+            <Stack.Screen name="Checkout" component={LazyCheckoutScreenWrapper} />
             <Stack.Screen name="AddListing" component={AddListingScreen} />
             <Stack.Screen name="SellerOnboarding" component={SellerOnboardingScreen} />
             <Stack.Screen name="Storefront" component={StorefrontScreen} />
@@ -463,7 +470,7 @@ export default function App() {
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="Verification" component={LazyVerificationScreenWrapper} />
             <Stack.Screen name="BusinessSubscription" component={BusinessSubscriptionScreen} />
-            <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
+            <Stack.Screen name="OrderDetail" component={LazyOrderDetailScreenWrapper} />
             <Stack.Screen name="Wishlist" component={WishlistScreen} />
             <Stack.Screen name="Addresses" component={AddressesScreen} />
             <Stack.Screen name="Payments" component={PaymentsScreen} />

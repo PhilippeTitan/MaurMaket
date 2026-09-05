@@ -11,6 +11,33 @@ import { gmailConfigured, sendViaGmailApi, emailTransporter, gmailSenderEmail } 
 
 const router = Router();
 
+router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
+  const { fullName, email, phone, dateOfBirth } = req.body;
+  if (!fullName || !email) return res.status(400).json({ error: 'Full name and email required' });
+  if (fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
+  try {
+    const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
+    const username = await generateUsername(fullName);
+    const result = await pool.query(
+      `INSERT INTO users (id, full_name, email, phone, role, username, date_of_birth, taste_onboarding_completed, email_verified)
+       VALUES ($1, $2, $3, $4, 'buyer', $5, $6, false, true)
+       ON CONFLICT (id) DO UPDATE SET
+         full_name = EXCLUDED.full_name,
+         email = EXCLUDED.email,
+         phone = COALESCE(EXCLUDED.phone, users.phone),
+         date_of_birth = COALESCE(EXCLUDED.date_of_birth, users.date_of_birth),
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified, taste_onboarding_completed`,
+      [req.user.id, fullName, String(email).trim().toLowerCase(), cleanPhone, username, dateOfBirth || null]
+    );
+    res.status(201).json({ user: result.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Email already registered' });
+    console.error('Profile bootstrap error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTH ROUTES
 // ═══════════════════════════════════════════════════════════════════════════════

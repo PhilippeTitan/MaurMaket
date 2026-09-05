@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import type { User, CartItem } from './types';
 import { setCachedToken } from './api';
 import { clearUserSnapshots } from './offlineCache';
+import { supabase } from './supabase';
 
 type Listener = () => void;
 
@@ -62,11 +63,12 @@ export const store = {
   isFollowing(sellerId: string) { return state.followedSellerIds.has(sellerId); },
 
   async init() {
-    const [token, userStr, cartStr] = await Promise.all([
-      storage.getItem('mm_token'),
+    const [{ data: sessionData }, userStr, cartStr] = await Promise.all([
+      supabase.auth.getSession(),
       storage.getItem('mm_user'),
       storage.getItem('mm_cart'),
     ]);
+    const token = sessionData.session?.access_token || null;
     if (token) {
       state.token = token;
       setCachedToken(token);
@@ -83,8 +85,7 @@ export const store = {
     state.user = user;
     state.token = token;
     setCachedToken(token);
-    if (token) await storage.setItem('mm_token', token);
-    else await storage.deleteItem('mm_token');
+    await storage.deleteItem('mm_token');
     if (user && token) await storage.setItem('mm_user', JSON.stringify(user));
     else await storage.deleteItem('mm_user');
     notify();
@@ -105,6 +106,7 @@ export const store = {
 
   async logout() {
     const previousUserId = state.user?.id;
+    await supabase.auth.signOut();
     state.user = null;
     state.token = null;
     setCachedToken(null);

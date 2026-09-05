@@ -1,6 +1,13 @@
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/database.js';
 import { JWT_SECRET } from '../config/security.js';
+import { supabaseAdmin } from '../config/supabase.js';
+
+async function getSupabaseUser(token) {
+  if (!supabaseAdmin) return null;
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  return error ? null : data.user;
+}
 
 function optionalAuth(req, _res, next) {
   const auth = req.headers.authorization;
@@ -18,8 +25,24 @@ async function authRequired(req, res, next) {
   if (!auth || !auth.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  const token = auth.slice(7);
+
   try {
-    const payload = jwt.verify(auth.slice(7), JWT_SECRET);
+    const supabaseUser = await getSupabaseUser(token);
+    if (supabaseUser) {
+      const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [supabaseUser.id]);
+      if (result.rows.length === 0 || result.rows[0].role === 'deleted') {
+        return res.status(401).json({ error: 'Account no longer active' });
+      }
+      req.user = { id: result.rows[0].id, email: result.rows[0].email, role: result.rows[0].role };
+      return next();
+    }
+  } catch {
+    // Fall through to the legacy JWT verifier during the migration.
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
     // Re-check identity against the DB on every request rather than trusting
     // the JWT's embedded role/email. This closes the gap where a deleted or
     // role-changed account could keep acting on a still-valid 7-day token.

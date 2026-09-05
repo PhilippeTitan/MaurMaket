@@ -14,9 +14,6 @@ import Divider from './components/Divider';
 import WelcomeMoment from '../../components/WelcomeMoment';
 import type { User } from '../../types';
 
-const GOOGLE_WEB_CLIENT_ID = '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com';
-const GOOGLE_REDIRECT_URI = 'https://auth.expo.io/@maurinex/MaurMaketMobile';
-
 const STEPS = ['name', 'email', 'password', 'phone', 'dob', 'review'] as const;
 type Step = typeof STEPS[number];
 
@@ -52,34 +49,8 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
   const handleGoogle = async () => {
     try {
       setGoogleLoading(true);
-      const Crypto = require('expo-crypto');
-      const WebBrowser = require('expo-web-browser');
-      WebBrowser.maybeCompleteAuthSession();
-
-      const state = Crypto.randomUUID();
-      const nonce = Crypto.randomUUID();
-
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${GOOGLE_WEB_CLIENT_ID}` +
-        `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` +
-        `&response_type=id_token` +
-        `&scope=${encodeURIComponent('openid profile email')}` +
-        `&state=${state}` +
-        `&nonce=${nonce}`;
-
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, GOOGLE_REDIRECT_URI);
-
-      if (result.type === 'success' && result.url) {
-        const hash = result.url.split('#')[1] || '';
-        const params = new URLSearchParams(hash);
-        const idToken = params.get('id_token');
-        if (idToken) {
-          const res = await googleAuth(idToken) as { user: User; token: string };
-          await store.setUser(res.user, res.token);
-        } else {
-          setErrors({ google: 'No ID token received from Google' });
-        }
-      }
+      const res = await googleAuth() as { user: User; token: string };
+      await store.setUser(res.user, res.token);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Google sign-in failed';
       setErrors({ google: message });
