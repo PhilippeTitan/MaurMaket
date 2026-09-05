@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Image, ScrollView, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH, TIER_COLORS, getDisplayName } from '../theme';
@@ -15,6 +15,8 @@ import CardRow from '../components/CardRow';
 import ConfirmModal from '../components/ConfirmModal';
 import { i18n, useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
+import AuthMethodsCard from '../components/AuthMethodsCard';
+import { supabase } from '../supabase';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -36,6 +38,13 @@ export default function SettingsScreen({ navigation }: Props) {
   const toast = useToast();
   const { user } = useUser();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setGoogleConnected(Boolean(data.user?.identities?.some(identity => identity.provider === 'google')));
+    }).catch(() => setGoogleConnected(false));
+  }, []);
 
   const isSeller = user?.role === 'seller';
   const tierLabel =
@@ -156,19 +165,23 @@ export default function SettingsScreen({ navigation }: Props) {
             divider
           />
           <CardRow
-            icon="lock-outline"
-            label={t('settings.changePassword')}
-            value="••••••••"
-            chevron
-            onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: t('settings.changePassword') })}
-            divider
-          />
-          <CardRow
             icon="translate"
             label={t('settings.language')}
             value={langLabel}
             chevron
             onPress={() => navigation.navigate('LanguageSettings')}
+          />
+        </SettingsCard>
+
+        <SectionHeader title="Sign-in & security" />
+        <AuthMethodsCard googleConnected={googleConnected} />
+        <SettingsCard>
+          <CardRow
+            icon="lock-outline"
+            label={t('settings.changePassword')}
+            value="••••••••"
+            chevron
+            onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: t('settings.changePassword') })}
           />
         </SettingsCard>
 

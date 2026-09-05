@@ -10,6 +10,7 @@ import { store } from '../../store';
 import AuthInput from './components/AuthInput';
 import Divider from './components/Divider';
 import type { User } from '../../types';
+import AuthMethodsCard from '../../components/AuthMethodsCard';
 
 interface SigninFormProps {
   switchMode: () => void;
@@ -120,6 +121,8 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
           <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
           <Text style={styles.googleBtnText}>{googleLoading ? 'Connecting…' : t('auth.googleSignIn')}</Text>
         </TouchableOpacity>
+
+        <AuthMethodsCard compact />
 
         <TouchableOpacity onPress={switchMode}>
           <Text style={styles.switchText}>

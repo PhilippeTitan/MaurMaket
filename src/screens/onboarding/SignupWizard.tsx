@@ -13,6 +13,7 @@ import ReviewRow from './components/ReviewRow';
 import Divider from './components/Divider';
 import WelcomeMoment from '../../components/WelcomeMoment';
 import type { User } from '../../types';
+import AuthMethodsCard from '../../components/AuthMethodsCard';
 
 const STEPS = ['name', 'email', 'password', 'phone', 'dob', 'review'] as const;
 type Step = typeof STEPS[number];
@@ -385,6 +386,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
               <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
               <Text style={styles.googleBtnText}>{googleLoading ? 'Connecting…' : t('auth.googleSignIn')}</Text>
             </TouchableOpacity>
+            <AuthMethodsCard compact />
             <TouchableOpacity onPress={switchMode}>
               <Text style={styles.switchText}>
                 {t('auth.hasAccount')} <Text style={styles.switchLink}>{t('auth.signIn')}</Text>
