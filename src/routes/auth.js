@@ -1,33 +1,10 @@
 import { Router } from 'express';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
 import { pool } from '../config/database.js';
 import { supabaseAdmin } from '../config/supabase.js';
-import { JWT_SECRET, BCRYPT_ROUNDS } from '../config/security.js';
 import { authRequired, sellerRequired, dobRequired, verifiedSellerRequired } from '../middleware/auth.js';
-import { createNotification } from '../utils/notifications.js';
-import { generateUsername, checkSubscriptionStatus, isAtLeast18 } from '../utils/helpers.js';
-import { gmailConfigured, sendViaGmailApi, emailTransporter, gmailSenderEmail } from '../config/email.js';
+import { generateUsername, isAtLeast18 } from '../utils/helpers.js';
 
 const router = Router();
-
-const supabaseOnly = (_req, res) => res.status(410).json({
-  error: 'This authentication flow has been retired. Use Supabase Auth.',
-  code: 'LEGACY_AUTH_DISABLED',
-});
-
-router.use([
-  '/auth/signup',
-  '/auth/login',
-  '/auth/google',
-  '/auth/google-code',
-  '/auth/verify/send',
-  '/auth/verify/check',
-  '/auth/forgot-password',
-  '/auth/reset-password',
-  '/auth/password',
-], supabaseOnly);
 
 router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
   if (!req.supabaseUser) return res.status(401).json({ error: 'Supabase authentication required' });
@@ -61,37 +38,6 @@ router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTH ROUTES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-router.post('/auth/signup', async (req, res) => {
-  const { fullName, email, password, phone, dateOfBirth } = req.body;
-  if (!fullName || !email || !password) {
-    return res.status(400).json({ error: 'Full name, email, and password required' });
-  }
-  if (!dateOfBirth) return res.status(400).json({ error: 'Date of birth is required' });
-  if (!isAtLeast18(dateOfBirth)) return res.status(400).json({ error: 'You must be at least 18 years old to create an account' });
-  if (fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
-  if (email.length > 254) return res.status(400).json({ error: 'Email too long' });
-  if (password.length < 6 || password.length > 128) return res.status(400).json({ error: 'Password must be 6-128 characters' });
-  try {
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
-    const username = await generateUsername(fullName);
-    const result = await pool.query(
-      `INSERT INTO users (full_name, email, password_hash, phone, role, username, date_of_birth, taste_onboarding_completed)
-       VALUES ($1, $2, $3, $4, 'buyer', $5, $6, false)
-       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified, taste_onboarding_completed`,
-      [fullName, email, passwordHash, cleanPhone, username, dateOfBirth]
-    );
-    const user = result.rows[0];
-    res.status(201).json({ user });
-  } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'Email already registered' });
-    }
-    console.error('Signup error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
 
 // ─── Check email availability ───────────────────────────────────────────────
 router.get('/auth/check-email', async (req, res) => {
@@ -127,56 +73,6 @@ router.get('/auth/check-username', async (req, res) => {
   } catch (err) {
     console.error('check-username error:', err);
     return res.status(500).json({ error: 'Server error' });
-  }
-});
-
-router.post('/auth/login', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password required' });
-  }
-  try {
-    const result = await pool.query(
-      `SELECT id, full_name, email, phone, role, avatar_url, bio, username, show_real_name, seller_tier, email_verified, store_name, taste_onboarding_completed, password_hash FROM users WHERE email = $1`,
-      [email]
-    );
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
-    const user = result.rows[0];
-    if (!user.password_hash) {
-      return res.status(401).json({ error: 'This account uses Google sign-in. Please use Google to sign in.' });
-    }
-    let passwordValid = false;
-    try {
-      passwordValid = await bcrypt.compare(password, user.password_hash);
-    } catch {}
-    if (!passwordValid) {
-      const shaHash = crypto.createHash('sha256').update(password).digest('hex');
-      const storedBuf = Buffer.from(user.password_hash, 'hex');
-      const inputBuf = Buffer.from(shaHash, 'hex');
-      if (storedBuf.length === inputBuf.length && crypto.timingSafeEqual(storedBuf, inputBuf)) {
-        passwordValid = true;
-        const bcryptHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-        await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [bcryptHash, user.id]);
-      }
-    }
-    if (!passwordValid) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
-    delete user.password_hash;
-    if (user.role === 'seller' && user.seller_tier === 'business') {
-      const subStatus = await checkSubscriptionStatus(user.id);
-      if (subStatus === 'expired') {
-        await pool.query(`UPDATE users SET seller_tier = 'verified', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [user.id]);
-        user.seller_tier = 'verified';
-        createNotification(user.id, 'subscription_expired', 'Business Subscription Expired', 'Your Business subscription has expired. You have been demoted to Verified Seller.', {}, pool);
-      }
-    }
-    res.json({ user });
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -329,43 +225,6 @@ router.post('/users/push-token', authRequired, async (req, res) => {
   }
 });
 
-router.put('/auth/password', authRequired, async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: 'Current and new password required' });
-  }
-  if (newPassword.length < 6 || newPassword.length > 128) {
-    return res.status(400).json({ error: 'New password must be 6-128 characters' });
-  }
-  try {
-    const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    if (!result.rows[0].password_hash) {
-      return res.status(400).json({ error: 'This account uses Google sign-in. Please set a password via Forgot Password first.' });
-    }
-    let valid = false;
-    try { valid = await bcrypt.compare(currentPassword, result.rows[0].password_hash); } catch {}
-    if (!valid) {
-      const shaHash = crypto.createHash('sha256').update(currentPassword).digest('hex');
-      const storedHash = result.rows[0].password_hash;
-      if (storedHash && shaHash.length === storedHash.length) {
-        const a = Buffer.from(shaHash, 'hex');
-        const b = Buffer.from(storedHash, 'hex');
-        if (crypto.timingSafeEqual(a, b)) valid = true;
-      }
-    }
-    if (!valid) {
-      return res.status(400).json({ error: 'Current password is incorrect' });
-    }
-    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-    await pool.query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [newHash, req.user.id]);
-    res.json({ updated: true });
-  } catch (err) {
-    console.error('Password change error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // ACCOUNT DELETION (GDPR / App Store Compliance)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -498,7 +357,7 @@ router.delete('/auth/delete-account', authRequired, async (req, res) => {
     await client.query(
       `UPDATE users SET
         full_name = 'Deleted User', username = $1, email = $2,
-        password_hash = 'DELETED', phone = NULL, avatar_url = NULL, bio = NULL,
+        phone = NULL, avatar_url = NULL, bio = NULL,
         store_name = NULL, store_logo_url = NULL, id_document_url = NULL,
         id_verified = FALSE, role = 'deleted', seller_tier = 'none', push_token = NULL,
         updated_at = CURRENT_TIMESTAMP
@@ -667,7 +526,9 @@ async function sendOtpEmail(email, code, purpose, lang) {
   return false;
 }
 
-router.post('/auth/verify/send', authRequired, async (req, res) => {
+router.post('/auth/verify/send', (_req, res) => {
+  return res.status(410).json({ error: 'Legacy email verification disabled', code: 'LEGACY_AUTH_DISABLED' });
+  /*
   const { language } = req.body || {};
   try {
     const userResult = await pool.query('SELECT email, email_verified FROM users WHERE id = $1', [req.user.id]);
@@ -699,9 +560,12 @@ router.post('/auth/verify/send', authRequired, async (req, res) => {
     console.error('Verify send error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+  */
 });
 
-router.post('/auth/verify/check', authRequired, async (req, res) => {
+router.post('/auth/verify/check', (_req, res) => {
+  return res.status(410).json({ error: 'Legacy email verification disabled', code: 'LEGACY_AUTH_DISABLED' });
+  /*
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: 'Code required' });
   try {
@@ -741,13 +605,16 @@ router.post('/auth/verify/check', authRequired, async (req, res) => {
     console.error('Verify check error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+  */
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FORGOT / RESET PASSWORD
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.post('/auth/forgot-password', async (req, res) => {
+router.post('/auth/forgot-password', (_req, res) => {
+  return res.status(410).json({ error: 'Legacy password reset disabled', code: 'LEGACY_AUTH_DISABLED' });
+  /*
   const { email, language } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
   try {
@@ -771,9 +638,12 @@ router.post('/auth/forgot-password', async (req, res) => {
     console.error('Forgot password error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+  */
 });
 
-router.post('/auth/reset-password', async (req, res) => {
+router.post('/auth/reset-password', (_req, res) => {
+  return res.status(410).json({ error: 'Legacy password reset disabled', code: 'LEGACY_AUTH_DISABLED' });
+  /*
   const { email, code, newPassword } = req.body;
   if (!email || !code || !newPassword) return res.status(400).json({ error: 'Email, code, and new password required' });
   if (newPassword.length < 6 || newPassword.length > 128) return res.status(400).json({ error: 'Password must be 6-128 characters' });
@@ -799,6 +669,7 @@ router.post('/auth/reset-password', async (req, res) => {
     console.error('Reset password error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+  */
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -806,7 +677,9 @@ router.post('/auth/reset-password', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Authorization code flow (primary)
-router.post('/auth/google-code', async (req, res) => {
+router.post('/auth/google-code', (_req, res) => {
+  return res.status(410).json({ error: 'Legacy Google authentication disabled', code: 'LEGACY_AUTH_DISABLED' });
+  /*
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: 'Authorization code required' });
 
@@ -881,10 +754,13 @@ router.post('/auth/google-code', async (req, res) => {
     console.error('Google code exchange error:', err);
     res.status(500).json({ error: 'Google authentication failed' });
   }
+  */
 });
 
 // Legacy implicit flow (kept as fallback)
-router.post('/auth/google', async (req, res) => {
+router.post('/auth/google', (_req, res) => {
+  return res.status(410).json({ error: 'Legacy Google authentication disabled', code: 'LEGACY_AUTH_DISABLED' });
+  /*
   const { idToken } = req.body;
   if (!idToken) return res.status(400).json({ error: 'Google ID token required' });
 
@@ -944,6 +820,7 @@ router.post('/auth/google', async (req, res) => {
     console.error('Google auth error:', err);
     res.status(500).json({ error: 'Google authentication failed' });
   }
+  */
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
