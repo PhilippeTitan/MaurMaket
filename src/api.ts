@@ -199,7 +199,10 @@ export const signup = async (fullName: string, email: string, password: string, 
   const { data, error } = await supabase.auth.signUp({
     email: normalizedEmail,
     password,
-    options: { data: { full_name: fullName, phone, date_of_birth: dateOfBirth || null } },
+    options: {
+      emailRedirectTo: Platform.OS === 'web' ? `${window.location.origin}/` : 'maurmaket://auth/callback',
+      data: { full_name: fullName, phone, date_of_birth: dateOfBirth || null },
+    },
   });
   if (error) throw new Error(error.message);
   if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
@@ -245,13 +248,6 @@ export const skipDob = () => request('/auth/skip-dob', { method: 'POST' });
 export const getMe = () => request('/auth/me');
 export const savePushToken = (pushToken: string) =>
   request('/users/push-token', { method: 'POST', body: JSON.stringify({ pushToken }) });
-
-// Email Verification
-export const sendVerifyCode = (language?: string) =>
-  request('/auth/verify/send', { method: 'POST', body: JSON.stringify({ language }) });
-
-export const checkVerifyCode = (code: string) =>
-  request('/auth/verify/check', { method: 'POST', body: JSON.stringify({ code }) });
 
 // Google Sign-In through Supabase OAuth
 export const googleAuth = async () => {

@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform,
+  View, Text, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
-import { sendVerifyCode, checkVerifyCode } from '../api';
 import { store } from '../store';
+import { supabase } from '../supabase';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, AuthStackParamList } from '../navigation';
 import BackButton from '../components/BackButton';
@@ -18,22 +18,10 @@ type Props = NativeStackScreenProps<RootStackParamList & AuthStackParamList, 'Em
 export default function EmailVerificationScreen({ navigation, route }: Props) {
   const { t, language } = useTranslation();
   const insets = useSafeAreaInsets();
-  const prefilledCode = route?.params?.code || '';
-
-  const [code, setCode] = useState(prefilledCode);
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [verified, setVerified] = useState(false);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const inputRef = useRef<TextInput>(null);
-
-  useEffect(() => {
-    if (prefilledCode) {
-      setCode(prefilledCode);
-      handleVerify(prefilledCode);
-    }
-  }, []);
-
   const startCooldown = useCallback(() => {
     setCooldown(60);
     if (cooldownRef.current) clearInterval(cooldownRef.current);
@@ -49,24 +37,23 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
   }, []);
 
   useEffect(() => {
-    sendVerifyCode(language).then(() => startCooldown()).catch(() => {});
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email_confirmed_at) setVerified(true);
+    }).catch(() => {});
     return () => { if (cooldownRef.current) clearInterval(cooldownRef.current); };
   }, []);
 
-  const handleVerify = async (codeValue?: string) => {
-    const c = (codeValue || code).trim();
-    if (c.length !== 6) {
-      Alert.alert(t('common.error'), t('verify.invalidCode'));
-      return;
-    }
+  const handleCheckStatus = async () => {
     setLoading(true);
     try {
-      const res = await checkVerifyCode(c) as { success?: boolean; alreadyVerified?: boolean; user?: typeof store.user };
-      // Sync store with updated user (email_verified=true) — even if already verified
-      if (res.user) {
-        await store.setUser(res.user, store.token || null);
+      const { data, error } = await supabase.auth.getUser();
+      if (error) throw error;
+      if (!data.user?.email_confirmed_at) {
+        Alert.alert(t('common.error'), 'Your email is not confirmed yet. Open the confirmation link from your inbox, then try again.');
+        return;
       }
       setVerified(true);
+      await store.refreshUser();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t('verify.invalidCode');
       Alert.alert(t('common.error'), message);
@@ -78,7 +65,10 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
   const handleResend = async () => {
     if (cooldown > 0) return;
     try {
-      await sendVerifyCode(language);
+      const { data } = await supabase.auth.getUser();
+      if (!data.user?.email) throw new Error('No email address is associated with this account.');
+      const { error } = await supabase.auth.resend({ type: 'signup', email: data.user.email });
+      if (error) throw error;
       startCooldown();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to send code';
@@ -122,39 +112,15 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
           </Text>
         </View>
 
-        <View style={styles.codeRow}>
-          {[0, 1, 2, 3, 4, 5].map(i => (
-            <View key={i} style={[styles.codeCell, code.length > i && styles.codeCellFilled]}>
-              <Text style={styles.codeDigit}>{code[i] || ''}</Text>
-            </View>
-          ))}
-        </View>
-
-        <TextInput
-          ref={inputRef}
-          style={styles.hiddenInput}
-          value={code}
-          onChangeText={text => {
-            const digits = text.replace(/\D/g, '').slice(0, 6);
-            setCode(digits);
-            if (digits.length === 6) handleVerify(digits);
-          }}
-          keyboardType="number-pad"
-          maxLength={6}
-          autoFocus
-          accessibilityLabel="verification code"
-         
-        />
-
         <TouchableOpacity
-          style={[styles.verifyBtn, (loading || code.length !== 6) && styles.verifyBtnDisabled]}
-          onPress={() => handleVerify()}
-          disabled={loading || code.length !== 6}
-          accessibilityLabel="verify"
+          style={[styles.verifyBtn, loading && styles.verifyBtnDisabled]}
+          onPress={handleCheckStatus}
+          disabled={loading}
+          accessibilityLabel="check email confirmation"
           accessibilityRole="button"
         >
           <Text style={styles.verifyBtnText}>
-            {loading ? t('common.loading') : t('verify.verify')}
+            {loading ? t('common.loading') : 'I confirmed my email'}
           </Text>
         </TouchableOpacity>
 

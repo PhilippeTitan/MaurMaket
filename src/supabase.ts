@@ -18,7 +18,7 @@ export const supabase = createClient(supabaseUrl || 'https://placeholder.supabas
   },
 });
 
-export async function restoreSessionFromUrl(url: string) {
+export async function restoreSessionFromUrl(url: string): Promise<'recovery' | 'confirmation' | false> {
   const fragment = url.includes('#') ? url.slice(url.indexOf('#') + 1) : '';
   const params = new URLSearchParams(fragment);
   const accessToken = params.get('access_token');
@@ -26,5 +26,5 @@ export async function restoreSessionFromUrl(url: string) {
   if (!accessToken || !refreshToken) return false;
   const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
   if (error) throw error;
-  return true;
+  return params.get('type') === 'recovery' ? 'recovery' : 'confirmation';
 }

@@ -309,9 +309,11 @@ export default function App() {
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
       const url = event.url;
-      void restoreSessionFromUrl(url).then((restored) => {
-        if (restored && navigationRef.isReady()) {
-          navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code: 'supabase-recovery' } });
+      void restoreSessionFromUrl(url).then((kind) => {
+        if (kind && navigationRef.isReady()) {
+          navigationRef.navigate('Auth', kind === 'recovery'
+            ? { screen: 'ForgotPassword', params: { code: 'supabase-recovery' } }
+            : { screen: 'EmailVerification' });
         }
       }).catch(() => {});
       if (url.includes('payment-return')) {
@@ -348,9 +350,11 @@ export default function App() {
 
     Linking.getInitialURL().then((url) => {
       if (!url) return;
-      void restoreSessionFromUrl(url).then((restored) => {
-        if (restored && navigationRef.isReady()) {
-          navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code: 'supabase-recovery' } });
+      void restoreSessionFromUrl(url).then((kind) => {
+        if (kind && navigationRef.isReady()) {
+          navigationRef.navigate('Auth', kind === 'recovery'
+            ? { screen: 'ForgotPassword', params: { code: 'supabase-recovery' } }
+            : { screen: 'EmailVerification' });
         }
       }).catch(() => {});
       if (url.includes('payment-return')) {
