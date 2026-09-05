@@ -61,8 +61,7 @@ router.get('/api/seller/payouts', authRequired, sellerRequired, async (req, res)
 
 // Request payout
 router.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req, res) => {
-  const evCheck = await pool.query('SELECT email_verified FROM users WHERE id = $1', [req.user.id]);
-  if (!evCheck.rows[0]?.email_verified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to request payouts.' });
+  if (!req.supabaseUser?.email_confirmed_at) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to request payouts.' });
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
   const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
   if (sellerTier === 'casual') return res.status(403).json({ error: 'Payouts are available for Verified sellers and above.' });

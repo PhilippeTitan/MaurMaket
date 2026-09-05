@@ -196,6 +196,7 @@ router.get('/auth/me', authRequired, async (req, res) => {
 
 router.put('/auth/profile', authRequired, async (req, res) => {
   let { fullName, email, phone, natcashPhone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng, showRealName, useStoreIdentity, acceptedPaymentMethods } = req.body;
+  email = undefined;
   if (phone) phone = phone.replace(/^\+?509/, '').replace(/^\+/, '');
   if (natcashPhone) natcashPhone = natcashPhone.replace(/^\+?509/, '').replace(/^\+/, '');
   if (fullName && fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
@@ -206,7 +207,7 @@ router.put('/auth/profile', authRequired, async (req, res) => {
     const result = await pool.query(
       `UPDATE users SET
         full_name = COALESCE($1, full_name),
-        email = COALESCE($2, email),
+        email = email,
         phone = COALESCE($3, phone),
         bio = COALESCE($4, bio),
         avatar_url = COALESCE($5, avatar_url),
@@ -218,7 +219,7 @@ router.put('/auth/profile', authRequired, async (req, res) => {
         location_lng = COALESCE($10, location_lng),
         show_real_name = COALESCE($11, show_real_name),
         use_store_identity = COALESCE($12, use_store_identity),
-        email_verified = CASE WHEN $2 IS NOT NULL AND $2 != email THEN false ELSE email_verified END,
+        email_verified = email_verified,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $6
        RETURNING id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,

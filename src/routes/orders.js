@@ -1167,8 +1167,7 @@ router.post('/payments/abandoned', authRequired, async (req, res) => {
 // ── Create Order ──────────────────────────────────────────────────────────
 
 router.post('/orders', authRequired, dobRequired, async (req, res) => {
-  const evCheck = await pool.query('SELECT email_verified FROM users WHERE id = $1', [req.user.id]);
-  if (!evCheck.rows[0]?.email_verified) {
+  if (!req.supabaseUser?.email_confirmed_at) {
     return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to place orders.' });
   }
   const { items, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, promoCode, meetupLat, meetupLng, meetupAddress, meetupName } = req.body;

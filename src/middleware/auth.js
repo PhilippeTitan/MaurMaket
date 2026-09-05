@@ -39,7 +39,7 @@ async function authRequired(req, res, next) {
       return next();
     }
   } catch {
-    // Fall through to the legacy JWT verifier during the migration.
+    // Invalid or expired Supabase access token.
   }
 
   return res.status(401).json({ error: 'Invalid Supabase token' });
