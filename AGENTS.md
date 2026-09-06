@@ -853,6 +853,12 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 - **Safe areas:** Always use `useSafeAreaInsets().top + SPACING.md` for top padding. Never hardcode `SPACING.xl + 40`.
 - **Consistent back buttons:** Use `<MaterialCommunityIcons name="arrow-left" />` NOT plain `←` text.
 
+## Auth Email Branding
+- Supabase auth emails currently use the plain text header **MaurMaket**. Keep it this way until an official logo is available on a stable public CDN or domain; externally hosted images can be blocked by Gmail, Outlook, and other clients.
+- In the future, replace the text header with the official logo only after its public hosting is stable and deliverability has been checked.
+- Use **MaurMaket** or **Maurinex** as branding language for now. Do not use `© Maurinex` as a substitute for legal entity information until the company is formally established and its exact registered legal name is known.
+- Once the legal entity is registered, update the email footer to the exact registered entity name.
+
 ## Known Gaps / Roadmap
 ### ✅ Completed (as of 2026-06-29)
 1. ~~**Multi-image listings**~~ — AddListing + EditListing support up to 8 images with imgbb upload.
