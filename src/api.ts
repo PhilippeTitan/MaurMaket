@@ -199,6 +199,12 @@ const getAuthRedirectUrl = () => {
   return process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL || `${window.location.origin}/`;
 };
 
+const getPasswordResetRedirectUrl = () => {
+  if (Platform.OS !== 'web') return 'maurmaket://reset-password';
+  const baseUrl = process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL || `${window.location.origin}/`;
+  return new URL('/reset-password', baseUrl).toString();
+};
+
 export const signup = async (fullName: string, email: string, password: string, phone: string, dateOfBirth?: string) => {
   const normalizedEmail = email.trim().toLowerCase();
   const { data, error } = await supabase.auth.signUp({
@@ -337,10 +343,9 @@ export const googleAuth = async () => {
 
 // Forgot / Reset Password
 export const forgotPassword = async (email: string, _language?: string) => {
-  const redirectTo = typeof window !== 'undefined'
-    ? `${window.location.origin}/reset-password`
-    : 'maurmaket://reset-password';
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo });
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+    redirectTo: getPasswordResetRedirectUrl(),
+  });
   if (error) throw new Error(error.message);
   return { sent: true };
 };

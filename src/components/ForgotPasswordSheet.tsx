@@ -51,7 +51,7 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
     setError('');
     try {
       await forgotPassword(email.trim());
-      setStage('code');
+      setStage('done');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to send code');
     } finally {
@@ -151,9 +151,9 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
                 <View style={styles.doneIcon}>
                   <MaterialCommunityIcons name="check" size={16} color="#06231A" />
                 </View>
-                <Text style={styles.title}>Password reset</Text>
+                <Text style={styles.title}>Check your inbox</Text>
               </View>
-              <Text style={styles.subtitle}>Sign in with your new password.</Text>
+              <Text style={styles.subtitle}>Open the password reset link in your email to choose a new password.</Text>
               <TouchableOpacity style={styles.btn} onPress={onClose}>
                 <Text style={styles.btnText}>Back to sign in</Text>
               </TouchableOpacity>
