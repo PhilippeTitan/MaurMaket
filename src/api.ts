@@ -194,13 +194,18 @@ const normalizeProductsResponse = (data: unknown) => {
 };
 
 // Auth
+const getAuthRedirectUrl = () => {
+  if (Platform.OS !== 'web') return 'maurmaket://auth/callback';
+  return process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL || `${window.location.origin}/`;
+};
+
 export const signup = async (fullName: string, email: string, password: string, phone: string, dateOfBirth?: string) => {
   const normalizedEmail = email.trim().toLowerCase();
   const { data, error } = await supabase.auth.signUp({
     email: normalizedEmail,
     password,
     options: {
-      emailRedirectTo: Platform.OS === 'web' ? `${window.location.origin}/` : 'maurmaket://auth/callback',
+      emailRedirectTo: getAuthRedirectUrl(),
       data: { full_name: fullName, phone, date_of_birth: dateOfBirth || null },
     },
   });
