@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -15,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SignupWizard from './SignupWizard';
 import SigninForm from './SigninForm';
 import ForgotPasswordSheet from '../../components/ForgotPasswordSheet';
+import AuthVisual from './components/AuthVisual';
 
 type AuthMode = 'signup' | 'signin';
 
@@ -94,6 +94,7 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
           </View>
         </View>
 
+        {mode === 'signup' && <AuthVisual />}
         <AmbientMark />
 
         <Animated.View style={[styles.content, contentStyle]}>
@@ -112,64 +113,16 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: SPACING.lg,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    zIndex: 2,
-  },
+  scroll: { flexGrow: 1, paddingHorizontal: SPACING.lg },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', zIndex: 2 },
   brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  brandGlyph: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
-    backgroundColor: COLORS.coral,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  brandGlyph: { width: 30, height: 30, borderRadius: 9, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
   brandText: { fontFamily: 'Syne', fontSize: 17, fontWeight: '800', color: COLORS.text },
   brandAccent: { color: COLORS.coral },
-  securePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: RADIUS.pill,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
-  },
+  securePill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface },
   secureText: { color: COLORS.text2, fontSize: 11.5, fontWeight: '700' },
-  ambient: {
-    position: 'absolute',
-    top: 54,
-    right: -42,
-    width: 150,
-    height: 150,
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.5,
-  },
-  ambientRing: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 1,
-    borderColor: COLORS.coral,
-    opacity: 0.22,
-  },
-  ambientDot: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: COLORS.coral,
-    opacity: 0.08,
-  },
+  ambient: { position: 'absolute', top: 54, right: -42, width: 150, height: 150, alignItems: 'center', justifyContent: 'center', opacity: 0.5 },
+  ambientRing: { position: 'absolute', width: 120, height: 120, borderRadius: 60, borderWidth: 1, borderColor: COLORS.coral, opacity: 0.22 },
+  ambientDot: { width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.coral, opacity: 0.08 },
   content: { flex: 1 },
 });
