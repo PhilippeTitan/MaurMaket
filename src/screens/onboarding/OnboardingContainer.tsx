@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
-  View, KeyboardAvoidingView, Platform, ScrollView, StyleSheet,
+  View, StyleSheet,
 } from 'react-native';
 import { COLORS, SPACING } from '../../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import SignupWizard from './SignupWizard';
-import SigninForm from './SigninForm';
+import AnimatedOnboarding from './AnimatedOnboarding';
+import AnimatedSignin from './AnimatedSignin';
 import ForgotPasswordSheet from '../../components/ForgotPasswordSheet';
 
 type AuthMode = 'signup' | 'signin';
@@ -24,26 +24,17 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + SPACING.lg, paddingBottom: insets.bottom + SPACING.lg }]}
-        keyboardShouldPersistTaps="handled"
-      >
-        {mode === 'signup' ? (
-          <SignupWizard switchMode={switchMode} />
-        ) : (
-          <SigninForm switchMode={switchMode} onForgotPassword={() => setForgotOpen(true)} />
-        )}
-      </ScrollView>
+    <View style={styles.container}>
+      {mode === 'signup' ? (
+        <AnimatedOnboarding onSwitchToSignin={switchMode} />
+      ) : (
+        <AnimatedSignin onSwitchToSignup={switchMode} onForgotPassword={() => setForgotOpen(true)} />
+      )}
       <ForgotPasswordSheet visible={forgotOpen} onClose={() => setForgotOpen(false)} />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { flexGrow: 1, paddingHorizontal: SPACING.xl, justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: '#0A0812' },
 });
