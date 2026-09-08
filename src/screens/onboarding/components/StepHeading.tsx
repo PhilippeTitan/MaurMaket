@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { COLORS } from '../../../theme';
 
 interface StepHeadingProps {
@@ -8,21 +8,46 @@ interface StepHeadingProps {
 }
 
 export default function StepHeading({ eyebrow, title }: StepHeadingProps) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(7)).current;
+
+  useEffect(() => {
+    opacity.setValue(0);
+    translateY.setValue(7);
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.spring(translateY, { toValue: 0, friction: 7, tension: 90, useNativeDriver: true }),
+    ]).start();
+  }, [eyebrow, title, opacity, translateY]);
+
   return (
-    <View style={styles.stepHeading}>
-      <Text style={styles.stepEyebrow}>{eyebrow}</Text>
+    <Animated.View style={[styles.stepHeading, { opacity, transform: [{ translateY }] }]}>
+      <View style={styles.eyebrowRow}>
+        <View style={styles.eyebrowDot} />
+        <Text style={styles.stepEyebrow}>{eyebrow}</Text>
+      </View>
       <Text style={styles.stepTitle}>{title}</Text>
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  stepHeading: { marginBottom: 20 },
+  stepHeading: { marginBottom: 21 },
+  eyebrowRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 7, gap: 7 },
+  eyebrowDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: COLORS.coral },
   stepEyebrow: {
-    fontSize: 12.5, fontWeight: '700', color: COLORS.coral, textTransform: 'uppercase',
-    letterSpacing: 0.6, marginBottom: 6,
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: COLORS.coral,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   stepTitle: {
-    fontFamily: 'Syne', fontSize: 26, fontWeight: '800', color: COLORS.text, lineHeight: 30,
+    fontFamily: 'Syne',
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.text,
+    lineHeight: 32,
+    maxWidth: 330,
   },
 });
