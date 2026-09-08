@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, RADIUS } from '../../../theme';
 
@@ -20,22 +20,55 @@ interface AuthInputProps {
 }
 
 export default function AuthInput({
-  icon, value, onChangeText, placeholder, keyboardType, autoCapitalize,
-  secureTextEntry, error, rightIcon, rightColor, onRightPress, autoFocus, loading,
+  icon,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType,
+  autoCapitalize,
+  secureTextEntry,
+  error,
+  rightIcon,
+  rightColor,
+  onRightPress,
+  autoFocus,
+  loading,
 }: AuthInputProps) {
   const [focused, setFocused] = useState(false);
+  const focusProgress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(focusProgress, {
+      toValue: focused ? 1 : 0,
+      duration: 160,
+      useNativeDriver: false,
+    }).start();
+  }, [focused, focusProgress]);
+
+  const borderColor = focusProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [error ? COLORS.coral : COLORS.border, error ? COLORS.coral : COLORS.coral],
+  });
+
+  const iconColor = focusProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [error ? COLORS.coral : COLORS.text2, COLORS.coral],
+  });
+
   return (
     <View style={styles.inputWrap}>
-      <View style={[
-        styles.inputRow,
-        focused && styles.inputRowFocused,
-        error && styles.inputRowError,
-      ]}>
-        <MaterialCommunityIcons
-          name={icon as any}
-          size={18}
-          color={focused ? COLORS.coral : COLORS.text2}
-        />
+      <Animated.View
+        style={[
+          styles.inputRow,
+          { borderColor },
+          error && styles.inputRowError,
+        ]}
+      >
+        <Animated.View>
+          <Animated.Text style={[styles.iconHolder, { color: iconColor }]}>
+            <MaterialCommunityIcons name={icon as any} size={19} />
+          </Animated.Text>
+        </Animated.View>
         <TextInput
           style={styles.input}
           value={value}
@@ -49,15 +82,29 @@ export default function AuthInput({
           editable={!loading}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          selectionColor={COLORS.coral}
+          accessibilityLabel={placeholder}
         />
         {loading ? (
-          <MaterialCommunityIcons name="loading" size={18} color={COLORS.text2} />
+          <MaterialCommunityIcons name="loading" size={19} color={COLORS.text2} />
         ) : rightIcon ? (
-          <TouchableOpacity onPress={onRightPress} style={styles.inputRight}>
-            <MaterialCommunityIcons name={rightIcon as any} size={18} color={rightColor || COLORS.text2} />
+          <TouchableOpacity
+            onPress={onRightPress}
+            style={styles.inputRight}
+            hitSlop={10}
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons
+              name={rightIcon as any}
+              size={19}
+              color={rightColor || COLORS.text2}
+            />
           </TouchableOpacity>
+        ) : value ? (
+          <View style={styles.valueDot} />
         ) : null}
-      </View>
+      </Animated.View>
+
       {error ? (
         <View style={styles.errorRow}>
           <MaterialCommunityIcons name="alert-circle-outline" size={14} color={COLORS.coral} />
@@ -69,19 +116,42 @@ export default function AuthInput({
 }
 
 const styles = StyleSheet.create({
-  inputWrap: { marginBottom: 12 },
+  inputWrap: { marginBottom: 13 },
   inputRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: COLORS.surface, borderWidth: 1.5, borderColor: COLORS.border,
-    borderRadius: RADIUS.card, paddingHorizontal: 16, paddingVertical: 14,
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5,
+    borderRadius: RADIUS.card,
+    paddingHorizontal: 15,
+    shadowOpacity: 0,
   },
-  inputRowFocused: { borderColor: COLORS.coral },
   inputRowError: { borderColor: COLORS.coral },
+  iconHolder: { lineHeight: 20 },
   input: {
-    flex: 1, backgroundColor: 'transparent', borderWidth: 0,
-    color: COLORS.text, fontSize: 16, fontWeight: '500', padding: 0,
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '500',
+    padding: 0,
+    minHeight: 42,
   },
-  inputRight: { padding: 4 },
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  errorText: { color: COLORS.coral, fontSize: 13, fontWeight: '500' },
+  inputRight: { padding: 5 },
+  valueDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: COLORS.green,
+    opacity: 0.65,
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 7,
+    paddingHorizontal: 2,
+  },
+  errorText: { color: COLORS.coral, fontSize: 12.5, lineHeight: 17, fontWeight: '500', flex: 1 },
 });
