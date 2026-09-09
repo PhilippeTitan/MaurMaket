@@ -262,10 +262,10 @@ function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry,
 }) {
   return (
     <View style={s.field}>
-      <MaterialCommunityIcons name={icon} size={18} color={C.faint} />
+      <MaterialCommunityIcons name={icon} size={18} color={C.sub} />
       <View style={{ flex: 1 }}>
         <Text style={s.fieldLabel}>{label}</Text>
-        <TextInput style={s.fieldInput} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={C.faint} secureTextEntry={secureTextEntry} />
+        <TextInput style={s.fieldInput} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={C.sub} secureTextEntry={secureTextEntry} />
       </View>
       {right}
     </View>
@@ -449,7 +449,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                 <Text style={s.splashSub}>{splashReady ? "Everything's set. Let's go." : "Warming up your marketplace…"}</Text>
                 <View style={s.dotsRow}>
                   {[0, 1, 2].map(d => (
-                    <View key={d} style={[s.dot, { opacity: pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 1, 0.4] }) }]} />
+                    <Animated.View key={d} style={[s.dot, { opacity: pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 1, 0.4] }) }]} />
                   ))}
                 </View>
                 {splashReady && (
@@ -660,8 +660,8 @@ const s = StyleSheet.create({
   stepSub: { fontSize: 14, color: C.sub, marginTop: 8, marginBottom: 24, lineHeight: 20 },
 
   // Fields
-  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16 },
-  fieldLabel: { fontSize: 11, fontWeight: '500', color: C.faint },
+  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, paddingHorizontal: 16 },
+  fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
   fieldError: { color: C.pink, fontSize: 12.5, marginTop: 4 },
 
