@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
-import {
-  View, StyleSheet,
-} from 'react-native';
-import { COLORS, SPACING } from '../../theme';
-import AmbientBackground from './components/AmbientBackground';
-import SignupWizard from './SignupWizard';
+import { View, StyleSheet } from 'react-native';
+import { COLORS } from '../../theme';
+import AnimatedOnboarding from './AnimatedOnboarding';
 import SigninForm from './SigninForm';
+import AmbientBackground from './components/AmbientBackground';
 import ForgotPasswordSheet from '../../components/ForgotPasswordSheet';
 
 type AuthMode = 'signup' | 'signin';
@@ -26,7 +24,7 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
     <View style={styles.container}>
       <AmbientBackground />
       {mode === 'signup' ? (
-        <SignupWizard switchMode={switchMode} />
+        <AnimatedOnboarding onSwitchToSignin={switchMode} />
       ) : (
         <SigninForm switchMode={switchMode} onForgotPassword={() => setForgotOpen(true)} />
       )}
