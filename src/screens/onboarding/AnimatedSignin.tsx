@@ -9,8 +9,10 @@ import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Sto
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
 import { useTranslation } from '../../i18n';
-import { login as apiLogin } from '../../api';
+import { login as apiLogin, googleAuth } from '../../api';
 import { store } from '../../store';
+import GoogleButton from './components/GoogleButton';
+import PasskeyButton from './components/PasskeyButton';
 import type { User } from '../../types';
 
 const C = {
@@ -128,6 +130,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   // Animations
   const drift = useRef(new Animated.Value(0)).current;
@@ -164,6 +167,15 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
       setError(err?.message || 'Login failed');
       triggerShake();
     } finally { setLoading(false); }
+  };
+
+  const handleGoogle = async () => {
+    try {
+      setGoogleLoading(true);
+      const res = await googleAuth() as { user: User; token: string };
+      await store.setUser(res.user, res.token);
+    } catch (err: any) { setError(err?.message || 'Google sign-in failed'); }
+    finally { setGoogleLoading(false); }
   };
 
   return (
@@ -212,6 +224,12 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 
           {/* Sign in button */}
           <PrimaryButton onPress={handleLogin} disabled={!canSubmit || loading}>{loading ? t('common.loading') : t('auth.signIn')}</PrimaryButton>
+
+          {/* Google + Passkey */}
+          <View style={{ gap: 12, marginTop: 20 }}>
+            <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignIn')} />
+            <PasskeyButton />
+          </View>
 
           {/* Switch to signup */}
           <TouchableOpacity onPress={onSwitchToSignup} style={{ paddingVertical: 16 }}>
