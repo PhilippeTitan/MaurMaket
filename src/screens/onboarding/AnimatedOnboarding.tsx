@@ -491,7 +491,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 2 — NAME */}
             {index === 2 && (
               <View style={{ flex: 1 }}>
-                <StepBadge step={1} total={STEP_MAX} label={STEP_LABELS.name} />
                 <NameIllustration />
                 <Text style={s.stepTitle}>What should we call you?</Text>
                 <Text style={s.stepSub}>This is how sellers and buyers will see you on MaurMaket.</Text>
@@ -501,6 +500,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   {errors.name ? <Text style={s.fieldError}>{errors.name}</Text> : null}
                 </View>
                 <View style={{ flex: 1 }} />
+                <StepBadge step={1} total={STEP_MAX} label={STEP_LABELS.name} />
                 <PrimaryButton onPress={validateAndNext} disabled={!form.first || !form.last}>Continue</PrimaryButton>
               </View>
             )}
@@ -508,7 +508,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 3 — EMAIL */}
             {index === 3 && (
               <View style={{ flex: 1 }}>
-                <StepBadge step={2} total={STEP_MAX} label={STEP_LABELS.email} />
                 <ContactIllustration />
                 <Text style={s.stepTitle}>Where can we reach you?</Text>
                 <Text style={s.stepSub}>We'll send order updates and account alerts here — nothing else.</Text>
@@ -520,6 +519,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                 {errors.email ? <Text style={s.fieldError}>{errors.email}</Text> : null}
                 {emailAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Email is available</Text> : null}
                 <View style={{ flex: 1 }} />
+                <StepBadge step={2} total={STEP_MAX} label={STEP_LABELS.email} />
                 <PrimaryButton onPress={validateAndNext} disabled={!emailValid || emailAvailable === false}>Continue</PrimaryButton>
               </View>
             )}
@@ -527,7 +527,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 4 — PURPOSE */}
             {index === 4 && (
               <View style={{ flex: 1 }}>
-                <StepBadge step={3} total={STEP_MAX} label={STEP_LABELS.purpose} />
                 <Text style={[s.stepTitle, { marginTop: 16 }]}>What brings you here?</Text>
                 <Text style={s.stepSub}>Pick what fits best — MaurMaket adapts around it.</Text>
                 <View style={{ gap: 12 }}>
@@ -550,6 +549,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   })}
                 </View>
                 <View style={{ flex: 1 }} />
+                <StepBadge step={3} total={STEP_MAX} label={STEP_LABELS.purpose} />
                 <PrimaryButton onPress={validateAndNext} disabled={!form.purpose}>Continue</PrimaryButton>
               </View>
             )}
@@ -557,7 +557,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 5 — PASSWORD */}
             {index === 5 && (
               <View style={{ flex: 1 }}>
-                <StepBadge step={4} total={STEP_MAX} label={STEP_LABELS.password} />
                 <SecurityIllustration matched={pwMatched} />
                 <Text style={s.stepTitle}>Keep it protected.</Text>
                 <Text style={s.stepSub}>Create a password only you know — at least 6 characters.</Text>
@@ -572,6 +571,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   } />
                 </View>
                 <View style={{ flex: 1 }} />
+                <StepBadge step={4} total={STEP_MAX} label={STEP_LABELS.password} />
                 <PrimaryButton onPress={validateAndNext} disabled={!pwMatched}>Continue</PrimaryButton>
               </View>
             )}
@@ -579,7 +579,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 6 — REVIEW */}
             {index === 6 && (
               <View style={{ flex: 1 }}>
-                <StepBadge step={5} total={STEP_MAX} label={STEP_LABELS.review} />
                 <ReviewIllustration items={reviewItems} />
                 <Text style={s.stepTitle}>You're ready.</Text>
                 <Text style={s.stepSub}>Your MaurMaket account is almost complete.</Text>
@@ -602,6 +601,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   ))}
                 </View>
                 <View style={{ flex: 1 }} />
+                <StepBadge step={5} total={STEP_MAX} label={STEP_LABELS.review} />
                 <PrimaryButton onPress={validateAndNext} disabled={loading}>{loading ? t('common.loading') : 'Create account'}</PrimaryButton>
               </View>
             )}
