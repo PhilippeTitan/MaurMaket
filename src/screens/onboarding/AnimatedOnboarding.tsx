@@ -257,6 +257,19 @@ function PrimaryButton({ children, onPress, disabled }: { children: React.ReactN
   );
 }
 
+function StepActions({ children, step, label, onBack }: { children: React.ReactNode; step: number; label: string; onBack: () => void }) {
+  return (
+    <View style={s.actions}>
+      <StepBadge step={step} total={STEP_MAX} label={label} />
+      {children}
+      <TouchableOpacity onPress={onBack} style={s.backAction} accessibilityRole="button" accessibilityLabel="Go back">
+        <MaterialCommunityIcons name="arrow-left" size={18} color={C.sub} />
+        <Text style={s.backActionText}>Back</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, right }: {
   icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode;
 }) {
@@ -432,13 +445,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
         <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
 
-          {/* Back button for wizard steps */}
-          {index >= 2 && index <= 6 && (
-            <TouchableOpacity onPress={() => go(-1)} style={[s.backBtn, { marginTop: 14, marginBottom: 4 }]}>
-              <MaterialCommunityIcons name="arrow-left" size={20} color={C.text} />
-            </TouchableOpacity>
-          )}
-
           <Animated.View style={[s.slide, enterClass]} key={index}>
 
             {/* SCREEN 0 — SPLASH */}
@@ -491,118 +497,128 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 2 — NAME */}
             {index === 2 && (
               <View style={{ flex: 1 }}>
-                <NameIllustration />
-                <Text style={s.stepTitle}>What should we call you?</Text>
-                <Text style={s.stepSub}>This is how sellers and buyers will see you on MaurMaket.</Text>
-                <View style={{ gap: 12 }}>
-                  <Field icon="account-outline" label="First name" value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" />
-                  <Field icon="account-outline" label="Last name" value={form.last} onChangeText={v => set('last', v)} placeholder="Reyes" />
-                  {errors.name ? <Text style={s.fieldError}>{errors.name}</Text> : null}
+                <View style={s.centeredStepBody}>
+                  <NameIllustration />
+                  <Text style={s.stepTitle}>What should we call you?</Text>
+                  <Text style={s.stepSub}>This is how sellers and buyers will see you on MaurMaket.</Text>
+                  <View style={{ gap: 12 }}>
+                    <Field icon="account-outline" label="First name" value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" />
+                    <Field icon="account-outline" label="Last name" value={form.last} onChangeText={v => set('last', v)} placeholder="Reyes" />
+                    {errors.name ? <Text style={s.fieldError}>{errors.name}</Text> : null}
+                  </View>
                 </View>
-                <View style={{ flex: 1 }} />
-                <StepBadge step={1} total={STEP_MAX} label={STEP_LABELS.name} />
-                <PrimaryButton onPress={validateAndNext} disabled={!form.first || !form.last}>Continue</PrimaryButton>
+                <StepActions step={1} label={STEP_LABELS.name} onBack={() => go(-1)}>
+                  <PrimaryButton onPress={validateAndNext} disabled={!form.first || !form.last}>Continue</PrimaryButton>
+                </StepActions>
               </View>
             )}
 
             {/* SCREEN 3 — EMAIL */}
             {index === 3 && (
               <View style={{ flex: 1 }}>
-                <ContactIllustration />
-                <Text style={s.stepTitle}>Where can we reach you?</Text>
-                <Text style={s.stepSub}>We'll send order updates and account alerts here — nothing else.</Text>
-                <Field icon="email-outline" label="Email address" value={form.email} onChangeText={v => set('email', v)} placeholder="you@example.com" right={
-                  emailChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
-                  emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
-                  emailAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
-                } />
-                {errors.email ? <Text style={s.fieldError}>{errors.email}</Text> : null}
-                {emailAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Email is available</Text> : null}
-                <View style={{ flex: 1 }} />
-                <StepBadge step={2} total={STEP_MAX} label={STEP_LABELS.email} />
-                <PrimaryButton onPress={validateAndNext} disabled={!emailValid || emailAvailable === false}>Continue</PrimaryButton>
+                <View style={s.centeredStepBody}>
+                  <ContactIllustration />
+                  <Text style={s.stepTitle}>Where can we reach you?</Text>
+                  <Text style={s.stepSub}>We'll send order updates and account alerts here — nothing else.</Text>
+                  <Field icon="email-outline" label="Email address" value={form.email} onChangeText={v => set('email', v)} placeholder="you@example.com" right={
+                    emailChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
+                    emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
+                    emailAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
+                  } />
+                  {errors.email ? <Text style={s.fieldError}>{errors.email}</Text> : null}
+                  {emailAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Email is available</Text> : null}
+                </View>
+                <StepActions step={2} label={STEP_LABELS.email} onBack={() => go(-1)}>
+                  <PrimaryButton onPress={validateAndNext} disabled={!emailValid || emailAvailable === false}>Continue</PrimaryButton>
+                </StepActions>
               </View>
             )}
 
             {/* SCREEN 4 — PURPOSE */}
             {index === 4 && (
               <View style={{ flex: 1 }}>
-                <Text style={[s.stepTitle, { marginTop: 16 }]}>What brings you here?</Text>
-                <Text style={s.stepSub}>Pick what fits best — MaurMaket adapts around it.</Text>
-                <View style={{ gap: 12 }}>
-                  {PURPOSES.map(p => {
-                    const active = form.purpose === p.id;
-                    return (
-                      <TouchableOpacity key={p.id} onPress={() => set('purpose', p.id)} activeOpacity={0.85} style={[s.purposeCard, active && s.purposeCardActive]}>
-                        <View style={[s.purposeIcon, active && s.purposeIconActive]}>
-                          <MaterialCommunityIcons name={p.icon} size={18} color={active ? '#1A0B12' : C.sub} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={s.purposeTitle}>{p.title}</Text>
-                          <Text style={s.purposeDesc}>{p.desc}</Text>
-                        </View>
-                        <View style={[s.radio, active && s.radioActive]}>
-                          {active && <MaterialCommunityIcons name="check" size={11} color="#1A0B12" />}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
+                <View style={s.centeredStepBody}>
+                  <Text style={[s.stepTitle, { marginTop: 16 }]}>What brings you here?</Text>
+                  <Text style={s.stepSub}>Pick what fits best — MaurMaket adapts around it.</Text>
+                  <View style={{ gap: 12 }}>
+                    {PURPOSES.map(p => {
+                      const active = form.purpose === p.id;
+                      return (
+                        <TouchableOpacity key={p.id} onPress={() => set('purpose', p.id)} activeOpacity={0.85} style={[s.purposeCard, active && s.purposeCardActive]}>
+                          <View style={[s.purposeIcon, active && s.purposeIconActive]}>
+                            <MaterialCommunityIcons name={p.icon} size={18} color={active ? '#1A0B12' : C.sub} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.purposeTitle}>{p.title}</Text>
+                            <Text style={s.purposeDesc}>{p.desc}</Text>
+                          </View>
+                          <View style={[s.radio, active && s.radioActive]}>
+                            {active && <MaterialCommunityIcons name="check" size={11} color="#1A0B12" />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
-                <View style={{ flex: 1 }} />
-                <StepBadge step={3} total={STEP_MAX} label={STEP_LABELS.purpose} />
-                <PrimaryButton onPress={validateAndNext} disabled={!form.purpose}>Continue</PrimaryButton>
+                <StepActions step={3} label={STEP_LABELS.purpose} onBack={() => go(-1)}>
+                  <PrimaryButton onPress={validateAndNext} disabled={!form.purpose}>Continue</PrimaryButton>
+                </StepActions>
               </View>
             )}
 
             {/* SCREEN 5 — PASSWORD */}
             {index === 5 && (
               <View style={{ flex: 1 }}>
-                <SecurityIllustration matched={pwMatched} />
-                <Text style={s.stepTitle}>Keep it protected.</Text>
-                <Text style={s.stepSub}>Create a password only you know — at least 6 characters.</Text>
-                <View style={{ gap: 12 }}>
-                  <Field icon="lock-outline" label="Password" value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} right={
-                    <TouchableOpacity onPress={() => setShowPw(s => !s)}>
-                      <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={17} color={C.faint} />
-                    </TouchableOpacity>
-                  } />
-                  <Field icon="lock-outline" label="Confirm password" value={form.pw2} onChangeText={v => set('pw2', v)} placeholder="••••••••" secureTextEntry={!showPw} right={
-                    form.pw2 ? (pwMatched ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> : <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.pink }} />) : null
-                  } />
+                <View style={s.centeredStepBody}>
+                  <SecurityIllustration matched={pwMatched} />
+                  <Text style={s.stepTitle}>Keep it protected.</Text>
+                  <Text style={s.stepSub}>Create a password only you know — at least 6 characters.</Text>
+                  <View style={{ gap: 12 }}>
+                    <Field icon="lock-outline" label="Password" value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} right={
+                      <TouchableOpacity onPress={() => setShowPw(s => !s)}>
+                        <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={17} color={C.faint} />
+                      </TouchableOpacity>
+                    } />
+                    <Field icon="lock-outline" label="Confirm password" value={form.pw2} onChangeText={v => set('pw2', v)} placeholder="••••••••" secureTextEntry={!showPw} right={
+                      form.pw2 ? (pwMatched ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> : <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.pink }} />) : null
+                    } />
+                  </View>
                 </View>
-                <View style={{ flex: 1 }} />
-                <StepBadge step={4} total={STEP_MAX} label={STEP_LABELS.password} />
-                <PrimaryButton onPress={validateAndNext} disabled={!pwMatched}>Continue</PrimaryButton>
+                <StepActions step={4} label={STEP_LABELS.password} onBack={() => go(-1)}>
+                  <PrimaryButton onPress={validateAndNext} disabled={!pwMatched}>Continue</PrimaryButton>
+                </StepActions>
               </View>
             )}
 
             {/* SCREEN 6 — REVIEW */}
             {index === 6 && (
               <View style={{ flex: 1 }}>
-                <ReviewIllustration items={reviewItems} />
-                <Text style={s.stepTitle}>You're ready.</Text>
-                <Text style={s.stepSub}>Your MaurMaket account is almost complete.</Text>
-                <View style={{ gap: 10 }}>
-                  {[
-                    ['Name', form.first ? `${form.first} ${form.last}` : '—', reviewItems[0]],
-                    ['Email', form.email || '—', reviewItems[1]],
-                    ['Purpose', PURPOSES.find(p => p.id === form.purpose)?.title || '—', reviewItems[2]],
-                    ['Password', pwMatched ? 'Set' : '—', reviewItems[3]],
-                  ].map(([label, val, ok], i) => (
-                    <View key={i} style={s.reviewRow}>
-                      <View>
-                        <Text style={s.reviewLabel}>{label}</Text>
-                        <Text style={s.reviewVal}>{val as string}</Text>
+                <View style={s.centeredStepBody}>
+                  <ReviewIllustration items={reviewItems} />
+                  <Text style={s.stepTitle}>You're ready.</Text>
+                  <Text style={s.stepSub}>Your MaurMaket account is almost complete.</Text>
+                  <View style={{ gap: 10 }}>
+                    {[
+                      ['Name', form.first ? `${form.first} ${form.last}` : '—', reviewItems[0]],
+                      ['Email', form.email || '—', reviewItems[1]],
+                      ['Purpose', PURPOSES.find(p => p.id === form.purpose)?.title || '—', reviewItems[2]],
+                      ['Password', pwMatched ? 'Set' : '—', reviewItems[3]],
+                    ].map(([label, val, ok], i) => (
+                      <View key={i} style={s.reviewRow}>
+                        <View>
+                          <Text style={s.reviewLabel}>{label}</Text>
+                          <Text style={s.reviewVal}>{val as string}</Text>
+                        </View>
+                        <View style={[s.reviewCheck, ok ? { backgroundColor: C.mint + '15', borderColor: C.mint } : {}]}>
+                          {ok ? <MaterialCommunityIcons name="check" size={12} color={C.mint} /> : null}
+                        </View>
                       </View>
-                      <View style={[s.reviewCheck, ok ? { backgroundColor: C.mint + '15', borderColor: C.mint } : {}]}>
-                        {ok ? <MaterialCommunityIcons name="check" size={12} color={C.mint} /> : null}
-                      </View>
-                    </View>
-                  ))}
+                    ))}
+                  </View>
                 </View>
-                <View style={{ flex: 1 }} />
-                <StepBadge step={5} total={STEP_MAX} label={STEP_LABELS.review} />
-                <PrimaryButton onPress={validateAndNext} disabled={loading}>{loading ? t('common.loading') : 'Create account'}</PrimaryButton>
+                <StepActions step={5} label={STEP_LABELS.review} onBack={() => go(-1)}>
+                  <PrimaryButton onPress={validateAndNext} disabled={loading}>{loading ? t('common.loading') : 'Create account'}</PrimaryButton>
+                </StepActions>
               </View>
             )}
 
@@ -640,8 +656,11 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 const s = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
   slide: { flex: 1, width: '100%', maxWidth: 430 },
+  centeredStepBody: { flex: 1, justifyContent: 'center' },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start' },
+  actions: { width: '100%', alignItems: 'stretch' },
+  backAction: { minHeight: 44, marginTop: 4, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
+  backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
   orb: { position: 'absolute', borderRadius: 999 },
 
   // Splash
@@ -658,8 +677,8 @@ const s = StyleSheet.create({
   heroSub: { fontSize: 14, color: C.sub, lineHeight: 21, marginTop: 10, maxWidth: 280 },
 
   // Steps
-  stepTitle: { fontFamily: FONTS.heading, fontSize: 24, fontWeight: '800', color: C.text, marginTop: 8 },
-  stepSub: { fontSize: 14, color: C.sub, marginTop: 8, marginBottom: 24, lineHeight: 20 },
+  stepTitle: { fontFamily: FONTS.heading, fontSize: 24, fontWeight: '800', color: C.text, marginTop: 8, textAlign: 'center' },
+  stepSub: { fontSize: 14, color: C.sub, marginTop: 8, marginBottom: 24, lineHeight: 20, textAlign: 'center', alignSelf: 'center', maxWidth: 340 },
 
   // Fields
   field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, paddingHorizontal: 16 },
