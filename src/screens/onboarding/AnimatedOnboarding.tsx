@@ -481,21 +481,21 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 1 — WELCOME */}
             {index === 1 && (
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 8, paddingBottom: 24 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingTop: 8, paddingBottom: 24 }}>
                   <Logomark size={34} />
                   <Text style={{ fontFamily: FONTS.heading, fontSize: 17, fontWeight: '700', color: C.text }}>MaurMaket</Text>
                 </View>
                 <WelcomeIllustration />
-                <View style={{ marginTop: 16 }}>
+                <View style={{ marginTop: 16, alignItems: 'center' }}>
                   <View style={s.badge}>
                     <Text style={s.badgeText}>A marketplace for real people</Text>
                   </View>
                 </View>
-                <Text style={s.heroTitle}>
+                <Text style={[s.heroTitle, { textAlign: 'center' }]}>
                   Commerce,{'\n'}
                   <Text style={s.heroAccent}>made more human.</Text>
                 </Text>
-                <Text style={s.heroSub}>MaurMaket connects people, products, and opportunity in one place built for how you actually buy and sell.</Text>
+                <Text style={[s.heroSub, { textAlign: 'center', alignSelf: 'center' }]}>MaurMaket connects people, products, and opportunity in one place built for how you actually buy and sell.</Text>
                 <View style={{ flex: 1 }} />
                 <View style={{ gap: 12 }}>
                   <PrimaryButton onPress={() => go(1)}>Get started</PrimaryButton>
