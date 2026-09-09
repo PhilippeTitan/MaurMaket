@@ -35,11 +35,11 @@ const C = {
   mint: '#2FE6B8',
 };
 
-const STEPS = ['name', 'email', 'purpose', 'password', 'review'] as const;
+const STEPS = ['name', 'email', 'purpose', 'dob', 'password', 'review'] as const;
 type Step = typeof STEPS[number];
-const STEP_MAX = 5;
+const STEP_MAX = 6;
 const STEP_LABELS: Record<Step, string> = {
-  name: 'About you', email: 'Contact', purpose: 'Purpose', password: 'Security', review: 'Review',
+  name: 'About you', email: 'Contact', purpose: 'Purpose', dob: 'Age', password: 'Security', review: 'Review',
 };
 
 const PURPOSES = [
@@ -310,7 +310,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(1);
-  const [form, setForm] = useState({ first: '', last: '', email: '', purpose: '', pw: '', pw2: '' });
+  const [form, setForm] = useState({ first: '', last: '', email: '', purpose: '', birthMonth: null as number | null, birthDay: null as number | null, birthYear: null as number | null, pw: '', pw2: '' });
   const [showPw, setShowPw] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -368,11 +368,21 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const pwScore = pwLen === 0 ? 0 : pwLen < 6 ? 1 : pwLen < 10 ? 2 : 3;
   const pwMatched = pwOk && form.pw === form.pw2;
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email);
+  const birthDateValid = !!form.birthMonth && !!form.birthDay && !!form.birthYear;
+  const isAdult = birthDateValid && (() => {
+    const birthDate = new Date(form.birthYear!, form.birthMonth! - 1, form.birthDay!);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDelta = today.getMonth() - birthDate.getMonth();
+    if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age >= 18;
+  })();
 
   const reviewItems = [
     !!(form.first && form.last),
     emailValid,
     !!form.purpose,
+    isAdult,
     pwMatched,
   ];
 
@@ -398,7 +408,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const go = (delta: number) => {
     setDir(delta);
     setErrors({});
-    setIndex(i => Math.min(Math.max(i + delta, 0), 7));
+    setIndex(i => Math.min(Math.max(i + delta, 0), 8));
   };
 
   const validateAndNext = () => {
@@ -408,6 +418,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
       if (emailAvailable === false) { setErrors({ email: 'This email is already registered' }); return; }
     }
     if (step === 'purpose' && !form.purpose) return;
+    if (step === 'dob' && !isAdult) { setErrors({ dob: 'You must be at least 18 years old' }); return; }
     if (step === 'password' && !pwMatched) return;
     if (step === 'review') { submitSignup(); return; }
     go(1);
@@ -416,8 +427,11 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const submitSignup = async () => {
     setLoading(true); setErrors({});
     const fullName = [form.first, form.last].filter(Boolean).join(' ').trim();
+    const dob = form.birthYear && form.birthMonth && form.birthDay
+      ? `${form.birthYear}-${String(form.birthMonth).padStart(2, '0')}-${String(form.birthDay).padStart(2, '0')}`
+      : '';
     try {
-      const res = await apiSignup(fullName, form.email, form.pw, '') as { user: User; token: string };
+      const res = await apiSignup(fullName, form.email, form.pw, '', dob) as { user: User; token: string };
       setUserResult(res);
       go(1); // → success screen
     } catch (err: any) {
@@ -570,6 +584,53 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {index === 5 && (
               <View style={{ flex: 1 }}>
                 <View style={s.centeredStepBody}>
+                  <NameIllustration />
+                  <Text style={s.stepTitle}>When's your birthday?</Text>
+                  <Text style={s.stepSub}>You must be 18 or older to use MaurMaket. This stays private.</Text>
+                  <View style={s.datePickerRow}>
+                    <View style={s.datePickerCol}>
+                      <Text style={s.datePickerLabel}>Month</Text>
+                      <ScrollView style={s.datePickerScroll} showsVerticalScrollIndicator={false}>
+                        {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((month, i) => (
+                          <TouchableOpacity key={month} style={[s.datePickerItem, form.birthMonth === i + 1 && s.datePickerItemActive]} onPress={() => set('birthMonth', i + 1)}>
+                            <Text style={[s.datePickerText, form.birthMonth === i + 1 && s.datePickerTextActive]}>{month}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                    <View style={s.datePickerCol}>
+                      <Text style={s.datePickerLabel}>Day</Text>
+                      <ScrollView style={s.datePickerScroll} showsVerticalScrollIndicator={false}>
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                          <TouchableOpacity key={day} style={[s.datePickerItem, form.birthDay === day && s.datePickerItemActive]} onPress={() => set('birthDay', day)}>
+                            <Text style={[s.datePickerText, form.birthDay === day && s.datePickerTextActive]}>{day}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                    <View style={s.datePickerCol}>
+                      <Text style={s.datePickerLabel}>Year</Text>
+                      <ScrollView style={s.datePickerScroll} showsVerticalScrollIndicator={false}>
+                        {Array.from({ length: 80 }, (_, i) => new Date().getFullYear() - 18 - i).map(year => (
+                          <TouchableOpacity key={year} style={[s.datePickerItem, form.birthYear === year && s.datePickerItemActive]} onPress={() => set('birthYear', year)}>
+                            <Text style={[s.datePickerText, form.birthYear === year && s.datePickerTextActive]}>{year}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </View>
+                  {errors.dob ? <Text style={s.fieldError}>{errors.dob}</Text> : null}
+                </View>
+                <StepActions step={4} label={STEP_LABELS.dob} onBack={() => go(-1)}>
+                  <PrimaryButton onPress={validateAndNext} disabled={!birthDateValid}>Continue</PrimaryButton>
+                </StepActions>
+              </View>
+            )}
+
+            {/* SCREEN 6 — PASSWORD */}
+            {index === 6 && (
+              <View style={{ flex: 1 }}>
+                <View style={s.centeredStepBody}>
                   <SecurityIllustration matched={pwMatched} />
                   <Text style={s.stepTitle}>Keep it protected.</Text>
                   <Text style={s.stepSub}>Create a password only you know — at least 6 characters.</Text>
@@ -584,14 +645,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                     } />
                   </View>
                 </View>
-                <StepActions step={4} label={STEP_LABELS.password} onBack={() => go(-1)}>
+                <StepActions step={5} label={STEP_LABELS.password} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={!pwMatched}>Continue</PrimaryButton>
                 </StepActions>
               </View>
             )}
 
-            {/* SCREEN 6 — REVIEW */}
-            {index === 6 && (
+            {/* SCREEN 7 — REVIEW */}
+            {index === 7 && (
               <View style={{ flex: 1 }}>
                 <View style={s.centeredStepBody}>
                   <ReviewIllustration items={reviewItems} />
@@ -602,7 +663,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                       ['Name', form.first ? `${form.first} ${form.last}` : '—', reviewItems[0]],
                       ['Email', form.email || '—', reviewItems[1]],
                       ['Purpose', PURPOSES.find(p => p.id === form.purpose)?.title || '—', reviewItems[2]],
-                      ['Password', pwMatched ? 'Set' : '—', reviewItems[3]],
+                      ['Birthday', birthDateValid ? `${form.birthMonth}/${form.birthDay}/${form.birthYear}` : '—', reviewItems[3]],
+                      ['Password', pwMatched ? 'Set' : '—', reviewItems[4]],
                     ].map(([label, val, ok], i) => (
                       <View key={i} style={s.reviewRow}>
                         <View>
@@ -616,14 +678,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                     ))}
                   </View>
                 </View>
-                <StepActions step={5} label={STEP_LABELS.review} onBack={() => go(-1)}>
+                <StepActions step={6} label={STEP_LABELS.review} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={loading}>{loading ? t('common.loading') : 'Create account'}</PrimaryButton>
                 </StepActions>
               </View>
             )}
 
-            {/* SCREEN 7 — SUCCESS */}
-            {index === 7 && (
+            {/* SCREEN 8 — SUCCESS */}
+            {index === 8 && (
               <View style={[s.screenCenter, { paddingTop: 20 }]}>
                 <SuccessIllustration pulse={pulse} />
                 <View style={s.successBadge}>
@@ -658,6 +720,14 @@ const s = StyleSheet.create({
   slide: { flex: 1, width: '100%', maxWidth: 430 },
   centeredStepBody: { flex: 1, justifyContent: 'center' },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  datePickerRow: { flexDirection: 'row', gap: 10, width: '100%' },
+  datePickerCol: { flex: 1, alignItems: 'center' },
+  datePickerLabel: { color: C.sub, fontSize: 12, fontWeight: '600', marginBottom: 8 },
+  datePickerScroll: { width: '100%', maxHeight: 132, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, paddingVertical: 4 },
+  datePickerItem: { minHeight: 32, alignItems: 'center', justifyContent: 'center', marginHorizontal: 4, borderRadius: 9 },
+  datePickerItemActive: { backgroundColor: C.pink, borderColor: C.pink },
+  datePickerText: { color: C.sub, fontSize: 13, fontWeight: '500' },
+  datePickerTextActive: { color: '#1A0B12', fontWeight: '800' },
   actions: { width: '100%', alignItems: 'stretch' },
   backAction: { minHeight: 44, marginTop: 4, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
