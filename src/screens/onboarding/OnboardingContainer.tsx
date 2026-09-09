@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { COLORS } from '../../theme';
 import AnimatedOnboarding from './AnimatedOnboarding';
-import SigninForm from './SigninForm';
+import AnimatedSignin from './AnimatedSignin';
 import AmbientBackground from './components/AmbientBackground';
 import ForgotPasswordSheet from '../../components/ForgotPasswordSheet';
 
@@ -16,9 +16,7 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [forgotOpen, setForgotOpen] = useState(false);
 
-  const switchMode = () => {
-    setMode(m => m === 'signup' ? 'signin' : 'signup');
-  };
+  const switchMode = () => setMode(m => m === 'signup' ? 'signin' : 'signup');
 
   return (
     <View style={styles.container}>
@@ -26,7 +24,7 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
       {mode === 'signup' ? (
         <AnimatedOnboarding onSwitchToSignin={switchMode} />
       ) : (
-        <SigninForm switchMode={switchMode} onForgotPassword={() => setForgotOpen(true)} />
+        <AnimatedSignin onSwitchToSignup={switchMode} onForgotPassword={() => setForgotOpen(true)} />
       )}
       <ForgotPasswordSheet visible={forgotOpen} onClose={() => setForgotOpen(false)} />
     </View>
