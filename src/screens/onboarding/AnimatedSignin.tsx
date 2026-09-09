@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Animated,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, Modal,
   Easing, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,7 @@ import { login as apiLogin, googleAuth } from '../../api';
 import { store } from '../../store';
 import GoogleButton from './components/GoogleButton';
 import PasskeyButton from './components/PasskeyButton';
+import OnboardingBackground from './components/OnboardingBackground';
 import type { User } from '../../types';
 
 const C = {
@@ -97,21 +98,8 @@ function PrimaryButton({ children, onPress, disabled }: { children: React.ReactN
         style={s.primaryBtn}
       >
         <Text style={[s.primaryBtnText, disabled && { color: C.faint }]}>{children}</Text>
-        <MaterialCommunityIcons name="arrow-right" size={17} color={disabled ? C.faint : '#1A0B12'} />
       </LinearGradient>
     </TouchableOpacity>
-  );
-}
-
-function BackgroundAtmosphere({ drift }: { drift: Animated.Value }) {
-  const d1 = drift.interpolate({ inputRange: [0, 1], outputRange: [0, 18] });
-  const d2 = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -22] });
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Animated.View style={[s.orb, { top: -60, left: -50, width: 260, height: 260, backgroundColor: C.violet + '55', transform: [{ translateX: d1 }, { translateY: d2 }] }]} />
-      <Animated.View style={[s.orb, { bottom: -70, right: -60, width: 280, height: 280, backgroundColor: C.pink + '4d', transform: [{ translateX: d2 }, { translateY: d1 }] }]} />
-      <Animated.View style={[s.orb, { top: '38%', right: -40, width: 160, height: 160, backgroundColor: C.amber + '33', transform: [{ translateX: d1 }] }]} />
-    </View>
   );
 }
 
@@ -129,19 +117,14 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Animations
-  const drift = useRef(new Animated.Value(0)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.loop(Animated.sequence([
-      Animated.timing(drift, { toValue: 1, duration: 9000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(drift, { toValue: 0, duration: 9000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-    ])).start();
     Animated.timing(fadeIn, { toValue: 1, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, []);
 
@@ -159,12 +142,12 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 
   const handleLogin = async () => {
     if (!canSubmit) return;
-    setLoading(true); setError('');
+    setLoading(true);
     try {
       const res = await apiLogin(email.trim(), password) as { user: User; token: string };
       await store.setUser(res.user, res.token);
     } catch (err: any) {
-      setError(err?.message || 'Login failed');
+      setErrorMessage(err?.message || 'Invalid email or password');
       triggerShake();
     } finally { setLoading(false); }
   };
@@ -174,14 +157,14 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
       setGoogleLoading(true);
       const res = await googleAuth() as { user: User; token: string };
       await store.setUser(res.user, res.token);
-    } catch (err: any) { setError(err?.message || 'Google sign-in failed'); }
+    } catch (err: any) { setErrorMessage(err?.message || 'Google sign-in failed'); }
     finally { setGoogleLoading(false); }
   };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flex: 1, backgroundColor: C.bg0 }}>
-        <BackgroundAtmosphere drift={drift} />
+        <OnboardingBackground />
 
         <View style={[s.content, { paddingTop: insets.top + 40, paddingHorizontal: 28, paddingBottom: insets.bottom + 16 }]}>
 
@@ -198,19 +181,11 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
           <Text style={s.heroTitle}>Welcome back</Text>
           <Text style={s.heroSub}>Sign in to continue</Text>
 
-          {/* Error */}
-          {error ? (
-            <View style={s.errorRow}>
-              <MaterialCommunityIcons name="alert-circle-outline" size={14} color={C.pink} />
-              <Text style={s.errorText}>{error}</Text>
-            </View>
-          ) : null}
-
           {/* Fields */}
           <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
-            <Field icon="email-outline" label="Email address" value={email} onChangeText={v => { setEmail(v); setError(''); }} placeholder="you@email.com" />
+            <Field icon="email-outline" label="Email address" value={email} onChangeText={setEmail} placeholder="you@email.com" />
             <View style={{ height: 12 }} />
-            <Field icon="lock-outline" label="Password" value={password} onChangeText={v => { setPassword(v); setError(''); }} placeholder="••••••••" secureTextEntry={!showPw} right={
+            <Field icon="lock-outline" label="Password" value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry={!showPw} right={
               <TouchableOpacity onPress={() => setShowPw(s => !s)}>
                 <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={17} color={C.faint} />
               </TouchableOpacity>
@@ -240,6 +215,24 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 
         </View>
       </View>
+      <Modal visible={!!errorMessage} transparent animationType="fade" onRequestClose={() => setErrorMessage(null)}>
+        <View style={s.errorBackdrop}>
+          <View style={s.errorCard}>
+            <View style={s.errorIconRing}>
+              <MaterialCommunityIcons name="shield-alert-outline" size={30} color={C.pink} />
+            </View>
+            <Text style={s.errorTitle}>Couldn&apos;t sign you in</Text>
+            <Text style={s.errorMessage}>
+              {errorMessage === 'Invalid email or password' ? 'The email or password is incorrect. Check your details and try again.' : errorMessage}
+            </Text>
+            <TouchableOpacity style={s.errorButton} onPress={() => setErrorMessage(null)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Try again">
+              <LinearGradient colors={[C.violet, C.pink, C.amber]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.errorButtonGradient}>
+                <Text style={s.errorButtonText}>Try again</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -248,16 +241,20 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 
 const s = StyleSheet.create({
   content: { flex: 1 },
-  orb: { position: 'absolute', borderRadius: 999 },
-
   heroTitle: { fontFamily: FONTS.heading, fontSize: 30, fontWeight: '800', color: C.text, marginTop: 12 },
   heroSub: { fontSize: 14, color: C.sub, marginTop: 6, lineHeight: 20 },
 
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, backgroundColor: C.pink + '12', padding: 12, borderRadius: 14, borderWidth: 1, borderColor: C.pink + '30' },
-  errorText: { color: C.pink, fontSize: 13, fontWeight: '500', flex: 1 },
+  errorBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: 'rgba(3, 2, 8, 0.76)' },
+  errorCard: { width: '100%', maxWidth: 360, alignItems: 'center', padding: 24, borderRadius: 24, backgroundColor: 'rgba(18, 14, 31, 0.98)', borderWidth: 1, borderColor: 'rgba(236, 72, 153, 0.42)', shadowColor: C.pink, shadowOpacity: 0.25, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 12 },
+  errorIconRing: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(236, 72, 153, 0.14)', borderWidth: 1, borderColor: 'rgba(236, 72, 153, 0.34)', marginBottom: 16 },
+  errorTitle: { color: C.text, fontFamily: FONTS.heading, fontSize: 21, fontWeight: '800', textAlign: 'center' },
+  errorMessage: { color: C.sub, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 8 },
+  errorButton: { width: '100%', marginTop: 22 },
+  errorButtonGradient: { height: 48, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  errorButtonText: { color: '#1A0B12', fontSize: 15, fontWeight: '800' },
 
-  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16 },
-  fieldLabel: { fontSize: 11, fontWeight: '500', color: C.faint },
+  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: 'rgba(13, 10, 27, 0.9)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)', paddingHorizontal: 16 },
+  fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
 
   primaryBtn: { height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },

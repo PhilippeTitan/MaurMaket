@@ -816,7 +816,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 const s = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
   slide: { flex: 1, width: '100%', maxWidth: 430, minHeight: Math.max(620, SCREEN_H - 40), alignSelf: 'center' },
-  stepScreen: { flex: 1 },
+  stepScreen: { flex: 1, minHeight: Math.max(620, SCREEN_H - 40), position: 'relative', paddingBottom: 172 },
   centeredStepBody: { flex: 1, justifyContent: 'center', marginBottom: 18 },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   welcomeScreen: { minHeight: Math.max(620, SCREEN_H - 40), justifyContent: 'center', paddingVertical: 24, position: 'relative', paddingBottom: 144 },
@@ -831,7 +831,7 @@ const s = StyleSheet.create({
   datePickerItemActive: { backgroundColor: C.pink, borderColor: C.pink },
   datePickerText: { color: C.sub, fontSize: 13, fontWeight: '500' },
   datePickerTextActive: { color: '#1A0B12', fontWeight: '800' },
-  actions: { width: '100%', alignItems: 'stretch' },
+  actions: { position: 'absolute', left: 0, right: 0, bottom: 44, width: '100%', alignItems: 'stretch' },
   backAction: { width: '100%', minHeight: 48, marginTop: 8, borderRadius: 999, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
   // Splash
