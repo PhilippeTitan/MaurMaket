@@ -17,7 +17,7 @@ import PasskeyButton from './components/PasskeyButton';
 import AuthMethodsCard from '../../components/AuthMethodsCard';
 import type { User } from '../../types';
 
-const { width: SCREEN_W } = Dimensions.get('window');
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 const C = {
   bg0: '#0A0812',
@@ -223,28 +223,26 @@ function SuccessIllustration({ pulse }: { pulse: Animated.Value }) {
 /* ── Shared UI ────────────────────────────────────────────── */
 
 function StepBadge({ step, total, label }: { step: number; total: number; label: string }) {
-  const width = useRef(new Animated.Value(0)).current;
+  const progress = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(width, { toValue: step / total, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+    Animated.timing(progress, { toValue: step, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
   }, [step, total]);
   return (
-    <View style={{ marginBottom: 20, marginTop: 4 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-        <Text style={{ color: C.sub, fontSize: 12, fontWeight: '500' }}>Step {step} of {total}</Text>
-        <Text style={{ color: C.faint, fontSize: 12, fontWeight: '500' }}>{label}</Text>
-      </View>
-      <View style={{ height: 4, borderRadius: 2, backgroundColor: C.surface, overflow: 'hidden' }}>
-        <Animated.View style={{ height: '100%', borderRadius: 2, width: width.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }}>
-          <LinearGradient colors={[C.violet, C.pink, C.amber]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1, borderRadius: 2 }} />
-        </Animated.View>
-      </View>
+    <View style={s.progressDots} accessibilityLabel={`Onboarding progress ${step} of ${total}`}>
+      {Array.from({ length: total }, (_, index) => {
+        const position = index + 1;
+        const activeWidth = progress.interpolate({ inputRange: [position - 1, position], outputRange: [8, 22], extrapolate: 'clamp' });
+        return (
+          <Animated.View key={position} style={[s.progressDot, { width: activeWidth, backgroundColor: position <= step ? C.pink : C.faint }]} />
+        );
+      })}
     </View>
   );
 }
 
 function PrimaryButton({ children, onPress, disabled }: { children: React.ReactNode; onPress: () => void; disabled?: boolean }) {
   return (
-    <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={{ opacity: disabled ? 0.7 : 1 }}>
+    <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={{ width: '100%', opacity: disabled ? 0.7 : 1 }}>
       <LinearGradient
         colors={disabled ? ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.08)'] : [C.violet, C.pink, C.amber]}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -510,7 +508,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
             {/* SCREEN 2 — NAME */}
             {index === 2 && (
-              <View style={{ flex: 1 }}>
+              <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <NameIllustration />
                   <Text style={s.stepTitle}>What should we call you?</Text>
@@ -529,7 +527,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
             {/* SCREEN 3 — EMAIL */}
             {index === 3 && (
-              <View style={{ flex: 1 }}>
+              <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <ContactIllustration />
                   <Text style={s.stepTitle}>Where can we reach you?</Text>
@@ -550,7 +548,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
             {/* SCREEN 4 — PURPOSE */}
             {index === 4 && (
-              <View style={{ flex: 1 }}>
+              <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <Text style={[s.stepTitle, { marginTop: 16 }]}>What brings you here?</Text>
                   <Text style={s.stepSub}>Pick what fits best — MaurMaket adapts around it.</Text>
@@ -582,7 +580,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
             {/* SCREEN 5 — PASSWORD */}
             {index === 5 && (
-              <View style={{ flex: 1 }}>
+              <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <NameIllustration />
                   <Text style={s.stepTitle}>When's your birthday?</Text>
@@ -629,7 +627,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
             {/* SCREEN 6 — PASSWORD */}
             {index === 6 && (
-              <View style={{ flex: 1 }}>
+              <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <SecurityIllustration matched={pwMatched} />
                   <Text style={s.stepTitle}>Keep it protected.</Text>
@@ -653,7 +651,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
             {/* SCREEN 7 — REVIEW */}
             {index === 7 && (
-              <View style={{ flex: 1 }}>
+              <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <ReviewIllustration items={reviewItems} />
                   <Text style={s.stepTitle}>You're ready.</Text>
@@ -717,9 +715,12 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
 const s = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
-  slide: { flex: 1, width: '100%', maxWidth: 430 },
-  centeredStepBody: { flex: 1, justifyContent: 'center' },
+  slide: { flex: 1, width: '100%', maxWidth: 430, minHeight: Math.max(620, SCREEN_H - 40), alignSelf: 'center' },
+  stepScreen: { flex: 1, justifyContent: 'center' },
+  centeredStepBody: { flexGrow: 0, flexShrink: 1, justifyContent: 'center', marginBottom: 18 },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  progressDots: { height: 20, marginTop: 4, marginBottom: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  progressDot: { height: 4, borderRadius: 2 },
   datePickerRow: { flexDirection: 'row', gap: 10, width: '100%' },
   datePickerCol: { flex: 1, alignItems: 'center' },
   datePickerLabel: { color: C.sub, fontSize: 12, fontWeight: '600', marginBottom: 8 },
@@ -729,7 +730,7 @@ const s = StyleSheet.create({
   datePickerText: { color: C.sub, fontSize: 13, fontWeight: '500' },
   datePickerTextActive: { color: '#1A0B12', fontWeight: '800' },
   actions: { width: '100%', alignItems: 'stretch' },
-  backAction: { minHeight: 44, marginTop: 4, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
+  backAction: { width: '100%', minHeight: 48, marginTop: 8, borderRadius: 999, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
   orb: { position: 'absolute', borderRadius: 999 },
 
