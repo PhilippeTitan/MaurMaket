@@ -228,7 +228,7 @@ function StepBadge({ step, total, label }: { step: number; total: number; label:
     Animated.timing(width, { toValue: step / total, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
   }, [step, total]);
   return (
-    <View style={{ marginBottom: 16 }}>
+    <View style={{ marginBottom: 20, marginTop: 4 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
         <Text style={{ color: C.sub, fontSize: 12, fontWeight: '500' }}>Step {step} of {total}</Text>
         <Text style={{ color: C.faint, fontSize: 12, fontWeight: '500' }}>{label}</Text>
@@ -430,16 +430,16 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
       <View style={{ flex: 1, backgroundColor: C.bg0 }}>
         <BackgroundAtmosphere drift={drift} />
 
-        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 28, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
 
           {/* Back button for wizard steps */}
           {index >= 2 && index <= 6 && (
-            <TouchableOpacity onPress={() => go(-1)} style={[s.backBtn, { marginTop: 4 }]}>
-              <MaterialCommunityIcons name="arrow-left" size={17} color={C.text} />
+            <TouchableOpacity onPress={() => go(-1)} style={[s.backBtn, { marginTop: 14, marginBottom: 4 }]}>
+              <MaterialCommunityIcons name="arrow-left" size={20} color={C.text} />
             </TouchableOpacity>
           )}
 
-          <Animated.View style={[{ flex: 1 }, enterClass]} key={index}>
+          <Animated.View style={[s.slide, enterClass]} key={index}>
 
             {/* SCREEN 0 — SPLASH */}
             {index === 0 && (
@@ -638,8 +638,10 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 /* ── Styles ───────────────────────────────────────────────── */
 
 const s = StyleSheet.create({
+  scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
+  slide: { flex: 1, width: '100%', maxWidth: 430 },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start' },
+  backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start' },
   orb: { position: 'absolute', borderRadius: 999 },
 
   // Splash
