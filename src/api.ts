@@ -341,6 +341,39 @@ export const googleAuth = async () => {
   }
 };
 
+export class PasskeyUnavailableError extends Error {
+  constructor(message = 'Passkeys are not available on this platform') {
+    super(message);
+    this.name = 'PasskeyUnavailableError';
+  }
+}
+
+// Passkey (WebAuthn) sign-in through Supabase Auth's experimental passkey API.
+// On web this calls supabase.auth.signInWithPasskey() which triggers the browser's
+// WebAuthn ceremony (biometrics / security key). On native this throws PasskeyUnavailableError
+// instead of attempting a broken call — see PASSKEYS_SUPPORTED in supabase.ts.
+export const passkeyAuth = async () => {
+  if (Platform.OS !== 'web') throw new PasskeyUnavailableError();
+
+  const { data, error } = await supabase.auth.signInWithPasskey();
+  if (error || !data.session) throw new Error(error?.message || 'Passkey sign-in failed');
+  setCachedToken(data.session.access_token);
+  try {
+    return { ...(await getMe() as any), token: data.session.access_token };
+  } catch (err: any) {
+    if (!String(err?.message || '').includes('User not found')) throw err;
+    const authUser = data.session.user;
+    return request('/auth/profile/bootstrap', {
+      method: 'POST',
+      body: JSON.stringify({
+        fullName: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || 'New User',
+        email: authUser?.email,
+        phone: authUser?.user_metadata?.phone || '',
+      }),
+    }).then((response: any) => ({ ...response, token: data.session!.access_token }));
+  }
+};
+
 // Forgot / Reset Password
 export const forgotPassword = async (email: string, _language?: string) => {
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {

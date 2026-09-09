@@ -15,8 +15,15 @@ export const supabase = createClient(supabaseUrl || 'https://placeholder.supabas
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: Platform.OS === 'web',
+    // Passkeys (WebAuthn) are still an experimental Supabase Auth API and must be
+    // opted into explicitly. The ceremony itself relies on `navigator.credentials`,
+    // which only exists on web — see `passkeyAuth()` in api.ts for the native fallback.
+    experimental: { passkey: true },
   },
 });
+
+/** True on platforms where the browser WebAuthn ceremony (`navigator.credentials`) exists. */
+export const PASSKEYS_SUPPORTED = Platform.OS === 'web';
 
 export async function restoreSessionFromUrl(url: string): Promise<'recovery' | 'confirmation' | false> {
   const fragment = url.includes('#') ? url.slice(url.indexOf('#') + 1) : '';

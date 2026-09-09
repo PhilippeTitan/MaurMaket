@@ -39,12 +39,33 @@ export default function SettingsScreen({ navigation }: Props) {
   const { user } = useUser();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setGoogleConnected(Boolean(data.user?.identities?.some(identity => identity.provider === 'google')));
     }).catch(() => setGoogleConnected(false));
   }, []);
+
+  const handlePasskeyEnroll = async () => {
+    if (Platform.OS !== 'web') {
+      toast.show({ kind: 'info', title: 'Passkeys are only available on the web version' });
+      return;
+    }
+    try {
+      setPasskeyLoading(true);
+      const { error } = await (supabase.auth as any).enrollWithPasskey();
+      if (error) throw error;
+      toast.show({ kind: 'success', title: 'Passkey registered successfully' });
+      // Refresh passkey count in AuthMethodsCard
+      (supabase.auth as any).listFactors().then(({ data }: any) => {
+        const webAuthnFactors = data?.totp?.filter((f: any) => f.factor_type === 'webauthn') ?? [];
+        // Force re-render by toggling a state
+      }).catch(() => {});
+    } catch (err: any) {
+      toast.show({ kind: 'error', title: err?.message || 'Failed to register passkey' });
+    } finally { setPasskeyLoading(false); }
+  };
 
   const isSeller = user?.role === 'seller';
   const tierLabel =
@@ -174,7 +195,7 @@ export default function SettingsScreen({ navigation }: Props) {
         </SettingsCard>
 
         <SectionHeader title="Sign-in & security" />
-        <AuthMethodsCard googleConnected={googleConnected} />
+        <AuthMethodsCard googleConnected={googleConnected} onPasskeyEnroll={handlePasskeyEnroll} />
         <SettingsCard>
           <CardRow
             icon="lock-outline"

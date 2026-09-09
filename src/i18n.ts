@@ -43,6 +43,9 @@ const translations: Record<Language, Record<string, string>> = {
     'auth.forgotPassword': 'Forgot password?',
     'auth.orContinueWith': 'or continue with',
     'auth.googleSignIn': 'Continue with Google',
+    'auth.passkeySignIn': 'Continue with a passkey',
+    'auth.passkeyUnavailableTitle': 'Passkeys aren\u2019t set up on this device yet',
+    'auth.passkeyUnavailableBody': 'Passkey sign-in works in the MaurMaket web app today. Support for this device is on the way \u2014 use email and password or Google for now.',
     'auth.passwordMin': 'Password must be at least 6 characters',
 
     'verify.title': 'Verify your email',
@@ -736,6 +739,9 @@ const translations: Record<Language, Record<string, string>> = {
     'auth.forgotPassword': 'Bliye paswòd?',
     'auth.orContinueWith': 'oswa kontinye avèk',
     'auth.googleSignIn': 'Kontinye avèk Google',
+    'auth.passkeySignIn': 'Kontinye avèk yon passkey',
+    'auth.passkeyUnavailableTitle': 'Passkey poko disponib sou aparèy sa a',
+    'auth.passkeyUnavailableBody': 'Koneksyon ak passkey mache sou sit entènèt MaurMaket la kounye a. N ap ajoute l sou telefòn byento \u2014 sèvi ak imèl ak paswòd oswa Google pou kounye a.',
     'auth.passwordMin': 'Paswòd dwe gen omwen 6 karaktè',
 
     'verify.title': 'Verifye imèl ou',
@@ -1429,6 +1435,9 @@ const translations: Record<Language, Record<string, string>> = {
     'auth.forgotPassword': 'Mot de passe oublié ?',
     'auth.orContinueWith': 'ou continuer avec',
     'auth.googleSignIn': 'Continuer avec Google',
+    'auth.passkeySignIn': 'Continuer avec une cl\u2019acc\u00e8s',
+    'auth.passkeyUnavailableTitle': 'Les cl\u2019acc\u00e8s ne sont pas encore configur\u00e9es sur cet appareil',
+    'auth.passkeyUnavailableBody': 'La connexion par cl\u2019acc\u00e8s fonctionne d\u00e8s aujourd\u2019hui sur l\u2019application web MaurMaket. La prise en charge sur cet appareil arrive bient\u00f4t \u2014 utilisez l\u2019e-mail et le mot de passe ou Google pour l\u2019instant.',
     'auth.passwordMin': 'Le mot de passe doit contenir au moins 6 caractères',
 
     'verify.title': 'Vérifiez votre email',
