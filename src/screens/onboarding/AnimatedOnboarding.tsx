@@ -258,12 +258,12 @@ function PrimaryButton({ children, onPress, disabled }: { children: React.ReactN
 function StepActions({ children, step, label, onBack }: { children: React.ReactNode; step: number; label: string; onBack: () => void }) {
   return (
     <View style={s.actions}>
+      <StepBadge step={step} total={STEP_MAX} label={label} />
       {children}
       <TouchableOpacity onPress={onBack} style={s.backAction} accessibilityRole="button" accessibilityLabel="Go back">
         <MaterialCommunityIcons name="arrow-left" size={18} color={C.sub} />
         <Text style={s.backActionText}>Back</Text>
       </TouchableOpacity>
-      <StepBadge step={step} total={STEP_MAX} label={label} />
     </View>
   );
 }
@@ -716,8 +716,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 const s = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
   slide: { flex: 1, width: '100%', maxWidth: 430, minHeight: Math.max(620, SCREEN_H - 40), alignSelf: 'center' },
-  stepScreen: { flex: 1, justifyContent: 'center' },
-  centeredStepBody: { flexGrow: 0, flexShrink: 1, justifyContent: 'center', marginBottom: 18 },
+  stepScreen: { flex: 1 },
+  centeredStepBody: { flex: 1, justifyContent: 'center', marginBottom: 18 },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   progressDots: { height: 24, marginTop: 18, marginBottom: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   progressDot: { height: 5, borderRadius: 3 },
