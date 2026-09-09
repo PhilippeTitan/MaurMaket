@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../../theme';
@@ -11,12 +11,25 @@ import AuthInput from './components/AuthInput';
 import StepHeading from './components/StepHeading';
 import ReviewRow from './components/ReviewRow';
 import Divider from './components/Divider';
+import AuthBadge, { AuthGlyph } from './components/AuthBadge';
+import ProgressTrail from './components/ProgressTrail';
+import GoogleButton from './components/GoogleButton';
+import PasskeyButton from './components/PasskeyButton';
 import WelcomeMoment from '../../components/WelcomeMoment';
 import type { User } from '../../types';
 import AuthMethodsCard from '../../components/AuthMethodsCard';
 
 const STEPS = ['name', 'email', 'password', 'phone', 'dob', 'review'] as const;
 type Step = typeof STEPS[number];
+
+const STEP_LABELS: Record<Step, string> = {
+  name: 'About you', email: 'Contact', password: 'Security',
+  phone: 'Phone', dob: 'Birthday', review: 'Review',
+};
+const STEP_GLYPHS: Record<Step, AuthGlyph> = {
+  name: 'name', email: 'email', password: 'password',
+  phone: 'phone', dob: 'dob', review: 'review',
+};
 
 interface SignupWizardProps {
   switchMode: () => void;
@@ -41,6 +54,13 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
   const [entered, setEntered] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [userResult, setUserResult] = useState<{ user: User; token: string } | null>(null);
+  const stepFade = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    stepFade.setValue(0);
+    Animated.timing(stepFade, { toValue: 1, duration: 360, useNativeDriver: true }).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepIdx]);
 
   // Real-time email availability
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
@@ -160,14 +180,30 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
 
   return (
     <>
-      <View style={styles.centeredHeader}>
-        <Text style={styles.brand}>Maur<Text style={styles.brandAccent}>Maket</Text></Text>
-        <Text style={styles.title}>Create your account</Text>
-        <Text style={styles.subtitle}>Join Haiti's marketplace</Text>
-      </View>
+      {stepIdx === 0 ? (
+        <View style={styles.centeredHeader}>
+          <AuthBadge variant="name" />
+          <Text style={styles.brand}>Maur<Text style={styles.brandAccent}>Maket</Text></Text>
+          <Text style={styles.title}>Create your account</Text>
+          <Text style={styles.subtitle}>Join Haiti&apos;s marketplace</Text>
+        </View>
+      ) : (
+        <View style={styles.wizardHeader}>
+          <ProgressTrail step={stepIdx + 1} total={STEPS.length} label={STEP_LABELS[step]} />
+          <AuthBadge variant={STEP_GLYPHS[step]} />
+        </View>
+      )}
 
       {/* Step content */}
-      <View style={styles.stepContent}>
+      <Animated.View
+        style={[
+          styles.stepContent,
+          {
+            opacity: stepFade,
+            transform: [{ translateX: stepFade.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+          },
+        ]}
+      >
         {stepIdx > 0 && (
           <TouchableOpacity onPress={goBack} style={styles.backBtnInline}>
             <MaterialCommunityIcons name="arrow-left" size={18} color={COLORS.text2} />
@@ -341,7 +377,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
             </View>
           </>
         )}
-      </View>
+      </Animated.View>
 
       {/* Footer */}
       <View style={styles.footer}>
@@ -378,14 +414,10 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
         {stepIdx === 0 && (
           <>
             <Divider />
-            <TouchableOpacity
-              style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
-              onPress={handleGoogle}
-              disabled={googleLoading}
-            >
-              <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
-              <Text style={styles.googleBtnText}>{googleLoading ? 'Connecting…' : t('auth.googleSignIn')}</Text>
-            </TouchableOpacity>
+            <View style={styles.altMethods}>
+              <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignIn')} />
+              <PasskeyButton />
+            </View>
             <AuthMethodsCard compact />
             <TouchableOpacity onPress={switchMode}>
               <Text style={styles.switchText}>
@@ -407,6 +439,8 @@ const styles = StyleSheet.create({
   subtitle: { color: COLORS.text2, fontSize: 15, textAlign: 'center' },
 
   stepContent: { flex: 1, marginTop: 22 },
+  wizardHeader: { marginTop: SPACING.lg, marginBottom: 4, alignItems: 'stretch' },
+  altMethods: { gap: 12 },
   backBtnInline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
   backBtnText: { color: COLORS.text2, fontSize: 14, fontWeight: '500' },
 

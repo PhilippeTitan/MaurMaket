@@ -3,10 +3,9 @@ import {
   View, StyleSheet,
 } from 'react-native';
 import { COLORS, SPACING } from '../../theme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AnimatedOnboarding from './AnimatedOnboarding';
-import AnimatedSignin from './AnimatedSignin';
 import AmbientBackground from './components/AmbientBackground';
+import SignupWizard from './SignupWizard';
+import SigninForm from './SigninForm';
 import ForgotPasswordSheet from '../../components/ForgotPasswordSheet';
 
 type AuthMode = 'signup' | 'signin';
@@ -16,7 +15,6 @@ interface OnboardingContainerProps {
 }
 
 export default function OnboardingContainer({ initialMode = 'signup' }: OnboardingContainerProps) {
-  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [forgotOpen, setForgotOpen] = useState(false);
 
@@ -28,9 +26,9 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
     <View style={styles.container}>
       <AmbientBackground />
       {mode === 'signup' ? (
-        <AnimatedOnboarding onSwitchToSignin={switchMode} />
+        <SignupWizard switchMode={switchMode} />
       ) : (
-        <AnimatedSignin onSwitchToSignup={switchMode} onForgotPassword={() => setForgotOpen(true)} />
+        <SigninForm switchMode={switchMode} onForgotPassword={() => setForgotOpen(true)} />
       )}
       <ForgotPasswordSheet visible={forgotOpen} onClose={() => setForgotOpen(false)} />
     </View>
@@ -38,5 +36,5 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0812' },
+  container: { flex: 1, backgroundColor: COLORS.bg },
 });

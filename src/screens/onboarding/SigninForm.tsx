@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
 } from 'react-native';
@@ -9,6 +9,9 @@ import { login as apiLogin, googleAuth } from '../../api';
 import { store } from '../../store';
 import AuthInput from './components/AuthInput';
 import Divider from './components/Divider';
+import AuthBadge from './components/AuthBadge';
+import GoogleButton from './components/GoogleButton';
+import PasskeyButton from './components/PasskeyButton';
 import type { User } from '../../types';
 import AuthMethodsCard from '../../components/AuthMethodsCard';
 
@@ -26,6 +29,11 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
   const [error, setError] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  const fadeIn = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeIn, { toValue: 1, duration: 480, useNativeDriver: true }).start();
+  }, [fadeIn]);
 
   const handleGoogle = async () => {
     try {
@@ -69,8 +77,14 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
   };
 
   return (
-    <>
+    <Animated.View
+      style={{
+        opacity: fadeIn,
+        transform: [{ translateY: fadeIn.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+      }}
+    >
       <View style={styles.centeredHeader}>
+        <AuthBadge variant="signin" />
         <Text style={styles.brand}>Maur<Text style={styles.brandAccent}>Maket</Text></Text>
         <Text style={styles.title}>Welcome back</Text>
         <Text style={styles.subtitle}>Sign in to continue</Text>
@@ -113,14 +127,10 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
 
         <Divider />
 
-        <TouchableOpacity
-          style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
-          onPress={handleGoogle}
-          disabled={googleLoading}
-        >
-          <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
-          <Text style={styles.googleBtnText}>{googleLoading ? 'Connecting…' : t('auth.googleSignIn')}</Text>
-        </TouchableOpacity>
+        <View style={styles.altMethods}>
+          <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignIn')} />
+          <PasskeyButton />
+        </View>
 
         <AuthMethodsCard compact />
 
@@ -130,12 +140,12 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
           </Text>
         </TouchableOpacity>
       </View>
-    </>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  centeredHeader: { alignItems: 'center', marginBottom: 36, marginTop: SPACING.xl },
+  centeredHeader: { alignItems: 'center', marginBottom: 28, marginTop: SPACING.lg },
   brand: { fontFamily: 'Syne', fontSize: 20, fontWeight: '800', color: COLORS.text },
   brandAccent: { color: COLORS.coral },
   title: { fontFamily: 'Syne', fontSize: 34, fontWeight: '800', color: COLORS.text, marginBottom: 8, textAlign: 'center', marginTop: 12 },
@@ -153,12 +163,7 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.5 },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  googleBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    padding: 14, borderRadius: RADIUS.pill, borderWidth: 1.5, borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
-  },
-  googleBtnText: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
+  altMethods: { gap: 12 },
   switchText: { textAlign: 'center', color: COLORS.text2, fontSize: 13.5, marginTop: 16 },
   switchLink: { color: COLORS.coral, fontWeight: '700', fontSize: 13.5 },
 });
