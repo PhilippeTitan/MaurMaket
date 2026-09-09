@@ -13,6 +13,7 @@ router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
   const phone = String(req.body.phone || metadata.phone || '').trim();
   const dateOfBirth = req.body.dateOfBirth || metadata.date_of_birth || null;
   const email = String(req.supabaseUser.email || '').trim().toLowerCase();
+  const requestedUsername = req.body.username ? String(req.body.username).trim().toLowerCase().replace(/[^a-z0-9._]/g, '') : null;
   if (!fullName || !email) return res.status(400).json({ error: 'Authenticated profile is missing name or email' });
   if (fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
   try {
@@ -20,7 +21,14 @@ router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
     if (existing.rows.length > 0) return res.json({ user: existing.rows[0], isNewProfile: false });
 
     const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
-    const username = await generateUsername(fullName);
+
+    let username;
+    if (requestedUsername && requestedUsername.length >= 1 && requestedUsername.length <= 30) {
+      const exists = await pool.query('SELECT 1 FROM users WHERE username = $1', [requestedUsername]);
+      username = exists.rows.length === 0 ? requestedUsername : await generateUsername(fullName);
+    } else {
+      username = await generateUsername(fullName);
+    }
     const result = await pool.query(
       `INSERT INTO users (id, full_name, email, phone, role, username, date_of_birth, pending_dob, taste_onboarding_completed, email_verified)
        VALUES ($1, $2, $3, $4, 'buyer', $5, $6, $7, false, $8)

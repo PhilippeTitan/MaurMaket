@@ -15,6 +15,7 @@ import AuthInput from './components/AuthInput';
 import GoogleButton from './components/GoogleButton';
 import PasskeyButton from './components/PasskeyButton';
 import AuthMethodsCard from '../../components/AuthMethodsCard';
+import OnboardingBackground from './components/OnboardingBackground';
 import type { User } from '../../types';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -35,11 +36,11 @@ const C = {
   mint: '#2FE6B8',
 };
 
-const STEPS = ['name', 'email', 'purpose', 'dob', 'password', 'review'] as const;
+const STEPS = ['name', 'username', 'email', 'purpose', 'dob', 'password', 'review'] as const;
 type Step = typeof STEPS[number];
-const STEP_MAX = 6;
+const STEP_MAX = 7;
 const STEP_LABELS: Record<Step, string> = {
-  name: 'About you', email: 'Contact', purpose: 'Purpose', dob: 'Age', password: 'Security', review: 'Review',
+  name: 'About you', username: 'Username', email: 'Contact', purpose: 'Purpose', dob: 'Age', password: 'Security', review: 'Review',
 };
 
 const PURPOSES = [
@@ -283,20 +284,6 @@ function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry,
   );
 }
 
-/* ── Background Atmosphere ────────────────────────────────── */
-
-function BackgroundAtmosphere({ drift }: { drift: Animated.Value }) {
-  const d1 = drift.interpolate({ inputRange: [0, 1], outputRange: [0, 18] });
-  const d2 = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -22] });
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Animated.View style={[s.orb, { top: -60, left: -50, width: 260, height: 260, backgroundColor: C.violet + '55', transform: [{ translateX: d1 }, { translateY: d2 }] }]} />
-      <Animated.View style={[s.orb, { bottom: -70, right: -60, width: 280, height: 280, backgroundColor: C.pink + '4d', transform: [{ translateX: d2 }, { translateY: d1 }] }]} />
-      <Animated.View style={[s.orb, { top: '38%', right: -40, width: 160, height: 160, backgroundColor: C.amber + '33', transform: [{ translateX: d1 }] }]} />
-    </View>
-  );
-}
-
 /* ── Main Component ───────────────────────────────────────── */
 
 interface Props {
@@ -308,7 +295,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(1);
-  const [form, setForm] = useState({ first: '', last: '', email: '', purpose: '', birthMonth: null as number | null, birthDay: null as number | null, birthYear: null as number | null, pw: '', pw2: '' });
+  const [form, setForm] = useState({ first: '', last: '', username: '', email: '', purpose: '', birthMonth: null as number | null, birthDay: null as number | null, birthYear: null as number | null, pw: '', pw2: '' });
   const [showPw, setShowPw] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -317,28 +304,44 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [emailChecking, setEmailChecking] = useState(false);
   const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [usernameChecking, setUsernameChecking] = useState(false);
+  const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [splashReady, setSplashReady] = useState(false);
+  const [revealing, setRevealing] = useState(false);
+  const reveal = useRef(new Animated.Value(0)).current;
+  const revealOpacity = useRef(new Animated.Value(1)).current;
+  const revealCompleted = useRef(false);
+  const holdRingA = useRef(new Animated.Value(0)).current;
+  const holdRingB = useRef(new Animated.Value(0)).current;
+  const holdRingC = useRef(new Animated.Value(0)).current;
 
   // Animations
-  const drift = useRef(new Animated.Value(0)).current;
   const spin = useRef(new Animated.Value(0)).current;
   const float = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
   const enterAnim = useRef(new Animated.Value(0)).current;
+  const scrollRef = useRef<ScrollView>(null);
+  const holdButtonRef = useRef<View>(null);
+  const [revealOrigin, setRevealOrigin] = useState({ x: SCREEN_W / 2, y: SCREEN_H / 2 });
 
   // Continuous animations
   useEffect(() => {
-    Animated.loop(Animated.sequence([
-      Animated.timing(drift, { toValue: 1, duration: 9000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(drift, { toValue: 0, duration: 9000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-    ])).start();
     Animated.loop(Animated.timing(spin, { toValue: 1, duration: 22000, easing: Easing.linear, useNativeDriver: true })).start();
     Animated.loop(Animated.sequence([
       Animated.timing(float, { toValue: 1, duration: 2500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       Animated.timing(float, { toValue: 0, duration: 2500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
     ])).start();
     Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 1800, easing: Easing.out(Easing.ease), useNativeDriver: true })).start();
+    const ringAnimation = (value: Animated.Value, delay: number) => Animated.loop(Animated.sequence([
+      Animated.delay(delay),
+      Animated.timing(value, { toValue: 1, duration: 1900, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(value, { toValue: 0, duration: 0, useNativeDriver: true }),
+    ])).start();
+    ringAnimation(holdRingA, 0);
+    ringAnimation(holdRingB, 620);
+    ringAnimation(holdRingC, 1240);
   }, []);
 
   // Splash auto-advance
@@ -352,6 +355,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
   // Step enter animation
   useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
     enterAnim.setValue(0);
     Animated.timing(enterAnim, { toValue: 1, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, [index]);
@@ -366,6 +370,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const pwScore = pwLen === 0 ? 0 : pwLen < 6 ? 1 : pwLen < 10 ? 2 : 3;
   const pwMatched = pwOk && form.pw === form.pw2;
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email);
+  const usernameValid = /^[a-z0-9][a-z0-9._]{0,28}[a-z0-9]$/.test(form.username) || form.username.length === 1;
   const birthDateValid = !!form.birthMonth && !!form.birthDay && !!form.birthYear;
   const isAdult = birthDateValid && (() => {
     const birthDate = new Date(form.birthYear!, form.birthMonth! - 1, form.birthDay!);
@@ -378,6 +383,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
   const reviewItems = [
     !!(form.first && form.last),
+    usernameValid && usernameAvailable !== false,
     emailValid,
     !!form.purpose,
     isAdult,
@@ -403,14 +409,65 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
     return () => { if (emailTimer.current) clearTimeout(emailTimer.current); };
   }, [form.email, emailValid]);
 
+  // Username availability check
+  useEffect(() => {
+    if (usernameTimer.current) clearTimeout(usernameTimer.current);
+    if (usernameValid && form.username.length >= 1) {
+      setUsernameChecking(true);
+      usernameTimer.current = setTimeout(async () => {
+        try {
+          const res = await fetch(`${API_BASE}/auth/check-username?username=${encodeURIComponent(form.username)}`);
+          const data = await res.json();
+          setUsernameAvailable(data.available);
+          if (!data.available) setErrors(p => ({ ...p, username: 'This username is taken' }));
+          else setErrors(p => { const n = { ...p }; delete n.username; return n; });
+        } catch { setUsernameAvailable(null); }
+        setUsernameChecking(false);
+      }, 500);
+    } else { setUsernameAvailable(null); }
+    return () => { if (usernameTimer.current) clearTimeout(usernameTimer.current); };
+  }, [form.username, usernameValid]);
+
   const go = (delta: number) => {
     setDir(delta);
     setErrors({});
-    setIndex(i => Math.min(Math.max(i + delta, 0), 8));
+    setIndex(i => Math.min(Math.max(i + delta, 0), 9));
+  };
+
+  const startSplashReveal = () => {
+    if (!splashReady || revealing) return;
+    holdButtonRef.current?.measureInWindow((x, y, width, height) => {
+      setRevealOrigin({ x: x + width / 2, y: y + height / 2 });
+      revealCompleted.current = false;
+      setRevealing(true);
+      Animated.timing(reveal, { toValue: 1, duration: 1900, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
+        if (!finished) return;
+        revealCompleted.current = true;
+        setIndex(1);
+        setTimeout(() => {
+            Animated.timing(revealOpacity, { toValue: 0, duration: 760, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(() => {
+            reveal.setValue(0);
+            revealOpacity.setValue(1);
+            setRevealing(false);
+          });
+        }, 80);
+      });
+    });
+  };
+
+  const cancelSplashReveal = () => {
+    if (!revealing || revealCompleted.current) return;
+    reveal.stopAnimation(value => {
+      Animated.timing(reveal, { toValue: value * 0.08, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => setRevealing(false));
+    });
   };
 
   const validateAndNext = () => {
     if (step === 'name' && (!form.first.trim() || !form.last.trim())) { setErrors({ name: "First and last name are needed" }); return; }
+    if (step === 'username') {
+      if (!usernameValid) { setErrors({ username: 'Lowercase letters, numbers, dots, and underscores only (1-30 chars)' }); return; }
+      if (usernameAvailable === false) { setErrors({ username: 'This username is taken' }); return; }
+    }
     if (step === 'email') {
       if (!emailValid) { setErrors({ email: "That doesn't look like a full email" }); return; }
       if (emailAvailable === false) { setErrors({ email: 'This email is already registered' }); return; }
@@ -429,7 +486,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
       ? `${form.birthYear}-${String(form.birthMonth).padStart(2, '0')}-${String(form.birthDay).padStart(2, '0')}`
       : '';
     try {
-      const res = await apiSignup(fullName, form.email, form.pw, '', dob) as { user: User; token: string };
+      const res = await apiSignup(fullName, form.email, form.pw, '', dob, form.username) as { user: User; token: string };
       setUserResult(res);
       go(1); // → success screen
     } catch (err: any) {
@@ -445,6 +502,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
   const canContinue =
     (step === 'name' && !(!form.first.trim() || !form.last.trim())) ||
+    (step === 'username' && usernameValid && usernameAvailable !== false) ||
     (step === 'email' && emailValid && emailAvailable !== false) ||
     (step === 'purpose' && !!form.purpose) ||
     (step === 'password' && pwMatched) ||
@@ -453,9 +511,9 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flex: 1, backgroundColor: C.bg0 }}>
-        <BackgroundAtmosphere drift={drift} />
+        <OnboardingBackground />
 
-        <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={scrollRef} contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
 
           <Animated.View style={[s.slide, enterClass]} key={index}>
 
@@ -471,8 +529,18 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   ))}
                 </View>
                 {splashReady && (
-                  <TouchableOpacity onPress={() => go(1)} style={{ marginTop: 20 }}>
-                    <Text style={{ color: C.sub, fontSize: 14, fontWeight: '500' }}>Tap to continue</Text>
+                  <TouchableOpacity
+                    onPressIn={startSplashReveal}
+                    onPressOut={cancelSplashReveal}
+                    disabled={revealing}
+                    ref={holdButtonRef}
+                    style={s.holdCircle}
+                    accessibilityRole="button"
+                    accessibilityLabel="Press and hold to continue"
+                  >
+                    <Animated.View style={[s.holdRing, s.holdRingA, { opacity: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] }), transform: [{ scale: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
+                    <Animated.View style={[s.holdRing, s.holdRingB, { opacity: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [0.62, 0] }), transform: [{ scale: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
+                    <Animated.View style={[s.holdRing, s.holdRingC, { opacity: holdRingC.interpolate({ inputRange: [0, 1], outputRange: [0.54, 0] }), transform: [{ scale: holdRingC.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -480,7 +548,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
             {/* SCREEN 1 — WELCOME */}
             {index === 1 && (
-              <View style={{ flex: 1 }}>
+              <View style={s.welcomeScreen}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingTop: 8, paddingBottom: 24 }}>
                   <Logomark size={34} />
                   <Text style={{ fontFamily: FONTS.heading, fontSize: 17, fontWeight: '700', color: C.text }}>MaurMaket</Text>
@@ -496,8 +564,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   <Text style={s.heroAccent}>made more human.</Text>
                 </Text>
                 <Text style={[s.heroSub, { textAlign: 'center', alignSelf: 'center' }]}>MaurMaket connects people, products, and opportunity in one place built for how you actually buy and sell.</Text>
-                <View style={{ flex: 1 }} />
-                <View style={{ gap: 12 }}>
+                <View style={s.welcomeActions}>
                   <PrimaryButton onPress={() => go(1)}>Get started</PrimaryButton>
                   <TouchableOpacity onPress={onSwitchToSignin} style={{ paddingVertical: 14 }}>
                     <Text style={{ textAlign: 'center', color: C.sub, fontSize: 14, fontWeight: '500' }}>I already have an account</Text>
@@ -525,8 +592,30 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
               </View>
             )}
 
-            {/* SCREEN 3 — EMAIL */}
+            {/* SCREEN 3 — USERNAME */}
             {index === 3 && (
+              <View style={s.stepScreen}>
+                <View style={s.centeredStepBody}>
+                  <ContactIllustration />
+                  <Text style={s.stepTitle}>Pick your username</Text>
+                  <Text style={s.stepSub}>This is your unique handle on MaurMaket. Lowercase letters, numbers, dots, and underscores.</Text>
+                  <Field icon="at" label="Username" value={form.username} onChangeText={v => set('username', v.toLowerCase().replace(/[^a-z0-9._]/g, ''))} placeholder="jordan.reyes" right={
+                    usernameChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
+                    usernameAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
+                    usernameAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
+                  } />
+                  {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>Lowercase letters, numbers, dots, and underscores only (1-30 chars)</Text> : null}
+                  {usernameAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Username is available</Text> : null}
+                  {errors.username ? <Text style={s.fieldError}>{errors.username}</Text> : null}
+                </View>
+                <StepActions step={2} label={STEP_LABELS.username} onBack={() => go(-1)}>
+                  <PrimaryButton onPress={validateAndNext} disabled={!usernameValid || usernameAvailable === false}>Continue</PrimaryButton>
+                </StepActions>
+              </View>
+            )}
+
+            {/* SCREEN 4 — EMAIL */}
+            {index === 4 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <ContactIllustration />
@@ -540,14 +629,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   {errors.email ? <Text style={s.fieldError}>{errors.email}</Text> : null}
                   {emailAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Email is available</Text> : null}
                 </View>
-                <StepActions step={2} label={STEP_LABELS.email} onBack={() => go(-1)}>
+                <StepActions step={3} label={STEP_LABELS.email} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={!emailValid || emailAvailable === false}>Continue</PrimaryButton>
                 </StepActions>
               </View>
             )}
 
-            {/* SCREEN 4 — PURPOSE */}
-            {index === 4 && (
+            {/* SCREEN 5 — PURPOSE */}
+            {index === 5 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <Text style={[s.stepTitle, { marginTop: 16 }]}>What brings you here?</Text>
@@ -572,14 +661,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                     })}
                   </View>
                 </View>
-                <StepActions step={3} label={STEP_LABELS.purpose} onBack={() => go(-1)}>
+                <StepActions step={4} label={STEP_LABELS.purpose} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={!form.purpose}>Continue</PrimaryButton>
                 </StepActions>
               </View>
             )}
 
-            {/* SCREEN 5 — PASSWORD */}
-            {index === 5 && (
+            {/* SCREEN 6 — DOB */}
+            {index === 6 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <NameIllustration />
@@ -619,14 +708,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   </View>
                   {errors.dob ? <Text style={s.fieldError}>{errors.dob}</Text> : null}
                 </View>
-                <StepActions step={4} label={STEP_LABELS.dob} onBack={() => go(-1)}>
+                <StepActions step={5} label={STEP_LABELS.dob} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={!birthDateValid}>Continue</PrimaryButton>
                 </StepActions>
               </View>
             )}
 
-            {/* SCREEN 6 — PASSWORD */}
-            {index === 6 && (
+            {/* SCREEN 7 — PASSWORD */}
+            {index === 7 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <SecurityIllustration matched={pwMatched} />
@@ -643,14 +732,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                     } />
                   </View>
                 </View>
-                <StepActions step={5} label={STEP_LABELS.password} onBack={() => go(-1)}>
+                <StepActions step={6} label={STEP_LABELS.password} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={!pwMatched}>Continue</PrimaryButton>
                 </StepActions>
               </View>
             )}
 
-            {/* SCREEN 7 — REVIEW */}
-            {index === 7 && (
+            {/* SCREEN 8 — REVIEW */}
+            {index === 8 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
                   <ReviewIllustration items={reviewItems} />
@@ -659,10 +748,11 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   <View style={{ gap: 10 }}>
                     {[
                       ['Name', form.first ? `${form.first} ${form.last}` : '—', reviewItems[0]],
-                      ['Email', form.email || '—', reviewItems[1]],
-                      ['Purpose', PURPOSES.find(p => p.id === form.purpose)?.title || '—', reviewItems[2]],
-                      ['Birthday', birthDateValid ? `${form.birthMonth}/${form.birthDay}/${form.birthYear}` : '—', reviewItems[3]],
-                      ['Password', pwMatched ? 'Set' : '—', reviewItems[4]],
+                      ['Username', form.username ? `@${form.username}` : '—', reviewItems[1]],
+                      ['Email', form.email || '—', reviewItems[2]],
+                      ['Purpose', PURPOSES.find(p => p.id === form.purpose)?.title || '—', reviewItems[3]],
+                      ['Birthday', birthDateValid ? `${form.birthMonth}/${form.birthDay}/${form.birthYear}` : '—', reviewItems[4]],
+                      ['Password', pwMatched ? 'Set' : '—', reviewItems[5]],
                     ].map(([label, val, ok], i) => (
                       <View key={i} style={s.reviewRow}>
                         <View>
@@ -676,14 +766,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                     ))}
                   </View>
                 </View>
-                <StepActions step={6} label={STEP_LABELS.review} onBack={() => go(-1)}>
+                <StepActions step={7} label={STEP_LABELS.review} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={loading}>{loading ? t('common.loading') : 'Create account'}</PrimaryButton>
                 </StepActions>
               </View>
             )}
 
-            {/* SCREEN 8 — SUCCESS */}
-            {index === 8 && (
+            {/* SCREEN 9 — SUCCESS */}
+            {index === 9 && (
               <View style={[s.screenCenter, { paddingTop: 20 }]}>
                 <SuccessIllustration pulse={pulse} />
                 <View style={s.successBadge}>
@@ -706,6 +796,16 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
           </Animated.View>
         </ScrollView>
+        {revealing && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              s.revealLayer,
+              { left: revealOrigin.x - Math.max(SCREEN_W, SCREEN_H) * 1.1, top: revealOrigin.y - Math.max(SCREEN_W, SCREEN_H) * 1.1 },
+              { opacity: revealOpacity, transform: [{ scale: reveal }] },
+            ]}
+          />
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -719,7 +819,9 @@ const s = StyleSheet.create({
   stepScreen: { flex: 1 },
   centeredStepBody: { flex: 1, justifyContent: 'center', marginBottom: 18 },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  progressDots: { height: 24, marginTop: 18, marginBottom: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  welcomeScreen: { minHeight: Math.max(620, SCREEN_H - 40), justifyContent: 'center', paddingVertical: 24, position: 'relative', paddingBottom: 144 },
+  welcomeActions: { position: 'absolute', left: 0, right: 0, bottom: 18, gap: 12 },
+  progressDots: { width: '100%', height: 24, alignSelf: 'center', marginTop: 14, marginBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   progressDot: { height: 5, borderRadius: 3 },
   datePickerRow: { flexDirection: 'row', gap: 10, width: '100%' },
   datePickerCol: { flex: 1, alignItems: 'center' },
@@ -732,13 +834,17 @@ const s = StyleSheet.create({
   actions: { width: '100%', alignItems: 'stretch' },
   backAction: { width: '100%', minHeight: 48, marginTop: 8, borderRadius: 999, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
-  orb: { position: 'absolute', borderRadius: 999 },
-
   // Splash
   splashBrand: { fontFamily: FONTS.heading, fontSize: 26, fontWeight: '800', color: C.text, marginTop: 12 },
   splashSub: { fontSize: 14, color: C.sub, marginTop: 8, maxWidth: 220, textAlign: 'center' },
   dotsRow: { flexDirection: 'row', gap: 6, marginTop: 12 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.faint },
+  holdCircle: { width: 64, height: 64, marginTop: 56, borderRadius: 32, borderWidth: 1.5, borderColor: 'rgba(236,72,153,0.72)', backgroundColor: 'rgba(18,14,31,0.9)', alignItems: 'center', justifyContent: 'center', shadowColor: C.pink, shadowOpacity: 0.8, shadowRadius: 18, shadowOffset: { width: 0, height: 0 }, elevation: 10 },
+  holdRing: { position: 'absolute', width: 64, height: 64, borderRadius: 32, borderWidth: 1.5 },
+  holdRingA: { borderColor: C.pink },
+  holdRingB: { borderColor: C.violet },
+  holdRingC: { borderColor: C.amber },
+  revealLayer: { position: 'absolute', width: Math.max(SCREEN_W, SCREEN_H) * 2.2, height: Math.max(SCREEN_W, SCREEN_H) * 2.2, left: SCREEN_W / 2 - Math.max(SCREEN_W, SCREEN_H) * 1.1, borderRadius: 999, backgroundColor: C.pink, shadowColor: C.amber, shadowOpacity: 0.8, shadowRadius: 70, shadowOffset: { width: 0, height: 0 }, elevation: 14 },
 
   // Welcome
   badge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },

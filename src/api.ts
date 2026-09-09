@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import * as AuthSession from 'expo-auth-session';
 import type { Conversation, Product } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
@@ -205,7 +206,7 @@ const getPasswordResetRedirectUrl = () => {
   return new URL('/reset-password', baseUrl).toString();
 };
 
-export const signup = async (fullName: string, email: string, password: string, phone: string, dateOfBirth?: string) => {
+export const signup = async (fullName: string, email: string, password: string, phone: string, dateOfBirth?: string, username?: string) => {
   const normalizedEmail = email.trim().toLowerCase();
   const { data, error } = await supabase.auth.signUp({
     email: normalizedEmail,
@@ -223,7 +224,7 @@ export const signup = async (fullName: string, email: string, password: string, 
   setCachedToken(data.session.access_token);
   return request('/auth/profile/bootstrap', {
     method: 'POST',
-    body: JSON.stringify({ fullName, email: normalizedEmail, phone, dateOfBirth }),
+    body: JSON.stringify({ fullName, email: normalizedEmail, phone, dateOfBirth, username }),
   }).then((response: any) => ({ ...response, token: data.session?.access_token }));
 };
 
@@ -262,7 +263,8 @@ export const savePushToken = (pushToken: string) =>
 
 // Google Sign-In through Supabase OAuth
 export const googleAuth = async () => {
-  if (Platform.OS !== 'web') {
+  // Expo Go does not include the native Google Sign-In module; use the browser OAuth flow there.
+  if (Platform.OS !== 'web' && Constants.executionEnvironment !== 'storeClient') {
     const { GoogleSignin } = require('@react-native-google-signin/google-signin');
     GoogleSignin.configure({
       webClientId: '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com',
@@ -296,7 +298,7 @@ export const googleAuth = async () => {
 
   const redirectTo = Platform.OS === 'web'
     ? `${window.location.origin}/`
-    : 'maurmaket://auth/callback';
+    : AuthSession.makeRedirectUri({ scheme: 'maurmaket', path: 'auth/callback' });
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo, skipBrowserRedirect: true },
@@ -310,8 +312,8 @@ export const googleAuth = async () => {
     throw new Error('Google sign-in was cancelled');
   }
 
-  const hash = result.url.includes('#') ? result.url.split('#')[1] : '';
-  const params = new URLSearchParams(hash);
+  const urlParts = result.url.split(/[?#]/);
+  const params = new URLSearchParams(urlParts[1] || '');
   const accessToken = params.get('access_token');
   const refreshToken = params.get('refresh_token');
   if (accessToken && refreshToken) {
