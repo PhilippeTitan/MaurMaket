@@ -201,9 +201,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
           <PrimaryButton onPress={handleLogin} disabled={!canSubmit || loading}>{loading ? t('common.loading') : t('auth.signIn')}</PrimaryButton>
 
           {/* Google + Passkey */}
-          <View style={{ gap: 12, marginTop: 20 }}>
-            <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignIn')} />
-            <PasskeyButton />
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 14, marginTop: 20 }}>
+            <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignIn')} compact />
+            <PasskeyButton compact />
           </View>
 
           {/* Switch to signup */}

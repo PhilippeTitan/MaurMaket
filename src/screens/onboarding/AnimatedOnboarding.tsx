@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Animated,
-  Easing, ScrollView, Platform, KeyboardAvoidingView, Dimensions,
+  Easing, ScrollView, Platform, KeyboardAvoidingView, Dimensions, Image, Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, Ellipse, G as SvgG } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
 import { useTranslation } from '../../i18n';
 import { signup as apiSignup, googleAuth, API_BASE } from '../../api';
@@ -93,32 +94,36 @@ function SplashIllustration({ spin }: { spin: Animated.Value }) {
 
 function WelcomeIllustration() {
   return (
-    <View style={{ height: 180, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="220" height="180" viewBox="0 0 220 180" fill="none">
-        <Defs>
-          <SvgLinearGradient id="bagG" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0%" stopColor={C.violet} />
-            <Stop offset="100%" stopColor={C.pink} />
-          </SvgLinearGradient>
-          <SvgLinearGradient id="tagG" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0%" stopColor={C.pink} />
-            <Stop offset="100%" stopColor={C.amber} />
-          </SvgLinearGradient>
-        </Defs>
-        <Ellipse cx="110" cy="150" rx="70" ry="9" fill="#000" opacity="0.28" />
-        <SvgG>
-          <Rect x="128" y="46" width="44" height="34" rx="7" fill="url(#tagG)" opacity="0.92" transform="rotate(14 150 63)" />
-        </SvgG>
-        <SvgG>
-          <Path d="M78 78h64a8 8 0 0 1 8 8v52a8 8 0 0 1-8 8H78a8 8 0 0 1-8-8V86a8 8 0 0 1 8-8Z" fill="url(#bagG)" />
-          <Path d="M92 78v-8a18 18 0 0 1 36 0v8" stroke={C.text} strokeWidth="4.5" fill="none" strokeLinecap="round" />
-          <Path d="M90 106c6 8 24 8 30 0" stroke="#1A0B12" strokeWidth="3.4" strokeLinecap="round" fill="none" opacity="0.55" />
-        </SvgG>
-        <SvgG>
-          <Rect x="42" y="44" width="30" height="30" rx="8" fill={C.bg1} stroke={C.borderHi} strokeWidth="1.5" transform="rotate(-10 57 59)" />
-          <Path d="M50 60l5 5 9-11" stroke={C.mint} strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" transform="rotate(-10 57 59)" />
-        </SvgG>
-      </Svg>
+    <View style={{ height: 250, alignItems: 'center', justifyContent: 'center' }}>
+      <Image
+        source={require('../../../illustration/commerce-more-human.webp')}
+        style={{ width: 360, height: 250, resizeMode: 'contain' }}
+        accessibilityLabel="Commerce made more human illustration"
+      />
+    </View>
+  );
+}
+
+function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asset: 'lets-start' | 'digital-address' | 'keep-it-protected' | 'youre-ready' | 'pick-username' | 'choose-purpose' | 'birthday'; accessibilityLabel: string; containerStyle?: any }) {
+  const tallAsset = asset === 'pick-username';
+  const birthdayAsset = asset === 'birthday';
+  const imageWidth = birthdayAsset || asset === 'lets-start' ? '100%' : tallAsset ? 240 : asset === 'choose-purpose' ? 330 : 360;
+  const imageHeight = birthdayAsset ? 455 : tallAsset ? 330 : asset === 'choose-purpose' ? 300 : 190;
+  return (
+    <View style={[{ height: imageHeight, width: '100%', marginBottom: 12, alignItems: 'center', justifyContent: 'center' }, containerStyle]}>
+      <Image
+        source={
+          asset === 'lets-start' ? require('../../../illustration/lets-start.webp') :
+          asset === 'digital-address' ? require('../../../illustration/digital-address.webp') :
+          asset === 'keep-it-protected' ? require('../../../illustration/keep-it-protected.webp') :
+          asset === 'youre-ready' ? require('../../../illustration/youre-ready.webp') :
+          asset === 'pick-username' ? require('../../../illustration/pick-username.webp') :
+          asset === 'choose-purpose' ? require('../../../illustration/choose-purpose.webp') :
+          require('../../../illustration/birthday.webp')
+        }
+        style={{ width: imageWidth, height: imageHeight, resizeMode: birthdayAsset ? 'stretch' : asset === 'lets-start' ? 'cover' : 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
+        accessibilityLabel={accessibilityLabel}
+      />
     </View>
   );
 }
@@ -224,20 +229,8 @@ function SuccessIllustration({ pulse }: { pulse: Animated.Value }) {
 /* ── Shared UI ────────────────────────────────────────────── */
 
 function StepBadge({ step, total, label }: { step: number; total: number; label: string }) {
-  const progress = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(progress, { toValue: step, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
-  }, [step, total]);
   return (
-    <View style={s.progressDots} accessibilityLabel={`Onboarding progress ${step} of ${total}`}>
-      {Array.from({ length: total }, (_, index) => {
-        const position = index + 1;
-        const activeWidth = progress.interpolate({ inputRange: [position - 1, position], outputRange: [8, 22], extrapolate: 'clamp' });
-        return (
-          <Animated.View key={position} style={[s.progressDot, { width: activeWidth, backgroundColor: position <= step ? C.pink : C.faint }]} />
-        );
-      })}
-    </View>
+    <Text style={s.stepCount} accessibilityLabel={`Onboarding progress ${step} of ${total}`}>{step}/{total}</Text>
   );
 }
 
@@ -256,33 +249,34 @@ function PrimaryButton({ children, onPress, disabled }: { children: React.ReactN
   );
 }
 
-function StepActions({ children, step, label, onBack }: { children: React.ReactNode; step: number; label: string; onBack: () => void }) {
+function StepActions({ children, step, label, onBack, compact }: { children: React.ReactNode; step: number; label: string; onBack: () => void; compact?: boolean }) {
   return (
-    <View style={s.actions}>
-      <StepBadge step={step} total={STEP_MAX} label={label} />
-      {children}
-      <TouchableOpacity onPress={onBack} style={s.backAction} accessibilityRole="button" accessibilityLabel="Go back">
-        <MaterialCommunityIcons name="arrow-left" size={18} color={C.sub} />
-        <Text style={s.backActionText}>Back</Text>
-      </TouchableOpacity>
-    </View>
+    <>
+      <View style={s.stepTopBar}>
+        <TouchableOpacity onPress={onBack} style={s.topBackAction} accessibilityRole="button" accessibilityLabel="Go back">
+          <MaterialCommunityIcons name="arrow-left" size={18} color={C.sub} />
+          <Text style={s.backActionText}>Back</Text>
+        </TouchableOpacity>
+        <StepBadge step={step} total={STEP_MAX} label={label} />
+      </View>
+      <View style={s.actions}>{children}</View>
+    </>
   );
 }
 
-function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, right }: {
-  icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode;
-}) {
+const Field = React.forwardRef<TextInput, { icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode; onFocus?: () => void }>(function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, right, onFocus }, ref) {
+  const inputRef = useRef<TextInput | null>(null);
   return (
-    <View style={s.field}>
+    <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={s.field} accessibilityRole="none">
       <MaterialCommunityIcons name={icon} size={18} color={C.sub} />
       <View style={{ flex: 1 }}>
         <Text style={s.fieldLabel}>{label}</Text>
-        <TextInput style={s.fieldInput} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={C.sub} secureTextEntry={secureTextEntry} />
+        <TextInput ref={node => { inputRef.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node; }} onFocus={onFocus} style={s.fieldInput} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={C.sub} secureTextEntry={secureTextEntry} />
       </View>
       {right}
-    </View>
+    </TouchableOpacity>
   );
-}
+});
 
 /* ── Main Component ───────────────────────────────────────── */
 
@@ -307,6 +301,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [usernameChecking, setUsernameChecking] = useState(false);
   const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const [splashReady, setSplashReady] = useState(false);
   const [revealing, setRevealing] = useState(false);
@@ -325,6 +321,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const holdButtonRef = useRef<View>(null);
   const [revealOrigin, setRevealOrigin] = useState({ x: SCREEN_W / 2, y: SCREEN_H / 2 });
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, eventData => setKeyboardHeight(eventData.endCoordinates.height));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => { setKeyboardHeight(0); setFocusedField(null); });
+    return () => { showSubscription.remove(); hideSubscription.remove(); };
+  }, []);
 
   // Continuous animations
   useEffect(() => {
@@ -509,7 +513,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
     (step === 'review');
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={{ flex: 1, backgroundColor: C.bg0 }}>
         <OnboardingBackground />
 
@@ -554,11 +558,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   <Text style={{ fontFamily: FONTS.heading, fontSize: 17, fontWeight: '700', color: C.text }}>MaurMaket</Text>
                 </View>
                 <WelcomeIllustration />
-                <View style={{ marginTop: 16, alignItems: 'center' }}>
-                  <View style={s.badge}>
-                    <Text style={s.badgeText}>A marketplace for real people</Text>
-                  </View>
-                </View>
                 <Text style={[s.heroTitle, { textAlign: 'center' }]}>
                   Commerce,{'\n'}
                   <Text style={s.heroAccent}>made more human.</Text>
@@ -576,13 +575,11 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 2 — NAME */}
             {index === 2 && (
               <View style={s.stepScreen}>
-                <View style={s.centeredStepBody}>
-                  <NameIllustration />
-                  <Text style={s.stepTitle}>What should we call you?</Text>
-                  <Text style={s.stepSub}>This is how sellers and buyers will see you on MaurMaket.</Text>
-                  <View style={{ gap: 12 }}>
-                    <Field icon="account-outline" label="First name" value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" />
-                    <Field icon="account-outline" label="Last name" value={form.last} onChangeText={v => set('last', v)} placeholder="Reyes" />
+                <View style={[s.centeredStepBody, s.nameStepBody]}>
+                  <AssetIllustration asset="lets-start" accessibilityLabel="Let's start illustration" />
+                  <View style={s.nameFields}>
+                    <Field icon="account-outline" label="First name" value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" onFocus={() => setFocusedField('first')} />
+                    <Field icon="account-outline" label="Last name" value={form.last} onChangeText={v => set('last', v)} placeholder="Reyes" onFocus={() => setFocusedField('last')} />
                     {errors.name ? <Text style={s.fieldError}>{errors.name}</Text> : null}
                   </View>
                 </View>
@@ -596,10 +593,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {index === 3 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
-                  <ContactIllustration />
-                  <Text style={s.stepTitle}>Pick your username</Text>
-                  <Text style={s.stepSub}>This is your unique handle on MaurMaket. Lowercase letters, numbers, dots, and underscores.</Text>
-                  <Field icon="at" label="Username" value={form.username} onChangeText={v => set('username', v.toLowerCase().replace(/[^a-z0-9._]/g, ''))} placeholder="jordan.reyes" right={
+                  <AssetIllustration asset="pick-username" accessibilityLabel="Pick your username illustration" />
+                  <Field icon="at" label="Username" value={form.username} onChangeText={v => set('username', v.toLowerCase().replace(/[^a-z0-9._]/g, ''))} placeholder="jordan.reyes" onFocus={() => setFocusedField('username')} right={
                     usernameChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
                     usernameAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
                     usernameAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
@@ -616,12 +611,17 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
             {/* SCREEN 4 — EMAIL */}
             {index === 4 && (
-              <View style={s.stepScreen}>
-                <View style={s.centeredStepBody}>
-                  <ContactIllustration />
-                  <Text style={s.stepTitle}>Where can we reach you?</Text>
-                  <Text style={s.stepSub}>We'll send order updates and account alerts here — nothing else.</Text>
-                  <Field icon="email-outline" label="Email address" value={form.email} onChangeText={v => set('email', v)} placeholder="you@example.com" right={
+              <View style={[s.stepScreen, s.emailScreen]}>
+                <View style={s.emailArtWindow}>
+                  <Image
+                    source={require('../../../illustration/digital-address.webp')}
+                    style={s.emailArtwork}
+                    resizeMode="contain"
+                    accessibilityLabel="Digital address illustration"
+                  />
+                </View>
+                <View style={s.emailContent}>
+                  <Field icon="email-outline" label="Email address" value={form.email} onChangeText={v => set('email', v)} placeholder="you@example.com" onFocus={() => setFocusedField('email')} right={
                     emailChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
                     emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
                     emailAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
@@ -638,28 +638,25 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 5 — PURPOSE */}
             {index === 5 && (
               <View style={s.stepScreen}>
-                <View style={s.centeredStepBody}>
-                  <Text style={[s.stepTitle, { marginTop: 16 }]}>What brings you here?</Text>
-                  <Text style={s.stepSub}>Pick what fits best — MaurMaket adapts around it.</Text>
-                  <View style={{ gap: 12 }}>
-                    {PURPOSES.map(p => {
-                      const active = form.purpose === p.id;
-                      return (
-                        <TouchableOpacity key={p.id} onPress={() => set('purpose', p.id)} activeOpacity={0.85} style={[s.purposeCard, active && s.purposeCardActive]}>
-                          <View style={[s.purposeIcon, active && s.purposeIconActive]}>
-                            <MaterialCommunityIcons name={p.icon} size={18} color={active ? '#1A0B12' : C.sub} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={s.purposeTitle}>{p.title}</Text>
-                            <Text style={s.purposeDesc}>{p.desc}</Text>
-                          </View>
-                          <View style={[s.radio, active && s.radioActive]}>
-                            {active && <MaterialCommunityIcons name="check" size={11} color="#1A0B12" />}
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+                <AssetIllustration asset="choose-purpose" accessibilityLabel="Choose your purpose illustration" containerStyle={s.purposeArtwork} />
+                <View style={s.purposeChoices}>
+                  {PURPOSES.map(p => {
+                    const active = form.purpose === p.id;
+                    return (
+                      <TouchableOpacity key={p.id} onPress={() => set('purpose', p.id)} activeOpacity={0.85} style={[s.purposeCard, active && s.purposeCardActive]}>
+                        <View style={[s.purposeIcon, active && s.purposeIconActive]}>
+                          <MaterialCommunityIcons name={p.icon} size={18} color={active ? '#1A0B12' : C.sub} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.purposeTitle}>{p.title}</Text>
+                          <Text style={s.purposeDesc}>{p.desc}</Text>
+                        </View>
+                        <View style={[s.radio, active && s.radioActive]}>
+                          {active && <MaterialCommunityIcons name="check" size={11} color="#1A0B12" />}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
                 <StepActions step={4} label={STEP_LABELS.purpose} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={!form.purpose}>Continue</PrimaryButton>
@@ -670,43 +667,23 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 6 — DOB */}
             {index === 6 && (
               <View style={s.stepScreen}>
-                <View style={s.centeredStepBody}>
-                  <NameIllustration />
-                  <Text style={s.stepTitle}>When's your birthday?</Text>
-                  <Text style={s.stepSub}>You must be 18 or older to use MaurMaket. This stays private.</Text>
-                  <View style={s.datePickerRow}>
-                    <View style={s.datePickerCol}>
-                      <Text style={s.datePickerLabel}>Month</Text>
-                      <ScrollView style={s.datePickerScroll} showsVerticalScrollIndicator={false}>
-                        {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((month, i) => (
-                          <TouchableOpacity key={month} style={[s.datePickerItem, form.birthMonth === i + 1 && s.datePickerItemActive]} onPress={() => set('birthMonth', i + 1)}>
-                            <Text style={[s.datePickerText, form.birthMonth === i + 1 && s.datePickerTextActive]}>{month}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                    <View style={s.datePickerCol}>
-                      <Text style={s.datePickerLabel}>Day</Text>
-                      <ScrollView style={s.datePickerScroll} showsVerticalScrollIndicator={false}>
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                          <TouchableOpacity key={day} style={[s.datePickerItem, form.birthDay === day && s.datePickerItemActive]} onPress={() => set('birthDay', day)}>
-                            <Text style={[s.datePickerText, form.birthDay === day && s.datePickerTextActive]}>{day}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                    <View style={s.datePickerCol}>
-                      <Text style={s.datePickerLabel}>Year</Text>
-                      <ScrollView style={s.datePickerScroll} showsVerticalScrollIndicator={false}>
-                        {Array.from({ length: 80 }, (_, i) => new Date().getFullYear() - 18 - i).map(year => (
-                          <TouchableOpacity key={year} style={[s.datePickerItem, form.birthYear === year && s.datePickerItemActive]} onPress={() => set('birthYear', year)}>
-                            <Text style={[s.datePickerText, form.birthYear === year && s.datePickerTextActive]}>{year}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  </View>
-                  {errors.dob ? <Text style={s.fieldError}>{errors.dob}</Text> : null}
+                <AssetIllustration asset="birthday" accessibilityLabel="Birthday illustration" containerStyle={s.birthdayArtwork} />
+                <View style={[s.datePickerRow, s.birthdayDatePickerRow]}>
+                  <TouchableOpacity style={s.dateSelector} onPress={() => set('birthMonth', form.birthMonth ? (form.birthMonth % 12) + 1 : 1)} accessibilityRole="button" accessibilityLabel="Select birth month">
+                    <MaterialCommunityIcons name="calendar-month-outline" size={20} color={C.text} />
+                    <Text numberOfLines={1} style={[s.dateSelectorText, !form.birthMonth && s.dateSelectorPlaceholder]}>{form.birthMonth ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][form.birthMonth - 1] : 'Month'}</Text>
+                    <MaterialCommunityIcons name="chevron-down" size={20} color={C.sub} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.dateSelector} onPress={() => set('birthDay', form.birthDay ? (form.birthDay % 31) + 1 : 1)} accessibilityRole="button" accessibilityLabel="Select birth day">
+                    <MaterialCommunityIcons name="calendar-month-outline" size={20} color={C.text} />
+                    <Text numberOfLines={1} style={[s.dateSelectorText, !form.birthDay && s.dateSelectorPlaceholder]}>{form.birthDay || 'Day'}</Text>
+                    <MaterialCommunityIcons name="chevron-down" size={20} color={C.sub} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.dateSelector} onPress={() => set('birthYear', form.birthYear ? (form.birthYear >= new Date().getFullYear() - 18 ? new Date().getFullYear() - 97 : form.birthYear + 1) : new Date().getFullYear() - 18)} accessibilityRole="button" accessibilityLabel="Select birth year">
+                    <MaterialCommunityIcons name="calendar-month-outline" size={20} color={C.text} />
+                    <Text numberOfLines={1} style={[s.dateSelectorText, !form.birthYear && s.dateSelectorPlaceholder]}>{form.birthYear || 'Year'}</Text>
+                    <MaterialCommunityIcons name="chevron-down" size={20} color={C.sub} />
+                  </TouchableOpacity>
                 </View>
                 <StepActions step={5} label={STEP_LABELS.dob} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={!birthDateValid}>Continue</PrimaryButton>
@@ -718,16 +695,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {index === 7 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
-                  <SecurityIllustration matched={pwMatched} />
-                  <Text style={s.stepTitle}>Keep it protected.</Text>
-                  <Text style={s.stepSub}>Create a password only you know — at least 6 characters.</Text>
+                  <AssetIllustration asset="keep-it-protected" accessibilityLabel="Keep it protected illustration" />
                   <View style={{ gap: 12 }}>
-                    <Field icon="lock-outline" label="Password" value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} right={
+                    <Field icon="lock-outline" label="Password" value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw')} right={
                       <TouchableOpacity onPress={() => setShowPw(s => !s)}>
                         <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={17} color={C.faint} />
                       </TouchableOpacity>
                     } />
-                    <Field icon="lock-outline" label="Confirm password" value={form.pw2} onChangeText={v => set('pw2', v)} placeholder="••••••••" secureTextEntry={!showPw} right={
+                    <Field icon="lock-outline" label="Confirm password" value={form.pw2} onChangeText={v => set('pw2', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw2')} right={
                       form.pw2 ? (pwMatched ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> : <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.pink }} />) : null
                     } />
                   </View>
@@ -742,9 +717,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {index === 8 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
-                  <ReviewIllustration items={reviewItems} />
-                  <Text style={s.stepTitle}>You're ready.</Text>
-                  <Text style={s.stepSub}>Your MaurMaket account is almost complete.</Text>
+                  <AssetIllustration asset="youre-ready" accessibilityLabel="You're ready illustration" />
                   <View style={{ gap: 10 }}>
                     {[
                       ['Name', form.first ? `${form.first} ${form.last}` : '—', reviewItems[0]],
@@ -796,6 +769,25 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
           </Animated.View>
         </ScrollView>
+        {focusedField && keyboardHeight > 0 && (
+          <>
+            <BlurView intensity={38} tint="dark" style={s.keyboardDimmer}>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => { Keyboard.dismiss(); setFocusedField(null); }}
+                style={StyleSheet.absoluteFill}
+                accessibilityLabel="Dismiss keyboard"
+              />
+            </BlurView>
+            <View pointerEvents="none" style={[s.keyboardGhost, { bottom: keyboardHeight + 12 }]}>
+            <MaterialCommunityIcons name={focusedField === 'email' ? 'email-outline' : focusedField === 'username' ? 'at' : focusedField === 'first' || focusedField === 'last' ? 'account-outline' : 'lock-outline'} size={18} color={C.sub} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.fieldLabel}>{focusedField === 'email' ? 'Email address' : focusedField === 'username' ? 'Username' : focusedField === 'first' ? 'First name' : focusedField === 'last' ? 'Last name' : focusedField === 'pw' ? 'Password' : 'Confirm password'}</Text>
+              <Text style={s.keyboardGhostValue}>{focusedField === 'email' ? form.email || 'you@example.com' : focusedField === 'username' ? form.username || 'jordan.reyes' : focusedField === 'first' ? form.first || 'Jordan' : focusedField === 'last' ? form.last || 'Reyes' : focusedField === 'pw' ? form.pw || '••••••••' : form.pw2 || '••••••••'}</Text>
+            </View>
+            </View>
+          </>
+        )}
         {revealing && (
           <Animated.View
             pointerEvents="none"
@@ -816,23 +808,27 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 const s = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
   slide: { flex: 1, width: '100%', maxWidth: 430, minHeight: Math.max(620, SCREEN_H - 40), alignSelf: 'center' },
-  stepScreen: { flex: 1, minHeight: Math.max(620, SCREEN_H - 40), position: 'relative', paddingBottom: 172 },
+  stepScreen: { flex: 1, minHeight: Math.max(620, SCREEN_H - 40), position: 'relative', paddingBottom: 130 },
   centeredStepBody: { flex: 1, justifyContent: 'center', marginBottom: 18 },
+  nameStepBody: { alignItems: 'center' },
+  nameFields: { width: '100%', gap: 12 },
+  emailScreen: { overflow: 'hidden' },
+  emailArtWindow: { position: 'absolute', left: 0, right: 0, bottom: 184, height: 455, width: '100%', alignItems: 'center', borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
+  emailArtwork: { width: 350, height: 455 },
+  emailContent: { position: 'absolute', left: 0, right: 0, bottom: 111 },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   welcomeScreen: { minHeight: Math.max(620, SCREEN_H - 40), justifyContent: 'center', paddingVertical: 24, position: 'relative', paddingBottom: 144 },
   welcomeActions: { position: 'absolute', left: 0, right: 0, bottom: 18, gap: 12 },
-  progressDots: { width: '100%', height: 24, alignSelf: 'center', marginTop: 14, marginBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  progressDot: { height: 5, borderRadius: 3 },
-  datePickerRow: { flexDirection: 'row', gap: 10, width: '100%' },
-  datePickerCol: { flex: 1, alignItems: 'center' },
-  datePickerLabel: { color: C.sub, fontSize: 12, fontWeight: '600', marginBottom: 8 },
-  datePickerScroll: { width: '100%', maxHeight: 132, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, paddingVertical: 4 },
-  datePickerItem: { minHeight: 32, alignItems: 'center', justifyContent: 'center', marginHorizontal: 4, borderRadius: 9 },
-  datePickerItemActive: { backgroundColor: C.pink, borderColor: C.pink },
-  datePickerText: { color: C.sub, fontSize: 13, fontWeight: '500' },
-  datePickerTextActive: { color: '#1A0B12', fontWeight: '800' },
+  stepTopBar: { position: 'absolute', top: 28, left: 0, right: 0, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  stepCount: { color: C.sub, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  datePickerRow: { flexDirection: 'row', gap: 15, width: '100%', marginBottom: 15 },
+  dateSelector: { flex: 1, height: 58, minWidth: 0, borderRadius: 14, backgroundColor: 'rgba(13,23,52,0.72)', borderWidth: 1, borderColor: '#315BA8', paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dateSelectorText: { flex: 1, color: C.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
+  dateSelectorPlaceholder: { color: '#B9C7E8', fontWeight: '500' },
   actions: { position: 'absolute', left: 0, right: 0, bottom: 44, width: '100%', alignItems: 'stretch' },
-  backAction: { width: '100%', minHeight: 48, marginTop: 8, borderRadius: 999, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
+  birthdayArtwork: { position: 'absolute', left: 0, right: 0, bottom: 184, height: 455, marginBottom: 0 },
+  birthdayDatePickerRow: { position: 'absolute', left: 0, right: 0, bottom: 111, marginBottom: 0 },
+  topBackAction: { minHeight: 38, paddingHorizontal: 4, paddingRight: 12, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
   // Splash
   splashBrand: { fontFamily: FONTS.heading, fontSize: 26, fontWeight: '800', color: C.text, marginTop: 12 },
@@ -862,9 +858,14 @@ const s = StyleSheet.create({
   fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
   fieldError: { color: C.pink, fontSize: 12.5, marginTop: 4 },
+  keyboardGhost: { position: 'absolute', left: 28, right: 28, minHeight: 58, borderRadius: 16, backgroundColor: 'rgba(33,29,56,0.94)', borderWidth: 1, borderColor: C.violet, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: C.violet, shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
+  keyboardDimmer: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(10,8,18,0.34)' },
+  keyboardGhostValue: { color: C.text, fontSize: 14, fontWeight: '500' },
 
   // Purpose
-  purposeCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border },
+  purposeCard: { height: 76, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border },
+  purposeChoices: { position: 'absolute', left: 0, right: 0, bottom: 111, gap: 15 },
+  purposeArtwork: { position: 'absolute', left: 0, right: 0, bottom: 384, height: 300, marginBottom: 0 },
   purposeCardActive: { backgroundColor: C.pink + '10', borderColor: C.pink },
   purposeIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.surfaceHi, alignItems: 'center', justifyContent: 'center' },
   purposeIconActive: { backgroundColor: C.pink },

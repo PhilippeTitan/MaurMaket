@@ -19,9 +19,10 @@ interface GoogleButtonProps {
   loading?: boolean;
   disabled?: boolean;
   label?: string;
+  compact?: boolean;
 }
 
-export default function GoogleButton({ onPress, loading, disabled, label = 'Continue with Google' }: GoogleButtonProps) {
+export default function GoogleButton({ onPress, loading, disabled, label = 'Continue with Google', compact = false }: GoogleButtonProps) {
   const press = useRef(new Animated.Value(1)).current;
   const animateTo = (v: number) => Animated.spring(press, { toValue: v, friction: 6, tension: 120, useNativeDriver: true }).start();
 
@@ -33,16 +34,19 @@ export default function GoogleButton({ onPress, loading, disabled, label = 'Cont
         onPressOut={() => animateTo(1)}
         disabled={disabled || loading}
         activeOpacity={0.85}
-        style={[styles.btn, (disabled || loading) && styles.disabled]}
+        style={[
+          compact ? styles.compactBtn : styles.btn,
+          (disabled || loading) && styles.disabled,
+        ]}
         accessibilityRole="button"
         accessibilityLabel={label}
       >
         {loading ? (
-          <ActivityIndicator color={COLORS.text} size="small" />
+          <ActivityIndicator color={COLORS.text} size={compact ? 'small' : 'small'} />
         ) : (
           <>
-            <GoogleMark />
-            <Text style={styles.text}>{label}</Text>
+            <GoogleMark size={compact ? 18 : 19} />
+            {!compact && <Text style={styles.text}>{label}</Text>}
           </>
         )}
       </TouchableOpacity>
@@ -55,6 +59,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     minHeight: 52, borderRadius: RADIUS.pill, borderWidth: 1.5, borderColor: COLORS.border,
     backgroundColor: COLORS.surface,
+  },
+  compactBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
   disabled: { opacity: 0.5 },
   text: { color: COLORS.text, fontSize: 15, fontWeight: '600' },

@@ -19,9 +19,10 @@ function KeyMark({ size = 18, color = COLORS.coral }: { size?: number; color?: s
 interface PasskeyButtonProps {
   onAuthenticated?: () => void;
   label?: string;
+  compact?: boolean;
 }
 
-export default function PasskeyButton({ onAuthenticated, label }: PasskeyButtonProps) {
+export default function PasskeyButton({ onAuthenticated, label, compact = false }: PasskeyButtonProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const press = useRef(new Animated.Value(1)).current;
@@ -53,7 +54,7 @@ export default function PasskeyButton({ onAuthenticated, label }: PasskeyButtonP
         onPressOut={() => animateTo(1)}
         disabled={loading}
         activeOpacity={0.85}
-        style={[styles.btn, loading && styles.disabled]}
+        style={[compact ? styles.compactBtn : styles.btn, loading && styles.disabled]}
         accessibilityRole="button"
         accessibilityLabel={label || t('auth.passkeySignIn')}
       >
@@ -61,8 +62,8 @@ export default function PasskeyButton({ onAuthenticated, label }: PasskeyButtonP
           <ActivityIndicator color={COLORS.coral} size="small" />
         ) : (
           <>
-            <KeyMark />
-            <Text style={styles.text}>{label || t('auth.passkeySignIn')}</Text>
+            <KeyMark size={compact ? 18 : 18} />
+            {!compact && <Text style={styles.text}>{label || t('auth.passkeySignIn')}</Text>}
           </>
         )}
       </TouchableOpacity>
@@ -75,6 +76,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     minHeight: 52, borderRadius: RADIUS.pill, borderWidth: 1.5, borderColor: COLORS.coralMuted,
     backgroundColor: 'rgba(255,77,106,0.06)',
+  },
+  compactBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.coralMuted,
+    backgroundColor: 'rgba(255,77,106,0.06)',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
   disabled: { opacity: 0.5 },
   text: { color: COLORS.coral, fontSize: 15, fontWeight: '600' },

@@ -36,6 +36,7 @@
     "expo": "~56.0.20",
     "expo-asset": "~56.0.18",
     "expo-auth-session": "~56.0.18",
+    "expo-blur": "~56.0.4",
     "expo-camera": "~56.0.8",
     "expo-clipboard": "~56.0.4",
     "expo-constants": "~56.0.19",
@@ -84,5 +85,6 @@
     "@types/react": "~19.2.2",
     "better-sqlite3": "^13.0.1",
     "typescript": "~6.0.3"
-  }
+  },
+  "packageManager": "pnpm@12.3.4+sha512.961aa41fb077da3a04a441d9f8e15ebc0c96da8ef710b2eb67bf9ee7cb0610eabd48f1fd85f51cffe73846785fa0f87c56a3a872a1d893f8446741b5cce45457"
 }
