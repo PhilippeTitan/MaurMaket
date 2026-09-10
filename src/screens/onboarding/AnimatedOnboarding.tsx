@@ -779,14 +779,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                 accessibilityLabel="Dismiss keyboard"
               />
             </BlurView>
-            <View pointerEvents="none" style={[s.keyboardGhost, { bottom: 79 }]}>
+            <View pointerEvents="none" style={[s.keyboardGhost, { bottom: 103 }]}>
             <MaterialCommunityIcons name={focusedField === 'email' ? 'email-outline' : focusedField === 'username' ? 'at' : focusedField === 'first' || focusedField === 'last' ? 'account-outline' : 'lock-outline'} size={18} color={C.sub} />
             <View style={{ flex: 1 }}>
               <Text style={s.fieldLabel}>{focusedField === 'email' ? 'Email address' : focusedField === 'username' ? 'Username' : focusedField === 'first' ? 'First name' : focusedField === 'last' ? 'Last name' : focusedField === 'pw' ? 'Password' : 'Confirm password'}</Text>
               <Text style={s.keyboardGhostValue}>{focusedField === 'email' ? form.email || 'you@example.com' : focusedField === 'username' ? form.username || 'jordan.reyes' : focusedField === 'first' ? form.first || 'Jordan' : focusedField === 'last' ? form.last || 'Reyes' : focusedField === 'pw' ? form.pw || '••••••••' : form.pw2 || '••••••••'}</Text>
             </View>
             </View>
-            <View pointerEvents="none" style={[s.keyboardGhostContinue, { bottom: 12 }]}>
+            <View pointerEvents="none" style={[s.keyboardGhostContinue, { bottom: 36 }]}>
               <Text style={s.keyboardGhostContinueText}>Continue</Text>
               <MaterialCommunityIcons name="arrow-right" size={17} color={C.sub} />
             </View>
