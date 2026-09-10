@@ -769,7 +769,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
           </Animated.View>
         </ScrollView>
-        {focusedField && keyboardHeight > 0 && (
+        {focusedField && (
           <>
             <BlurView intensity={38} tint="dark" style={s.keyboardDimmer}>
               <TouchableOpacity
@@ -779,12 +779,16 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                 accessibilityLabel="Dismiss keyboard"
               />
             </BlurView>
-            <View pointerEvents="none" style={[s.keyboardGhost, { bottom: keyboardHeight + 12 }]}>
+            <View pointerEvents="none" style={[s.keyboardGhost, { bottom: (keyboardHeight || 98) + 79 }]}>
             <MaterialCommunityIcons name={focusedField === 'email' ? 'email-outline' : focusedField === 'username' ? 'at' : focusedField === 'first' || focusedField === 'last' ? 'account-outline' : 'lock-outline'} size={18} color={C.sub} />
             <View style={{ flex: 1 }}>
               <Text style={s.fieldLabel}>{focusedField === 'email' ? 'Email address' : focusedField === 'username' ? 'Username' : focusedField === 'first' ? 'First name' : focusedField === 'last' ? 'Last name' : focusedField === 'pw' ? 'Password' : 'Confirm password'}</Text>
               <Text style={s.keyboardGhostValue}>{focusedField === 'email' ? form.email || 'you@example.com' : focusedField === 'username' ? form.username || 'jordan.reyes' : focusedField === 'first' ? form.first || 'Jordan' : focusedField === 'last' ? form.last || 'Reyes' : focusedField === 'pw' ? form.pw || '••••••••' : form.pw2 || '••••••••'}</Text>
             </View>
+            </View>
+            <View pointerEvents="none" style={[s.keyboardGhostContinue, { bottom: (keyboardHeight || 98) + 12 }]}>
+              <Text style={s.keyboardGhostContinueText}>Continue</Text>
+              <MaterialCommunityIcons name="arrow-right" size={17} color={C.sub} />
             </View>
           </>
         )}
@@ -861,6 +865,8 @@ const s = StyleSheet.create({
   keyboardGhost: { position: 'absolute', left: 28, right: 28, minHeight: 58, borderRadius: 16, backgroundColor: 'rgba(33,29,56,0.94)', borderWidth: 1, borderColor: C.violet, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: C.violet, shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
   keyboardDimmer: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(10,8,18,0.34)' },
   keyboardGhostValue: { color: C.text, fontSize: 14, fontWeight: '500' },
+  keyboardGhostContinue: { position: 'absolute', left: 28, right: 28, height: 52, borderRadius: 999, backgroundColor: 'rgba(139,92,246,0.32)', borderWidth: 1, borderColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  keyboardGhostContinueText: { color: C.sub, fontSize: 15, fontWeight: '800' },
 
   // Purpose
   purposeCard: { height: 76, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border },
