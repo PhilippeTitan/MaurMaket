@@ -266,9 +266,9 @@ function DobWheelColumn({
   const scrollY = useRef(new Animated.Value(0)).current;
   const isUserScrolling = useRef(false);
 
-  // 999 repetition cycles for virtually infinite continuous scrolling
-  const REPEAT_CYCLES = loop && items.length > 1 ? 999 : 1;
-  const MID_CYCLE = Math.floor(REPEAT_CYCLES / 2); // Cycle 499 is the center
+  // 20 repetition cycles for seamless continuous scrolling
+  const REPEAT_CYCLES = loop && items.length > 1 ? 20 : 1;
+  const MID_CYCLE = Math.floor(REPEAT_CYCLES / 2); // Cycle 10 is the center
   const N = items.length;
 
   const displayItems = React.useMemo(() => {
