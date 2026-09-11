@@ -11,6 +11,11 @@ export default function OnboardingBackground() {
         style={styles.image}
         resizeMode="cover"
       />
+      <Image
+        source={require('../../../../assets/onboarding-bg-literal.webp')}
+        style={[styles.image, { position: 'absolute' }]}
+        resizeMode="contain"
+      />
     </View>
   );
 }
