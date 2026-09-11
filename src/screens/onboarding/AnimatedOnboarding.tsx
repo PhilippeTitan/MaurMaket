@@ -105,10 +105,10 @@ function WelcomeIllustration() {
 }
 
 function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asset: 'lets-start' | 'digital-address' | 'keep-it-protected' | 'youre-ready' | 'pick-username' | 'choose-purpose' | 'birthday'; accessibilityLabel: string; containerStyle?: any }) {
+  const tallAsset = asset === 'pick-username';
   const birthdayAsset = asset === 'birthday';
-  const pickUsernameAsset = asset === 'pick-username';
-  const imageWidth = birthdayAsset || asset === 'lets-start' ? '100%' : pickUsernameAsset ? 350 : asset === 'choose-purpose' ? 330 : 360;
-  const imageHeight = birthdayAsset ? 455 : pickUsernameAsset ? 455 : asset === 'choose-purpose' ? 300 : 190;
+  const imageWidth = birthdayAsset || asset === 'lets-start' ? '100%' : tallAsset ? 240 : asset === 'choose-purpose' ? 330 : 360;
+  const imageHeight = birthdayAsset ? 455 : tallAsset ? 330 : asset === 'choose-purpose' ? 300 : 190;
   return (
     <View style={[{ height: imageHeight, width: '100%', marginBottom: 12, alignItems: 'center', justifyContent: 'center' }, containerStyle]}>
       <Image
@@ -117,11 +117,11 @@ function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asse
           asset === 'digital-address' ? require('../../../illustration/digital-address.webp') :
           asset === 'keep-it-protected' ? require('../../../illustration/keep-it-protected.webp') :
           asset === 'youre-ready' ? require('../../../illustration/youre-ready.webp') :
-          asset === 'pick-username' ? require('../../../illustration/pick-username-corrected.webp') :
+          asset === 'pick-username' ? require('../../../illustration/pick-username.webp') :
           asset === 'choose-purpose' ? require('../../../illustration/choose-purpose.webp') :
           require('../../../illustration/birthday.webp')
         }
-        style={{ width: imageWidth, height: imageHeight, resizeMode: birthdayAsset ? 'stretch' : asset === 'lets-start' ? 'cover' : asset === 'pick-username' ? 'cover' : 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
+        style={{ width: imageWidth, height: imageHeight, resizeMode: birthdayAsset ? 'stretch' : asset === 'lets-start' ? 'cover' : 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
         accessibilityLabel={accessibilityLabel}
       />
     </View>
@@ -266,132 +266,17 @@ function StepActions({ children, step, label, onBack, compact }: { children: Rea
 
 const Field = React.forwardRef<TextInput, { icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode; onFocus?: () => void }>(function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, right, onFocus }, ref) {
   const inputRef = useRef<TextInput | null>(null);
-  const [isFocused, setIsFocused] = useState(false);
-  const hasValue = value.trim().length > 0;
-  const labelAnim = useRef(new Animated.Value(hasValue ? 0 : 1)).current;
-
-  useEffect(() => {
-    Animated.timing(labelAnim, {
-      toValue: hasValue ? 0 : 1,
-      duration: 80,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [hasValue, labelAnim]);
-
-  const chars = label.split('');
-
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={[s.field, isFocused && s.fieldFocused]} accessibilityRole="none">
-      <MaterialCommunityIcons name={icon} size={18} color={isFocused ? C.violet : C.sub} />
+    <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={s.field} accessibilityRole="none">
+      <MaterialCommunityIcons name={icon} size={18} color={C.sub} />
       <View style={{ flex: 1 }}>
-        <Animated.View pointerEvents="none" style={{
-          position: 'absolute',
-          left: 0,
-          top: 14,
-          right: 0,
-          height: 22,
-          alignItems: 'center',
-          flexDirection: 'row',
-          overflow: 'hidden',
-        }}>
-          {chars.map((char, index) => (
-            <Animated.Text
-              key={`${char}-${index}`}
-              style={{
-                color: C.sub,
-                fontSize: 14,
-                fontWeight: '600',
-                opacity: labelAnim,
-                includeFontPadding: false,
-                lineHeight: 18,
-                marginRight: char === ' ' ? 4 : 0,
-              }}
-            >
-              {char}
-            </Animated.Text>
-          ))}
-        </Animated.View>
-        <TextInput
-          ref={node => { inputRef.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node; }}
-          onFocus={() => { setIsFocused(true); onFocus?.(); }}
-          onBlur={() => setIsFocused(false)}
-          style={[s.fieldInput, { marginTop: 20, paddingTop: 0, paddingBottom: 0 }]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={undefined}
-          placeholderTextColor={C.sub}
-          secureTextEntry={secureTextEntry}
-          autoCapitalize="words"
-        />
-        <Animated.View style={[s.waveBar, isFocused && s.waveBarActive]} />
+        <Text style={s.fieldLabel}>{label}</Text>
+        <TextInput ref={node => { inputRef.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node; }} onFocus={onFocus} style={s.fieldInput} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={C.sub} secureTextEntry={secureTextEntry} />
       </View>
       {right}
     </TouchableOpacity>
   );
 });
-
-function GhostFieldRow({ icon, label, value, onChangeText, secure, capitalize, active }: { icon: any; label: string; value: string; onChangeText: (value: string) => void; secure?: boolean; capitalize?: 'none' | 'sentences' | 'words' | 'characters'; active?: boolean }) {
-  const hasValue = value.trim().length > 0;
-  const labelAnim = useRef(new Animated.Value(hasValue ? 0 : 1)).current;
-
-  useEffect(() => {
-    Animated.timing(labelAnim, {
-      toValue: hasValue ? 0 : 1,
-      duration: 80,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [hasValue, labelAnim]);
-
-  const chars = label.split('');
-
-  return (
-    <View style={[s.keyboardGhostRow, active && s.keyboardGhostRowActive]}>
-      <MaterialCommunityIcons name={icon} size={18} color={active ? C.violet : C.sub} />
-      <View style={{ flex: 1 }}>
-        <Animated.View pointerEvents="none" style={{
-          position: 'absolute',
-          left: 0,
-          top: 14,
-          right: 0,
-          height: 22,
-          alignItems: 'center',
-          flexDirection: 'row',
-          overflow: 'hidden',
-        }}>
-          {chars.map((char, index) => (
-            <Animated.Text
-              key={`${char}-${index}`}
-              style={{
-                color: C.sub,
-                fontSize: 14,
-                fontWeight: '600',
-                opacity: labelAnim,
-                includeFontPadding: false,
-                lineHeight: 18,
-                marginRight: char === ' ' ? 4 : 0,
-              }}
-            >
-              {char}
-            </Animated.Text>
-          ))}
-        </Animated.View>
-        <TextInput
-          autoFocus={active}
-          style={[s.keyboardGhostInput, { marginTop: 18, paddingTop: 0, paddingBottom: 0 }]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={undefined}
-          placeholderTextColor={C.sub}
-          secureTextEntry={secure}
-          autoCapitalize={capitalize}
-        />
-        <Animated.View style={[s.waveBar, active && s.waveBarActive]} />
-      </View>
-    </View>
-  );
-}
 
 /* ── Main Component ───────────────────────────────────────── */
 
@@ -418,7 +303,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const ghostOpacity = useRef(new Animated.Value(1)).current;
 
   const [splashReady, setSplashReady] = useState(false);
   const [revealing, setRevealing] = useState(false);
@@ -445,10 +329,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
     const hideSubscription = Keyboard.addListener(hideEvent, () => { setKeyboardHeight(0); setFocusedField(null); });
     return () => { showSubscription.remove(); hideSubscription.remove(); };
   }, []);
-
-  useEffect(() => {
-    ghostOpacity.setValue(1);
-  }, [focusedField, index, ghostOpacity]);
 
   // Continuous animations
   useEffect(() => {
@@ -600,8 +480,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
     if (step === 'dob' && !isAdult) { setErrors({ dob: 'You must be at least 18 years old' }); return; }
     if (step === 'password' && !pwMatched) return;
     if (step === 'review') { submitSignup(); return; }
-    Keyboard.dismiss();
-    setFocusedField(null);
     go(1);
   };
 
@@ -634,26 +512,9 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
     (step === 'password' && pwMatched) ||
     (step === 'review');
 
-  const handleGhostContinue = () => {
-    if (!canContinue) { validateAndNext(); return; }
-    Animated.timing(ghostOpacity, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => validateAndNext());
-  };
-
-  const ghostFieldMap = {
-    email: { label: 'Email address', icon: 'email-outline', placeholder: undefined, value: form.email, setValue: (value: string) => set('email', value), secure: false, capitalize: 'none' as const },
-    username: { label: 'Username', icon: 'at', placeholder: undefined, value: form.username, setValue: (value: string) => set('username', value.toLowerCase().replace(/[^a-z0-9._]/g, '')), secure: false, capitalize: 'none' as const },
-    first: { label: 'First name', icon: 'account-outline', placeholder: undefined, value: form.first, setValue: (value: string) => set('first', value), secure: false, capitalize: 'words' as const },
-    last: { label: 'Last name', icon: 'account-outline', placeholder: undefined, value: form.last, setValue: (value: string) => set('last', value), secure: false, capitalize: 'words' as const },
-    pw: { label: 'Password', icon: 'lock-outline', placeholder: '••••••••', value: form.pw, setValue: (value: string) => set('pw', value), secure: !showPw, capitalize: 'none' as const },
-    pw2: { label: 'Confirm password', icon: 'lock-outline', placeholder: '••••••••', value: form.pw2, setValue: (value: string) => set('pw2', value), secure: !showPw, capitalize: 'none' as const },
-  } as const;
-
-  const ghostFieldKeys = focusedField === 'first' || focusedField === 'last' ? ['first', 'last'] as const : focusedField ? [focusedField] as const : [];
-  const ghostFields = ghostFieldKeys.map(key => ({ key, ...ghostFieldMap[key as keyof typeof ghostFieldMap] }));
-
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={{ flex: 1, backgroundColor: '#120E1F' }}>
+      <View style={{ flex: 1, backgroundColor: C.bg0 }}>
         <OnboardingBackground />
 
         <ScrollView ref={scrollRef} contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
@@ -717,12 +578,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                 <View style={[s.centeredStepBody, s.nameStepBody]}>
                   <AssetIllustration asset="lets-start" accessibilityLabel="Let's start illustration" />
                   <View style={s.nameFields}>
-                    <View style={s.nameFieldRow}>
-                      <Field icon="account-outline" label="First name" value={form.first} onChangeText={v => set('first', v)} onFocus={() => setFocusedField('first')} />
-                    </View>
-                    <View style={s.nameFieldRow}>
-                      <Field icon="account-outline" label="Last name" value={form.last} onChangeText={v => set('last', v)} onFocus={() => setFocusedField('last')} />
-                    </View>
+                    <Field icon="account-outline" label="First name" value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" onFocus={() => setFocusedField('first')} />
+                    <Field icon="account-outline" label="Last name" value={form.last} onChangeText={v => set('last', v)} placeholder="Reyes" onFocus={() => setFocusedField('last')} />
                     {errors.name ? <Text style={s.fieldError}>{errors.name}</Text> : null}
                   </View>
                 </View>
@@ -736,19 +593,17 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {index === 3 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
-                  {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>Lowercase letters, numbers, dots, and underscores only (1-30 chars)</Text> : null}
-                  {usernameAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Username is available</Text> : null}
-                  {errors.username ? <Text style={s.fieldError}>{errors.username}</Text> : null}
-                </View>
-                <StepActions step={2} label={STEP_LABELS.username} onBack={() => go(-1)}>
-                  <AssetIllustration asset="pick-username" accessibilityLabel="Pick your username illustration" containerStyle={s.pickUsernameArtwork} />
-                  <View style={{ height: 15 }} />
+                  <AssetIllustration asset="pick-username" accessibilityLabel="Pick your username illustration" />
                   <Field icon="at" label="Username" value={form.username} onChangeText={v => set('username', v.toLowerCase().replace(/[^a-z0-9._]/g, ''))} placeholder="jordan.reyes" onFocus={() => setFocusedField('username')} right={
                     usernameChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
                     usernameAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
                     usernameAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
                   } />
-                  <View style={{ height: 15 }} />
+                  {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>Lowercase letters, numbers, dots, and underscores only (1-30 chars)</Text> : null}
+                  {usernameAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Username is available</Text> : null}
+                  {errors.username ? <Text style={s.fieldError}>{errors.username}</Text> : null}
+                </View>
+                <StepActions step={2} label={STEP_LABELS.username} onBack={() => go(-1)}>
                   <PrimaryButton onPress={validateAndNext} disabled={!usernameValid || usernameAvailable === false}>Continue</PrimaryButton>
                 </StepActions>
               </View>
@@ -914,7 +769,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
           </Animated.View>
         </ScrollView>
-        {focusedField && ghostFields.length > 0 && (
+        {focusedField && (
           <>
             <BlurView intensity={72} tint="dark" style={s.keyboardDimmer}>
               <TouchableOpacity
@@ -924,26 +779,17 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                 accessibilityLabel="Dismiss keyboard"
               />
             </BlurView>
-            <Animated.View style={[s.keyboardGhostStack, { bottom: 123, opacity: ghostOpacity }]}>
-              {ghostFields.map((ghostField) => (
-                <GhostFieldRow
-                  key={ghostField.key}
-                  icon={ghostField.icon}
-                  label={ghostField.label}
-                  value={ghostField.value}
-                  onChangeText={ghostField.setValue}
-                  secure={ghostField.secure}
-                  capitalize={ghostField.capitalize}
-                  active={ghostField.key === focusedField}
-                />
-              ))}
-            </Animated.View>
-            <Animated.View style={[s.keyboardGhostContinue, { bottom: 56, opacity: ghostOpacity }]}>
-              <TouchableOpacity onPress={handleGhostContinue} style={s.keyboardGhostButton} accessibilityRole="button" accessibilityLabel="Continue">
-                <Text style={s.keyboardGhostContinueText}>Continue</Text>
-                <MaterialCommunityIcons name="arrow-right" size={17} color={C.sub} />
-              </TouchableOpacity>
-            </Animated.View>
+            <View pointerEvents="none" style={[s.keyboardGhost, { bottom: 103 }]}>
+            <MaterialCommunityIcons name={focusedField === 'email' ? 'email-outline' : focusedField === 'username' ? 'at' : focusedField === 'first' || focusedField === 'last' ? 'account-outline' : 'lock-outline'} size={18} color={C.sub} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.fieldLabel}>{focusedField === 'email' ? 'Email address' : focusedField === 'username' ? 'Username' : focusedField === 'first' ? 'First name' : focusedField === 'last' ? 'Last name' : focusedField === 'pw' ? 'Password' : 'Confirm password'}</Text>
+              <Text style={s.keyboardGhostValue}>{focusedField === 'email' ? form.email || 'you@example.com' : focusedField === 'username' ? form.username || 'jordan.reyes' : focusedField === 'first' ? form.first || 'Jordan' : focusedField === 'last' ? form.last || 'Reyes' : focusedField === 'pw' ? form.pw || '••••••••' : form.pw2 || '••••••••'}</Text>
+            </View>
+            </View>
+            <View pointerEvents="none" style={[s.keyboardGhostContinue, { bottom: 36 }]}>
+              <Text style={s.keyboardGhostContinueText}>Continue</Text>
+              <MaterialCommunityIcons name="arrow-right" size={17} color={C.sub} />
+            </View>
           </>
         )}
         {revealing && (
@@ -964,19 +810,17 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 /* ── Styles ───────────────────────────────────────────────── */
 
 const s = StyleSheet.create({
-  scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 24, paddingTop: 0, paddingBottom: 16, maxWidth: 400, alignSelf: 'center', width: '100%' },
+  scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
   slide: { flex: 1, width: '100%', maxWidth: 430, minHeight: Math.max(620, SCREEN_H - 40), alignSelf: 'center' },
-  stepScreen: { flex: 1, minHeight: Math.max(620, SCREEN_H - 40), position: 'relative', paddingBottom: 130, paddingHorizontal: 24 },
-  centeredStepBody: { flex: 1, justifyContent: 'center', marginBottom: 18, paddingHorizontal: 24, maxWidth: 400, alignSelf: 'center', width: '100%' },
+  stepScreen: { flex: 1, minHeight: Math.max(620, SCREEN_H - 40), position: 'relative', paddingBottom: 130 },
+  centeredStepBody: { flex: 1, justifyContent: 'center', marginBottom: 18 },
   nameStepBody: { alignItems: 'center' },
   nameFields: { width: '100%', gap: 12 },
-  nameFieldRow: { width: '100%', minHeight: 58 },
   emailScreen: { overflow: 'hidden' },
   emailArtWindow: { position: 'absolute', left: 0, right: 0, bottom: 184, height: 455, width: '100%', alignItems: 'center', borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
   emailArtwork: { width: 350, height: 455 },
   emailContent: { position: 'absolute', left: 0, right: 0, bottom: 111 },
-  screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, maxWidth: 400, alignSelf: 'center', width: '100%' },
-  pickUsernameArtwork: { height: 455, width: 350, marginBottom: 15, alignItems: 'center', justifyContent: 'center' },
+  screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   welcomeScreen: { minHeight: Math.max(620, SCREEN_H - 40), justifyContent: 'center', paddingVertical: 24, position: 'relative', paddingBottom: 144 },
   welcomeActions: { position: 'absolute', left: 0, right: 0, bottom: 18, gap: 12 },
   stepTopBar: { position: 'absolute', top: 28, left: 0, right: 0, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -1014,21 +858,14 @@ const s = StyleSheet.create({
   stepSub: { fontSize: 14, color: C.sub, marginTop: 8, marginBottom: 24, lineHeight: 20, textAlign: 'center', alignSelf: 'center', maxWidth: 340 },
 
   // Fields
-  field: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 62, borderRadius: 16, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, paddingHorizontal: 16, paddingVertical: 12 },
-  fieldFocused: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
+  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, paddingHorizontal: 16 },
   fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
-  fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0, marginTop: 4 },
+  fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
   fieldError: { color: C.pink, fontSize: 12.5, marginTop: 4 },
-  waveBar: { position: 'absolute', left: 0, right: 0, bottom: -2, height: 2, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)' },
-  waveBarActive: { backgroundColor: C.violet, shadowColor: C.violet, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 4 },
-  keyboardGhostStack: { position: 'absolute', left: 28, right: 28, paddingHorizontal: 0, paddingVertical: 0, gap: 8 },
-  keyboardGhostRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 62, borderRadius: 16, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, paddingHorizontal: 16, paddingVertical: 12 },
-  keyboardGhostRowActive: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
+  keyboardGhost: { position: 'absolute', left: 28, right: 28, minHeight: 58, borderRadius: 16, backgroundColor: 'rgba(33,29,56,0.94)', borderWidth: 1, borderColor: C.violet, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: C.violet, shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
   keyboardDimmer: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(10,8,18,0.52)' },
   keyboardGhostValue: { color: C.text, fontSize: 14, fontWeight: '500' },
-  keyboardGhostInput: { height: 22, padding: 0, color: C.text, fontSize: 14, fontWeight: '500' },
   keyboardGhostContinue: { position: 'absolute', left: 28, right: 28, height: 52, borderRadius: 999, backgroundColor: 'rgba(139,92,246,0.32)', borderWidth: 1, borderColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  keyboardGhostButton: { flex: 1, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   keyboardGhostContinueText: { color: C.sub, fontSize: 15, fontWeight: '800' },
 
   // Purpose
