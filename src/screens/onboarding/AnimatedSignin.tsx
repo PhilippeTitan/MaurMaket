@@ -241,7 +241,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 /* ── Styles ───────────────────────────────────────────────── */
 
 const s = StyleSheet.create({
-  content: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, maxWidth: 400, alignSelf: 'center', width: '100%' },
+  content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   logoCenter: { alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   heroTitle: { fontFamily: FONTS.heading, fontSize: 34, fontWeight: '800', color: C.text, textAlign: 'center', marginTop: 4 },
   heroSub: { fontSize: 15, color: C.sub, marginTop: 8, lineHeight: 22, textAlign: 'center' },
@@ -255,11 +255,11 @@ const s = StyleSheet.create({
   errorButtonGradient: { height: 48, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   errorButtonText: { color: '#1A0B12', fontSize: 15, fontWeight: '800' },
 
-  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: 'rgba(13, 10, 27, 0.9)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)', paddingHorizontal: 16 },
+  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: 'rgba(13, 10, 27, 0.9)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)', paddingHorizontal: 16, alignSelf: 'stretch' },
   fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
 
-  primaryBtn: { height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  primaryBtn: { height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch' },
   separatorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 16 },
   separatorLine: { flex: 1, height: 1, backgroundColor: 'rgba(221,232,255,0.24)' },
   separatorText: { color: C.sub, fontSize: 12, fontWeight: '700', textAlign: 'center' },
