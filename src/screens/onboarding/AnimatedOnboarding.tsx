@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Animated,
-  Easing, ScrollView, Platform, KeyboardAvoidingView, Dimensions, Image, Keyboard,
+  Easing, ScrollView, FlatList, Platform, KeyboardAvoidingView, Dimensions, Image, Keyboard,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, Ellipse, G as SvgG } from 'react-native-svg';
@@ -269,142 +270,108 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
   label: string;
   formatItem?: (val: any) => string;
 }) {
-  const scrollRef = useRef<ScrollView>(null);
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const isUserScrolling = useRef(false);
-  const lastReportedIdx = useRef<number>(-1);
-  const hasInitialScrolled = useRef(false);
+  const flatRef = useRef<FlatList>(null);
+  const lastIdx = useRef(-1);
+  const hasMounted = useRef(false);
   const N = items.length;
 
-  // Only scroll to position once on initial mount/open
+  // O(1) layout — no measuring needed
+  const getItemLayout = useCallback((_: any, index: number) => ({
+    length: DOB_ITEM_HEIGHT,
+    offset: DOB_ITEM_HEIGHT * index,
+    index,
+  }), []);
+
+  // Initial scroll to selected value (once)
   useEffect(() => {
-    if (selectedValue != null && !hasInitialScrolled.current) {
+    if (selectedValue != null && !hasMounted.current) {
       const idx = items.indexOf(selectedValue);
       if (idx >= 0) {
-        hasInitialScrolled.current = true;
-        lastReportedIdx.current = idx;
-        scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: false });
+        hasMounted.current = true;
+        lastIdx.current = idx;
+        setTimeout(() => {
+          flatRef.current?.scrollToIndex({ index: idx, animated: false });
+        }, 50);
       }
     }
   }, [selectedValue, items]);
 
-  const updateSelectionImmediate = (offsetY: number) => {
-    const rawIdx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
-    if (rawIdx !== lastReportedIdx.current) {
-      lastReportedIdx.current = rawIdx;
-      const selected = items[rawIdx];
-      if (selected !== undefined) {
-        onSelect(selected);
-      }
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    // The center item is the one closest to the middle of the viewport
+    if (!viewableItems || viewableItems.length === 0) return;
+    // With snapToInterval, the first viewable item at the snap point is the selected one
+    const centerItem = viewableItems[Math.floor(viewableItems.length / 2)];
+    if (!centerItem) return;
+    const idx = centerItem.index as number;
+    if (idx !== lastIdx.current && idx >= 0) {
+      lastIdx.current = idx;
+      Haptics.selectionAsync();
+      onSelect(centerItem.item);
     }
-  };
+  }).current;
 
-  const handleMomentumScrollEnd = (e: any) => {
-    isUserScrolling.current = false;
-    const offsetY = e?.nativeEvent?.contentOffset?.y;
-    if (typeof offsetY === 'number') {
-      updateSelectionImmediate(offsetY);
-    }
-  };
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 60,
+  }).current;
 
-  const handleScrollEndDrag = (e: any) => {
-    const offsetY = e?.nativeEvent?.contentOffset?.y;
-    const velocity = e?.nativeEvent?.velocity?.y ?? 0;
-    if (Math.abs(velocity) < 0.2 && typeof offsetY === 'number') {
-      isUserScrolling.current = false;
-      updateSelectionImmediate(offsetY);
-    }
-  };
+  const renderItem = useCallback(({ item, index }: { item: number | string; index: number }) => {
+    const display = formatItem ? formatItem(item) : String(item);
+    const isSelected = item === selectedValue;
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => {
+          flatRef.current?.scrollToIndex({ index, animated: true });
+        }}
+        style={s.dobWheelItem}
+      >
+        <Text
+          style={[
+            s.dobWheelItemText,
+            {
+              color: isSelected ? '#FFFFFF' : C.sub,
+              fontWeight: isSelected ? '800' : '500',
+              fontSize: isSelected ? 18 : 15,
+              opacity: isSelected ? 1 : 0.5,
+            },
+          ]}
+        >
+          {display}
+        </Text>
+      </TouchableOpacity>
+    );
+  }, [selectedValue, formatItem]);
+
+  const keyExtractor = useCallback((item: number | string, idx: number) => `${item}-${idx}`, []);
 
   return (
     <View style={s.dobWheelCol}>
       <Text style={s.dobWheelLabel}>{label}</Text>
-
       <View style={s.dobWheelViewport}>
-        <Animated.ScrollView
-          ref={scrollRef as any}
+        <FlatList
+          ref={flatRef}
+          data={items}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          getItemLayout={getItemLayout}
           showsVerticalScrollIndicator={false}
           snapToInterval={DOB_ITEM_HEIGHT}
           snapToAlignment="start"
           decelerationRate="fast"
-          disableIntervalMomentum={true}
-          bounces={true}
-          overScrollMode="always"
-          nestedScrollEnabled={true}
-          onScrollBeginDrag={() => { isUserScrolling.current = true; }}
-          onScrollEndDrag={handleScrollEndDrag}
-          onMomentumScrollEnd={handleMomentumScrollEnd}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            {
-              useNativeDriver: true,
-              listener: (e: any) => {
-                const offsetY = e?.nativeEvent?.contentOffset?.y;
-                if (typeof offsetY === 'number') {
-                  updateSelectionImmediate(offsetY);
-                }
-              },
-            }
-          )}
-          scrollEventThrottle={16}
+          disableIntervalMomentum
+          bounces
+          nestedScrollEnabled
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
           contentContainerStyle={{
             paddingTop: DOB_PADDING,
             paddingBottom: DOB_PADDING,
           }}
           style={s.dobWheelScroll}
-        >
-          {items.map((item, idx) => {
-            const display = formatItem ? formatItem(item) : String(item);
-            const itemOffset = idx * DOB_ITEM_HEIGHT;
-
-            const inputRange = [
-              itemOffset - DOB_ITEM_HEIGHT * 2,
-              itemOffset - DOB_ITEM_HEIGHT,
-              itemOffset,
-              itemOffset + DOB_ITEM_HEIGHT,
-              itemOffset + DOB_ITEM_HEIGHT * 2,
-            ];
-
-            const opacity = scrollY.interpolate({
-              inputRange,
-              outputRange: [0.22, 0.45, 1, 0.45, 0.22],
-              extrapolate: 'clamp',
-            });
-
-            const scale = scrollY.interpolate({
-              inputRange,
-              outputRange: [0.84, 0.92, 1.15, 0.92, 0.84],
-              extrapolate: 'clamp',
-            });
-
-            return (
-              <TouchableOpacity
-                key={`${String(item)}-${idx}`}
-                onPress={() => {
-                  isUserScrolling.current = false;
-                  scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: true });
-                  onSelect(item);
-                }}
-                activeOpacity={0.7}
-                style={s.dobWheelItem}
-              >
-                <Animated.Text
-                  style={[
-                    s.dobWheelItemText,
-                    {
-                      opacity,
-                      transform: [{ scale }],
-                      color: selectedValue === item ? '#FFFFFF' : C.sub,
-                      fontWeight: selectedValue === item ? '800' : '600',
-                    },
-                  ]}
-                >
-                  {display}
-                </Animated.Text>
-              </TouchableOpacity>
-            );
-          })}
-        </Animated.ScrollView>
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+        />
       </View>
     </View>
   );
