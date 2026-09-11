@@ -266,9 +266,9 @@ function DobWheelColumn({
   const scrollY = useRef(new Animated.Value(0)).current;
   const isUserScrolling = useRef(false);
 
-  // 20 repetition cycles for completely seamless, massive continuous scrolling
-  const REPEAT_CYCLES = loop && items.length > 1 ? 20 : 1;
-  const MID_CYCLE = Math.floor(REPEAT_CYCLES / 2); // Cycle 10 is the center
+  // 999 repetition cycles for virtually infinite continuous scrolling
+  const REPEAT_CYCLES = loop && items.length > 1 ? 999 : 1;
+  const MID_CYCLE = Math.floor(REPEAT_CYCLES / 2); // Cycle 499 is the center
   const N = items.length;
 
   const displayItems = React.useMemo(() => {
@@ -975,9 +975,11 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                 outputRange: [1, 0],
               });
 
+              const targetLift = Math.round((SCREEN_H / 2) - 140);
+
               const containerTranslateY = dobPickerAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, -210],
+                outputRange: [0, -targetLift],
               });
 
               const headerOpacity = dobPickerAnim.interpolate({
@@ -1002,6 +1004,15 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
               return (
                 <View style={s.stepScreen}>
+                  {/* Backdrop dismiss when wheel is open */}
+                  {dobPickerActive && (
+                    <TouchableOpacity
+                      activeOpacity={1}
+                      onPress={closeDobPicker}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  )}
+
                   {/* Fading Illustration */}
                   <Animated.View
                     pointerEvents={dobPickerActive ? 'none' : 'auto'}
@@ -1025,6 +1036,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   >
                     {/* White Date Shower above the boxes */}
                     <Animated.View
+                      pointerEvents={dobPickerActive ? 'auto' : 'none'}
                       style={[
                         s.dobDateShower,
                         {
@@ -1033,19 +1045,21 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                         },
                       ]}
                     >
-                      <Text style={s.dobDateShowerText}>{formattedFullDate}</Text>
-                      {ageNumber != null && (
-                        <Text
-                          style={[
-                            s.dobAgeBadge,
-                            ageNumber >= 18 ? s.dobAgeBadgeAdult : s.dobAgeBadgeMinor,
-                          ]}
-                        >
-                          {ageNumber >= 18
-                            ? `✓ ${ageNumber} years old (18+ verified)`
-                            : `✕ ${ageNumber} years old (Must be 18+)`}
-                        </Text>
-                      )}
+                      <View style={s.dobDateShowerPill}>
+                        <Text style={s.dobDateShowerText}>{formattedFullDate}</Text>
+                        {ageNumber != null && (
+                          <Text
+                            style={[
+                              s.dobAgeBadge,
+                              ageNumber >= 18 ? s.dobAgeBadgeAdult : s.dobAgeBadgeMinor,
+                            ]}
+                          >
+                            {ageNumber >= 18
+                              ? `✓ ${ageNumber} years old (18+ verified)`
+                              : `✕ ${ageNumber} years old (Must be 18+)`}
+                          </Text>
+                        )}
+                      </View>
                     </Animated.View>
 
                     {/* 3 Date Selector Boxes */}
@@ -1384,12 +1398,12 @@ const s = StyleSheet.create({
   welcomeActions: { position: 'absolute', left: 0, right: 0, bottom: 18, gap: 12 },
   stepTopBar: { position: 'absolute', top: 28, left: 0, right: 0, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   stepCount: { color: C.sub, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  datePickerRow: { flexDirection: 'row', gap: 15, width: '100%', marginBottom: 15 },
+  datePickerRow: { flexDirection: 'row', gap: 15, width: '100%', height: 58 },
   dateSelector: { flex: 1, height: 58, minWidth: 0, borderRadius: 14, backgroundColor: 'rgba(13,23,52,0.72)', borderWidth: 1, borderColor: '#315BA8', paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
   dateSelectorActive: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   dateSelectorText: { flex: 1, color: C.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
   dateSelectorPlaceholder: { color: '#B9C7E8', fontWeight: '500' },
-  actions: { position: 'absolute', left: 0, right: 0, bottom: 44, width: '100%', alignItems: 'stretch' },
+  actions: { position: 'absolute', left: 0, right: 0, bottom: 44, width: '100%', alignItems: 'stretch', zIndex: 11 },
   birthdayArtwork: { position: 'absolute', left: 0, right: 0, bottom: 184, height: 455, marginBottom: 0 },
   birthdayDatePickerRow: { position: 'absolute', left: 0, right: 0, bottom: 111, marginBottom: 0 },
 
@@ -1399,12 +1413,20 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 111,
+    height: 58,
     zIndex: 10,
   },
   dobDateShower: {
+    position: 'absolute',
+    bottom: 70,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 15,
+  },
+  dobDateShowerPill: {
     alignSelf: 'center',
     alignItems: 'center',
-    marginBottom: 16,
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 999,
@@ -1435,8 +1457,11 @@ const s = StyleSheet.create({
     color: '#DC2626',
   },
   dobWheelTray: {
-    marginTop: 16,
-    height: 252,
+    position: 'absolute',
+    top: 70,
+    left: 0,
+    right: 0,
+    height: 246,
     borderRadius: 24,
     backgroundColor: 'rgba(18,14,31,0.95)',
     borderWidth: 1.5,
@@ -1445,12 +1470,12 @@ const s = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 8,
     paddingBottom: 4,
-    position: 'relative',
     shadowColor: C.violet,
     shadowOpacity: 0.45,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 8 },
     elevation: 12,
+    zIndex: 12,
   },
   dobWheelRow: {
     flex: 1,
