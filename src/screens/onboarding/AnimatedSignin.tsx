@@ -205,33 +205,33 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
           {/* Google + Passkey */}
           <View style={s.providerRow}>
             <TouchableOpacity onPress={handleGoogle} style={s.providerCard}>
-              <View style={s.providerIconOuter}>
+              <View style={s.providerIconWrap}>
                 <Animated.View style={[s.providerIconRing, { transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>
-                  <LinearGradient colors={[C.violet, C.pink, C.amber, C.violet]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.providerIconRingInner} />
+                  <LinearGradient colors={[C.violet, C.pink, C.amber, C.violet]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.providerIconRingFill} />
                 </Animated.View>
-              </View>
-              <View style={s.providerIconInner}>
-                <Svg width="28" height="28" viewBox="0 0 24 24">
-                  <Path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
-                  <Path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                  <Path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                  <Path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                </Svg>
+                <View style={s.providerIconInner}>
+                  <Svg width="28" height="28" viewBox="0 0 24 24">
+                    <Path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+                    <Path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <Path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                    <Path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </Svg>
+                </View>
               </View>
               <Text style={s.providerText}>Google</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => {}} style={s.providerCard}>
-              <View style={s.providerIconOuter}>
+              <View style={s.providerIconWrap}>
                 <Animated.View style={[s.providerIconRing, { transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>
-                  <LinearGradient colors={[C.violet, C.pink, C.amber, C.violet]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.providerIconRingInner} />
+                  <LinearGradient colors={[C.violet, C.pink, C.amber, C.violet]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.providerIconRingFill} />
                 </Animated.View>
-              </View>
-              <View style={s.providerIconInner}>
-                <Svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                  <Path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" stroke={C.violet} strokeWidth="1.5" fill="none"/>
-                  <Path d="M15 9.5C15 10.88 13.88 12 12.5 12H11.5C10.12 12 9 10.88 9 9.5S10.12 7 11.5 7h1C13.88 7 15 8.12 15 9.5z" fill={C.violet}/>
-                  <Path d="M8 18.5c0-2.21 1.79-4 4-4h0c2.21 0 4 1.79 4 4" stroke={C.violet} strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-                </Svg>
+                <View style={s.providerIconInner}>
+                  <Svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                    <Path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" stroke={C.violet} strokeWidth="1.5" fill="none"/>
+                    <Path d="M15 9.5C15 10.88 13.88 12 12.5 12H11.5C10.12 12 9 10.88 9 9.5S10.12 7 11.5 7h1C13.88 7 15 8.12 15 9.5z" fill={C.violet}/>
+                    <Path d="M8 18.5c0-2.21 1.79-4 4-4h0c2.21 0 4 1.79 4 4" stroke={C.violet} strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+                  </Svg>
+                </View>
               </View>
               <Text style={s.providerText}>Passkey</Text>
             </TouchableOpacity>
@@ -273,10 +273,10 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 const s = StyleSheet.create({
   content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   logoCenter: { alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  logoRingOuter: { width: 120, height: 120, borderRadius: 60, alignItems: 'center', justifyContent: 'center', padding: 3 },
-  logoRingGradient: { width: 120, height: 120, borderRadius: 60, alignItems: 'center', justifyContent: 'center' },
-  logoRingGradientInner: { width: 120, height: 120, borderRadius: 60 },
-  logoImageContainer: { position: 'absolute', width: 108, height: 108, borderRadius: 54, alignItems: 'center', justifyContent: 'center', backgroundColor: '#120E1F' },
+  logoRingOuter: { width: 112, height: 112, borderRadius: 56, alignItems: 'center', justifyContent: 'center', padding: 3 },
+  logoRingGradient: { width: 112, height: 112, borderRadius: 56, alignItems: 'center', justifyContent: 'center' },
+  logoRingGradientInner: { width: 112, height: 112, borderRadius: 56 },
+  logoImageContainer: { position: 'absolute', width: 106, height: 106, borderRadius: 53, alignItems: 'center', justifyContent: 'center', backgroundColor: '#120E1F' },
   heroTitle: { fontFamily: FONTS.heading, fontSize: 34, fontWeight: '800', color: C.text, textAlign: 'center', marginTop: 4 },
   heroAccent: { color: C.pink },
   heroSub: { fontSize: 15, color: C.sub, marginTop: 8, lineHeight: 22, textAlign: 'center' },
@@ -300,11 +300,11 @@ const s = StyleSheet.create({
   separatorText: { color: C.sub, fontSize: 12, fontWeight: '700', textAlign: 'center' },
   providerRow: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 3 },
   providerCard: { alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
-  providerIconOuter: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', padding: 3 },
-  providerIconRing: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
-  providerIconRingInner: { width: 72, height: 72, borderRadius: 36 },
-  providerIconInner: { position: 'absolute', width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: '#120E1F' },
-  providerText: { color: C.text, fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  providerIconWrap: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center' },
+  providerIconRing: { width: 68, height: 68, borderRadius: 34, position: 'absolute' },
+  providerIconRingFill: { width: 68, height: 68, borderRadius: 34 },
+  providerIconInner: { width: 62, height: 62, borderRadius: 31, alignItems: 'center', justifyContent: 'center', backgroundColor: '#120E1F' },
+  providerText: { color: C.text, fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 6 },
   primaryBtnText: { fontSize: 15, fontWeight: '700', color: '#1A0B12' },
 
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 20 },
