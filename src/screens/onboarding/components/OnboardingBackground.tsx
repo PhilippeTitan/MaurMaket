@@ -8,12 +8,12 @@ export default function OnboardingBackground() {
     <View style={[screenFill, styles.root]} pointerEvents="none">
       <Image
         source={require('../../../../assets/PURPLE BACKGROUND.webp')}
-        style={styles.image}
+        style={[styles.image, { position: 'absolute' }]}
         resizeMode="cover"
       />
       <Image
         source={require('../../../../assets/onboarding-bg-literal.webp')}
-        style={[styles.image, { position: 'absolute' }]}
+        style={[styles.image, { position: 'absolute', opacity: 0.6 }]}
         resizeMode="cover"
       />
     </View>
