@@ -263,44 +263,45 @@ function DobWheelColumn({
   const scrollRef = useRef<ScrollView>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const isUserScrolling = useRef(false);
+  const lastReportedIdx = useRef<number>(-1);
   const N = items.length;
 
-  // Sync scroll position to selected value
+  // Sync scroll position to selected value when not actively dragging
   useEffect(() => {
     if (selectedValue != null && !isUserScrolling.current) {
       const idx = items.indexOf(selectedValue);
-      if (idx >= 0) {
+      if (idx >= 0 && idx !== lastReportedIdx.current) {
+        lastReportedIdx.current = idx;
         scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: false });
       }
     }
   }, [selectedValue, items]);
 
+  const updateSelectionImmediate = (offsetY: number) => {
+    const rawIdx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
+    if (rawIdx !== lastReportedIdx.current) {
+      lastReportedIdx.current = rawIdx;
+      const selected = items[rawIdx];
+      if (selected !== undefined) {
+        onSelect(selected);
+      }
+    }
+  };
+
   const handleMomentumScrollEnd = (e: any) => {
     isUserScrolling.current = false;
     const offsetY = e?.nativeEvent?.contentOffset?.y;
-    if (typeof offsetY !== 'number') return;
-    const rawIdx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
-    const selected = items[rawIdx];
-    if (selected !== undefined && selected !== selectedValue) {
-      onSelect(selected);
+    if (typeof offsetY === 'number') {
+      updateSelectionImmediate(offsetY);
     }
   };
 
   const handleScrollEndDrag = (e: any) => {
     const offsetY = e?.nativeEvent?.contentOffset?.y;
-    if (typeof offsetY !== 'number') return;
-
-    const update = () => {
-      if (!isUserScrolling.current) {
-        const rawIdx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
-        const selected = items[rawIdx];
-        if (selected !== undefined && selected !== selectedValue) {
-          onSelect(selected);
-        }
-      }
-    };
-
-    setTimeout(update, 100);
+    if (typeof offsetY === 'number') {
+      updateSelectionImmediate(offsetY);
+    }
+    isUserScrolling.current = false;
   };
 
   return (
@@ -323,7 +324,15 @@ function DobWheelColumn({
           onMomentumScrollEnd={handleMomentumScrollEnd}
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: true }
+            {
+              useNativeDriver: true,
+              listener: (e: any) => {
+                const offsetY = e?.nativeEvent?.contentOffset?.y;
+                if (typeof offsetY === 'number') {
+                  updateSelectionImmediate(offsetY);
+                }
+              },
+            }
           )}
           scrollEventThrottle={16}
           contentContainerStyle={{
