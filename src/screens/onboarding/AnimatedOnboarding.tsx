@@ -264,13 +264,15 @@ function DobWheelColumn({
   const scrollY = useRef(new Animated.Value(0)).current;
   const isUserScrolling = useRef(false);
   const lastReportedIdx = useRef<number>(-1);
+  const hasInitialScrolled = useRef(false);
   const N = items.length;
 
-  // Sync scroll position to selected value when not actively dragging
+  // Only scroll to position once on initial mount/open
   useEffect(() => {
-    if (selectedValue != null && !isUserScrolling.current) {
+    if (selectedValue != null && !hasInitialScrolled.current) {
       const idx = items.indexOf(selectedValue);
-      if (idx >= 0 && idx !== lastReportedIdx.current) {
+      if (idx >= 0) {
+        hasInitialScrolled.current = true;
         lastReportedIdx.current = idx;
         scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: false });
       }
