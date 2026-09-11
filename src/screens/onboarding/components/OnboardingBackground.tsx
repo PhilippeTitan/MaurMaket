@@ -9,16 +9,8 @@ export default function OnboardingBackground() {
       <Image
         source={require('../../../../assets/onboarding-bg-literal.webp')}
         style={styles.image}
-        resizeMode="contain"
+        resizeMode="cover"
       />
-
-      <Image
-        source={require('../../../../assets/onboarding-bg-1.webp')}
-        style={styles.image}
-        resizeMode="contain"
-      />
-
-      <View style={[screenFill, styles.vignette]} />
     </View>
   );
 }
@@ -31,9 +23,5 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
-    alignSelf: 'center',
-  },
-  vignette: {
-    backgroundColor: 'rgba(5, 4, 12, 0.44)',
   },
 });
