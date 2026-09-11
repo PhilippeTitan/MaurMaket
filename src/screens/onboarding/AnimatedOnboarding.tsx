@@ -950,11 +950,10 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
               const dayItems = Array.from({ length: maxDaysInMonth }, (_, i) => i + 1);
               const yearItems = Array.from({ length: 82 }, (_, i) => (currentYear - 18) - i);
 
-              const formattedFullDate = birthDateValid
-                ? `${FULL_MONTH_NAMES[form.birthMonth! - 1]} ${form.birthDay}, ${form.birthYear}`
-                : form.birthMonth || form.birthDay || form.birthYear
-                ? `${form.birthMonth ? MONTH_NAMES[form.birthMonth - 1] : 'Month'} ${form.birthDay || 'Day'}, ${form.birthYear || 'Year'}`
-                : 'Select your birthday';
+              const mm = form.birthMonth ? String(form.birthMonth).padStart(2, '0') : 'MM';
+              const dd = form.birthDay ? String(form.birthDay).padStart(2, '0') : 'DD';
+              const yyyy = form.birthYear ? String(form.birthYear) : 'YYYY';
+              const formattedFullDate = `${mm}/${dd}/${yyyy}`;
 
               let ageNumber: number | null = null;
               if (birthDateValid) {
@@ -1397,7 +1396,7 @@ const s = StyleSheet.create({
   stepCount: { color: C.sub, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   datePickerRow: {
     position: 'absolute',
-    top: 66,
+    top: 76,
     left: 0,
     right: 0,
     height: 58,
@@ -1418,14 +1417,14 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: -145,
-    height: 380,
+    bottom: -155,
+    height: 400,
     zIndex: 10,
     overflow: 'visible',
   },
   dobDateShower: {
     position: 'absolute',
-    top: 8,
+    top: 0,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -1434,27 +1433,28 @@ const s = StyleSheet.create({
   dobDateShowerPill: {
     alignSelf: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    minWidth: 230,
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
     shadowColor: '#ffffff',
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    shadowOpacity: 0.45,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
   },
   dobDateShowerText: {
     color: '#0A0812',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: 2.5,
     textAlign: 'center',
   },
   dobAgeBadge: {
-    marginTop: 2,
-    fontSize: 11,
-    fontWeight: '700',
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '800',
     letterSpacing: 0.5,
   },
   dobAgeBadgeAdult: {
@@ -1465,7 +1465,7 @@ const s = StyleSheet.create({
   },
   dobWheelTray: {
     position: 'absolute',
-    top: 132,
+    top: 144,
     left: 0,
     right: 0,
     height: 246,
