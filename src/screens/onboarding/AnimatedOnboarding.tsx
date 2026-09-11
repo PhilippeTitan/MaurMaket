@@ -105,10 +105,10 @@ function WelcomeIllustration() {
 }
 
 function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asset: 'lets-start' | 'digital-address' | 'keep-it-protected' | 'youre-ready' | 'pick-username' | 'choose-purpose' | 'birthday'; accessibilityLabel: string; containerStyle?: any }) {
-  const tallAsset = asset === 'pick-username';
   const birthdayAsset = asset === 'birthday';
-  const imageWidth = birthdayAsset || asset === 'lets-start' ? '100%' : tallAsset ? 240 : asset === 'choose-purpose' ? 330 : 360;
-  const imageHeight = birthdayAsset ? 455 : tallAsset ? 330 : asset === 'choose-purpose' ? 300 : 190;
+  const pickUsernameAsset = asset === 'pick-username';
+  const imageWidth = birthdayAsset || asset === 'lets-start' ? '100%' : pickUsernameAsset ? 350 : asset === 'choose-purpose' ? 330 : 360;
+  const imageHeight = birthdayAsset || pickUsernameAsset ? 455 : asset === 'choose-purpose' ? 300 : 190;
   return (
     <View style={[{ height: imageHeight, width: '100%', marginBottom: 12, alignItems: 'center', justifyContent: 'center' }, containerStyle]}>
       <Image
@@ -121,7 +121,7 @@ function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asse
           asset === 'choose-purpose' ? require('../../../illustration/choose-purpose.webp') :
           require('../../../illustration/birthday.webp')
         }
-        style={{ width: imageWidth, height: imageHeight, resizeMode: birthdayAsset ? 'stretch' : asset === 'lets-start' ? 'cover' : 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
+        style={{ width: imageWidth, height: imageHeight, resizeMode: birthdayAsset ? 'stretch' : asset === 'lets-start' || pickUsernameAsset ? 'cover' : 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
         accessibilityLabel={accessibilityLabel}
       />
     </View>
