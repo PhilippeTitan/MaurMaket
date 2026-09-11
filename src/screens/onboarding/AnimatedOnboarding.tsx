@@ -253,53 +253,88 @@ function DobWheelColumn({
   onSelect,
   label,
   formatItem,
+  loop = true,
 }: {
   items: (number | string)[];
   selectedValue: number | string | null;
   onSelect: (val: any) => void;
   label: string;
   formatItem?: (val: any) => string;
+  loop?: boolean;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const isUserScrolling = useRef(false);
 
+  // If looping, repeat items across multiple cycles for an infinite feel
+  const REPEAT_CYCLES = loop && items.length > 1 ? 5 : 1;
+  const MID_CYCLE = Math.floor(REPEAT_CYCLES / 2);
+
+  const displayItems = React.useMemo(() => {
+    if (!loop || items.length <= 1) return items;
+    const repeated: { item: number | string; globalIdx: number; origIdx: number }[] = [];
+    let gIdx = 0;
+    for (let c = 0; c < REPEAT_CYCLES; c++) {
+      for (let i = 0; i < items.length; i++) {
+        repeated.push({ item: items[i], globalIdx: gIdx++, origIdx: i });
+      }
+    }
+    return repeated;
+  }, [items, loop, REPEAT_CYCLES]);
+
   // Sync scroll position when selectedValue changes externally
   useEffect(() => {
     if (selectedValue != null && !isUserScrolling.current) {
-      const idx = items.indexOf(selectedValue);
-      if (idx >= 0) {
-        scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: true });
+      const origIdx = items.indexOf(selectedValue);
+      if (origIdx >= 0) {
+        const targetIdx = loop ? MID_CYCLE * items.length + origIdx : origIdx;
+        scrollRef.current?.scrollTo({ y: targetIdx * DOB_ITEM_HEIGHT, animated: false });
       }
     }
-  }, [selectedValue, items]);
+  }, [selectedValue, items, loop, MID_CYCLE]);
+
+  const recenterIfNearBounds = useCallback((rawIdx: number) => {
+    if (!loop || items.length <= 1) return rawIdx;
+    const totalItems = items.length;
+    const cycle = Math.floor(rawIdx / totalItems);
+    // If scrolled into first cycle or last cycle, smoothly jump back to mid cycle silently
+    if (cycle < 1 || cycle >= REPEAT_CYCLES - 1) {
+      const origIdx = ((rawIdx % totalItems) + totalItems) % totalItems;
+      const centeredIdx = MID_CYCLE * totalItems + origIdx;
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({ y: centeredIdx * DOB_ITEM_HEIGHT, animated: false });
+      }, 50);
+      return centeredIdx;
+    }
+    return rawIdx;
+  }, [loop, items.length, REPEAT_CYCLES, MID_CYCLE]);
 
   const handleMomentumScrollEnd = (e: any) => {
     isUserScrolling.current = false;
     const offsetY = e?.nativeEvent?.contentOffset?.y;
     if (typeof offsetY !== 'number') return;
     const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
-    const clampedIdx = Math.max(0, Math.min(rawIdx, items.length - 1));
-    const item = items[clampedIdx];
-    if (item !== undefined && item !== selectedValue) {
-      onSelect(item);
+    const validIdx = recenterIfNearBounds(rawIdx);
+    const origIdx = loop ? ((validIdx % items.length) + items.length) % items.length : Math.max(0, Math.min(validIdx, items.length - 1));
+    const selected = items[origIdx];
+    if (selected !== undefined && selected !== selectedValue) {
+      onSelect(selected);
     }
   };
 
   const handleScrollEndDrag = (e: any) => {
-    // Extract offsetY synchronously from synthetic event before it's pooled
     const offsetY = e?.nativeEvent?.contentOffset?.y;
     if (typeof offsetY !== 'number') return;
 
     if (Platform.OS === 'android') {
-      // Android momentum end can sometimes be skipped if drag stops abruptly
       setTimeout(() => {
         if (!isUserScrolling.current) {
           const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
-          const clampedIdx = Math.max(0, Math.min(rawIdx, items.length - 1));
-          const item = items[clampedIdx];
-          if (item !== undefined && item !== selectedValue) {
-            onSelect(item);
+          const validIdx = recenterIfNearBounds(rawIdx);
+          const origIdx = loop ? ((validIdx % items.length) + items.length) % items.length : Math.max(0, Math.min(validIdx, items.length - 1));
+          const selected = items[origIdx];
+          if (selected !== undefined && selected !== selectedValue) {
+            onSelect(selected);
           }
         }
       }, 150);
@@ -332,7 +367,8 @@ function DobWheelColumn({
           }}
           style={s.dobWheelScroll}
         >
-          {items.map((item, idx) => {
+          {displayItems.map((entry, idx) => {
+            const item = typeof entry === 'object' && entry !== null && 'item' in entry ? (entry as any).item : entry;
             const display = formatItem ? formatItem(item) : String(item);
             const itemOffset = idx * DOB_ITEM_HEIGHT;
 
@@ -359,11 +395,12 @@ function DobWheelColumn({
 
             return (
               <TouchableOpacity
-                key={String(item)}
+                key={`${String(item)}-${idx}`}
                 onPress={() => {
                   isUserScrolling.current = false;
                   scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: true });
                   onSelect(item);
+                  setTimeout(() => recenterIfNearBounds(idx), 300);
                 }}
                 activeOpacity={0.7}
                 style={s.dobWheelItem}
