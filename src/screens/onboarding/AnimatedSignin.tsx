@@ -274,7 +274,7 @@ const s = StyleSheet.create({
   logoRingOuter: { width: 112, height: 112, borderRadius: 56, alignItems: 'center', justifyContent: 'center', padding: 3 },
   logoRingGradient: { width: 112, height: 112, borderRadius: 56, alignItems: 'center', justifyContent: 'center' },
   logoRingGradientInner: { width: 112, height: 112, borderRadius: 56 },
-  logoImageContainer: { position: 'absolute', width: 106, height: 106, borderRadius: 53, alignItems: 'center', justifyContent: 'center', backgroundColor: '#120E1F' },
+  logoImageContainer: { position: 'absolute', width: 106, height: 106, borderRadius: 53, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1040' },
   heroTitle: { fontFamily: FONTS.heading, fontSize: 34, fontWeight: '800', color: C.text, textAlign: 'center', marginTop: 4 },
   heroAccent: { color: C.pink },
   heroSub: { fontSize: 15, color: C.sub, marginTop: 8, lineHeight: 22, textAlign: 'center' },
@@ -301,7 +301,7 @@ const s = StyleSheet.create({
   providerIconWrap: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center' },
   providerIconRing: { width: 68, height: 68, borderRadius: 34, position: 'absolute' },
   providerIconRingFill: { width: 68, height: 68, borderRadius: 34 },
-  providerIconInner: { width: 62, height: 62, borderRadius: 31, alignItems: 'center', justifyContent: 'center', backgroundColor: '#120E1F' },
+  providerIconInner: { width: 62, height: 62, borderRadius: 31, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1040' },
   providerText: { color: C.text, fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 6 },
   primaryBtnText: { fontSize: 15, fontWeight: '700', color: '#1A0B12' },
 
