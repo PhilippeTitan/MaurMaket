@@ -739,17 +739,30 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {index === 3 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
-                  <AssetIllustration asset="pick-username" accessibilityLabel="Pick your username illustration" />
-                  <Field icon="at" label="Username" value={form.username} onChangeText={v => set('username', v.toLowerCase().replace(/[^a-z0-9._]/g, ''))} placeholder="jordan.reyes" onFocus={() => setFocusedField('username')} right={
-                    usernameChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
-                    usernameAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
-                    usernameAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
-                  } />
                   {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>Lowercase letters, numbers, dots, and underscores only (1-30 chars)</Text> : null}
                   {usernameAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Username is available</Text> : null}
                   {errors.username ? <Text style={s.fieldError}>{errors.username}</Text> : null}
                 </View>
                 <StepActions step={2} label={STEP_LABELS.username} onBack={() => go(-1)}>
+                  <AssetIllustration
+                    asset="pick-username"
+                    accessibilityLabel="Pick your username illustration"
+                    containerStyle={{ marginBottom: 15 }}
+                  />
+                  <Field
+                    icon="at"
+                    label="Username"
+                    value={form.username}
+                    onChangeText={v => set('username', v.toLowerCase().replace(/[^a-z0-9._]/g, ''))}
+                    placeholder="jordan.reyes"
+                    onFocus={() => setFocusedField('username')}
+                    right={
+                      usernameChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
+                      usernameAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
+                      usernameAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
+                    }
+                  />
+                  <View style={{ height: 15 }} />
                   <PrimaryButton onPress={validateAndNext} disabled={!usernameValid || usernameAvailable === false}>Continue</PrimaryButton>
                 </StepActions>
               </View>
