@@ -156,7 +156,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 
           {/* Logo */}
           <View style={s.logoCenter}>
-            <Image source={require('../../../../assets/Logo/maurmaket-logo-icon.png')} style={{ width: 64, height: 64, resizeMode: 'contain' }} />
+            <Image source={require('../../../assets/Logo/maurmaket-logo-icon.png')} style={{ width: 64, height: 64, resizeMode: 'contain' }} />
           </View>
 
           {/* Title */}
