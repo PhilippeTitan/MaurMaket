@@ -290,17 +290,17 @@ function DobWheelColumn({
     const offsetY = e?.nativeEvent?.contentOffset?.y;
     if (typeof offsetY !== 'number') return;
 
-    if (Platform.OS === 'android') {
-      setTimeout(() => {
-        if (!isUserScrolling.current) {
-          const rawIdx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
-          const selected = items[rawIdx];
-          if (selected !== undefined && selected !== selectedValue) {
-            onSelect(selected);
-          }
+    const update = () => {
+      if (!isUserScrolling.current) {
+        const rawIdx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
+        const selected = items[rawIdx];
+        if (selected !== undefined && selected !== selectedValue) {
+          onSelect(selected);
         }
-      }, 150);
-    }
+      }
+    };
+
+    setTimeout(update, 100);
   };
 
   return (
@@ -312,10 +312,12 @@ function DobWheelColumn({
           ref={scrollRef as any}
           showsVerticalScrollIndicator={false}
           snapToInterval={DOB_ITEM_HEIGHT}
+          snapToAlignment="start"
           decelerationRate="fast"
+          disableIntervalMomentum={true}
           bounces={true}
           overScrollMode="always"
-          nestedScrollEnabled
+          nestedScrollEnabled={true}
           onScrollBeginDrag={() => { isUserScrolling.current = true; }}
           onScrollEndDrag={handleScrollEndDrag}
           onMomentumScrollEnd={handleMomentumScrollEnd}
@@ -764,7 +766,12 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
       <View style={{ flex: 1, backgroundColor: C.bg0 }}>
         <OnboardingBackground />
 
-        <ScrollView ref={scrollRef} contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={s.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={!dobPickerActive}
+        >
 
           <Animated.View style={[s.slide, enterClass]} key={index}>
 
