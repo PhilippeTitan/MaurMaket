@@ -264,14 +264,67 @@ function StepActions({ children, step, label, onBack, compact }: { children: Rea
   );
 }
 
-const Field = React.forwardRef<TextInput, { icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode; onFocus?: () => void }>(function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, right, onFocus }, ref) {
+const Field = React.forwardRef<TextInput, { icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters'; right?: React.ReactNode; onFocus?: () => void }>(function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, autoCapitalize, right, onFocus }, ref) {
   const inputRef = useRef<TextInput | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
+  const hasValue = value.trim().length > 0;
+  const labelAnim = useRef(new Animated.Value(hasValue ? 0 : 1)).current;
+
+  useEffect(() => {
+    Animated.timing(labelAnim, {
+      toValue: hasValue ? 0 : 1,
+      duration: 80,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [hasValue, labelAnim]);
+
+  const chars = label.split('');
+
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={s.field} accessibilityRole="none">
-      <MaterialCommunityIcons name={icon} size={18} color={C.sub} />
+    <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={[s.field, isFocused && s.fieldFocused]} accessibilityRole="none">
+      <MaterialCommunityIcons name={icon} size={18} color={isFocused ? C.violet : C.sub} />
       <View style={{ flex: 1 }}>
-        <Text style={s.fieldLabel}>{label}</Text>
-        <TextInput ref={node => { inputRef.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node; }} onFocus={onFocus} style={s.fieldInput} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={C.sub} secureTextEntry={secureTextEntry} />
+        <Animated.View pointerEvents="none" style={{
+          position: 'absolute',
+          left: 0,
+          top: 14,
+          right: 0,
+          height: 22,
+          alignItems: 'center',
+          flexDirection: 'row',
+          overflow: 'hidden',
+        }}>
+          {chars.map((char, index) => (
+            <Animated.Text
+              key={`${char}-${index}`}
+              style={{
+                color: C.sub,
+                fontSize: 14,
+                fontWeight: '600',
+                opacity: labelAnim,
+                includeFontPadding: false,
+                lineHeight: 18,
+                marginRight: char === ' ' ? 4 : 0,
+              }}
+            >
+              {char}
+            </Animated.Text>
+          ))}
+        </Animated.View>
+        <TextInput
+          ref={node => { inputRef.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node; }}
+          onFocus={() => { setIsFocused(true); onFocus?.(); }}
+          onBlur={() => setIsFocused(false)}
+          style={[s.fieldInput, { marginTop: 20, paddingTop: 0, paddingBottom: 0 }]}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={undefined}
+          placeholderTextColor={C.sub}
+          secureTextEntry={secureTextEntry}
+          autoCapitalize={autoCapitalize || 'none'}
+        />
+        <Animated.View style={[s.waveBar, isFocused && s.waveBarActive]} />
       </View>
       {right}
     </TouchableOpacity>
@@ -581,8 +634,16 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   }, [focusedField, index, ghostOpacity]);
 
   const handleGhostContinue = () => {
+    if (focusedField === 'first' && form.first.trim() && !form.last.trim()) {
+      setFocusedField('last');
+      return;
+    }
     if (!canContinue) { validateAndNext(); return; }
-    Animated.timing(ghostOpacity, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => validateAndNext());
+    Animated.timing(ghostOpacity, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => {
+      Keyboard.dismiss();
+      setFocusedField(null);
+      validateAndNext();
+    });
   };
 
   const ghostFieldMap = {
@@ -855,7 +916,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
           </Animated.View>
         </ScrollView>
         {focusedField && ghostFields.length > 0 && (
-          <>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: ghostOpacity }]}>
             <BlurView intensity={72} tint="dark" style={s.keyboardDimmer}>
               <TouchableOpacity
                 activeOpacity={1}
@@ -864,7 +925,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                 accessibilityLabel="Dismiss keyboard"
               />
             </BlurView>
-            <Animated.View style={[s.keyboardGhostStack, { bottom: 123, opacity: ghostOpacity }]}>
+            <View style={[s.keyboardGhostStack, { bottom: 123 }]}>
               {ghostFields.map((ghostField) => (
                 <GhostFieldRow
                   key={ghostField.key}
@@ -877,14 +938,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                   active={ghostField.key === focusedField}
                 />
               ))}
-            </Animated.View>
-            <Animated.View style={[s.keyboardGhostContinue, { bottom: 56, opacity: ghostOpacity }]}>
+            </View>
+            <View style={[s.keyboardGhostContinue, { bottom: 56 }]}>
               <TouchableOpacity onPress={handleGhostContinue} style={s.keyboardGhostButton} accessibilityRole="button" accessibilityLabel="Continue">
                 <Text style={s.keyboardGhostContinueText}>Continue</Text>
                 <MaterialCommunityIcons name="arrow-right" size={17} color={C.sub} />
               </TouchableOpacity>
-            </Animated.View>
-          </>
+            </View>
+          </Animated.View>
         )}
         {revealing && (
           <Animated.View
@@ -953,6 +1014,7 @@ const s = StyleSheet.create({
 
   // Fields
   field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, paddingHorizontal: 16 },
+  fieldFocused: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
   fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
   fieldError: { color: C.pink, fontSize: 12.5, marginTop: 4 },
