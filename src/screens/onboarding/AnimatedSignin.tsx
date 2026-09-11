@@ -150,6 +150,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flex: 1, backgroundColor: '#120E1F' }}>
+        <OnboardingBackground />
 
         <View style={s.content}>
 

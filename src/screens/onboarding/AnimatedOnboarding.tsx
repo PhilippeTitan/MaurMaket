@@ -654,6 +654,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={{ flex: 1, backgroundColor: '#120E1F' }}>
+        <OnboardingBackground />
 
         <ScrollView ref={scrollRef} contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
 
