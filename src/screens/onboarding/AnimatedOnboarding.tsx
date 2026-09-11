@@ -312,10 +312,7 @@ function DobWheelColumn({
         <Animated.ScrollView
           ref={scrollRef as any}
           showsVerticalScrollIndicator={false}
-          snapToInterval={DOB_ITEM_HEIGHT}
-          snapToAlignment="start"
-          decelerationRate="fast"
-          disableIntervalMomentum={true}
+          decelerationRate="normal"
           bounces={true}
           overScrollMode="always"
           nestedScrollEnabled={true}
