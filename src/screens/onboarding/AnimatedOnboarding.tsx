@@ -265,71 +265,40 @@ function DobWheelColumn({
   const scrollRef = useRef<ScrollView>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const isUserScrolling = useRef(false);
-  const isResetting = useRef(false);
 
-  // Optical illusion duplication:
-  // Duplicate the set 3 times: [Set A (Prepend)] + [Set B (Primary)] + [Set C (Append)]
-  // 1 full cycle height = items.length * DOB_ITEM_HEIGHT
+  // 20 repetition cycles for completely seamless, massive continuous scrolling
+  const REPEAT_CYCLES = loop && items.length > 1 ? 20 : 1;
+  const MID_CYCLE = Math.floor(REPEAT_CYCLES / 2); // Cycle 10 is the center
   const N = items.length;
-  const cycleHeight = N * DOB_ITEM_HEIGHT;
-  const shouldLoop = loop && N > 1;
 
   const displayItems = React.useMemo(() => {
-    if (!shouldLoop) return items;
-    // Repeat original set 3 times
-    return [...items, ...items, ...items];
-  }, [items, shouldLoop]);
+    if (!loop || N <= 1) return items;
+    const repeated: (number | string)[] = [];
+    for (let c = 0; c < REPEAT_CYCLES; c++) {
+      for (let i = 0; i < N; i++) {
+        repeated.push(items[i]);
+      }
+    }
+    return repeated;
+  }, [items, loop, N, REPEAT_CYCLES]);
 
-  // Initial sync: position user in the middle set (Set B)
+  // Initial sync: position user cleanly in the middle cycle (Cycle 10)
   useEffect(() => {
     if (selectedValue != null && !isUserScrolling.current) {
       const origIdx = items.indexOf(selectedValue);
       if (origIdx >= 0) {
-        const targetY = shouldLoop ? cycleHeight + origIdx * DOB_ITEM_HEIGHT : origIdx * DOB_ITEM_HEIGHT;
-        scrollRef.current?.scrollTo({ y: targetY, animated: false });
+        const targetIdx = loop ? MID_CYCLE * N + origIdx : origIdx;
+        scrollRef.current?.scrollTo({ y: targetIdx * DOB_ITEM_HEIGHT, animated: false });
       }
     }
-  }, [selectedValue, items, shouldLoop, cycleHeight]);
-
-  // Real-time instantaneous teleportation optical illusion:
-  // When scrolling past Set B into Set C, subtract exactly 1 cycle (cycleHeight)
-  // When scrolling before Set B into Set A, add exactly 1 cycle (cycleHeight)
-  // The sets are visually 100% identical, so the user cannot detect the reset.
-  const checkOpticalReset = (offsetY: number) => {
-    if (!shouldLoop || isResetting.current || cycleHeight <= 0) return offsetY;
-
-    if (offsetY >= cycleHeight * 2) {
-      // Past Set B into Set C -> instantly reset back to Set B
-      isResetting.current = true;
-      const newY = offsetY - cycleHeight;
-      scrollRef.current?.scrollTo({ y: newY, animated: false });
-      setTimeout(() => { isResetting.current = false; }, 20);
-      return newY;
-    } else if (offsetY < cycleHeight) {
-      // Before Set B into Set A -> instantly reset forward to Set B
-      isResetting.current = true;
-      const newY = offsetY + cycleHeight;
-      scrollRef.current?.scrollTo({ y: newY, animated: false });
-      setTimeout(() => { isResetting.current = false; }, 20);
-      return newY;
-    }
-    return offsetY;
-  };
-
-  const handleScroll = (e: any) => {
-    const offsetY = e?.nativeEvent?.contentOffset?.y;
-    if (typeof offsetY === 'number') {
-      checkOpticalReset(offsetY);
-    }
-  };
+  }, [selectedValue, items, loop, N, MID_CYCLE]);
 
   const handleMomentumScrollEnd = (e: any) => {
     isUserScrolling.current = false;
-    const rawY = e?.nativeEvent?.contentOffset?.y;
-    if (typeof rawY !== 'number') return;
-    const finalY = checkOpticalReset(rawY);
-    const rawIdx = Math.round(finalY / DOB_ITEM_HEIGHT);
-    const origIdx = shouldLoop ? ((rawIdx % N) + N) % N : Math.max(0, Math.min(rawIdx, N - 1));
+    const offsetY = e?.nativeEvent?.contentOffset?.y;
+    if (typeof offsetY !== 'number') return;
+    const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
+    const origIdx = loop ? ((rawIdx % N) + N) % N : Math.max(0, Math.min(rawIdx, N - 1));
     const selected = items[origIdx];
     if (selected !== undefined && selected !== selectedValue) {
       onSelect(selected);
@@ -337,15 +306,14 @@ function DobWheelColumn({
   };
 
   const handleScrollEndDrag = (e: any) => {
-    const rawY = e?.nativeEvent?.contentOffset?.y;
-    if (typeof rawY !== 'number') return;
+    const offsetY = e?.nativeEvent?.contentOffset?.y;
+    if (typeof offsetY !== 'number') return;
 
     if (Platform.OS === 'android') {
       setTimeout(() => {
         if (!isUserScrolling.current) {
-          const finalY = checkOpticalReset(rawY);
-          const rawIdx = Math.round(finalY / DOB_ITEM_HEIGHT);
-          const origIdx = shouldLoop ? ((rawIdx % N) + N) % N : Math.max(0, Math.min(rawIdx, N - 1));
+          const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
+          const origIdx = loop ? ((rawIdx % N) + N) % N : Math.max(0, Math.min(rawIdx, N - 1));
           const selected = items[origIdx];
           if (selected !== undefined && selected !== selectedValue) {
             onSelect(selected);
@@ -372,10 +340,7 @@ function DobWheelColumn({
           onMomentumScrollEnd={handleMomentumScrollEnd}
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            {
-              useNativeDriver: true,
-              listener: handleScroll,
-            }
+            { useNativeDriver: true }
           )}
           scrollEventThrottle={16}
           contentContainerStyle={{
@@ -416,9 +381,6 @@ function DobWheelColumn({
                   isUserScrolling.current = false;
                   scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: true });
                   onSelect(item);
-                  setTimeout(() => {
-                    checkOpticalReset(idx * DOB_ITEM_HEIGHT);
-                  }, 250);
                 }}
                 activeOpacity={0.7}
                 style={s.dobWheelItem}
