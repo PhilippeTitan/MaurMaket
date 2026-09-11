@@ -11,8 +11,6 @@ import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
 import { useTranslation } from '../../i18n';
 import { login as apiLogin, googleAuth } from '../../api';
 import { store } from '../../store';
-import GoogleButton from './components/GoogleButton';
-import PasskeyButton from './components/PasskeyButton';
 import OnboardingBackground from './components/OnboardingBackground';
 import type { User } from '../../types';
 
@@ -55,19 +53,7 @@ function Logomark({ size = 40 }: { size?: number }) {
 function SigninIllustration() {
   return (
     <View style={{ height: 150, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="160" height="150" viewBox="0 0 160 150" fill="none">
-        <Defs>
-          <SvgLinearGradient id="shieldG" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0%" stopColor={C.violet} />
-            <Stop offset="100%" stopColor={C.pink} />
-          </SvgLinearGradient>
-        </Defs>
-        <Circle cx="80" cy="75" r="60" fill={C.surface} stroke={C.border} />
-        <SvgG>
-          <Path d="M80 30L110 45v20c0 22-12 36-30 42-18-6-30-20-30-42V45L80 30Z" fill="url(#shieldG)" opacity="0.9" />
-          <Path d="M68 72l8 8 16-18" stroke={C.mint} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        </SvgG>
-      </Svg>
+      <Logomark size={64} />
     </View>
   );
 }
@@ -163,23 +149,18 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={{ flex: 1, backgroundColor: C.bg0 }}>
-        <OnboardingBackground />
+      <View style={{ flex: 1, backgroundColor: '#120E1F' }}>
 
-        <View style={[s.content, { paddingTop: insets.top + 40, paddingHorizontal: 28, paddingBottom: insets.bottom + 16 }]}>
+        <View style={s.content}>
 
-          {/* Logo */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-            <Logomark size={34} />
-            <Text style={{ fontFamily: FONTS.heading, fontSize: 17, fontWeight: '700', color: C.text }}>MaurMaket</Text>
+          {/* Logo mark only, matching the screenshot's centered icon stack */}
+          <View style={s.logoCenter}>
+            <Logomark size={56} />
           </View>
-
-          {/* Illustration */}
-          <SigninIllustration />
 
           {/* Title */}
           <Text style={s.heroTitle}>Welcome back</Text>
-          <Text style={s.heroSub}>Sign in to continue</Text>
+          <Text style={s.heroSub}>Sign in to continue to MaurMaket.</Text>
 
           {/* Fields */}
           <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
@@ -193,22 +174,41 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
           </Animated.View>
 
           {/* Forgot password */}
-          <TouchableOpacity onPress={onForgotPassword} style={{ alignSelf: 'flex-end', marginTop: 8, marginBottom: 20 }}>
-            <Text style={{ color: C.pink, fontSize: 13, fontWeight: '500' }}>{t('auth.forgotPassword')}</Text>
+          <TouchableOpacity onPress={onForgotPassword} style={{ alignSelf: 'center', marginTop: 12, marginBottom: 16 }}>
+            <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{t('auth.forgotPassword')}</Text>
           </TouchableOpacity>
 
           {/* Sign in button */}
-          <PrimaryButton onPress={handleLogin} disabled={!canSubmit || loading}>{loading ? t('common.loading') : t('auth.signIn')}</PrimaryButton>
+          <PrimaryButton onPress={handleLogin} disabled={!canSubmit || loading}>{loading ? t('common.loading') : 'Sign in →'}</PrimaryButton>
+
+          {/* Separator: Or row */}
+          <View style={s.separatorRow}>
+            <View style={s.separatorLine} />
+            <Text style={s.separatorText}>or</Text>
+            <View style={s.separatorLine} />
+          </View>
 
           {/* Google + Passkey */}
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 14, marginTop: 20 }}>
-            <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignIn')} compact />
-            <PasskeyButton compact />
+          <View style={s.providerRow}>
+            <TouchableOpacity onPress={handleGoogle} style={s.providerCard}>
+              <View style={s.providerIcon}><Text style={s.providerIconText}>G</Text></View>
+              <Text style={s.providerText}>
+                <Text>Sign in with</Text>
+                <Text>{'\n'}Google</Text>
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => {}} style={s.providerCard}>
+              <View style={s.providerIcon}><MaterialCommunityIcons name="account-circle-outline" size={24} color={C.text} /></View>
+              <Text style={s.providerText}>
+                <Text>Sign in with</Text>
+                <Text>{'\n'}Passkey</Text>
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Switch to signup */}
           <TouchableOpacity onPress={onSwitchToSignup} style={{ paddingVertical: 16 }}>
-            <Text style={{ textAlign: 'center', color: C.sub, fontSize: 14, fontWeight: '500' }}>
+            <Text style={{ textAlign: 'center', color: C.sub, fontSize: 16, fontWeight: '500' }}>
               {t('auth.noAccount')} <Text style={{ color: C.pink, fontWeight: '700' }}>{t('auth.signUp')}</Text>
             </Text>
           </TouchableOpacity>
@@ -240,9 +240,10 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 /* ── Styles ───────────────────────────────────────────────── */
 
 const s = StyleSheet.create({
-  content: { flex: 1 },
-  heroTitle: { fontFamily: FONTS.heading, fontSize: 30, fontWeight: '800', color: C.text, marginTop: 12 },
-  heroSub: { fontSize: 14, color: C.sub, marginTop: 6, lineHeight: 20 },
+  content: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, maxWidth: 400, alignSelf: 'center', width: '100%' },
+  logoCenter: { alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  heroTitle: { fontFamily: FONTS.heading, fontSize: 34, fontWeight: '800', color: C.text, textAlign: 'center', marginTop: 4 },
+  heroSub: { fontSize: 15, color: C.sub, marginTop: 8, lineHeight: 22, textAlign: 'center' },
 
   errorBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: 'rgba(3, 2, 8, 0.76)' },
   errorCard: { width: '100%', maxWidth: 360, alignItems: 'center', padding: 24, borderRadius: 24, backgroundColor: 'rgba(18, 14, 31, 0.98)', borderWidth: 1, borderColor: 'rgba(236, 72, 153, 0.42)', shadowColor: C.pink, shadowOpacity: 0.25, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 12 },
@@ -258,6 +259,14 @@ const s = StyleSheet.create({
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
 
   primaryBtn: { height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  separatorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 16 },
+  separatorLine: { flex: 1, height: 1, backgroundColor: 'rgba(221,232,255,0.24)' },
+  separatorText: { color: C.sub, fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  providerRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 3 },
+  providerCard: { width: 150, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', borderRadius: 20, paddingVertical: 16 },
+  providerIcon: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(139,92,246,0.24)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)', marginBottom: 10 },
+  providerIconText: { color: C.text, fontFamily: FONTS.heading, fontSize: 28, fontWeight: '800' },
+  providerText: { color: C.text, fontSize: 14, fontWeight: '700', textAlign: 'center', lineHeight: 18 },
   primaryBtnText: { fontSize: 15, fontWeight: '700', color: '#1A0B12' },
 
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 20 },
