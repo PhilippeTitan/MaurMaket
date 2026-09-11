@@ -267,64 +267,24 @@ function StepActions({ children, step, label, onBack, compact }: { children: Rea
 const Field = React.forwardRef<TextInput, { icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters'; right?: React.ReactNode; onFocus?: () => void }>(function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, autoCapitalize, right, onFocus }, ref) {
   const inputRef = useRef<TextInput | null>(null);
   const [isFocused, setIsFocused] = useState(false);
-  const hasValue = value.trim().length > 0;
-  const labelAnim = useRef(new Animated.Value(hasValue ? 0 : 1)).current;
-
-  useEffect(() => {
-    Animated.timing(labelAnim, {
-      toValue: hasValue ? 0 : 1,
-      duration: 80,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [hasValue, labelAnim]);
-
-  const chars = label.split('');
 
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={[s.field, isFocused && s.fieldFocused]} accessibilityRole="none">
       <MaterialCommunityIcons name={icon} size={18} color={isFocused ? C.violet : C.sub} />
-      <View style={{ flex: 1 }}>
-        <Animated.View pointerEvents="none" style={{
-          position: 'absolute',
-          left: 0,
-          top: 14,
-          right: 0,
-          height: 22,
-          alignItems: 'center',
-          flexDirection: 'row',
-          overflow: 'hidden',
-        }}>
-          {chars.map((char, index) => (
-            <Animated.Text
-              key={`${char}-${index}`}
-              style={{
-                color: C.sub,
-                fontSize: 14,
-                fontWeight: '600',
-                opacity: labelAnim,
-                includeFontPadding: false,
-                lineHeight: 18,
-                marginRight: char === ' ' ? 4 : 0,
-              }}
-            >
-              {char}
-            </Animated.Text>
-          ))}
-        </Animated.View>
+      <View style={{ flex: 1, justifyContent: 'center' }}>
+        <Text style={s.fieldLabel}>{label}</Text>
         <TextInput
           ref={node => { inputRef.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node; }}
           onFocus={() => { setIsFocused(true); onFocus?.(); }}
           onBlur={() => setIsFocused(false)}
-          style={[s.fieldInput, { marginTop: 20, paddingTop: 0, paddingBottom: 0 }]}
+          style={s.fieldInput}
           value={value}
           onChangeText={onChangeText}
-          placeholder={undefined}
+          placeholder={placeholder}
           placeholderTextColor={C.sub}
           secureTextEntry={secureTextEntry}
           autoCapitalize={autoCapitalize || 'none'}
         />
-        <Animated.View style={[s.waveBar, isFocused && s.waveBarActive]} />
       </View>
       {right}
     </TouchableOpacity>
@@ -332,62 +292,21 @@ const Field = React.forwardRef<TextInput, { icon: any; label: string; value: str
 });
 
 function GhostFieldRow({ icon, label, value, onChangeText, secure, capitalize, active }: { icon: any; label: string; value: string; onChangeText: (value: string) => void; secure?: boolean; capitalize?: 'none' | 'sentences' | 'words' | 'characters'; active?: boolean }) {
-  const hasValue = value.trim().length > 0;
-  const labelAnim = useRef(new Animated.Value(hasValue ? 0 : 1)).current;
-
-  useEffect(() => {
-    Animated.timing(labelAnim, {
-      toValue: hasValue ? 0 : 1,
-      duration: 80,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [hasValue, labelAnim]);
-
-  const chars = label.split('');
-
   return (
     <View style={[s.keyboardGhostRow, active && s.keyboardGhostRowActive]}>
       <MaterialCommunityIcons name={icon} size={18} color={active ? C.violet : C.sub} />
-      <View style={{ flex: 1 }}>
-        <Animated.View pointerEvents="none" style={{
-          position: 'absolute',
-          left: 0,
-          top: 14,
-          right: 0,
-          height: 22,
-          alignItems: 'center',
-          flexDirection: 'row',
-          overflow: 'hidden',
-        }}>
-          {chars.map((char, index) => (
-            <Animated.Text
-              key={`${char}-${index}`}
-              style={{
-                color: C.sub,
-                fontSize: 14,
-                fontWeight: '600',
-                opacity: labelAnim,
-                includeFontPadding: false,
-                lineHeight: 18,
-                marginRight: char === ' ' ? 4 : 0,
-              }}
-            >
-              {char}
-            </Animated.Text>
-          ))}
-        </Animated.View>
+      <View style={{ flex: 1, justifyContent: 'center' }}>
+        <Text style={s.fieldLabel}>{label}</Text>
         <TextInput
           autoFocus={active}
-          style={[s.keyboardGhostInput, { marginTop: 18, paddingTop: 0, paddingBottom: 0 }]}
+          style={s.keyboardGhostInput}
           value={value}
           onChangeText={onChangeText}
-          placeholder={undefined}
+          placeholder={label}
           placeholderTextColor={C.sub}
           secureTextEntry={secure}
           autoCapitalize={capitalize}
         />
-        <Animated.View style={[s.waveBar, active && s.waveBarActive]} />
       </View>
     </View>
   );
@@ -1031,8 +950,6 @@ const s = StyleSheet.create({
   fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
   fieldError: { color: C.pink, fontSize: 12.5, marginTop: 4 },
-  waveBar: { position: 'absolute', left: 0, right: 0, bottom: -2, height: 2, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)' },
-  waveBarActive: { backgroundColor: C.violet, shadowColor: C.violet, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 4 },
   keyboardGhostStack: { position: 'absolute', left: 28, right: 28, paddingHorizontal: 0, paddingVertical: 0, gap: 8 },
   keyboardGhostRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 62, borderRadius: 16, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, paddingHorizontal: 16, paddingVertical: 12 },
   keyboardGhostRowActive: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
