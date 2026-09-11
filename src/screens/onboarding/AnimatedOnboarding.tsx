@@ -1415,6 +1415,7 @@ const s = StyleSheet.create({
     bottom: 111,
     height: 58,
     zIndex: 10,
+    overflow: 'visible',
   },
   dobDateShower: {
     position: 'absolute',
