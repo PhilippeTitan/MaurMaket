@@ -3,7 +3,6 @@ import { View, StyleSheet } from 'react-native';
 import { COLORS } from '../../theme';
 import AnimatedOnboarding from './AnimatedOnboarding';
 import AnimatedSignin from './AnimatedSignin';
-import AmbientBackground from './components/AmbientBackground';
 import ForgotPasswordSheet from '../../components/ForgotPasswordSheet';
 
 type AuthMode = 'signup' | 'signin';
@@ -20,7 +19,6 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
 
   return (
     <View style={styles.container}>
-      <AmbientBackground />
       {mode === 'signup' ? (
         <AnimatedOnboarding onSwitchToSignin={switchMode} />
       ) : (
