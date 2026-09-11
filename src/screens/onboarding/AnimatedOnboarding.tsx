@@ -276,7 +276,8 @@ function DobWheelColumn({
 
   const handleMomentumScrollEnd = (e: any) => {
     isUserScrolling.current = false;
-    const offsetY = e.nativeEvent.contentOffset.y;
+    const offsetY = e?.nativeEvent?.contentOffset?.y;
+    if (typeof offsetY !== 'number') return;
     const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
     const clampedIdx = Math.max(0, Math.min(rawIdx, items.length - 1));
     const item = items[clampedIdx];
@@ -286,11 +287,14 @@ function DobWheelColumn({
   };
 
   const handleScrollEndDrag = (e: any) => {
+    // Extract offsetY synchronously from synthetic event before it's pooled
+    const offsetY = e?.nativeEvent?.contentOffset?.y;
+    if (typeof offsetY !== 'number') return;
+
     if (Platform.OS === 'android') {
       // Android momentum end can sometimes be skipped if drag stops abruptly
       setTimeout(() => {
         if (!isUserScrolling.current) {
-          const offsetY = e.nativeEvent.contentOffset.y;
           const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
           const clampedIdx = Math.max(0, Math.min(rawIdx, items.length - 1));
           const item = items[clampedIdx];
