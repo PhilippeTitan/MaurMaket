@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, Modal,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, Modal, Image,
   Easing, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -154,9 +154,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 
         <View style={s.content}>
 
-          {/* Logo mark only, matching the screenshot's centered icon stack */}
+          {/* Logo */}
           <View style={s.logoCenter}>
-            <Logomark size={56} />
+            <Image source={require('../../../../assets/Logo/MaurMaket Logo Trans.png')} style={{ width: 64, height: 64, resizeMode: 'contain' }} />
           </View>
 
           {/* Title */}
