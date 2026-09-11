@@ -109,9 +109,11 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
   // Animations
   const fadeIn = useRef(new Animated.Value(0)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  const spin = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeIn, { toValue: 1, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    Animated.loop(Animated.timing(spin, { toValue: 1, duration: 4000, easing: Easing.linear, useNativeDriver: true })).start();
   }, []);
 
   const canSubmit = email.trim() && password.trim();
@@ -154,9 +156,20 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 
         <View style={s.content}>
 
-          {/* Logo */}
+          {/* Logo with animated gradient ring */}
           <View style={s.logoCenter}>
-            <Image source={require('../../../assets/Logo/maurmaket-logo-icon.png')} style={{ width: 64, height: 64, resizeMode: 'contain' }} />
+            <View style={s.logoRingOuter}>
+              <Animated.View style={[s.logoRingGradient, { transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>
+                <LinearGradient
+                  colors={[C.violet, C.pink, C.amber, C.violet]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={s.logoRingGradientInner}
+                />
+              </Animated.View>
+            </View>
+            <View style={s.logoImageContainer}>
+              <Image source={require('../../../assets/Logo/maurmaket-logo-icon.png')} style={{ width: 96, height: 96, resizeMode: 'contain' }} />
+            </View>
           </View>
 
           {/* Title */}
@@ -193,7 +206,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
           <View style={s.providerRow}>
             <TouchableOpacity onPress={handleGoogle} style={s.providerCard}>
               <View style={s.providerIcon}>
-                <Svg width="22" height="22" viewBox="0 0 24 24">
+                <Svg width="28" height="28" viewBox="0 0 24 24">
                   <Path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
                   <Path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
                   <Path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
@@ -204,7 +217,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
             </TouchableOpacity>
             <TouchableOpacity onPress={() => {}} style={s.providerCard}>
               <View style={s.providerIcon}>
-                <Svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <Svg width="28" height="28" viewBox="0 0 24 24" fill="none">
                   <Path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" stroke={C.violet} strokeWidth="1.5" fill="none"/>
                   <Path d="M15 9.5C15 10.88 13.88 12 12.5 12H11.5C10.12 12 9 10.88 9 9.5S10.12 7 11.5 7h1C13.88 7 15 8.12 15 9.5z" fill={C.violet}/>
                   <Path d="M8 18.5c0-2.21 1.79-4 4-4h0c2.21 0 4 1.79 4 4" stroke={C.violet} strokeWidth="1.5" fill="none" strokeLinecap="round"/>
@@ -250,6 +263,10 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
 const s = StyleSheet.create({
   content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   logoCenter: { alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  logoRingOuter: { width: 120, height: 120, borderRadius: 60, alignItems: 'center', justifyContent: 'center', padding: 3 },
+  logoRingGradient: { width: 120, height: 120, borderRadius: 60, alignItems: 'center', justifyContent: 'center' },
+  logoRingGradientInner: { width: 120, height: 120, borderRadius: 60 },
+  logoImageContainer: { position: 'absolute', width: 108, height: 108, borderRadius: 54, alignItems: 'center', justifyContent: 'center', backgroundColor: '#120E1F' },
   heroTitle: { fontFamily: FONTS.heading, fontSize: 34, fontWeight: '800', color: C.text, textAlign: 'center', marginTop: 4 },
   heroAccent: { color: C.pink },
   heroSub: { fontSize: 15, color: C.sub, marginTop: 8, lineHeight: 22, textAlign: 'center' },
@@ -273,7 +290,7 @@ const s = StyleSheet.create({
   separatorText: { color: C.sub, fontSize: 12, fontWeight: '700', textAlign: 'center' },
   providerRow: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 3 },
   providerCard: { alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
-  providerIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(139,92,246,0.12)', borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.4)', marginBottom: 6 },
+  providerIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(139,92,246,0.12)', borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.4)', marginBottom: 6 },
   providerText: { color: C.text, fontSize: 12, fontWeight: '600', textAlign: 'center' },
   primaryBtnText: { fontSize: 15, fontWeight: '700', color: '#1A0B12' },
 
