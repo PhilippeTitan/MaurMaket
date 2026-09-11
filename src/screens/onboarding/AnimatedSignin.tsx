@@ -227,9 +227,13 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
                 </Animated.View>
                 <View style={s.providerIconInner}>
                   <Svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                    <Path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" stroke={C.violet} strokeWidth="1.5" fill="none"/>
-                    <Path d="M15 9.5C15 10.88 13.88 12 12.5 12H11.5C10.12 12 9 10.88 9 9.5S10.12 7 11.5 7h1C13.88 7 15 8.12 15 9.5z" fill={C.violet}/>
-                    <Path d="M8 18.5c0-2.21 1.79-4 4-4h0c2.21 0 4 1.79 4 4" stroke={C.violet} strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+                    <Path d="M18.9 7.1C17.6 5.1 15.4 3.8 13 3.5V1h-2v2.5C8.2 3.8 5.7 5.3 4.5 7.6" stroke={C.violet} strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                    <Path d="M19.5 9.5c-1-2.5-3-4.2-5.5-4.9V7c1.8.5 3.3 1.9 4 3.8" stroke={C.violet} strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                    <Path d="M12 10.5c-2.5 0-4.5 1.5-5.2 3.8" stroke={C.violet} strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                    <Path d="M15.5 13c-.3-1.2-1.2-2.2-2.5-2.5" stroke={C.violet} strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                    <Path d="M6.5 16c1 2.5 2.8 4 5.5 4.5" stroke={C.violet} strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                    <Path d="M12 20.5c2-.3 3.5-1.3 4.5-3" stroke={C.violet} strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                    <Path d="M18.5 17c-1.2 2.2-3.2 3.5-5.5 3.5" stroke={C.violet} strokeWidth="1.5" strokeLinecap="round" fill="none"/>
                   </Svg>
                 </View>
               </View>
