@@ -253,53 +253,34 @@ function DobWheelColumn({
   onSelect,
   label,
   formatItem,
-  loop = true,
 }: {
   items: (number | string)[];
   selectedValue: number | string | null;
   onSelect: (val: any) => void;
   label: string;
   formatItem?: (val: any) => string;
-  loop?: boolean;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const isUserScrolling = useRef(false);
-
-  // 20 repetition cycles for seamless continuous scrolling
-  const REPEAT_CYCLES = loop && items.length > 1 ? 20 : 1;
-  const MID_CYCLE = Math.floor(REPEAT_CYCLES / 2); // Cycle 10 is the center
   const N = items.length;
 
-  const displayItems = React.useMemo(() => {
-    if (!loop || N <= 1) return items;
-    const repeated: (number | string)[] = [];
-    for (let c = 0; c < REPEAT_CYCLES; c++) {
-      for (let i = 0; i < N; i++) {
-        repeated.push(items[i]);
-      }
-    }
-    return repeated;
-  }, [items, loop, N, REPEAT_CYCLES]);
-
-  // Initial sync: position user cleanly in the middle cycle (Cycle 10)
+  // Sync scroll position to selected value
   useEffect(() => {
     if (selectedValue != null && !isUserScrolling.current) {
-      const origIdx = items.indexOf(selectedValue);
-      if (origIdx >= 0) {
-        const targetIdx = loop ? MID_CYCLE * N + origIdx : origIdx;
-        scrollRef.current?.scrollTo({ y: targetIdx * DOB_ITEM_HEIGHT, animated: false });
+      const idx = items.indexOf(selectedValue);
+      if (idx >= 0) {
+        scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: false });
       }
     }
-  }, [selectedValue, items, loop, N, MID_CYCLE]);
+  }, [selectedValue, items]);
 
   const handleMomentumScrollEnd = (e: any) => {
     isUserScrolling.current = false;
     const offsetY = e?.nativeEvent?.contentOffset?.y;
     if (typeof offsetY !== 'number') return;
-    const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
-    const origIdx = loop ? ((rawIdx % N) + N) % N : Math.max(0, Math.min(rawIdx, N - 1));
-    const selected = items[origIdx];
+    const rawIdx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
+    const selected = items[rawIdx];
     if (selected !== undefined && selected !== selectedValue) {
       onSelect(selected);
     }
@@ -312,9 +293,8 @@ function DobWheelColumn({
     if (Platform.OS === 'android') {
       setTimeout(() => {
         if (!isUserScrolling.current) {
-          const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
-          const origIdx = loop ? ((rawIdx % N) + N) % N : Math.max(0, Math.min(rawIdx, N - 1));
-          const selected = items[origIdx];
+          const rawIdx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
+          const selected = items[rawIdx];
           if (selected !== undefined && selected !== selectedValue) {
             onSelect(selected);
           }
@@ -349,11 +329,10 @@ function DobWheelColumn({
           }}
           style={s.dobWheelScroll}
         >
-          {displayItems.map((item, idx) => {
+          {items.map((item, idx) => {
             const display = formatItem ? formatItem(item) : String(item);
             const itemOffset = idx * DOB_ITEM_HEIGHT;
 
-            // Distance from center lens
             const inputRange = [
               itemOffset - DOB_ITEM_HEIGHT * 2,
               itemOffset - DOB_ITEM_HEIGHT,
