@@ -234,6 +234,71 @@ function StepBadge({ step, total, label }: { step: number; total: number; label:
   );
 }
 
+/* ── Birthday Picker Wheel Column ─────────────────────────── */
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const FULL_MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+] as const;
+
+function DobWheelColumn({
+  items,
+  selectedValue,
+  onSelect,
+  label,
+  formatItem,
+}: {
+  items: (number | string)[];
+  selectedValue: number | string | null;
+  onSelect: (val: any) => void;
+  label: string;
+  formatItem?: (val: any) => string;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (selectedValue != null) {
+      const idx = items.indexOf(selectedValue);
+      if (idx >= 0) {
+        setTimeout(() => {
+          scrollRef.current?.scrollTo({ y: Math.max(0, idx * 44 - 60), animated: true });
+        }, 120);
+      }
+    }
+  }, [selectedValue]);
+
+  return (
+    <View style={s.dobWheelCol}>
+      <Text style={s.dobWheelLabel}>{label}</Text>
+      <ScrollView
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.dobWheelScrollContent}
+        style={s.dobWheelScroll}
+        nestedScrollEnabled
+      >
+        {items.map(item => {
+          const active = selectedValue === item;
+          const display = formatItem ? formatItem(item) : String(item);
+          return (
+            <TouchableOpacity
+              key={String(item)}
+              onPress={() => onSelect(item)}
+              activeOpacity={0.7}
+              style={[s.dobWheelItem, active && s.dobWheelItemActive]}
+            >
+              <Text style={[s.dobWheelItemText, active && s.dobWheelItemTextActive]}>
+                {display}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
 function PrimaryButton({ children, onPress, disabled }: { children: React.ReactNode; onPress: () => void; disabled?: boolean }) {
   return (
     <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={{ width: '100%', opacity: disabled ? 0.7 : 1 }}>
@@ -338,6 +403,31 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
+  // Birthday screen vertical picker animation & state
+  const [dobPickerActive, setDobPickerActive] = useState(false);
+  const [dobActiveTab, setDobActiveTab] = useState<'month' | 'day' | 'year'>('month');
+  const dobPickerAnim = useRef(new Animated.Value(0)).current;
+
+  const openDobPicker = useCallback((tab: 'month' | 'day' | 'year' = 'month') => {
+    setDobActiveTab(tab);
+    setDobPickerActive(true);
+    Animated.spring(dobPickerAnim, {
+      toValue: 1,
+      tension: 68,
+      friction: 10,
+      useNativeDriver: true,
+    }).start();
+  }, [dobPickerAnim]);
+
+  const closeDobPicker = useCallback(() => {
+    Animated.timing(dobPickerAnim, {
+      toValue: 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => setDobPickerActive(false));
+  }, [dobPickerAnim]);
+
   const [splashReady, setSplashReady] = useState(false);
   const [revealing, setRevealing] = useState(false);
   const reveal = useRef(new Animated.Value(0)).current;
@@ -396,7 +486,11 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
     enterAnim.setValue(0);
     Animated.timing(enterAnim, { toValue: 1, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-  }, [index]);
+    if (index !== 6) {
+      dobPickerAnim.setValue(0);
+      setDobPickerActive(false);
+    }
+  }, [index, dobPickerAnim]);
 
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
@@ -743,31 +837,277 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             )}
 
             {/* SCREEN 6 — DOB */}
-            {index === 6 && (
-              <View style={s.stepScreen}>
-                <AssetIllustration asset="birthday" accessibilityLabel="Birthday illustration" containerStyle={s.birthdayArtwork} />
-                <View style={[s.datePickerRow, s.birthdayDatePickerRow]}>
-                  <TouchableOpacity style={s.dateSelector} onPress={() => set('birthMonth', form.birthMonth ? (form.birthMonth % 12) + 1 : 1)} accessibilityRole="button" accessibilityLabel="Select birth month">
-                    <MaterialCommunityIcons name="calendar-month-outline" size={20} color={C.text} />
-                    <Text numberOfLines={1} style={[s.dateSelectorText, !form.birthMonth && s.dateSelectorPlaceholder]}>{form.birthMonth ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][form.birthMonth - 1] : 'Month'}</Text>
-                    <MaterialCommunityIcons name="chevron-down" size={20} color={C.sub} />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={s.dateSelector} onPress={() => set('birthDay', form.birthDay ? (form.birthDay % 31) + 1 : 1)} accessibilityRole="button" accessibilityLabel="Select birth day">
-                    <MaterialCommunityIcons name="calendar-month-outline" size={20} color={C.text} />
-                    <Text numberOfLines={1} style={[s.dateSelectorText, !form.birthDay && s.dateSelectorPlaceholder]}>{form.birthDay || 'Day'}</Text>
-                    <MaterialCommunityIcons name="chevron-down" size={20} color={C.sub} />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={s.dateSelector} onPress={() => set('birthYear', form.birthYear ? (form.birthYear >= new Date().getFullYear() - 18 ? new Date().getFullYear() - 97 : form.birthYear + 1) : new Date().getFullYear() - 18)} accessibilityRole="button" accessibilityLabel="Select birth year">
-                    <MaterialCommunityIcons name="calendar-month-outline" size={20} color={C.text} />
-                    <Text numberOfLines={1} style={[s.dateSelectorText, !form.birthYear && s.dateSelectorPlaceholder]}>{form.birthYear || 'Year'}</Text>
-                    <MaterialCommunityIcons name="chevron-down" size={20} color={C.sub} />
-                  </TouchableOpacity>
+            {index === 6 && (() => {
+              const currentYear = new Date().getFullYear();
+              const monthItems = Array.from({ length: 12 }, (_, i) => i + 1);
+              const maxDaysInMonth = form.birthMonth && form.birthYear
+                ? new Date(form.birthYear, form.birthMonth, 0).getDate()
+                : 31;
+              const dayItems = Array.from({ length: maxDaysInMonth }, (_, i) => i + 1);
+              const yearItems = Array.from({ length: 82 }, (_, i) => (currentYear - 18) - i);
+
+              const formattedFullDate = birthDateValid
+                ? `${FULL_MONTH_NAMES[form.birthMonth! - 1]} ${form.birthDay}, ${form.birthYear}`
+                : form.birthMonth || form.birthDay || form.birthYear
+                ? `${form.birthMonth ? MONTH_NAMES[form.birthMonth - 1] : 'Month'} ${form.birthDay || 'Day'}, ${form.birthYear || 'Year'}`
+                : 'Select your birthday';
+
+              let ageNumber: number | null = null;
+              if (birthDateValid) {
+                const birthDate = new Date(form.birthYear!, form.birthMonth! - 1, form.birthDay!);
+                const today = new Date();
+                let age = today.getFullYear() - birthDate.getFullYear();
+                const monthDelta = today.getMonth() - birthDate.getMonth();
+                if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) age--;
+                ageNumber = age;
+              }
+
+              const artOpacity = dobPickerAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 0],
+              });
+
+              const containerTranslateY = dobPickerAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -210],
+              });
+
+              const headerOpacity = dobPickerAnim.interpolate({
+                inputRange: [0, 0.4, 1],
+                outputRange: [0, 0.5, 1],
+              });
+
+              const headerTranslateY = dobPickerAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [14, 0],
+              });
+
+              const carouselOpacity = dobPickerAnim.interpolate({
+                inputRange: [0, 0.3, 1],
+                outputRange: [0, 0.4, 1],
+              });
+
+              const carouselTranslateY = dobPickerAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [24, 0],
+              });
+
+              return (
+                <View style={s.stepScreen}>
+                  {/* Fading Illustration */}
+                  <Animated.View
+                    pointerEvents={dobPickerActive ? 'none' : 'auto'}
+                    style={[s.birthdayArtwork, { opacity: artOpacity }]}
+                  >
+                    <AssetIllustration
+                      asset="birthday"
+                      accessibilityLabel="Birthday illustration"
+                      containerStyle={{ height: '100%', marginBottom: 0 }}
+                    />
+                  </Animated.View>
+
+                  {/* Animated Center Stage Container: Date Shower + 3 Boxes + Vertical Wheels */}
+                  <Animated.View
+                    style={[
+                      s.dobCenterContainer,
+                      {
+                        transform: [{ translateY: containerTranslateY }],
+                      },
+                    ]}
+                  >
+                    {/* White Date Shower above the boxes */}
+                    <Animated.View
+                      style={[
+                        s.dobDateShower,
+                        {
+                          opacity: headerOpacity,
+                          transform: [{ translateY: headerTranslateY }],
+                        },
+                      ]}
+                    >
+                      <Text style={s.dobDateShowerText}>{formattedFullDate}</Text>
+                      {ageNumber != null && (
+                        <Text
+                          style={[
+                            s.dobAgeBadge,
+                            ageNumber >= 18 ? s.dobAgeBadgeAdult : s.dobAgeBadgeMinor,
+                          ]}
+                        >
+                          {ageNumber >= 18
+                            ? `✓ ${ageNumber} years old (18+ verified)`
+                            : `✕ ${ageNumber} years old (Must be 18+)`}
+                        </Text>
+                      )}
+                    </Animated.View>
+
+                    {/* 3 Date Selector Boxes */}
+                    <View style={s.datePickerRow}>
+                      <TouchableOpacity
+                        style={[
+                          s.dateSelector,
+                          dobPickerActive && dobActiveTab === 'month' && s.dateSelectorActive,
+                        ]}
+                        onPress={() => {
+                          if (!form.birthMonth) set('birthMonth', 1);
+                          openDobPicker('month');
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Select birth month"
+                      >
+                        <MaterialCommunityIcons
+                          name="calendar-month-outline"
+                          size={20}
+                          color={dobPickerActive && dobActiveTab === 'month' ? C.violet : C.text}
+                        />
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            s.dateSelectorText,
+                            !form.birthMonth && s.dateSelectorPlaceholder,
+                            dobPickerActive && dobActiveTab === 'month' && { color: '#FFFFFF' },
+                          ]}
+                        >
+                          {form.birthMonth ? MONTH_NAMES[form.birthMonth - 1] : 'Month'}
+                        </Text>
+                        <MaterialCommunityIcons
+                          name={dobPickerActive && dobActiveTab === 'month' ? 'chevron-up' : 'chevron-down'}
+                          size={20}
+                          color={dobPickerActive && dobActiveTab === 'month' ? C.violet : C.sub}
+                        />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          s.dateSelector,
+                          dobPickerActive && dobActiveTab === 'day' && s.dateSelectorActive,
+                        ]}
+                        onPress={() => {
+                          if (!form.birthDay) set('birthDay', 1);
+                          openDobPicker('day');
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Select birth day"
+                      >
+                        <MaterialCommunityIcons
+                          name="calendar-month-outline"
+                          size={20}
+                          color={dobPickerActive && dobActiveTab === 'day' ? C.violet : C.text}
+                        />
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            s.dateSelectorText,
+                            !form.birthDay && s.dateSelectorPlaceholder,
+                            dobPickerActive && dobActiveTab === 'day' && { color: '#FFFFFF' },
+                          ]}
+                        >
+                          {form.birthDay || 'Day'}
+                        </Text>
+                        <MaterialCommunityIcons
+                          name={dobPickerActive && dobActiveTab === 'day' ? 'chevron-up' : 'chevron-down'}
+                          size={20}
+                          color={dobPickerActive && dobActiveTab === 'day' ? C.violet : C.sub}
+                        />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          s.dateSelector,
+                          dobPickerActive && dobActiveTab === 'year' && s.dateSelectorActive,
+                        ]}
+                        onPress={() => {
+                          if (!form.birthYear) set('birthYear', currentYear - 18);
+                          openDobPicker('year');
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Select birth year"
+                      >
+                        <MaterialCommunityIcons
+                          name="calendar-month-outline"
+                          size={20}
+                          color={dobPickerActive && dobActiveTab === 'year' ? C.violet : C.text}
+                        />
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            s.dateSelectorText,
+                            !form.birthYear && s.dateSelectorPlaceholder,
+                            dobPickerActive && dobActiveTab === 'year' && { color: '#FFFFFF' },
+                          ]}
+                        >
+                          {form.birthYear || 'Year'}
+                        </Text>
+                        <MaterialCommunityIcons
+                          name={dobPickerActive && dobActiveTab === 'year' ? 'chevron-up' : 'chevron-down'}
+                          size={20}
+                          color={dobPickerActive && dobActiveTab === 'year' ? C.violet : C.sub}
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Revealing Vertical Carousel Tray */}
+                    {dobPickerActive && (
+                      <Animated.View
+                        style={[
+                          s.dobWheelTray,
+                          {
+                            opacity: carouselOpacity,
+                            transform: [{ translateY: carouselTranslateY }],
+                          },
+                        ]}
+                      >
+                        <View style={s.dobWheelRow}>
+                          <DobWheelColumn
+                            label="Month"
+                            items={monthItems}
+                            selectedValue={form.birthMonth}
+                            onSelect={m => {
+                              set('birthMonth', m);
+                              setDobActiveTab('month');
+                            }}
+                            formatItem={m => MONTH_NAMES[m - 1]}
+                          />
+                          <DobWheelColumn
+                            label="Day"
+                            items={dayItems}
+                            selectedValue={form.birthDay}
+                            onSelect={d => {
+                              set('birthDay', d);
+                              setDobActiveTab('day');
+                            }}
+                          />
+                          <DobWheelColumn
+                            label="Year"
+                            items={yearItems}
+                            selectedValue={form.birthYear}
+                            onSelect={y => {
+                              set('birthYear', y);
+                              setDobActiveTab('year');
+                            }}
+                          />
+                        </View>
+                      </Animated.View>
+                    )}
+                  </Animated.View>
+
+                  <StepActions
+                    step={5}
+                    label={STEP_LABELS.dob}
+                    onBack={() => {
+                      if (dobPickerActive) {
+                        closeDobPicker();
+                      } else {
+                        go(-1);
+                      }
+                    }}
+                  >
+                    <PrimaryButton onPress={validateAndNext} disabled={!birthDateValid}>
+                      Continue
+                    </PrimaryButton>
+                  </StepActions>
                 </View>
-                <StepActions step={5} label={STEP_LABELS.dob} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={!birthDateValid}>Continue</PrimaryButton>
-                </StepActions>
-              </View>
-            )}
+              );
+            })()}
 
             {/* SCREEN 7 — PASSWORD */}
             {index === 7 && (
@@ -914,11 +1254,122 @@ const s = StyleSheet.create({
   stepCount: { color: C.sub, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   datePickerRow: { flexDirection: 'row', gap: 15, width: '100%', marginBottom: 15 },
   dateSelector: { flex: 1, height: 58, minWidth: 0, borderRadius: 14, backgroundColor: 'rgba(13,23,52,0.72)', borderWidth: 1, borderColor: '#315BA8', paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dateSelectorActive: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   dateSelectorText: { flex: 1, color: C.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
   dateSelectorPlaceholder: { color: '#B9C7E8', fontWeight: '500' },
   actions: { position: 'absolute', left: 0, right: 0, bottom: 44, width: '100%', alignItems: 'stretch' },
   birthdayArtwork: { position: 'absolute', left: 0, right: 0, bottom: 184, height: 455, marginBottom: 0 },
   birthdayDatePickerRow: { position: 'absolute', left: 0, right: 0, bottom: 111, marginBottom: 0 },
+
+  // Birthday animation & vertical carousel styles
+  dobCenterContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 111,
+    zIndex: 10,
+  },
+  dobDateShower: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  dobDateShowerText: {
+    color: '#0A0812',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
+  dobAgeBadge: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  dobAgeBadgeAdult: {
+    color: '#059669',
+  },
+  dobAgeBadgeMinor: {
+    color: '#DC2626',
+  },
+  dobWheelTray: {
+    marginTop: 16,
+    height: 190,
+    borderRadius: 22,
+    backgroundColor: 'rgba(21,19,38,0.95)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(139,92,246,0.4)',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 6,
+    shadowColor: C.violet,
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  dobWheelRow: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dobWheelCol: {
+    flex: 1,
+    height: '100%',
+    alignItems: 'center',
+  },
+  dobWheelLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: C.sub,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  dobWheelScroll: {
+    width: '100%',
+    flex: 1,
+  },
+  dobWheelScrollContent: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  dobWheelItem: {
+    width: '100%',
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 2,
+  },
+  dobWheelItemActive: {
+    backgroundColor: 'rgba(139,92,246,0.3)',
+    borderWidth: 1,
+    borderColor: C.violet,
+  },
+  dobWheelItemText: {
+    fontSize: 14,
+    color: C.faint,
+    fontWeight: '500',
+  },
+  dobWheelItemTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+
   topBackAction: { minHeight: 38, paddingHorizontal: 4, paddingRight: 12, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
   // Splash
