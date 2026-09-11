@@ -234,13 +234,18 @@ function StepBadge({ step, total, label }: { step: number; total: number; label:
   );
 }
 
-/* ── Birthday Picker Wheel Column ─────────────────────────── */
+/* ── Birthday Picker Wheel Column (Glass Center Lens) ─────────────────────────── */
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 const FULL_MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ] as const;
+
+const DOB_ITEM_HEIGHT = 44;
+const DOB_VISIBLE_ITEMS = 5;
+const DOB_WHEEL_HEIGHT = DOB_ITEM_HEIGHT * DOB_VISIBLE_ITEMS; // 220
+const DOB_PADDING = (DOB_WHEEL_HEIGHT - DOB_ITEM_HEIGHT) / 2; // 88
 
 function DobWheelColumn({
   items,
@@ -256,45 +261,127 @@ function DobWheelColumn({
   formatItem?: (val: any) => string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const isUserScrolling = useRef(false);
 
+  // Sync scroll position when selectedValue changes externally
   useEffect(() => {
-    if (selectedValue != null) {
+    if (selectedValue != null && !isUserScrolling.current) {
       const idx = items.indexOf(selectedValue);
       if (idx >= 0) {
-        setTimeout(() => {
-          scrollRef.current?.scrollTo({ y: Math.max(0, idx * 44 - 60), animated: true });
-        }, 120);
+        scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: true });
       }
     }
-  }, [selectedValue]);
+  }, [selectedValue, items]);
+
+  const handleMomentumScrollEnd = (e: any) => {
+    isUserScrolling.current = false;
+    const offsetY = e.nativeEvent.contentOffset.y;
+    const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
+    const clampedIdx = Math.max(0, Math.min(rawIdx, items.length - 1));
+    const item = items[clampedIdx];
+    if (item !== undefined && item !== selectedValue) {
+      onSelect(item);
+    }
+  };
+
+  const handleScrollEndDrag = (e: any) => {
+    if (Platform.OS === 'android') {
+      // Android momentum end can sometimes be skipped if drag stops abruptly
+      setTimeout(() => {
+        if (!isUserScrolling.current) {
+          const offsetY = e.nativeEvent.contentOffset.y;
+          const rawIdx = Math.round(offsetY / DOB_ITEM_HEIGHT);
+          const clampedIdx = Math.max(0, Math.min(rawIdx, items.length - 1));
+          const item = items[clampedIdx];
+          if (item !== undefined && item !== selectedValue) {
+            onSelect(item);
+          }
+        }
+      }, 150);
+    }
+  };
 
   return (
     <View style={s.dobWheelCol}>
       <Text style={s.dobWheelLabel}>{label}</Text>
-      <ScrollView
-        ref={scrollRef}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.dobWheelScrollContent}
-        style={s.dobWheelScroll}
-        nestedScrollEnabled
-      >
-        {items.map(item => {
-          const active = selectedValue === item;
-          const display = formatItem ? formatItem(item) : String(item);
-          return (
-            <TouchableOpacity
-              key={String(item)}
-              onPress={() => onSelect(item)}
-              activeOpacity={0.7}
-              style={[s.dobWheelItem, active && s.dobWheelItemActive]}
-            >
-              <Text style={[s.dobWheelItemText, active && s.dobWheelItemTextActive]}>
-                {display}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+
+      <View style={s.dobWheelViewport}>
+        <Animated.ScrollView
+          ref={scrollRef as any}
+          showsVerticalScrollIndicator={false}
+          snapToInterval={DOB_ITEM_HEIGHT}
+          decelerationRate="fast"
+          bounces={false}
+          nestedScrollEnabled
+          onScrollBeginDrag={() => { isUserScrolling.current = true; }}
+          onScrollEndDrag={handleScrollEndDrag}
+          onMomentumScrollEnd={handleMomentumScrollEnd}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true }
+          )}
+          scrollEventThrottle={16}
+          contentContainerStyle={{
+            paddingTop: DOB_PADDING,
+            paddingBottom: DOB_PADDING,
+          }}
+          style={s.dobWheelScroll}
+        >
+          {items.map((item, idx) => {
+            const display = formatItem ? formatItem(item) : String(item);
+            const itemOffset = idx * DOB_ITEM_HEIGHT;
+
+            // Distance from center lens
+            const inputRange = [
+              itemOffset - DOB_ITEM_HEIGHT * 2,
+              itemOffset - DOB_ITEM_HEIGHT,
+              itemOffset,
+              itemOffset + DOB_ITEM_HEIGHT,
+              itemOffset + DOB_ITEM_HEIGHT * 2,
+            ];
+
+            const opacity = scrollY.interpolate({
+              inputRange,
+              outputRange: [0.22, 0.45, 1, 0.45, 0.22],
+              extrapolate: 'clamp',
+            });
+
+            const scale = scrollY.interpolate({
+              inputRange,
+              outputRange: [0.84, 0.92, 1.15, 0.92, 0.84],
+              extrapolate: 'clamp',
+            });
+
+            return (
+              <TouchableOpacity
+                key={String(item)}
+                onPress={() => {
+                  isUserScrolling.current = false;
+                  scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: true });
+                  onSelect(item);
+                }}
+                activeOpacity={0.7}
+                style={s.dobWheelItem}
+              >
+                <Animated.Text
+                  style={[
+                    s.dobWheelItemText,
+                    {
+                      opacity,
+                      transform: [{ scale }],
+                      color: selectedValue === item ? '#FFFFFF' : C.sub,
+                      fontWeight: selectedValue === item ? '800' : '600',
+                    },
+                  ]}
+                >
+                  {display}
+                </Animated.Text>
+              </TouchableOpacity>
+            );
+          })}
+        </Animated.ScrollView>
+      </View>
     </View>
   );
 }
@@ -1056,6 +1143,30 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                           },
                         ]}
                       >
+                        {/* Horizontal Frosted Glass Center Lens */}
+                        <View pointerEvents="none" style={s.dobWheelGlassLens}>
+                          <LinearGradient
+                            colors={['rgba(255,255,255,0.18)', 'rgba(139,92,246,0.12)', 'rgba(255,255,255,0.06)']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={StyleSheet.absoluteFill}
+                          />
+                        </View>
+
+                        {/* Top Gradient Fade Overlay */}
+                        <LinearGradient
+                          pointerEvents="none"
+                          colors={['rgba(21,19,38,0.95)', 'rgba(21,19,38,0.4)', 'transparent']}
+                          style={s.dobWheelTopFade}
+                        />
+
+                        {/* Bottom Gradient Fade Overlay */}
+                        <LinearGradient
+                          pointerEvents="none"
+                          colors={['transparent', 'rgba(21,19,38,0.4)', 'rgba(21,19,38,0.95)']}
+                          style={s.dobWheelBottomFade}
+                        />
+
                         <View style={s.dobWheelRow}>
                           <DobWheelColumn
                             label="Month"
@@ -1304,30 +1415,69 @@ const s = StyleSheet.create({
   },
   dobWheelTray: {
     marginTop: 16,
-    height: 190,
-    borderRadius: 22,
-    backgroundColor: 'rgba(21,19,38,0.95)',
+    height: 252,
+    borderRadius: 24,
+    backgroundColor: 'rgba(18,14,31,0.95)',
     borderWidth: 1.5,
-    borderColor: 'rgba(139,92,246,0.4)',
+    borderColor: 'rgba(139,92,246,0.45)',
     overflow: 'hidden',
     paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 6,
+    paddingTop: 8,
+    paddingBottom: 4,
+    position: 'relative',
     shadowColor: C.violet,
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
+    elevation: 12,
   },
   dobWheelRow: {
     flex: 1,
     flexDirection: 'row',
     gap: 8,
+    zIndex: 1,
   },
   dobWheelCol: {
     flex: 1,
     height: '100%',
     alignItems: 'center',
+  },
+  dobWheelViewport: {
+    flex: 1,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  dobWheelGlassLens: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    top: 114, // 28px header/padding + 88px (DOB_PADDING)
+    height: 44, // DOB_ITEM_HEIGHT
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: 'rgba(255,255,255,0.3)',
+    overflow: 'hidden',
+    zIndex: 2,
+    shadowColor: C.violet,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  dobWheelTopFade: {
+    position: 'absolute',
+    top: 26,
+    left: 0,
+    right: 0,
+    height: 48,
+    zIndex: 3,
+  },
+  dobWheelBottomFade: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 48,
+    zIndex: 3,
   },
   dobWheelLabel: {
     fontSize: 10,
@@ -1335,39 +1485,23 @@ const s = StyleSheet.create({
     color: C.sub,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   dobWheelScroll: {
     width: '100%',
     flex: 1,
   },
-  dobWheelScrollContent: {
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
   dobWheelItem: {
     width: '100%',
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderRadius: 10,
+    height: 44, // DOB_ITEM_HEIGHT
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 2,
-  },
-  dobWheelItemActive: {
-    backgroundColor: 'rgba(139,92,246,0.3)',
-    borderWidth: 1,
-    borderColor: C.violet,
   },
   dobWheelItemText: {
-    fontSize: 14,
-    color: C.faint,
-    fontWeight: '500',
-  },
-  dobWheelItemTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '800',
     fontSize: 15,
+    color: C.faint,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 
   topBackAction: { minHeight: 38, paddingHorizontal: 4, paddingRight: 12, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
