@@ -246,8 +246,17 @@ const DOB_ITEM_HEIGHT = 44;
 const DOB_VISIBLE_ITEMS = 5;
 const DOB_WHEEL_HEIGHT = DOB_ITEM_HEIGHT * DOB_VISIBLE_ITEMS; // 220
 const DOB_PADDING = (DOB_WHEEL_HEIGHT - DOB_ITEM_HEIGHT) / 2; // 88
+const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
+const CURRENT_YEAR = new Date().getFullYear();
+const ALL_YEARS = Array.from({ length: 82 }, (_, i) => (CURRENT_YEAR - 18) - i);
+const DAY_CACHE: Record<number, number[]> = {
+  28: Array.from({ length: 28 }, (_, i) => i + 1),
+  29: Array.from({ length: 29 }, (_, i) => i + 1),
+  30: Array.from({ length: 30 }, (_, i) => i + 1),
+  31: Array.from({ length: 31 }, (_, i) => i + 1),
+};
 
-function DobWheelColumn({
+const DobWheelColumn = React.memo(function DobWheelColumn({
   items,
   selectedValue,
   onSelect,
@@ -300,10 +309,11 @@ function DobWheelColumn({
 
   const handleScrollEndDrag = (e: any) => {
     const offsetY = e?.nativeEvent?.contentOffset?.y;
-    if (typeof offsetY === 'number') {
+    const velocity = e?.nativeEvent?.velocity?.y ?? 0;
+    if (Math.abs(velocity) < 0.2 && typeof offsetY === 'number') {
+      isUserScrolling.current = false;
       updateSelectionImmediate(offsetY);
     }
-    isUserScrolling.current = false;
   };
 
   return (
@@ -314,7 +324,10 @@ function DobWheelColumn({
         <Animated.ScrollView
           ref={scrollRef as any}
           showsVerticalScrollIndicator={false}
-          decelerationRate="normal"
+          snapToInterval={DOB_ITEM_HEIGHT}
+          snapToAlignment="start"
+          decelerationRate="fast"
+          disableIntervalMomentum={true}
           bounces={true}
           overScrollMode="always"
           nestedScrollEnabled={true}
@@ -395,7 +408,7 @@ function DobWheelColumn({
       </View>
     </View>
   );
-}
+});
 
 function PrimaryButton({ children, onPress, disabled }: { children: React.ReactNode; onPress: () => void; disabled?: boolean }) {
   return (
@@ -941,13 +954,12 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
             {/* SCREEN 6 — DOB */}
             {index === 6 && (() => {
-              const currentYear = new Date().getFullYear();
-              const monthItems = Array.from({ length: 12 }, (_, i) => i + 1);
+              const monthItems = ALL_MONTHS;
               const maxDaysInMonth = form.birthMonth && form.birthYear
                 ? new Date(form.birthYear, form.birthMonth, 0).getDate()
                 : 31;
-              const dayItems = Array.from({ length: maxDaysInMonth }, (_, i) => i + 1);
-              const yearItems = Array.from({ length: 82 }, (_, i) => (currentYear - 18) - i);
+              const dayItems = DAY_CACHE[maxDaysInMonth] ?? DAY_CACHE[31];
+              const yearItems = ALL_YEARS;
 
               const mm = form.birthMonth ? String(form.birthMonth).padStart(2, '0') : 'MM';
               const dd = form.birthDay ? String(form.birthDay).padStart(2, '0') : 'DD';
@@ -1134,7 +1146,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                           dobPickerActive && dobActiveTab === 'year' && s.dateSelectorActive,
                         ]}
                         onPress={() => {
-                          if (!form.birthYear) set('birthYear', currentYear - 18);
+                          if (!form.birthYear) set('birthYear', CURRENT_YEAR - 18);
                           openDobPicker('year');
                         }}
                         accessibilityRole="button"
