@@ -313,7 +313,8 @@ function DobWheelColumn({
           showsVerticalScrollIndicator={false}
           snapToInterval={DOB_ITEM_HEIGHT}
           decelerationRate="fast"
-          bounces={false}
+          bounces={true}
+          overScrollMode="always"
           nestedScrollEnabled
           onScrollBeginDrag={() => { isUserScrolling.current = true; }}
           onScrollEndDrag={handleScrollEndDrag}
@@ -1006,6 +1007,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
                   {/* Animated Center Stage Container: Date Shower + 3 Boxes + Vertical Wheels */}
                   <Animated.View
+                    pointerEvents={dobPickerActive ? 'box-none' : 'auto'}
                     style={[
                       s.dobCenterContainer,
                       {
@@ -1377,7 +1379,16 @@ const s = StyleSheet.create({
   welcomeActions: { position: 'absolute', left: 0, right: 0, bottom: 18, gap: 12 },
   stepTopBar: { position: 'absolute', top: 28, left: 0, right: 0, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   stepCount: { color: C.sub, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  datePickerRow: { flexDirection: 'row', gap: 15, width: '100%', height: 58 },
+  datePickerRow: {
+    position: 'absolute',
+    top: 66,
+    left: 0,
+    right: 0,
+    height: 58,
+    flexDirection: 'row',
+    gap: 15,
+    zIndex: 14,
+  },
   dateSelector: { flex: 1, height: 58, minWidth: 0, borderRadius: 14, backgroundColor: 'rgba(13,23,52,0.72)', borderWidth: 1, borderColor: '#315BA8', paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
   dateSelectorActive: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   dateSelectorText: { flex: 1, color: C.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
@@ -1391,14 +1402,14 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 111,
-    height: 58,
+    bottom: -145,
+    height: 380,
     zIndex: 10,
     overflow: 'visible',
   },
   dobDateShower: {
     position: 'absolute',
-    bottom: 70,
+    top: 8,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -1438,7 +1449,7 @@ const s = StyleSheet.create({
   },
   dobWheelTray: {
     position: 'absolute',
-    top: 70,
+    top: 132,
     left: 0,
     right: 0,
     height: 246,
