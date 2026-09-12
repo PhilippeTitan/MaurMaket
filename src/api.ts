@@ -504,7 +504,7 @@ export const changePassword = async (currentPassword: string, newPassword: strin
   if (userError || !userData.user?.email) throw new Error('Your session has expired. Please sign in again.');
   const { error: reauthError } = await supabase.auth.signInWithPassword({ email: userData.user.email, password: currentPassword });
   if (reauthError) throw new Error('Current password is incorrect');
-  const { error } = await supabbase.auth.updateUser({ password: newPassword });
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw new Error(error.message);
   return { updated: true };
 };

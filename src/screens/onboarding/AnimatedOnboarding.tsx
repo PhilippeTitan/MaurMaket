@@ -55,38 +55,89 @@ const PURPOSES = [
 
 function Logomark({ size = 40 }: { size?: number }) {
   return (
-    <View style={{ width: size, height: size, borderRadius: size * 0.28, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', shadowColor: C.pink, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.55, shadowRadius: 20, elevation: 8 }}>
-      <Svg width={size} height={size} viewBox="0 0 40 40">
-        <Defs>
-          <SvgLinearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0%" stopColor={C.violet} />
-            <Stop offset="55%" stopColor={C.pink} />
-            <Stop offset="100%" stopColor={C.amber} />
-          </SvgLinearGradient>
-        </Defs>
-        <Rect width="40" height="40" rx="11" fill="url(#logoGrad)" />
-        <Path d="M10 28L18 8L22 20L32 8" stroke="#160817" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      </Svg>
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Image
+        source={require('../../../assets/Logo/webp/maurmaket-logo-icon.webp')}
+        style={{ width: size, height: size, borderRadius: Math.max(6, size * 0.2), resizeMode: 'contain' }}
+        accessibilityLabel="MaurMaket icon"
+      />
     </View>
   );
 }
 
-function SplashIllustration({ spin }: { spin: Animated.Value }) {
-  const rotation = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+function SplashIllustration({ spin, reveal, revealOpacity }: { spin: Animated.Value; reveal?: Animated.Value; revealOpacity?: Animated.Value }) {
+  const pinkScale = reveal ? reveal.interpolate({ inputRange: [0, 1], outputRange: [0.12, 1.55] }) : new Animated.Value(0);
+  const pinkOpacity = revealOpacity ? revealOpacity.interpolate({ inputRange: [0, 1], outputRange: [0, 0.62] }) : 0;
+
+  /*
+   * Conic-gradient ring arcs — two laser trails on concentric tracks,
+   * rotating clockwise at the same speed, 180° apart.
+   *
+   * Each trail covers ~35% of its ring circumference.
+   * The SVG linearGradient rotates WITH the arc because it's in the SVG's
+   * local coordinate space, giving the bright-head / fading-tail laser look.
+   */
+  const laserA = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const laserB = spin.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '540deg'] });
+
+  const R_OUTER = 90;
+  const R_INNER = 76;
+  const C_OUTER = 2 * Math.PI * R_OUTER;
+  const C_INNER = 2 * Math.PI * R_INNER;
+  const ARC_OUTER = C_OUTER * 0.35;
+  const ARC_INNER = C_INNER * 0.35;
+
   return (
     <View style={{ width: 200, height: 200, alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View style={{ position: 'absolute', transform: [{ rotate: rotation }] }}>
+      {/* Pink reveal disc behind logo */}
+      <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: 104, height: 104, borderRadius: 52, backgroundColor: C.pink }, { opacity: pinkOpacity, transform: [{ scale: pinkScale }] }]} />
+
+      {/* ── Laser A — Violet, outer ring track ── */}
+      <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: laserA }] }}>
         <Svg width="200" height="200" viewBox="0 0 200 200">
           <Defs>
-            <SvgLinearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0%" stopColor={C.violet} />
-              <Stop offset="100%" stopColor={C.amber} />
+            <SvgLinearGradient id="laserA" x1="0" y1="0" x2="1" y2="0.45">
+              <Stop offset="0%" stopColor={C.violet} stopOpacity="0" />
+              <Stop offset="48%" stopColor={C.violet} stopOpacity="0.18" />
+              <Stop offset="72%" stopColor={C.violet} stopOpacity="0.7" />
+              <Stop offset="92%" stopColor={C.violet} stopOpacity="1" />
+              <Stop offset="98%" stopColor="#ffffff" stopOpacity="1" />
+              <Stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
             </SvgLinearGradient>
           </Defs>
-          <Circle cx="100" cy="100" r="86" stroke="url(#ringGrad)" strokeWidth="1.2" strokeDasharray="4 10" fill="none" />
+          {/* Wide glow halo */}
+          <Circle cx="100" cy="100" r={R_OUTER} stroke={C.violet} strokeWidth="14" fill="none"
+            strokeDasharray={`${ARC_OUTER} ${C_OUTER - ARC_OUTER}`} opacity="0.1" />
+          {/* Thin bright beam */}
+          <Circle cx="100" cy="100" r={R_OUTER} stroke="url(#laserA)" strokeWidth="2.5" fill="none"
+            strokeDasharray={`${ARC_OUTER} ${C_OUTER - ARC_OUTER}`} strokeLinecap="round" />
         </Svg>
       </Animated.View>
+
+      {/* ── Laser B — Pink, inner ring track ── */}
+      <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: laserB }] }}>
+        <Svg width="200" height="200" viewBox="0 0 200 200">
+          <Defs>
+            <SvgLinearGradient id="laserB" x1="0" y1="0" x2="1" y2="0.45">
+              <Stop offset="0%" stopColor={C.pink} stopOpacity="0" />
+              <Stop offset="48%" stopColor={C.pink} stopOpacity="0.18" />
+              <Stop offset="72%" stopColor={C.pink} stopOpacity="0.7" />
+              <Stop offset="92%" stopColor={C.pink} stopOpacity="1" />
+              <Stop offset="98%" stopColor="#ffffff" stopOpacity="1" />
+              <Stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
+            </SvgLinearGradient>
+          </Defs>
+          <Circle cx="100" cy="100" r={R_INNER} stroke={C.pink} strokeWidth="14" fill="none"
+            strokeDasharray={`${ARC_INNER} ${C_INNER - ARC_INNER}`} opacity="0.08" />
+          <Circle cx="100" cy="100" r={R_INNER} stroke="url(#laserB)" strokeWidth="2.5" fill="none"
+            strokeDasharray={`${ARC_INNER} ${C_INNER - ARC_INNER}`} strokeLinecap="round" />
+        </Svg>
+      </Animated.View>
+
+      {/* Logo (on top of lasers) */}
       <Logomark size={92} />
+
+      {/* Decorative accent dots */}
       <View style={{ position: 'absolute', top: 18, right: 12, width: 10, height: 10, borderRadius: 4, backgroundColor: C.amber }} />
       <View style={{ position: 'absolute', bottom: 22, left: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: C.mint }} />
     </View>
@@ -453,6 +504,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleInfo, setGoogleInfo] = useState<{ firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string } | null>(null);
   const [userResult, setUserResult] = useState<{ user: User; token: string } | null>(null);
+  const [cachedSignupResult, setCachedSignupResult] = useState<{ user: User; token: string } | null>(null);
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [emailChecking, setEmailChecking] = useState(false);
   const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -628,7 +680,11 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const startSplashReveal = () => {
     if (!splashReady || revealing) return;
     holdButtonRef.current?.measureInWindow((x, y, width, height) => {
-      setRevealOrigin({ x: x + width / 2, y: y + height / 2 });
+      const cx = x + width / 2;
+      const cy = y + height / 2;
+      setRevealOrigin({ x: cx, y: cy });
+      reveal.setValue(0.01);
+      revealOpacity.setValue(1);
       revealCompleted.current = false;
       setRevealing(true);
       Animated.timing(reveal, { toValue: 1, duration: 1900, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
@@ -636,7 +692,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
         revealCompleted.current = true;
         setIndex(1);
         setTimeout(() => {
-            Animated.timing(revealOpacity, { toValue: 0, duration: 760, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(() => {
+          Animated.timing(revealOpacity, { toValue: 0, duration: 760, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(() => {
             reveal.setValue(0);
             revealOpacity.setValue(1);
             setRevealing(false);
@@ -649,7 +705,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const cancelSplashReveal = () => {
     if (!revealing || revealCompleted.current) return;
     reveal.stopAnimation(value => {
-      Animated.timing(reveal, { toValue: value * 0.08, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => setRevealing(false));
+      Animated.timing(reveal, { toValue: Math.max(value * 0.08, 0.01), duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => setRevealing(false));
     });
   };
 
@@ -679,6 +735,12 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   };
 
   const submitSignup = async () => {
+    if (cachedSignupResult) {
+      setUserResult(cachedSignupResult);
+      go(1);
+      return;
+    }
+
     setLoading(true); setErrors({});
     const fullName = [form.first, form.last].filter(Boolean).join(' ').trim();
     const dob = form.birthYear && form.birthMonth && form.birthDay
@@ -686,6 +748,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
       : '';
     try {
       const res = await apiSignup(fullName, form.email, form.pw, '', dob, form.username) as { user: User; token: string };
+      setCachedSignupResult(res);
       // If user signed up via Google, link the Google identity to their account
       if (googleInfo?.googleIdToken) {
         try {
@@ -807,28 +870,23 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
             {/* SCREEN 0 — SPLASH */}
             {index === 0 && (
               <View style={s.screenCenter}>
-                <SplashIllustration spin={spin} />
-                <Text style={s.splashBrand}>MaurMaket</Text>
-                <Text style={s.splashSub}>{splashReady ? "Everything's set. Let's go." : "Warming up your marketplace…"}</Text>
-                <View style={s.dotsRow}>
-                  {[0, 1, 2].map(d => (
-                    <Animated.View key={d} style={[s.dot, { opacity: pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 1, 0.4] }) }]} />
-                  ))}
-                </View>
-                {splashReady && (
+                {splashReady ? (
                   <TouchableOpacity
                     onPressIn={startSplashReveal}
                     onPressOut={cancelSplashReveal}
                     disabled={revealing}
                     ref={holdButtonRef}
-                    style={s.holdCircle}
+                    style={s.splashIllustrationButton}
                     accessibilityRole="button"
                     accessibilityLabel="Press and hold to continue"
                   >
                     <Animated.View style={[s.holdRing, s.holdRingA, { opacity: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] }), transform: [{ scale: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
                     <Animated.View style={[s.holdRing, s.holdRingB, { opacity: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [0.62, 0] }), transform: [{ scale: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
                     <Animated.View style={[s.holdRing, s.holdRingC, { opacity: holdRingC.interpolate({ inputRange: [0, 1], outputRange: [0.54, 0] }), transform: [{ scale: holdRingC.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
+                    <SplashIllustration spin={spin} reveal={reveal} revealOpacity={revealOpacity} />
                   </TouchableOpacity>
+                ) : (
+                  <SplashIllustration spin={spin} reveal={reveal} revealOpacity={revealOpacity} />
                 )}
               </View>
             )}
@@ -1618,12 +1676,8 @@ const s = StyleSheet.create({
   topBackAction: { minHeight: 38, paddingHorizontal: 4, paddingRight: 12, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
   // Splash
-  splashBrand: { fontFamily: FONTS.heading, fontSize: 26, fontWeight: '800', color: C.text, marginTop: 12 },
-  splashSub: { fontSize: 14, color: C.sub, marginTop: 8, maxWidth: 220, textAlign: 'center' },
-  dotsRow: { flexDirection: 'row', gap: 6, marginTop: 12 },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.faint },
-  holdCircle: { width: 64, height: 64, marginTop: 56, borderRadius: 32, borderWidth: 1.5, borderColor: 'rgba(236,72,153,0.72)', backgroundColor: 'rgba(18,14,31,0.9)', alignItems: 'center', justifyContent: 'center', shadowColor: C.pink, shadowOpacity: 0.8, shadowRadius: 18, shadowOffset: { width: 0, height: 0 }, elevation: 10 },
-  holdRing: { position: 'absolute', width: 64, height: 64, borderRadius: 32, borderWidth: 1.5 },
+  splashIllustrationButton: { width: 200, height: 200, borderRadius: 100, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
+  holdRing: { position: 'absolute', width: 92, height: 92, borderRadius: 46, borderWidth: 1.5 },
   holdRingA: { borderColor: C.pink },
   holdRingB: { borderColor: C.violet },
   holdRingC: { borderColor: C.amber },
