@@ -4,6 +4,8 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { authRequired, sellerRequired, dobRequired, verifiedSellerRequired } from '../middleware/auth.js';
 import { generateUsername, isAtLeast18 } from '../utils/helpers.js';
 
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com';
+
 const router = Router();
 
 router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
@@ -81,6 +83,60 @@ router.get('/auth/check-username', async (req, res) => {
   } catch (err) {
     console.error('check-username error:', err);
     return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── Link Google identity to existing account ──────────────────────────────
+// Called after password-based signup when user signed up via Google button.
+router.post('/auth/google-link', authRequired, async (req, res) => {
+  const { googleIdToken } = req.body;
+  if (!googleIdToken || typeof googleIdToken !== 'string') {
+    return res.status(400).json({ error: 'googleIdToken is required' });
+  }
+  try {
+    // Verify the Google ID token via Google's tokeninfo endpoint
+    const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(googleIdToken)}`);
+    if (!verifyRes.ok) {
+      return res.status(400).json({ error: 'Invalid or expired Google token' });
+    }
+    const payload = await verifyRes.json();
+    if (payload.aud !== GOOGLE_CLIENT_ID) {
+      return res.status(400).json({ error: 'Token audience mismatch' });
+    }
+    const googleSub = payload.sub;
+    const avatarUrl = payload.picture || null;
+
+    // Store the Google identity on the user
+    await pool.query(
+      'UPDATE users SET google_id = $1, avatar_url = COALESCE(avatar_url, $2) WHERE id = $3',
+      [googleSub, avatarUrl, req.user.id]
+    );
+
+    console.log(`[auth] Linked Google identity ${googleSub} to user ${req.user.id}`);
+    res.json({ linked: true, googleSub });
+  } catch (err) {
+    console.error('Google link error:', err);
+    res.status(500).json({ error: 'Failed to link Google identity' });
+  }
+});
+
+// ─── Set password for Google-created account ────────────────────────────────
+router.post('/auth/set-password', authRequired, async (req, res) => {
+  const { password } = req.body;
+  if (!password || typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  try {
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, { password });
+    if (error) {
+      console.error('Set password error:', error);
+      return res.status(400).json({ error: error.message || 'Failed to set password' });
+    }
+    console.log(`[auth] Set password for user ${req.user.id}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Set password error:', err);
+    res.status(500).json({ error: 'Failed to set password' });
   }
 });
 

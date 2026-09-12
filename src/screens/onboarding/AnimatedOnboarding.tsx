@@ -11,7 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
 import { useTranslation } from '../../i18n';
-import { signup as apiSignup, googleAuth, API_BASE } from '../../api';
+import { signup as apiSignup, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
 import { store } from '../../store';
 import AuthInput from './components/AuthInput';
 import GoogleButton from './components/GoogleButton';
@@ -270,19 +270,12 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
   label: string;
   formatItem?: (val: any) => string;
 }) {
-  const flatRef = useRef<FlatList>(null);
+  const scrollRef = useRef<ScrollView>(null);
   const lastIdx = useRef(-1);
   const hasMounted = useRef(false);
   const N = items.length;
 
-  // O(1) layout — no measuring needed
-  const getItemLayout = useCallback((_: any, index: number) => ({
-    length: DOB_ITEM_HEIGHT,
-    offset: DOB_ITEM_HEIGHT * index,
-    index,
-  }), []);
-
-  // Initial scroll to selected value (once)
+  // Initial scroll once on mount
   useEffect(() => {
     if (selectedValue != null && !hasMounted.current) {
       const idx = items.indexOf(selectedValue);
@@ -290,70 +283,27 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
         hasMounted.current = true;
         lastIdx.current = idx;
         setTimeout(() => {
-          flatRef.current?.scrollToIndex({ index: idx, animated: false });
+          scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: false });
         }, 50);
       }
     }
   }, [selectedValue, items]);
 
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    // The center item is the one closest to the middle of the viewport
-    if (!viewableItems || viewableItems.length === 0) return;
-    // With snapToInterval, the first viewable item at the snap point is the selected one
-    const centerItem = viewableItems[Math.floor(viewableItems.length / 2)];
-    if (!centerItem) return;
-    const idx = centerItem.index as number;
-    if (idx !== lastIdx.current && idx >= 0) {
+  const pickFromOffset = (offsetY: number) => {
+    const idx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
+    if (idx !== lastIdx.current) {
       lastIdx.current = idx;
       Haptics.selectionAsync();
-      onSelect(centerItem.item);
+      onSelect(items[idx]);
     }
-  }).current;
-
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 60,
-  }).current;
-
-  const renderItem = useCallback(({ item, index }: { item: number | string; index: number }) => {
-    const display = formatItem ? formatItem(item) : String(item);
-    const isSelected = item === selectedValue;
-    return (
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => {
-          flatRef.current?.scrollToIndex({ index, animated: true });
-        }}
-        style={s.dobWheelItem}
-      >
-        <Text
-          style={[
-            s.dobWheelItemText,
-            {
-              color: isSelected ? '#FFFFFF' : C.sub,
-              fontWeight: isSelected ? '800' : '500',
-              fontSize: isSelected ? 18 : 15,
-              opacity: isSelected ? 1 : 0.5,
-            },
-          ]}
-        >
-          {display}
-        </Text>
-      </TouchableOpacity>
-    );
-  }, [selectedValue, formatItem]);
-
-  const keyExtractor = useCallback((item: number | string, idx: number) => `${item}-${idx}`, []);
+  };
 
   return (
     <View style={s.dobWheelCol}>
       <Text style={s.dobWheelLabel}>{label}</Text>
       <View style={s.dobWheelViewport}>
-        <FlatList
-          ref={flatRef}
-          data={items}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          getItemLayout={getItemLayout}
+        <ScrollView
+          ref={scrollRef}
           showsVerticalScrollIndicator={false}
           snapToInterval={DOB_ITEM_HEIGHT}
           snapToAlignment="start"
@@ -361,17 +311,47 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
           disableIntervalMomentum
           bounces
           nestedScrollEnabled
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
+          onMomentumScrollEnd={(e) => pickFromOffset(e.nativeEvent.contentOffset.y)}
+          onScrollEndDrag={(e) => {
+            const v = e.nativeEvent.velocity?.y ?? 0;
+            if (Math.abs(v) < 0.3) pickFromOffset(e.nativeEvent.contentOffset.y);
+          }}
           contentContainerStyle={{
             paddingTop: DOB_PADDING,
             paddingBottom: DOB_PADDING,
           }}
           style={s.dobWheelScroll}
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
-          windowSize={7}
-        />
+        >
+          {items.map((item, idx) => {
+            const display = formatItem ? formatItem(item) : String(item);
+            const isSelected = item === selectedValue;
+            return (
+              <TouchableOpacity
+                key={`${item}-${idx}`}
+                activeOpacity={0.7}
+                onPress={() => {
+                  scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: true });
+                  pickFromOffset(idx * DOB_ITEM_HEIGHT);
+                }}
+                style={s.dobWheelItem}
+              >
+                <Text
+                  style={[
+                    s.dobWheelItemText,
+                    {
+                      color: isSelected ? '#FFFFFF' : C.sub,
+                      fontWeight: isSelected ? '800' : '500',
+                      fontSize: isSelected ? 18 : 15,
+                      opacity: isSelected ? 1 : 0.5,
+                    },
+                  ]}
+                >
+                  {display}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
     </View>
   );
@@ -471,6 +451,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleInfo, setGoogleInfo] = useState<{ firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string } | null>(null);
   const [userResult, setUserResult] = useState<{ user: User; token: string } | null>(null);
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [emailChecking, setEmailChecking] = useState(false);
@@ -677,13 +658,21 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
     if (step === 'username') {
       if (!usernameValid) { setErrors({ username: 'Lowercase letters, numbers, dots, and underscores only (1-30 chars)' }); return; }
       if (usernameAvailable === false) { setErrors({ username: 'This username is taken' }); return; }
+      // If Google pre-filled email, skip email step (jump from username → purpose)
+      if (googleInfo) { go(2); return; }
     }
     if (step === 'email') {
+      // If Google pre-filled, skip this step entirely
+      if (googleInfo) { go(1); return; }
       if (!emailValid) { setErrors({ email: "That doesn't look like a full email" }); return; }
       if (emailAvailable === false) { setErrors({ email: 'This email is already registered' }); return; }
     }
     if (step === 'purpose' && !form.purpose) return;
-    if (step === 'dob' && !isAdult) { setErrors({ dob: 'You must be at least 18 years old' }); return; }
+    if (step === 'dob') {
+      if (!isAdult) { setErrors({ dob: 'You must be at least 18 years old' }); return; }
+      // If Google pre-filled DOB, skip to password
+      if (googleInfo?.birthDate) { go(1); return; }
+    }
     if (step === 'password' && !pwMatched) return;
     if (step === 'review') { submitSignup(); return; }
     go(1);
@@ -697,6 +686,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
       : '';
     try {
       const res = await apiSignup(fullName, form.email, form.pw, '', dob, form.username) as { user: User; token: string };
+      // If user signed up via Google, link the Google identity to their account
+      if (googleInfo?.googleIdToken) {
+        try {
+          await linkGoogleIdentity(googleInfo.googleIdToken);
+        } catch (linkErr: any) {
+          console.warn('[onboarding] Google link failed (non-blocking):', linkErr?.message);
+        }
+      }
       setUserResult(res);
       go(1); // → success screen
     } catch (err: any) {
@@ -706,6 +703,50 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
   };
 
   const handleEnterApp = async () => { if (userResult) await store.setUser(userResult.user, userResult.token); };
+
+  const handleGoogleSignup = async () => {
+    setGoogleLoading(true);
+    try {
+      const info = await googleAuthInfo();
+      setGoogleInfo(info);
+
+      // Parse birthday (format: "YYYY-MM-DD") into month/day/year
+      let birthMonth: number | null = null;
+      let birthDay: number | null = null;
+      let birthYear: number | null = null;
+      if (info.birthDate) {
+        const parts = info.birthDate.split('-');
+        if (parts.length === 3) {
+          birthYear = parseInt(parts[0], 10) || null;
+          birthMonth = parseInt(parts[1], 10) || null;
+          birthDay = parseInt(parts[2], 10) || null;
+        }
+      }
+
+      // Pre-fill name, email, and DOB from Google
+      setForm(f => ({
+        ...f,
+        first: info.firstName || f.first,
+        last: info.lastName || f.last,
+        email: info.email || f.email,
+        birthMonth: birthMonth || f.birthMonth,
+        birthDay: birthDay || f.birthDay,
+        birthYear: birthYear || f.birthYear,
+      }));
+
+      // If we have all DOB fields, jump to username (skip name + DOB edit)
+      // If no DOB, jump to username (skip name)
+      // DOB step will be skipped later if all fields are pre-filled
+      setDir(1);
+      setIndex(3);
+    } catch (err: any) {
+      if (!String(err?.message || '').includes('cancelled')) {
+        setErrors({ name: err?.message || 'Google sign-in failed' });
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const enterClass = dir >= 0 ? { opacity: enterAnim, transform: [{ translateX: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) }] }
     : { opacity: enterAnim, transform: [{ translateX: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [-28, 0] }) }] };
@@ -823,6 +864,15 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                     <Field icon="account-outline" label="First name" value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" onFocus={() => setFocusedField('first')} />
                     <Field icon="account-outline" label="Last name" value={form.last} onChangeText={v => set('last', v)} placeholder="Reyes" onFocus={() => setFocusedField('last')} />
                     {errors.name ? <Text style={s.fieldError}>{errors.name}</Text> : null}
+                  </View>
+                  {/* Google sign-up divider + button */}
+                  <View style={{ width: '100%', marginTop: 20 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                      <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
+                      <Text style={{ color: C.faint, fontSize: 12, fontWeight: '600' }}>or sign up with</Text>
+                      <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
+                    </View>
+                    <GoogleButton onPress={handleGoogleSignup} loading={googleLoading} disabled={googleLoading} compact={false} />
                   </View>
                 </View>
                 <StepActions step={1} label={STEP_LABELS.name} onBack={() => go(-1)}>
@@ -1267,8 +1317,20 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                       ['Password', pwMatched ? 'Set' : '—', reviewItems[5]],
                     ].map(([label, val, ok], i) => (
                       <View key={i} style={s.reviewRow}>
-                        <View>
-                          <Text style={s.reviewLabel}>{label}</Text>
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={s.reviewLabel}>{label}</Text>
+                            {i === 2 && googleInfo && (
+                              <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: C.violet + '20', borderWidth: 1, borderColor: C.violet + '40' }}>
+                                <Text style={{ fontSize: 9, fontWeight: '700', color: C.violet }}>Google</Text>
+                              </View>
+                            )}
+                            {i === 4 && googleInfo?.birthDate && (
+                              <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: C.violet + '20', borderWidth: 1, borderColor: C.violet + '40' }}>
+                                <Text style={{ fontSize: 9, fontWeight: '700', color: C.violet }}>Google</Text>
+                              </View>
+                            )}
+                          </View>
                           <Text style={s.reviewVal}>{val as string}</Text>
                         </View>
                         <View style={[s.reviewCheck, ok ? { backgroundColor: C.mint + '15', borderColor: C.mint } : {}]}>

@@ -343,6 +343,109 @@ export const googleAuth = async () => {
   }
 };
 
+// Google OAuth info extraction — gets user metadata WITHOUT creating a Supabase account.
+// Used during signup to pre-fill name/email, then link after password account is created.
+export const googleAuthInfo = async (): Promise<{ firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string }> => {
+  if (Platform.OS !== 'web' && Constants.executionEnvironment !== 'storeClient') {
+    const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+    GoogleSignin.configure({
+      webClientId: '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com',
+      scopes: ['profile', 'email'],
+    });
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const result = await GoogleSignin.signIn();
+    if (result.type !== 'success' || !result.data.idToken) {
+      throw new Error('Google sign-in was cancelled or did not return an ID token');
+    }
+    const meta = result.data.user;
+
+    // Try to extract birthday from the ID token payload
+    let birthDate: string | undefined;
+    try {
+      const [, payloadB64] = result.data.idToken.split('.');
+      if (payloadB64) {
+        const padded = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
+        const json = JSON.parse(atob(padded));
+        if (json.birthday) birthDate = json.birthday; // YYYY-MM-DD
+      }
+    } catch {}
+
+    return {
+      firstName: meta.givenName || '',
+      lastName: meta.familyName || '',
+      email: meta.email || '',
+      birthDate,
+      googleIdToken: result.data.idToken,
+    };
+  }
+
+  // Web: browser OAuth — extract id_token from redirect without creating Supabase session
+  const redirectTo = Platform.OS === 'web'
+    ? `${window.location.origin}/`
+    : AuthSession.makeRedirectUri({ scheme: 'maurmaket', path: 'auth/callback' });
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo, skipBrowserRedirect: true },
+  });
+  if (error || !data.url) throw new Error(error?.message || 'Google sign-in failed');
+
+  const WebBrowser = require('expo-web-browser');
+  WebBrowser.maybeCompleteAuthSession();
+  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  if (result.type !== 'success' || !result.url) {
+    throw new Error('Google sign-in was cancelled');
+  }
+
+  // Parse the id_token from the redirect URL fragment or query params
+  const hashPart = result.url.split('#')[1] || '';
+  const queryPart = result.url.split('?')[1]?.split('#')[0] || '';
+  const allParams = new URLSearchParams(hashPart || queryPart);
+  const idToken = allParams.get('id_token');
+  if (idToken) {
+    const [, payloadB64] = idToken.split('.');
+    if (payloadB64) {
+      const padded = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
+      const json = JSON.parse(atob(padded));
+      return {
+        firstName: json.given_name || json.name?.split(' ')[0] || '',
+        lastName: json.family_name || json.name?.split(' ').slice(1).join(' ') || '',
+        email: json.email || '',
+        birthDate: json.birthday || undefined, // YYYY-MM-DD or undefined
+        googleIdToken: idToken,
+      };
+    }
+  }
+
+  // Fallback: use access_token to get session metadata, then sign out
+  const accessToken = allParams.get('access_token');
+  const refreshToken = allParams.get('refresh_token');
+  if (accessToken && refreshToken) {
+    await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData.session?.user) {
+      const u = sessionData.session.user;
+      const meta = u.user_metadata || {};
+      const result = {
+        firstName: meta.given_name || meta.full_name?.split(' ')[0] || '',
+        lastName: meta.family_name || meta.full_name?.split(' ').slice(1).join(' ') || '',
+        email: u.email || '',
+        birthDate: meta.birthday || undefined,
+        googleIdToken: accessToken,
+      };
+      await supabase.auth.signOut();
+      return result;
+    }
+  }
+  throw new Error('Could not extract Google user info');
+};
+
+// Link Google identity to an existing email/password account after signup.
+export const linkGoogleIdentity = async (googleIdToken: string) =>
+  request('/auth/google-link', {
+    method: 'POST',
+    body: JSON.stringify({ googleIdToken }),
+  });
+
 export class PasskeyUnavailableError extends Error {
   constructor(message = 'Passkeys are not available on this platform') {
     super(message);
@@ -401,7 +504,7 @@ export const changePassword = async (currentPassword: string, newPassword: strin
   if (userError || !userData.user?.email) throw new Error('Your session has expired. Please sign in again.');
   const { error: reauthError } = await supabase.auth.signInWithPassword({ email: userData.user.email, password: currentPassword });
   if (reauthError) throw new Error('Current password is incorrect');
-  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  const { error } = await supabbase.auth.updateUser({ password: newPassword });
   if (error) throw new Error(error.message);
   return { updated: true };
 };
