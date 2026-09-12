@@ -65,7 +65,14 @@ function Logomark({ size = 40 }: { size?: number }) {
   );
 }
 
-function SplashIllustration({ spin, reveal, revealOpacity }: { spin: Animated.Value; reveal?: Animated.Value; revealOpacity?: Animated.Value }) {
+const BURST_ANGLES = Array.from({ length: 8 }, (_, i) => (i / 8) * Math.PI * 2);
+
+function SplashIllustration({
+  spin, reveal, revealOpacity, turboSpin, logoFade, burst,
+}: {
+  spin: Animated.Value; reveal?: Animated.Value; revealOpacity?: Animated.Value;
+  turboSpin?: Animated.Value; logoFade?: Animated.Value; burst?: Animated.Value;
+}) {
   const pinkScale = reveal ? reveal.interpolate({ inputRange: [0, 1], outputRange: [0.12, 1.55] }) : new Animated.Value(0);
   const pinkOpacity = revealOpacity ? revealOpacity.interpolate({ inputRange: [0, 1], outputRange: [0, 0.62] }) : 0;
 
@@ -80,6 +87,13 @@ function SplashIllustration({ spin, reveal, revealOpacity }: { spin: Animated.Va
   const laserA = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   const laserB = spin.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '540deg'] });
 
+  // Turbo layer only exists while charging: crossfades in over the ambient
+  // layer and spins ~8x faster, giving the illusion of the trails "spinning up".
+  const turboA = turboSpin ? turboSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) : '0deg';
+  const turboB = turboSpin ? turboSpin.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '540deg'] }) : '0deg';
+  const ambientOpacity = reveal ? reveal.interpolate({ inputRange: [0, 1], outputRange: [1, 0.25] }) : 1;
+  const turboOpacity = reveal ? reveal.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }) : 0;
+
   const R_OUTER = 90;
   const R_INNER = 76;
   const C_OUTER = 2 * Math.PI * R_OUTER;
@@ -92,8 +106,8 @@ function SplashIllustration({ spin, reveal, revealOpacity }: { spin: Animated.Va
       {/* Pink reveal disc behind logo */}
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: 104, height: 104, borderRadius: 52, backgroundColor: C.pink }, { opacity: pinkOpacity, transform: [{ scale: pinkScale }] }]} />
 
-      {/* ── Laser A — Violet, outer ring track ── */}
-      <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: laserA }] }}>
+      {/* ── Laser A — Violet, outer ring track (ambient speed, fades out while charging) ── */}
+      <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: laserA }], opacity: ambientOpacity }}>
         <Svg width="200" height="200" viewBox="0 0 200 200">
           <Defs>
             <SvgLinearGradient id="laserA" x1="0" y1="0" x2="1" y2="0.45">
@@ -114,8 +128,8 @@ function SplashIllustration({ spin, reveal, revealOpacity }: { spin: Animated.Va
         </Svg>
       </Animated.View>
 
-      {/* ── Laser B — Pink, inner ring track ── */}
-      <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: laserB }] }}>
+      {/* ── Laser B — Pink, inner ring track (ambient speed, fades out while charging) ── */}
+      <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: laserB }], opacity: ambientOpacity }}>
         <Svg width="200" height="200" viewBox="0 0 200 200">
           <Defs>
             <SvgLinearGradient id="laserB" x1="0" y1="0" x2="1" y2="0.45">
@@ -134,12 +148,68 @@ function SplashIllustration({ spin, reveal, revealOpacity }: { spin: Animated.Va
         </Svg>
       </Animated.View>
 
-      {/* Logo (on top of lasers) */}
-      <Logomark size={92} />
+      {/* ── Turbo A/B — same tracks, ~8x rotation speed, only visible while charging ── */}
+      {turboSpin && (
+        <>
+          <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: turboA }], opacity: turboOpacity }}>
+            <Svg width="200" height="200" viewBox="0 0 200 200">
+              <Defs>
+                <SvgLinearGradient id="turboA" x1="0" y1="0" x2="1" y2="0.45">
+                  <Stop offset="0%" stopColor={C.violet} stopOpacity="0" />
+                  <Stop offset="60%" stopColor={C.violet} stopOpacity="0.5" />
+                  <Stop offset="92%" stopColor={C.violet} stopOpacity="1" />
+                  <Stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
+                </SvgLinearGradient>
+              </Defs>
+              <Circle cx="100" cy="100" r={R_OUTER} stroke="url(#turboA)" strokeWidth="3.5" fill="none"
+                strokeDasharray={`${ARC_OUTER} ${C_OUTER - ARC_OUTER}`} strokeLinecap="round" />
+            </Svg>
+          </Animated.View>
+          <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: turboB }], opacity: turboOpacity }}>
+            <Svg width="200" height="200" viewBox="0 0 200 200">
+              <Defs>
+                <SvgLinearGradient id="turboB" x1="0" y1="0" x2="1" y2="0.45">
+                  <Stop offset="0%" stopColor={C.pink} stopOpacity="0" />
+                  <Stop offset="60%" stopColor={C.pink} stopOpacity="0.5" />
+                  <Stop offset="92%" stopColor={C.pink} stopOpacity="1" />
+                  <Stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
+                </SvgLinearGradient>
+              </Defs>
+              <Circle cx="100" cy="100" r={R_INNER} stroke="url(#turboB)" strokeWidth="3.5" fill="none"
+                strokeDasharray={`${ARC_INNER} ${C_INNER - ARC_INNER}`} strokeLinecap="round" />
+            </Svg>
+          </Animated.View>
+        </>
+      )}
+
+      {/* Logo (on top of lasers) — fades out once fully charged, before the blackout crossfade */}
+      <Animated.View style={{ opacity: logoFade ?? 1, transform: [{ scale: logoFade ? logoFade.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) : 1 }] }}>
+        <Logomark size={92} />
+      </Animated.View>
 
       {/* Decorative accent dots */}
       <View style={{ position: 'absolute', top: 18, right: 12, width: 10, height: 10, borderRadius: 4, backgroundColor: C.amber }} />
       <View style={{ position: 'absolute', bottom: 22, left: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: C.mint }} />
+
+      {/* Particle burst — fires once when the hold completes */}
+      {burst && BURST_ANGLES.map((angle, i) => {
+        const dist = 70 + (i % 3) * 18;
+        const tx = burst.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * dist] });
+        const ty = burst.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * dist] });
+        const opacity = burst.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 1, 0] });
+        const scale = burst.interpolate({ inputRange: [0, 1], outputRange: [1, 0.3] });
+        return (
+          <Animated.View
+            key={i}
+            pointerEvents="none"
+            style={{
+              position: 'absolute', width: 6, height: 6, borderRadius: 3,
+              backgroundColor: i % 2 === 0 ? C.violet : C.pink,
+              opacity, transform: [{ translateX: tx }, { translateY: ty }, { scale }],
+            }}
+          />
+        );
+      })}
     </View>
   );
 }
@@ -541,12 +611,19 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
 
   const [splashReady, setSplashReady] = useState(false);
   const [revealing, setRevealing] = useState(false);
+  const [activationStage, setActivationStage] = useState<'idle' | 'filled' | 'fade' | 'blackout'>('idle');
   const reveal = useRef(new Animated.Value(0)).current;
   const revealOpacity = useRef(new Animated.Value(1)).current;
   const revealCompleted = useRef(false);
   const holdRingA = useRef(new Animated.Value(0)).current;
   const holdRingB = useRef(new Animated.Value(0)).current;
   const holdRingC = useRef(new Animated.Value(0)).current;
+  // Charge-up laser layer, particle burst, and the crossfade to black once fully held.
+  const turboSpin = useRef(new Animated.Value(0)).current;
+  const logoFade = useRef(new Animated.Value(1)).current;
+  const burst = useRef(new Animated.Value(0)).current;
+  const blackout = useRef(new Animated.Value(0)).current;
+  const turboLoop = useRef<Animated.CompositeAnimation | null>(null);
 
   // Animations
   const spin = useRef(new Animated.Value(0)).current;
@@ -685,25 +762,62 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
       setRevealOrigin({ x: cx, y: cy });
       reveal.setValue(0.01);
       revealOpacity.setValue(1);
+      logoFade.setValue(1);
+      burst.setValue(0);
+      blackout.setValue(0);
       revealCompleted.current = false;
+      setActivationStage('idle');
       setRevealing(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      // Laser trails spin up to speed while the ring is charging.
+      turboSpin.setValue(0);
+      turboLoop.current = Animated.loop(
+        Animated.timing(turboSpin, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true }),
+      );
+      turboLoop.current.start();
+
       Animated.timing(reveal, { toValue: 1, duration: 1900, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
         if (!finished) return;
         revealCompleted.current = true;
-        setIndex(1);
+        turboLoop.current?.stop();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+        // Stage 1 — screen is fully filled by the reveal disc.
+        setActivationStage('filled');
+        burst.setValue(0);
+        Animated.timing(burst, { toValue: 1, duration: 550, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+
+        // Stage 2 — logo fades out over the filled color.
         setTimeout(() => {
-          Animated.timing(revealOpacity, { toValue: 0, duration: 760, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(() => {
-            reveal.setValue(0);
-            revealOpacity.setValue(1);
-            setRevealing(false);
+          setActivationStage('fade');
+          Animated.timing(logoFade, { toValue: 0, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+        }, 400);
+
+        // Stage 3 — filled color crossfades to black, then we advance underneath it.
+        setTimeout(() => {
+          setActivationStage('blackout');
+          Animated.timing(blackout, { toValue: 1, duration: 500, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(() => {
+            setIndex(1);
+            setTimeout(() => {
+              Animated.timing(revealOpacity, { toValue: 0, duration: 760, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(() => {
+                reveal.setValue(0);
+                revealOpacity.setValue(1);
+                blackout.setValue(0);
+                logoFade.setValue(1);
+                setActivationStage('idle');
+                setRevealing(false);
+              });
+            }, 80);
           });
-        }, 80);
+        }, 1400);
       });
     });
   };
 
   const cancelSplashReveal = () => {
     if (!revealing || revealCompleted.current) return;
+    turboLoop.current?.stop();
     reveal.stopAnimation(value => {
       Animated.timing(reveal, { toValue: Math.max(value * 0.08, 0.01), duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => setRevealing(false));
     });
@@ -883,7 +997,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
                     <Animated.View style={[s.holdRing, s.holdRingA, { opacity: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] }), transform: [{ scale: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
                     <Animated.View style={[s.holdRing, s.holdRingB, { opacity: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [0.62, 0] }), transform: [{ scale: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
                     <Animated.View style={[s.holdRing, s.holdRingC, { opacity: holdRingC.interpolate({ inputRange: [0, 1], outputRange: [0.54, 0] }), transform: [{ scale: holdRingC.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
-                    <SplashIllustration spin={spin} reveal={reveal} revealOpacity={revealOpacity} />
+                    <SplashIllustration spin={spin} reveal={reveal} revealOpacity={revealOpacity} turboSpin={turboSpin} logoFade={logoFade} burst={burst} />
                   </TouchableOpacity>
                 ) : (
                   <SplashIllustration spin={spin} reveal={reveal} revealOpacity={revealOpacity} />
@@ -1461,14 +1575,25 @@ export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
           </Animated.View>
         )}
         {revealing && (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              s.revealLayer,
-              { left: revealOrigin.x - Math.max(SCREEN_W, SCREEN_H) * 1.1, top: revealOrigin.y - Math.max(SCREEN_W, SCREEN_H) * 1.1 },
-              { opacity: revealOpacity, transform: [{ scale: reveal }] },
-            ]}
-          />
+          <>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                s.revealLayer,
+                { left: revealOrigin.x - Math.max(SCREEN_W, SCREEN_H) * 1.1, top: revealOrigin.y - Math.max(SCREEN_W, SCREEN_H) * 1.1 },
+                { opacity: revealOpacity, transform: [{ scale: reveal }] },
+              ]}
+            />
+            {/* Crossfades the filled pink over to black once fully charged (stage: blackout) */}
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                s.revealLayer,
+                { left: revealOrigin.x - Math.max(SCREEN_W, SCREEN_H) * 1.1, top: revealOrigin.y - Math.max(SCREEN_W, SCREEN_H) * 1.1, backgroundColor: '#000000', shadowOpacity: 0 },
+                { opacity: Animated.multiply(revealOpacity, blackout), transform: [{ scale: reveal }] },
+              ]}
+            />
+          </>
         )}
       </View>
     </KeyboardAvoidingView>
