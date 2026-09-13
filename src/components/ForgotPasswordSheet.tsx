@@ -5,7 +5,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
-import { forgotPassword, resetPassword } from '../api';
+import { forgotPassword } from '../api';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
@@ -16,10 +16,8 @@ interface ForgotPasswordSheetProps {
 
 export default function ForgotPasswordSheet({ visible, onClose }: ForgotPasswordSheetProps) {
   const { t } = useTranslation();
-  const [stage, setStage] = useState<'email' | 'code' | 'done'>('email');
+  const [stage, setStage] = useState<'email' | 'done'>('email');
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -30,8 +28,6 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
     if (visible) {
       setStage('email');
       setEmail('');
-      setCode('');
-      setNewPassword('');
       setError('');
       Animated.parallel([
         Animated.timing(bgOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
@@ -45,7 +41,7 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
     }
   }, [visible]);
 
-  const handleSendCode = async () => {
+  const handleSendLink = async () => {
     if (!email.trim()) return;
     setLoading(true);
     setError('');
@@ -53,21 +49,7 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
       await forgotPassword(email.trim());
       setStage('done');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to send code');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleReset = async () => {
-    if (code.length !== 6 || newPassword.length < 6) return;
-    setLoading(true);
-    setError('');
-    try {
-      await resetPassword(email.trim(), code, newPassword);
-      setStage('done');
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to reset password');
+      setError(err instanceof Error ? err.message : 'Failed to send reset link');
     } finally {
       setLoading(false);
     }
@@ -99,49 +81,15 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
                 autoCapitalize="none"
                 keyboardType="email-address"
                 returnKeyType="done"
-                onSubmitEditing={handleSendCode}
+                onSubmitEditing={handleSendLink}
               />
               {error ? <Text style={styles.error}>{error}</Text> : null}
               <TouchableOpacity
                 style={[styles.btn, (!email.trim() || loading) && styles.btnDisabled]}
-                onPress={handleSendCode}
+                onPress={handleSendLink}
                 disabled={!email.trim() || loading}
               >
                 <Text style={styles.btnText}>{loading ? t('common.loading') : t('reset.sendCode')}</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          {stage === 'code' && (
-            <>
-              <Text style={styles.title}>Check your inbox</Text>
-              <Text style={styles.subtitle}>Enter the code and pick a new password.</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="6-digit code"
-                placeholderTextColor={COLORS.text2}
-                value={code}
-                onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
-                keyboardType="number-pad"
-                maxLength={6}
-                autoFocus
-              />
-              <TextInput
-                style={styles.input}
-                placeholder={t('reset.newPassword')}
-                placeholderTextColor={COLORS.text2}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry
-                returnKeyType="done"
-                onSubmitEditing={handleReset}
-              />
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              <TouchableOpacity
-                style={[styles.btn, (code.length !== 6 || newPassword.length < 6 || loading) && styles.btnDisabled]}
-                onPress={handleReset}
-                disabled={code.length !== 6 || newPassword.length < 6 || loading}
-              >
-                <Text style={styles.btnText}>{loading ? t('common.loading') : t('reset.resetPassword')}</Text>
               </TouchableOpacity>
             </>
           )}
@@ -153,7 +101,7 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
                 </View>
                 <Text style={styles.title}>Check your inbox</Text>
               </View>
-              <Text style={styles.subtitle}>Open the password reset link in your email to choose a new password.</Text>
+              <Text style={styles.subtitle}>We sent a password reset link to {email}. Open it to choose a new password.</Text>
               <TouchableOpacity style={styles.btn} onPress={onClose}>
                 <Text style={styles.btnText}>Back to sign in</Text>
               </TouchableOpacity>

@@ -9,7 +9,6 @@ import morgan from 'morgan';
 // ───── Modularized infrastructure ─────
 import { pool, isTestMode, neonBackupDatabaseUrl } from './src/config/database.js';
 import { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand } from './src/config/storage.js';
-import { gmailConfigured, emailTransporter, sendViaGmailApi, gmailSenderEmail } from './src/config/email.js';
 import { JWT_SECRET, BCRYPT_ROUNDS, PRODUCTION_URL } from './src/config/security.js';
 import { generalLimiter, authLimiter, paymentLimiter, uploadLimiter, msgLimiter, convLimiter, verifyLimiter } from './src/middleware/rateLimit.js';
 import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from './src/middleware/auth.js';
@@ -494,14 +493,6 @@ async function runMigrations() {
     await step('Email verification + Google', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;
-      CREATE TABLE IF NOT EXISTS otp_codes (
-        email TEXT PRIMARY KEY,
-        code TEXT NOT NULL,
-        purpose TEXT NOT NULL DEFAULT 'verify',
-        expires_at TIMESTAMPTZ NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-      );
-      ALTER TABLE otp_codes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
     `));
 
     // 27. User location fields
@@ -1232,7 +1223,7 @@ const MIGRATION_TABLES = [
   'reviews', 'wishlists', 'follows', 'notifications', 'conversations', 'messages',
   'promo_codes', 'promo_uses', 'disputes', 'platform_revenue', 'platform_payouts',
   'verification_attempts', 'seller_subscriptions', 'order_escrow', 'meetup_checkins',
-  'feed_events', 'seller_locations', 'otp_codes', 'message_offers', 'user_category_affinities', 'product_cooccurrences'
+  'feed_events', 'seller_locations', 'message_offers', 'user_category_affinities', 'product_cooccurrences'
 ];
 
 // Column whitelist for tables with schema drift between Neon and Supabase
