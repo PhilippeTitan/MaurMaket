@@ -128,12 +128,12 @@ function Loader({ autoExpand, onComplete, onPressChange }: {
         const distanceRatio = (targetScale - startValues[ringIndex]) / (COVER_SCALE - 1);
         const isInnerRing = ringIndex === 0;
         const isFreshInnerRing = compensateLateStart && isInnerRing;
-        const baseDuration = isInnerRing ? 900 : 1850 * Math.max(0.85, distanceRatio);
-        const totalDuration = isFreshInnerRing ? 800 : baseDuration;
+        const baseDuration = isInnerRing ? 1400 : 1850 * Math.max(0.85, distanceRatio);
+        const totalDuration = isFreshInnerRing ? 1300 : baseDuration;
         const expansionTiming = Animated.timing(rings[ringIndex], {
           toValue: targetScale,
           duration: totalDuration,
-          easing: isInnerRing ? Easing.out(Easing.cubic) : Easing.inOut(Easing.cubic),
+          easing: isInnerRing ? Easing.in(Easing.cubic) : Easing.inOut(Easing.cubic),
           useNativeDriver: true,
         });
 
