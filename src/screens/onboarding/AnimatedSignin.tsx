@@ -121,7 +121,6 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
-  const [passkeyScreenVisible, setPasskeyScreenVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
@@ -262,14 +261,11 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
     if (isSuccess) return;
     try {
       setPasskeyLoading(true);
-      setPasskeyScreenVisible(true);
       const res = await passkeyAuth() as { user: User; token: string };
-      setPasskeyScreenVisible(false);
       playSuccessAndEnter(res.user, res.token);
     } catch (err: any) {
-      setPasskeyScreenVisible(false);
       if (err instanceof PasskeyUnavailableError) {
-        setErrorMessage(err.message || 'Passkeys aren’t available on this device yet');
+        setErrorMessage(err.message || 'Passkeys aren't available on this device yet');
       } else {
         setErrorMessage(err?.message || 'Passkey sign-in failed');
       }
@@ -478,36 +474,6 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
           </View>
         </Animated.View>
       )}
-      {passkeyScreenVisible && (
-        <View style={s.passkeyScreenOverlay} pointerEvents="box-none">
-          <View style={s.passkeyScreenBackdrop}>
-            <OnboardingBackground />
-            <View style={s.passkeyScreenContent}>
-              <Image
-                source={require('../../../illustration/sign-in-passkey.webp')}
-                style={s.passkeyHeroImage}
-                resizeMode="contain"
-              />
-
-              <View style={s.passkeyLoaderWrap}>
-                <Animated.View style={[s.passkeyLoaderRing, { transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>
-                  <LinearGradient colors={['#78F3FF', '#8B5CF6', '#FF4D6A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.passkeyLoaderGradient} />
-                </Animated.View>
-                <Text style={s.passkeyLoaderText}>Verifying your passkey...</Text>
-              </View>
-
-              {/* Close preview button */}
-              <TouchableOpacity
-                onPress={() => setPasskeyScreenVisible(false)}
-                style={s.passkeyCloseBtn}
-                activeOpacity={0.8}
-              >
-                <Text style={s.passkeyCloseText}>Close Preview ✕</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      )}
 
       <Modal visible={!!errorMessage} transparent animationType="fade" onRequestClose={() => setErrorMessage(null)}>
         <View style={s.errorBackdrop}>
@@ -606,30 +572,4 @@ const s = StyleSheet.create({
   dividerLine: { flex: 1, height: 1, backgroundColor: C.border },
   dividerText: { fontSize: 12, fontWeight: '500', color: C.faint },
 
-  passkeyScreenOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', zIndex: 20 },
-  passkeyScreenBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', backgroundColor: 'rgba(10, 8, 18, 0.94)' },
-  passkeyScreenContent: { alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: 24 },
-  passkeyHeroImage: {
-    width: Math.min(340, SCREEN_W - 48),
-    height: Math.min(340, SCREEN_W - 48),
-    resizeMode: 'contain',
-  },
-  passkeyLoaderWrap: { alignItems: 'center', marginTop: 24 },
-  passkeyLoaderRing: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.borderHi },
-  passkeyLoaderGradient: { width: 40, height: 40, borderRadius: 20 },
-  passkeyLoaderText: { color: C.sub, fontSize: 14, marginTop: 12, fontWeight: '600' },
-  passkeyCloseBtn: {
-    marginTop: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-  },
-  passkeyCloseText: {
-    color: C.text,
-    fontSize: 13,
-    fontWeight: '700',
-  },
 });
