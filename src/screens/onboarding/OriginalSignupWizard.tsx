@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Animated,
-  Easing, ScrollView, FlatList, Platform, KeyboardAvoidingView, Dimensions, Image, Keyboard, ActivityIndicator,
+  Easing, ScrollView, FlatList, Platform, KeyboardAvoidingView, Dimensions, Image, Keyboard, ActivityIndicator, BackHandler,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -617,6 +617,23 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
     return () => { showSubscription.remove(); hideSubscription.remove(); if (hideFieldTimer.current) clearTimeout(hideFieldTimer.current); };
   }, []);
 
+  // Android hardware back: dismiss ghost overlay first, then go back
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (focusedField) {
+        setFocusedField(null);
+        Keyboard.dismiss();
+        return true; // consumed
+      }
+      if (index > 0) {
+        go(-1);
+        return true; // consumed
+      }
+      return false; // let system handle (exit app)
+    });
+    return () => sub.remove();
+  }, [focusedField, index]);
+
   // Continuous animations
   useEffect(() => {
     Animated.loop(Animated.timing(spin, { toValue: 1, duration: 22000, easing: Easing.linear, useNativeDriver: true })).start();
@@ -727,6 +744,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   const go = (delta: number) => {
     setDir(delta);
     setErrors({});
+    setFocusedField(null);
+    Keyboard.dismiss();
     setIndex(i => Math.min(Math.max(i + delta, 0), 9));
   };
 
