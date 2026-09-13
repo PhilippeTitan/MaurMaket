@@ -213,7 +213,7 @@ export const signup = async (fullName: string, email: string, password: string, 
     password,
     options: {
       emailRedirectTo: getAuthRedirectUrl(),
-      data: { full_name: fullName, phone, date_of_birth: dateOfBirth || null },
+      data: { full_name: fullName, phone, date_of_birth: dateOfBirth || null, username: username || null },
     },
   });
   if (error) throw new Error(error.message);
@@ -232,11 +232,17 @@ export const signup = async (fullName: string, email: string, password: string, 
   }
   // No session — email confirmation required. Build a minimal user from Supabase metadata
   // so the wizard can proceed to the success screen and enter the app.
+  // Match the DB trigger's username format: base + '_' + first 8 chars of UUID (no dashes)
+  const userId = data.user?.id || '';
+  const usernameBase = (username || normalizedEmail.split('@')[0] || 'user')
+    .toLowerCase().replace(/[^a-z0-9._]/g, '').replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+  const triggerUsername = (usernameBase || 'user').slice(0, 20) + '_' + userId.replace(/-/g, '').slice(0, 8);
+  const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
   const pendingUser = {
-    id: data.user?.id || '',
+    id: userId,
     full_name: fullName,
     email: normalizedEmail,
-    phone: phone || '',
+    phone: cleanPhone,
     natcash_phone: null,
     accepted_payment_methods: null,
     role: 'buyer' as const,
@@ -256,7 +262,7 @@ export const signup = async (fullName: string, email: string, password: string, 
     location_city: null,
     location_lat: null,
     location_lng: null,
-    username: username || null,
+    username: triggerUsername,
     show_real_name: true,
     pending_dob: !dateOfBirth,
     taste_onboarding_completed: false,
