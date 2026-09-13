@@ -126,13 +126,14 @@ function Loader({ autoExpand, onComplete, onPressChange }: {
       [4, 3, 2, 1, 0].map((ringIndex, waveIndex) => {
         const targetScale = ringIndex === 0 ? COVER_SCALE * 1.12 : COVER_SCALE;
         const distanceRatio = (targetScale - startValues[ringIndex]) / (COVER_SCALE - 1);
-        const baseDuration = 1850 * Math.max(0.85, distanceRatio);
-        const isFreshInnerRing = compensateLateStart && ringIndex === 0;
-        const totalDuration = isFreshInnerRing ? 1800 : baseDuration;
+        const isInnerRing = ringIndex === 0;
+        const isFreshInnerRing = compensateLateStart && isInnerRing;
+        const baseDuration = isInnerRing ? 900 : 1850 * Math.max(0.85, distanceRatio);
+        const totalDuration = isFreshInnerRing ? 800 : baseDuration;
         const expansionTiming = Animated.timing(rings[ringIndex], {
           toValue: targetScale,
           duration: totalDuration,
-          easing: isFreshInnerRing ? Easing.inOut(Easing.ease) : ringIndex === 0 ? Easing.in(Easing.cubic) : Easing.inOut(Easing.cubic),
+          easing: isInnerRing ? Easing.out(Easing.cubic) : Easing.inOut(Easing.cubic),
           useNativeDriver: true,
         });
 
