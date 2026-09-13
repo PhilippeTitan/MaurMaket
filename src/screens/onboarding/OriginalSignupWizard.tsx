@@ -810,7 +810,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   };
 
   const ghostFieldMap = {
-    email: { label: 'Email address', icon: 'email-outline', placeholder: 'yourname', value: form.email, inputValue: emailLocalPart, suffix: '@gmail.com', setValue: (value: string) => set('email', `${value.toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, '')}@gmail.com`), secure: false, capitalize: 'none' as const },
+    email: { label: 'Email address', icon: 'email-outline', placeholder: '', value: form.email, inputValue: emailLocalPart, suffix: '@gmail.com', setValue: (value: string) => { const local = value.replace(/@.*$/, '').toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, ''); set('email', `${local}@gmail.com`); }, secure: false, capitalize: 'none' as const },
     username: { label: 'Username', icon: 'at', placeholder: undefined, value: form.username, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('username', value.toLowerCase().replace(/[^a-z0-9._]/g, '')), secure: false, capitalize: 'none' as const },
     first: { label: 'First name', icon: 'account-outline', placeholder: undefined, value: form.first, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('first', value), secure: false, capitalize: 'words' as const },
     last: { label: 'Last name', icon: 'account-outline', placeholder: undefined, value: form.last, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('last', value), secure: false, capitalize: 'words' as const },
@@ -962,7 +962,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                   />
                 </View>
                 <View style={s.emailContent}>
-                  <Field icon="email-outline" label="Email address" value={form.email} inputValue={emailLocalPart} suffix="@gmail.com" onChangeText={v => set('email', `${v.toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, '')}@gmail.com`)} placeholder="yourname" onFocus={() => setFocusedField('email')} right={
+                  <Field icon="email-outline" label="Email address" value={form.email} inputValue={emailLocalPart} suffix="@gmail.com" onChangeText={v => { const local = v.replace(/@.*$/, '').toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, ''); set('email', `${local}@gmail.com`); }} placeholder="" onFocus={() => setFocusedField('email')} right={
                     emailChecking ? <ActivityIndicator size="small" color={C.faint} /> :
                     emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
                     emailAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
