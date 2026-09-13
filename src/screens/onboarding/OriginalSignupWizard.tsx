@@ -9,6 +9,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, Ellipse, G as SvgG } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import LottieView from 'lottie-react-native';
 import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
 import { useTranslation } from '../../i18n';
 import { signup as apiSignup, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
@@ -257,6 +258,56 @@ function SuccessIllustration({ pulse }: { pulse: Animated.Value }) {
           <Path d="M11 24l8 8 16-18" stroke={C.mint} strokeWidth="4.4" strokeLinecap="round" strokeLinejoin="round" />
         </Svg>
       </Animated.View>
+    </View>
+  );
+}
+
+function VerificationScreen({ name, onDone }: { name: string; onDone: () => void }) {
+  const [phase, setPhase] = useState<'loading' | 'tick'>('loading');
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const lottieRef = useRef<LottieView>(null);
+
+  useEffect(() => {
+    const spin = Animated.loop(
+      Animated.timing(spinAnim, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true })
+    );
+    spin.start();
+    const t = setTimeout(() => { spin.stop(); setPhase('tick'); }, 2000);
+    return () => { spin.stop(); clearTimeout(t); };
+  }, []);
+
+  useEffect(() => {
+    if (phase === 'tick') {
+      lottieRef.current?.play();
+    }
+  }, [phase]);
+
+  const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      {phase === 'loading' ? (
+        <View style={{ alignItems: 'center', gap: 24 }}>
+          <Animated.View style={{ width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: C.border, borderTopColor: C.violet, transform: [{ rotate: spin }] }} />
+          <View style={{ gap: 8, alignItems: 'center' }}>
+            <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text }}>Verifying your account</Text>
+            <Text style={{ fontSize: 14, color: C.sub }}>This won't take long...</Text>
+          </View>
+        </View>
+      ) : (
+        <View style={{ alignItems: 'center', gap: 20 }}>
+          <LottieView
+            ref={lottieRef}
+            source={require('../../../assets/success-tick.json')}
+            style={{ width: 200, height: 200 }}
+            loop={false}
+            onAnimationFinish={() => setTimeout(onDone, 400)}
+          />
+          <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text }}>
+            You're all set{ name ? `, ${name}` : ''}!
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -1399,26 +1450,9 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               </View>
             )}
 
-            {/* SCREEN 9 -- SUCCESS */}
+            {/* SCREEN 9 -- VERIFICATION */}
             {index === 9 && (
-              <View style={[s.screenCenter, { paddingTop: 20 }]}>
-                <SuccessIllustration pulse={pulse} />
-                <View style={s.successBadge}>
-                  <Text style={s.successBadgeText}>Welcome in</Text>
-                </View>
-                <Text style={s.successTitle}>
-                  This is your{'\n'}
-                  <Text style={s.heroAccent}>marketplace.</Text>
-                </Text>
-                <Text style={s.successSub}>{form.first ? `Good to have you, ${form.first}. ` : ''}Your MaurMaket journey starts now.</Text>
-                <View style={s.pillRow}>
-                  {['Buy', 'Sell', 'Grow'].map(t => (
-                    <View key={t} style={s.pill}><Text style={s.pillText}>{t}</Text></View>
-                  ))}
-                </View>
-                <View style={{ flex: 1 }} />
-                <PrimaryButton onPress={handleEnterApp}>Explore MaurMaket</PrimaryButton>
-              </View>
+              <VerificationScreen name={form.first} onDone={handleEnterApp} />
             )}
 
           </Animated.View>
