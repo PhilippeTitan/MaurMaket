@@ -128,7 +128,7 @@ function Loader({ autoExpand, onComplete, onPressChange }: {
         const distanceRatio = (targetScale - startValues[ringIndex]) / (COVER_SCALE - 1);
         const isInnerRing = ringIndex === 0;
         const isFreshInnerRing = compensateLateStart && isInnerRing;
-        const baseDuration = isInnerRing ? 1400 : 1850 * Math.max(0.85, distanceRatio);
+        const baseDuration = isInnerRing ? 1400 : 1200 * Math.max(0.85, distanceRatio);
         const totalDuration = isFreshInnerRing ? 1300 : baseDuration;
         const expansionTiming = Animated.timing(rings[ringIndex], {
           toValue: targetScale,
@@ -252,7 +252,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, onNaturalComplete
   };
 
   const handleComplete = () => {
-    Animated.timing(fade, { toValue: 0, duration: 260, useNativeDriver: true }).start(() => {
+    Animated.timing(fade, { toValue: 0, duration: 140, useNativeDriver: true }).start(() => {
       if (pendingGoogle.current) {
         onGoogleComplete?.(pendingGoogle.current);
         pendingGoogle.current = null;
