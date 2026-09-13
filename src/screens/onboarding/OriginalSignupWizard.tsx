@@ -424,28 +424,30 @@ const Field = React.forwardRef<TextInput, { icon: any; label: string; value: str
   const [isFocused, setIsFocused] = useState(false);
 
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={[s.field, isFocused && s.fieldFocused]} accessibilityRole="none">
-      <MaterialCommunityIcons name={icon} size={18} color={isFocused ? C.violet : C.sub} />
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Text style={s.fieldLabel}>{label}</Text>
-        <View style={suffix ? s.fieldInputRow : undefined}>
-          <TextInput
-            ref={node => { inputRef.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node; }}
-            onFocus={() => { setIsFocused(true); onFocus?.(); }}
-            onBlur={() => setIsFocused(false)}
-            style={[s.fieldInput, suffix && s.fieldInputWithSuffix]}
-            value={inputValue ?? value}
-            onChangeText={onChangeText}
-            placeholder={placeholder}
-            placeholderTextColor={C.sub}
-            secureTextEntry={secureTextEntry}
-            autoCapitalize={autoCapitalize || 'none'}
-          />
-          {suffix ? <Text style={s.fieldSuffix}>{suffix}</Text> : null}
+    <View style={[s.field, isFocused && s.fieldFocused]} accessibilityRole="none">
+      <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+        <MaterialCommunityIcons name={icon} size={18} color={isFocused ? C.violet : C.sub} />
+        <View style={{ flex: 1, justifyContent: 'center' }}>
+          <Text style={s.fieldLabel}>{label}</Text>
+          <View style={suffix ? s.fieldInputRow : undefined}>
+            <TextInput
+              ref={node => { inputRef.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node; }}
+              onFocus={() => { setIsFocused(true); onFocus?.(); }}
+              onBlur={() => setIsFocused(false)}
+              style={[s.fieldInput, suffix && s.fieldInputWithSuffix]}
+              value={inputValue ?? value}
+              onChangeText={onChangeText}
+              placeholder={placeholder}
+              placeholderTextColor={C.sub}
+              secureTextEntry={secureTextEntry}
+              autoCapitalize={autoCapitalize || 'none'}
+            />
+            {suffix ? <Text style={s.fieldSuffix}>{suffix}</Text> : null}
+          </View>
         </View>
-      </View>
+      </TouchableOpacity>
       {right}
-    </TouchableOpacity>
+    </View>
   );
 });
 
@@ -1339,7 +1341,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                 <StepActions step={6} label={STEP_LABELS.password} onBack={() => go(-1)}>
                   <View style={s.passwordActionContainer}>
                     <Field icon="lock-outline" label="Password" value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw')} right={
-                      <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 40, right: 0 }} style={{ paddingVertical: 8, paddingLeft: 12 }}>
+                      <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                       </TouchableOpacity>
                     } />
@@ -1470,7 +1472,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
                     emailAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
                   ) : ghostField.key === 'pw' ? (
-                    <TouchableOpacity onPress={() => setShowPw(show => !show)} hitSlop={{ top: 20, bottom: 20, left: 40, right: 0 }} style={{ paddingVertical: 8, paddingLeft: 12 }} accessibilityRole="button" accessibilityLabel={showPw ? 'Hide password' : 'Show password'}>
+                    <TouchableOpacity onPress={() => setShowPw(show => !show)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }} accessibilityRole="button" accessibilityLabel={showPw ? 'Hide password' : 'Show password'}>
                       <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                     </TouchableOpacity>
                   ) : ghostField.key === 'pw2' && ghostField.value ? (

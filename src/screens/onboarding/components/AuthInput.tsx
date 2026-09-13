@@ -53,7 +53,7 @@ export default function AuthInput({
         {loading ? (
           <MaterialCommunityIcons name="loading" size={18} color={COLORS.text2} />
         ) : rightIcon ? (
-            <TouchableOpacity onPress={onRightPress} hitSlop={{ top: 20, bottom: 20, left: 40, right: 0 }} style={styles.inputRight}>
+            <TouchableOpacity onPress={onRightPress} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
             <MaterialCommunityIcons name={rightIcon as any} size={28} color={rightColor || COLORS.text2} />
           </TouchableOpacity>
         ) : null}

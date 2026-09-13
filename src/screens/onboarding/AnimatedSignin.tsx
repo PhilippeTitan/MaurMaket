@@ -360,7 +360,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
               <Field icon="email-outline" label="Email address" value={email} onChangeText={setEmail} placeholder="you@email.com" onFocus={() => setFocusedField('email')} />
               <View style={{ height: 12 }} />
               <Field icon="lock-outline" label="Password" value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('password')} right={
-                <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 40, right: 0 }} style={{ paddingVertical: 8, paddingLeft: 12 }}>
+                <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
                   <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                 </TouchableOpacity>
               } />
@@ -455,7 +455,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
                     />
                   </View>
                   {!isEmail && (
-                    <TouchableOpacity onPress={() => setShowPw(value => !value)} hitSlop={{ top: 20, bottom: 20, left: 40, right: 0 }} style={{ paddingVertical: 8, paddingLeft: 12 }}>
+                    <TouchableOpacity onPress={() => setShowPw(value => !value)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
                       <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                     </TouchableOpacity>
                   )}
