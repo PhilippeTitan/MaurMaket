@@ -4,6 +4,7 @@ import {
   Easing, ScrollView, FlatList, Platform, KeyboardAvoidingView, Dimensions, Image, Keyboard, ActivityIndicator,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, Ellipse, G as SvgG } from 'react-native-svg';
@@ -295,7 +296,17 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
   const scrollRef = useRef<ScrollView>(null);
   const lastIdx = useRef(-1);
   const hasMounted = useRef(false);
+  const tickSound = useRef<Audio.Sound | null>(null);
   const N = items.length;
+
+  useEffect(() => {
+    let mounted = true;
+    Audio.Sound.createAsync(require('../../../assets/tick.wav')).then(({ sound }) => {
+      if (mounted) tickSound.current = sound;
+      else sound.unloadAsync();
+    });
+    return () => { mounted = false; tickSound.current?.unloadAsync(); };
+  }, []);
 
   // Initial scroll once on mount
   useEffect(() => {
@@ -314,6 +325,7 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
   const pickFromOffset = (offsetY: number) => {
     const idx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
     Haptics.selectionAsync();
+    tickSound.current?.replayAsync();
     onSelect(items[idx]);
   };
 
@@ -952,16 +964,15 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 4 -- EMAIL */}
             {index === 4 && (
-              <View style={[s.stepScreen, s.emailScreen]}>
-                <View style={s.emailArtWindow}>
-                  <Image
-                    source={require('../../../illustration/digital-address.webp')}
-                    style={s.emailArtwork}
-                    resizeMode="contain"
-                    accessibilityLabel="Digital address illustration"
-                  />
-                </View>
-                <View style={s.emailContent}>
+              <View style={s.stepScreen}>
+                <View style={{ position: 'absolute', left: 0, right: 0, bottom: 100, paddingHorizontal: 0 }}>
+                  <View style={{ alignItems: 'center', marginBottom: 15 }}>
+                    <Image
+                      source={require('../../../illustration/digital-address.webp')}
+                      style={{ width: 350, height: 455, resizeMode: 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
+                      accessibilityLabel="Digital address illustration"
+                    />
+                  </View>
                   <Field icon="email-outline" label="Email address" value={form.email} inputValue={emailLocalPart} suffix="@gmail.com" onChangeText={v => { const local = v.replace(/@.*$/, '').toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, ''); set('email', `${local}@gmail.com`); }} placeholder="" onFocus={() => setFocusedField('email')} right={
                     emailChecking ? <ActivityIndicator size="small" color={C.faint} /> :
                     emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
@@ -981,7 +992,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {index === 5 && (
               <View style={s.stepScreen}>
                 <AssetIllustration asset="choose-purpose" accessibilityLabel="Choose your purpose illustration" containerStyle={s.purposeArtwork} />
-                <Text style={s.fieldHint}>Select at least one option to personalize your experience.</Text>
                 <View style={s.purposeChoices}>
                   {PURPOSES.map(p => {
                     const active = form.purpose === p.id;
