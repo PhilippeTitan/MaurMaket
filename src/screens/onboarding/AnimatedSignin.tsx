@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, Modal, Image,
   Easing, Platform, KeyboardAvoidingView, Keyboard, Dimensions,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, G as SvgG } from 'react-native-svg';
@@ -62,15 +63,27 @@ function SigninIllustration() {
 
 /* ── Shared UI ────────────────────────────────────────────── */
 
-function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, right }: {
-  icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode;
+function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, right, onFocus }: {
+  icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode; onFocus?: () => void;
 }) {
+  const [focused, setFocused] = useState(false);
+
   return (
-    <View style={s.field}>
-      <MaterialCommunityIcons name={icon} size={18} color={C.faint} />
+    <View style={[s.field, focused && s.fieldFocused]}>
+      <MaterialCommunityIcons name={icon} size={18} color={focused ? C.violet : C.faint} />
       <View style={{ flex: 1 }}>
         <Text style={s.fieldLabel}>{label}</Text>
-        <TextInput style={s.fieldInput} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={C.faint} secureTextEntry={secureTextEntry} />
+        <TextInput
+          style={s.fieldInput}
+          value={value}
+          onChangeText={onChangeText}
+          onFocus={() => { setFocused(true); onFocus?.(); }}
+          onBlur={() => setFocused(false)}
+          placeholder={placeholder}
+          placeholderTextColor={C.faint}
+          secureTextEntry={secureTextEntry}
+          autoCapitalize="none"
+        />
       </View>
       {right}
     </View>
@@ -83,7 +96,7 @@ function PrimaryButton({ children, onPress, disabled }: { children: React.ReactN
       <LinearGradient
         colors={disabled ? ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.08)'] : [C.violet, C.pink, C.amber]}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        style={s.primaryBtn}
+        style={[s.primaryBtn, disabled && s.primaryBtnDisabled]}
       >
         <Text style={[s.primaryBtnText, disabled && { color: C.faint }]}>{children}</Text>
       </LinearGradient>
@@ -96,9 +109,10 @@ function PrimaryButton({ children, onPress, disabled }: { children: React.ReactN
 interface Props {
   onSwitchToSignup: () => void;
   onForgotPassword: () => void;
+  onAccountMissing?: () => void;
 }
 
-export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: Props) {
+export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onAccountMissing }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
@@ -110,6 +124,10 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
   const [passkeyScreenVisible, setPasskeyScreenVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const ghostOpacity = useRef(new Animated.Value(1)).current;
+  const keyboardLift = useRef(new Animated.Value(0)).current;
 
   // Animations
   const fadeIn = useRef(new Animated.Value(0)).current;
@@ -126,6 +144,21 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
   useEffect(() => {
     Animated.timing(fadeIn, { toValue: 1, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     Animated.loop(Animated.timing(spin, { toValue: 1, duration: 4000, easing: Easing.linear, useNativeDriver: true })).start();
+  }, []);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, event => {
+      setKeyboardHeight(event.endCoordinates.height);
+      Animated.timing(keyboardLift, { toValue: -92, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      setFocusedField(null);
+      Animated.timing(keyboardLift, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    });
+    return () => { showSubscription.remove(); hideSubscription.remove(); };
   }, []);
 
   const canSubmit = email.trim() && password.trim();
@@ -198,9 +231,21 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
       const res = await apiLogin(email.trim(), password) as { user: User; token: string };
       playSuccessAndEnter(res.user, res.token);
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Invalid email or password');
-      triggerShake();
+      const message = String(err?.message || '').toLowerCase();
+      if (onAccountMissing && (message.includes('user not found') || message.includes('email not found'))) {
+        onAccountMissing();
+      } else {
+        setErrorMessage(err?.message || 'Invalid email or password');
+        triggerShake();
+      }
     } finally { setLoading(false); }
+  };
+
+  const handleGhostSignIn = () => {
+    if (!canSubmit || loading) return;
+    Keyboard.dismiss();
+    setFocusedField(null);
+    handleLogin();
   };
 
   const handleGoogle = async () => {
@@ -234,11 +279,15 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: C.bg0 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
       <View style={{ flex: 1, backgroundColor: '#120E1F' }}>
         <OnboardingBackground />
 
-        <View style={s.content}>
+        <Animated.View style={[s.content, { transform: [{ translateY: keyboardLift }] }]}>
 
           {/* Header wordmark: starts bigger, shrinks and moves up on success */}
           <Animated.View style={[
@@ -308,9 +357,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
           >
             {/* Fields */}
             <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
-              <Field icon="email-outline" label="Email address" value={email} onChangeText={setEmail} placeholder="you@email.com" />
+              <Field icon="email-outline" label="Email address" value={email} onChangeText={setEmail} placeholder="you@email.com" onFocus={() => setFocusedField('email')} />
               <View style={{ height: 12 }} />
-              <Field icon="lock-outline" label="Password" value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry={!showPw} right={
+              <Field icon="lock-outline" label="Password" value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('password')} right={
                 <TouchableOpacity onPress={() => setShowPw(s => !s)}>
                   <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={17} color={C.faint} />
                 </TouchableOpacity>
@@ -358,15 +407,6 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
                   </View>
                 </View>
               </TouchableOpacity>
-              {/* Temp design preview button */}
-              <TouchableOpacity onPress={() => setPasskeyScreenVisible(true)} style={s.providerCard} activeOpacity={0.8}>
-                <View style={s.providerIconWrap}>
-                  <View style={[s.providerIconRing, { borderWidth: 1.5, borderColor: '#A78BFA', borderStyle: 'dashed' }]} />
-                  <View style={s.providerIconInner}>
-                    <MaterialCommunityIcons name="eye-outline" size={30} color="#A78BFA" />
-                  </View>
-                </View>
-              </TouchableOpacity>
             </View>
 
             {/* Switch to signup */}
@@ -377,8 +417,67 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword }: P
             </TouchableOpacity>
           </Animated.View>
 
-        </View>
+        </Animated.View>
       </View>
+      {focusedField && (
+        <Animated.View style={[s.keyboardGhostOverlay, { opacity: ghostOpacity }]}>
+          <BlurView intensity={72} tint="dark" style={s.keyboardDimmer}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => { Keyboard.dismiss(); setFocusedField(null); }}
+              style={StyleSheet.absoluteFill}
+              accessibilityLabel="Dismiss keyboard"
+            />
+          </BlurView>
+          <View style={s.keyboardGhostContainer}>
+            <View style={s.keyboardGhostStack}>
+            {(['email', 'password'] as const).map((fieldName) => {
+              const isEmail = fieldName === 'email';
+              const isActive = focusedField === fieldName;
+              return (
+                <View key={fieldName} style={[s.field, isActive && s.fieldFocused]}>
+                  <MaterialCommunityIcons
+                    name={isEmail ? 'email-outline' : 'lock-outline'}
+                    size={18}
+                    color={isActive ? C.violet : C.sub}
+                  />
+                  <View style={{ flex: 1, justifyContent: 'center' }}>
+                    <Text style={s.fieldLabel}>{isEmail ? 'Email address' : 'Password'}</Text>
+                    <TextInput
+                      autoFocus={isActive}
+                      style={s.fieldInput}
+                      value={isEmail ? email : password}
+                      onChangeText={isEmail ? setEmail : setPassword}
+                      placeholder={isEmail ? 'Email address' : 'Password'}
+                      placeholderTextColor={C.sub}
+                      secureTextEntry={!isEmail && !showPw}
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  {!isEmail && (
+                    <TouchableOpacity onPress={() => setShowPw(value => !value)}>
+                      <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={17} color={C.faint} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
+            </View>
+            <View style={s.keyboardGhostSignIn}>
+              <TouchableOpacity
+                onPress={handleGhostSignIn}
+                disabled={!canSubmit || loading}
+                style={s.keyboardGhostButton}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in"
+              >
+                <Text style={[s.keyboardGhostSignInText, (!canSubmit || loading) && s.keyboardGhostDisabledText]}>Sign in</Text>
+                <MaterialCommunityIcons name="arrow-right" size={17} color={canSubmit && !loading ? C.sub : C.faint} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Animated.View>
+      )}
       {passkeyScreenVisible && (
         <View style={s.passkeyScreenOverlay} pointerEvents="box-none">
           <View style={s.passkeyScreenBackdrop}>
@@ -478,10 +577,20 @@ const s = StyleSheet.create({
   errorButtonText: { color: '#1A0B12', fontSize: 15, fontWeight: '800' },
 
   field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: 'rgba(13, 10, 27, 0.9)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)', paddingHorizontal: 16, alignSelf: 'stretch' },
+  fieldFocused: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)' },
   fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
+  keyboardGhostOverlay: { ...StyleSheet.absoluteFill, zIndex: 15, backgroundColor: 'rgba(10,8,18,0.52)' },
+  keyboardDimmer: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(10,8,18,0.52)' },
+  keyboardGhostContainer: { position: 'absolute', left: 28, right: 28, bottom: 56 },
+  keyboardGhostStack: { gap: 12, marginBottom: 15 },
+  keyboardGhostSignIn: { height: 52, borderRadius: 999, backgroundColor: 'rgba(139,92,246,0.32)', borderWidth: 1, borderColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  keyboardGhostButton: { flex: 1, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  keyboardGhostSignInText: { color: C.sub, fontSize: 15, fontWeight: '800' },
+  keyboardGhostDisabledText: { color: C.faint },
 
   primaryBtn: { height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch' },
+  primaryBtnDisabled: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
   separatorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 16 },
   separatorLine: { flex: 1, height: 1, backgroundColor: 'rgba(221,232,255,0.24)' },
   separatorText: { color: C.sub, fontSize: 12, fontWeight: '700', textAlign: 'center' },

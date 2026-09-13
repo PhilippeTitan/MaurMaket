@@ -46,6 +46,8 @@ const state: StoreState = {
   listeners: [],
 };
 
+let usernamePromptPending = false;
+
 function notify() {
   state.listeners.forEach(fn => fn());
 }
@@ -57,6 +59,12 @@ export const store = {
   get isLoggedIn() { return !!state.token; },
   get isSeller() { return state.user?.role === 'seller'; },
   get isEmailVerified() { return !!state.user?.email_verified; },
+  markUsernamePromptPending() { usernamePromptPending = true; },
+  consumeUsernamePrompt() {
+    const pending = usernamePromptPending;
+    usernamePromptPending = false;
+    return pending;
+  },
   get followedSellerIds() { return state.followedSellerIds; },
   get followerCount() { return state.followerCount; },
   get followingCount() { return state.followingCount; },

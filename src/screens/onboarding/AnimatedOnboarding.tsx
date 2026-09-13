@@ -1,1868 +1,389 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Animated,
-  Easing, ScrollView, FlatList, Platform, KeyboardAvoidingView, Dimensions, Image, Keyboard,
-} from 'react-native';
-import * as Haptics from 'expo-haptics';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useEffect, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, View, Text, StyleSheet, Animated, Dimensions, Easing, Pressable } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, Ellipse, G as SvgG } from 'react-native-svg';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
-import { useTranslation } from '../../i18n';
-import { signup as apiSignup, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { COLORS } from '../../theme';
+import { googleAuthInfo } from '../../api';
 import { store } from '../../store';
-import AuthInput from './components/AuthInput';
-import GoogleButton from './components/GoogleButton';
-import PasskeyButton from './components/PasskeyButton';
-import AuthMethodsCard from '../../components/AuthMethodsCard';
+import { useTranslation } from '../../i18n';
 import OnboardingBackground from './components/OnboardingBackground';
-import type { User } from '../../types';
+import GoogleButton from './components/GoogleButton';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-
-const C = {
-  bg0: '#0A0812',
-  bg1: '#120E1F',
-  surface: '#151326',
-  surfaceHi: '#211D38',
-  border: '#302B4B',
-  borderHi: '#514A73',
-  text: '#F4F1FB',
-  sub: '#C1BAD8',
-  faint: '#8F88AA',
-  violet: '#8B5CF6',
-  pink: '#EC4899',
-  amber: '#FB923C',
-  mint: '#2FE6B8',
-};
-
-const STEPS = ['name', 'username', 'email', 'purpose', 'dob', 'password', 'review'] as const;
-type Step = typeof STEPS[number];
-const STEP_MAX = 7;
-const STEP_LABELS: Record<Step, string> = {
-  name: 'About you', username: 'Username', email: 'Contact', purpose: 'Purpose', dob: 'Age', password: 'Security', review: 'Review',
-};
-
-const PURPOSES = [
-  { id: 'buy', title: 'Discover & buy', desc: 'Find products from sellers around you', icon: 'shopping-outline' as const },
-  { id: 'sell', title: 'Build a store', desc: 'Sell products and grow your audience', icon: 'store-outline' as const },
-  { id: 'both', title: 'A little of both', desc: 'Buy, sell, and explore freely', icon: 'swap-horizontal' as const },
-];
-
-/* ── SVG Illustrations ────────────────────────────────────── */
-
-function Logomark({ size = 40 }: { size?: number }) {
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Image
-        source={require('../../../assets/Logo/webp/maurmaket-logo-icon.webp')}
-        style={{ width: size, height: size, borderRadius: Math.max(6, size * 0.2), resizeMode: 'contain' }}
-        accessibilityLabel="MaurMaket icon"
-      />
-    </View>
-  );
+interface AnimatedOnboardingProps {
+  onSwitchToSignin?: () => void;
+  onNaturalComplete?: () => void;
+  onGoogleComplete?: (result: { firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string }) => void;
 }
 
-const BURST_ANGLES = Array.from({ length: 8 }, (_, i) => (i / 8) * Math.PI * 2);
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const RING_SIZES = [66, 110, 150, 190, 230];
+const COVER_SCALE = Math.hypot(SCREEN_WIDTH, SCREEN_HEIGHT) / Math.min(...RING_SIZES) + 0.5;
 
-function SplashIllustration({
-  spin, reveal, revealOpacity, turboSpin, logoFade, burst,
-}: {
-  spin: Animated.Value; reveal?: Animated.Value; revealOpacity?: Animated.Value;
-  turboSpin?: Animated.Value; logoFade?: Animated.Value; burst?: Animated.Value;
+function Loader({ autoExpand, onComplete, onPressChange }: {
+  autoExpand: boolean;
+  onComplete: () => void;
+  onPressChange: (pressed: boolean) => void;
 }) {
-  const pinkScale = reveal ? reveal.interpolate({ inputRange: [0, 1], outputRange: [0.12, 1.55] }) : new Animated.Value(0);
-  const pinkOpacity = revealOpacity ? revealOpacity.interpolate({ inputRange: [0, 1], outputRange: [0, 0.62] }) : 0;
+  const rings = useRef([
+    new Animated.Value(1),
+    new Animated.Value(1),
+    new Animated.Value(1),
+    new Animated.Value(1),
+    new Animated.Value(1),
+  ]).current;
 
-  /*
-   * Conic-gradient ring arcs — two laser trails on concentric tracks,
-   * rotating clockwise at the same speed, 180° apart.
-   *
-   * Each trail covers ~35% of its ring circumference.
-   * The SVG linearGradient rotates WITH the arc because it's in the SVG's
-   * local coordinate space, giving the bright-head / fading-tail laser look.
-   */
-  const laserA = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const laserB = spin.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '540deg'] });
+  const holdAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  const isReturning = useRef(false);
+  const idleAnimations = useRef<Animated.CompositeAnimation[]>([]);
+  const idleTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const fingerprintOpacity = useRef(new Animated.Value(1)).current;
 
-  // Turbo layer only exists while charging: crossfades in over the ambient
-  // layer and spins ~8x faster, giving the illusion of the trails "spinning up".
-  const turboA = turboSpin ? turboSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) : '0deg';
-  const turboB = turboSpin ? turboSpin.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '540deg'] }) : '0deg';
-  const ambientOpacity = reveal ? reveal.interpolate({ inputRange: [0, 1], outputRange: [1, 0.25] }) : 1;
-  const turboOpacity = reveal ? reveal.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }) : 0;
-
-  const R_OUTER = 90;
-  const R_INNER = 76;
-  const C_OUTER = 2 * Math.PI * R_OUTER;
-  const C_INNER = 2 * Math.PI * R_INNER;
-  const ARC_OUTER = C_OUTER * 0.35;
-  const ARC_INNER = C_INNER * 0.35;
-
-  return (
-    <View style={{ width: 200, height: 200, alignItems: 'center', justifyContent: 'center' }}>
-      {/* Pink reveal disc behind logo */}
-      <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: 104, height: 104, borderRadius: 52, backgroundColor: C.pink }, { opacity: pinkOpacity, transform: [{ scale: pinkScale }] }]} />
-
-      {/* ── Laser A — Violet, outer ring track (ambient speed, fades out while charging) ── */}
-      <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: laserA }], opacity: ambientOpacity }}>
-        <Svg width="200" height="200" viewBox="0 0 200 200">
-          <Defs>
-            <SvgLinearGradient id="laserA" x1="0" y1="0" x2="1" y2="0.45">
-              <Stop offset="0%" stopColor={C.violet} stopOpacity="0" />
-              <Stop offset="48%" stopColor={C.violet} stopOpacity="0.18" />
-              <Stop offset="72%" stopColor={C.violet} stopOpacity="0.7" />
-              <Stop offset="92%" stopColor={C.violet} stopOpacity="1" />
-              <Stop offset="98%" stopColor="#ffffff" stopOpacity="1" />
-              <Stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
-            </SvgLinearGradient>
-          </Defs>
-          {/* Wide glow halo */}
-          <Circle cx="100" cy="100" r={R_OUTER} stroke={C.violet} strokeWidth="14" fill="none"
-            strokeDasharray={`${ARC_OUTER} ${C_OUTER - ARC_OUTER}`} opacity="0.1" />
-          {/* Thin bright beam */}
-          <Circle cx="100" cy="100" r={R_OUTER} stroke="url(#laserA)" strokeWidth="2.5" fill="none"
-            strokeDasharray={`${ARC_OUTER} ${C_OUTER - ARC_OUTER}`} strokeLinecap="round" />
-        </Svg>
-      </Animated.View>
-
-      {/* ── Laser B — Pink, inner ring track (ambient speed, fades out while charging) ── */}
-      <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: laserB }], opacity: ambientOpacity }}>
-        <Svg width="200" height="200" viewBox="0 0 200 200">
-          <Defs>
-            <SvgLinearGradient id="laserB" x1="0" y1="0" x2="1" y2="0.45">
-              <Stop offset="0%" stopColor={C.pink} stopOpacity="0" />
-              <Stop offset="48%" stopColor={C.pink} stopOpacity="0.18" />
-              <Stop offset="72%" stopColor={C.pink} stopOpacity="0.7" />
-              <Stop offset="92%" stopColor={C.pink} stopOpacity="1" />
-              <Stop offset="98%" stopColor="#ffffff" stopOpacity="1" />
-              <Stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
-            </SvgLinearGradient>
-          </Defs>
-          <Circle cx="100" cy="100" r={R_INNER} stroke={C.pink} strokeWidth="14" fill="none"
-            strokeDasharray={`${ARC_INNER} ${C_INNER - ARC_INNER}`} opacity="0.08" />
-          <Circle cx="100" cy="100" r={R_INNER} stroke="url(#laserB)" strokeWidth="2.5" fill="none"
-            strokeDasharray={`${ARC_INNER} ${C_INNER - ARC_INNER}`} strokeLinecap="round" />
-        </Svg>
-      </Animated.View>
-
-      {/* ── Turbo A/B — same tracks, ~8x rotation speed, only visible while charging ── */}
-      {turboSpin && (
-        <>
-          <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: turboA }], opacity: turboOpacity }}>
-            <Svg width="200" height="200" viewBox="0 0 200 200">
-              <Defs>
-                <SvgLinearGradient id="turboA" x1="0" y1="0" x2="1" y2="0.45">
-                  <Stop offset="0%" stopColor={C.violet} stopOpacity="0" />
-                  <Stop offset="60%" stopColor={C.violet} stopOpacity="0.5" />
-                  <Stop offset="92%" stopColor={C.violet} stopOpacity="1" />
-                  <Stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
-                </SvgLinearGradient>
-              </Defs>
-              <Circle cx="100" cy="100" r={R_OUTER} stroke="url(#turboA)" strokeWidth="3.5" fill="none"
-                strokeDasharray={`${ARC_OUTER} ${C_OUTER - ARC_OUTER}`} strokeLinecap="round" />
-            </Svg>
-          </Animated.View>
-          <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate: turboB }], opacity: turboOpacity }}>
-            <Svg width="200" height="200" viewBox="0 0 200 200">
-              <Defs>
-                <SvgLinearGradient id="turboB" x1="0" y1="0" x2="1" y2="0.45">
-                  <Stop offset="0%" stopColor={C.pink} stopOpacity="0" />
-                  <Stop offset="60%" stopColor={C.pink} stopOpacity="0.5" />
-                  <Stop offset="92%" stopColor={C.pink} stopOpacity="1" />
-                  <Stop offset="100%" stopColor="#ffffff" stopOpacity="1" />
-                </SvgLinearGradient>
-              </Defs>
-              <Circle cx="100" cy="100" r={R_INNER} stroke="url(#turboB)" strokeWidth="3.5" fill="none"
-                strokeDasharray={`${ARC_INNER} ${C_INNER - ARC_INNER}`} strokeLinecap="round" />
-            </Svg>
-          </Animated.View>
-        </>
-      )}
-
-      {/* Logo (on top of lasers) — fades out once fully charged, before the blackout crossfade */}
-      <Animated.View style={{ opacity: logoFade ?? 1, transform: [{ scale: logoFade ? logoFade.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) : 1 }] }}>
-        <Logomark size={92} />
-      </Animated.View>
-
-      {/* Decorative accent dots */}
-      <View style={{ position: 'absolute', top: 18, right: 12, width: 10, height: 10, borderRadius: 4, backgroundColor: C.amber }} />
-      <View style={{ position: 'absolute', bottom: 22, left: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: C.mint }} />
-
-      {/* Particle burst — fires once when the hold completes */}
-      {burst && BURST_ANGLES.map((angle, i) => {
-        const dist = 70 + (i % 3) * 18;
-        const tx = burst.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * dist] });
-        const ty = burst.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * dist] });
-        const opacity = burst.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 1, 0] });
-        const scale = burst.interpolate({ inputRange: [0, 1], outputRange: [1, 0.3] });
-        return (
-          <Animated.View
-            key={i}
-            pointerEvents="none"
-            style={{
-              position: 'absolute', width: 6, height: 6, borderRadius: 3,
-              backgroundColor: i % 2 === 0 ? C.violet : C.pink,
-              opacity, transform: [{ translateX: tx }, { translateY: ty }, { scale }],
-            }}
-          />
-        );
-      })}
-    </View>
-  );
-}
-
-function WelcomeIllustration() {
-  return (
-    <View style={{ height: 250, alignItems: 'center', justifyContent: 'center' }}>
-      <Image
-        source={require('../../../illustration/commerce-more-human.webp')}
-        style={{ width: 360, height: 250, resizeMode: 'contain' }}
-        accessibilityLabel="Commerce made more human illustration"
-      />
-    </View>
-  );
-}
-
-function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asset: 'lets-start' | 'digital-address' | 'keep-it-protected' | 'youre-ready' | 'pick-username' | 'choose-purpose' | 'birthday'; accessibilityLabel: string; containerStyle?: any }) {
-  const birthdayAsset = asset === 'birthday';
-  const pickUsernameAsset = asset === 'pick-username';
-  const imageWidth = birthdayAsset || asset === 'lets-start' ? '100%' : pickUsernameAsset ? 350 : asset === 'choose-purpose' ? 330 : 360;
-  const imageHeight = birthdayAsset || pickUsernameAsset ? 455 : asset === 'choose-purpose' ? 300 : 190;
-  return (
-    <View style={[{ height: imageHeight, width: '100%', marginBottom: 12, alignItems: 'center', justifyContent: 'center' }, containerStyle]}>
-      <Image
-        source={
-          asset === 'lets-start' ? require('../../../illustration/lets-start.webp') :
-          asset === 'digital-address' ? require('../../../illustration/digital-address.webp') :
-          asset === 'keep-it-protected' ? require('../../../illustration/keep-it-protected.webp') :
-          asset === 'youre-ready' ? require('../../../illustration/youre-ready.webp') :
-          asset === 'pick-username' ? require('../../../illustration/pick-username.webp') :
-          asset === 'choose-purpose' ? require('../../../illustration/choose-purpose.webp') :
-          require('../../../illustration/birthday.webp')
-        }
-        style={{ width: imageWidth, height: imageHeight, resizeMode: birthdayAsset ? 'stretch' : asset === 'lets-start' || pickUsernameAsset ? 'cover' : 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
-        accessibilityLabel={accessibilityLabel}
-      />
-    </View>
-  );
-}
-
-function NameIllustration() {
-  return (
-    <View style={{ height: 130, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="180" height="120" viewBox="0 0 180 120" fill="none">
-        <Defs>
-          <SvgLinearGradient id="faceG" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0%" stopColor={C.violet} />
-            <Stop offset="100%" stopColor={C.pink} />
-          </SvgLinearGradient>
-        </Defs>
-        <Circle cx="90" cy="42" r="26" fill="none" stroke={C.borderHi} strokeWidth="1.4" />
-        <Circle cx="90" cy="42" r="26" stroke="url(#faceG)" strokeWidth="2.2" strokeDasharray="164" strokeDashoffset="0" />
-        <Circle cx="90" cy="36" r="8" fill={C.surfaceHi} stroke={C.borderHi} />
-        <Path d="M72 58c4-9 32-9 36 0" stroke={C.borderHi} strokeWidth="2" fill="none" strokeLinecap="round" />
-        <Path d="M20 100c26-14 114-14 140 0" stroke={C.faint} strokeWidth="1.6" strokeDasharray="2 7" fill="none" strokeLinecap="round" />
-      </Svg>
-    </View>
-  );
-}
-
-function ContactIllustration() {
-  return (
-    <View style={{ height: 150, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="200" height="150" viewBox="0 0 200 150" fill="none">
-        <Defs>
-          <SvgLinearGradient id="envG" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0%" stopColor={C.violet} />
-            <Stop offset="100%" stopColor={C.pink} />
-          </SvgLinearGradient>
-        </Defs>
-        <Circle cx="100" cy="72" r="58" stroke={C.border} strokeWidth="1" fill="none" strokeDasharray="1 7" />
-        <SvgG>
-          <Rect x="58" y="46" width="84" height="56" rx="9" fill="url(#envG)" />
-          <Path d="M58 52l42 30 42-30" stroke="#1A0B12" strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
-        </SvgG>
-        <SvgG>
-          <Path d="M138 96l30-10-9 29-7-11-14 8 0-16z" fill={C.amber} />
-        </SvgG>
-      </Svg>
-    </View>
-  );
-}
-
-function SecurityIllustration({ matched }: { matched: boolean }) {
-  return (
-    <View style={{ height: 150, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="150" height="150" viewBox="0 0 150 150" fill="none">
-        <Defs>
-          <SvgLinearGradient id="lockG" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0%" stopColor={matched ? C.mint : C.violet} />
-            <Stop offset="100%" stopColor={matched ? C.mint : C.pink} />
-          </SvgLinearGradient>
-        </Defs>
-        <Circle cx="75" cy="75" r="60" fill={C.surface} stroke={C.border} />
-        <Rect x="50" y="72" width="50" height="38" rx="9" fill="url(#lockG)" />
-        <Path d="M58 72V58a17 17 0 0 1 34 0v14" stroke={matched ? C.mint : C.borderHi} strokeWidth="5" fill="none" strokeLinecap="round" />
-        <Circle cx="75" cy="88" r="4.2" fill="#1A0B12" />
-        <Rect x="73" y="90" width="4" height="9" rx="2" fill="#1A0B12" />
-      </Svg>
-    </View>
-  );
-}
-
-function ReviewIllustration({ items }: { items: boolean[] }) {
-  return (
-    <View style={{ height: 140, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="170" height="140" viewBox="0 0 170 140" fill="none">
-        <Rect x="35" y="10" width="100" height="120" rx="14" fill={C.surface} stroke={C.border} />
-        <Rect x="60" y="2" width="50" height="18" rx="6" fill={C.borderHi} />
-        {items.map((done, i) => (
-          <SvgG key={i} opacity={done ? 1 : 0.35}>
-            <Circle cx="55" cy={42 + i * 22} r="7" fill={done ? C.mint : 'transparent'} stroke={done ? C.mint : C.faint} strokeWidth="1.4" />
-            {done && <Path d={`M51.5 ${42 + i * 22}l2.5 2.5 5-5`} stroke="#0A0812" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
-            <Rect x="70" y={38 + i * 22} width="52" height="7" rx="3.5" fill={C.faint} opacity="0.5" />
-          </SvgG>
-        ))}
-      </Svg>
-    </View>
-  );
-}
-
-function SuccessIllustration({ pulse }: { pulse: Animated.Value }) {
-  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] });
-  const opacity = pulse.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, 1, 1] });
-  return (
-    <View style={{ height: 210, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {[0, 1, 2].map(i => (
-        <View key={i} style={[StyleSheet.absoluteFill, { borderRadius: 999, borderWidth: 1.4, borderColor: C.mint, opacity: 0.3 }]} />
-      ))}
-      <Animated.View style={{ width: 92, height: 92, borderRadius: 46, backgroundColor: '#123B31', alignItems: 'center', justifyContent: 'center', transform: [{ scale }], opacity }}>
-        <Svg width="46" height="46" viewBox="0 0 46 46" fill="none">
-          <Path d="M11 24l8 8 16-18" stroke={C.mint} strokeWidth="4.4" strokeLinecap="round" strokeLinejoin="round" />
-        </Svg>
-      </Animated.View>
-    </View>
-  );
-}
-
-/* ── Shared UI ────────────────────────────────────────────── */
-
-function StepBadge({ step, total, label }: { step: number; total: number; label: string }) {
-  return (
-    <Text style={s.stepCount} accessibilityLabel={`Onboarding progress ${step} of ${total}`}>{step}/{total}</Text>
-  );
-}
-
-/* ── Birthday Picker Wheel Column (Glass Center Lens) ─────────────────────────── */
-
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
-const FULL_MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-] as const;
-
-const DOB_ITEM_HEIGHT = 44;
-const DOB_VISIBLE_ITEMS = 5;
-const DOB_WHEEL_HEIGHT = DOB_ITEM_HEIGHT * DOB_VISIBLE_ITEMS; // 220
-const DOB_PADDING = (DOB_WHEEL_HEIGHT - DOB_ITEM_HEIGHT) / 2; // 88
-const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-const CURRENT_YEAR = new Date().getFullYear();
-const ALL_YEARS = Array.from({ length: 82 }, (_, i) => (CURRENT_YEAR - 18) - i);
-const DAY_CACHE: Record<number, number[]> = {
-  28: Array.from({ length: 28 }, (_, i) => i + 1),
-  29: Array.from({ length: 29 }, (_, i) => i + 1),
-  30: Array.from({ length: 30 }, (_, i) => i + 1),
-  31: Array.from({ length: 31 }, (_, i) => i + 1),
-};
-
-const DobWheelColumn = React.memo(function DobWheelColumn({
-  items,
-  selectedValue,
-  onSelect,
-  label,
-  formatItem,
-}: {
-  items: (number | string)[];
-  selectedValue: number | string | null;
-  onSelect: (val: any) => void;
-  label: string;
-  formatItem?: (val: any) => string;
-}) {
-  const scrollRef = useRef<ScrollView>(null);
-  const lastIdx = useRef(-1);
-  const hasMounted = useRef(false);
-  const N = items.length;
-
-  // Initial scroll once on mount
-  useEffect(() => {
-    if (selectedValue != null && !hasMounted.current) {
-      const idx = items.indexOf(selectedValue);
-      if (idx >= 0) {
-        hasMounted.current = true;
-        lastIdx.current = idx;
-        setTimeout(() => {
-          scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: false });
-        }, 50);
-      }
-    }
-  }, [selectedValue, items]);
-
-  const pickFromOffset = (offsetY: number) => {
-    const idx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
-    if (idx !== lastIdx.current) {
-      lastIdx.current = idx;
-      Haptics.selectionAsync();
-      onSelect(items[idx]);
-    }
+  const stopIdle = () => {
+    idleTimers.current.forEach(clearTimeout);
+    idleTimers.current = [];
+    idleAnimations.current.forEach((animation) => animation.stop());
+    idleAnimations.current = [];
   };
 
-  return (
-    <View style={s.dobWheelCol}>
-      <Text style={s.dobWheelLabel}>{label}</Text>
-      <View style={s.dobWheelViewport}>
-        <ScrollView
-          ref={scrollRef}
-          showsVerticalScrollIndicator={false}
-          snapToInterval={DOB_ITEM_HEIGHT}
-          snapToAlignment="start"
-          decelerationRate="fast"
-          disableIntervalMomentum
-          bounces
-          nestedScrollEnabled
-          onMomentumScrollEnd={(e) => pickFromOffset(e.nativeEvent.contentOffset.y)}
-          onScrollEndDrag={(e) => {
-            const v = e.nativeEvent.velocity?.y ?? 0;
-            if (Math.abs(v) < 0.3) pickFromOffset(e.nativeEvent.contentOffset.y);
-          }}
-          contentContainerStyle={{
-            paddingTop: DOB_PADDING,
-            paddingBottom: DOB_PADDING,
-          }}
-          style={s.dobWheelScroll}
-        >
-          {items.map((item, idx) => {
-            const display = formatItem ? formatItem(item) : String(item);
-            const isSelected = item === selectedValue;
-            return (
-              <TouchableOpacity
-                key={`${item}-${idx}`}
-                activeOpacity={0.7}
-                onPress={() => {
-                  scrollRef.current?.scrollTo({ y: idx * DOB_ITEM_HEIGHT, animated: true });
-                  pickFromOffset(idx * DOB_ITEM_HEIGHT);
-                }}
-                style={s.dobWheelItem}
-              >
-                <Text
-                  style={[
-                    s.dobWheelItemText,
-                    {
-                      color: isSelected ? '#FFFFFF' : C.sub,
-                      fontWeight: isSelected ? '800' : '500',
-                      fontSize: isSelected ? 18 : 15,
-                      opacity: isSelected ? 1 : 0.5,
-                    },
-                  ]}
-                >
-                  {display}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-    </View>
-  );
-});
+  const startIdle = () => {
+    stopIdle();
+    idleAnimations.current = rings.map((ring) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(ring, {
+            toValue: 1.3,
+            duration: 780,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(ring, {
+            toValue: 1,
+            duration: 780,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      )
+    );
+    idleTimers.current = idleAnimations.current.map((animation, index) =>
+      setTimeout(() => animation.start(), index * 180)
+    );
+  };
 
-function PrimaryButton({ children, onPress, disabled }: { children: React.ReactNode; onPress: () => void; disabled?: boolean }) {
-  return (
-    <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={{ width: '100%', opacity: disabled ? 0.7 : 1 }}>
-      <LinearGradient
-        colors={disabled ? ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.08)'] : [C.violet, C.pink, C.amber]}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        style={s.primaryBtn}
-      >
-        <Text style={[s.primaryBtnText, disabled && { color: C.faint }]}>{children}</Text>
-        <MaterialCommunityIcons name="arrow-right" size={17} color={disabled ? C.faint : '#1A0B12'} />
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-}
+  useEffect(() => {
+    startIdle();
+    return stopIdle;
+  }, [rings]);
 
-function StepActions({ children, step, label, onBack, compact }: { children: React.ReactNode; step: number; label: string; onBack: () => void; compact?: boolean }) {
-  return (
-    <>
-      <View style={s.stepTopBar}>
-        <TouchableOpacity onPress={onBack} style={s.topBackAction} accessibilityRole="button" accessibilityLabel="Go back">
-          <MaterialCommunityIcons name="arrow-left" size={18} color={C.sub} />
-          <Text style={s.backActionText}>Back</Text>
-        </TouchableOpacity>
-        <StepBadge step={step} total={STEP_MAX} label={label} />
-      </View>
-      <View style={s.actions}>{children}</View>
-    </>
-  );
-}
-
-const Field = React.forwardRef<TextInput, { icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters'; right?: React.ReactNode; onFocus?: () => void }>(function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, autoCapitalize, right, onFocus }, ref) {
-  const inputRef = useRef<TextInput | null>(null);
-  const [isFocused, setIsFocused] = useState(false);
-
-  return (
-    <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={[s.field, isFocused && s.fieldFocused]} accessibilityRole="none">
-      <MaterialCommunityIcons name={icon} size={18} color={isFocused ? C.violet : C.sub} />
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Text style={s.fieldLabel}>{label}</Text>
-        <TextInput
-          ref={node => { inputRef.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node; }}
-          onFocus={() => { setIsFocused(true); onFocus?.(); }}
-          onBlur={() => setIsFocused(false)}
-          style={s.fieldInput}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={C.sub}
-          secureTextEntry={secureTextEntry}
-          autoCapitalize={autoCapitalize || 'none'}
-        />
-      </View>
-      {right}
-    </TouchableOpacity>
-  );
-});
-
-function GhostFieldRow({ icon, label, value, onChangeText, secure, capitalize, active }: { icon: any; label: string; value: string; onChangeText: (value: string) => void; secure?: boolean; capitalize?: 'none' | 'sentences' | 'words' | 'characters'; active?: boolean }) {
-  return (
-    <View style={[s.keyboardGhostRow, active && s.keyboardGhostRowActive]}>
-      <MaterialCommunityIcons name={icon} size={18} color={active ? C.violet : C.sub} />
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Text style={s.fieldLabel}>{label}</Text>
-        <TextInput
-          autoFocus={active}
-          style={s.keyboardGhostInput}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={label}
-          placeholderTextColor={C.sub}
-          secureTextEntry={secure}
-          autoCapitalize={capitalize}
-        />
-      </View>
-    </View>
-  );
-}
-
-/* ── Main Component ───────────────────────────────────────── */
-
-interface Props {
-  onSwitchToSignin: () => void;
-}
-
-export default function AnimatedOnboarding({ onSwitchToSignin }: Props) {
-  const insets = useSafeAreaInsets();
-  const { t } = useTranslation();
-  const [index, setIndex] = useState(0);
-  const [dir, setDir] = useState(1);
-  const [form, setForm] = useState({ first: '', last: '', username: '', email: '', purpose: '', birthMonth: null as number | null, birthDay: null as number | null, birthYear: null as number | null, pw: '', pw2: '' });
-  const [showPw, setShowPw] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const [googleInfo, setGoogleInfo] = useState<{ firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string } | null>(null);
-  const [userResult, setUserResult] = useState<{ user: User; token: string } | null>(null);
-  const [cachedSignupResult, setCachedSignupResult] = useState<{ user: User; token: string } | null>(null);
-  const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
-  const [emailChecking, setEmailChecking] = useState(false);
-  const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
-  const [usernameChecking, setUsernameChecking] = useState(false);
-  const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  // Birthday screen vertical picker animation & state
-  const [dobPickerActive, setDobPickerActive] = useState(false);
-  const [dobActiveTab, setDobActiveTab] = useState<'month' | 'day' | 'year'>('month');
-  const dobPickerAnim = useRef(new Animated.Value(0)).current;
-
-  const openDobPicker = useCallback((tab: 'month' | 'day' | 'year' = 'month') => {
-    setDobActiveTab(tab);
-    setDobPickerActive(true);
-    Animated.spring(dobPickerAnim, {
+  const returnToRest = () => {
+    onPressChange(false);
+    Animated.timing(fingerprintOpacity, {
       toValue: 1,
-      tension: 68,
-      friction: 10,
+      duration: 420,
       useNativeDriver: true,
     }).start();
-  }, [dobPickerAnim]);
+    isReturning.current = true;
+    holdAnimation.current?.stop();
+    const stoppedValues = rings.map((ring) => new Promise<number>((resolve) => {
+      ring.stopAnimation((value) => resolve(value));
+    }));
 
-  const closeDobPicker = useCallback(() => {
-    Animated.timing(dobPickerAnim, {
-      toValue: 0,
-      duration: 240,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start(() => setDobPickerActive(false));
-  }, [dobPickerAnim]);
+    Promise.all(stoppedValues).then((values) => {
+      if (!isReturning.current) return;
 
-  const [splashReady, setSplashReady] = useState(false);
-  const [revealing, setRevealing] = useState(false);
-  const [activationStage, setActivationStage] = useState<'idle' | 'filled' | 'fade' | 'blackout'>('idle');
-  const reveal = useRef(new Animated.Value(0)).current;
-  const revealOpacity = useRef(new Animated.Value(1)).current;
-  const revealCompleted = useRef(false);
-  const holdRingA = useRef(new Animated.Value(0)).current;
-  const holdRingB = useRef(new Animated.Value(0)).current;
-  const holdRingC = useRef(new Animated.Value(0)).current;
-  // Charge-up laser layer, particle burst, and the crossfade to black once fully held.
-  const turboSpin = useRef(new Animated.Value(0)).current;
-  const logoFade = useRef(new Animated.Value(1)).current;
-  const burst = useRef(new Animated.Value(0)).current;
-  const blackout = useRef(new Animated.Value(0)).current;
-  const turboLoop = useRef<Animated.CompositeAnimation | null>(null);
-
-  // Animations
-  const spin = useRef(new Animated.Value(0)).current;
-  const float = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(0)).current;
-  const enterAnim = useRef(new Animated.Value(0)).current;
-  const scrollRef = useRef<ScrollView>(null);
-  const holdButtonRef = useRef<View>(null);
-  const [revealOrigin, setRevealOrigin] = useState({ x: SCREEN_W / 2, y: SCREEN_H / 2 });
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSubscription = Keyboard.addListener(showEvent, eventData => setKeyboardHeight(eventData.endCoordinates.height));
-    const hideSubscription = Keyboard.addListener(hideEvent, () => { setKeyboardHeight(0); setFocusedField(null); });
-    return () => { showSubscription.remove(); hideSubscription.remove(); };
-  }, []);
-
-  // Continuous animations
-  useEffect(() => {
-    Animated.loop(Animated.timing(spin, { toValue: 1, duration: 22000, easing: Easing.linear, useNativeDriver: true })).start();
-    Animated.loop(Animated.sequence([
-      Animated.timing(float, { toValue: 1, duration: 2500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(float, { toValue: 0, duration: 2500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-    ])).start();
-    Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 1800, easing: Easing.out(Easing.ease), useNativeDriver: true })).start();
-    const ringAnimation = (value: Animated.Value, delay: number) => Animated.loop(Animated.sequence([
-      Animated.delay(delay),
-      Animated.timing(value, { toValue: 1, duration: 1900, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(value, { toValue: 0, duration: 0, useNativeDriver: true }),
-    ])).start();
-    ringAnimation(holdRingA, 0);
-    ringAnimation(holdRingB, 620);
-    ringAnimation(holdRingC, 1240);
-  }, []);
-
-  // Splash auto-advance
-  useEffect(() => {
-    if (index === 0) {
-      setSplashReady(false);
-      const t = setTimeout(() => setSplashReady(true), 1400);
-      return () => clearTimeout(t);
-    }
-  }, [index]);
-
-  // Step enter animation
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ y: 0, animated: false });
-    enterAnim.setValue(0);
-    Animated.timing(enterAnim, { toValue: 1, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    if (index !== 6) {
-      dobPickerAnim.setValue(0);
-      setDobPickerActive(false);
-    }
-  }, [index, dobPickerAnim]);
-
-  const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
-
-  const stepIdx = index - 2;
-  const step: Step | null = stepIdx >= 0 && stepIdx < STEPS.length ? STEPS[stepIdx] : null;
-
-  const pwLen = form.pw.length;
-  const pwOk = pwLen >= 6 && pwLen <= 128;
-  const pwScore = pwLen === 0 ? 0 : pwLen < 6 ? 1 : pwLen < 10 ? 2 : 3;
-  const pwMatched = pwOk && form.pw === form.pw2;
-  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email);
-  const usernameValid = /^[a-z0-9][a-z0-9._]{0,28}[a-z0-9]$/.test(form.username) || form.username.length === 1;
-  const birthDateValid = !!form.birthMonth && !!form.birthDay && !!form.birthYear;
-  const isAdult = birthDateValid && (() => {
-    const birthDate = new Date(form.birthYear!, form.birthMonth! - 1, form.birthDay!);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDelta = today.getMonth() - birthDate.getMonth();
-    if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) age--;
-    return age >= 18;
-  })();
-
-  const reviewItems = [
-    !!(form.first && form.last),
-    usernameValid && usernameAvailable !== false,
-    emailValid,
-    !!form.purpose,
-    isAdult,
-    pwMatched,
-  ];
-
-  // Email availability check
-  useEffect(() => {
-    if (emailTimer.current) clearTimeout(emailTimer.current);
-    if (emailValid && form.email.length > 5) {
-      emailTimer.current = setTimeout(async () => {
-        setEmailChecking(true);
-        try {
-          const res = await fetch(`${API_BASE}/auth/check-email?email=${encodeURIComponent(form.email)}`);
-          const data = await res.json();
-          setEmailAvailable(data.available);
-          if (!data.available) setErrors(p => ({ ...p, email: 'This email is already registered' }));
-          else setErrors(p => { const n = { ...p }; delete n.email; return n; });
-        } catch { setEmailAvailable(null); }
-        setEmailChecking(false);
-      }, 500);
-    } else { setEmailAvailable(null); }
-    return () => { if (emailTimer.current) clearTimeout(emailTimer.current); };
-  }, [form.email, emailValid]);
-
-  // Username availability check
-  useEffect(() => {
-    if (usernameTimer.current) clearTimeout(usernameTimer.current);
-    if (usernameValid && form.username.length >= 1) {
-      setUsernameChecking(true);
-      usernameTimer.current = setTimeout(async () => {
-        try {
-          const res = await fetch(`${API_BASE}/auth/check-username?username=${encodeURIComponent(form.username)}`);
-          const data = await res.json();
-          setUsernameAvailable(data.available);
-          if (!data.available) setErrors(p => ({ ...p, username: 'This username is taken' }));
-          else setErrors(p => { const n = { ...p }; delete n.username; return n; });
-        } catch { setUsernameAvailable(null); }
-        setUsernameChecking(false);
-      }, 500);
-    } else { setUsernameAvailable(null); }
-    return () => { if (usernameTimer.current) clearTimeout(usernameTimer.current); };
-  }, [form.username, usernameValid]);
-
-  const go = (delta: number) => {
-    setDir(delta);
-    setErrors({});
-    setIndex(i => Math.min(Math.max(i + delta, 0), 9));
-  };
-
-  const startSplashReveal = () => {
-    if (!splashReady || revealing) return;
-    holdButtonRef.current?.measureInWindow((x, y, width, height) => {
-      const cx = x + width / 2;
-      const cy = y + height / 2;
-      setRevealOrigin({ x: cx, y: cy });
-      reveal.setValue(0.01);
-      revealOpacity.setValue(1);
-      logoFade.setValue(1);
-      burst.setValue(0);
-      blackout.setValue(0);
-      revealCompleted.current = false;
-      setActivationStage('idle');
-      setRevealing(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-      // Laser trails spin up to speed while the ring is charging.
-      turboSpin.setValue(0);
-      turboLoop.current = Animated.loop(
-        Animated.timing(turboSpin, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true }),
+      const returnAnimation = Animated.parallel(
+        rings.map((ring, ringIndex) =>
+          Animated.sequence([
+            Animated.delay(ringIndex * 90),
+            Animated.timing(ring, {
+              toValue: Math.min(values[ringIndex] * 1.04, COVER_SCALE),
+              duration: 120,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.timing(ring, {
+              toValue: 1,
+              duration: 1000,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ])
+        ),
+        { stopTogether: false }
       );
-      turboLoop.current.start();
-
-      Animated.timing(reveal, { toValue: 1, duration: 1900, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
-        if (!finished) return;
-        revealCompleted.current = true;
-        turboLoop.current?.stop();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-        // Stage 1 — screen is fully filled by the reveal disc.
-        setActivationStage('filled');
-        burst.setValue(0);
-        Animated.timing(burst, { toValue: 1, duration: 550, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-
-        // Stage 2 — logo fades out over the filled color.
-        setTimeout(() => {
-          setActivationStage('fade');
-          Animated.timing(logoFade, { toValue: 0, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-        }, 400);
-
-        // Stage 3 — filled color crossfades to black, then we advance underneath it.
-        setTimeout(() => {
-          setActivationStage('blackout');
-          Animated.timing(blackout, { toValue: 1, duration: 500, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(() => {
-            setIndex(1);
-            setTimeout(() => {
-              Animated.timing(revealOpacity, { toValue: 0, duration: 760, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start(() => {
-                reveal.setValue(0);
-                revealOpacity.setValue(1);
-                blackout.setValue(0);
-                logoFade.setValue(1);
-                setActivationStage('idle');
-                setRevealing(false);
-              });
-            }, 80);
-          });
-        }, 1400);
+      holdAnimation.current = returnAnimation;
+      returnAnimation.start(({ finished }) => {
+        if (finished) {
+          isReturning.current = false;
+          startIdle();
+        }
       });
     });
   };
 
-  const cancelSplashReveal = () => {
-    if (!revealing || revealCompleted.current) return;
-    turboLoop.current?.stop();
-    reveal.stopAnimation(value => {
-      Animated.timing(reveal, { toValue: Math.max(value * 0.08, 0.01), duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => setRevealing(false));
+  const runExpansion = (startValues = [1, 1, 1, 1, 1], compensateLateStart = false) => {
+    const expansion = Animated.parallel(
+      [4, 3, 2, 1, 0].map((ringIndex, waveIndex) => {
+        const targetScale = ringIndex === 0 ? COVER_SCALE * 1.12 : COVER_SCALE;
+        const distanceRatio = (targetScale - startValues[ringIndex]) / (COVER_SCALE - 1);
+        const baseDuration = 1850 * Math.max(0.85, distanceRatio);
+        const isFreshInnerRing = compensateLateStart && ringIndex === 0;
+        const totalDuration = isFreshInnerRing ? 1800 : baseDuration;
+        const expansionTiming = Animated.timing(rings[ringIndex], {
+          toValue: targetScale,
+          duration: totalDuration,
+          easing: isFreshInnerRing ? Easing.inOut(Easing.ease) : ringIndex === 0 ? Easing.in(Easing.cubic) : Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        });
+
+        return Animated.sequence([
+          Animated.delay(waveIndex * 70),
+          expansionTiming,
+        ]);
+      }),
+      { stopTogether: false }
+    );
+    holdAnimation.current = expansion;
+    expansion.start(({ finished }) => {
+      if (finished) onComplete();
     });
   };
 
-  const validateAndNext = () => {
-    if (step === 'name' && (!form.first.trim() || !form.last.trim())) { setErrors({ name: "First and last name are needed" }); return; }
-    if (step === 'username') {
-      if (!usernameValid) { setErrors({ username: 'Lowercase letters, numbers, dots, and underscores only (1-30 chars)' }); return; }
-      if (usernameAvailable === false) { setErrors({ username: 'This username is taken' }); return; }
-      // If Google pre-filled email, skip email step (jump from username → purpose)
-      if (googleInfo) { go(2); return; }
-    }
-    if (step === 'email') {
-      // If Google pre-filled, skip this step entirely
-      if (googleInfo) { go(1); return; }
-      if (!emailValid) { setErrors({ email: "That doesn't look like a full email" }); return; }
-      if (emailAvailable === false) { setErrors({ email: 'This email is already registered' }); return; }
-    }
-    if (step === 'purpose' && !form.purpose) return;
-    if (step === 'dob') {
-      if (!isAdult) { setErrors({ dob: 'You must be at least 18 years old' }); return; }
-      // If Google pre-filled DOB, skip to password
-      if (googleInfo?.birthDate) { go(1); return; }
-    }
-    if (step === 'password' && !pwMatched) return;
-    if (step === 'review') { submitSignup(); return; }
-    go(1);
+  const startExpanding = () => {
+    onPressChange(true);
+    Animated.timing(fingerprintOpacity, {
+      toValue: 0,
+      duration: 260,
+      useNativeDriver: true,
+    }).start();
+    const wasReturning = isReturning.current;
+    stopIdle();
+    holdAnimation.current?.stop();
+    isReturning.current = false;
+
+    const stoppedValues = rings.map((ring) => new Promise<number>((resolve) => {
+      ring.stopAnimation((value) => resolve(value));
+    }));
+
+    Promise.all(stoppedValues).then((values) => {
+      if (isReturning.current) return;
+      runExpansion(values, !wasReturning);
+    });
   };
 
-  const submitSignup = async () => {
-    if (cachedSignupResult) {
-      setUserResult(cachedSignupResult);
-      go(1);
-      return;
-    }
+  useEffect(() => {
+    if (autoExpand) startExpanding();
+  }, [autoExpand]);
 
-    setLoading(true); setErrors({});
-    const fullName = [form.first, form.last].filter(Boolean).join(' ').trim();
-    const dob = form.birthYear && form.birthMonth && form.birthDay
-      ? `${form.birthYear}-${String(form.birthMonth).padStart(2, '0')}-${String(form.birthDay).padStart(2, '0')}`
-      : '';
+  const ringStyles = [styles.ring1, styles.ring2, styles.ring3, styles.ring4, styles.ring5];
+  const ringGradients = [
+    ['#F6D77A', '#C9A227', '#4D3B0C', '#030303'],
+    ['#E7C45B', '#B58A19', '#403108', '#020202'],
+    ['#DDB84A', '#A77B12', '#332706', '#010101'],
+    ['#EBCB70', '#BD9225', '#49370A', '#020202'],
+    ['#F0D98A', '#C5A13A', '#55420E', '#030303'],
+  ] as const;
+
+  return (
+    <Pressable
+      style={styles.loaderWrap}
+      onPressIn={startExpanding}
+      onPressOut={returnToRest}
+    >
+      <Animated.View style={styles.loader}>
+        {[5, 4, 3, 2, 1].map((ringNumber) => (
+          <Animated.View
+            key={ringNumber}
+            style={[styles.ring, ringStyles[ringNumber - 1], { transform: [{ scale: rings[ringNumber - 1] }] }]}
+          >
+            <Svg style={styles.gradientRing} viewBox="0 0 100 100">
+              <Defs>
+                <RadialGradient id={`ring-${ringNumber}`} cx="50%" cy="50%" r="70%">
+                  <Stop offset="0%" stopColor={ringGradients[ringNumber - 1][0]} />
+                  <Stop offset="55%" stopColor={ringGradients[ringNumber - 1][1]} />
+                  <Stop offset="78%" stopColor={ringGradients[ringNumber - 1][2]} />
+                  <Stop offset="100%" stopColor={ringGradients[ringNumber - 1][3]} />
+                </RadialGradient>
+              </Defs>
+              <Circle cx="50" cy="50" r="50" fill={`url(#ring-${ringNumber})`} />
+            </Svg>
+            <Svg style={styles.ringCutout} viewBox="0 0 100 100">
+              <Defs>
+                <RadialGradient id={`ring-center-${ringNumber}`} cx="50%" cy="50%" r="72%">
+                  <Stop offset="0%" stopColor="#FF4D6A" stopOpacity="0.46" />
+                  <Stop offset="24%" stopColor="#A855F7" stopOpacity="0.64" />
+                  <Stop offset="52%" stopColor="#6D28D9" stopOpacity="0.38" />
+                  <Stop offset="78%" stopColor="#241044" stopOpacity="0.14" />
+                  <Stop offset="100%" stopColor="#000000" stopOpacity="1" />
+                </RadialGradient>
+              </Defs>
+              <Circle cx="50" cy="50" r="50" fill={`url(#ring-center-${ringNumber})`} />
+            </Svg>
+            {ringNumber === 1 && (
+              <Animated.View style={[styles.fingerprint, { opacity: fingerprintOpacity }]}>
+                <MaterialCommunityIcons name="fingerprint" size={36} color="#FFFFFF" />
+              </Animated.View>
+            )}
+          </Animated.View>
+        ))}
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+export default function AnimatedOnboarding({ onSwitchToSignin, onNaturalComplete, onGoogleComplete }: AnimatedOnboardingProps) {
+  const { t } = useTranslation();
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [autoExpand, setAutoExpand] = useState(false);
+  const controlsOpacity = useRef(new Animated.Value(1)).current;
+  const pendingGoogle = useRef<{ firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string } | null>(null);
+  const fade = useRef(new Animated.Value(1)).current;
+
+  const handleGoogle = async () => {
     try {
-      const res = await apiSignup(fullName, form.email, form.pw, '', dob, form.username) as { user: User; token: string };
-      setCachedSignupResult(res);
-      // If user signed up via Google, link the Google identity to their account
-      if (googleInfo?.googleIdToken) {
-        try {
-          await linkGoogleIdentity(googleInfo.googleIdToken);
-        } catch (linkErr: any) {
-          console.warn('[onboarding] Google link failed (non-blocking):', linkErr?.message);
-        }
-      }
-      setUserResult(res);
-      go(1); // → success screen
-    } catch (err: any) {
-      setErrors({ email: err?.message || 'Signup failed' });
-      setIndex(3); // → email step
-    } finally { setLoading(false); }
-  };
-
-  const handleEnterApp = async () => { if (userResult) await store.setUser(userResult.user, userResult.token); };
-
-  const handleGoogleSignup = async () => {
-    setGoogleLoading(true);
-    try {
-      const info = await googleAuthInfo();
-      setGoogleInfo(info);
-
-      // Parse birthday (format: "YYYY-MM-DD") into month/day/year
-      let birthMonth: number | null = null;
-      let birthDay: number | null = null;
-      let birthYear: number | null = null;
-      if (info.birthDate) {
-        const parts = info.birthDate.split('-');
-        if (parts.length === 3) {
-          birthYear = parseInt(parts[0], 10) || null;
-          birthMonth = parseInt(parts[1], 10) || null;
-          birthDay = parseInt(parts[2], 10) || null;
-        }
-      }
-
-      // Pre-fill name, email, and DOB from Google
-      setForm(f => ({
-        ...f,
-        first: info.firstName || f.first,
-        last: info.lastName || f.last,
-        email: info.email || f.email,
-        birthMonth: birthMonth || f.birthMonth,
-        birthDay: birthDay || f.birthDay,
-        birthYear: birthYear || f.birthYear,
-      }));
-
-      // If we have all DOB fields, jump to username (skip name + DOB edit)
-      // If no DOB, jump to username (skip name)
-      // DOB step will be skipped later if all fields are pre-filled
-      setDir(1);
-      setIndex(3);
-    } catch (err: any) {
-      if (!String(err?.message || '').includes('cancelled')) {
-        setErrors({ name: err?.message || 'Google sign-in failed' });
-      }
+      setGoogleLoading(true);
+      const result = await googleAuthInfo();
+      pendingGoogle.current = result;
+      setAutoExpand(true);
     } finally {
       setGoogleLoading(false);
     }
   };
 
-  const enterClass = dir >= 0 ? { opacity: enterAnim, transform: [{ translateX: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) }] }
-    : { opacity: enterAnim, transform: [{ translateX: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [-28, 0] }) }] };
-
-  const canContinue =
-    (step === 'name' && !(!form.first.trim() || !form.last.trim())) ||
-    (step === 'username' && usernameValid && usernameAvailable !== false) ||
-    (step === 'email' && emailValid && emailAvailable !== false) ||
-    (step === 'purpose' && !!form.purpose) ||
-    (step === 'password' && pwMatched) ||
-    (step === 'review');
-
-  const ghostOpacity = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    ghostOpacity.setValue(1);
-  }, [focusedField, index, ghostOpacity]);
-
-  const handleGhostContinue = () => {
-    if (focusedField === 'first' && form.first.trim() && !form.last.trim()) {
-      setFocusedField('last');
-      return;
-    }
-    if (!canContinue) { validateAndNext(); return; }
-    Animated.timing(ghostOpacity, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => {
-      Keyboard.dismiss();
-      setFocusedField(null);
-      validateAndNext();
+  const handleComplete = () => {
+    Animated.timing(fade, { toValue: 0, duration: 260, useNativeDriver: true }).start(() => {
+      if (pendingGoogle.current) {
+        onGoogleComplete?.(pendingGoogle.current);
+        pendingGoogle.current = null;
+      } else {
+        onNaturalComplete?.();
+      }
     });
   };
 
-  const ghostFieldMap = {
-    email: { label: 'Email address', icon: 'email-outline', placeholder: undefined, value: form.email, setValue: (value: string) => set('email', value), secure: false, capitalize: 'none' as const },
-    username: { label: 'Username', icon: 'at', placeholder: undefined, value: form.username, setValue: (value: string) => set('username', value.toLowerCase().replace(/[^a-z0-9._]/g, '')), secure: false, capitalize: 'none' as const },
-    first: { label: 'First name', icon: 'account-outline', placeholder: undefined, value: form.first, setValue: (value: string) => set('first', value), secure: false, capitalize: 'words' as const },
-    last: { label: 'Last name', icon: 'account-outline', placeholder: undefined, value: form.last, setValue: (value: string) => set('last', value), secure: false, capitalize: 'words' as const },
-    pw: { label: 'Password', icon: 'lock-outline', placeholder: '••••••••', value: form.pw, setValue: (value: string) => set('pw', value), secure: !showPw, capitalize: 'none' as const },
-    pw2: { label: 'Confirm password', icon: 'lock-outline', placeholder: '••••••••', value: form.pw2, setValue: (value: string) => set('pw2', value), secure: !showPw, capitalize: 'none' as const },
-  } as const;
-
-  const ghostFieldKeys = focusedField === 'first' || focusedField === 'last' ? ['first', 'last'] as const : focusedField ? [focusedField] as const : [];
-  const ghostFields = ghostFieldKeys.map(key => ({ key, ...ghostFieldMap[key as keyof typeof ghostFieldMap] }));
+  const handlePressChange = (pressed: boolean) => {
+    Animated.timing(controlsOpacity, {
+      toValue: pressed ? 0 : 1,
+      duration: pressed ? 220 : 320,
+      useNativeDriver: true,
+    }).start();
+  };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg0 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={{ flex: 1, backgroundColor: C.bg0 }}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <View style={styles.stage}>
         <OnboardingBackground />
-
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={s.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          scrollEnabled={!dobPickerActive}
-        >
-
-          <Animated.View style={[s.slide, enterClass]} key={index}>
-
-            {/* SCREEN 0 — SPLASH */}
-            {index === 0 && (
-              <View style={s.screenCenter}>
-                {splashReady ? (
-                  <TouchableOpacity
-                    onPressIn={startSplashReveal}
-                    onPressOut={cancelSplashReveal}
-                    disabled={revealing}
-                    ref={holdButtonRef}
-                    style={s.splashIllustrationButton}
-                    accessibilityRole="button"
-                    accessibilityLabel="Press and hold to continue"
-                  >
-                    <Animated.View style={[s.holdRing, s.holdRingA, { opacity: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] }), transform: [{ scale: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
-                    <Animated.View style={[s.holdRing, s.holdRingB, { opacity: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [0.62, 0] }), transform: [{ scale: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
-                    <Animated.View style={[s.holdRing, s.holdRingC, { opacity: holdRingC.interpolate({ inputRange: [0, 1], outputRange: [0.54, 0] }), transform: [{ scale: holdRingC.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
-                    <SplashIllustration spin={spin} reveal={reveal} revealOpacity={revealOpacity} turboSpin={turboSpin} logoFade={logoFade} burst={burst} />
-                  </TouchableOpacity>
-                ) : (
-                  <SplashIllustration spin={spin} reveal={reveal} revealOpacity={revealOpacity} />
-                )}
-              </View>
-            )}
-
-            {/* SCREEN 1 — WELCOME */}
-            {index === 1 && (
-              <View style={s.welcomeScreen}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingTop: 8, paddingBottom: 24 }}>
-                  <Logomark size={34} />
-                  <Text style={{ fontFamily: FONTS.heading, fontSize: 17, fontWeight: '700', color: C.text }}>MaurMaket</Text>
-                </View>
-                <WelcomeIllustration />
-                <Text style={[s.heroTitle, { textAlign: 'center' }]}>
-                  Commerce,{'\n'}
-                  <Text style={s.heroAccent}>made more human.</Text>
-                </Text>
-                <Text style={[s.heroSub, { textAlign: 'center', alignSelf: 'center' }]}>MaurMaket connects people, products, and opportunity in one place built for how you actually buy and sell.</Text>
-                <View style={s.welcomeActions}>
-                  <PrimaryButton onPress={() => go(1)}>Get started</PrimaryButton>
-                  <TouchableOpacity onPress={onSwitchToSignin} style={{ paddingVertical: 14 }}>
-                    <Text style={{ textAlign: 'center', color: C.sub, fontSize: 14, fontWeight: '500' }}>I already have an account</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* SCREEN 2 — NAME */}
-            {index === 2 && (
-              <View style={s.stepScreen}>
-                <View style={[s.centeredStepBody, s.nameStepBody]}>
-                  <AssetIllustration asset="lets-start" accessibilityLabel="Let's start illustration" />
-                  <View style={s.nameFields}>
-                    <Field icon="account-outline" label="First name" value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" onFocus={() => setFocusedField('first')} />
-                    <Field icon="account-outline" label="Last name" value={form.last} onChangeText={v => set('last', v)} placeholder="Reyes" onFocus={() => setFocusedField('last')} />
-                    {errors.name ? <Text style={s.fieldError}>{errors.name}</Text> : null}
-                  </View>
-                  {/* Google sign-up divider + button */}
-                  <View style={{ width: '100%', marginTop: 20 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                      <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
-                      <Text style={{ color: C.faint, fontSize: 12, fontWeight: '600' }}>or sign up with</Text>
-                      <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
-                    </View>
-                    <GoogleButton onPress={handleGoogleSignup} loading={googleLoading} disabled={googleLoading} compact={false} />
-                  </View>
-                </View>
-                <StepActions step={1} label={STEP_LABELS.name} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={!form.first || !form.last}>Continue</PrimaryButton>
-                </StepActions>
-              </View>
-            )}
-
-            {/* SCREEN 3 — USERNAME */}
-            {index === 3 && (
-              <View style={s.stepScreen}>
-                <View style={s.centeredStepBody}>
-                  {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>Lowercase letters, numbers, dots, and underscores only (1-30 chars)</Text> : null}
-                  {usernameAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Username is available</Text> : null}
-                  {errors.username ? <Text style={s.fieldError}>{errors.username}</Text> : null}
-                </View>
-                <StepActions step={2} label={STEP_LABELS.username} onBack={() => go(-1)}>
-                  <AssetIllustration
-                    asset="pick-username"
-                    accessibilityLabel="Pick your username illustration"
-                    containerStyle={{ marginBottom: 15 }}
-                  />
-                  <Field
-                    icon="at"
-                    label="Username"
-                    value={form.username}
-                    onChangeText={v => set('username', v.toLowerCase().replace(/[^a-z0-9._]/g, ''))}
-                    placeholder="jordan.reyes"
-                    onFocus={() => setFocusedField('username')}
-                    right={
-                      usernameChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
-                      usernameAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
-                      usernameAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
-                    }
-                  />
-                  <View style={{ height: 15 }} />
-                  <PrimaryButton onPress={validateAndNext} disabled={!usernameValid || usernameAvailable === false}>Continue</PrimaryButton>
-                </StepActions>
-              </View>
-            )}
-
-            {/* SCREEN 4 — EMAIL */}
-            {index === 4 && (
-              <View style={[s.stepScreen, s.emailScreen]}>
-                <View style={s.emailArtWindow}>
-                  <Image
-                    source={require('../../../illustration/digital-address.webp')}
-                    style={s.emailArtwork}
-                    resizeMode="contain"
-                    accessibilityLabel="Digital address illustration"
-                  />
-                </View>
-                <View style={s.emailContent}>
-                  <Field icon="email-outline" label="Email address" value={form.email} onChangeText={v => set('email', v)} placeholder="you@example.com" onFocus={() => setFocusedField('email')} right={
-                    emailChecking ? <MaterialCommunityIcons name="dots-horizontal" size={17} color={C.faint} /> :
-                    emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
-                    emailAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
-                  } />
-                  {errors.email ? <Text style={s.fieldError}>{errors.email}</Text> : null}
-                  {emailAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Email is available</Text> : null}
-                </View>
-                <StepActions step={3} label={STEP_LABELS.email} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={!emailValid || emailAvailable === false}>Continue</PrimaryButton>
-                </StepActions>
-              </View>
-            )}
-
-            {/* SCREEN 5 — PURPOSE */}
-            {index === 5 && (
-              <View style={s.stepScreen}>
-                <AssetIllustration asset="choose-purpose" accessibilityLabel="Choose your purpose illustration" containerStyle={s.purposeArtwork} />
-                <View style={s.purposeChoices}>
-                  {PURPOSES.map(p => {
-                    const active = form.purpose === p.id;
-                    return (
-                      <TouchableOpacity key={p.id} onPress={() => set('purpose', p.id)} activeOpacity={0.85} style={[s.purposeCard, active && s.purposeCardActive]}>
-                        <View style={[s.purposeIcon, active && s.purposeIconActive]}>
-                          <MaterialCommunityIcons name={p.icon} size={18} color={active ? '#1A0B12' : C.sub} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={s.purposeTitle}>{p.title}</Text>
-                          <Text style={s.purposeDesc}>{p.desc}</Text>
-                        </View>
-                        <View style={[s.radio, active && s.radioActive]}>
-                          {active && <MaterialCommunityIcons name="check" size={11} color="#1A0B12" />}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <StepActions step={4} label={STEP_LABELS.purpose} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={!form.purpose}>Continue</PrimaryButton>
-                </StepActions>
-              </View>
-            )}
-
-            {/* SCREEN 6 — DOB */}
-            {index === 6 && (() => {
-              const monthItems = ALL_MONTHS;
-              const maxDaysInMonth = form.birthMonth && form.birthYear
-                ? new Date(form.birthYear, form.birthMonth, 0).getDate()
-                : 31;
-              const dayItems = DAY_CACHE[maxDaysInMonth] ?? DAY_CACHE[31];
-              const yearItems = ALL_YEARS;
-
-              const mm = form.birthMonth ? String(form.birthMonth).padStart(2, '0') : 'MM';
-              const dd = form.birthDay ? String(form.birthDay).padStart(2, '0') : 'DD';
-              const yyyy = form.birthYear ? String(form.birthYear) : 'YYYY';
-              const formattedFullDate = `${mm}/${dd}/${yyyy}`;
-
-              let ageNumber: number | null = null;
-              if (birthDateValid) {
-                const birthDate = new Date(form.birthYear!, form.birthMonth! - 1, form.birthDay!);
-                const today = new Date();
-                let age = today.getFullYear() - birthDate.getFullYear();
-                const monthDelta = today.getMonth() - birthDate.getMonth();
-                if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) age--;
-                ageNumber = age;
-              }
-
-              const artOpacity = dobPickerAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 0],
-              });
-
-              const targetLift = Math.round((SCREEN_H / 2) - 140);
-
-              const containerTranslateY = dobPickerAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, -targetLift],
-              });
-
-              const headerOpacity = dobPickerAnim.interpolate({
-                inputRange: [0, 0.4, 1],
-                outputRange: [0, 0.5, 1],
-              });
-
-              const headerTranslateY = dobPickerAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [14, 0],
-              });
-
-              const carouselOpacity = dobPickerAnim.interpolate({
-                inputRange: [0, 0.3, 1],
-                outputRange: [0, 0.4, 1],
-              });
-
-              const carouselTranslateY = dobPickerAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [24, 0],
-              });
-
-              return (
-                <View style={s.stepScreen}>
-                  {/* Backdrop dismiss when wheel is open */}
-                  {dobPickerActive && (
-                    <TouchableOpacity
-                      activeOpacity={1}
-                      onPress={closeDobPicker}
-                      style={StyleSheet.absoluteFill}
-                    />
-                  )}
-
-                  {/* Fading Illustration */}
-                  <Animated.View
-                    pointerEvents={dobPickerActive ? 'none' : 'auto'}
-                    style={[s.birthdayArtwork, { opacity: artOpacity }]}
-                  >
-                    <AssetIllustration
-                      asset="birthday"
-                      accessibilityLabel="Birthday illustration"
-                      containerStyle={{ height: '100%', marginBottom: 0 }}
-                    />
-                  </Animated.View>
-
-                  {/* Animated Center Stage Container: Date Shower + 3 Boxes + Vertical Wheels */}
-                  <Animated.View
-                    pointerEvents={dobPickerActive ? 'box-none' : 'auto'}
-                    style={[
-                      s.dobCenterContainer,
-                      {
-                        transform: [{ translateY: containerTranslateY }],
-                      },
-                    ]}
-                  >
-                    {/* White Date Shower above the boxes */}
-                    <Animated.View
-                      pointerEvents={dobPickerActive ? 'auto' : 'none'}
-                      style={[
-                        s.dobDateShower,
-                        {
-                          opacity: headerOpacity,
-                          transform: [{ translateY: headerTranslateY }],
-                        },
-                      ]}
-                    >
-                      <View style={s.dobDateShowerPill}>
-                        <Text style={s.dobCardMiniLabel}>Date of Birth</Text>
-                        <Text style={s.dobDateShowerText}>{formattedFullDate}</Text>
-                        {ageNumber != null && (
-                          <Text
-                            style={[
-                              s.dobAgeBadge,
-                              ageNumber >= 18 ? s.dobAgeBadgeAdult : s.dobAgeBadgeMinor,
-                            ]}
-                          >
-                            {ageNumber >= 18
-                              ? `✓ ${ageNumber} years old (18+ verified)`
-                              : `✕ ${ageNumber} years old (Must be 18+)`}
-                          </Text>
-                        )}
-                      </View>
-                    </Animated.View>
-
-                    {/* 3 Date Selector Boxes */}
-                    <View style={s.datePickerRow}>
-                      <TouchableOpacity
-                        style={[
-                          s.dateSelector,
-                          dobPickerActive && dobActiveTab === 'month' && s.dateSelectorActive,
-                        ]}
-                        onPress={() => {
-                          if (!form.birthMonth) set('birthMonth', 1);
-                          openDobPicker('month');
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel="Select birth month"
-                      >
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'month' ? C.violet : C.text}
-                        />
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            s.dateSelectorText,
-                            !form.birthMonth && s.dateSelectorPlaceholder,
-                            dobPickerActive && dobActiveTab === 'month' && { color: '#FFFFFF' },
-                          ]}
-                        >
-                          {form.birthMonth ? MONTH_NAMES[form.birthMonth - 1] : 'Month'}
-                        </Text>
-                        <MaterialCommunityIcons
-                          name={dobPickerActive && dobActiveTab === 'month' ? 'chevron-up' : 'chevron-down'}
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'month' ? C.violet : C.sub}
-                        />
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.dateSelector,
-                          dobPickerActive && dobActiveTab === 'day' && s.dateSelectorActive,
-                        ]}
-                        onPress={() => {
-                          if (!form.birthDay) set('birthDay', 1);
-                          openDobPicker('day');
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel="Select birth day"
-                      >
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'day' ? C.violet : C.text}
-                        />
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            s.dateSelectorText,
-                            !form.birthDay && s.dateSelectorPlaceholder,
-                            dobPickerActive && dobActiveTab === 'day' && { color: '#FFFFFF' },
-                          ]}
-                        >
-                          {form.birthDay || 'Day'}
-                        </Text>
-                        <MaterialCommunityIcons
-                          name={dobPickerActive && dobActiveTab === 'day' ? 'chevron-up' : 'chevron-down'}
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'day' ? C.violet : C.sub}
-                        />
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.dateSelector,
-                          dobPickerActive && dobActiveTab === 'year' && s.dateSelectorActive,
-                        ]}
-                        onPress={() => {
-                          if (!form.birthYear) set('birthYear', CURRENT_YEAR - 18);
-                          openDobPicker('year');
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel="Select birth year"
-                      >
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'year' ? C.violet : C.text}
-                        />
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            s.dateSelectorText,
-                            !form.birthYear && s.dateSelectorPlaceholder,
-                            dobPickerActive && dobActiveTab === 'year' && { color: '#FFFFFF' },
-                          ]}
-                        >
-                          {form.birthYear || 'Year'}
-                        </Text>
-                        <MaterialCommunityIcons
-                          name={dobPickerActive && dobActiveTab === 'year' ? 'chevron-up' : 'chevron-down'}
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'year' ? C.violet : C.sub}
-                        />
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Revealing Vertical Carousel Tray */}
-                    {dobPickerActive && (
-                      <Animated.View
-                        style={[
-                          s.dobWheelTray,
-                          {
-                            opacity: carouselOpacity,
-                            transform: [{ translateY: carouselTranslateY }],
-                          },
-                        ]}
-                      >
-                        {/* Horizontal Frosted Glass Center Lens */}
-                        <View pointerEvents="none" style={s.dobWheelGlassLens}>
-                          <LinearGradient
-                            colors={['rgba(255,255,255,0.18)', 'rgba(139,92,246,0.12)', 'rgba(255,255,255,0.06)']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 0 }}
-                            style={StyleSheet.absoluteFill}
-                          />
-                        </View>
-
-                        {/* Top Gradient Fade Overlay */}
-                        <LinearGradient
-                          pointerEvents="none"
-                          colors={['rgba(21,19,38,0.95)', 'rgba(21,19,38,0.4)', 'transparent']}
-                          style={s.dobWheelTopFade}
-                        />
-
-                        {/* Bottom Gradient Fade Overlay */}
-                        <LinearGradient
-                          pointerEvents="none"
-                          colors={['transparent', 'rgba(21,19,38,0.4)', 'rgba(21,19,38,0.95)']}
-                          style={s.dobWheelBottomFade}
-                        />
-
-                        <View style={s.dobWheelRow}>
-                          <DobWheelColumn
-                            label="Month"
-                            items={monthItems}
-                            selectedValue={form.birthMonth}
-                            onSelect={m => {
-                              set('birthMonth', m);
-                              setDobActiveTab('month');
-                            }}
-                            formatItem={m => MONTH_NAMES[m - 1]}
-                          />
-                          <DobWheelColumn
-                            label="Day"
-                            items={dayItems}
-                            selectedValue={form.birthDay}
-                            onSelect={d => {
-                              set('birthDay', d);
-                              setDobActiveTab('day');
-                            }}
-                          />
-                          <DobWheelColumn
-                            label="Year"
-                            items={yearItems}
-                            selectedValue={form.birthYear}
-                            onSelect={y => {
-                              set('birthYear', y);
-                              setDobActiveTab('year');
-                            }}
-                          />
-                        </View>
-                      </Animated.View>
-                    )}
-                  </Animated.View>
-
-                  <StepActions
-                    step={5}
-                    label={STEP_LABELS.dob}
-                    onBack={() => {
-                      if (dobPickerActive) {
-                        closeDobPicker();
-                      } else {
-                        go(-1);
-                      }
-                    }}
-                  >
-                    <PrimaryButton onPress={validateAndNext} disabled={!birthDateValid}>
-                      Continue
-                    </PrimaryButton>
-                  </StepActions>
-                </View>
-              );
-            })()}
-
-            {/* SCREEN 7 — PASSWORD */}
-            {index === 7 && (
-              <View style={s.stepScreen}>
-                <View style={s.centeredStepBody}>
-                  <AssetIllustration asset="keep-it-protected" accessibilityLabel="Keep it protected illustration" />
-                  <View style={{ gap: 12 }}>
-                    <Field icon="lock-outline" label="Password" value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw')} right={
-                      <TouchableOpacity onPress={() => setShowPw(s => !s)}>
-                        <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={17} color={C.faint} />
-                      </TouchableOpacity>
-                    } />
-                    <Field icon="lock-outline" label="Confirm password" value={form.pw2} onChangeText={v => set('pw2', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw2')} right={
-                      form.pw2 ? (pwMatched ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> : <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.pink }} />) : null
-                    } />
-                  </View>
-                </View>
-                <StepActions step={6} label={STEP_LABELS.password} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={!pwMatched}>Continue</PrimaryButton>
-                </StepActions>
-              </View>
-            )}
-
-            {/* SCREEN 8 — REVIEW */}
-            {index === 8 && (
-              <View style={s.stepScreen}>
-                <View style={s.centeredStepBody}>
-                  <AssetIllustration asset="youre-ready" accessibilityLabel="You're ready illustration" />
-                  <View style={{ gap: 10 }}>
-                    {[
-                      ['Name', form.first ? `${form.first} ${form.last}` : '—', reviewItems[0]],
-                      ['Username', form.username ? `@${form.username}` : '—', reviewItems[1]],
-                      ['Email', form.email || '—', reviewItems[2]],
-                      ['Purpose', PURPOSES.find(p => p.id === form.purpose)?.title || '—', reviewItems[3]],
-                      ['Birthday', birthDateValid ? `${form.birthMonth}/${form.birthDay}/${form.birthYear}` : '—', reviewItems[4]],
-                      ['Password', pwMatched ? 'Set' : '—', reviewItems[5]],
-                    ].map(([label, val, ok], i) => (
-                      <View key={i} style={s.reviewRow}>
-                        <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={s.reviewLabel}>{label}</Text>
-                            {i === 2 && googleInfo && (
-                              <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: C.violet + '20', borderWidth: 1, borderColor: C.violet + '40' }}>
-                                <Text style={{ fontSize: 9, fontWeight: '700', color: C.violet }}>Google</Text>
-                              </View>
-                            )}
-                            {i === 4 && googleInfo?.birthDate && (
-                              <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: C.violet + '20', borderWidth: 1, borderColor: C.violet + '40' }}>
-                                <Text style={{ fontSize: 9, fontWeight: '700', color: C.violet }}>Google</Text>
-                              </View>
-                            )}
-                          </View>
-                          <Text style={s.reviewVal}>{val as string}</Text>
-                        </View>
-                        <View style={[s.reviewCheck, ok ? { backgroundColor: C.mint + '15', borderColor: C.mint } : {}]}>
-                          {ok ? <MaterialCommunityIcons name="check" size={12} color={C.mint} /> : null}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-                <StepActions step={7} label={STEP_LABELS.review} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={loading}>{loading ? t('common.loading') : 'Create account'}</PrimaryButton>
-                </StepActions>
-              </View>
-            )}
-
-            {/* SCREEN 9 — SUCCESS */}
-            {index === 9 && (
-              <View style={[s.screenCenter, { paddingTop: 20 }]}>
-                <SuccessIllustration pulse={pulse} />
-                <View style={s.successBadge}>
-                  <Text style={s.successBadgeText}>Welcome in</Text>
-                </View>
-                <Text style={s.successTitle}>
-                  This is your{'\n'}
-                  <Text style={s.heroAccent}>marketplace.</Text>
-                </Text>
-                <Text style={s.successSub}>{form.first ? `Good to have you, ${form.first}. ` : ''}Your MaurMaket journey starts now.</Text>
-                <View style={s.pillRow}>
-                  {['Buy', 'Sell', 'Grow'].map(t => (
-                    <View key={t} style={s.pill}><Text style={s.pillText}>{t}</Text></View>
-                  ))}
-                </View>
-                <View style={{ flex: 1 }} />
-                <PrimaryButton onPress={handleEnterApp}>Explore MaurMaket</PrimaryButton>
-              </View>
-            )}
-
-          </Animated.View>
-        </ScrollView>
-        {focusedField && ghostFields.length > 0 && (
-          <Animated.View style={[StyleSheet.absoluteFill, { opacity: ghostOpacity }]}>
-            <BlurView intensity={72} tint="dark" style={s.keyboardDimmer}>
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={() => { Keyboard.dismiss(); setFocusedField(null); }}
-                style={StyleSheet.absoluteFill}
-                accessibilityLabel="Dismiss keyboard"
-              />
-            </BlurView>
-            <View style={[s.keyboardGhostStack, { bottom: 123 }]}>
-              {ghostFields.map((ghostField) => (
-                <GhostFieldRow
-                  key={ghostField.key}
-                  icon={ghostField.icon}
-                  label={ghostField.label}
-                  value={ghostField.value}
-                  onChangeText={ghostField.setValue}
-                  secure={ghostField.secure}
-                  capitalize={ghostField.capitalize}
-                  active={ghostField.key === focusedField}
-                />
-              ))}
-            </View>
-            <View style={[s.keyboardGhostContinue, { bottom: 56 }]}>
-              <TouchableOpacity onPress={handleGhostContinue} style={s.keyboardGhostButton} accessibilityRole="button" accessibilityLabel="Continue">
-                <Text style={s.keyboardGhostContinueText}>Continue</Text>
-                <MaterialCommunityIcons name="arrow-right" size={17} color={C.sub} />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        )}
-        {revealing && (
-          <>
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                s.revealLayer,
-                { left: revealOrigin.x - Math.max(SCREEN_W, SCREEN_H) * 1.1, top: revealOrigin.y - Math.max(SCREEN_W, SCREEN_H) * 1.1 },
-                { opacity: revealOpacity, transform: [{ scale: reveal }] },
-              ]}
-            />
-            {/* Crossfades the filled pink over to black once fully charged (stage: blackout) */}
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                s.revealLayer,
-                { left: revealOrigin.x - Math.max(SCREEN_W, SCREEN_H) * 1.1, top: revealOrigin.y - Math.max(SCREEN_W, SCREEN_H) * 1.1, backgroundColor: '#000000', shadowOpacity: 0 },
-                { opacity: Animated.multiply(revealOpacity, blackout), transform: [{ scale: reveal }] },
-              ]}
-            />
-          </>
-        )}
+        <Animated.View style={{ flex: 1, opacity: fade }}>
+          <Loader autoExpand={autoExpand} onComplete={handleComplete} onPressChange={handlePressChange} />
+        </Animated.View>
+        <Animated.View style={[styles.authActions, { opacity: controlsOpacity }]}>
+          <GoogleButton onPress={handleGoogle} loading={googleLoading} label="Sign up with Google" />
+          {onSwitchToSignin && (
+            <Pressable onPress={onSwitchToSignin} style={styles.signinAction}>
+              <Text style={styles.signinActionText}>
+                {t('auth.hasAccount')} <Text style={styles.signinActionLink}>{t('auth.signIn')}</Text>
+              </Text>
+            </Pressable>
+          )}
+        </Animated.View>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-/* ── Styles ───────────────────────────────────────────────── */
-
-const s = StyleSheet.create({
-  scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
-  slide: { flex: 1, width: '100%', maxWidth: 430, minHeight: Math.max(620, SCREEN_H - 40), alignSelf: 'center' },
-  stepScreen: { flex: 1, minHeight: Math.max(620, SCREEN_H - 40), position: 'relative', paddingBottom: 130 },
-  centeredStepBody: { flex: 1, justifyContent: 'center', marginBottom: 18 },
-  nameStepBody: { alignItems: 'center' },
-  nameFields: { width: '100%', gap: 12 },
-  emailScreen: { overflow: 'hidden' },
-  emailArtWindow: { position: 'absolute', left: 0, right: 0, bottom: 184, height: 455, width: '100%', alignItems: 'center', borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
-  emailArtwork: { width: 350, height: 455 },
-  emailContent: { position: 'absolute', left: 0, right: 0, bottom: 111 },
-  screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  welcomeScreen: { minHeight: Math.max(620, SCREEN_H - 40), justifyContent: 'center', paddingVertical: 24, position: 'relative', paddingBottom: 144 },
-  welcomeActions: { position: 'absolute', left: 0, right: 0, bottom: 18, gap: 12 },
-  stepTopBar: { position: 'absolute', top: 28, left: 0, right: 0, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  stepCount: { color: C.sub, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  datePickerRow: {
-    position: 'absolute',
-    top: 202,
-    left: 0,
-    right: 0,
-    height: 58,
-    flexDirection: 'row',
-    gap: 15,
-    zIndex: 14,
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
   },
-  dateSelector: { flex: 1, height: 58, minWidth: 0, borderRadius: 14, backgroundColor: 'rgba(13,23,52,0.72)', borderWidth: 1, borderColor: '#315BA8', paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  dateSelectorActive: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
-  dateSelectorText: { flex: 1, color: C.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
-  dateSelectorPlaceholder: { color: '#B9C7E8', fontWeight: '500' },
-  actions: { position: 'absolute', left: 0, right: 0, bottom: 44, width: '100%', alignItems: 'stretch', zIndex: 11 },
-  birthdayArtwork: { position: 'absolute', left: 0, right: 0, bottom: 184, height: 455, marginBottom: 0 },
-  birthdayDatePickerRow: { position: 'absolute', left: 0, right: 0, bottom: 111, marginBottom: 0 },
-
-  // Birthday animation & vertical carousel styles
-  dobCenterContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: -147,
-    height: 518,
-    zIndex: 10,
-    overflow: 'visible',
-  },
-  dobDateShower: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 190,
-    zIndex: 15,
-  },
-  dobDateShowerPill: {
-    width: '100%',
-    height: 190,
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+  stage: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    shadowColor: '#ffffff',
-    shadowOpacity: 0.35,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 12,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.9)',
   },
-  dobCardMiniLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#8B5CF6',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  dobDateShowerText: {
-    color: '#0A0812',
-    fontSize: 36,
-    fontWeight: '900',
-    letterSpacing: 3,
-    textAlign: 'center',
-  },
-  dobAgeBadge: {
-    marginTop: 10,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  dobAgeBadgeAdult: {
-    backgroundColor: 'rgba(5,150,105,0.12)',
-    color: '#059669',
-  },
-  dobAgeBadgeMinor: {
-    backgroundColor: 'rgba(220,38,38,0.12)',
-    color: '#DC2626',
-  },
-  dobWheelTray: {
-    position: 'absolute',
-    top: 272,
-    left: 0,
-    right: 0,
-    height: 246,
-    borderRadius: 24,
-    backgroundColor: 'rgba(18,14,31,0.95)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(139,92,246,0.45)',
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 4,
-    shadowColor: C.violet,
-    shadowOpacity: 0.45,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
-    zIndex: 12,
-  },
-  dobWheelRow: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    zIndex: 1,
-  },
-  dobWheelCol: {
-    flex: 1,
-    height: '100%',
-    alignItems: 'center',
-  },
-  dobWheelViewport: {
+  loaderWrap: {
     flex: 1,
     width: '100%',
-    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  dobWheelGlassLens: {
+  authActions: {
     position: 'absolute',
-    left: 8,
-    right: 8,
-    top: 114, // 28px header/padding + 88px (DOB_PADDING)
-    height: 44, // DOB_ITEM_HEIGHT
-    borderRadius: 14,
-    borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.3)',
-    overflow: 'hidden',
-    zIndex: 2,
-    shadowColor: C.violet,
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 2 },
+    left: 24,
+    right: 24,
+    bottom: 32,
   },
-  dobWheelTopFade: {
-    position: 'absolute',
-    top: 26,
-    left: 0,
-    right: 0,
-    height: 48,
-    zIndex: 3,
+  signinAction: {
+    alignItems: 'center',
+    paddingTop: 16,
   },
-  dobWheelBottomFade: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 48,
-    zIndex: 3,
+  signinActionText: {
+    color: COLORS.text2,
+    fontSize: 14,
   },
-  dobWheelLabel: {
-    fontSize: 10,
+  signinActionLink: {
+    color: COLORS.coral,
     fontWeight: '700',
-    color: C.sub,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 4,
   },
-  dobWheelScroll: {
-    width: '100%',
-    flex: 1,
-  },
-  dobWheelItem: {
-    width: '100%',
-    height: 44, // DOB_ITEM_HEIGHT
+  loader: {
+    width: 250,
+    height: 250,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 125,
   },
-  dobWheelItemText: {
-    fontSize: 15,
-    color: C.faint,
-    fontWeight: '600',
-    textAlign: 'center',
+  ring: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(100,100,100,0.12)',
+    borderWidth: 1,
+    borderColor: '#D4AF37',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 6,
   },
-
-  topBackAction: { minHeight: 38, paddingHorizontal: 4, paddingRight: 12, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
-  backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
-  // Splash
-  splashIllustrationButton: { width: 200, height: 200, borderRadius: 100, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
-  holdRing: { position: 'absolute', width: 92, height: 92, borderRadius: 46, borderWidth: 1.5 },
-  holdRingA: { borderColor: C.pink },
-  holdRingB: { borderColor: C.violet },
-  holdRingC: { borderColor: C.amber },
-  revealLayer: { position: 'absolute', width: Math.max(SCREEN_W, SCREEN_H) * 2.2, height: Math.max(SCREEN_W, SCREEN_H) * 2.2, left: SCREEN_W / 2 - Math.max(SCREEN_W, SCREEN_H) * 1.1, borderRadius: 999, backgroundColor: C.pink, shadowColor: C.amber, shadowOpacity: 0.8, shadowRadius: 70, shadowOffset: { width: 0, height: 0 }, elevation: 14 },
-
-  // Welcome
-  badge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  badgeText: { fontSize: 12, fontWeight: '500', color: C.sub },
-  heroTitle: { fontFamily: FONTS.heading, fontSize: 30, fontWeight: '800', color: C.text, lineHeight: 36, marginTop: 12 },
-  heroAccent: { color: C.violet },
-  heroSub: { fontSize: 14, color: C.sub, lineHeight: 21, marginTop: 10, maxWidth: 280 },
-
-  // Steps
-  stepTitle: { fontFamily: FONTS.heading, fontSize: 24, fontWeight: '800', color: C.text, marginTop: 8, textAlign: 'center' },
-  stepSub: { fontSize: 14, color: C.sub, marginTop: 8, marginBottom: 24, lineHeight: 20, textAlign: 'center', alignSelf: 'center', maxWidth: 340 },
-
-  // Fields
-  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, paddingHorizontal: 16 },
-  fieldFocused: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
-  fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
-  fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
-  fieldError: { color: C.pink, fontSize: 12.5, marginTop: 4 },
-  keyboardGhostStack: { position: 'absolute', left: 28, right: 28, paddingHorizontal: 0, paddingVertical: 0, gap: 8 },
-  keyboardGhostRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 62, borderRadius: 16, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.borderHi, paddingHorizontal: 16, paddingVertical: 12 },
-  keyboardGhostRowActive: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
-  keyboardDimmer: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(10,8,18,0.52)' },
-  keyboardGhostValue: { color: C.text, fontSize: 14, fontWeight: '500' },
-  keyboardGhostInput: { height: 22, padding: 0, color: C.text, fontSize: 14, fontWeight: '500' },
-  keyboardGhostContinue: { position: 'absolute', left: 28, right: 28, height: 52, borderRadius: 999, backgroundColor: 'rgba(139,92,246,0.32)', borderWidth: 1, borderColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  keyboardGhostButton: { flex: 1, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  keyboardGhostContinueText: { color: C.sub, fontSize: 15, fontWeight: '800' },
-
-  // Purpose
-  purposeCard: { height: 76, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border },
-  purposeChoices: { position: 'absolute', left: 0, right: 0, bottom: 111, gap: 15 },
-  purposeArtwork: { position: 'absolute', left: 0, right: 0, bottom: 384, height: 300, marginBottom: 0 },
-  purposeCardActive: { backgroundColor: C.pink + '10', borderColor: C.pink },
-  purposeIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.surfaceHi, alignItems: 'center', justifyContent: 'center' },
-  purposeIconActive: { backgroundColor: C.pink },
-  purposeTitle: { fontSize: 14, fontWeight: '600', color: C.text },
-  purposeDesc: { fontSize: 12, color: C.sub, marginTop: 2 },
-  radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center' },
-  radioActive: { backgroundColor: C.pink, borderColor: C.pink },
-
-  // Review
-  reviewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  reviewLabel: { fontSize: 11, color: C.faint },
-  reviewVal: { fontSize: 14, fontWeight: '500', color: C.text, marginTop: 2 },
-  reviewCheck: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center' },
-
-  // Success
-  successBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: C.mint + '12', borderWidth: 1, borderColor: C.mint + '40', marginTop: 8 },
-  successBadgeText: { fontSize: 12, fontWeight: '600', color: C.mint },
-  successTitle: { fontFamily: FONTS.heading, fontSize: 27, fontWeight: '800', color: C.text, textAlign: 'center', lineHeight: 34, marginTop: 12 },
-  successSub: { fontSize: 14, color: C.sub, textAlign: 'center', lineHeight: 21, marginTop: 10, maxWidth: 260 },
-  pillRow: { flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 20 },
-  pill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  pillText: { fontSize: 12, fontWeight: '500', color: C.sub },
-
-  // Primary button
-  primaryBtn: { height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  primaryBtnText: { fontSize: 15, fontWeight: '700', color: '#1A0B12' },
+  ring1: {
+    width: 66,
+    height: 66,
+  },
+  gradientRing: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 999,
+  },
+  ringCutout: {
+    position: 'absolute',
+    top: 1,
+    right: 1,
+    bottom: 1,
+    left: 1,
+    borderRadius: 999,
+    backgroundColor: '#000000',
+  },
+  fingerprint: {
+    position: 'absolute',
+    top: 15,
+    left: 15,
+  },
+  ring2: {
+    width: 110,
+    height: 110,
+  },
+  ring3: {
+    width: 150,
+    height: 150,
+  },
+  ring4: {
+    width: 190,
+    height: 190,
+  },
+  ring5: {
+    width: 230,
+    height: 230,
+  },
 });

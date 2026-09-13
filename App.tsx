@@ -303,6 +303,14 @@ export default function App() {
     return unsub;
   }, []);
 
+  useEffect(() => {
+    if (!isLoggedIn || !store.consumeUsernamePrompt()) return;
+    const timer = setTimeout(() => {
+      if (navigationRef.isReady()) navigationRef.navigate('UsernameSettings');
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [isLoggedIn]);
+
   const pendingDeepLink = useRef<string | null>(null);
   const pendingDeepLinkType = useRef<string | null>(null);
 

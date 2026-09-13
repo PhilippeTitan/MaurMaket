@@ -5,7 +5,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../../theme';
 import { useTranslation } from '../../i18n';
-import { signup as apiSignup, googleAuth, API_BASE } from '../../api';
+import { signup as apiSignup, API_BASE } from '../../api';
 import { store } from '../../store';
 import AuthInput from './components/AuthInput';
 import StepHeading from './components/StepHeading';
@@ -13,7 +13,6 @@ import ReviewRow from './components/ReviewRow';
 import Divider from './components/Divider';
 import AuthBadge, { AuthGlyph } from './components/AuthBadge';
 import ProgressTrail from './components/ProgressTrail';
-import GoogleButton from './components/GoogleButton';
 import PasskeyButton from './components/PasskeyButton';
 import WelcomeMoment from '../../components/WelcomeMoment';
 import type { User } from '../../types';
@@ -52,7 +51,6 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [entered, setEntered] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [userResult, setUserResult] = useState<{ user: User; token: string } | null>(null);
   const stepFade = useRef(new Animated.Value(1)).current;
 
@@ -66,19 +64,6 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [emailChecking, setEmailChecking] = useState(false);
   const emailCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleGoogle = async () => {
-    try {
-      setGoogleLoading(true);
-      const res = await googleAuth() as { user: User; token: string };
-      await store.setUser(res.user, res.token);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Google sign-in failed';
-      setErrors({ google: message });
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
 
   const step: Step = STEPS[stepIdx];
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -415,7 +400,6 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
           <>
             <Divider />
             <View style={styles.altMethods}>
-              <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignIn')} />
               <PasskeyButton />
             </View>
             <AuthMethodsCard compact />

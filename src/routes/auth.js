@@ -25,7 +25,7 @@ router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
     const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
 
     let username;
-    if (requestedUsername && requestedUsername.length >= 1 && requestedUsername.length <= 30) {
+    if (requestedUsername && requestedUsername.length >= 5 && requestedUsername.length <= 30 && /^[a-z0-9][a-z0-9._]{3,28}[a-z0-9]$/.test(requestedUsername)) {
       const exists = await pool.query('SELECT 1 FROM users WHERE username = $1', [requestedUsername]);
       username = exists.rows.length === 0 ? requestedUsername : await generateUsername(fullName);
     } else {
@@ -71,8 +71,8 @@ router.get('/auth/check-username', async (req, res) => {
     return res.status(400).json({ error: 'Username query parameter required' });
   }
   const clean = username.trim().toLowerCase();
-  if (clean.length < 1 || clean.length > 30) {
-    return res.json({ available: false, reason: 'Username must be 1-30 characters' });
+  if (clean.length < 5 || clean.length > 30) {
+    return res.json({ available: false, reason: 'Username must be 5-30 characters' });
   }
   if (!/^[a-z0-9][a-z0-9._]{0,28}[a-z0-9]$/.test(clean) && clean.length > 1) {
     return res.json({ available: false, reason: 'Lowercase letters, numbers, dots, and underscores only' });
