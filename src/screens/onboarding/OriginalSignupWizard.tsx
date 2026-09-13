@@ -4,7 +4,6 @@ import {
   Easing, ScrollView, FlatList, Platform, KeyboardAvoidingView, Dimensions, Image, Keyboard, ActivityIndicator,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, Ellipse, G as SvgG } from 'react-native-svg';
@@ -296,17 +295,7 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
   const scrollRef = useRef<ScrollView>(null);
   const lastIdx = useRef(-1);
   const hasMounted = useRef(false);
-  const tickSound = useRef<Audio.Sound | null>(null);
   const N = items.length;
-
-  useEffect(() => {
-    let mounted = true;
-    Audio.Sound.createAsync(require('../../../assets/tick.wav')).then(({ sound }) => {
-      if (mounted) tickSound.current = sound;
-      else sound.unloadAsync();
-    });
-    return () => { mounted = false; tickSound.current?.unloadAsync(); };
-  }, []);
 
   // Initial scroll once on mount
   useEffect(() => {
@@ -325,7 +314,6 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
   const pickFromOffset = (offsetY: number) => {
     const idx = Math.max(0, Math.min(Math.round(offsetY / DOB_ITEM_HEIGHT), N - 1));
     Haptics.selectionAsync();
-    tickSound.current?.replayAsync();
     onSelect(items[idx]);
   };
 
