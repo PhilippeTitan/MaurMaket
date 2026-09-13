@@ -39,23 +39,35 @@ const C = {
 };
 
 function buildUsernameSuggestions(firstName: string, lastName: string, email: string): string[] {
-  const clean = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clean = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '');
   const first = clean(firstName);
   const last = clean(lastName);
   const emailBase = clean(email.split('@')[0] || '');
-  const candidates = [
-    `${first}${last}`,
-    `${first}.${last}`,
-    emailBase,
-    `${first}${last}2026`,
-    `${first}market`,
-    `${first}buys`,
-    'marketfriend',
-  ];
+  const MAX = 20;
+
+  const truncate = (s: string) => s.length > MAX ? s.slice(0, MAX) : s;
+
+  const candidates: string[] = [];
+
+  // Email base is usually short and clean — try first
+  if (emailBase.length >= 3) candidates.push(emailBase);
+
+  // First name + last initial (compact, Instagram-style)
+  if (first && last) {
+    candidates.push(truncate(`${first}${last[0]}`));
+    candidates.push(truncate(`${first}.${last[0]}`));
+    candidates.push(truncate(`${first[0]}${last}`));
+  }
+
+  // Full first+last only if short enough
+  const combined = truncate(`${first}${last}`);
+  if (combined.length <= 15) candidates.push(combined);
+
+  // First name only
+  if (first.length >= 3) candidates.push(first);
 
   return Array.from(new Set(candidates))
-    .map(value => value.slice(0, 30))
-    .filter(value => value.length >= 5 && /^[a-z0-9][a-z0-9._]*[a-z0-9]$/.test(value))
+    .filter(v => v.length >= 5 && v.length <= 30 && /^[a-z0-9][a-z0-9._]*[a-z0-9]$/.test(v))
     .slice(0, 3);
 }
 
