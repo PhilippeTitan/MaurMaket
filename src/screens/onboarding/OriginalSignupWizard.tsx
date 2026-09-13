@@ -1339,8 +1339,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                 <StepActions step={6} label={STEP_LABELS.password} onBack={() => go(-1)}>
                   <View style={s.passwordActionContainer}>
                     <Field icon="lock-outline" label="Password" value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw')} right={
-                      <TouchableOpacity onPress={() => setShowPw(s => !s)}>
-                        <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={17} color={C.faint} />
+                      <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 40, right: 0 }} style={{ paddingVertical: 8, paddingLeft: 12 }}>
+                        <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                       </TouchableOpacity>
                     } />
                     <Field icon="lock-outline" label="Confirm password" value={form.pw2} onChangeText={v => set('pw2', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw2')} right={
@@ -1470,8 +1470,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
                     emailAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
                   ) : ghostField.key === 'pw' ? (
-                    <TouchableOpacity onPress={() => setShowPw(show => !show)} accessibilityRole="button" accessibilityLabel={showPw ? 'Hide password' : 'Show password'}>
-                      <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={17} color={C.faint} />
+                    <TouchableOpacity onPress={() => setShowPw(show => !show)} hitSlop={{ top: 20, bottom: 20, left: 40, right: 0 }} style={{ paddingVertical: 8, paddingLeft: 12 }} accessibilityRole="button" accessibilityLabel={showPw ? 'Hide password' : 'Show password'}>
+                      <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                     </TouchableOpacity>
                   ) : ghostField.key === 'pw2' && ghostField.value ? (
                     pwMatched ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> : <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.pink }} />
