@@ -1096,7 +1096,6 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                       },
                     ]}
                   >
-                    <Text style={s.dobHint}>You must be 18 or older to create an account.</Text>
                     {/* White Date Shower above the boxes */}
                     <Animated.View
                       pointerEvents={dobPickerActive ? 'auto' : 'none'}
