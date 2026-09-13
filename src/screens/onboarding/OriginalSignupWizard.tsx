@@ -425,7 +425,7 @@ const Field = React.forwardRef<TextInput, { icon: any; label: string; value: str
 
   return (
     <View style={[s.field, isFocused && s.fieldFocused]} accessibilityRole="none">
-      <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+      <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <MaterialCommunityIcons name={icon} size={18} color={isFocused ? C.violet : C.sub} />
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={s.fieldLabel}>{label}</Text>
