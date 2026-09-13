@@ -438,13 +438,15 @@ const Field = React.forwardRef<TextInput, { icon: any; label: string; value: str
 });
 
 function GhostFieldRow({ icon, label, value, onChangeText, secure, capitalize, active, right, suffix, inputValue }: { icon: any; label: string; value: string; onChangeText: (value: string) => void; secure?: boolean; capitalize?: 'none' | 'sentences' | 'words' | 'characters'; active?: boolean; right?: React.ReactNode; suffix?: string; inputValue?: string }) {
+  const inputRef = useRef<TextInput>(null);
   return (
-    <View style={[s.field, active && s.fieldFocused]}>
+    <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={[s.field, active && s.fieldFocused]}>
       <MaterialCommunityIcons name={icon} size={18} color={active ? C.violet : C.sub} />
       <View style={{ flex: 1, justifyContent: 'center' }}>
         <Text style={s.fieldLabel}>{label}</Text>
         <View style={suffix ? s.fieldInputRow : undefined}>
           <TextInput
+            ref={inputRef}
             autoFocus={active}
             style={[s.fieldInput, suffix && s.fieldInputWithSuffix]}
             value={inputValue ?? value}
@@ -458,7 +460,7 @@ function GhostFieldRow({ icon, label, value, onChangeText, secure, capitalize, a
         </View>
       </View>
       {right}
-    </View>
+    </TouchableOpacity>
   );
 }
 
