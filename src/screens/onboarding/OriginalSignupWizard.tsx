@@ -558,6 +558,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const hideFieldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Birthday screen vertical picker animation & state
   const [dobPickerActive, setDobPickerActive] = useState(false);
@@ -605,9 +606,15 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSubscription = Keyboard.addListener(showEvent, eventData => setKeyboardHeight(eventData.endCoordinates.height));
-    const hideSubscription = Keyboard.addListener(hideEvent, () => { setKeyboardHeight(0); setFocusedField(null); });
-    return () => { showSubscription.remove(); hideSubscription.remove(); };
+    const showSubscription = Keyboard.addListener(showEvent, (e) => {
+      if (hideFieldTimer.current) { clearTimeout(hideFieldTimer.current); hideFieldTimer.current = null; }
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      hideFieldTimer.current = setTimeout(() => { setFocusedField(null); hideFieldTimer.current = null; }, 150);
+    });
+    return () => { showSubscription.remove(); hideSubscription.remove(); if (hideFieldTimer.current) clearTimeout(hideFieldTimer.current); };
   }, []);
 
   // Continuous animations
