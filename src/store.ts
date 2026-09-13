@@ -84,7 +84,7 @@ export const store = {
     if (cartStr) {
       try { state.cart = JSON.parse(cartStr); } catch { /* ignore */ }
     }
-    if (userStr && token) {
+    if (userStr) {
       try { state.user = JSON.parse(userStr); } catch { /* ignore */ }
     }
   },
@@ -94,7 +94,9 @@ export const store = {
     state.token = token;
     setCachedToken(token);
     await storage.deleteItem('mm_token');
-    if (user && token) await storage.setItem('mm_user', JSON.stringify(user));
+    // Persist user whenever present (even without token, e.g. pending email confirmation).
+    // Only clear on explicit logout (user === null).
+    if (user) await storage.setItem('mm_user', JSON.stringify(user));
     else await storage.deleteItem('mm_user');
     notify();
   },

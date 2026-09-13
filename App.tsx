@@ -292,12 +292,12 @@ export default function App() {
           await hydrateSession();
         }
       }
-      setIsLoggedIn(store.isLoggedIn);
+      setIsLoggedIn(!!store.user);
       setPendingDob(!!store.user?.pending_dob);
     })();
 
     const unsub = store.onChange(() => {
-      setIsLoggedIn(store.isLoggedIn);
+      setIsLoggedIn(!!store.user);
       setPendingDob(!!store.user?.pending_dob);
     });
     return unsub;
