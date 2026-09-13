@@ -262,6 +262,31 @@ function SuccessIllustration({ pulse }: { pulse: Animated.Value }) {
   );
 }
 
+function EmailConfirmationScreen({ name, email, onDone }: { name: string; email: string; onDone: () => void }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })).start();
+  }, []);
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingHorizontal: 32 }}>
+      <SuccessIllustration pulse={pulse} />
+      <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text, textAlign: 'center' }}>
+        You're all set{ name ? `, ${name}` : ''}!
+      </Text>
+      <Text style={{ fontSize: 14, color: C.sub, textAlign: 'center', lineHeight: 20 }}>
+        We've sent a verification link to{'\n'}
+        <Text style={{ color: C.mint, fontWeight: '600' }}>{email}</Text>
+        {'\n\n'}Check your inbox and tap the link to verify your account. You can start using the app right away!
+      </Text>
+      <View style={{ marginTop: 12, width: '100%' }}>
+        <PrimaryButton onPress={onDone}>
+          Enter the app
+        </PrimaryButton>
+      </View>
+    </View>
+  );
+}
+
 function VerificationScreen({ name, onDone }: { name: string; onDone: () => void }) {
   const [phase, setPhase] = useState<'loading' | 'tick'>('loading');
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -549,7 +574,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleInfo, setGoogleInfo] = useState<{ firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string } | null>(initialGoogleInfo || null);
-  const [userResult, setUserResult] = useState<{ user: User; token: string } | null>(null);
+  const [userResult, setUserResult] = useState<{ user: User; token: string | null; emailConfirmationPending?: boolean } | null>(null);
+  const [pendingEmailConfirm, setPendingEmailConfirm] = useState(false);
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [emailChecking, setEmailChecking] = useState(false);
   const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -809,7 +835,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       ? `${form.birthYear}-${String(form.birthMonth).padStart(2, '0')}-${String(form.birthDay).padStart(2, '0')}`
       : '';
     try {
-      const res = await apiSignup(fullName, form.email, form.pw, '', dob, form.username) as { user: User; token: string };
+      const res = await apiSignup(fullName, form.email, form.pw, '', dob, form.username) as { user: User; token: string | null; emailConfirmationPending?: boolean };
       // If user signed up via Google, link the Google identity to their account
       if (googleInfo?.googleIdToken) {
         try {
@@ -819,10 +845,11 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
         }
       }
       setUserResult(res);
-      go(1); // ΓåÆ success screen
+      setPendingEmailConfirm(!!res.emailConfirmationPending);
+      go(1); // → success / verification screen
     } catch (err: any) {
       setErrors({ email: err?.message || 'Signup failed' });
-      setIndex(4); // ΓåÆ email step
+      setIndex(4); // → email step
     } finally { setLoading(false); }
   };
 
@@ -1476,9 +1503,11 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               </View>
             )}
 
-            {/* SCREEN 9 -- VERIFICATION */}
+            {/* SCREEN 9 -- VERIFICATION / SUCCESS */}
             {index === 9 && (
-              <VerificationScreen name={form.first} onDone={handleEnterApp} />
+              pendingEmailConfirm
+                ? <EmailConfirmationScreen name={form.first} email={form.email} onDone={handleEnterApp} />
+                : <VerificationScreen name={form.first} onDone={handleEnterApp} />
             )}
 
           </Animated.View>

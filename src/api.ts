@@ -220,12 +220,58 @@ export const signup = async (fullName: string, email: string, password: string, 
   if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
     throw new Error('An account with this email already exists. Please sign in instead.');
   }
-  if (!data.session) throw new Error('Account created. Check your email to confirm your account before signing in.');
-  setCachedToken(data.session.access_token);
-  return request('/auth/profile/bootstrap', {
-    method: 'POST',
-    body: JSON.stringify({ fullName, email: normalizedEmail, phone, dateOfBirth, username }),
-  }).then((response: any) => ({ ...response, token: data.session?.access_token }));
+  // Account created — if Supabase returned a session (email auto-confirmed), bootstrap the profile
+  // and enter the app. If no session (email confirmation pending), return a minimal user object
+  // so the frontend can show the success screen and enter the app anyway.
+  if (data.session) {
+    setCachedToken(data.session.access_token);
+    return request('/auth/profile/bootstrap', {
+      method: 'POST',
+      body: JSON.stringify({ fullName, email: normalizedEmail, phone, dateOfBirth, username }),
+    }).then((response: any) => ({ ...response, token: data.session?.access_token }));
+  }
+  // No session — email confirmation required. Build a minimal user from Supabase metadata
+  // so the wizard can proceed to the success screen and enter the app.
+  const pendingUser = {
+    id: data.user?.id || '',
+    full_name: fullName,
+    email: normalizedEmail,
+    phone: phone || '',
+    natcash_phone: null,
+    accepted_payment_methods: null,
+    role: 'buyer' as const,
+    avatar_url: null,
+    bio: null,
+    created_at: new Date().toISOString(),
+    store_name: null,
+    store_logo_url: null,
+    seller_tier: 'none' as const,
+    id_submitted_at: null,
+    id_verified: false,
+    id_verified_at: null,
+    id_verification_result: null,
+    use_store_identity: false,
+    email_verified: false,
+    location_address: null,
+    location_city: null,
+    location_lat: null,
+    location_lng: null,
+    username: username || null,
+    show_real_name: true,
+    pending_dob: !dateOfBirth,
+    taste_onboarding_completed: false,
+  };
+  return { user: pendingUser, token: null, emailConfirmationPending: true };
+};
+
+export const resendVerificationEmail = async (email: string) => {
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: email.trim().toLowerCase(),
+    options: { emailRedirectTo: getAuthRedirectUrl() },
+  });
+  if (error) throw new Error(error.message);
+  return { success: true };
 };
 
 export const login = async (email: string, password: string) => {

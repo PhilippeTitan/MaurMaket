@@ -4,7 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH, TIER_COLORS, getDisplayName } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
-import { getImageUrl } from '../api';
+import { getImageUrl, resendVerificationEmail } from '../api';
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
 import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 import ScreenContainer from '../components/ScreenContainer';
@@ -133,7 +133,12 @@ export default function SettingsScreen({ navigation }: Props) {
                   <MaterialCommunityIcons name="check-circle" size={13} color={COLORS.green} />
                   <Text style={styles.verifiedText}>{t('settings.emailVerified')}</Text>
                 </View>
-              ) : null}
+              ) : (
+                <View style={[styles.verifiedBadge, { backgroundColor: '#FCD34D20', borderColor: '#FCD34D40' }]}>
+                  <MaterialCommunityIcons name="alert-circle-outline" size={13} color="#F59E0B" />
+                  <Text style={[styles.verifiedText, { color: '#F59E0B' }]}>Email not verified</Text>
+                </View>
+              )}
             </View>
           </View>
           <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text3} />
@@ -150,6 +155,22 @@ export default function SettingsScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('SettingsEdit', { field: 'email', title: t('settings.email') })}
             divider
           />
+          {user?.email && !user.email_verified ? (
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14, gap: 8 }}
+              onPress={async () => {
+                try {
+                  await resendVerificationEmail(user.email);
+                  toast.show({ kind: 'success', title: 'Verification email sent! Check your inbox.' });
+                } catch (e: any) {
+                  toast.show({ kind: 'error', title: e?.message || 'Failed to resend' });
+                }
+              }}
+            >
+              <MaterialCommunityIcons name="email-fast-outline" size={20} color="#F59E0B" />
+              <Text style={{ fontSize: 14, color: '#F59E0B', fontWeight: '500' }}>Resend verification email</Text>
+            </TouchableOpacity>
+          ) : null}
 
           {/* Phone row with payment badges (custom layout) */}
           <View style={styles.phoneRow}>
