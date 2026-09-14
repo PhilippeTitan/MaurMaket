@@ -27,6 +27,22 @@ router.get('/api/health', async (_req, res) => {
     result.primary = 'connected';
   } catch { result.primary = 'down'; }
   result.status = result.primary === 'connected' ? 'ok' : 'error';
+
+  // DB Controller + Replicator status (if available)
+  const dbController = res.req.app?.locals?.dbController;
+  const replicator = res.req.app?.locals?.replicator;
+  if (dbController) {
+    try {
+      const dbStatus = await dbController.getStatus();
+      result.dbController = dbStatus;
+    } catch { result.dbController = { error: 'unavailable' }; }
+  }
+  if (replicator) {
+    try {
+      result.replication = await replicator.getStatus();
+    } catch { result.replication = { error: 'unavailable' }; }
+  }
+
   res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
 

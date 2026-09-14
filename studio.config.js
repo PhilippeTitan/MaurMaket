@@ -1,7 +1,7 @@
-import { auth } from './src/config/auth.js';
+import { getAuth } from './src/config/auth.js';
 
 const studioConfig = {
-  auth,
+  get auth() { return getAuth(); },
   basePath: "/api/studio",
   metadata: {
     title: "MaurMaket Admin",

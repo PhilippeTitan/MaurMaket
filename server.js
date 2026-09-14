@@ -3,11 +3,13 @@ import cors from 'cors';
 import crypto from 'crypto';
 import sharp from 'sharp';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
 import path from 'path';
+const { join } = path;
 import morgan from 'morgan';
 
 // ───── Modularized infrastructure ─────
-import { pool, isTestMode, neonBackupDatabaseUrl } from './src/config/database.js';
+import { pool, isTestMode, neonBackupDatabaseUrl, setDbController } from './src/config/database.js';
 import { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand } from './src/config/storage.js';
 import { JWT_SECRET, BCRYPT_ROUNDS, PRODUCTION_URL } from './src/config/security.js';
 import { generalLimiter, authLimiter, paymentLimiter, uploadLimiter, msgLimiter, convLimiter, verifyLimiter } from './src/middleware/rateLimit.js';
@@ -16,7 +18,7 @@ import { createNotification, sendPushNotification } from './src/utils/notificati
 import { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences } from './src/utils/helpers.js';
 import { startJobs } from './src/jobs/index.js';
 import { registerRoutes } from './src/routes/index.js';
-import { auth } from './src/config/auth.js';
+import { createAuth, getAuth } from './src/config/auth.js';
 import { toNodeHandler } from 'better-auth/node';
 
 // ───── Better Auth Studio (admin dashboard, optional) ─────
@@ -1074,6 +1076,54 @@ await step('NatCash phone separation', () => c.query(`
       )
     `));
 
+    // ── Replication schema (dual-database failover) ──
+    await step('Replication: mirror_outbox', () => c.query(`
+      CREATE TABLE IF NOT EXISTS mirror_outbox (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        operation_id UUID UNIQUE NOT NULL,
+        model TEXT NOT NULL,
+        action TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        payload JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        source TEXT NOT NULL DEFAULT 'supabase',
+        synced BOOLEAN NOT NULL DEFAULT FALSE,
+        synced_at TIMESTAMPTZ,
+        priority TEXT NOT NULL DEFAULT 'normal'
+      )
+    `));
+    await step('Replication: mirror_outbox indexes', () => c.query(`
+      CREATE INDEX IF NOT EXISTS idx_mirror_outbox_synced ON mirror_outbox(synced, created_at);
+      CREATE INDEX IF NOT EXISTS idx_mirror_outbox_priority ON mirror_outbox(priority, synced);
+    `));
+    await step('Replication: mirror_operations', () => c.query(`
+      CREATE TABLE IF NOT EXISTS mirror_operations (
+        operation_id UUID PRIMARY KEY,
+        source TEXT NOT NULL,
+        processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `));
+    await step('Replication: mirror_operations index', () => c.query(`
+      CREATE INDEX IF NOT EXISTS idx_mirror_operations_source ON mirror_operations(source, processed_at);
+    `));
+    await step('Replication: sync_state', () => c.query(`
+      CREATE TABLE IF NOT EXISTS sync_state (
+        id SERIAL PRIMARY KEY,
+        key TEXT UNIQUE NOT NULL,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `));
+    await step('Replication: sync_state seed', () => c.query(`
+      INSERT INTO sync_state (key, value) VALUES
+        ('primary', 'supabase'),
+        ('last_sync_supabase_to_neon', ''),
+        ('last_sync_neon_to_supabase', ''),
+        ('supabase_failures', '0'),
+        ('neon_failures', '0')
+      ON CONFLICT (key) DO NOTHING;
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -1092,6 +1142,7 @@ await step('NatCash phone separation', () => c.query(`
 const ALLOWED_ORIGINS = [
   'https://maurmaket.onrender.com',
   'http://localhost:3001',
+  'http://localhost:4000',
   'http://localhost:8081',
   'http://localhost:19006',
 ];
@@ -1110,19 +1161,21 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
 
-// ───── Better Auth ─────
-app.all('/api/auth/*', toNodeHandler(auth));
+// ───── Better Auth (lazy: initialized after DB Controller) ─────
+// Handler is mounted now but getAuth() is called per-request.
+// createAuth(adapter) must run before the first request arrives.
+app.all('/api/auth/*', (req, res) => {
+  try {
+    const handler = toNodeHandler(getAuth());
+    handler(req, res);
+  } catch (e) {
+    console.error('[Auth] Not initialized yet:', e.message);
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Auth system initializing' }));
+  }
+});
 
-// ───── Better Auth Studio (only when available locally) ─────
-if (betterAuthStudio) {
-  app.use('/api/studio', betterAuthStudio({
-    auth,
-    basePath: '/api/studio',
-    metadata: { title: 'MaurMaket Admin', theme: 'dark' },
-    access: { allowEmails: ['lexikonstrsut@gmail.com', 'maurinexus.contact@gmail.com'] },
-  }));
-  console.log('Studio dashboard at /api/studio');
-}
+// ───── Better Auth Studio (mounted after DB Controller init) ─────
 
 app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
@@ -1437,6 +1490,62 @@ if (isMain) {
   runMigrations().catch(err => {
     console.error('Migration error (non-blocking):', err.message);
   });
+
+  // ───── DB Controller: dual-database failover + replication ─────
+  (async () => {
+    try {
+      const { getDbController, Replicator, Reconciler, createRaidAdapter } = await import('./src/db/index.js');
+      const dbController = getDbController();
+
+      // Wire the failover proxy — all pool.query(SELECT) routes through controller
+      setDbController(dbController);
+
+      const replicator = new Replicator(dbController);
+      const reconciler = new Reconciler(dbController);
+
+      // Wire Better Auth through RAID adapter → DB Controller
+      const raidAdapter = createRaidAdapter(dbController);
+      createAuth(raidAdapter);
+      console.log('[DB:Controller] ✅ Better Auth wired through RAID adapter');
+
+      // Mount Better Auth Studio after auth is initialized
+      if (betterAuthStudio) {
+        app.use('/api/studio', betterAuthStudio({
+          auth: getAuth(),
+          basePath: '/api/studio',
+          metadata: { title: 'MaurMaket Admin', theme: 'dark' },
+          access: {
+            roles: ['admin'],
+            allowEmails: ['lexikonstrsut@gmail.com', 'maurinexus.contact@gmail.com'],
+          },
+        }));
+        console.log('[Auth] Studio dashboard at /api/studio');
+      }
+
+      dbController.startHealthChecks();
+      replicator.start();
+
+      // Watch for RECOVERING state → trigger reconciliation
+      const origHealthCheck = dbController.healthCheck.bind(dbController);
+      dbController.healthCheck = async function() {
+        const result = await origHealthCheck();
+        if (this.mode === 'RECOVERING') {
+          reconciler.reconcile().catch(err => {
+            console.error('[Reconciler] Error:', err.message);
+          });
+        }
+        return result;
+      };
+
+      // Expose for health endpoint + routes
+      app.locals.dbController = dbController;
+      app.locals.replicator = replicator;
+
+      console.log('[DB:Controller] ✅ Dual-database failover + replication active');
+    } catch (err) {
+      console.error('[DB:Controller] Init failed (non-blocking):', err.message);
+    }
+  })();
 
   // Non-blocking cleanup with timeout — never blocks server startup
   setTimeout(async () => {
