@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'fs';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-const backendDeps = ['bcrypt', 'cors', 'dotenv', 'express', 'jsonwebtoken', 'multer', 'pg', 'node-cron', 'expo-server-sdk', 'express-rate-limit', 'morgan', '@aws-sdk/client-s3', 'sharp', '@supabase/supabase-js', 'better-auth', '@better-auth/infra', 'better-auth-studio', 'zod'];
+const backendDeps = ['bcrypt', 'cors', 'dotenv', 'express', 'jsonwebtoken', 'multer', 'pg', 'node-cron', 'expo-server-sdk', 'express-rate-limit', 'morgan', '@aws-sdk/client-s3', 'sharp', '@supabase/supabase-js', 'better-auth', '@better-auth/infra', 'zod'];
 const filtered = {
   name: pkg.name,
   version: pkg.version,
