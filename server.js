@@ -16,6 +16,7 @@ import { createNotification, sendPushNotification } from './src/utils/notificati
 import { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences } from './src/utils/helpers.js';
 import { startJobs } from './src/jobs/index.js';
 import { registerRoutes } from './src/routes/index.js';
+import { auth } from './src/config/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1042,6 +1043,10 @@ app.use(cors({
   credentials: true,
 }));
 app.use(morgan('combined'));
+
+// ───── Better Auth ─────
+app.use('/api/auth', auth.handler);
+
 app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
 app.use('/api/upload', uploadLimiter);
