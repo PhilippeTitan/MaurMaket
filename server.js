@@ -1014,6 +1014,52 @@ await step('NatCash phone separation', () => c.query(`
       if (existingOrders.length > 0) console.log(`[MIGRATION] Created ${existingOrders.length} seller_fulfillments rows from existing orders`);
     });
 
+    // ───── Better Auth tables ─────
+    await step('Better Auth: email_verified column', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false
+    `));
+
+    await step('Better Auth: sessions table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token TEXT UNIQUE NOT NULL,
+        ip_address TEXT,
+        user_agent TEXT,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+
+    await step('Better Auth: accounts table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS accounts (
+        id TEXT PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        account_id TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        access_token TEXT,
+        refresh_token TEXT,
+        id_token TEXT,
+        access_token_expires_at TIMESTAMP,
+        refresh_token_expires_at TIMESTAMP,
+        scope TEXT,
+        password TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+
+    await step('Better Auth: verifications table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS verifications (
+        id TEXT PRIMARY KEY,
+        identifier TEXT NOT NULL,
+        value TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
