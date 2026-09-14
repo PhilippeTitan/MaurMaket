@@ -1,7 +1,7 @@
 FROM node:20-slim
 WORKDIR /app
 COPY package*.json strip-mobile-deps.mjs ./
-RUN node strip-mobile-deps.mjs && npm install --production --legacy-peer-deps
+RUN node strip-mobile-deps.mjs && npm install --legacy-peer-deps
 COPY server.js .
 COPY src ./src
 RUN mkdir -p uploads
