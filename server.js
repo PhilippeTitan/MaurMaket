@@ -1016,6 +1016,10 @@ await step('NatCash phone separation', () => c.query(`
     });
 
     // ───── Better Auth tables ─────
+    await step('Better Auth: drop Supabase auth FK', () => c.query(`
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_id_auth_users_id_fkey
+    `));
+
     await step('Better Auth: email_verified column', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false
     `));
