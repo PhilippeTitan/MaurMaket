@@ -1049,7 +1049,14 @@ app.use(express.json({
 }));
 
 // ───── Better Auth ─────
-app.use('/api/auth', auth.handler);
+app.use('/api/auth', (req, res, next) => {
+  Promise.resolve(auth.handler(req, res, next)).catch(err => {
+    console.error('[BETTER_AUTH] Handler error:', err.message, err.stack);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Auth handler error', detail: err.message });
+    }
+  });
+});
 
 app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
