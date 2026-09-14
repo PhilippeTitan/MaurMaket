@@ -265,7 +265,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
       playSuccessAndEnter(res.user, res.token);
     } catch (err: any) {
       if (err instanceof PasskeyUnavailableError) {
-        setErrorMessage(err.message || 'Passkeys aren't available on this device yet');
+        setErrorMessage(err.message || "Passkeys aren't available on this device yet");
       } else {
         setErrorMessage(err?.message || 'Passkey sign-in failed');
       }
