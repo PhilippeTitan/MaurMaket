@@ -33,6 +33,7 @@
     "@tanstack/react-query": "^5.101.4",
     "bcrypt": "^6.0.0",
     "better-auth": "^1.7.4",
+    "better-auth-studio": "^1.1.5",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "expo": "^57",
@@ -79,8 +80,7 @@
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.1",
     "sharp": "^0.35.3",
-    "zod": "^4.6.5",
-    "better-auth-studio": "latest"
+    "zod": "^4.6.5"
   },
   "overrides": {
     "ip-address": "^10.4.0",

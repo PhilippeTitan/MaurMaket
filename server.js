@@ -19,7 +19,6 @@ import { registerRoutes } from './src/routes/index.js';
 import { auth } from './src/config/auth.js';
 import { toNodeHandler } from 'better-auth/node';
 import { betterAuthStudio } from 'better-auth-studio/express';
-import studioConfig from './studio.config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1107,7 +1106,12 @@ app.use(express.json({
 app.all('/api/auth/*', toNodeHandler(auth));
 
 // ───── Better Auth Studio (admin dashboard) ─────
-app.use('/api/studio', betterAuthStudio(studioConfig));
+app.use('/api/studio', betterAuthStudio({
+  auth,
+  basePath: '/api/studio',
+  metadata: { title: 'MaurMaket Admin', theme: 'dark' },
+  access: { allowEmails: ['lexikonstrsut@gmail.com'] },
+}));
 
 app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
