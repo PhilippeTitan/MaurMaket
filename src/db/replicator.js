@@ -19,6 +19,8 @@ export class Replicator {
     this._timer = null;
     this._running = false;
     this._stats = { replicated: 0, failed: 0, skipped: 0 };
+    this._retryCount = new Map(); // operation_id → retry count
+    this._MAX_RETRIES = 3;
   }
 
   start() {
@@ -80,6 +82,16 @@ export class Replicator {
 
     if (!primaryPool || !secondaryPool) return;
 
+    // Skip replication if secondary is down (circuit breaker open)
+    if (!this.controller.secondaryBreaker.isHealthy) {
+      if (!this._secondaryLoggedDown) {
+        console.warn(`[Replicator] Secondary (${this.controller.secondaryName}) is down — skipping replication`);
+        this._secondaryLoggedDown = true;
+      }
+      return;
+    }
+    this._secondaryLoggedDown = false;
+
     // Ensure replication tables exist on secondary
     await this._ensureSchema(secondaryPool);
 
@@ -110,9 +122,24 @@ export class Replicator {
         );
 
         this._stats.replicated++;
+        this._retryCount.delete(op.operation_id);
       } catch (error) {
-        console.error(`[Replicator] Failed operation ${op.operation_id}:`, error.message);
         this._stats.failed++;
+        const retries = (this._retryCount.get(op.operation_id) || 0) + 1;
+        this._retryCount.set(op.operation_id, retries);
+
+        // FK constraint = referenced data doesn't exist on secondary — skip permanently
+        const isFK = error.message?.includes('foreign key constraint');
+        if (isFK || retries >= this._MAX_RETRIES) {
+          console.warn(`[Replicator] Dead-lettering ${op.operation_id} (${op.model}/${op.action}) after ${retries} retries: ${error.message}`);
+          await primaryPool.query(
+            `UPDATE mirror_outbox SET synced = TRUE, synced_at = NOW() WHERE operation_id = $1`,
+            [op.operation_id]
+          ).catch(() => {});
+          this._retryCount.delete(op.operation_id);
+        } else {
+          console.error(`[Replicator] Failed operation ${op.operation_id} (attempt ${retries}):`, error.message);
+        }
         break; // Stop batch on failure (will retry next tick)
       }
     }

@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { dash } from '@better-auth/infra';
+import { username, phoneNumber, emailOTP, twoFactor } from 'better-auth/plugins';
 
 /**
  * Better Auth — lazy singleton.
@@ -32,6 +33,36 @@ export function createAuth(adapter) {
 
     plugins: [
       dash(),
+
+      // Username — @publicname for marketplace identity
+      username(),
+
+      // Phone Number — +509 OTP for marketplace trust
+      phoneNumber({
+        sendOTP: async ({ phoneNumber, code }) => {
+          console.log(`[Auth:SMS] OTP for ${phoneNumber}: ${code}`);
+          // TODO: Wire real SMS provider (Twilio, Twilio Verify, etc.)
+          // await smsProvider.send({ to: phoneNumber, body: `Your MaurMaket code: ${code}` });
+        },
+      }),
+
+      // Email OTP — passwordless login + verification + password reset
+      emailOTP({
+        sendOTP: async ({ email, otp }) => {
+          console.log(`[Auth:EmailOTP] OTP for ${email}: ${otp}`);
+          // TODO: Wire real email provider (Resend, SendGrid, etc.)
+          // await emailProvider.send({ to: email, subject: 'Your MaurMaket code', body: `Code: ${otp}` });
+        },
+        expiresIn: 600, // 10 minutes
+        maxAttempts: 5,
+      }),
+
+      // Two-Factor — TOTP for seller/admin accounts
+      twoFactor({
+        issuer: 'MaurMaket',
+        // Don't force 2FA on everyone — let sellers/admins opt in
+        requireTwoFactor: false,
+      }),
     ],
 
     emailAndPassword: {
@@ -65,6 +96,38 @@ export function createAuth(adapter) {
           defaultValue: 'buyer',
           input: false,
         },
+        // Username plugin fields
+        username: {
+          type: 'string',
+          required: false,
+          unique: true,
+          input: true,
+        },
+        displayUsername: {
+          type: 'string',
+          required: false,
+          input: true,
+        },
+        // Phone Number plugin fields
+        phoneNumber: {
+          type: 'string',
+          required: false,
+          unique: true,
+          input: true,
+        },
+        phoneNumberVerified: {
+          type: 'boolean',
+          required: false,
+          defaultValue: false,
+          input: false,
+        },
+        // Two-Factor plugin fields
+        twoFactorEnabled: {
+          type: 'boolean',
+          required: false,
+          defaultValue: false,
+          input: false,
+        },
       },
     },
 
@@ -79,6 +142,7 @@ export function createAuth(adapter) {
         expiresAt: 'expires_at',
         createdAt: 'created_at',
         updatedAt: 'updated_at',
+        loginMethod: 'login_method',
       },
     },
 

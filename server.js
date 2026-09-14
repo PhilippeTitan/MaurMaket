@@ -36,8 +36,8 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 let server;
 
-async function runMigrations() {
-  const c = await pool.connect();
+async function runMigrations(targetPool) {
+  const c = await (targetPool || pool).connect();
   let stepNum = 0;
   const failed = [];
   // Each migration step is isolated: failure in one does NOT prevent the rest from running.
@@ -1124,6 +1124,37 @@ await step('NatCash phone separation', () => c.query(`
       ON CONFLICT (key) DO NOTHING;
     `));
 
+    // ── Better Auth plugins: schema additions ──
+    await step('Auth plugin: username columns', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT UNIQUE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS display_username TEXT;
+    `));
+    await step('Auth plugin: phone number columns', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number TEXT UNIQUE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number_verified BOOLEAN DEFAULT FALSE;
+    `));
+    await step('Auth plugin: two-factor columns', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT FALSE;
+    `));
+    await step('Auth plugin: two-factor table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS two_factor (
+        id TEXT PRIMARY KEY,
+        secret TEXT NOT NULL,
+        backup_codes TEXT NOT NULL,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        verified BOOLEAN DEFAULT TRUE,
+        failed_verification_count INTEGER DEFAULT 0,
+        locked_until TIMESTAMP
+      )
+    `));
+    await step('Auth plugin: two-factor index', () => c.query(`
+      CREATE INDEX IF NOT EXISTS idx_two_factor_user_id ON two_factor(user_id);
+      CREATE INDEX IF NOT EXISTS idx_two_factor_secret ON two_factor(secret);
+    `));
+    await step('Auth plugin: session loginMethod column', () => c.query(`
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS login_method TEXT;
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {
@@ -1490,6 +1521,20 @@ if (isMain) {
   runMigrations().catch(err => {
     console.error('Migration error (non-blocking):', err.message);
   });
+
+  // ───── Neon migration: ensure Better Auth tables exist on secondary ─────
+  if (neonBackupDatabaseUrl) {
+    const neonPool = new (await import('pg')).Pool({
+      connectionString: neonBackupDatabaseUrl,
+      max: 5,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 15000,
+      ssl: neonBackupDatabaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
+    });
+    runMigrations(neonPool).catch(err => {
+      console.error('[MIGRATION] Neon migration error (non-blocking):', err.message);
+    }).finally(() => neonPool.end().catch(() => {}));
+  }
 
   // ───── DB Controller: dual-database failover + replication ─────
   (async () => {
