@@ -19,6 +19,15 @@ import { registerRoutes } from './src/routes/index.js';
 import { auth } from './src/config/auth.js';
 import { toNodeHandler } from 'better-auth/node';
 
+// ───── Better Auth Studio (admin dashboard, optional) ─────
+let betterAuthStudio;
+try {
+  const mod = await import('better-auth-studio/express');
+  betterAuthStudio = mod.betterAuthStudio;
+} catch (e) {
+  // Studio deps not available in Docker — skip silently
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.set('trust proxy', 1);
@@ -1103,6 +1112,17 @@ app.use(express.json({
 
 // ───── Better Auth ─────
 app.all('/api/auth/*', toNodeHandler(auth));
+
+// ───── Better Auth Studio (only when available locally) ─────
+if (betterAuthStudio) {
+  app.use('/api/studio', betterAuthStudio({
+    auth,
+    basePath: '/api/studio',
+    metadata: { title: 'MaurMaket Admin', theme: 'dark' },
+    access: { allowEmails: ['lexikonstrsut@gmail.com', 'maurinexus.contact@gmail.com'] },
+  }));
+  console.log('Studio dashboard at /api/studio');
+}
 
 app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
