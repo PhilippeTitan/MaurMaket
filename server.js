@@ -1110,7 +1110,7 @@ app.use('/api/studio', betterAuthStudio({
   auth,
   basePath: '/api/studio',
   metadata: { title: 'MaurMaket Admin', theme: 'dark' },
-  access: { allowEmails: ['lexikonstrsut@gmail.com'] },
+  access: { allowEmails: ['lexikonstrsut@gmail.com', 'maurinexus.contact@gmail.com'] },
 }));
 
 app.use('/api/auth', authLimiter);
