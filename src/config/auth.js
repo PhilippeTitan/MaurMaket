@@ -6,10 +6,7 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_BASE_URL || 'http://localhost:4000',
   secret: process.env.BETTER_AUTH_SECRET || 'maurmaket_better_auth_secret_2026',
 
-  database: {
-    type: 'postgres',
-    pool: pool,
-  },
+  database: pool,
 
   plugins: [
     dash(),
