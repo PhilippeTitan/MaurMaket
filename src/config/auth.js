@@ -25,64 +25,6 @@ export const auth = betterAuth({
     },
   },
 
-  user: {
-    modelName: 'users',
-    fields: {
-      id: 'id',
-      name: 'full_name',
-      email: 'email',
-      emailVerified: 'email_verified',
-      image: 'avatar_url',
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
-    },
-  },
-
-  session: {
-    modelName: 'sessions',
-    fields: {
-      id: 'id',
-      userId: 'user_id',
-      token: 'token',
-      ipAddress: 'ip_address',
-      userAgent: 'user_agent',
-      expiresAt: 'expires_at',
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
-    },
-  },
-
-  account: {
-    modelName: 'accounts',
-    fields: {
-      id: 'id',
-      userId: 'user_id',
-      accountId: 'account_id',
-      providerId: 'provider_id',
-      accessToken: 'access_token',
-      refreshToken: 'refresh_token',
-      idToken: 'id_token',
-      accessTokenExpiresAt: 'access_token_expires_at',
-      refreshTokenExpiresAt: 'refresh_token_expires_at',
-      scope: 'scope',
-      password: 'password',
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
-    },
-  },
-
-  verification: {
-    modelName: 'verifications',
-    fields: {
-      id: 'id',
-      identifier: 'identifier',
-      value: 'value',
-      expiresAt: 'expires_at',
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
-    },
-  },
-
   advanced: {
     database: {
       generateId: () => crypto.randomUUID(),

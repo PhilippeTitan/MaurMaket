@@ -1043,6 +1043,10 @@ app.use(cors({
   credentials: true,
 }));
 app.use(morgan('combined'));
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
+}));
 
 // ───── Better Auth ─────
 app.use('/api/auth', auth.handler);
@@ -1199,10 +1203,6 @@ app.delete('/api/upload', authRequired, async (req, res) => {
   }
 });
 app.use('/api', generalLimiter);
-app.use(express.json({
-  limit: '1mb',
-  verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
-}));
 
 // Force UTF-8 charset on all JSON responses so accented characters render correctly
 app.use((_req, res, next) => {
