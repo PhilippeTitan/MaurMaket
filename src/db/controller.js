@@ -162,12 +162,28 @@ export class DatabaseController {
   // ───── Pool Selection ─────
 
   _getReadPool() {
-    if (this._mode === 'FAILOVER') return this.secondaryPool;
+    if (this._mode === 'FAILOVER') {
+      if (this.secondaryBreaker.isHealthy) return this.secondaryPool;
+      return null;
+    }
+    if (!this.primaryIsHealthy) {
+      if (this.secondaryBreaker.isHealthy) return this.secondaryPool;
+      return null;
+    }
     return this.primaryPool;
   }
 
   _getWritePool() {
-    if (this._mode === 'FAILOVER') return this.secondaryPool;
+    if (this._mode === 'FAILOVER') {
+      // Only use secondary if it's actually healthy
+      if (this.secondaryBreaker.isHealthy) return this.secondaryPool;
+      return null;
+    }
+    if (!this.primaryIsHealthy) {
+      // Primary down — try secondary if healthy
+      if (this.secondaryBreaker.isHealthy) return this.secondaryPool;
+      return null;
+    }
     return this.primaryPool;
   }
 
@@ -486,12 +502,11 @@ export class DatabaseController {
   // ───── Status ─────
 
   async getStatus() {
-    const health = await this.healthCheck();
     return {
       primary: this._primary,
       mode: this._mode,
-      supabase: health.supabase,
-      neon: health.neon,
+      supabaseHealthy: this.supabaseBreaker.isHealthy,
+      neonHealthy: this.neonBreaker.isHealthy,
       supabaseFailures: this.supabaseBreaker.failures,
       neonFailures: this.neonBreaker.failures,
     };

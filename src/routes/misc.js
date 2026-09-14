@@ -78,8 +78,9 @@ router.get('/terms', (_req, res) => {
   `));
 });
 
-// 404 handler (must be last)
-router.get('*', (_req, res) => {
+// 404 handler (must be last — but skip /api/studio which is mounted later)
+router.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/studio')) return next();
   res.status(404).json({ error: 'Not found' });
 });
 

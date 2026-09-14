@@ -80,6 +80,9 @@ export class Replicator {
 
     if (!primaryPool || !secondaryPool) return;
 
+    // Ensure replication tables exist on secondary
+    await this._ensureSchema(secondaryPool);
+
     // Read pending operations from primary
     const { rows: operations } = await primaryPool.query(
       `SELECT id, operation_id, model, action, record_id, payload, source, priority, created_at
@@ -113,6 +116,22 @@ export class Replicator {
         break; // Stop batch on failure (will retry next tick)
       }
     }
+  }
+
+  async _ensureSchema(pool) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS mirror_operations (
+          operation_id UUID PRIMARY KEY,
+          source TEXT NOT NULL,
+          processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_mirror_operations_source
+        ON mirror_operations(source, processed_at)
+      `);
+    } catch { /* table may already exist or no permission — continue */ }
   }
 
   async _applyOperation(targetPool, operation) {
