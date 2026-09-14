@@ -18,6 +18,8 @@ import { startJobs } from './src/jobs/index.js';
 import { registerRoutes } from './src/routes/index.js';
 import { auth } from './src/config/auth.js';
 import { toNodeHandler } from 'better-auth/node';
+import { betterAuthStudio } from 'better-auth-studio/express';
+import studioConfig from './studio.config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1095,14 +1097,17 @@ app.use(cors({
 }));
 app.use(morgan('combined'));
 
-// ───── Better Auth ─────
-app.all('/api/auth/*', toNodeHandler(auth));
-
-// Body parser AFTER Better Auth (BA handles its own body parsing)
+// Body parser (needed before studio, auth handles its own body)
 app.use(express.json({
   limit: '1mb',
   verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
 }));
+
+// ───── Better Auth ─────
+app.all('/api/auth/*', toNodeHandler(auth));
+
+// ───── Better Auth Studio (admin dashboard) ─────
+app.use('/api/studio', betterAuthStudio(studioConfig));
 
 app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
