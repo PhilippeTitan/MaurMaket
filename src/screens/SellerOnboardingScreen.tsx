@@ -1,14 +1,13 @@
-import React, { useState } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Image,
-  ScrollView, ActivityIndicator, Alert,
+  ScrollView, ActivityIndicator, Alert, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Icon } from '../components/icons/Icon';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
 import { becomeSeller, upgradeTier, uploadImage } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n';
@@ -32,6 +31,20 @@ export default function SellerOnboardingScreen() {
   const [loading, setLoading] = useState(false);
   const [pickLoading, setPickLoading] = useState(false);
   const [natcashPhone, setNatcashPhone] = useState('');
+
+  const stepAnim = useRef({
+    opacity: new Animated.Value(0),
+    translateY: new Animated.Value(20),
+  }).current;
+
+  useEffect(() => {
+    stepAnim.opacity.setValue(0);
+    stepAnim.translateY.setValue(20);
+    Animated.parallel([
+      Animated.timing(stepAnim.opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.timing(stepAnim.translateY, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start();
+  }, [step]);
 
   const handlePickLogo = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -308,7 +321,9 @@ export default function SellerOnboardingScreen() {
           ))}
         </View>
       )}
-      {renderStep()}
+      <Animated.View style={{ flex: 1, opacity: stepAnim.opacity, transform: [{ translateY: stepAnim.translateY }] }}>
+        {renderStep()}
+      </Animated.View>
     </ScrollView>
   );
 }

@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform, TextInput,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform, TextInput, Animated,
 } from 'react-native';
-import { Icon } from '../components/icons/Icon';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
+import SettingsGroup from '../components/SettingsGroup';
+import SettingsRow from '../components/SettingsRow';
 import { updateProfile } from '../api';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -26,11 +28,22 @@ export default function LocationSettingsScreen({ navigation }: Props) {
   const [locDetecting, setLocDetecting] = useState(false);
   const [editing, setEditing] = useState(!user?.location_address);
 
+  const anim = useRef({
+    opacity: new Animated.Value(0),
+    translateY: new Animated.Value(16),
+  }).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(anim.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(anim.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
   const handleAutoDetect = async () => {
     if (Platform.OS === 'web') return;
     setLocDetecting(true);
     try {
-      // Request permissions first
       const Location = await import('expo-location');
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -38,7 +51,6 @@ export default function LocationSettingsScreen({ navigation }: Props) {
         setLocDetecting(false);
         return;
       }
-      // Use native fast location on Android, expo-location on iOS
       const { getFastLocation } = await import('../fast-location');
       const pos = await getFastLocation();
       const lat = pos.lat;
@@ -55,7 +67,6 @@ export default function LocationSettingsScreen({ navigation }: Props) {
         const street = [a.road, a.house_number].filter(Boolean).join(' ') || '';
         const neighbourhood = a.neighbourhood || a.suburb || a.city_district || '';
         city = a.city || a.municipality || a.county || '';
-        // Address = street + neighbourhood. City = actual city name.
         address = [street, neighbourhood].filter(Boolean).join(', ') || nominatim.display_name?.split(',')[0] || '';
       } catch {}
       setLocAddress(address);
@@ -102,102 +113,187 @@ export default function LocationSettingsScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScreenHeader title={t('settings.deliveryLocation')} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.scroll}>
 
-      {/* ── Map preview ── */}
-      <View style={styles.mapPreview}>
-        <View style={styles.mapGradient} />
-        <Icon name="location-pin" size={30} color={COLORS.coral} />
-      </View>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
 
-      {/* ── Delivery address card ── */}
-      <Text style={styles.sectionHeader}>Delivery address</Text>
-      <View style={styles.addressCard}>
-        <Text style={styles.addressText}>{locAddress || t('settings.deliveryAddress')}</Text>
-        {locCity ? <Text style={styles.cityText}>{locCity}</Text> : null}
-      </View>
+          {/* ── Map preview ── */}
+          <View style={styles.mapPreview}>
+            <View style={styles.mapGradient} />
+            <MaterialCommunityIcons name="map-marker-outline" size={40} color={COLORS.coral} />
+            {locAddress ? (
+              <View style={styles.mapOverlay}>
+                <Text style={styles.mapAddress} numberOfLines={2}>{locAddress}</Text>
+                {locCity ? <Text style={styles.mapCity}>{locCity}</Text> : null}
+              </View>
+            ) : null}
+          </View>
 
-      {/* ── Auto-detect ── */}
-      {Platform.OS !== 'web' && (
-        <TouchableOpacity style={styles.autoDetectBtn} onPress={handleAutoDetect} disabled={locDetecting}>
-          {locDetecting ? (
-            <ActivityIndicator size={14} color={COLORS.blue} />
-          ) : (
-            <Icon name="my-location" size={16} color={COLORS.blue} />
+          {/* ── Auto-detect ── */}
+          {Platform.OS !== 'web' && (
+            <SettingsGroup style={{ marginTop: 0 }}>
+              <SettingsRow
+                icon="crosshairs-gps"
+                iconColor={COLORS.blue}
+                iconBg={COLORS.blueMuted}
+                label={locDetecting ? t('settings.locationDetecting') : t('settings.autoDetect')}
+                subtitle="Use your phone's GPS to find your location"
+                rightElement={
+                  locDetecting ? (
+                    <ActivityIndicator size="small" color={COLORS.blue} />
+                  ) : (
+                    <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.blue} />
+                  )
+                }
+                onPress={handleAutoDetect}
+              />
+            </SettingsGroup>
           )}
-          <Text style={styles.autoDetectText}>
-            {locDetecting ? t('settings.locationDetecting') : t('settings.autoDetect')}
-          </Text>
-        </TouchableOpacity>
-      )}
 
-      {/* ── Edit manually ── */}
-      {editing ? (
-        <View style={styles.editSection}>
-          <TextInput
-            style={styles.input}
-            placeholder={t('settings.deliveryAddress')}
-            placeholderTextColor={COLORS.text2}
-            value={locAddress}
-            onChangeText={setLocAddress}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder={t('settings.deliveryCity')}
-            placeholderTextColor={COLORS.text2}
-            value={locCity}
-            onChangeText={setLocCity}
-          />
-        </View>
-      ) : (
-        <TouchableOpacity style={styles.editRow} onPress={() => setEditing(true)}>
-          <Icon name="edit" size={17} color={COLORS.text2} />
-          <Text style={styles.editRowLabel}>Edit manually</Text>
-          <Icon name="chevron-right" size={16} color={COLORS.text2} />
-        </TouchableOpacity>
-      )}
+          {/* ── Address fields ── */}
+          <SettingsGroup
+            header="Delivery Address"
+            accentColor={COLORS.green}
+            description="Set your default delivery location"
+          >
+            {editing ? (
+              <>
+                <View style={styles.inputRow}>
+                  <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.green} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder={t('settings.deliveryAddress')}
+                    placeholderTextColor={COLORS.text3}
+                    value={locAddress}
+                    onChangeText={setLocAddress}
+                  />
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.inputRow}>
+                  <MaterialCommunityIcons name="city-variant-outline" size={18} color={COLORS.green} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder={t('settings.deliveryCity')}
+                    placeholderTextColor={COLORS.text3}
+                    value={locCity}
+                    onChangeText={setLocCity}
+                  />
+                </View>
+              </>
+            ) : (
+              <SettingsRow
+                icon="pencil-outline"
+                iconBg={COLORS.surface2}
+                label="Edit manually"
+                subtitle={locAddress ? `${locAddress}${locCity ? `, ${locCity}` : ''}` : 'Set your address'}
+                chevron
+                onPress={() => setEditing(true)}
+              />
+            )}
+          </SettingsGroup>
 
-      {/* ── Save button ── */}
-      <View style={styles.saveWrap}>
-        <TouchableOpacity
-          style={[styles.saveBtn, locSaving && { opacity: 0.5 }]}
-          onPress={handleSave}
-          disabled={locSaving}
-        >
-          {locSaving ? (
-            <ActivityIndicator size={16} color={COLORS.white} />
-          ) : (
-            <Text style={styles.saveBtnText}>Save location</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+          {/* ── Save button ── */}
+          <TouchableOpacity
+            style={[styles.saveButton, locSaving && { opacity: 0.5 }]}
+            activeOpacity={0.7}
+            onPress={handleSave}
+            disabled={locSaving}
+          >
+            {locSaving ? (
+              <ActivityIndicator size="small" color={COLORS.white} />
+            ) : (
+              <Text style={styles.saveButtonText}>Save location</Text>
+            )}
+          </TouchableOpacity>
 
-      <View style={{ height: 60 }} />
+        </Animated.View>
+
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
   );
 }
 
+/* ── Styles ──────────────────────────────────────────────── */
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { paddingBottom: 20 },
+  scroll: { paddingBottom: SPACING.page },
 
   /* Map preview */
   mapPreview: {
-    height: 150, margin: 14, borderRadius: 14, overflow: 'hidden',
-    backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center',
+    height: 150,
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
+    borderRadius: RADIUS.card,
+    overflow: 'hidden',
+    backgroundColor: COLORS.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
     position: 'relative',
   },
   mapGradient: {
     ...StyleSheet.absoluteFill,
     backgroundColor: COLORS.surface2,
   },
+  mapOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.bg + 'CC',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+  },
+  mapAddress: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text,
+    fontWeight: FONT_WEIGHTS.medium,
+  },
+  mapCity: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.text2,
+    marginTop: 2,
+  },
 
-  /* Section header */
-  sectionHeader: {
-    fontSize: 10, fontWeight: '700', color: COLORS.text2,
-    textTransform: 'uppercase', letterSpacing: 0.4,
-    marginHorizontal: 14, marginTop: 12, marginBottom: 4,
+  /* Inputs */
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    minHeight: 52,
+  },
+  input: {
+    flex: 1,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text,
+    paddingVertical: SPACING.md,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginLeft: SPACING.lg + 18 + SPACING.md,
+  },
+
+  saveButton: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.xl,
+    backgroundColor: COLORS.coral,
+    borderRadius: RADIUS.pill,
+    paddingVertical: SPACING.lg,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: COLORS.white,
+    fontSize: FONT_SIZES.md,
+    fontWeight: FONT_WEIGHTS.bold,
+  },
+
+  bottomSpacer: {
+    height: 60,
+  },
+});
   },
 
   /* Address card */

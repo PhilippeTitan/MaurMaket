@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Animated,
 } from 'react-native';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
+import SettingsGroup from '../components/SettingsGroup';
 import { updateUsername } from '../api';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -30,6 +32,18 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
     && !clean.includes('..');
   const changed = clean !== user?.username;
 
+  const anim = useRef({
+    opacity: new Animated.Value(0),
+    translateY: new Animated.Value(16),
+  }).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(anim.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(anim.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
   const handleSave = async () => {
     if (!isValid || !changed) return;
     setSaving(true);
@@ -47,87 +61,160 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
     setSaving(false);
   };
 
+  const getErrorText = () => {
+    if (clean.length > 30) return t('username.tooLong');
+    if (clean.startsWith('.') || clean.endsWith('.')) return t('username.noEdgePeriod');
+    if (clean.includes('..')) return t('username.noDoublePeriod');
+    return t('username.startAlphanumeric');
+  };
+
   return (
     <View style={styles.container}>
       <ScreenHeader title={t('username.title')} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.scroll}>
 
-      <View style={styles.card}>
-        <Text style={styles.label}>{t('username.label')}</Text>
-        <Text style={styles.hint}>{t('username.hint')}</Text>
-        <View style={styles.inputRow}>
-          <Text style={styles.at}>@</Text>
-          <TextInput
-            style={[styles.input, error && styles.inputError]}
-            value={username}
-            onChangeText={(v) => { setUsername(v); setError(''); }}
-            placeholder={t('username.placeholder')}
-            placeholderTextColor={COLORS.text2}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        </View>
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        {clean && isValid && changed ? (
-          <Text style={styles.preview}>{t('username.newPreview', { username: clean })}</Text>
-        ) : null}
-        {clean && !isValid ? (
-          <Text style={styles.errorText}>
-            {clean.length > 30 ? t('username.tooLong')
-              : clean.startsWith('.') || clean.endsWith('.') ? t('username.noEdgePeriod')
-              : clean.includes('..') ? t('username.noDoublePeriod')
-              : t('username.startAlphanumeric')}
-          </Text>
-        ) : null}
-      </View>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
+          <SettingsGroup
+            header="Username"
+            accentColor={COLORS.blue}
+            description={t('username.hint')}
+          >
+            <View style={styles.inputCard}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.at}>@</Text>
+                <TextInput
+                  style={[styles.input, error && styles.inputError]}
+                  value={username}
+                  onChangeText={(v) => { setUsername(v); setError(''); }}
+                  placeholder={t('username.placeholder')}
+                  placeholderTextColor={COLORS.text3}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus
+                />
+              </View>
+            </View>
 
-      <TouchableOpacity
-        style={[styles.saveBtn, (!isValid || !changed || saving) && styles.saveBtnDisabled]}
-        onPress={handleSave}
-        disabled={!isValid || !changed || saving}
-      >
-        {saving ? (
-          <ActivityIndicator size={16} color={COLORS.white} />
-        ) : (
-          <Text style={styles.saveBtnText}>{t('common.save')}</Text>
-        )}
-      </TouchableOpacity>
+            {/* Validation messages */}
+            {error ? (
+              <View style={styles.messageRow}>
+                <MaterialCommunityIcons name="alert-circle" size={16} color={COLORS.coral} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
 
-      <View style={{ height: 60 }} />
+            {clean && !isValid ? (
+              <View style={styles.messageRow}>
+                <MaterialCommunityIcons name="alert-circle" size={16} color={COLORS.coral} />
+                <Text style={styles.errorText}>{getErrorText()}</Text>
+              </View>
+            ) : null}
+
+            {clean && isValid && changed ? (
+              <View style={styles.messageRow}>
+                <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.green} />
+                <Text style={styles.previewText}>{t('username.newPreview', { username: clean })}</Text>
+              </View>
+            ) : null}
+          </SettingsGroup>
+        </Animated.View>
+
+        {/* ── Save button ── */}
+        <TouchableOpacity
+          style={[styles.saveButton, (!isValid || !changed || saving) && styles.saveButtonDisabled]}
+          activeOpacity={0.7}
+          onPress={handleSave}
+          disabled={!isValid || !changed || saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Text style={styles.saveButtonText}>{t('common.save')}</Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
   );
 }
 
+/* ── Styles ──────────────────────────────────────────────── */
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { paddingBottom: 20 },
-  card: {
-    marginHorizontal: SPACING.lg, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card,
-    padding: 14,
+  scroll: { paddingBottom: SPACING.page },
+
+  inputCard: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
   },
-  label: { fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: 4 },
-  hint: { fontSize: 12, color: COLORS.text2, marginBottom: 12 },
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.row, overflow: 'hidden',
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bg,
+    borderWidth: 1.5,
+    borderColor: COLORS.blue + '40',
+    borderRadius: RADIUS.card,
+    paddingHorizontal: SPACING.lg,
+    minHeight: 52,
   },
   at: {
-    paddingLeft: 12, fontSize: 15, fontWeight: '600', color: COLORS.text2,
+    fontSize: FONT_SIZES.lg,
+    fontWeight: FONT_WEIGHTS.bold,
+    color: COLORS.blue,
+    marginRight: SPACING.xs,
   },
   input: {
-    flex: 1, padding: 12, color: COLORS.text, fontSize: 14,
+    flex: 1,
+    fontSize: FONT_SIZES.lg,
+    color: COLORS.text,
+    paddingVertical: SPACING.md,
+    fontWeight: FONT_WEIGHTS.medium,
   },
-  inputError: { borderColor: COLORS.coral },
-  errorText: { fontSize: 12, color: COLORS.coral, marginTop: 8 },
-  preview: { fontSize: 12, color: COLORS.green, marginTop: 8 },
-  saveBtn: {
-    marginHorizontal: SPACING.lg, marginTop: 16,
-    backgroundColor: COLORS.coral, borderRadius: RADIUS.row,
-    padding: 14, alignItems: 'center',
+  inputError: {
+    borderColor: COLORS.coral,
   },
+
+  messageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
+  },
+  errorText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.coral,
+    flex: 1,
+  },
+  previewText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.green,
+    flex: 1,
+  },
+
+  saveButton: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.xl,
+    backgroundColor: COLORS.coral,
+    borderRadius: RADIUS.pill,
+    paddingVertical: SPACING.lg,
+    alignItems: 'center',
+  },
+  saveButtonDisabled: {
+    opacity: 0.4,
+  },
+  saveButtonText: {
+    color: COLORS.white,
+    fontSize: FONT_SIZES.md,
+    fontWeight: FONT_WEIGHTS.bold,
+  },
+
+  bottomSpacer: {
+    height: 60,
+  },
+});
   saveBtnDisabled: { opacity: 0.4 },
   saveBtnText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
 });

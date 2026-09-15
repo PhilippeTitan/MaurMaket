@@ -1,14 +1,16 @@
-import React, { useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
+import SettingsGroup from '../components/SettingsGroup';
+import SettingsRow from '../components/SettingsRow';
 import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '../api';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -28,6 +30,18 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
   const [storeLogoUploading, setStoreLogoUploading] = useState(false);
   const [fulfillmentProfile, setFulfillmentProfile] = useState<SellerFulfillmentProfile | null>(null);
   const [proposals, setProposals] = useState<any[]>([]);
+
+  const anim = useRef({
+    opacity: new Animated.Value(0),
+    translateY: new Animated.Value(16),
+  }).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(anim.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(anim.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   const loadFulfillmentProfile = useCallback(async () => {
     if (!isSeller) return;
@@ -122,7 +136,8 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScreenHeader title={t('settings.seller')} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
 
       {/* ── Store Profile ── */}
       <Text style={styles.sectionHeader}>Store Profile</Text>
@@ -293,6 +308,7 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
       )}
 
       <View style={{ height: 60 }} />
+        </Animated.View>
       </ScrollView>
     </View>
   );

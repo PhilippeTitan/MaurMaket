@@ -1,34 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Image, ScrollView, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Platform, TouchableOpacity, Animated } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH, TIER_COLORS, getDisplayName } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
-import { getImageUrl, resendVerificationEmail } from '../api';
+import { resendVerificationEmail } from '../api';
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
 import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 import ScreenContainer from '../components/ScreenContainer';
 import ScreenHeader from '../components/ScreenHeader';
-import SettingsCard from '../components/SettingsCard';
-import SectionHeader from '../components/SectionHeader';
-import CardRow from '../components/CardRow';
+import SettingsGroup from '../components/SettingsGroup';
+import SettingsRow from '../components/SettingsRow';
+import ProfileCard from '../components/ProfileCard';
 import ConfirmModal from '../components/ConfirmModal';
-import { i18n, useTranslation } from '../i18n';
+import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
 import AuthMethodsCard from '../components/AuthMethodsCard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
-
-/* ── Helpers ────────────────────────────────────────────── */
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
-  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
-}
 
 /* ── Component ──────────────────────────────────────────── */
 
@@ -38,13 +29,28 @@ export default function SettingsScreen({ navigation }: Props) {
   const { user } = useUser();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
-  const [passkeyLoading, setPasskeyLoading] = useState(false);
+
+  // Staggered entrance animations
+  const sections = useRef(
+    Array.from({ length: 8 }, () => ({
+      opacity: new Animated.Value(0),
+      translateY: new Animated.Value(16),
+    }))
+  ).current;
 
   useEffect(() => {
-    // Check Google connection via Better Auth session
+    Animated.stagger(60,
+      sections.map(s =>
+        Animated.parallel([
+          Animated.timing(s.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+          Animated.timing(s.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+        ])
+      )
+    ).start();
+
+    // Check Google connection
     const { getMe } = require('../api');
     getMe().then((data: any) => {
-      // Better Auth stores accounts — check if Google account is linked
       setGoogleConnected(Boolean(data.user?.google_linked || data.user?.accounts?.some((a: any) => a.provider === 'google')));
     }).catch(() => setGoogleConnected(false));
   }, []);
@@ -55,10 +61,8 @@ export default function SettingsScreen({ navigation }: Props) {
       return;
     }
     try {
-      setPasskeyLoading(true);
-      // Better Auth passkey enrollment
       const { API_BASE } = require('../api');
-      const { data: sessionData } = await require('../api').getMe() as any;
+      await require('../api').getMe();
       const res = await fetch(`${API_BASE.replace('/api', '')}/api/auth/passkey/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -71,7 +75,7 @@ export default function SettingsScreen({ navigation }: Props) {
       toast.show({ kind: 'success', title: 'Passkey registered successfully' });
     } catch (err: any) {
       toast.show({ kind: 'error', title: err?.message || 'Failed to register passkey' });
-    } finally { setPasskeyLoading(false); }
+    }
   };
 
   const isSeller = user?.role === 'seller';
@@ -84,10 +88,6 @@ export default function SettingsScreen({ navigation }: Props) {
 
   const langLabel = language === 'en' ? 'English' : language === 'ht' ? 'Kreyòl' : 'Français';
 
-  const avatarUri = user?.avatar_url ? getImageUrl(user.avatar_url) : null;
-  const displayName = getDisplayName(user);
-  const initials = getInitials(displayName);
-
   const handleLogout = () => {
     if (Platform.OS === 'web') {
       if (window.confirm(t('settings.logoutConfirm'))) {
@@ -98,12 +98,10 @@ export default function SettingsScreen({ navigation }: Props) {
     setShowLogoutModal(true);
   };
 
-  /* ── Tier badge (small pill in profile hero) ──── */
-  const tierBadge = tierLabel ? (
-    <View style={[styles.tierPill, { backgroundColor: (tierColor ?? COLORS.text2) + '20' }]}>
-      <Text style={[styles.tierPillText, { color: tierColor ?? COLORS.text2 }]}>{tierLabel}</Text>
-    </View>
-  ) : null;
+  const animStyle = (i: number) => ({
+    opacity: sections[i].opacity,
+    transform: [{ translateY: sections[i].translateY }],
+  });
 
   return (
     <ScreenContainer>
@@ -112,195 +110,206 @@ export default function SettingsScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* ── Profile Hero ── */}
-        <TouchableOpacity
-          style={styles.profileHero}
-          activeOpacity={0.65}
-          onPress={() => navigation.navigate('EditProfile')}
-          accessibilityRole="button"
-          accessibilityLabel={t('settings.editProfile')}
-        >
-          <View style={styles.avatarOuter}>
-            {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
-            ) : (
-              <View style={styles.avatarFallback}>
-                <Text style={styles.avatarInitials}>{initials}</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
-            {user?.username ? (
-              <Text style={styles.profileUsername}>{user.username}</Text>
-            ) : null}
-            <View style={styles.profileMeta}>
-              {tierBadge}
-              {user?.email_verified ? (
-                <View style={styles.verifiedBadge}>
-                  <MaterialCommunityIcons name="check-circle" size={13} color={COLORS.green} />
-                  <Text style={styles.verifiedText}>{t('settings.emailVerified')}</Text>
-                </View>
-              ) : (
-                <View style={[styles.verifiedBadge, { backgroundColor: '#FCD34D20', borderColor: '#FCD34D40' }]}>
-                  <MaterialCommunityIcons name="alert-circle-outline" size={13} color="#F59E0B" />
-                  <Text style={[styles.verifiedText, { color: '#F59E0B' }]}>Email not verified</Text>
-                </View>
-              )}
-            </View>
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text3} />
-        </TouchableOpacity>
+        <Animated.View style={animStyle(0)}>
+          <ProfileCard user={user} onPress={() => navigation.navigate('EditProfile')} />
+        </Animated.View>
 
         {/* ── Account ── */}
-        <SectionHeader title={t('settings.sectionAccount') || 'Account'} />
-        <SettingsCard>
-          <CardRow
-            icon="email-outline"
-            label={t('settings.email')}
-            value={user?.email}
-            chevron
-            onPress={() => navigation.navigate('SettingsEdit', { field: 'email', title: t('settings.email') })}
-            divider
-          />
-          {user?.email && !user.email_verified ? (
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14, gap: 8 }}
-              onPress={async () => {
-                try {
-                  await resendVerificationEmail(user.email);
-                  toast.show({ kind: 'success', title: 'Verification email sent! Check your inbox.' });
-                } catch (e: any) {
-                  toast.show({ kind: 'error', title: e?.message || 'Failed to resend' });
-                }
-              }}
-            >
-              <MaterialCommunityIcons name="email-fast-outline" size={20} color="#F59E0B" />
-              <Text style={{ fontSize: 14, color: '#F59E0B', fontWeight: '500' }}>Resend verification email</Text>
-            </TouchableOpacity>
-          ) : null}
-
-          {/* Phone row with payment badges (custom layout) */}
-          <View style={styles.phoneRow}>
-            <View style={styles.phoneIcon}>
-              <MaterialCommunityIcons name="phone-outline" size={20} color={COLORS.text2} />
-            </View>
-            <Text style={styles.phoneLabel}>{t('settings.phone')}</Text>
-            <View style={styles.phoneBadges}>
-              {user?.phone ? (
-                <View style={styles.badge}>
-                  <Image source={moncashLogo} style={styles.badgeIcon} resizeMode="cover" />
-                  <Text style={styles.badgeText}>MC</Text>
+        <Animated.View style={animStyle(1)}>
+          <SettingsGroup
+            header={t('settings.sectionAccount') || 'Account'}
+            accentColor={COLORS.blue}
+          >
+            <SettingsRow
+              icon="email-outline"
+              iconColor={COLORS.blue}
+              iconBg={COLORS.blueMuted}
+              label={t('settings.email')}
+              value={user?.email}
+              chevron
+              onPress={() => navigation.navigate('SettingsEdit', { field: 'email', title: t('settings.email') })}
+              divider
+            />
+            {user?.email && !user.email_verified ? (
+              <SettingsRow
+                icon="email-fast-outline"
+                iconColor="#F59E0B"
+                iconBg="#F59E0B18"
+                label="Verify your email"
+                subtitle="Resend verification link"
+                chevron
+                onPress={async () => {
+                  try {
+                    await resendVerificationEmail(user.email);
+                    toast.show({ kind: 'success', title: 'Verification email sent! Check your inbox.' });
+                  } catch (e: any) {
+                    toast.show({ kind: 'error', title: e?.message || 'Failed to resend' });
+                  }
+                }}
+                divider
+              />
+            ) : null}
+            <SettingsRow
+              icon="phone-outline"
+              iconColor={COLORS.green}
+              iconBg={COLORS.greenMuted}
+              label={t('settings.phone')}
+              subtitle={
+                user?.phone ? `MonCash: ${user.phone}` :
+                user?.natcash_phone ? `NatCash: ${user.natcash_phone}` :
+                t('settings.buyer')
+              }
+              rightElement={
+                <View style={styles.phoneBadges}>
+                  {user?.phone ? (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>MC</Text>
+                    </View>
+                  ) : null}
+                  {user?.natcash_phone ? (
+                    <View style={[styles.badge, styles.badgeNat]}>
+                      <Text style={[styles.badgeText, styles.badgeTextNat]}>NC</Text>
+                    </View>
+                  ) : null}
                 </View>
-              ) : null}
-              {user?.natcash_phone ? (
-                <View style={[styles.badge, styles.badgeNat]}>
-                  <Image source={natcashLogo} style={styles.badgeIcon} resizeMode="cover" />
-                  <Text style={[styles.badgeText, styles.badgeTextNat]}>NC</Text>
-                </View>
-              ) : null}
-              {!user?.phone && !user?.natcash_phone ? (
-                <Text style={styles.notSet}>{t('settings.buyer')}</Text>
-              ) : null}
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.text3} />
-          </View>
+              }
+              chevron
+              divider
+            />
+            <SettingsRow
+              icon="at"
+              iconBg={COLORS.surface2}
+              label={t('username.label')}
+              value={user?.username ? `@${user.username}` : undefined}
+              chevron
+              onPress={() => navigation.navigate('UsernameSettings')}
+              divider
+            />
+            <SettingsRow
+              icon="translate"
+              iconColor={COLORS.purple}
+              iconBg={COLORS.purpleMuted}
+              label={t('settings.language')}
+              value={langLabel}
+              chevron
+              onPress={() => navigation.navigate('LanguageSettings')}
+            />
+          </SettingsGroup>
+        </Animated.View>
 
-          <CardRow
-            icon="at"
-            label={t('username.label')}
-            value={user?.username ? `@${user.username}` : undefined}
-            chevron
-            onPress={() => navigation.navigate('UsernameSettings')}
-            divider
-          />
-          <CardRow
-            icon="translate"
-            label={t('settings.language')}
-            value={langLabel}
-            chevron
-            onPress={() => navigation.navigate('LanguageSettings')}
-          />
-        </SettingsCard>
-
-        <SectionHeader title="Sign-in & security" />
-        <AuthMethodsCard googleConnected={googleConnected} onPasskeyEnroll={handlePasskeyEnroll} />
-        <SettingsCard>
-          <CardRow
-            icon="lock-outline"
-            label={t('settings.changePassword')}
-            value="••••••••"
-            chevron
-            onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: t('settings.changePassword') })}
-          />
-        </SettingsCard>
+        {/* ── Sign-in & Security ── */}
+        <Animated.View style={animStyle(2)}>
+          <SettingsGroup
+            header="Sign-in & security"
+            accentColor={COLORS.green}
+          >
+            <AuthMethodsCard googleConnected={googleConnected} onPasskeyEnroll={handlePasskeyEnroll} />
+          </SettingsGroup>
+          <SettingsGroup style={{ marginTop: -SPACING.xs }}>
+            <SettingsRow
+              icon="lock-outline"
+              iconColor={COLORS.yellow}
+              iconBg={COLORS.yellowMuted}
+              label={t('settings.changePassword')}
+              value="••••••••"
+              chevron
+              onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: t('settings.changePassword') })}
+            />
+          </SettingsGroup>
+        </Animated.View>
 
         {/* ── Shopping ── */}
-        <SectionHeader title={t('settings.sectionShopping') || 'Shopping'} />
-        <SettingsCard>
-          <CardRow
-            icon="map-marker-outline"
-            iconColor={COLORS.green}
-            label={t('settings.deliveryLocation')}
-            value={user?.location_city}
-            chevron
-            onPress={() => navigation.navigate('LocationSettings')}
-            divider
-          />
-          <CardRow
-            icon="home-outline"
-            label={t('me.addresses')}
-            chevron
-            onPress={() => navigation.navigate('Addresses')}
-          />
-        </SettingsCard>
+        <Animated.View style={animStyle(3)}>
+          <SettingsGroup
+            header={t('settings.sectionShopping') || 'Shopping'}
+            accentColor={COLORS.green}
+          >
+            <SettingsRow
+              icon="map-marker-outline"
+              iconColor={COLORS.green}
+              iconBg={COLORS.greenMuted}
+              label={t('settings.deliveryLocation')}
+              subtitle={user?.location_city || 'Set your delivery area'}
+              chevron
+              onPress={() => navigation.navigate('LocationSettings')}
+              divider
+            />
+            <SettingsRow
+              icon="home-outline"
+              iconBg={COLORS.surface2}
+              label={t('me.addresses')}
+              subtitle="Manage saved addresses"
+              chevron
+              onPress={() => navigation.navigate('Addresses')}
+            />
+          </SettingsGroup>
+        </Animated.View>
 
         {/* ── Selling ── */}
-        <SectionHeader title={t('settings.sectionSelling') || 'Selling'} />
-        <SettingsCard>
-          <CardRow
-            icon={isSeller ? 'storefront-outline' : 'store-plus-outline'}
-            iconColor={isSeller ? COLORS.blue : COLORS.green}
-            label={isSeller ? t('settings.sellerTools') : t('me.becomeSeller')}
-            value={isSeller ? tierLabel : undefined}
-            valueColor={isSeller ? COLORS.green : undefined}
-            chevron
-            onPress={() => navigation.navigate(isSeller ? 'SellerToolsSettings' : 'SellerOnboarding')}
-          />
-        </SettingsCard>
+        <Animated.View style={animStyle(4)}>
+          <SettingsGroup
+            header={t('settings.sectionSelling') || 'Selling'}
+            accentColor={isSeller ? COLORS.blue : COLORS.coral}
+          >
+            <SettingsRow
+              icon={isSeller ? 'storefront-outline' : 'store-plus-outline'}
+              iconColor={isSeller ? COLORS.blue : COLORS.coral}
+              iconBg={isSeller ? COLORS.blueMuted : COLORS.coralMuted}
+              label={isSeller ? t('settings.sellerTools') : t('me.becomeSeller')}
+              subtitle={isSeller ? `${tierLabel} seller` : 'Start selling on MaurMaket'}
+              value={isSeller ? tierLabel : undefined}
+              valueColor={isSeller ? (tierColor || COLORS.green) : undefined}
+              chevron
+              onPress={() => navigation.navigate(isSeller ? 'SellerToolsSettings' : 'SellerOnboarding')}
+            />
+          </SettingsGroup>
+        </Animated.View>
 
         {/* ── Privacy ── */}
-        <SectionHeader title={t('settings.sectionPrivacy') || 'Privacy'} />
-        <SettingsCard>
-          <CardRow
-            icon="shield-lock-outline"
-            label={t('settings.profileVisibility') || 'Profile visibility'}
-            value={user?.show_real_name ? (t('settings.nameVisible') || 'Name visible') : (t('settings.nameHidden') || 'Name hidden')}
-            chevron
-            onPress={() => navigation.navigate('PrivacySettings')}
-          />
-        </SettingsCard>
+        <Animated.View style={animStyle(5)}>
+          <SettingsGroup
+            header={t('settings.sectionPrivacy') || 'Privacy'}
+            accentColor="#8B5CF6"
+          >
+            <SettingsRow
+              icon="shield-lock-outline"
+              iconColor="#8B5CF6"
+              iconBg="#8B5CF618"
+              label={t('settings.profileVisibility') || 'Profile visibility'}
+              value={user?.show_real_name ? (t('settings.nameVisible') || 'Name visible') : (t('settings.nameHidden') || 'Name hidden')}
+              chevron
+              onPress={() => navigation.navigate('PrivacySettings')}
+            />
+          </SettingsGroup>
+        </Animated.View>
 
         {/* ── App ── */}
-        <SectionHeader title={t('settings.sectionApp') || 'App'} />
-        <SettingsCard>
-          <CardRow
-            icon="information-outline"
-            label={t('settings.version') || 'Version'}
-            value="MaurMaket v1.0.0"
-          />
-        </SettingsCard>
+        <Animated.View style={animStyle(6)}>
+          <SettingsGroup
+            header={t('settings.sectionApp') || 'App'}
+            accentColor={COLORS.text3}
+          >
+            <SettingsRow
+              icon="information-outline"
+              iconBg={COLORS.surface2}
+              label={t('settings.version') || 'Version'}
+              value="MaurMaket v1.0.0"
+            />
+          </SettingsGroup>
+        </Animated.View>
 
         {/* ── Log out ── */}
-        <View style={styles.logoutSpacer} />
-        <SettingsCard>
-          <CardRow
-            icon="logout"
-            iconColor={COLORS.coral}
-            label={t('settings.logout')}
-            valueColor={COLORS.coral}
+        <Animated.View style={animStyle(7)}>
+          <View style={styles.logoutSpacer} />
+          <TouchableOpacity
+            style={styles.logoutButton}
+            activeOpacity={0.7}
             onPress={handleLogout}
-          />
-        </SettingsCard>
+          >
+            <MaterialCommunityIcons name="logout" size={20} color={COLORS.coral} />
+            <Text style={styles.logoutText}>{t('settings.logout')}</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
         {/* ── Bottom safe area ── */}
         <View style={styles.bottomSpacer} />
@@ -329,100 +338,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: SPACING.page,
   },
-
-  /* Profile hero */
-  profileHero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.lg,
-    marginTop: SPACING.sm,
-    marginBottom: SPACING.sm,
-  },
-  avatarOuter: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    overflow: 'hidden',
-    backgroundColor: COLORS.surface2,
-  },
-  avatarImg: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-  },
-  avatarFallback: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.surface2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarInitials: {
-    fontSize: 20,
-    fontWeight: FONT_WEIGHTS.bold,
-    color: COLORS.text2,
-  },
-  profileInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  profileName: {
-    fontSize: FONT_SIZES.xxl,
-    fontWeight: FONT_WEIGHTS.bold,
-    color: COLORS.text,
-  },
-  profileUsername: {
-    fontSize: FONT_SIZES.base,
-    color: COLORS.text2,
-  },
-  profileMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    marginTop: 2,
-  },
-  tierPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: RADIUS.pill,
-  },
-  tierPillText: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: FONT_WEIGHTS.bold,
-  },
-  verifiedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  verifiedText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.green,
-    fontWeight: FONT_WEIGHTS.semibold,
-  },
-
-  /* Phone row (custom layout for payment badges) */
-  phoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    minHeight: TOUCH.min,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
-  },
-  phoneIcon: {
-    width: 28,
-    alignItems: 'center',
-  },
-  phoneLabel: {
-    flex: 1,
-    fontSize: FONT_SIZES.lg,
-    fontWeight: FONT_WEIGHTS.medium,
-    color: COLORS.text,
-  },
   phoneBadges: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -434,15 +349,11 @@ const styles = StyleSheet.create({
     gap: 3,
     backgroundColor: COLORS.blueMuted,
     borderRadius: RADIUS.sm,
-    paddingHorizontal: SPACING.xs,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   badgeNat: {
     backgroundColor: COLORS.purpleMuted,
-  },
-  badgeIcon: {
-    width: 12,
-    height: 12,
   },
   badgeText: {
     fontSize: FONT_SIZES.xs,
@@ -452,14 +363,25 @@ const styles = StyleSheet.create({
   badgeTextNat: {
     color: COLORS.purple,
   },
-  notSet: {
-    fontSize: FONT_SIZES.base,
-    color: COLORS.text2,
-  },
-
-  /* Footer */
   logoutSpacer: {
-    height: SPACING.xl,
+    height: SPACING.xxxl,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    marginHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    backgroundColor: COLORS.coralMuted,
+    borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: COLORS.coral + '20',
+  },
+  logoutText: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: FONT_WEIGHTS.semibold,
+    color: COLORS.coral,
   },
   bottomSpacer: {
     height: 60,

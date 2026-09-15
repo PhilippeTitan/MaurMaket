@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated,
 } from 'react-native';
-import { Icon } from '../components/icons/Icon';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
+import SettingsGroup from '../components/SettingsGroup';
 import { i18n, useTranslation, type Language } from '../i18n';
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -12,14 +13,26 @@ import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LanguageSettings'>;
 
-const LANGUAGES: { code: Language; label: string; native: string }[] = [
-  { code: 'en', label: 'English', native: 'English' },
-  { code: 'ht', label: 'Kreyòl', native: 'Kreyòl Ayisyen' },
-  { code: 'fr', label: 'French', native: 'Français' },
+const LANGUAGES: { code: Language; label: string; native: string; flag: string }[] = [
+  { code: 'en', label: 'English', native: 'English', flag: '🇺🇸' },
+  { code: 'ht', label: 'Kreyòl', native: 'Kreyòl Ayisyen', flag: '🇭🇹' },
+  { code: 'fr', label: 'French', native: 'Français', flag: '🇫🇷' },
 ];
 
 export default function LanguageSettingsScreen({ navigation }: Props) {
   const { language } = useTranslation();
+
+  const anim = useRef({
+    opacity: new Animated.Value(0),
+    translateY: new Animated.Value(16),
+  }).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(anim.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(anim.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   const handleSelect = async (code: Language) => {
     if (code === language) return;
@@ -30,45 +43,93 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScreenHeader title="Language" onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.scroll}>
 
-      <Text style={styles.sectionHeader}>Select Language</Text>
-      <View style={styles.card}>
-        {LANGUAGES.map((lang, i) => (
-          <React.Fragment key={lang.code}>
-            {i > 0 && <View style={styles.divider} />}
-            <TouchableOpacity style={styles.row} onPress={() => handleSelect(lang.code)}>
-              <Text style={styles.rowLabel}>{lang.native}</Text>
-              {language === lang.code && (
-                <Icon name="check-circle" size={20} color={COLORS.green} />
-              )}
-            </TouchableOpacity>
-          </React.Fragment>
-        ))}
-      </View>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
+          <SettingsGroup
+            header="Select Language"
+            accentColor={COLORS.blue}
+            description="Choose your preferred language for the app"
+          >
+            {LANGUAGES.map((lang) => {
+              const isSelected = language === lang.code;
+              return (
+                <TouchableOpacity
+                  key={lang.code}
+                  style={styles.langRow}
+                  activeOpacity={0.6}
+                  onPress={() => handleSelect(lang.code)}
+                >
+                  <Text style={styles.flag}>{lang.flag}</Text>
+                  <View style={styles.langInfo}>
+                    <Text style={[styles.langName, isSelected && { color: COLORS.blue }]}>{lang.native}</Text>
+                    <Text style={styles.langSub}>{lang.label}</Text>
+                  </View>
+                  {isSelected ? (
+                    <View style={styles.checkCircle}>
+                      <MaterialCommunityIcons name="check" size={14} color={COLORS.white} />
+                    </View>
+                  ) : (
+                    <View style={styles.radio} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </SettingsGroup>
+        </Animated.View>
 
-      <View style={{ height: 60 }} />
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
   );
 }
 
+/* ── Styles ──────────────────────────────────────────────── */
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { paddingBottom: 20 },
-  sectionHeader: {
-    fontSize: 11, fontWeight: '700', color: COLORS.text2,
-    textTransform: 'uppercase', letterSpacing: 0.5,
-    marginHorizontal: SPACING.lg, marginTop: 20, marginBottom: 6,
+  scroll: { paddingBottom: SPACING.page },
+
+  langRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    minHeight: 60,
   },
-  card: {
-    marginHorizontal: SPACING.lg, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, overflow: 'hidden',
+  flag: {
+    fontSize: 28,
   },
-  row: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 13,
+  langInfo: {
+    flex: 1,
   },
-  rowLabel: { flex: 1, fontSize: 15, color: COLORS.text, fontWeight: '500' },
-  divider: { height: 1, backgroundColor: COLORS.border, marginLeft: 14 },
+  langName: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: FONT_WEIGHTS.semibold,
+    color: COLORS.text,
+  },
+  langSub: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text2,
+    marginTop: 1,
+  },
+  checkCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+  },
+  bottomSpacer: {
+    height: 60,
+  },
 });

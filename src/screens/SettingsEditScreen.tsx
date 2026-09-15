@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, Image, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform,
-  KeyboardAvoidingView, ScrollView,
+  KeyboardAvoidingView, ScrollView, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Icon } from '../components/icons/Icon';
-import { COLORS, SPACING, RADIUS } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
 import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 import { store } from '../store';
@@ -17,26 +16,15 @@ import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SettingsEdit'>;
 
-const FIELD_PLACEHOLDERS: Record<string, string> = {
-  name: 'Full name',
-  email: 'Email',
-  phone: 'Phone',
-  phones: 'Phone numbers',
-  natcash_phone: 'NatCash number',
-  bio: 'Bio',
-  password: 'New password',
-  storeName: 'Store name',
-};
-
-const FIELD_ICONS: Record<string, string> = {
-  name: 'account-outline',
-  email: 'email-outline',
-  phone: 'phone-outline',
-  phones: 'phone-outline',
-  natcash_phone: 'cellphone',
-  bio: 'text-short',
-  password: 'lock-outline',
-  storeName: 'storefront-outline',
+const FIELD_META: Record<string, { placeholder: string; icon: string; iconColor: string; iconBg: string; description: string; keyboardType?: string; secure?: boolean; multiline?: boolean }> = {
+  name: { placeholder: 'Full name', icon: 'account-outline', iconColor: COLORS.coral, iconBg: COLORS.coralMuted, description: 'Your display name shown on your profile' },
+  email: { placeholder: 'Email', icon: 'email-outline', iconColor: COLORS.blue, iconBg: COLORS.blueMuted, description: 'Your login email address', keyboardType: 'email-address' },
+  phone: { placeholder: 'Phone', icon: 'phone-outline', iconColor: COLORS.green, iconBg: COLORS.greenMuted, description: 'MonCash payment number', keyboardType: 'phone-pad' },
+  phones: { placeholder: 'Phone numbers', icon: 'phone-outline', iconColor: COLORS.green, iconBg: COLORS.greenMuted, description: 'Manage your payment numbers' },
+  natcash_phone: { placeholder: 'NatCash number', icon: 'cellphone', iconColor: COLORS.purple, iconBg: COLORS.purpleMuted, description: 'For direct NatCash transfers', keyboardType: 'phone-pad' },
+  bio: { placeholder: 'Tell us about yourself...', icon: 'text-short', iconColor: COLORS.coral, iconBg: COLORS.coralMuted, description: 'Short bio visible on your profile', multiline: true },
+  password: { placeholder: 'New password', icon: 'lock-outline', iconColor: COLORS.yellow, iconBg: COLORS.yellowMuted, description: 'Choose a strong new password', secure: true },
+  storeName: { placeholder: 'Store name', icon: 'storefront-outline', iconColor: COLORS.blue, iconBg: COLORS.blueMuted, description: 'Your public store name for buyers' },
 };
 
 export default function SettingsEditScreen({ route, navigation }: Props) {
@@ -44,6 +32,8 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
   const { field, title } = route.params;
   const user = store.user;
   const [loading, setLoading] = useState(false);
+
+  const meta = FIELD_META[field] || FIELD_META.name;
 
   const splitName = (fullName: string) => {
     const parts = (fullName || '').trim().split(/\s+/);
@@ -74,6 +64,19 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
   const [value, setValue] = useState(getValue());
   const [natcashValue, setNatcashValue] = useState(user?.natcash_phone || '');
   const [currentPassword, setCurrentPassword] = useState('');
+
+  // Entrance animation
+  const anim = useRef({
+    opacity: new Animated.Value(0),
+    translateY: new Animated.Value(16),
+  }).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(anim.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(anim.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   const handleSave = async () => {
     if (field === 'name') {
@@ -113,7 +116,6 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
         case 'natcash_phone':
         case 'bio': {
           const payload: Record<string, string> = {};
-          // Map natcash_phone to natcashPhone for the API
           const apiKey = field === 'natcash_phone' ? 'natcashPhone' : field;
           payload[apiKey] = field === 'bio' ? value.trim() : value.trim();
           const res = await updateProfile(payload) as { user: typeof user };
@@ -147,7 +149,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <View style={styles.container}>
       <ScreenHeader
         title={title}
@@ -163,198 +165,349 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
         ) : undefined}
       />
 
-      <View style={styles.fieldCard}>
-        {field === 'phones' ? (
-          <>
-            {/* MonCash card */}
-            <View style={{ padding: 14 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(0,194,255,0.12)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                  <Image source={moncashLogo} style={{ width: 36, height: 36 }} resizeMode="cover" />
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
+
+          {/* ── Field description ── */}
+          <View style={styles.fieldHeader}>
+            <View style={[styles.iconContainer, { backgroundColor: meta.iconBg }]}>
+              <MaterialCommunityIcons name={meta.icon as any} size={20} color={meta.iconColor} />
+            </View>
+            <Text style={styles.fieldDescription}>{meta.description}</Text>
+          </View>
+
+          {field === 'phones' ? (
+            /* ── Phone Numbers (Dual Card) ── */
+            <>
+              {/* MonCash Card */}
+              <View style={styles.paymentCard}>
+                <View style={styles.paymentHeader}>
+                  <View style={styles.paymentLogoWrap}>
+                    <Image source={moncashLogo} style={styles.paymentLogo} resizeMode="cover" />
+                  </View>
+                  <View style={styles.paymentInfo}>
+                    <Text style={styles.paymentName}>MonCash</Text>
+                    <Text style={styles.paymentSub}>Primary payment number</Text>
+                  </View>
+                  <View style={[styles.paymentBadge, { backgroundColor: COLORS.blueMuted, borderColor: COLORS.blue + '30' }]}>
+                    <Text style={[styles.paymentBadgeText, { color: COLORS.blue }]}>Primary</Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.text }}>MonCash</Text>
-                  <Text style={{ fontSize: 11, color: COLORS.text2 }}>Primary payment number</Text>
-                </View>
-                <View style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: 'rgba(0,194,255,0.1)', borderRadius: 6 }}>
-                  <Text style={{ fontSize: 9, fontWeight: '700', color: COLORS.blue, textTransform: 'uppercase' }}>Primary</Text>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.countryCode}>+509</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={value}
+                    onChangeText={setValue}
+                    placeholder="Phone number"
+                    placeholderTextColor={COLORS.text3}
+                    keyboardType="phone-pad"
+                    autoFocus
+                    accessibilityLabel="MonCash phone number"
+                  />
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg, borderWidth: 1.5, borderColor: COLORS.blue + '44', borderRadius: RADIUS.card, paddingHorizontal: 14, paddingVertical: 0, minHeight: 48 }}>
-                <Text style={{ fontSize: 16, color: COLORS.text2, fontWeight: '600', marginRight: 4 }}>+509</Text>
+
+              {/* NatCash Card */}
+              <View style={[styles.paymentCard, { marginTop: SPACING.md }]}>
+                <View style={styles.paymentHeader}>
+                  <View style={[styles.paymentLogoWrap, { backgroundColor: COLORS.purpleMuted }]}>
+                    <Image source={natcashLogo} style={styles.paymentLogo} resizeMode="cover" />
+                  </View>
+                  <View style={styles.paymentInfo}>
+                    <Text style={styles.paymentName}>NatCash</Text>
+                    <Text style={styles.paymentSub}>For direct NatCash transfers</Text>
+                  </View>
+                  <View style={[styles.paymentBadge, { backgroundColor: COLORS.purpleMuted, borderColor: COLORS.purple + '30' }]}>
+                    <Text style={[styles.paymentBadgeText, { color: COLORS.purple }]}>Optional</Text>
+                  </View>
+                </View>
+                <View style={[styles.inputContainer, { borderColor: COLORS.purple + '30' }]}>
+                  <Text style={styles.countryCode}>+509</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={natcashValue}
+                    onChangeText={setNatcashValue}
+                    placeholder="Number"
+                    placeholderTextColor={COLORS.text3}
+                    keyboardType="phone-pad"
+                    accessibilityLabel="NatCash phone number"
+                  />
+                </View>
+              </View>
+            </>
+          ) : field === 'name' ? (
+            /* ── Name (3 fields) ── */
+            <View style={styles.inputCard}>
+              <View style={styles.inputRow}>
+                <Text style={styles.inputLabel}>{t('settingsEdit.firstName')}</Text>
                 <TextInput
-                  style={{ flex: 1, fontSize: 16, color: COLORS.text, paddingVertical: 12, fontWeight: '500' }}
+                  style={styles.input}
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  placeholder={t('settingsEdit.firstName')}
+                  placeholderTextColor={COLORS.text3}
+                  autoFocus
+                  accessibilityLabel="first name"
+                />
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.inputRow}>
+                <Text style={styles.inputLabel}>{t('settingsEdit.middleNameOptional')}</Text>
+                <TextInput
+                  style={styles.input}
+                  value={middleName}
+                  onChangeText={setMiddleName}
+                  placeholder={t('settingsEdit.middleNameOptional')}
+                  placeholderTextColor={COLORS.text3}
+                  accessibilityLabel="middle name"
+                />
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.inputRow}>
+                <Text style={styles.inputLabel}>{t('settingsEdit.lastName')}</Text>
+                <TextInput
+                  style={styles.input}
+                  value={lastName}
+                  onChangeText={setLastName}
+                  placeholder={t('settingsEdit.lastName')}
+                  placeholderTextColor={COLORS.text3}
+                  accessibilityLabel="last name"
+                />
+              </View>
+            </View>
+          ) : (
+            /* ── Single field ── */
+            <View style={styles.inputCard}>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={[styles.input, field === 'bio' && styles.multilineInput]}
                   value={value}
                   onChangeText={setValue}
-                  placeholder="Phone number"
-                  placeholderTextColor={COLORS.text2}
-                  keyboardType="phone-pad"
+                  placeholder={meta.placeholder}
+                  placeholderTextColor={COLORS.text3}
+                  secureTextEntry={meta.secure}
+                  keyboardType={(meta.keyboardType as any) || 'default'}
+                  autoCapitalize={field === 'email' ? 'none' : 'sentences'}
+                  multiline={meta.multiline}
+                  numberOfLines={meta.multiline ? 4 : 1}
+                  textAlignVertical={meta.multiline ? 'top' : 'center'}
                   autoFocus
-                  accessibilityLabel="MonCash phone number"
+                  accessibilityLabel={field}
                 />
               </View>
             </View>
-
-            {/* Divider */}
-            <View style={{ height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 }} />
-
-            {/* NatCash card */}
-            <View style={{ padding: 14 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(139,92,246,0.12)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                  <Image source={natcashLogo} style={{ width: 36, height: 36 }} resizeMode="cover" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.text }}>NatCash</Text>
-                  <Text style={{ fontSize: 11, color: COLORS.text2 }}>For direct NatCash transfers</Text>
-                </View>
-                <View style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: 'rgba(139,92,246,0.1)', borderRadius: 6 }}>
-                  <Text style={{ fontSize: 9, fontWeight: '700', color: '#8b5cf6', textTransform: 'uppercase' }}>Optional</Text>
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg, borderWidth: 1.5, borderColor: '#8b5cf6' + '44', borderRadius: RADIUS.card, paddingHorizontal: 14, paddingVertical: 0, minHeight: 48 }}>
-                <Text style={{ fontSize: 16, color: COLORS.text2, fontWeight: '600', marginRight: 4 }}>+509</Text>
-                <TextInput
-                  style={{ flex: 1, fontSize: 16, color: COLORS.text, paddingVertical: 12, fontWeight: '500' }}
-                  value={natcashValue}
-                  onChangeText={setNatcashValue}
-                  placeholder="Number"
-                  placeholderTextColor={COLORS.text2}
-                  keyboardType="phone-pad"
-                  accessibilityLabel="NatCash phone number"
-                />
-              </View>
-            </View>
-          </>
-        ) : field === 'name' ? (
-          <>
-            <View style={styles.fieldRow}>
-              <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.text2} />
-              <TextInput
-                style={styles.fieldInput}
-                value={firstName}
-                onChangeText={setFirstName}
-                placeholder={t('settingsEdit.firstName')}
-                placeholderTextColor={COLORS.text2}
-                autoFocus
-               
-                accessibilityLabel="first name"
-              />
-            </View>
-            <View style={[styles.fieldRow, { borderTopWidth: 1, borderTopColor: COLORS.border }]}>
-              <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.text2} />
-              <TextInput
-                style={styles.fieldInput}
-                value={middleName}
-                onChangeText={setMiddleName}
-                placeholder={t('settingsEdit.middleNameOptional')}
-                placeholderTextColor={COLORS.text2}
-               
-                accessibilityLabel="middle name"
-              />
-            </View>
-            <View style={[styles.fieldRow, { borderTopWidth: 1, borderTopColor: COLORS.border }]}>
-              <MaterialCommunityIcons name="account-outline" size={18} color={COLORS.text2} />
-              <TextInput
-                style={styles.fieldInput}
-                value={lastName}
-                onChangeText={setLastName}
-                placeholder={t('settingsEdit.lastName')}
-                placeholderTextColor={COLORS.text2}
-               
-                accessibilityLabel="last name"
-              />
-            </View>
-          </>
-        ) : (
-          <View style={styles.fieldRow}>
-            <MaterialCommunityIcons
-              name={FIELD_ICONS[field] as any}
-              size={18}
-              color={COLORS.text2}
-            />
-            <TextInput
-              style={styles.fieldInput}
-              value={value}
-              onChangeText={setValue}
-              placeholder={FIELD_PLACEHOLDERS[field]}
-              placeholderTextColor={COLORS.text2}
-              secureTextEntry={field === 'password'}
-              keyboardType={field === 'email' ? 'email-address' : field === 'phone' ? 'phone-pad' : 'default'}
-              autoCapitalize={field === 'email' ? 'none' : 'sentences'}
-              multiline={field === 'bio'}
-              numberOfLines={field === 'bio' ? 4 : 1}
-              textAlignVertical={field === 'bio' ? 'top' : 'center'}
-              autoFocus
-             
-              accessibilityLabel={field === 'password' ? 'new password' : field === 'storeName' ? 'store name' : field}
-            />
-          </View>
-        )}
-
-        {field === 'password' && (
-          <View style={[styles.fieldRow, { borderTopWidth: 1, borderTopColor: COLORS.border }]}>
-            <Icon name="locked" size={18} color={COLORS.text2} />
-            <TextInput
-              style={styles.fieldInput}
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              placeholder={t('settingsEdit.currentPasswordPlaceholder')}
-              placeholderTextColor={COLORS.text2}
-              secureTextEntry
-             
-              accessibilityLabel="current password"
-            />
-          </View>
-        )}
-      </View>
-
-      {field === 'bio' && (
-        <Text style={styles.charCount}>{value.length}/150</Text>
-      )}
-
-      {field === 'name' && (
-        <TouchableOpacity
-          style={[styles.bottomSaveBtn, loading && { opacity: 0.5 }]}
-          onPress={handleSave}
-          disabled={loading}
-          accessibilityRole="button"
-          accessibilityLabel="save"
-        >
-          {loading ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={styles.bottomSaveBtnText}>{t('settingsEdit.save')}</Text>
           )}
-        </TouchableOpacity>
-      )}
+
+          {/* ── Password extra field ── */}
+          {field === 'password' && (
+            <View style={[styles.inputCard, { marginTop: SPACING.md }]}>
+              <View style={styles.inputRow}>
+                <Text style={styles.inputLabel}>{t('settingsEdit.currentPasswordPlaceholder')}</Text>
+                <TextInput
+                  style={styles.input}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  placeholder={t('settingsEdit.currentPasswordPlaceholder')}
+                  placeholderTextColor={COLORS.text3}
+                  secureTextEntry
+                  accessibilityLabel="current password"
+                />
+              </View>
+            </View>
+          )}
+
+          {/* ── Character count ── */}
+          {field === 'bio' && (
+            <Text style={styles.charCount}>{value.length}/150</Text>
+          )}
+
+          {/* ── Save button (name field only) ── */}
+          {field === 'name' && (
+            <TouchableOpacity
+              style={[styles.saveButton, loading && { opacity: 0.5 }]}
+              onPress={handleSave}
+              disabled={loading}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="save"
+            >
+              {loading ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <Text style={styles.saveButtonText}>{t('settingsEdit.save')}</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
+        </Animated.View>
+
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
     </View>
     </KeyboardAvoidingView>
   );
 }
 
+/* ── Styles ──────────────────────────────────────────────── */
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  saveTopBtn: { fontSize: 14, fontWeight: '700', color: COLORS.coral, flexShrink: 0 },
-  fieldCard: {
-    marginHorizontal: SPACING.lg, marginTop: SPACING.lg,
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.card, overflow: 'hidden',
+  scrollContent: { paddingBottom: SPACING.page },
+  saveTopBtn: { fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.bold, color: COLORS.coral },
+
+  /* Field header */
+  fieldHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.md,
   },
-  fieldRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 14,
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.card,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  fieldInput: {
-    flex: 1, fontSize: 15, color: COLORS.text, paddingVertical: 0,
+  fieldDescription: {
+    flex: 1,
+    fontSize: FONT_SIZES.base,
+    color: COLORS.text2,
+    lineHeight: 22,
   },
+
+  /* Input cards */
+  inputCard: {
+    marginHorizontal: SPACING.lg,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    minHeight: 52,
+  },
+  inputLabel: {
+    width: 120,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text2,
+    fontWeight: FONT_WEIGHTS.medium,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    minHeight: 52,
+  },
+  input: {
+    flex: 1,
+    fontSize: FONT_SIZES.lg,
+    color: COLORS.text,
+    paddingVertical: SPACING.md,
+    fontWeight: FONT_WEIGHTS.medium,
+  },
+  multilineInput: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginLeft: SPACING.lg + 40 + SPACING.md,
+  },
+  countryCode: {
+    fontSize: FONT_SIZES.lg,
+    color: COLORS.text2,
+    fontWeight: FONT_WEIGHTS.semibold,
+  },
+
+  /* Payment cards */
+  paymentCard: {
+    marginHorizontal: SPACING.lg,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.lg,
+  },
+  paymentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  paymentLogoWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.card,
+    backgroundColor: COLORS.blueMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  paymentLogo: {
+    width: 36,
+    height: 36,
+  },
+  paymentInfo: {
+    flex: 1,
+  },
+  paymentName: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: FONT_WEIGHTS.bold,
+    color: COLORS.text,
+  },
+  paymentSub: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.text2,
+    marginTop: 1,
+  },
+  paymentBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+  },
+  paymentBadgeText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: FONT_WEIGHTS.bold,
+    textTransform: 'uppercase',
+  },
+
+  /* Char count */
   charCount: {
-    textAlign: 'right', fontSize: 11, color: COLORS.text2,
-    marginHorizontal: SPACING.lg, marginTop: 6,
+    textAlign: 'right',
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.text3,
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.sm,
   },
-  bottomSaveBtn: {
-    marginHorizontal: SPACING.lg, marginTop: 14,
-    backgroundColor: COLORS.coral, borderRadius: RADIUS.row,
-    padding: 14, alignItems: 'center',
+
+  /* Save button */
+  saveButton: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.xl,
+    backgroundColor: COLORS.coral,
+    borderRadius: RADIUS.pill,
+    paddingVertical: SPACING.lg,
+    alignItems: 'center',
   },
-  bottomSaveBtnText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
+  saveButtonText: {
+    color: COLORS.white,
+    fontSize: FONT_SIZES.md,
+    fontWeight: FONT_WEIGHTS.bold,
+  },
+
+  bottomSpacer: {
+    height: 60,
+  },
 });
