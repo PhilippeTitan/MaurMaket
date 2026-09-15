@@ -61,7 +61,6 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.6.2",
     "jsonwebtoken": "^9.0.3",
-    "leaflet": "^1.9.4",
     "lottie-react-native": "^7.5.0",
     "lucide-react": "^1.45.0",
     "morgan": "^1.11.0",

@@ -12,8 +12,22 @@ import SettingsRow from '../components/SettingsRow';
 import { updateProfile } from '../api';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
+
+/* Lazy-load MapLibre (native only) */
+let Map: any = null;
+let Camera: any = null;
+let Marker: any = null;
+if (Platform.OS !== 'web') {
+  try { Map = require('@maplibre/maplibre-react-native').Map; } catch {}
+  try { Camera = require('@maplibre/maplibre-react-native').Camera; } catch {}
+  try { Marker = require('@maplibre/maplibre-react-native').Marker; } catch {}
+}
+
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
+const HAITI_CENTER: [number, number] = [-72.3074, 18.5944];
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LocationSettings'>;
 
@@ -21,12 +35,16 @@ export default function LocationSettingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const { user } = useUser();
+  const insets = useSafeAreaInsets();
 
   const [locAddress, setLocAddress] = useState(user?.location_address || '');
   const [locCity, setLocCity] = useState(user?.location_city || '');
+  const [locLat, setLocLat] = useState(Number(user?.location_lat) || 0);
+  const [locLng, setLocLng] = useState(Number(user?.location_lng) || 0);
   const [locSaving, setLocSaving] = useState(false);
   const [locDetecting, setLocDetecting] = useState(false);
   const [editing, setEditing] = useState(!user?.location_address);
+  const [hasLocation, setHasLocation] = useState(Boolean(locLat && locLng));
 
   const anim = useRef({
     opacity: new Animated.Value(0),
@@ -55,6 +73,9 @@ export default function LocationSettingsScreen({ navigation }: Props) {
       const pos = await getFastLocation();
       const lat = pos.lat;
       const lng = pos.lng;
+      setLocLat(lat);
+      setLocLng(lng);
+      setHasLocation(true);
       let address = '';
       let city = '';
       try {
@@ -100,6 +121,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
       const res = await updateProfile({
         locationAddress: locAddress,
         locationCity: locCity,
+        ...(locLat && locLng ? { locationLat: String(locLat), locationLng: String(locLng) } : {}),
       }) as { user: typeof user };
       if (res.user) await store.setUser(res.user, store.token);
       toast.success(t('settings.locationSaved'));
@@ -110,6 +132,8 @@ export default function LocationSettingsScreen({ navigation }: Props) {
     setLocSaving(false);
   };
 
+  const mapCenter: [number, number] = hasLocation ? [locLng, locLat] : HAITI_CENTER;
+
   return (
     <View style={styles.container}>
       <ScreenHeader title={t('settings.deliveryLocation')} onBack={() => navigation.goBack()} />
@@ -117,32 +141,60 @@ export default function LocationSettingsScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
 
-          {/* ── Map preview ── */}
-          <View style={styles.mapPreview}>
-            <View style={styles.mapGradient} />
-            <MaterialCommunityIcons name="map-marker-outline" size={40} color={COLORS.coral} />
-            {locAddress ? (
-              <View style={styles.mapOverlay}>
-                <Text style={styles.mapAddress} numberOfLines={2}>{locAddress}</Text>
-                {locCity ? <Text style={styles.mapCity}>{locCity}</Text> : null}
-              </View>
-            ) : null}
-          </View>
+          {/* ── Map ── */}
+          {Map ? (
+            <View style={styles.mapContainer}>
+              <Map
+                style={styles.map}
+                mapStyle={MAP_STYLE}
+                logoEnabled={false}
+                attributionEnabled={false}
+              >
+                <Camera
+                  zoomLevel={hasLocation ? 15 : 6}
+                  centerCoordinate={mapCenter}
+                  animationMode="flyTo"
+                  animationDuration={600}
+                />
+                {hasLocation && (
+                  <Marker coordinate={[locLng, locLat]}>
+                    <View style={styles.markerWrap}>
+                      <View style={styles.markerDot} />
+                      <View style={styles.markerRing} />
+                    </View>
+                  </Marker>
+                )}
+              </Map>
+              {/* Address overlay */}
+              {locAddress ? (
+                <View style={styles.mapOverlay}>
+                  <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
+                  <Text style={styles.mapOverlayText} numberOfLines={1}>
+                    {locAddress}{locCity ? `, ${locCity}` : ''}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            /* Web fallback */
+            <View style={styles.mapFallback}>
+              <MaterialCommunityIcons name="map-outline" size={48} color={COLORS.text3} />
+              <Text style={styles.mapFallbackText}>Map available on mobile</Text>
+            </View>
+          )}
 
           {/* ── Auto-detect ── */}
           {Platform.OS !== 'web' && (
-            <SettingsGroup style={{ marginTop: 0 }}>
+            <SettingsGroup>
               <SettingsRow
                 icon="crosshairs-gps"
-                iconColor={COLORS.blue}
-                iconBg={COLORS.blueMuted}
                 label={locDetecting ? t('settings.locationDetecting') : t('settings.autoDetect')}
                 subtitle="Use your phone's GPS to find your location"
                 rightElement={
                   locDetecting ? (
-                    <ActivityIndicator size="small" color={COLORS.blue} />
+                    <ActivityIndicator size="small" color={COLORS.white} />
                   ) : (
-                    <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.blue} />
+                    <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text3} />
                   )
                 }
                 onPress={handleAutoDetect}
@@ -153,13 +205,12 @@ export default function LocationSettingsScreen({ navigation }: Props) {
           {/* ── Address fields ── */}
           <SettingsGroup
             header="Delivery Address"
-            accentColor={COLORS.green}
             description="Set your default delivery location"
           >
             {editing ? (
               <>
                 <View style={styles.inputRow}>
-                  <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.green} />
+                  <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.white} />
                   <TextInput
                     style={styles.input}
                     placeholder={t('settings.deliveryAddress')}
@@ -170,7 +221,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
                 </View>
                 <View style={styles.divider} />
                 <View style={styles.inputRow}>
-                  <MaterialCommunityIcons name="city-variant-outline" size={18} color={COLORS.green} />
+                  <MaterialCommunityIcons name="city-variant-outline" size={18} color={COLORS.white} />
                   <TextInput
                     style={styles.input}
                     placeholder={t('settings.deliveryCity')}
@@ -183,7 +234,6 @@ export default function LocationSettingsScreen({ navigation }: Props) {
             ) : (
               <SettingsRow
                 icon="pencil-outline"
-                iconBg={COLORS.surface2}
                 label="Edit manually"
                 subtitle={locAddress ? `${locAddress}${locCity ? `, ${locCity}` : ''}` : 'Set your address'}
                 chevron
@@ -220,40 +270,69 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingBottom: SPACING.page },
 
-  /* Map preview */
-  mapPreview: {
-    height: 150,
+  /* Map */
+  mapContainer: {
+    height: 200,
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.md,
     borderRadius: RADIUS.card,
     overflow: 'hidden',
-    backgroundColor: COLORS.surface2,
-    alignItems: 'center',
-    justifyContent: 'center',
     position: 'relative',
   },
-  mapGradient: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: COLORS.surface2,
+  map: {
+    flex: 1,
+  },
+  markerWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 32,
+    height: 32,
+  },
+  markerDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: COLORS.coral,
+    borderWidth: 2,
+    borderColor: COLORS.white,
+  },
+  markerRing: {
+    position: 'absolute',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.coral + '20',
   },
   mapOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: COLORS.bg + 'CC',
-    paddingHorizontal: SPACING.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    backgroundColor: COLORS.bg + 'DD',
+    paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
   },
-  mapAddress: {
+  mapOverlayText: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text,
-    fontWeight: FONT_WEIGHTS.medium,
+    flex: 1,
   },
-  mapCity: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.text2,
-    marginTop: 2,
+  mapFallback: {
+    height: 200,
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
+    borderRadius: RADIUS.card,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+  },
+  mapFallbackText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text3,
   },
 
   /* Inputs */
