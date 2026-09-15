@@ -50,8 +50,13 @@ import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import SettingsEditScreen from './src/screens/SettingsEditScreen';
 import LocationSettingsScreen from './src/screens/LocationSettingsScreen';
 import EditProfileScreen from './src/screens/EditProfileScreen';
+import AccountDashboardScreen from './src/screens/AccountDashboardScreen';
 import SellerToolsSettingsScreen from './src/screens/SellerToolsSettingsScreen';
 import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
+import SecuritySettingsScreen from './src/screens/SecuritySettingsScreen';
+import NotificationsSettingsScreen from './src/screens/NotificationsSettingsScreen';
+import HelpSupportScreen from './src/screens/HelpSupportScreen';
+import AppearanceSettingsScreen from './src/screens/AppearanceSettingsScreen';
 import UsernameSettingsScreen from './src/screens/UsernameSettingsScreen';
 import LanguageSettingsScreen from './src/screens/LanguageSettingsScreen';
 import OfferDetailScreen from './src/screens/OfferDetailScreen';
@@ -488,6 +493,7 @@ export default function App() {
             <Stack.Screen name="Storefront" component={StorefrontScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+            <Stack.Screen name="AccountDashboard" component={AccountDashboardScreen} />
             <Stack.Screen name="Orders" component={OrdersScreen} />
             <Stack.Screen name="Inbox" component={InboxScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
@@ -503,6 +509,10 @@ export default function App() {
             <Stack.Screen name="LocationSettings" component={LocationSettingsScreen} />
             <Stack.Screen name="SellerToolsSettings" component={SellerToolsSettingsScreen} />
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
+            <Stack.Screen name="SecuritySettings" component={SecuritySettingsScreen} />
+            <Stack.Screen name="NotificationsSettings" component={NotificationsSettingsScreen} />
+            <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+            <Stack.Screen name="AppearanceSettings" component={AppearanceSettingsScreen} />
             <Stack.Screen name="UsernameSettings" component={UsernameSettingsScreen} />
             <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
             <Stack.Screen name="FollowList" component={FollowListScreen} />

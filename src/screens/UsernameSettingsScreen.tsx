@@ -215,6 +215,3 @@ const styles = StyleSheet.create({
     height: 60,
   },
 });
-  saveBtnDisabled: { opacity: 0.4 },
-  saveBtnText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
-});

@@ -49,9 +49,6 @@ export default function SettingsGroup({
     <View style={[styles.container, style]}>
       {header ? (
         <View style={styles.headerRow}>
-          {accentColor ? (
-            <View style={[styles.accentDot, { backgroundColor: accentColor }]} />
-          ) : null}
           <Text style={styles.header}>{header}</Text>
         </View>
       ) : null}

@@ -39,6 +39,7 @@ export type RootStackParamList = {
   SellerOnboarding: undefined;
   Storefront: { sellerId: string; preloadedSeller?: PreloadedSeller };
   Settings: undefined;
+  AccountDashboard: undefined;
   EditProfile: undefined;
   Orders: undefined;
   Inbox: { returnTab?: keyof TabParamList } | undefined;
@@ -74,6 +75,10 @@ export type RootStackParamList = {
   LocationSettings: undefined;
   SellerToolsSettings: undefined;
   PrivacySettings: undefined;
+  SecuritySettings: undefined;
+  NotificationsSettings: undefined;
+  HelpSupport: undefined;
+  AppearanceSettings: undefined;
   UsernameSettings: undefined;
   LanguageSettings: undefined;
   FollowList: { userId: string; kind: 'followers' | 'following'; title: string };

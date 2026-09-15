@@ -218,7 +218,7 @@ export default function SellerOnboardingScreen() {
                       ))}
                     </View>
                   </View>
-                  {!isDowngrade && <Icon name="chevron-right" size={20} color={COLORS.text2} />}
+                  {!isDowngrade && <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />}
                 </TouchableOpacity>
               );
             })}

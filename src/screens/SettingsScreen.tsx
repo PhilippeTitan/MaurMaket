@@ -4,9 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
-import { resendVerificationEmail } from '../api';
-import moncashLogo from '../../assets/MonNatCash/moncash.webp';
-import natcashLogo from '../../assets/MonNatCash/natcash.webp';
+
 import ScreenContainer from '../components/ScreenContainer';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
@@ -14,8 +12,7 @@ import SettingsRow from '../components/SettingsRow';
 import ProfileCard from '../components/ProfileCard';
 import ConfirmModal from '../components/ConfirmModal';
 import { useTranslation } from '../i18n';
-import { useToast } from '../components/Toast';
-import AuthMethodsCard from '../components/AuthMethodsCard';
+
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -24,15 +21,13 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 /* ── Component ──────────────────────────────────────────── */
 
 export default function SettingsScreen({ navigation }: Props) {
-  const { t, language } = useTranslation();
-  const toast = useToast();
+  const { t } = useTranslation();
   const { user } = useUser();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [googleConnected, setGoogleConnected] = useState(false);
 
-  // Staggered entrance animations
+  // Staggered entrance animations — 9 sections (profile + 7 groups + logout)
   const sections = useRef(
-    Array.from({ length: 8 }, () => ({
+    Array.from({ length: 9 }, () => ({
       opacity: new Animated.Value(0),
       translateY: new Animated.Value(16),
     }))
@@ -47,36 +42,7 @@ export default function SettingsScreen({ navigation }: Props) {
         ])
       )
     ).start();
-
-    // Check Google connection
-    const { getMe } = require('../api');
-    getMe().then((data: any) => {
-      setGoogleConnected(Boolean(data.user?.google_linked || data.user?.accounts?.some((a: any) => a.provider === 'google')));
-    }).catch(() => setGoogleConnected(false));
   }, []);
-
-  const handlePasskeyEnroll = async () => {
-    if (Platform.OS !== 'web') {
-      toast.show({ kind: 'info', title: 'Passkeys are only available on the web version' });
-      return;
-    }
-    try {
-      const { API_BASE } = require('../api');
-      await require('../api').getMe();
-      const res = await fetch(`${API_BASE.replace('/api', '')}/api/auth/passkey/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.message || 'Failed to register passkey');
-      }
-      toast.show({ kind: 'success', title: 'Passkey registered successfully' });
-    } catch (err: any) {
-      toast.show({ kind: 'error', title: err?.message || 'Failed to register passkey' });
-    }
-  };
 
   const isSeller = user?.role === 'seller';
   const tierLabel =
@@ -85,8 +51,6 @@ export default function SettingsScreen({ navigation }: Props) {
     : user?.seller_tier === 'casual' ? t('settings.casualSeller')
     : '';
   const tierColor = user?.seller_tier ? TIER_COLORS[user.seller_tier] ?? COLORS.text2 : undefined;
-
-  const langLabel = language === 'en' ? 'English' : language === 'ht' ? 'Kreyòl' : 'Français';
 
   const handleLogout = () => {
     if (Platform.OS === 'web') {
@@ -121,146 +85,61 @@ export default function SettingsScreen({ navigation }: Props) {
             accentColor={COLORS.blue}
           >
             <SettingsRow
-              icon="email-outline"
-              iconColor={COLORS.blue}
-              iconBg={COLORS.blueMuted}
-              label={t('settings.email')}
-              value={user?.email}
-              chevron
-              onPress={() => navigation.navigate('SettingsEdit', { field: 'email', title: t('settings.email') })}
-              divider
-            />
-            {user?.email && !user.email_verified ? (
-              <SettingsRow
-                icon="email-fast-outline"
-                iconColor="#F59E0B"
-                iconBg="#F59E0B18"
-                label="Verify your email"
-                subtitle="Resend verification link"
-                chevron
-                onPress={async () => {
-                  try {
-                    await resendVerificationEmail(user.email);
-                    toast.show({ kind: 'success', title: 'Verification email sent! Check your inbox.' });
-                  } catch (e: any) {
-                    toast.show({ kind: 'error', title: e?.message || 'Failed to resend' });
-                  }
-                }}
-                divider
-              />
-            ) : null}
-            <SettingsRow
-              icon="phone-outline"
-              iconColor={COLORS.green}
-              iconBg={COLORS.greenMuted}
-              label={t('settings.phone')}
-              subtitle={
-                user?.phone ? `MonCash: ${user.phone}` :
-                user?.natcash_phone ? `NatCash: ${user.natcash_phone}` :
-                t('settings.buyer')
-              }
-              rightElement={
-                <View style={styles.phoneBadges}>
-                  {user?.phone ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>MC</Text>
-                    </View>
-                  ) : null}
-                  {user?.natcash_phone ? (
-                    <View style={[styles.badge, styles.badgeNat]}>
-                      <Text style={[styles.badgeText, styles.badgeTextNat]}>NC</Text>
-                    </View>
-                  ) : null}
-                </View>
-              }
-              chevron
-              divider
-            />
-            <SettingsRow
-              icon="at"
-              iconBg={COLORS.surface2}
-              label={t('username.label')}
+              icon="account-cog-outline"
+              label="Account settings"
+              subtitle="Profile, contact info, preferences"
               value={user?.username ? `@${user.username}` : undefined}
               chevron
-              onPress={() => navigation.navigate('UsernameSettings')}
-              divider
-            />
-            <SettingsRow
-              icon="translate"
-              iconColor={COLORS.purple}
-              iconBg={COLORS.purpleMuted}
-              label={t('settings.language')}
-              value={langLabel}
-              chevron
-              onPress={() => navigation.navigate('LanguageSettings')}
+              onPress={() => navigation.navigate('AccountDashboard')}
             />
           </SettingsGroup>
         </Animated.View>
 
-        {/* ── Sign-in & Security ── */}
+        {/* ── Payments ── */}
         <Animated.View style={animStyle(2)}>
-          <SettingsGroup
-            header="Sign-in & security"
-            accentColor={COLORS.green}
-          >
-            <AuthMethodsCard googleConnected={googleConnected} onPasskeyEnroll={handlePasskeyEnroll} />
-          </SettingsGroup>
-          <SettingsGroup style={{ marginTop: -SPACING.xs }}>
+          <SettingsGroup header="Payments">
             <SettingsRow
-              icon="lock-outline"
-              iconColor={COLORS.yellow}
-              iconBg={COLORS.yellowMuted}
-              label={t('settings.changePassword')}
-              value="••••••••"
+              icon="cash"
+              label="Payment methods"
+              subtitle="MonCash & NatCash"
               chevron
-              onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: t('settings.changePassword') })}
-            />
-          </SettingsGroup>
-        </Animated.View>
-
-        {/* ── Shopping ── */}
-        <Animated.View style={animStyle(3)}>
-          <SettingsGroup
-            header={t('settings.sectionShopping') || 'Shopping'}
-            accentColor={COLORS.green}
-          >
-            <SettingsRow
-              icon="map-marker-outline"
-              iconColor={COLORS.green}
-              iconBg={COLORS.greenMuted}
-              label={t('settings.deliveryLocation')}
-              subtitle={user?.location_city || 'Set your delivery area'}
-              chevron
-              onPress={() => navigation.navigate('LocationSettings')}
+              onPress={() => navigation.navigate('Payments')}
               divider
             />
-            <SettingsRow
-              icon="home-outline"
-              iconBg={COLORS.surface2}
-              label={t('me.addresses')}
-              subtitle="Manage saved addresses"
+            {isSeller ? (
+              <SettingsRow
+              icon="bank-transfer-out"
+              label="Payouts"
+              subtitle="Manage your earnings"
               chevron
-              onPress={() => navigation.navigate('Addresses')}
+              onPress={() => navigation.navigate('Payments')}
+              />
+            ) : null}
+          </SettingsGroup>
+        </Animated.View>
+
+        {/* ── Notifications ── */}
+        <Animated.View style={animStyle(3)}>
+          <SettingsGroup header="Notifications">
+            <SettingsRow
+              icon="bell-outline"
+              label="Notification preferences"
+              subtitle="Choose what you get notified about"
+              chevron
+              onPress={() => navigation.navigate('NotificationsSettings')}
             />
           </SettingsGroup>
         </Animated.View>
 
-        {/* ── Selling ── */}
+        {/* ── Security ── */}
         <Animated.View style={animStyle(4)}>
-          <SettingsGroup
-            header={t('settings.sectionSelling') || 'Selling'}
-            accentColor={isSeller ? COLORS.blue : COLORS.coral}
-          >
+          <SettingsGroup header="Security">
             <SettingsRow
-              icon={isSeller ? 'storefront-outline' : 'store-plus-outline'}
-              iconColor={isSeller ? COLORS.blue : COLORS.coral}
-              iconBg={isSeller ? COLORS.blueMuted : COLORS.coralMuted}
-              label={isSeller ? t('settings.sellerTools') : t('me.becomeSeller')}
-              subtitle={isSeller ? `${tierLabel} seller` : 'Start selling on MaurMaket'}
-              value={isSeller ? tierLabel : undefined}
-              valueColor={isSeller ? (tierColor || COLORS.green) : undefined}
+              icon="shield-lock-outline"
+              label="Password & authentication"
+              subtitle="Password, 2FA, trusted devices"
               chevron
-              onPress={() => navigation.navigate(isSeller ? 'SellerToolsSettings' : 'SellerOnboarding')}
+              onPress={() => navigation.navigate('SecuritySettings')}
             />
           </SettingsGroup>
         </Animated.View>
@@ -272,26 +151,54 @@ export default function SettingsScreen({ navigation }: Props) {
             accentColor="#8B5CF6"
           >
             <SettingsRow
-              icon="shield-lock-outline"
-              iconColor="#8B5CF6"
-              iconBg="#8B5CF618"
-              label={t('settings.profileVisibility') || 'Profile visibility'}
-              value={user?.show_real_name ? (t('settings.nameVisible') || 'Name visible') : (t('settings.nameHidden') || 'Name hidden')}
+              icon="eye-outline"
+              label="Privacy controls"
+              subtitle="Profile visibility, data, blocked users"
               chevron
               onPress={() => navigation.navigate('PrivacySettings')}
             />
           </SettingsGroup>
         </Animated.View>
 
-        {/* ── App ── */}
+        {/* ── Selling ── */}
         <Animated.View style={animStyle(6)}>
           <SettingsGroup
-            header={t('settings.sectionApp') || 'App'}
-            accentColor={COLORS.text3}
+            header={t('settings.sectionSelling') || 'Selling'}
+            accentColor={isSeller ? COLORS.blue : COLORS.coral}
           >
             <SettingsRow
+              icon={isSeller ? 'storefront-outline' : 'store-plus-outline'}
+              label={isSeller ? t('settings.sellerTools') || 'Seller tools' : t('me.becomeSeller') || 'Become a seller'}
+              subtitle={isSeller ? `${tierLabel} seller` : 'Start selling on MaurMaket'}
+              value={isSeller ? tierLabel : undefined}
+              valueColor={isSeller ? (tierColor || COLORS.green) : undefined}
+              chevron
+              onPress={() => navigation.navigate(isSeller ? 'SellerToolsSettings' : 'SellerOnboarding')}
+            />
+          </SettingsGroup>
+        </Animated.View>
+
+        {/* ── App ── */}
+        <Animated.View style={animStyle(7)}>
+          <SettingsGroup header="App">
+            <SettingsRow
+              icon="palette-outline"
+              label="Appearance"
+              subtitle="Theme, accent color, app icon"
+              chevron
+              onPress={() => navigation.navigate('AppearanceSettings')}
+              divider
+            />
+            <SettingsRow
+              icon="help-circle-outline"
+              label="Help & Support"
+              subtitle="FAQs, contact, report a problem"
+              chevron
+              onPress={() => navigation.navigate('HelpSupport')}
+              divider
+            />
+            <SettingsRow
               icon="information-outline"
-              iconBg={COLORS.surface2}
               label={t('settings.version') || 'Version'}
               value="MaurMaket v1.0.0"
             />
@@ -299,7 +206,7 @@ export default function SettingsScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* ── Log out ── */}
-        <Animated.View style={animStyle(7)}>
+        <Animated.View style={animStyle(8)}>
           <View style={styles.logoutSpacer} />
           <TouchableOpacity
             style={styles.logoutButton}
@@ -337,31 +244,6 @@ export default function SettingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: SPACING.page,
-  },
-  phoneBadges: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: COLORS.blueMuted,
-    borderRadius: RADIUS.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  badgeNat: {
-    backgroundColor: COLORS.purpleMuted,
-  },
-  badgeText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.blue,
-    fontWeight: FONT_WEIGHTS.semibold,
-  },
-  badgeTextNat: {
-    color: COLORS.purple,
   },
   logoutSpacer: {
     height: SPACING.xxxl,
