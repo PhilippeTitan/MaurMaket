@@ -204,8 +204,8 @@ export default function LocationSettingsScreen({ navigation }: Props) {
   /* ─── Web fallback ─── */
   if (Platform.OS === 'web') {
     return (
-      <View style={styles.container}>
-        <View style={[styles.header, { paddingTop: insets.top + HEADER_TOP_PAD }]}>
+      <View style={styles.container} pointerEvents="box-none">
+        <View style={[styles.header, { paddingTop: insets.top + HEADER_TOP_PAD, zIndex: 50 }]}>
           <View style={styles.headerSide}>
             <BackButton onPress={() => navigation.goBack()} size={24} />
           </View>
@@ -222,7 +222,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
 
   /* ─── Main render ─── */
   return (
-    <View style={styles.container}>
+    <View style={styles.container} pointerEvents="box-none">
       {/* Full-screen Map */}
       <NativeMap
         ref={mapRef}
@@ -235,7 +235,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
       />
 
       {/* Floating header */}
-      <Animated.View style={[styles.header, { paddingTop: insets.top + HEADER_TOP_PAD }, { opacity: anim.opacity }]}>
+      <Animated.View style={[styles.header, { paddingTop: insets.top + HEADER_TOP_PAD, zIndex: 50 }, { opacity: anim.opacity }]}>
         <View style={styles.headerSide}>
           <BackButton onPress={handleBack} size={24} />
         </View>
@@ -246,7 +246,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
       {/* Floating "Find me" button */}
       {step !== 'details' && (
         <TouchableOpacity
-          style={[styles.findMeBtn, { top: insets.top + 64 }]}
+          style={[styles.findMeBtn, { top: insets.top + 64, zIndex: 50 }]}
           onPress={handleFindMe}
           disabled={detecting}
           activeOpacity={0.7}
@@ -263,7 +263,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
 
       {/* Search bar (map step only) */}
       {step === 'map' && (
-        <View style={[styles.searchContainer, { top: insets.top + 64 }]}>
+        <View style={[styles.searchContainer, { top: insets.top + 64, zIndex: 50 }]}>
           <View style={styles.searchBar}>
             <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
             <TextInput
@@ -316,7 +316,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
       <Animated.View
         style={[
           styles.bottomCard,
-          { bottom: insets.bottom + SPACING.lg },
+          { bottom: insets.bottom + SPACING.lg, zIndex: 50 },
           { opacity: anim.opacity, transform: [{ translateY: anim.translateY }] },
         ]}
       >
