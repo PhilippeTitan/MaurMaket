@@ -27,7 +27,7 @@ export default function AuthMethodsCard({ googleConnected = false, compact = fal
     <Animated.View style={[styles.card, compact && styles.compactCard, { opacity }]}>
       <View style={styles.headingRow}>
         <View style={styles.headingIcon}>
-          <MaterialCommunityIcons name="shield-check-outline" size={16} color={COLORS.green} />
+          <MaterialCommunityIcons name="shield-check-outline" size={16} color={COLORS.white} />
         </View>
         <View style={styles.headingText}>
           <Text style={styles.heading}>Sign-in options</Text>
@@ -38,8 +38,8 @@ export default function AuthMethodsCard({ googleConnected = false, compact = fal
       <View style={styles.methods}>
         {/* Email + Password */}
         <View style={styles.methodRow}>
-          <View style={[styles.methodIcon, { backgroundColor: COLORS.blueMuted }]}>
-            <MaterialCommunityIcons name="email-outline" size={18} color={COLORS.blue} />
+          <View style={styles.methodIcon}>
+            <MaterialCommunityIcons name="email-outline" size={18} color={COLORS.white} />
           </View>
           <View style={styles.methodCopy}>
             <Text style={styles.methodTitle}>Email and password</Text>
@@ -62,8 +62,8 @@ export default function AuthMethodsCard({ googleConnected = false, compact = fal
             window.location.href = `${API_BASE.replace('/api', '')}/api/auth/sign-in/google`;
           }}
         >
-          <View style={[styles.methodIcon, { backgroundColor: '#4285F415' }]}>
-            <MaterialCommunityIcons name="google" size={18} color="#4285F4" />
+          <View style={styles.methodIcon}>
+            <MaterialCommunityIcons name="google" size={18} color={COLORS.white} />
           </View>
           <View style={styles.methodCopy}>
             <Text style={styles.methodTitle}>Google</Text>
@@ -83,15 +83,15 @@ export default function AuthMethodsCard({ googleConnected = false, compact = fal
           <>
             <View style={styles.methodDivider} />
             <View style={styles.methodRow}>
-              <View style={[styles.methodIcon, { backgroundColor: COLORS.purpleMuted }]}>
-                <MaterialCommunityIcons name="fingerprint" size={18} color={COLORS.purple} />
+              <View style={styles.methodIcon}>
+                <MaterialCommunityIcons name="fingerprint" size={18} color={COLORS.white} />
               </View>
               <View style={styles.methodCopy}>
                 <Text style={styles.methodTitle}>Passkey</Text>
               </View>
               {passkeyCount === 0 || passkeyCount === null ? (
-                <TouchableOpacity onPress={onPasskeyEnroll} style={[styles.statusChip, { backgroundColor: COLORS.purpleMuted, borderColor: COLORS.purple + '30' }]}>
-                  <Text style={[styles.statusText, { color: COLORS.purple }]}>Set up</Text>
+                <TouchableOpacity onPress={onPasskeyEnroll} style={styles.statusChip}>
+                  <Text style={[styles.statusText, { color: COLORS.text3 }]}>Set up</Text>
                 </TouchableOpacity>
               ) : (
                 <View style={styles.statusChip}>

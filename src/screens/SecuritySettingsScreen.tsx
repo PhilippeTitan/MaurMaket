@@ -133,7 +133,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         <Animated.View style={animStyle(0)}>
           <View style={styles.statusCard}>
             <View style={styles.statusIcon}>
-              <MaterialCommunityIcons name="shield-check" size={32} color={COLORS.green} />
+              <MaterialCommunityIcons name="shield-check" size={32} color={COLORS.white} />
             </View>
             <Text style={styles.statusTitle}>
               {checksPassed === totalChecks ? 'Your account is secure' : `${checksPassed}/${totalChecks} checks passed`}
@@ -155,22 +155,10 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
           </View>
         </Animated.View>
 
-        {/* ── Sign-in Methods ── */}
+        {/* ── Account Protection ── */}
         <Animated.View style={animStyle(1)}>
           <SettingsGroup
-            header="Sign-in methods"
-            accentColor={COLORS.blue}
-            description="How you sign into your account"
-          >
-            <AuthMethodsCard googleConnected={googleConnected} onPasskeyEnroll={handlePasskeyEnroll} />
-          </SettingsGroup>
-        </Animated.View>
-
-        {/* ── Account Protection ── */}
-        <Animated.View style={animStyle(2)}>
-          <SettingsGroup
             header="Account protection"
-            accentColor={COLORS.yellow}
             description="Keep your account safe"
           >
             <TouchableOpacity
@@ -232,6 +220,16 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
                 {i < trustedDevices.length - 1 && <View style={styles.divider} />}
               </View>
             ))}
+          </SettingsGroup>
+        </Animated.View>
+
+        {/* ── Sign-in Methods ── */}
+        <Animated.View style={animStyle(2)}>
+          <SettingsGroup
+            header="Sign-in methods"
+            description="How you sign into your account"
+          >
+            <AuthMethodsCard googleConnected={googleConnected} onPasskeyEnroll={handlePasskeyEnroll} />
           </SettingsGroup>
         </Animated.View>
 
