@@ -1,375 +1,586 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform, TextInput, Animated,
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
+  Platform, TextInput, Animated, ScrollView, KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
-import ScreenHeader from '../components/ScreenHeader';
-import SettingsGroup from '../components/SettingsGroup';
-import SettingsRow from '../components/SettingsRow';
 import { updateProfile } from '../api';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BackButton from '../components/BackButton';
+import NativeMap, { MAP_STYLE_LIGHT, type NativeMapRef } from '../components/NativeMap';
+import { searchAreasHybrid, type HaitiArea } from '../data/haiti-areas';
+import { getFastLocation } from '../fast-location';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
-/* Lazy-load MapLibre (native only) */
-let Map: any = null;
-let Camera: any = null;
-let Marker: any = null;
-if (Platform.OS !== 'web') {
-  try { Map = require('@maplibre/maplibre-react-native').Map; } catch {}
-  try { Camera = require('@maplibre/maplibre-react-native').Camera; } catch {}
-  try { Marker = require('@maplibre/maplibre-react-native').Marker; } catch {}
-}
-
-const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
-const HAITI_CENTER: [number, number] = [-72.3074, 18.5944];
-
 type Props = NativeStackScreenProps<RootStackParamList, 'LocationSettings'>;
+type Step = 'map' | 'confirm' | 'details';
+
+const HEADER_TOP_PAD = 8;
 
 export default function LocationSettingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const { user } = useUser();
   const insets = useSafeAreaInsets();
+  const mapRef = useRef<NativeMapRef>(null);
 
-  const [locAddress, setLocAddress] = useState(user?.location_address || '');
-  const [locCity, setLocCity] = useState(user?.location_city || '');
-  const [locLat, setLocLat] = useState(Number(user?.location_lat) || 0);
-  const [locLng, setLocLng] = useState(Number(user?.location_lng) || 0);
-  const [locSaving, setLocSaving] = useState(false);
-  const [locDetecting, setLocDetecting] = useState(false);
-  const [editing, setEditing] = useState(!user?.location_address);
-  const [hasLocation, setHasLocation] = useState(Boolean(locLat && locLng));
+  /* ── Location state ── */
+  const [selectedLat, setSelectedLat] = useState<number | null>(Number(user?.location_lat) || null);
+  const [selectedLng, setSelectedLng] = useState<number | null>(Number(user?.location_lng) || null);
+  const [address, setAddress] = useState(user?.location_address || '');
+  const [city, setCity] = useState(user?.location_city || '');
 
+  /* ── Step flow ── */
+  const hasSavedLocation = Boolean(user?.location_address);
+  const [step, setStep] = useState<Step>(hasSavedLocation ? 'confirm' : 'map');
+
+  /* ── Search ── */
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<HaitiArea[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  /* ── Delivery details ── */
+  const [building, setBuilding] = useState('');
+  const [apartment, setApartment] = useState('');
+  const [landmark, setLandmark] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+
+  /* ── Animation ── */
   const anim = useRef({
     opacity: new Animated.Value(0),
-    translateY: new Animated.Value(16),
+    translateY: new Animated.Value(20),
   }).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(anim.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-      Animated.timing(anim.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+      Animated.timing(anim.opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(anim.translateY, { toValue: 0, duration: 300, useNativeDriver: true }),
     ]).start();
   }, []);
 
-  const handleAutoDetect = async () => {
-    if (Platform.OS === 'web') return;
-    setLocDetecting(true);
+  /* ── Reverse geocode ── */
+  const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     try {
-      const Location = await import('expo-location');
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=fr,en`,
+        { headers: { 'User-Agent': 'MaurMaket/1.0' } },
+      );
+      const data = await res.json();
+      const a = data.address || {};
+      const street = [a.road, a.house_number].filter(Boolean).join(' ') || '';
+      const neighbourhood = a.neighbourhood || a.suburb || a.city_district || '';
+      const detectedCity = a.city || a.municipality || a.county || '';
+      const addr = [street, neighbourhood].filter(Boolean).join(', ') || data.display_name?.split(',')[0] || '';
+      setAddress(addr);
+      setCity(detectedCity);
+      return { addr, city: detectedCity };
+    } catch {
+      const fallback = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      setAddress(fallback);
+      setCity('');
+      return { addr: fallback, city: '' };
+    }
+  }, []);
+
+  /* ── Map tap ── */
+  const handleMapPress = useCallback((lat: number, lng: number) => {
+    setSelectedLat(lat);
+    setSelectedLng(lng);
+    mapRef.current?.flyTo(lat, lng, 16);
+    reverseGeocode(lat, lng);
+    setStep('confirm');
+  }, [reverseGeocode]);
+
+  /* ── Find me ── */
+  const handleFindMe = useCallback(async () => {
+    if (Platform.OS === 'web') return;
+    setDetecting(true);
+    try {
+      const { status } = await (await import('expo-location')).requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         toast.warning(t('settings.locationDeniedTitle'), t('settings.locationDeniedMessage'));
-        setLocDetecting(false);
+        setDetecting(false);
         return;
       }
-      const { getFastLocation } = await import('../fast-location');
       const pos = await getFastLocation();
-      const lat = pos.lat;
-      const lng = pos.lng;
-      setLocLat(lat);
-      setLocLng(lng);
-      setHasLocation(true);
-      let address = '';
-      let city = '';
-      try {
-        const nominatimRes = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=fr,en`,
-          { headers: { 'User-Agent': 'MaurMaket/1.0' } }
-        );
-        const nominatim = await nominatimRes.json();
-        const a = nominatim.address || {};
-        const street = [a.road, a.house_number].filter(Boolean).join(' ') || '';
-        const neighbourhood = a.neighbourhood || a.suburb || a.city_district || '';
-        city = a.city || a.municipality || a.county || '';
-        address = [street, neighbourhood].filter(Boolean).join(', ') || nominatim.display_name?.split(',')[0] || '';
-      } catch {}
-      setLocAddress(address);
-      setLocCity(city);
-      try {
-        const res = await updateProfile({
-          locationAddress: address,
-          locationCity: city,
-          locationLat: String(lat),
-          locationLng: String(lng),
-        }) as { user: typeof user };
-        if (res.user) await store.setUser(res.user, store.token);
-        toast.success(t('settings.locationSaved'), t('settings.locationEditHint'));
-        setEditing(false);
-      } catch {
-        toast.error(t('settings.error'), t('settings.locationSaveFailed'));
-      }
+      setSelectedLat(pos.lat);
+      setSelectedLng(pos.lng);
+      mapRef.current?.centerOn(pos.lat, pos.lng, 15);
+      await reverseGeocode(pos.lat, pos.lng);
+      setStep('confirm');
     } catch (err: any) {
       if (err?.code === 'E_LOCATION_SERVICES_DISABLED') {
-        toast.error(t('settings.error'), 'GPS is turned off. Please enable Location Services in your phone settings.');
+        toast.error(t('settings.error'), 'GPS is turned off. Please enable Location Services.');
       } else {
-        toast.error(t('settings.error'), 'Could not detect location. Make sure you are outdoors or near a window.');
+        toast.error(t('settings.error'), 'Could not detect location.');
       }
     }
-    setLocDetecting(false);
-  };
+    setDetecting(false);
+  }, [reverseGeocode, t, toast]);
 
-  const handleSave = async () => {
-    setLocSaving(true);
+  /* ── Search debounce ── */
+  useEffect(() => {
+    if (searchQuery.length < 1) { setSearchResults([]); return; }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      const results = await searchAreasHybrid(searchQuery);
+      setSearchResults(results);
+      setSearching(false);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handleSelectArea = useCallback((area: HaitiArea) => {
+    setSelectedLat(area.lat);
+    setSelectedLng(area.lng);
+    setAddress(area.name);
+    setCity(area.city);
+    const zoom = area.radius < 300 ? 16 : area.radius < 600 ? 15 : area.radius < 1200 ? 14 : 13;
+    mapRef.current?.flyTo(area.lat, area.lng, zoom);
+    setSearchFocused(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setStep('confirm');
+  }, []);
+
+  /* ── Confirm location ── */
+  const handleConfirmLocation = useCallback(() => {
+    setStep('details');
+  }, []);
+
+  /* ── Change location ── */
+  const handleChangeLocation = useCallback(() => {
+    setSelectedLat(null);
+    setSelectedLng(null);
+    setAddress('');
+    setCity('');
+    setStep('map');
+  }, []);
+
+  /* ── Save ── */
+  const handleSave = useCallback(async () => {
+    if (!selectedLat || !selectedLng || !address) return;
+    setSaving(true);
     try {
       const res = await updateProfile({
-        locationAddress: locAddress,
-        locationCity: locCity,
-        ...(locLat && locLng ? { locationLat: String(locLat), locationLng: String(locLng) } : {}),
+        locationAddress: address,
+        locationCity: city,
+        locationLat: String(selectedLat),
+        locationLng: String(selectedLng),
       }) as { user: typeof user };
       if (res.user) await store.setUser(res.user, store.token);
       toast.success(t('settings.locationSaved'));
-      setEditing(false);
+      navigation.goBack();
     } catch {
       toast.error(t('settings.locationSaveFailed'));
     }
-    setLocSaving(false);
-  };
+    setSaving(false);
+  }, [selectedLat, selectedLng, address, city, t, toast, navigation]);
 
-  const mapCenter: [number, number] = hasLocation ? [locLng, locLat] : HAITI_CENTER;
+  /* ── Handle back ── */
+  const handleBack = useCallback(() => {
+    if (step === 'details') {
+      setStep('confirm');
+    } else if (step === 'confirm') {
+      if (!hasSavedLocation) {
+        handleChangeLocation();
+      } else {
+        navigation.goBack();
+      }
+    } else {
+      navigation.goBack();
+    }
+  }, [step, hasSavedLocation, navigation, handleChangeLocation]);
 
+  /* ─── Web fallback ─── */
+  if (Platform.OS === 'web') {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.header, { paddingTop: insets.top + HEADER_TOP_PAD }]}>
+          <View style={styles.headerSide}>
+            <BackButton onPress={() => navigation.goBack()} size={24} />
+          </View>
+          <Text style={styles.headerTitle}>{t('settings.deliveryLocation')}</Text>
+          <View style={styles.headerSide} />
+        </View>
+        <View style={styles.webFallback}>
+          <MaterialCommunityIcons name="map-marker-outline" size={48} color={COLORS.text3} />
+          <Text style={styles.webFallbackText}>Map picker available on mobile</Text>
+        </View>
+      </View>
+    );
+  }
+
+  /* ─── Main render ─── */
   return (
     <View style={styles.container}>
-      <ScreenHeader title={t('settings.deliveryLocation')} onBack={() => navigation.goBack()} />
+      {/* Full-screen Map */}
+      <NativeMap
+        ref={mapRef}
+        style={StyleSheet.absoluteFill}
+        showUserLocation
+        selectedLat={selectedLat}
+        selectedLng={selectedLng}
+        selectedColor={COLORS.coral}
+        onPress={handleMapPress}
+      />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
+      {/* Floating header */}
+      <Animated.View style={[styles.header, { paddingTop: insets.top + HEADER_TOP_PAD }, { opacity: anim.opacity }]}>
+        <View style={styles.headerSide}>
+          <BackButton onPress={handleBack} size={24} />
+        </View>
+        <Text style={styles.headerTitle}>{t('settings.deliveryLocation')}</Text>
+        <View style={styles.headerSide} />
+      </Animated.View>
 
-          {/* ── Map ── */}
-          {Map ? (
-            <View style={styles.mapContainer}>
-              <Map
-                style={styles.map}
-                mapStyle={MAP_STYLE}
-                logoEnabled={false}
-                attributionEnabled={false}
-              >
-                <Camera
-                  zoomLevel={hasLocation ? 15 : 6}
-                  centerCoordinate={mapCenter}
-                  animationMode="flyTo"
-                  animationDuration={600}
-                />
-                {hasLocation && (
-                  <Marker coordinate={[locLng, locLat]}>
-                    <View style={styles.markerWrap}>
-                      <View style={styles.markerDot} />
-                      <View style={styles.markerRing} />
-                    </View>
-                  </Marker>
-                )}
-              </Map>
-              {/* Address overlay */}
-              {locAddress ? (
-                <View style={styles.mapOverlay}>
-                  <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral} />
-                  <Text style={styles.mapOverlayText} numberOfLines={1}>
-                    {locAddress}{locCity ? `, ${locCity}` : ''}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
+      {/* Floating "Find me" button */}
+      {step !== 'details' && (
+        <TouchableOpacity
+          style={[styles.findMeBtn, { top: insets.top + 64 }]}
+          onPress={handleFindMe}
+          disabled={detecting}
+          activeOpacity={0.7}
+          accessibilityLabel="find my location"
+          accessibilityRole="button"
+        >
+          {detecting ? (
+            <ActivityIndicator size="small" color={COLORS.coral} />
           ) : (
-            /* Web fallback */
-            <View style={styles.mapFallback}>
-              <MaterialCommunityIcons name="map-outline" size={48} color={COLORS.text3} />
-              <Text style={styles.mapFallbackText}>Map available on mobile</Text>
+            <MaterialCommunityIcons name="crosshairs-gps" size={20} color={COLORS.coral} />
+          )}
+        </TouchableOpacity>
+      )}
+
+      {/* Search bar (map step only) */}
+      {step === 'map' && (
+        <View style={[styles.searchContainer, { top: insets.top + 64 }]}>
+          <View style={styles.searchBar}>
+            <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search area... (e.g. Delmas 33)"
+              placeholderTextColor={COLORS.text2}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onFocus={() => setSearchFocused(true)}
+              returnKeyType="search"
+              accessibilityLabel="search area"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }} accessibilityLabel="clear search" accessibilityRole="button">
+                <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.text2} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {searchFocused && (searching || searchResults.length > 0) && (
+            <View style={styles.searchResults}>
+              {searching && searchResults.length === 0 && (
+                <View style={styles.searchLoading}>
+                  <ActivityIndicator size="small" color={COLORS.coral} />
+                  <Text style={styles.searchLoadingText}>Searching...</Text>
+                </View>
+              )}
+              {searchResults.map((area) => (
+                <TouchableOpacity
+                  key={area.id}
+                  style={styles.resultItem}
+                  onPress={() => handleSelectArea(area)}
+                  accessibilityLabel={`select ${area.name}`}
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons name="map-marker-outline" size={16} color={COLORS.coral} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.resultName} numberOfLines={1}>{area.name}</Text>
+                    <Text style={styles.resultCity} numberOfLines={1}>{area.city}</Text>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text2} />
+                </TouchableOpacity>
+              ))}
             </View>
           )}
+        </View>
+      )}
 
-          {/* ── Auto-detect ── */}
-          {Platform.OS !== 'web' && (
-            <SettingsGroup>
-              <SettingsRow
-                icon="crosshairs-gps"
-                label={locDetecting ? t('settings.locationDetecting') : t('settings.autoDetect')}
-                subtitle="Use your phone's GPS to find your location"
-                rightElement={
-                  locDetecting ? (
-                    <ActivityIndicator size="small" color={COLORS.white} />
-                  ) : (
-                    <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text3} />
-                  )
-                }
-                onPress={handleAutoDetect}
-              />
-            </SettingsGroup>
-          )}
+      {/* Bottom card */}
+      <Animated.View
+        style={[
+          styles.bottomCard,
+          { bottom: insets.bottom + SPACING.lg },
+          { opacity: anim.opacity, transform: [{ translateY: anim.translateY }] },
+        ]}
+      >
+        {/* Step: MAP — prompt to tap */}
+        {step === 'map' && (
+          <>
+            <View style={styles.cardIconWrap}>
+              <MaterialCommunityIcons name="map-marker-plus" size={28} color={COLORS.coral} />
+            </View>
+            <Text style={styles.cardTitle}>Where should we deliver?</Text>
+            <Text style={styles.cardHint}>Tap anywhere on the map to choose your delivery location.</Text>
+          </>
+        )}
 
-          {/* ── Address fields ── */}
-          <SettingsGroup
-            header="Delivery Address"
-            description="Set your default delivery location"
-          >
-            {editing ? (
-              <>
-                <View style={styles.inputRow}>
-                  <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.white} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder={t('settings.deliveryAddress')}
-                    placeholderTextColor={COLORS.text3}
-                    value={locAddress}
-                    onChangeText={setLocAddress}
-                  />
-                </View>
-                <View style={styles.divider} />
-                <View style={styles.inputRow}>
-                  <MaterialCommunityIcons name="city-variant-outline" size={18} color={COLORS.white} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder={t('settings.deliveryCity')}
-                    placeholderTextColor={COLORS.text3}
-                    value={locCity}
-                    onChangeText={setLocCity}
-                  />
-                </View>
-              </>
-            ) : (
-              <SettingsRow
-                icon="pencil-outline"
-                label="Edit manually"
-                subtitle={locAddress ? `${locAddress}${locCity ? `, ${locCity}` : ''}` : 'Set your address'}
-                chevron
-                onPress={() => setEditing(true)}
-              />
-            )}
-          </SettingsGroup>
+        {/* Step: CONFIRM — show address */}
+        {step === 'confirm' && (
+          <>
+            <View style={styles.cardIconRow}>
+              <View style={styles.cardIconSmall}>
+                <MaterialCommunityIcons name="map-marker" size={18} color={COLORS.coral} />
+              </View>
+              <Text style={styles.cardLabel}>Selected location</Text>
+            </View>
+            <Text style={styles.cardAddress} numberOfLines={2}>{address || 'Address not found'}</Text>
+            {city ? <Text style={styles.cardCity}>{city}</Text> : null}
 
-          {/* ── Save button ── */}
-          <TouchableOpacity
-            style={[styles.saveButton, locSaving && { opacity: 0.5 }]}
-            activeOpacity={0.7}
-            onPress={handleSave}
-            disabled={locSaving}
-          >
-            {locSaving ? (
-              <ActivityIndicator size="small" color={COLORS.white} />
-            ) : (
-              <Text style={styles.saveButtonText}>Save location</Text>
-            )}
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleConfirmLocation}
+              activeOpacity={0.7}
+              accessibilityLabel="confirm location"
+              accessibilityRole="button"
+            >
+              <Text style={styles.primaryBtnText}>Confirm location</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.linkBtn}
+              onPress={handleChangeLocation}
+              activeOpacity={0.7}
+              accessibilityLabel="change location"
+              accessibilityRole="button"
+            >
+              <Text style={styles.linkBtnText}>Change location</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
-        </Animated.View>
+        {/* Step: DETAILS — delivery form */}
+        {step === 'details' && (
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView style={styles.detailsScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.detailsTitle}>Delivery Details</Text>
+              <Text style={styles.detailsSubtitle}>How to find you at this location</Text>
 
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Building / House</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Villa 23, Building A"
+                  placeholderTextColor={COLORS.text2}
+                  value={building}
+                  onChangeText={setBuilding}
+                  accessibilityLabel="building or house"
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Apartment / Unit</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Apt 4B (optional)"
+                  placeholderTextColor={COLORS.text2}
+                  value={apartment}
+                  onChangeText={setApartment}
+                  accessibilityLabel="apartment or unit"
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Nearby Landmark</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Next to Total gas station"
+                  placeholderTextColor={COLORS.text2}
+                  value={landmark}
+                  onChangeText={setLandmark}
+                  accessibilityLabel="nearby landmark"
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Delivery Instructions</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="e.g. Ring the blue gate, ask for Marie"
+                  placeholderTextColor={COLORS.text2}
+                  value={instructions}
+                  onChangeText={setInstructions}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  accessibilityLabel="delivery instructions"
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.primaryBtn, saving && { opacity: 0.5 }]}
+                onPress={handleSave}
+                disabled={saving}
+                activeOpacity={0.7}
+                accessibilityLabel="save location"
+                accessibilityRole="button"
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Save location</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.linkBtn}
+                onPress={() => setStep('confirm')}
+                activeOpacity={0.7}
+                accessibilityLabel="go back"
+                accessibilityRole="button"
+              >
+                <Text style={styles.linkBtnText}>Back</Text>
+              </TouchableOpacity>
+
+              <View style={{ height: SPACING.xl }} />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        )}
+      </Animated.View>
     </View>
   );
 }
 
 /* ── Styles ──────────────────────────────────────────────── */
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { paddingBottom: SPACING.page },
 
-  /* Map */
-  mapContainer: {
-    height: 200,
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.md,
-    borderRadius: RADIUS.card,
-    overflow: 'hidden',
-    position: 'relative',
+  /* Header */
+  header: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md,
+    zIndex: 20,
   },
-  map: {
-    flex: 1,
-  },
-  markerWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 32,
-    height: 32,
-  },
-  markerDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: COLORS.coral,
-    borderWidth: 2,
-    borderColor: COLORS.white,
-  },
-  markerRing: {
-    position: 'absolute',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.coral + '20',
-  },
-  mapOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    backgroundColor: COLORS.bg + 'DD',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-  },
-  mapOverlayText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text,
-    flex: 1,
-  },
-  mapFallback: {
-    height: 200,
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.md,
-    borderRadius: RADIUS.card,
-    backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-  },
-  mapFallbackText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text3,
+  headerSide: { width: TOUCH.min, height: TOUCH.min, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: {
+    fontSize: FONT_SIZES.lg, fontWeight: FONT_WEIGHTS.bold,
+    color: COLORS.text, textAlign: 'center',
+    textShadowColor: '#000', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
 
-  /* Inputs */
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    minHeight: 52,
+  /* Find me button */
+  findMeBtn: {
+    position: 'absolute', right: SPACING.lg,
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: COLORS.surface + 'EE',
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
+    zIndex: 15,
   },
+
+  /* Search */
+  searchContainer: {
+    position: 'absolute', left: SPACING.lg, right: SPACING.lg,
+    zIndex: 15,
+  },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: COLORS.surface + 'EE', borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.pill, paddingHorizontal: SPACING.lg, height: 48,
+    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
+  },
+  searchInput: { flex: 1, color: COLORS.text, fontSize: FONT_SIZES.md, padding: 0 },
+  searchResults: {
+    marginTop: SPACING.sm, backgroundColor: COLORS.surface + 'EE',
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card,
+    maxHeight: 220, overflow: 'hidden',
+    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
+  },
+  searchLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: SPACING.lg },
+  searchLoadingText: { fontSize: FONT_SIZES.sm, color: COLORS.text2 },
+  resultItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: SPACING.lg, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  resultName: { fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text },
+  resultCity: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
+
+  /* Bottom card */
+  bottomCard: {
+    position: 'absolute', left: SPACING.lg, right: SPACING.lg,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.media, padding: SPACING.xl,
+    elevation: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 12,
+    zIndex: 20,
+  },
+
+  /* Card — map step */
+  cardIconWrap: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: COLORS.coral + '15', alignItems: 'center', justifyContent: 'center',
+    alignSelf: 'center', marginBottom: SPACING.md,
+  },
+  cardTitle: {
+    fontSize: FONT_SIZES.xl, fontWeight: FONT_WEIGHTS.bold,
+    color: COLORS.text, textAlign: 'center', marginBottom: SPACING.xs,
+  },
+  cardHint: {
+    fontSize: FONT_SIZES.md, color: COLORS.text2,
+    textAlign: 'center', lineHeight: 20,
+  },
+
+  /* Card — confirm step */
+  cardIconRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.md },
+  cardIconSmall: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: COLORS.coral + '15', alignItems: 'center', justifyContent: 'center',
+  },
+  cardLabel: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  cardAddress: { fontSize: FONT_SIZES.lg, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text, marginBottom: SPACING.xs, lineHeight: 22 },
+  cardCity: { fontSize: FONT_SIZES.md, color: COLORS.text2, marginBottom: SPACING.xl },
+
+  /* Card — details step */
+  detailsScroll: { maxHeight: 320 },
+  detailsTitle: {
+    fontSize: FONT_SIZES.title, fontWeight: FONT_WEIGHTS.bold,
+    color: COLORS.text, marginBottom: SPACING.xs,
+  },
+  detailsSubtitle: {
+    fontSize: FONT_SIZES.md, color: COLORS.text2,
+    marginBottom: SPACING.xl, lineHeight: 20,
+  },
+
+  /* Onboarding wizard button language */
+  primaryBtn: {
+    width: '100%', paddingVertical: 14, borderRadius: RADIUS.media,
+    backgroundColor: COLORS.coral, alignItems: 'center', marginTop: SPACING.xl,
+  },
+  primaryBtnText: { color: COLORS.white, fontSize: FONT_SIZES.lg, fontWeight: FONT_WEIGHTS.bold },
+  linkBtn: { paddingVertical: 10 },
+  linkBtnText: { color: COLORS.text2, fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, textAlign: 'center' },
+
+  /* Form fields */
+  fieldGroup: { gap: 6, marginBottom: SPACING.md },
+  label: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text },
   input: {
-    flex: 1,
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text,
-    paddingVertical: SPACING.md,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.card, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: FONT_SIZES.md, color: COLORS.text,
   },
-  divider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginLeft: SPACING.lg + 18 + SPACING.md,
-  },
+  textArea: { minHeight: 80, paddingTop: 12 },
 
-  saveButton: {
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.xl,
-    backgroundColor: COLORS.coral,
-    borderRadius: RADIUS.pill,
-    paddingVertical: SPACING.lg,
-    alignItems: 'center',
+  /* Web fallback */
+  webFallback: {
+    flex: 1, backgroundColor: COLORS.bg,
+    alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
   },
-  saveButtonText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZES.md,
-    fontWeight: FONT_WEIGHTS.bold,
-  },
-
-  bottomSpacer: {
-    height: 60,
-  },
+  webFallbackText: { fontSize: FONT_SIZES.sm, color: COLORS.text3 },
 });
