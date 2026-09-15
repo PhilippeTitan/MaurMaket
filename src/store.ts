@@ -1,8 +1,7 @@
 import { Platform } from 'react-native';
 import type { User, CartItem } from './types';
-import { setCachedToken } from './api';
+import { setCachedToken, clearSessionToken } from './api';
 import { clearUserSnapshots } from './offlineCache';
-import { supabase } from './supabase';
 
 type Listener = () => void;
 
@@ -71,15 +70,14 @@ export const store = {
   isFollowing(sellerId: string) { return state.followedSellerIds.has(sellerId); },
 
   async init() {
-    const [{ data: sessionData }, userStr, cartStr] = await Promise.all([
-      supabase.auth.getSession(),
+    const [tokenStr, userStr, cartStr] = await Promise.all([
+      storage.getItem('ba_session_token'),
       storage.getItem('mm_user'),
       storage.getItem('mm_cart'),
     ]);
-    const token = sessionData.session?.access_token || null;
-    if (token) {
-      state.token = token;
-      setCachedToken(token);
+    if (tokenStr) {
+      state.token = tokenStr;
+      setCachedToken(tokenStr);
     }
     if (cartStr) {
       try { state.cart = JSON.parse(cartStr); } catch { /* ignore */ }
@@ -116,11 +114,14 @@ export const store = {
 
   async logout() {
     const previousUserId = state.user?.id;
-    await supabase.auth.signOut();
+    // Sign out from Better Auth (fire-and-forget, don't block on errors)
+    try {
+      const { API_BASE } = require('./api');
+      await fetch(`${API_BASE.replace('/api', '')}/api/auth/sign-out`, { method: 'POST' });
+    } catch { /* ignore — server might be down */ }
     state.user = null;
     state.token = null;
-    setCachedToken(null);
-    await storage.deleteItem('mm_token');
+    await clearSessionToken();
     await storage.deleteItem('mm_user');
     await clearUserSnapshots(previousUserId);
     notify();

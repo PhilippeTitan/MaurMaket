@@ -8,7 +8,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '../i18n';
 import { store } from '../store';
-import { supabase } from '../supabase';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, AuthStackParamList } from '../navigation';
 import BackButton from '../components/BackButton';
@@ -37,8 +36,10 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user?.email_confirmed_at) setVerified(true);
+    // Check if email is already verified via Better Auth session
+    const { getMe } = require('../api');
+    getMe().then((data: any) => {
+      if (data.user?.email_verified) setVerified(true);
     }).catch(() => {});
     return () => { if (cooldownRef.current) clearInterval(cooldownRef.current); };
   }, []);
@@ -46,9 +47,9 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
   const handleCheckStatus = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      if (!data.user?.email_confirmed_at) {
+      const { getMe } = require('../api');
+      const data = await getMe() as any;
+      if (!data.user?.email_verified) {
         Alert.alert(t('common.error'), 'Your email is not confirmed yet. Open the confirmation link from your inbox, then try again.');
         return;
       }
@@ -65,10 +66,11 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
   const handleResend = async () => {
     if (cooldown > 0) return;
     try {
-      const { data } = await supabase.auth.getUser();
+      const { resendVerificationEmail } = require('../api');
+      const { getMe } = require('../api');
+      const data = await getMe() as any;
       if (!data.user?.email) throw new Error('No email address is associated with this account.');
-      const { error } = await supabase.auth.resend({ type: 'signup', email: data.user.email });
-      if (error) throw error;
+      await resendVerificationEmail(data.user.email);
       startCooldown();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to send code';

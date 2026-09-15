@@ -4,7 +4,6 @@ import * as AuthSession from 'expo-auth-session';
 import type { Conversation, Product } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
-import { supabase } from './supabase';
 
 export class OfflineError extends Error {
   constructor(message = 'No internet connection') {
@@ -53,9 +52,28 @@ export const UPLOAD_BASE = Platform.OS === 'web'
 let _cachedToken: string | null = null;
 let _tokenRead = false;
 
+// Simple platform-aware storage for Better Auth session token
+const tokenStorage = {
+  async getItem(key: string): Promise<string | null> {
+    if (Platform.OS === 'web') return localStorage.getItem(key);
+    const SecureStore = require('expo-secure-store');
+    return SecureStore.getItemAsync(key);
+  },
+  async setItem(key: string, value: string): Promise<void> {
+    if (Platform.OS === 'web') { localStorage.setItem(key, value); return; }
+    const SecureStore = require('expo-secure-store');
+    return SecureStore.setItemAsync(key, value);
+  },
+  async deleteItem(key: string): Promise<void> {
+    if (Platform.OS === 'web') { localStorage.removeItem(key); return; }
+    const SecureStore = require('expo-secure-store');
+    return SecureStore.deleteItemAsync(key);
+  },
+};
+
 async function getToken(): Promise<string | null> {
-  const { data } = await supabase.auth.getSession();
-  _cachedToken = data.session?.access_token || null;
+  if (_cachedToken) return _cachedToken;
+  _cachedToken = await tokenStorage.getItem('ba_session_token');
   _tokenRead = true;
   return _cachedToken;
 }
@@ -63,6 +81,15 @@ async function getToken(): Promise<string | null> {
 export function setCachedToken(token: string | null) {
   _cachedToken = token;
   _tokenRead = true;
+  if (token) tokenStorage.setItem('ba_session_token', token);
+  else tokenStorage.deleteItem('ba_session_token');
+}
+
+/** Clear the stored Better Auth session token (used on logout). */
+export async function clearSessionToken() {
+  _cachedToken = null;
+  _tokenRead = false;
+  await tokenStorage.deleteItem('ba_session_token');
 }
 
 async function request<T = Record<string, unknown>>(
@@ -206,196 +233,233 @@ const getPasswordResetRedirectUrl = () => {
   return new URL('/reset-password', baseUrl).toString();
 };
 
+/**
+ * Extract session token from Better Auth response.
+ * Better Auth sets the token in cookies (web) or returns it in the body.
+ * We grab it from Set-Cookie header or response body.
+ */
+function extractSessionToken(res: Response, body: any): string | null {
+  // 1) Check response body for session token
+  if (body?.session?.token) return body.session.token;
+  if (body?.token) return body.token;
+  // 2) Check Set-Cookie header for better-auth.session_token
+  const cookies = res.headers.getSetCookie?.() || [];
+  for (const cookie of cookies) {
+    const match = cookie.match(/better-auth\.session_token=([^;]+)/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/** Auth-fetch wrapper: calls the backend with auto-env and returns JSON. */
+async function authFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; body: any }> {
+  const url = `${API_BASE}${path}`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> || {}),
+  };
+  const res = await fetch(url, { ...options, headers });
+  let body: any;
+  try { body = await res.json(); } catch { body = {}; }
+  return { res, body };
+}
+
 export const signup = async (fullName: string, email: string, password: string, phone: string, dateOfBirth?: string, username?: string) => {
   const normalizedEmail = email.trim().toLowerCase();
-  const { data, error } = await supabase.auth.signUp({
-    email: normalizedEmail,
-    password,
-    options: {
-      emailRedirectTo: getAuthRedirectUrl(),
-      data: { full_name: fullName, phone, date_of_birth: dateOfBirth || null, username: username || null },
-    },
+
+  // Better Auth sign-up: creates user + session in one call
+  const { res, body } = await authFetch('/auth/sign-up/email', {
+    method: 'POST',
+    body: JSON.stringify({
+      email: normalizedEmail,
+      password,
+      name: fullName,
+      ...(username ? { username } : {}),
+      ...(phone ? { phoneNumber: phone.replace(/^\+?509/, '').replace(/^\+/, '') } : {}),
+    }),
   });
-  if (error) throw new Error(error.message);
-  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-    throw new Error('An account with this email already exists. Please sign in instead.');
+
+  if (!res.ok) {
+    const msg = body?.message || body?.error || 'Signup failed';
+    if (msg.includes('already') || msg.includes('exists') || res.status === 422) {
+      throw new Error('An account with this email already exists. Please sign in instead.');
+    }
+    throw new Error(msg);
   }
-  // Account created — if Supabase returned a session (email auto-confirmed), bootstrap the profile
-  // and enter the app. If no session (email confirmation pending), return a minimal user object
-  // so the frontend can show the success screen and enter the app anyway.
-  if (data.session) {
-    setCachedToken(data.session.access_token);
-    return request('/auth/profile/bootstrap', {
+
+  const token = extractSessionToken(res, body);
+  if (token) setCachedToken(token);
+
+  // Bootstrap profile with extra fields that Better Auth doesn't handle (DOB, etc.)
+  try {
+    const profileRes = await request('/user/profile/bootstrap', {
       method: 'POST',
       body: JSON.stringify({ fullName, email: normalizedEmail, phone, dateOfBirth, username }),
-    }).then((response: any) => ({ ...response, token: data.session?.access_token }));
+    });
+    return { ...(profileRes as any), token };
+  } catch {
+    // Bootstrap may fail if user already exists — build minimal user from response
+    const userId = body?.user?.id || '';
+    const triggerUsername = (username || normalizedEmail.split('@')[0] || 'user')
+      .toLowerCase().replace(/[^a-z0-9._]/g, '').replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+    const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
+    return {
+      user: {
+        id: userId, full_name: fullName, email: normalizedEmail, phone: cleanPhone,
+        role: 'buyer' as const, seller_tier: 'none' as const, avatar_url: null, bio: null,
+        created_at: new Date().toISOString(), username: triggerUsername,
+        show_real_name: true, pending_dob: !dateOfBirth,
+        email_verified: false, id_verified: false,
+      },
+      token,
+      emailConfirmationPending: !token,
+    };
   }
-  // No session — email confirmation required. Build a minimal user from Supabase metadata
-  // so the wizard can proceed to the success screen and enter the app.
-  // Match the DB trigger's username format: base + '_' + first 8 chars of UUID (no dashes)
-  const userId = data.user?.id || '';
-  const usernameBase = (username || normalizedEmail.split('@')[0] || 'user')
-    .toLowerCase().replace(/[^a-z0-9._]/g, '').replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
-  const triggerUsername = (usernameBase || 'user').slice(0, 20) + '_' + userId.replace(/-/g, '').slice(0, 8);
-  const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
-  const pendingUser = {
-    id: userId,
-    full_name: fullName,
-    email: normalizedEmail,
-    phone: cleanPhone,
-    natcash_phone: null,
-    accepted_payment_methods: null,
-    role: 'buyer' as const,
-    avatar_url: null,
-    bio: null,
-    created_at: new Date().toISOString(),
-    store_name: null,
-    store_logo_url: null,
-    seller_tier: 'none' as const,
-    id_submitted_at: null,
-    id_verified: false,
-    id_verified_at: null,
-    id_verification_result: null,
-    use_store_identity: false,
-    email_verified: false,
-    location_address: null,
-    location_city: null,
-    location_lat: null,
-    location_lng: null,
-    username: triggerUsername,
-    show_real_name: true,
-    pending_dob: !dateOfBirth,
-    taste_onboarding_completed: false,
-  };
-  return { user: pendingUser, token: null, emailConfirmationPending: true };
 };
 
 export const resendVerificationEmail = async (email: string) => {
-  const { error } = await supabase.auth.resend({
-    type: 'signup',
-    email: email.trim().toLowerCase(),
-    options: { emailRedirectTo: getAuthRedirectUrl() },
+  const { res, body } = await authFetch('/auth/send-verification-email', {
+    method: 'POST',
+    body: JSON.stringify({
+      email: email.trim().toLowerCase(),
+      callbackURL: getAuthRedirectUrl(),
+    }),
   });
-  if (error) throw new Error(error.message);
+  if (!res.ok) throw new Error(body?.message || body?.error || 'Failed to resend verification email');
   return { success: true };
 };
 
 export const login = async (email: string, password: string) => {
   const normalizedEmail = email.trim().toLowerCase();
-  const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-  if (data.session) {
-    setCachedToken(data.session.access_token);
-    try {
-      return { ...(await getMe() as any), token: data.session.access_token };
-    } catch (profileError: any) {
-      if (!String(profileError?.message || '').includes('User not found')) throw profileError;
-      return request('/auth/profile/bootstrap', {
-        method: 'POST',
-        body: JSON.stringify({
-          fullName: data.user?.user_metadata?.full_name || normalizedEmail.split('@')[0],
-          email: normalizedEmail,
-          phone: data.user?.user_metadata?.phone || '',
-          dateOfBirth: data.user?.user_metadata?.date_of_birth || undefined,
-        }),
-      }).then((response: any) => ({ ...response, token: data.session?.access_token }));
-    }
+
+  // Better Auth sign-in
+  const { res, body } = await authFetch('/auth/sign-in/email', {
+    method: 'POST',
+    body: JSON.stringify({ email: normalizedEmail, password }),
+  });
+
+  if (!res.ok) {
+    throw new Error(body?.message || body?.error || 'Invalid email or password');
   }
 
-  throw new Error(error?.message || 'Invalid email or password');
+  const token = extractSessionToken(res, body);
+  if (token) setCachedToken(token);
+
+  // Fetch profile from our backend
+  try {
+    return { ...(await getMe() as any), token };
+  } catch (profileError: any) {
+    if (!String(profileError?.message || '').includes('User not found')) throw profileError;
+    // First-time login: bootstrap profile
+    return request('/user/profile/bootstrap', {
+      method: 'POST',
+      body: JSON.stringify({
+        fullName: body?.user?.name || normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        phone: body?.user?.phoneNumber || '',
+      }),
+    }).then((response: any) => ({ ...response, token }));
+  }
 };
 
 export const completeDob = (dateOfBirth: string) =>
-  request('/auth/complete-dob', { method: 'POST', body: JSON.stringify({ dateOfBirth }) });
+  request('/user/complete-dob', { method: 'POST', body: JSON.stringify({ dateOfBirth }) });
 
-export const skipDob = () => request('/auth/skip-dob', { method: 'POST' });
+export const skipDob = () => request('/user/skip-dob', { method: 'POST' });
 
-export const getMe = () => request('/auth/me');
+export const getMe = () => request('/user/me');
 export const savePushToken = (pushToken: string) =>
   request('/users/push-token', { method: 'POST', body: JSON.stringify({ pushToken }) });
 
-// Google Sign-In through Supabase OAuth
+// Google Sign-In via Better Auth social provider
 export const googleAuth = async () => {
-  // Expo Go does not include the native Google Sign-In module; use the browser OAuth flow there.
-  if (Platform.OS !== 'web' && Constants.executionEnvironment !== 'storeClient') {
-    const { GoogleSignin } = require('@react-native-google-signin/google-signin');
-    GoogleSignin.configure({
-      webClientId: '273654218158-k61mtuaq2kcvohj05roqdpe6nqmfscu0.apps.googleusercontent.com',
-    });
-    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-    const result = await GoogleSignin.signIn();
-    if (result.type !== 'success' || !result.data.idToken) {
-      throw new Error('Google sign-in was cancelled or did not return an ID token');
+  // Native: use expo-auth-session to redirect to Better Auth's Google OAuth endpoint
+  if (Platform.OS !== 'web') {
+    const redirectUri = AuthSession.makeRedirectUri({ scheme: 'maurmaket', path: 'auth/callback' });
+    const authUrl = `${API_BASE.replace('/api', '')}/api/auth/signin/google?callbackURL=${encodeURIComponent(redirectUri)}`;
+
+    const WebBrowser = require('expo-web-browser');
+    WebBrowser.maybeCompleteAuthSession();
+    const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+    if (result.type !== 'success' || !result.url) {
+      throw new Error('Google sign-in was cancelled');
     }
 
-    const { data, error } = await supabase.auth.signInWithIdToken({
-      provider: 'google',
-      token: result.data.idToken,
+    // Better Auth callback returns cookies — extract session token from the URL's cookies
+    // On native, the callback URL contains a set-cookie header that we need to capture
+    // Instead, let's re-fetch the session from the server
+    const { res: sessionRes, body: sessionBody } = await authFetch('/auth/get-session', {
+      method: 'GET',
+      headers: {
+        // Better Auth sets cookies on the redirect; we need to forward them
+        // On native, we extract the token from the callback URL
+      },
     });
-    if (error || !data.session) throw new Error(error?.message || 'Google sign-in failed');
-    setCachedToken(data.session.access_token);
+
+    // Alternative: parse the callback URL for the session token
+    const urlParams = new URLSearchParams(result.url.split('?')[1] || '');
+    const token = urlParams.get('token') || urlParams.get('session_token');
+    if (token) {
+      setCachedToken(token);
+    }
+
+    // Try to get the user from Better Auth
+    const { body } = await authFetch('/auth/get-session', { method: 'GET' });
+    if (body?.session?.token) {
+      setCachedToken(body.session.token);
+    }
+
     try {
-      return { ...(await getMe() as any), token: data.session.access_token };
+      return { ...(await getMe() as any), token: body?.session?.token || token };
     } catch (profileError: any) {
       if (!String(profileError?.message || '').includes('User not found')) throw profileError;
-      return request('/auth/profile/bootstrap', {
+      return request('/user/profile/bootstrap', {
         method: 'POST',
         body: JSON.stringify({
-          fullName: data.user?.user_metadata?.full_name || data.user?.user_metadata?.name || 'New User',
-          email: data.user?.email,
-          phone: data.user?.user_metadata?.phone || '',
+          fullName: body?.user?.name || 'New User',
+          email: body?.user?.email || '',
+          phone: '',
         }),
-      }).then((response: any) => ({ ...response, token: data.session.access_token }));
+      }).then((response: any) => ({ ...response, token: body?.session?.token || token }));
     }
   }
 
-  const redirectTo = Platform.OS === 'web'
-    ? `${window.location.origin}/`
-    : AuthSession.makeRedirectUri({ scheme: 'maurmaket', path: 'auth/callback' });
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo, skipBrowserRedirect: true },
-  });
-  if (error || !data.url) throw new Error(error?.message || 'Google sign-in failed');
+  // Web: redirect to Better Auth's Google OAuth
+  const redirectTo = `${window.location.origin}/`;
+  const authUrl = `${API_BASE.replace('/api', '')}/api/auth/signin/google?callbackURL=${encodeURIComponent(redirectTo)}`;
 
   const WebBrowser = require('expo-web-browser');
   WebBrowser.maybeCompleteAuthSession();
-  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectTo);
   if (result.type !== 'success' || !result.url) {
     throw new Error('Google sign-in was cancelled');
   }
 
-  const urlParts = result.url.split(/[?#]/);
-  const params = new URLSearchParams(urlParts[1] || '');
-  const accessToken = params.get('access_token');
-  const refreshToken = params.get('refresh_token');
-  if (accessToken && refreshToken) {
-    const { error: sessionError } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-    if (sessionError) throw new Error(sessionError.message);
-  }
+  // Parse session token from callback URL or cookies
+  const urlParams = new URLSearchParams(result.url.split('?')[1] || '');
+  const token = urlParams.get('token') || urlParams.get('session_token');
+  if (token) setCachedToken(token);
 
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData.session) throw new Error('Google sign-in did not return a Supabase session');
-  setCachedToken(sessionData.session.access_token);
+  // Fetch session from server
+  const { body } = await authFetch('/auth/get-session', { method: 'GET' });
+  if (body?.session?.token) setCachedToken(body.session.token);
+
   try {
-    return { ...(await getMe() as any), token: sessionData.session.access_token };
+    return { ...(await getMe() as any), token: body?.session?.token || token };
   } catch (err: any) {
     if (!String(err?.message || '').includes('User not found')) throw err;
-    const authUser = sessionData.session.user;
-    return request('/auth/profile/bootstrap', {
+    return request('/user/profile/bootstrap', {
       method: 'POST',
       body: JSON.stringify({
-        fullName: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || 'New User',
-        email: authUser?.email,
-        phone: authUser?.user_metadata?.phone || '',
+        fullName: body?.user?.name || 'New User',
+        email: body?.user?.email || '',
+        phone: '',
       }),
-    }).then((response: any) => ({ ...response, token: sessionData.session.access_token }));
+    }).then((response: any) => ({ ...response, token: body?.session?.token || token }));
   }
 };
 
-// Google OAuth info extraction — gets user metadata WITHOUT creating a Supabase account.
+// Google OAuth info extraction — gets user metadata WITHOUT creating an account.
 // Used during signup to pre-fill name/email, then link after password account is created.
 export const googleAuthInfo = async (): Promise<{ firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string }> => {
   if (Platform.OS !== 'web' && Constants.executionEnvironment !== 'storeClient') {
@@ -411,14 +475,13 @@ export const googleAuthInfo = async (): Promise<{ firstName: string; lastName: s
     }
     const meta = result.data.user;
 
-    // Try to extract birthday from the ID token payload
     let birthDate: string | undefined;
     try {
       const [, payloadB64] = result.data.idToken.split('.');
       if (payloadB64) {
         const padded = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
         const json = JSON.parse(atob(padded));
-        if (json.birthday) birthDate = json.birthday; // YYYY-MM-DD
+        if (json.birthday) birthDate = json.birthday;
       }
     } catch {}
 
@@ -431,24 +494,20 @@ export const googleAuthInfo = async (): Promise<{ firstName: string; lastName: s
     };
   }
 
-  // Web: browser OAuth — extract id_token from redirect without creating Supabase session
+  // Web: browser OAuth for info extraction
   const redirectTo = Platform.OS === 'web'
     ? `${window.location.origin}/`
     : AuthSession.makeRedirectUri({ scheme: 'maurmaket', path: 'auth/callback' });
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo, skipBrowserRedirect: true },
-  });
-  if (error || !data.url) throw new Error(error?.message || 'Google sign-in failed');
+  const authUrl = `${API_BASE.replace('/api', '')}/api/auth/signin/google?callbackURL=${encodeURIComponent(redirectTo)}`;
 
   const WebBrowser = require('expo-web-browser');
   WebBrowser.maybeCompleteAuthSession();
-  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectTo);
   if (result.type !== 'success' || !result.url) {
     throw new Error('Google sign-in was cancelled');
   }
 
-  // Parse the id_token from the redirect URL fragment or query params
+  // Parse id_token from redirect URL
   const hashPart = result.url.split('#')[1] || '';
   const queryPart = result.url.split('?')[1]?.split('#')[0] || '';
   const allParams = new URLSearchParams(hashPart || queryPart);
@@ -462,38 +521,33 @@ export const googleAuthInfo = async (): Promise<{ firstName: string; lastName: s
         firstName: json.given_name || json.name?.split(' ')[0] || '',
         lastName: json.family_name || json.name?.split(' ').slice(1).join(' ') || '',
         email: json.email || '',
-        birthDate: json.birthday || undefined, // YYYY-MM-DD or undefined
+        birthDate: json.birthday || undefined,
         googleIdToken: idToken,
       };
     }
   }
 
-  // Fallback: use access_token to get session metadata, then sign out
-  const accessToken = allParams.get('access_token');
-  const refreshToken = allParams.get('refresh_token');
-  if (accessToken && refreshToken) {
-    await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (sessionData.session?.user) {
-      const u = sessionData.session.user;
-      const meta = u.user_metadata || {};
-      const result = {
-        firstName: meta.given_name || meta.full_name?.split(' ')[0] || '',
-        lastName: meta.family_name || meta.full_name?.split(' ').slice(1).join(' ') || '',
-        email: u.email || '',
-        birthDate: meta.birthday || undefined,
-        googleIdToken: accessToken,
-      };
-      await supabase.auth.signOut();
-      return result;
-    }
+  // Fallback: use Better Auth session to get user info, then sign out
+  const { body } = await authFetch('/auth/get-session', { method: 'GET' });
+  if (body?.user) {
+    const u = body.user;
+    const result = {
+      firstName: u.name?.split(' ')[0] || '',
+      lastName: u.name?.split(' ').slice(1).join(' ') || '',
+      email: u.email || '',
+      birthDate: u.birthday || undefined,
+      googleIdToken: idToken || body.session?.token || '',
+    };
+    await authFetch('/auth/sign-out', { method: 'POST' });
+    return result;
   }
+
   throw new Error('Could not extract Google user info');
 };
 
 // Link Google identity to an existing email/password account after signup.
 export const linkGoogleIdentity = async (googleIdToken: string) =>
-  request('/auth/google-link', {
+  request('/user/google-link', {
     method: 'POST',
     body: JSON.stringify({ googleIdToken }),
   });
@@ -505,75 +559,93 @@ export class PasskeyUnavailableError extends Error {
   }
 }
 
-// Passkey (WebAuthn) sign-in through Supabase Auth's experimental passkey API.
-// On web this calls supabase.auth.signInWithPasskey() which triggers the browser's
-// WebAuthn ceremony (biometrics / security key). On native this throws PasskeyUnavailableError
-// instead of attempting a broken call — see PASSKEYS_SUPPORTED in supabase.ts.
+// Passkey sign-in via Better Auth WebAuthn support
 export const passkeyAuth = async () => {
   if (Platform.OS !== 'web') throw new PasskeyUnavailableError();
 
-  const { data, error } = await supabase.auth.signInWithPasskey();
-  if (error || !data.session) throw new Error(error?.message || 'Passkey sign-in failed');
-  setCachedToken(data.session.access_token);
+  // Better Auth passkey sign-in
+  const { res, body } = await authFetch('/auth/sign-in/passkey', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+
+  if (!res.ok) throw new Error(body?.message || 'Passkey sign-in failed');
+
+  const token = extractSessionToken(res, body);
+  if (token) setCachedToken(token);
+
   try {
-    return { ...(await getMe() as any), token: data.session.access_token };
+    return { ...(await getMe() as any), token };
   } catch (err: any) {
     if (!String(err?.message || '').includes('User not found')) throw err;
-    const authUser = data.session.user;
-    return request('/auth/profile/bootstrap', {
+    return request('/user/profile/bootstrap', {
       method: 'POST',
       body: JSON.stringify({
-        fullName: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || 'New User',
-        email: authUser?.email,
-        phone: authUser?.user_metadata?.phone || '',
+        fullName: body?.user?.name || 'New User',
+        email: body?.user?.email || '',
+        phone: '',
       }),
-    }).then((response: any) => ({ ...response, token: data.session!.access_token }));
+    }).then((response: any) => ({ ...response, token }));
   }
 };
 
-// Forgot / Reset Password
+// Forgot / Reset Password via Better Auth
 export const forgotPassword = async (email: string, _language?: string) => {
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-    redirectTo: getPasswordResetRedirectUrl(),
+  const { res, body } = await authFetch('/auth/forget-password', {
+    method: 'POST',
+    body: JSON.stringify({
+      email: email.trim().toLowerCase(),
+      redirectTo: getPasswordResetRedirectUrl(),
+    }),
   });
-  if (error) throw new Error(error.message);
+  if (!res.ok) throw new Error(body?.message || body?.error || 'Failed to send reset email');
   return { sent: true };
 };
 
 export const resetPassword = async (_email: string, _code: string, newPassword: string) => {
-  const { error } = await supabase.auth.updateUser({ password: newPassword });
-  if (error) throw new Error(error.message);
+  const { res, body } = await authFetch('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ newPassword }),
+  });
+  if (!res.ok) throw new Error(body?.message || body?.error || 'Failed to reset password');
+  // Update the session token if a new one was returned
+  const token = extractSessionToken(res, body);
+  if (token) setCachedToken(token);
   return { updated: true };
 };
 
 export const updateProfile = (data: Record<string, string>) =>
-  request('/auth/profile', { method: 'PUT', body: JSON.stringify(data) });
+  request('/user/profile', { method: 'PUT', body: JSON.stringify(data) });
 
-export const exportAccountData = () => request('/auth/export-data');
+export const exportAccountData = () => request('/user/export-data');
 
 export const changePassword = async (currentPassword: string, newPassword: string) => {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError || !userData.user?.email) throw new Error('Your session has expired. Please sign in again.');
-  const { error: reauthError } = await supabase.auth.signInWithPassword({ email: userData.user.email, password: currentPassword });
-  if (reauthError) throw new Error('Current password is incorrect');
-  const { error } = await supabase.auth.updateUser({ password: newPassword });
-  if (error) throw new Error(error.message);
+  // Better Auth change password — session validates identity
+  const { res, body } = await authFetch('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  if (!res.ok) {
+    const msg = body?.message || body?.error || 'Failed to change password';
+    if (msg.includes('incorrect') || msg.includes('wrong')) throw new Error('Current password is incorrect');
+    throw new Error(msg);
+  }
   return { updated: true };
 };
 
 export const becomeSeller = (data?: { storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; tier?: string; natcashPhone?: string }) =>
-  request('/auth/become-seller', { method: 'PUT', body: data ? JSON.stringify(data) : undefined });
+  request('/user/become-seller', { method: 'PUT', body: data ? JSON.stringify(data) : undefined });
 
 export const updateSellerProfile = (data: Record<string, string | boolean>) =>
-  request('/auth/seller-profile', { method: 'PUT', body: JSON.stringify(data) });
+  request('/user/seller-profile', { method: 'PUT', body: JSON.stringify(data) });
 
 export const updateUsername = (username: string) =>
-  request('/auth/username', { method: 'PUT', body: JSON.stringify({ username }) });
+  request('/user/username', { method: 'PUT', body: JSON.stringify({ username }) });
 
 export const getVerificationStatus = () => request('/verification/status');
 
 export const upgradeTier = (data: { tier: string; storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; natcashPhone?: string }) =>
-  request('/auth/upgrade-tier', { method: 'PUT', body: JSON.stringify(data) });
+  request('/user/upgrade-tier', { method: 'PUT', body: JSON.stringify(data) });
 
 // Products
 export const getProducts = (params?: Record<string, string>) => {
@@ -632,10 +704,10 @@ export const confirmAllNatCashSessions = (pendingId: string) =>
 
 // ── SIM preference (carrier-aware payment routing) ──
 export const getSimPreferences = () =>
-  request('/auth/sim-preferences');
+  request('/user/sim-preferences');
 
 export const saveSimPreference = (provider: 'natcash' | 'moncash', subscriptionId: number | null) =>
-  request('/auth/sim-preferences', { method: 'PUT', body: JSON.stringify({ provider, subscriptionId }) });
+  request('/user/sim-preferences', { method: 'PUT', body: JSON.stringify({ provider, subscriptionId }) });
 
 export const reportAbandonedPayment = (data: { pendingId?: string; orderId?: string }) =>
   request('/payments/abandoned', { method: 'POST', body: JSON.stringify(data) });

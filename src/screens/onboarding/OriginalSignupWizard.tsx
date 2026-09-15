@@ -736,7 +736,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       emailTimer.current = setTimeout(async () => {
         setEmailChecking(true);
         try {
-          const res = await fetch(`${API_BASE}/auth/check-email?email=${encodeURIComponent(form.email)}`);
+          const res = await fetch(`${API_BASE}/user/check-email?email=${encodeURIComponent(form.email)}`);
           const data = await res.json();
           setEmailAvailable(data.available);
           if (!data.available) setErrors(p => ({ ...p, email: 'This email is already registered' }));
@@ -755,7 +755,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       setUsernameChecking(true);
       usernameTimer.current = setTimeout(async () => {
         try {
-          const res = await fetch(`${API_BASE}/auth/check-username?username=${encodeURIComponent(form.username)}`);
+          const res = await fetch(`${API_BASE}/user/check-username?username=${encodeURIComponent(form.username)}`);
           const data = await res.json();
           setUsernameAvailable(data.available);
           if (!data.available) setErrors(p => ({ ...p, username: 'This username is taken' }));

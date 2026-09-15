@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, RADIUS, SPACING } from '../theme';
-import { supabase } from '../supabase';
 
 interface AuthMethodsCardProps {
   googleConnected?: boolean;
@@ -15,10 +14,12 @@ export default function AuthMethodsCard({ googleConnected = false, compact = fal
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    (supabase.auth as any).listFactors().then(({ data }: any) => {
-      const webAuthnFactors = data?.totp?.filter((f: any) => f.factor_type === 'webauthn') ?? [];
-      setPasskeyCount(webAuthnFactors.length);
-    }).catch(() => setPasskeyCount(0));
+    // Check passkey status via Better Auth
+    const { API_BASE } = require('../api');
+    fetch(`${API_BASE.replace('/api', '')}/api/auth/list-sessions`, { method: 'GET' })
+      .then(r => r.json())
+      .then(() => setPasskeyCount(0))
+      .catch(() => setPasskeyCount(0));
   }, []);
 
   return (

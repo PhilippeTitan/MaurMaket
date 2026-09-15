@@ -16,7 +16,6 @@ import ConfirmModal from '../components/ConfirmModal';
 import { i18n, useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
 import AuthMethodsCard from '../components/AuthMethodsCard';
-import { supabase } from '../supabase';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -42,8 +41,11 @@ export default function SettingsScreen({ navigation }: Props) {
   const [passkeyLoading, setPasskeyLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setGoogleConnected(Boolean(data.user?.identities?.some(identity => identity.provider === 'google')));
+    // Check Google connection via Better Auth session
+    const { getMe } = require('../api');
+    getMe().then((data: any) => {
+      // Better Auth stores accounts — check if Google account is linked
+      setGoogleConnected(Boolean(data.user?.google_linked || data.user?.accounts?.some((a: any) => a.provider === 'google')));
     }).catch(() => setGoogleConnected(false));
   }, []);
 
@@ -54,14 +56,19 @@ export default function SettingsScreen({ navigation }: Props) {
     }
     try {
       setPasskeyLoading(true);
-      const { error } = await (supabase.auth as any).enrollWithPasskey();
-      if (error) throw error;
+      // Better Auth passkey enrollment
+      const { API_BASE } = require('../api');
+      const { data: sessionData } = await require('../api').getMe() as any;
+      const res = await fetch(`${API_BASE.replace('/api', '')}/api/auth/passkey/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || 'Failed to register passkey');
+      }
       toast.show({ kind: 'success', title: 'Passkey registered successfully' });
-      // Refresh passkey count in AuthMethodsCard
-      (supabase.auth as any).listFactors().then(({ data }: any) => {
-        const webAuthnFactors = data?.totp?.filter((f: any) => f.factor_type === 'webauthn') ?? [];
-        // Force re-render by toggling a state
-      }).catch(() => {});
     } catch (err: any) {
       toast.show({ kind: 'error', title: err?.message || 'Failed to register passkey' });
     } finally { setPasskeyLoading(false); }

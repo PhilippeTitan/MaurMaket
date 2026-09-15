@@ -79,7 +79,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
     }
     setEmailChecking(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/check-email?email=${encodeURIComponent(emailToCheck)}`);
+      const res = await fetch(`${API_BASE}/user/check-email?email=${encodeURIComponent(emailToCheck)}`);
       const data = await res.json();
       setEmailAvailable(data.available);
       if (!data.available) {

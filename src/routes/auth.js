@@ -8,7 +8,7 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '273654218158-k61
 
 const router = Router();
 
-router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
+router.post('/user/profile/bootstrap', authRequired, async (req, res) => {
   if (!req.supabaseUser) return res.status(401).json({ error: 'Supabase authentication required' });
   const metadata = req.supabaseUser.user_metadata || {};
   const fullName = String(req.body.fullName || metadata.full_name || metadata.name || '').trim();
@@ -50,7 +50,7 @@ router.post('/auth/profile/bootstrap', authRequired, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── Check email availability ───────────────────────────────────────────────
-router.get('/auth/check-email', async (req, res) => {
+router.get('/user/check-email', async (req, res) => {
   const { email } = req.query;
   if (!email || typeof email !== 'string') {
     return res.status(400).json({ error: 'Email query parameter required' });
@@ -65,7 +65,7 @@ router.get('/auth/check-email', async (req, res) => {
 });
 
 // ─── Check username availability ────────────────────────────────────────────
-router.get('/auth/check-username', async (req, res) => {
+router.get('/user/check-username', async (req, res) => {
   const { username } = req.query;
   if (!username || typeof username !== 'string') {
     return res.status(400).json({ error: 'Username query parameter required' });
@@ -88,7 +88,7 @@ router.get('/auth/check-username', async (req, res) => {
 
 // ─── Link Google identity to existing account ──────────────────────────────
 // Called after password-based signup when user signed up via Google button.
-router.post('/auth/google-link', authRequired, async (req, res) => {
+router.post('/user/google-link', authRequired, async (req, res) => {
   const { googleIdToken } = req.body;
   if (!googleIdToken || typeof googleIdToken !== 'string') {
     return res.status(400).json({ error: 'googleIdToken is required' });
@@ -121,7 +121,7 @@ router.post('/auth/google-link', authRequired, async (req, res) => {
 });
 
 // ─── Set password for Google-created account ────────────────────────────────
-router.post('/auth/set-password', authRequired, async (req, res) => {
+router.post('/user/set-password', authRequired, async (req, res) => {
   const { password } = req.body;
   if (!password || typeof password !== 'string' || password.length < 6) {
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
@@ -140,7 +140,7 @@ router.post('/auth/set-password', authRequired, async (req, res) => {
   }
 });
 
-router.get('/auth/me', authRequired, async (req, res) => {
+router.get('/user/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed FROM users WHERE id = $1`,
@@ -154,7 +154,7 @@ router.get('/auth/me', authRequired, async (req, res) => {
   }
 });
 
-router.put('/auth/profile', authRequired, async (req, res) => {
+router.put('/user/profile', authRequired, async (req, res) => {
   let { fullName, email, phone, natcashPhone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng, showRealName, useStoreIdentity, acceptedPaymentMethods } = req.body;
   email = undefined;
   if (phone) phone = phone.replace(/^\+?509/, '').replace(/^\+/, '');
@@ -205,7 +205,7 @@ router.put('/auth/profile', authRequired, async (req, res) => {
  * Returns: { natcashSubId, moncashSubId }
  * These are mutable preferences — validated against active SIMs before each use.
  */
-router.get('/auth/sim-preferences', authRequired, async (req, res) => {
+router.get('/user/sim-preferences', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT preferred_natcash_sub_id, preferred_moncash_sub_id FROM users WHERE id = $1',
@@ -229,7 +229,7 @@ router.get('/auth/sim-preferences', authRequired, async (req, res) => {
  * Pass subscriptionId=null to clear preference.
  * The subscriptionId is a runtime routing preference, NOT a permanent identity.
  */
-router.put('/auth/sim-preferences', authRequired, async (req, res) => {
+router.put('/user/sim-preferences', authRequired, async (req, res) => {
   try {
     const { provider, subscriptionId } = req.body || {};
     if (provider !== 'natcash' && provider !== 'moncash') {
@@ -254,7 +254,7 @@ router.put('/auth/sim-preferences', authRequired, async (req, res) => {
   }
 });
 
-router.put('/auth/username', authRequired, async (req, res) => {
+router.put('/user/username', authRequired, async (req, res) => {
   const { username } = req.body;
   if (!username) return res.status(400).json({ error: 'Username required' });
   const clean = username.toLowerCase().replace(/[^a-z0-9._]/g, '');
@@ -293,7 +293,7 @@ router.post('/users/push-token', authRequired, async (req, res) => {
 // ACCOUNT DELETION (GDPR / App Store Compliance)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get('/auth/export-data', authRequired, async (req, res) => {
+router.get('/user/export-data', authRequired, async (req, res) => {
   try {
     const userId = req.user.id;
     const [profile, orders, messages, notifications, reviews] = await Promise.all([
@@ -310,7 +310,7 @@ router.get('/auth/export-data', authRequired, async (req, res) => {
   }
 });
 
-router.delete('/auth/delete-account', authRequired, async (req, res) => {
+router.delete('/user/delete-account', authRequired, async (req, res) => {
   const userId = req.user.id;
   const client = await pool.connect();
   try {
@@ -444,41 +444,13 @@ router.delete('/auth/delete-account', authRequired, async (req, res) => {
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// EMAIL VERIFICATION
-// ═══════════════════════════════════════════════════════════════════════════════
-// LEGACY ENDPOINTS — all handled by Supabase Auth now
-// ═══════════════════════════════════════════════════════════════════════════════
-
-router.post('/auth/verify/send', (_req, res) => {
-  return res.status(410).json({ error: 'Legacy email verification disabled', code: 'LEGACY_AUTH_DISABLED' });
-});
-
-router.post('/auth/verify/check', (_req, res) => {
-  return res.status(410).json({ error: 'Legacy email verification disabled', code: 'LEGACY_AUTH_DISABLED' });
-});
-
-router.post('/auth/forgot-password', (_req, res) => {
-  return res.status(410).json({ error: 'Legacy password reset disabled', code: 'LEGACY_AUTH_DISABLED' });
-});
-
-router.post('/auth/reset-password', (_req, res) => {
-  return res.status(410).json({ error: 'Legacy password reset disabled', code: 'LEGACY_AUTH_DISABLED' });
-});
-
-router.post('/auth/google-code', (_req, res) => {
-  return res.status(410).json({ error: 'Legacy Google authentication disabled', code: 'LEGACY_AUTH_DISABLED' });
-});
-
-router.post('/auth/google', (_req, res) => {
-  return res.status(410).json({ error: 'Legacy Google authentication disabled', code: 'LEGACY_AUTH_DISABLED' });
-});
+// Legacy 410 stubs removed — auth now handled by Better Auth
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPLETE DOB (Google OAuth users)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.post('/auth/complete-dob', authRequired, async (req, res) => {
+router.post('/user/complete-dob', authRequired, async (req, res) => {
   const { dateOfBirth } = req.body;
   if (!dateOfBirth) return res.status(400).json({ error: 'Date of birth is required' });
   if (!isAtLeast18(dateOfBirth)) return res.status(400).json({ error: 'You must be at least 18 years old' });
@@ -500,7 +472,7 @@ router.post('/auth/complete-dob', authRequired, async (req, res) => {
   }
 });
 
-router.post('/auth/skip-dob', authRequired, async (req, res) => {
+router.post('/user/skip-dob', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE users SET pending_dob = false, updated_at = CURRENT_TIMESTAMP
@@ -520,7 +492,7 @@ router.post('/auth/skip-dob', authRequired, async (req, res) => {
 // BECOME A SELLER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.put('/auth/become-seller', authRequired, dobRequired, async (req, res) => {
+router.put('/user/become-seller', authRequired, dobRequired, async (req, res) => {
   try {
     if (req.user.role === 'seller') {
       const existing = await pool.query(
@@ -554,7 +526,7 @@ router.put('/auth/become-seller', authRequired, dobRequired, async (req, res) =>
 // SELLER PROFILE & VERIFICATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.put('/auth/upgrade-tier', authRequired, sellerRequired, async (req, res) => {
+router.put('/user/upgrade-tier', authRequired, sellerRequired, async (req, res) => {
   try {
     const { tier, storeName, storeLogoUrl, idDocumentUrl, natcashPhone } = req.body;
     if (!['verified', 'business'].includes(tier)) {
@@ -606,7 +578,7 @@ router.put('/auth/upgrade-tier', authRequired, sellerRequired, async (req, res) 
   }
 });
 
-router.put('/auth/seller-profile', authRequired, sellerRequired, async (req, res) => {
+router.put('/user/seller-profile', authRequired, sellerRequired, async (req, res) => {
   const { storeName, storeLogoUrl, idDocumentUrl, useStoreIdentity, natcashPhone, acceptedPaymentMethods } = req.body;
 
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);

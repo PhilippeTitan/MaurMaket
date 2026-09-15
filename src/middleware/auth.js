@@ -1,5 +1,6 @@
 import { pool } from '../config/database.js';
 import { supabase } from '../config/supabase.js';
+import { getAuth } from '../config/auth.js';
 
 async function getSupabaseUser(token) {
   if (!supabase) return null;
@@ -7,26 +8,69 @@ async function getSupabaseUser(token) {
   return error ? null : data.user;
 }
 
+/**
+ * Try to validate token via Better Auth session.
+ * Returns { userId, email } or null.
+ */
+async function getBetterAuthUser(headers) {
+  try {
+    const auth = getAuth();
+    if (!auth) return null;
+    const session = await auth.api.getSession({ headers });
+    if (session?.user) {
+      return { userId: session.user.id, email: session.user.email };
+    }
+  } catch {
+    // Not a valid Better Auth session
+  }
+  return null;
+}
+
 async function optionalAuth(req, _res, next) {
   const auth = req.headers.authorization;
   if (auth && auth.startsWith('Bearer ')) {
+    // Try Better Auth first
+    const baUser = await getBetterAuthUser(req.headers);
+    if (baUser) {
+      const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [baUser.userId]);
+      if (result.rows.length > 0) {
+        req.user = { id: result.rows[0].id, email: result.rows[0].email, role: result.rows[0].role };
+        return next();
+      }
+    }
+    // Fall back to Supabase
     const supabaseUser = await getSupabaseUser(auth.slice(7));
     if (supabaseUser) {
-      req.supabaseUser = supabaseUser;
       req.user = { id: supabaseUser.id, email: supabaseUser.email, role: 'buyer' };
     }
   }
   next();
 }
 
-// Auth middleware
+// Auth middleware — supports both Better Auth and Supabase tokens
 async function authRequired(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const token = auth.slice(7);
 
+  // 1) Try Better Auth session first
+  try {
+    const baUser = await getBetterAuthUser(req.headers);
+    if (baUser) {
+      const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [baUser.userId]);
+      if (result.rows.length === 0 || result.rows[0].role === 'deleted') {
+        return res.status(401).json({ error: 'Account no longer active' });
+      }
+      req.user = { id: result.rows[0].id, email: result.rows[0].email, role: result.rows[0].role };
+      return next();
+    }
+  } catch {
+    // Not a Better Auth token — try Supabase below
+  }
+
+  // 2) Fall back to Supabase validation (backward compatibility)
+  const token = auth.slice(7);
   try {
     const supabaseUser = await getSupabaseUser(token);
     if (supabaseUser) {
@@ -39,10 +83,10 @@ async function authRequired(req, res, next) {
       return next();
     }
   } catch {
-    // Invalid or expired Supabase access token.
+    // Invalid Supabase token
   }
 
-  return res.status(401).json({ error: 'Invalid Supabase token' });
+  return res.status(401).json({ error: 'Invalid token' });
 }
 
 function sellerRequired(req, res, next) {
