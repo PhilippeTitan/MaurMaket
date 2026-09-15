@@ -1,6 +1,5 @@
 import { pool } from '../config/database.js';
 import { supabase } from '../config/supabase.js';
-import { getAuth } from '../config/auth.js';
 
 async function getSupabaseUser(token) {
   if (!supabase) return null;
@@ -9,19 +8,26 @@ async function getSupabaseUser(token) {
 }
 
 /**
- * Try to validate token via Better Auth session.
+ * Validate a Better Auth session token by querying the sessions table directly.
+ * Better Auth's auth.api.getSession() only works with cookie-based sessions (via toNodeHandler).
+ * For Bearer token validation from custom middleware, we query the DB directly.
  * Returns { userId, email } or null.
  */
-async function getBetterAuthUser(headers) {
+async function getBetterAuthUser(token) {
   try {
-    const auth = getAuth();
-    if (!auth) return null;
-    const session = await auth.api.getSession({ headers });
-    if (session?.user) {
-      return { userId: session.user.id, email: session.user.email };
+    const result = await pool.query(
+      `SELECT s.user_id, s.expires_at, u.email
+       FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.token = $1 AND s.expires_at > NOW()`,
+      [token]
+    );
+    if (result.rows.length > 0) {
+      const row = result.rows[0];
+      return { userId: row.user_id, email: row.email };
     }
-  } catch {
-    // Not a valid Better Auth session
+  } catch (err) {
+    console.log('[AUTH-MW] Session lookup error:', err.message);
   }
   return null;
 }
@@ -29,8 +35,9 @@ async function getBetterAuthUser(headers) {
 async function optionalAuth(req, _res, next) {
   const auth = req.headers.authorization;
   if (auth && auth.startsWith('Bearer ')) {
+    const token = auth.slice(7);
     // Try Better Auth first
-    const baUser = await getBetterAuthUser(req.headers);
+    const baUser = await getBetterAuthUser(token);
     if (baUser) {
       const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [baUser.userId]);
       if (result.rows.length > 0) {
@@ -39,7 +46,7 @@ async function optionalAuth(req, _res, next) {
       }
     }
     // Fall back to Supabase
-    const supabaseUser = await getSupabaseUser(auth.slice(7));
+    const supabaseUser = await getSupabaseUser(token);
     if (supabaseUser) {
       req.user = { id: supabaseUser.id, email: supabaseUser.email, role: 'buyer' };
     }
@@ -56,7 +63,7 @@ async function authRequired(req, res, next) {
 
   // 1) Try Better Auth session first
   try {
-    const baUser = await getBetterAuthUser(req.headers);
+    const baUser = await getBetterAuthUser(auth.slice(7));
     if (baUser) {
       const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [baUser.userId]);
       if (result.rows.length === 0 || result.rows[0].role === 'deleted') {
@@ -70,9 +77,8 @@ async function authRequired(req, res, next) {
   }
 
   // 2) Fall back to Supabase validation (backward compatibility)
-  const token = auth.slice(7);
   try {
-    const supabaseUser = await getSupabaseUser(token);
+    const supabaseUser = await getSupabaseUser(auth.slice(7));
     if (supabaseUser) {
       const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [supabaseUser.id]);
       if (result.rows.length === 0 || result.rows[0].role === 'deleted') {

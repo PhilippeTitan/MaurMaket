@@ -65,6 +65,16 @@ export function createAuth(adapter) {
       }),
     ],
 
+    // Allow cross-origin requests from the Expo web dev server and production URL
+    trustedOrigins: [
+      'http://localhost:8081',
+      'http://localhost:8080',
+      'http://localhost:4000',
+      'http://localhost:3001',
+      'http://localhost:19006',
+      'https://maurmaket.onrender.com',
+    ],
+
     emailAndPassword: {
       enabled: true,
       autoVerifyEmail: true,
