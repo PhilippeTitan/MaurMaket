@@ -4,7 +4,12 @@
  * Routes all Better Auth operations through the Database Controller.
  * Handles field mapping (Better Auth ↔ DB columns), model→table mapping,
  * JOIN queries (for includeAccounts), and reverse mapping on read.
+ *
+ * CRITICAL: The transaction() method buffers all writes and flushes them
+ * to mirror_outbox after commit, ensuring Better Auth's transactional
+ * operations (signup, session create) get replicated to Neon.
  */
+import crypto from 'crypto';
 
 const MODEL_TO_TABLE = {
   user: 'users',
@@ -289,19 +294,138 @@ export function createRaidAdapter(controller) {
 
     async runRaw(sql, params) { return controller.query(sql, params); },
 
+    /**
+     * Execute a Better Auth transaction with outbox replication.
+     *
+     * Better Auth wraps signup (user + account + session) in a transaction.
+     * The pinned adapter writes directly to the pool client for atomicity,
+     * which bypasses controller.create() and the outbox — breaking replication.
+     *
+     * FIX: Buffer all writes during the transaction, then flush them to
+     * mirror_outbox after the main commit. This ensures every Better Auth
+     * transactional operation gets replicated to Neon.
+     */
     async transaction(cb) {
-      const pool = controller._getWritePool();
-      if (!pool) throw new Error('[RAID] No healthy database for transaction');
-      const client = await pool.connect();
+      const writePool = controller._getWritePool();
+      if (!writePool) throw new Error('[RAID] No healthy database for transaction');
+      const client = await writePool.connect();
+
+      // Buffer to collect all write operations during the transaction
+      const writeBuffer = [];
+
       try {
         await client.query('BEGIN');
-        const pinned = createPinnedAdapter((sql, params) => client.query(sql, params));
+
+        // Pinned adapter: reads go to the client, writes are buffered
+        const pinned = {
+          async findOne({ model, where, select, join }) {
+            const { row, joinData } = await findOneWithJoin(
+              (sql, params) => client.query(sql, params), model, where, select, join
+            );
+            if (row) Object.assign(row, joinData);
+            return row;
+          },
+          async findMany({ model, where, limit, offset, orderBy }) {
+            const { sql, values } = buildFindManyQuery(model, where, limit, offset, orderBy);
+            return fromDbRows(model, (await client.query(sql, values)).rows);
+          },
+          async create({ model, data }) {
+            const { sql, values } = buildInsertQuery(model, data);
+            const result = await client.query(sql, values);
+            const row = fromDbRow(model, result.rows[0]);
+            // Buffer for outbox flush after commit
+            writeBuffer.push({ model: toTable(model), action: 'create', recordId: row.id, payload: mapData(model, { ...data, ...(data.id ? {} : { id: row.id }) }) });
+            return row;
+          },
+          async update({ model, where, update }) {
+            const { sql, values } = buildUpdateQuery(model, where, update);
+            const result = await client.query(sql, values);
+            const row = fromDbRow(model, result.rows[0]);
+            if (row) writeBuffer.push({ model: toTable(model), action: 'update', recordId: row.id, payload: mapData(model, update) });
+            return row;
+          },
+          async delete({ model, where }) {
+            const { sql, values } = buildDeleteQuery(model, where);
+            const result = await client.query(sql, values);
+            const row = fromDbRow(model, result.rows[0]);
+            if (row) writeBuffer.push({ model: toTable(model), action: 'delete', recordId: row.id, payload: { id: row.id } });
+            return row || null;
+          },
+          async consumeOne({ model, where }) {
+            const { sql, values } = buildDeleteQuery(model, where);
+            const result = await client.query(sql, values);
+            const row = fromDbRow(model, result.rows[0]);
+            if (row) writeBuffer.push({ model: toTable(model), action: 'delete', recordId: row.id, payload: { id: row.id } });
+            return row || null;
+          },
+          async incrementOne({ model, where, increments }) {
+            const tableName = toTable(model);
+            const mappedInc = {};
+            for (const [k, v] of Object.entries(increments)) mappedInc[toColumn(model, k)] = v;
+            const setClauses = Object.keys(mappedInc).map((k, i) => `"${k}" = "${k}" + $${i + 1}`);
+            const setValues = Object.values(mappedInc);
+            const { conditions, values: whereValues } = buildWhere(model, where, setValues.length + 1);
+            const result = await client.query(
+              `UPDATE ${tableName} SET ${setClauses.join(', ')} WHERE ${conditions.join(' AND ')} RETURNING *`,
+              [...setValues, ...whereValues]
+            );
+            const row = fromDbRow(model, result.rows[0]);
+            if (row) writeBuffer.push({ model: tableName, action: 'update', recordId: row.id, payload: mapData(model, increments) });
+            return row;
+          },
+          async runRaw(sql, params) { return client.query(sql, params); },
+          transaction: undefined,
+        };
+
+        // Execute the Better Auth transaction callback
         const result = await cb(pinned);
+
+        // Commit the main transaction (data is now on primary)
         await client.query('COMMIT');
+
+        // Flush buffered writes to outbox (separate transaction)
+        if (writeBuffer.length > 0) {
+          await this._flushOutbox(writeBuffer);
+        }
+
         return result;
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;
+      } finally {
+        client.release();
+      }
+    },
+
+    /**
+     * Flush buffered write operations to mirror_outbox.
+     * Called after the main transaction commits successfully.
+     * Uses a separate transaction — if this fails, data is still on primary
+     * but won't replicate until a reconciliation pass catches it.
+     */
+    async _flushOutbox(buffer) {
+      const writePool = controller._getWritePool();
+      if (!writePool) {
+        console.warn(`[RAID] No healthy DB for outbox flush — ${buffer.length} operations won't replicate`);
+        return;
+      }
+      const client = await writePool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const op of buffer) {
+          const operationId = crypto.randomUUID();
+          await client.query(
+            `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
+             VALUES ($1, $2, $3, $4, $5, 'supabase', $6)`,
+            [operationId, op.model, op.action, String(op.recordId), JSON.stringify(op.payload),
+             ['users', 'sessions', 'accounts', 'verifications'].includes(op.model) ? 'high' : 'normal']
+          );
+        }
+        await client.query('COMMIT');
+        console.log(`[RAID] Flushed ${buffer.length} outbox entries (transaction writes now replicable)`);
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error(`[RAID] Outbox flush failed — ${buffer.length} operations won't replicate:`, error.message);
       } finally {
         client.release();
       }
