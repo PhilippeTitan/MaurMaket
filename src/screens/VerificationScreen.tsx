@@ -21,14 +21,20 @@ let CameraView: any = null;
 let useCameraPermissions: any = () => [null, () => {}];
 let ImageManipulator: any = null;
 let WebView: any = null;
+let hasCameraSupport = false;
 if (Platform.OS !== 'web') {
-  const cam = require('expo-camera');
-  CameraView = cam.CameraView;
-  useCameraPermissions = cam.useCameraPermissions;
-  // Keep Expo Go on Expo modules only. ML Kit modules are native custom-build
-  // dependencies and cannot be loaded by the Expo Go binary.
-  try { ImageManipulator = require('expo-image-manipulator'); } catch {}
-  try { WebView = require('react-native-webview').WebView; } catch {}
+  try {
+    const cam = require('expo-camera');
+    CameraView = cam.CameraView;
+    useCameraPermissions = cam.useCameraPermissions;
+    hasCameraSupport = true;
+    // Keep Expo Go on Expo modules only. ML Kit modules are native custom-build
+    // dependencies and cannot be loaded by the Expo Go binary.
+    try { ImageManipulator = require('expo-image-manipulator'); } catch {}
+    try { WebView = require('react-native-webview').WebView; } catch {}
+  } catch (error) {
+    console.warn('expo-camera disabled for local UI editing; using a static verification placeholder.');
+  }
 }
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -88,6 +94,18 @@ export default function VerificationScreen() {
   const [verified, setVerified] = useState(false);
   const [frontPhotoUri, setFrontPhotoUri] = useState('');
   const [croppedFaceUri, setCroppedFaceUri] = useState('');
+
+  if (!hasCameraSupport && Platform.OS !== 'web') {
+    return (
+      <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center', padding: SPACING.xl }}>
+        <MaterialCommunityIcons name="camera-off-outline" size={44} color={COLORS.text2} />
+        <Text style={{ color: COLORS.text, fontSize: 20, fontWeight: '700', marginTop: SPACING.md }}>Verification camera disabled</Text>
+        <Text style={{ color: COLORS.text2, fontSize: 14, textAlign: 'center', marginTop: SPACING.sm, maxWidth: 280 }}>
+          Camera-based verification is currently disabled while you work on the UI.
+        </Text>
+      </View>
+    );
+  }
   const [cropSourceSize, setCropSourceSize] = useState({ w: 1080, h: 1920 });
   const [cropBox, setCropBox] = useState({ x: 0, y: 0, size: 200 });
   const cropDragRef = useRef<any>(null);

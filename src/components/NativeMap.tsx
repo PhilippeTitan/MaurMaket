@@ -1,7 +1,25 @@
 import React, { forwardRef, useImperativeHandle, useRef, useCallback, useEffect, useState, type ReactElement } from 'react';
-import { View, StyleSheet, Platform, type ViewStyle } from 'react-native';
-import { Map, Camera, Marker, UserLocation, OfflineManager } from '@maplibre/maplibre-react-native';
+import { View, StyleSheet, Platform, Text, type ViewStyle } from 'react-native';
 import type { MapRef, CameraRef } from '@maplibre/maplibre-react-native';
+
+let Map: any = null;
+let Camera: any = null;
+let Marker: any = null;
+let UserLocation: any = null;
+let OfflineManager: any = null;
+let hasMapLibre = false;
+
+try {
+  const maplibre = require('@maplibre/maplibre-react-native');
+  Map = maplibre.Map;
+  Camera = maplibre.Camera;
+  Marker = maplibre.Marker;
+  UserLocation = maplibre.UserLocation;
+  OfflineManager = maplibre.OfflineManager;
+  hasMapLibre = true;
+} catch (error) {
+  console.warn('MapLibre disabled for local UI editing; using static fallback map placeholder.');
+}
 
 /* ─── Map tile styles ─── */
 export const MAP_STYLE_LIGHT = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
@@ -86,10 +104,10 @@ const NativeMap = forwardRef<NativeMapRef, NativeMapProps>(({
     }
   }, [onPress]);
 
-  if (Platform.OS === 'web') {
+  if (!hasMapLibre || Platform.OS === 'web') {
     return (
       <View style={[styles.webFallback, style]}>
-        {/* Web fallback — static placeholder */}
+        <Text style={styles.webFallbackText}>Map preview disabled for local UI edits</Text>
       </View>
     );
   }
@@ -164,6 +182,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#0D1117',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    borderRadius: 16,
+  },
+  webFallbackText: {
+    color: '#D1D5DB',
+    fontSize: 12,
+    letterSpacing: 0.3,
+    textAlign: 'center',
+    paddingHorizontal: 18,
   },
   defaultMarker: {
     width: 28,

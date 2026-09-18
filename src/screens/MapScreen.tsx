@@ -2,8 +2,26 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Image, Animated, PanResponder,
   TextInput} from 'react-native';
-import { Map, Camera, Marker, UserLocation, OfflineManager } from '@maplibre/maplibre-react-native';
 import type { MapRef, CameraRef } from '@maplibre/maplibre-react-native';
+
+let Map: any = null;
+let Camera: any = null;
+let Marker: any = null;
+let UserLocation: any = null;
+let OfflineManager: any = null;
+let hasMapLibre = false;
+
+try {
+  const maplibre = require('@maplibre/maplibre-react-native');
+  Map = maplibre.Map;
+  Camera = maplibre.Camera;
+  Marker = maplibre.Marker;
+  UserLocation = maplibre.UserLocation;
+  OfflineManager = maplibre.OfflineManager;
+  hasMapLibre = true;
+} catch (error) {
+  console.warn('MapLibre disabled in MapScreen for local UI editing.');
+}
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice, TIER_COLORS } from '../theme';
 import UserAvatar from '../components/UserAvatar';
@@ -82,6 +100,15 @@ export default function MapScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
   const [, setStoreTick] = useState(0);
+
+  if (!hasMapLibre || Platform.OS === 'web') {
+    return (
+      <View style={styles.disabledShell}>
+        <Text style={styles.disabledTitle}>Map preview disabled</Text>
+        <Text style={styles.disabledText}>Turn off the map-only modules to keep the app usable while editing the UI.</Text>
+      </View>
+    );
+  }
 
   useEffect(() => {
     const unsub = store.onChange(() => setStoreTick(t => t + 1));
@@ -738,6 +765,26 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   map: { flex: 1 },
+  disabledShell: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.xl,
+  },
+  disabledTitle: {
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: SPACING.sm,
+  },
+  disabledText: {
+    color: COLORS.text2,
+    fontSize: 14,
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 20,
+  },
   mapOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 },
 
   /* Markers */

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
+import { ONBOARDING_COLORS } from '../screens/onboarding/theme';
 
 interface Props {
   /** Left icon name (MaterialCommunityIcons) */
@@ -47,12 +48,12 @@ interface Props {
  */
 export default function SettingsRow({
   icon,
-  iconColor = COLORS.white,
+  iconColor = ONBOARDING_COLORS.white,
   iconBg,
   label,
   subtitle,
   value,
-  valueColor = COLORS.text3,
+  valueColor = ONBOARDING_COLORS.sub,
   chip,
   chevron = false,
   rightElement,
@@ -61,13 +62,13 @@ export default function SettingsRow({
   divider = false,
   destructive = false,
 }: Props) {
-  const labelColor = destructive ? COLORS.coral : COLORS.text;
-  const finalIconColor = destructive ? COLORS.coral : iconColor;
+  const labelColor = destructive ? ONBOARDING_COLORS.coral : ONBOARDING_COLORS.text;
+  const finalIconColor = destructive ? ONBOARDING_COLORS.coral : iconColor;
 
   const content = (
     <View style={[styles.row, style]}>
       {icon ? (
-        <View style={[styles.iconContainer, iconBg ? { backgroundColor: iconBg } : null]}>
+        <View style={[styles.iconContainer, iconBg ? { backgroundColor: iconBg } : { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
           <MaterialCommunityIcons name={icon as any} size={22} color={finalIconColor} />
         </View>
       ) : null}
@@ -85,13 +86,13 @@ export default function SettingsRow({
             <Text style={[styles.chipText, { color: chip.color }]}>{chip.label}</Text>
           </View>
         ) : value ? (
-          <Text style={[styles.value, { color: destructive ? COLORS.coral : valueColor }]} numberOfLines={1}>
+          <Text style={[styles.value, { color: destructive ? ONBOARDING_COLORS.coral : valueColor }]} numberOfLines={1}>
             {value}
           </Text>
         ) : null}
         {rightElement || null}
         {chevron && !rightElement ? (
-          <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} style={styles.chevron} />
+          <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} style={styles.chevron} />
         ) : null}
       </View>
     </View>
@@ -123,17 +124,20 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 52,
+    minHeight: 58,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     gap: SPACING.md,
+    backgroundColor: 'rgba(255,255,255,0.015)',
   },
   iconContainer: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: ONBOARDING_COLORS.border,
   },
   textContainer: {
     flex: 1,
@@ -142,11 +146,11 @@ const styles = StyleSheet.create({
   label: {
     fontSize: FONT_SIZES.lg,
     fontWeight: FONT_WEIGHTS.medium,
-    color: COLORS.text,
+    color: ONBOARDING_COLORS.text,
   },
   subtitle: {
     fontSize: FONT_SIZES.xs,
-    color: COLORS.text3,
+    color: ONBOARDING_COLORS.sub,
     lineHeight: 15,
   },
   right: {
@@ -156,7 +160,7 @@ const styles = StyleSheet.create({
   },
   value: {
     fontSize: FONT_SIZES.base,
-    color: COLORS.text3,
+    color: ONBOARDING_COLORS.sub,
   },
   chip: {
     paddingHorizontal: 10,
@@ -173,7 +177,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: COLORS.border,
-    marginLeft: SPACING.md + 36 + SPACING.md, // align with label text
+    backgroundColor: ONBOARDING_COLORS.border,
+    marginLeft: SPACING.md + 36 + SPACING.md,
   },
 });

@@ -1,6 +1,23 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { betterAuth } from 'better-auth';
 import { dash } from '@better-auth/infra';
 import { username, phoneNumber, emailOTP, twoFactor } from 'better-auth/plugins';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function getLogoDataUri() {
+  try {
+    const imagePath = path.resolve(__dirname, '../../assets/Logo/webp/Maurmaket Logo Text Trans Solo.webp');
+    const fileBuffer = fs.readFileSync(imagePath);
+    return `data:image/webp;base64,${fileBuffer.toString('base64')}`;
+  } catch (error) {
+    console.warn('[Auth:Logo] Could not load local MaurMaket logo asset, falling back to text branding.', error);
+    return null;
+  }
+}
 
 /**
  * Better Auth — lazy singleton.
@@ -13,6 +30,150 @@ import { username, phoneNumber, emailOTP, twoFactor } from 'better-auth/plugins'
  */
 
 let _auth = null;
+
+function buildEmailChangeEmailHtml(url) {
+  const fallbackUrl = url || 'https://maurmaket.app';
+  const logoDataUri = getLogoDataUri();
+
+  return `<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f5f5;padding:40px 16px;">
+    <tr>
+      <td align="center">
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#ffffff;border-radius:16px;overflow:hidden;">
+
+          <tr>
+            <td style="padding:32px 40px 20px;text-align:center;">
+              ${logoDataUri ? `<img src="${logoDataUri}" alt="MaurMaket" style="display:block;max-width:220px;height:auto;margin:0 auto;" />` : `<h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-0.5px;">MaurMaket</h1>`}
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:20px 40px 40px;">
+
+              <h2 style="margin:0 0 16px;font-size:24px;font-weight:700;">
+                Confirm your email change
+              </h2>
+
+              <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#52525b;">
+                You requested to change the email address connected to your MaurMaket account. Confirm this email address to complete the change.
+              </p>
+
+              <table cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="border-radius:10px;background-color:#18181b;">
+                    <a href="${fallbackUrl}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;">
+                      Confirm new email address
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:32px 0 0;font-size:13px;line-height:1.6;color:#71717a;">
+                If you didn't request this change, secure your account immediately and contact MaurMaket Support.
+              </p>
+
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:24px 40px;border-top:1px solid #e4e4e7;">
+              <p style="margin:0;text-align:center;font-size:12px;color:#a1a1aa;">
+                © Maurinex. All rights reserved.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
+}
+
+function buildPasswordResetEmailHtml(url) {
+  const fallbackUrl = url || 'https://maurmaket.app';
+  const logoDataUri = getLogoDataUri();
+
+  return `<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f5f5;padding:40px 16px;">
+    <tr>
+      <td align="center">
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#ffffff;border-radius:16px;overflow:hidden;">
+
+          <tr>
+            <td style="padding:32px 40px 20px;text-align:center;">
+              ${logoDataUri ? `<img src="${logoDataUri}" alt="MaurMaket" style="display:block;max-width:220px;height:auto;margin:0 auto;" />` : `<h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-0.5px;">MaurMaket</h1>`}
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:20px 40px 40px;">
+
+              <h2 style="margin:0 0 16px;font-size:24px;font-weight:700;">
+                Reset your password
+              </h2>
+
+              <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#52525b;">
+                We received a request to reset the password for your MaurMaket account.
+              </p>
+
+              <table cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="border-radius:10px;background-color:#18181b;">
+                    <a href="${fallbackUrl}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;">
+                      Reset password
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:32px 0 0;font-size:13px;line-height:1.6;color:#71717a;">
+                This link is intended only for you and will expire automatically. If you didn't request a password reset, you can safely ignore this email. Your current password will remain unchanged.
+              </p>
+
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:24px 40px;border-top:1px solid #e4e4e7;">
+              <p style="margin:0;text-align:center;font-size:12px;color:#a1a1aa;">
+                © Maurinex. All rights reserved.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
+}
 
 /**
  * Initialize Better Auth with a database adapter (RAID adapter from DB Controller,
@@ -75,10 +236,30 @@ export function createAuth(adapter) {
       'https://maurmaket.onrender.com',
     ],
 
+    emailVerification: {
+      expiresIn: 600,
+      sendOnSignUp: true,
+      sendOnSignIn: false,
+      async sendVerificationEmail({ user, url }) {
+        const html = buildEmailChangeEmailHtml(url);
+
+        // TODO: replace this with the production mailer (Resend / SendGrid / SMTP)
+        console.log(`[Auth:EmailVerification] Sending verification email to ${user.email}`);
+        console.log(html);
+      },
+    },
+
     emailAndPassword: {
       enabled: true,
       autoVerifyEmail: true,
       minPasswordLength: 6,
+      resetPasswordTokenExpiresIn: 3600,
+      sendResetPassword: async ({ user, url }) => {
+        const html = buildPasswordResetEmailHtml(url);
+
+        console.log(`[Auth:PasswordReset] Sending reset email to ${user.email}`);
+        console.log(html);
+      },
     },
 
     socialProviders: {

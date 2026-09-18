@@ -112,6 +112,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: TOUCH.min + SPACING.sm,
+    pointerEvents: 'none',
   },
   title: {
     textAlign: 'center',

@@ -43,9 +43,6 @@ export default function ProfileCard({ user, onPress }: Props) {
 
   const cardContent = (
     <Animated.View style={[styles.card, { opacity, transform: [{ translateY }] }]}>
-      {/* Accent bar */}
-      <View style={styles.accentBar} />
-
       <View style={styles.inner}>
         {/* Avatar with tier ring */}
         <View style={[styles.avatarRing, { borderColor: tierColor || COLORS.border }]}>
@@ -107,11 +104,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.card,
     overflow: 'hidden',
-  },
-  accentBar: {
-    height: 3,
-    backgroundColor: COLORS.coral,
-    opacity: 0.6,
   },
   inner: {
     flexDirection: 'row',

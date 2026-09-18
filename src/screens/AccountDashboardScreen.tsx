@@ -4,12 +4,12 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '../theme';
+import { ONBOARDING_COLORS } from './onboarding/theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import ProfileCard from '../components/ProfileCard';
-import { resendVerificationEmail } from '../api';
 import { useTranslation } from '../i18n';
 import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -100,14 +100,14 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('SettingsEdit', { field: 'name', title: 'Name' })}
             >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="account-outline" size={20} color={COLORS.white} />
+              <View style={[styles.iconContainer, { backgroundColor: 'rgba(255, 77, 106, 0.15)' }]}>
+                <MaterialCommunityIcons name="account-outline" size={20} color={ONBOARDING_COLORS.coral} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Full name</Text>
                 <Text style={styles.rowValue} numberOfLines={1}>{user?.full_name || 'Not set'}</Text>
               </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
             <View style={styles.divider} />
             <TouchableOpacity
@@ -115,8 +115,8 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('SettingsEdit', { field: 'bio', title: 'Bio' })}
             >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="text-box-outline" size={20} color={COLORS.white} />
+              <View style={[styles.iconContainer, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+                <MaterialCommunityIcons name="text-box-outline" size={20} color={ONBOARDING_COLORS.purple} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Bio</Text>
@@ -124,7 +124,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
                   {user?.bio || 'Tell people about yourself'}
                 </Text>
               </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
           </SettingsGroup>
         </Animated.View>
@@ -140,47 +140,20 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('SettingsEdit', { field: 'email', title: t('settings.email') })}
             >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="email-outline" size={20} color={COLORS.white} />
+              <View style={[styles.iconContainer, { backgroundColor: 'rgba(0, 194, 255, 0.15)' }]}>
+                <MaterialCommunityIcons name="email-outline" size={20} color={ONBOARDING_COLORS.blue} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Email</Text>
                 <View style={styles.valueRow}>
                   <Text style={styles.rowValue} numberOfLines={1}>{user?.email || 'Not set'}</Text>
                   {isVerified && (
-                    <MaterialCommunityIcons name="check-circle" size={14} color={COLORS.green} style={{ marginLeft: 4 }} />
+                    <MaterialCommunityIcons name="check-circle" size={14} color={ONBOARDING_COLORS.green} style={{ marginLeft: 4 }} />
                   )}
                 </View>
               </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
-
-            {user?.email && !isVerified && (
-              <>
-                <View style={styles.divider} />
-                <TouchableOpacity
-                  style={styles.row}
-                  activeOpacity={0.6}
-                  onPress={async () => {
-                    try {
-                      await resendVerificationEmail(user.email);
-                      toast.show({ kind: 'success', title: 'Verification email sent!' });
-                    } catch (e: any) {
-                      toast.show({ kind: 'error', title: e?.message || 'Failed to resend' });
-                    }
-                  }}
-                >
-                  <View style={styles.iconContainer}>
-                    <MaterialCommunityIcons name="email-fast-outline" size={20} color={COLORS.white} />
-                  </View>
-                  <View style={styles.rowText}>
-                    <Text style={styles.rowLabel}>Verify your email</Text>
-                    <Text style={styles.rowValue}>Resend verification link</Text>
-                  </View>
-                  <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
-                </TouchableOpacity>
-              </>
-            )}
 
             <View style={styles.divider} />
             <TouchableOpacity
@@ -188,8 +161,8 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('SettingsEdit', { field: 'phone', title: t('settings.phone') || 'Phone' })}
             >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="phone-outline" size={20} color={COLORS.white} />
+              <View style={[styles.iconContainer, { backgroundColor: 'rgba(0, 229, 160, 0.15)' }]}>
+                <MaterialCommunityIcons name="phone-outline" size={20} color={ONBOARDING_COLORS.green} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Phone</Text>
@@ -204,7 +177,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
                   )}
                 </View>
               </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
           </SettingsGroup>
         </Animated.View>
@@ -220,14 +193,14 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('UsernameSettings')}
             >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="at" size={20} color={COLORS.white} />
+              <View style={[styles.iconContainer, { backgroundColor: 'rgba(255, 224, 102, 0.15)' }]}>
+                <MaterialCommunityIcons name="at" size={20} color={ONBOARDING_COLORS.yellow} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Username</Text>
                 <Text style={styles.rowValue}>{user?.username ? `@${user.username}` : 'Not set'}</Text>
               </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
             <View style={styles.divider} />
             <TouchableOpacity
@@ -235,14 +208,14 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('LanguageSettings')}
             >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="translate" size={20} color={COLORS.white} />
+              <View style={[styles.iconContainer, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+                <MaterialCommunityIcons name="translate" size={20} color={ONBOARDING_COLORS.purple} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Language</Text>
                 <Text style={styles.rowValue}>{langLabel}</Text>
               </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
             <View style={styles.divider} />
             <TouchableOpacity
@@ -250,14 +223,14 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('LocationSettings')}
             >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="map-marker-outline" size={20} color={COLORS.white} />
+              <View style={[styles.iconContainer, { backgroundColor: 'rgba(0, 229, 160, 0.15)' }]}>
+                <MaterialCommunityIcons name="map-marker-outline" size={20} color={ONBOARDING_COLORS.green} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Location</Text>
                 <Text style={styles.rowValue}>{user?.location_city || 'Set your delivery area'}</Text>
               </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
           </SettingsGroup>
         </Animated.View>
@@ -270,7 +243,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+  container: { flex: 1, backgroundColor: ONBOARDING_COLORS.bg0 },
   scroll: { paddingBottom: SPACING.page },
 
   // Rows
@@ -281,31 +254,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
     minHeight: 56,
+    backgroundColor: 'rgba(255,255,255,0.015)',
   },
   iconContainer: {
     width: 36,
     height: 36,
-    borderRadius: RADIUS.sm,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: ONBOARDING_COLORS.border,
   },
   rowText: { flex: 1 },
-  rowLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: COLORS.text },
-  rowValue: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
+  rowLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: ONBOARDING_COLORS.text },
+  rowValue: { fontSize: FONT_SIZES.sm, color: ONBOARDING_COLORS.sub, marginTop: 2 },
   valueRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   phoneBadge: {
-    backgroundColor: COLORS.blueMuted,
+    backgroundColor: 'rgba(0, 194, 255, 0.15)',
     borderRadius: RADIUS.xs,
     paddingHorizontal: 6,
     paddingVertical: 1,
     marginLeft: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 194, 255, 0.32)',
   },
-  phoneBadgeText: { fontSize: FONT_SIZES.xs - 1, color: COLORS.blue, fontWeight: FONT_WEIGHTS.semibold },
+  phoneBadgeText: { fontSize: FONT_SIZES.xs - 1, color: ONBOARDING_COLORS.blue, fontWeight: FONT_WEIGHTS.semibold },
 
   // Divider
   divider: {
     height: 1,
-    backgroundColor: COLORS.border,
+    backgroundColor: ONBOARDING_COLORS.border,
     marginLeft: SPACING.lg + 36 + SPACING.md,
   },
 

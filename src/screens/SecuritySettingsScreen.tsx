@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
+import { ONBOARDING_COLORS } from './onboarding/theme';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
@@ -133,7 +134,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         <Animated.View style={animStyle(0)}>
           <View style={styles.statusCard}>
             <View style={styles.statusIcon}>
-              <MaterialCommunityIcons name="shield-check" size={32} color={COLORS.white} />
+              <MaterialCommunityIcons name="shield-check" size={32} color={ONBOARDING_COLORS.white} />
             </View>
             <Text style={styles.statusTitle}>
               {checksPassed === totalChecks ? 'Your account is secure' : `${checksPassed}/${totalChecks} checks passed`}
@@ -167,18 +168,18 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: 'Change password' })}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="lock-outline" size={20} color={COLORS.white} />
+                <MaterialCommunityIcons name="lock-outline" size={20} color={ONBOARDING_COLORS.coral} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Change password</Text>
                 <Text style={styles.rowSubtitle}>Update your password regularly</Text>
               </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
             <View style={styles.divider} />
             <View style={styles.row}>
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="cellphone-key" size={20} color={COLORS.white} />
+                <MaterialCommunityIcons name="cellphone-key" size={20} color={ONBOARDING_COLORS.blue} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Two-step verification</Text>
@@ -189,8 +190,8 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
               <Switch
                 value={twoFactorEnabled}
                 onValueChange={handleToggle2FA}
-                trackColor={{ false: COLORS.border, true: COLORS.blue + '40' }}
-                thumbColor={twoFactorEnabled ? COLORS.blue : COLORS.text3}
+                trackColor={{ false: ONBOARDING_COLORS.border, true: ONBOARDING_COLORS.blue + '40' }}
+                thumbColor={twoFactorEnabled ? ONBOARDING_COLORS.blue : ONBOARDING_COLORS.faint}
                 disabled={loading2FA}
               />
             </View>
@@ -199,7 +200,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
               <View key={device.id}>
                 <View style={styles.row}>
                   <View style={styles.iconContainer}>
-                    <MaterialCommunityIcons name="devices" size={20} color={COLORS.white} />
+                    <MaterialCommunityIcons name="devices" size={20} color={ONBOARDING_COLORS.purple} />
                   </View>
                   <View style={styles.rowText}>
                     <View style={styles.activityDevice}>
@@ -274,7 +275,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+  container: { flex: 1, backgroundColor: ONBOARDING_COLORS.bg0 },
   scroll: { paddingBottom: SPACING.page },
 
   // Status Card
@@ -283,21 +284,25 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
     marginBottom: SPACING.lg,
     padding: SPACING.xl,
-    backgroundColor: COLORS.surface,
+    backgroundColor: ONBOARDING_COLORS.surface,
     borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: ONBOARDING_COLORS.border,
     alignItems: 'center',
   },
   statusIcon: {
     width: 56,
     height: 56,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.greenMuted,
+    backgroundColor: 'rgba(0, 229, 160, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 160, 0.4)',
   },
-  statusTitle: { fontSize: FONT_SIZES.lg, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text, textAlign: 'center' },
-  statusSubtitle: { fontSize: FONT_SIZES.sm, color: COLORS.text2, textAlign: 'center', marginTop: SPACING.xs },
+  statusTitle: { fontSize: FONT_SIZES.lg, fontWeight: FONT_WEIGHTS.semibold, color: ONBOARDING_COLORS.text, textAlign: 'center' },
+  statusSubtitle: { fontSize: FONT_SIZES.sm, color: ONBOARDING_COLORS.sub, textAlign: 'center', marginTop: SPACING.xs },
   statusDots: {
     flexDirection: 'row',
     gap: SPACING.sm,
@@ -307,10 +312,10 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.border,
+    backgroundColor: ONBOARDING_COLORS.border,
   },
   statusDotActive: {
-    backgroundColor: COLORS.green,
+    backgroundColor: ONBOARDING_COLORS.mint,
   },
 
   // Rows
@@ -321,17 +326,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
     minHeight: 56,
+    backgroundColor: 'rgba(255,255,255,0.015)',
   },
   iconContainer: {
     width: 36,
     height: 36,
-    borderRadius: RADIUS.sm,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: ONBOARDING_COLORS.border,
   },
   rowText: { flex: 1 },
-  rowLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: COLORS.text },
-  rowSubtitle: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
+  rowLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: ONBOARDING_COLORS.text },
+  rowSubtitle: { fontSize: FONT_SIZES.sm, color: ONBOARDING_COLORS.sub, marginTop: 2 },
 
   // Activity
   activityRow: {
@@ -343,22 +351,24 @@ const styles = StyleSheet.create({
   },
   activityDevice: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   currentBadge: {
-    backgroundColor: COLORS.greenMuted,
+    backgroundColor: 'rgba(0, 229, 160, 0.18)',
     borderRadius: RADIUS.xs,
     paddingHorizontal: 6,
     paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 160, 0.35)',
   },
-  currentText: { fontSize: FONT_SIZES.xs, color: COLORS.green, fontWeight: FONT_WEIGHTS.semibold },
+  currentText: { fontSize: FONT_SIZES.xs, color: ONBOARDING_COLORS.green, fontWeight: FONT_WEIGHTS.semibold },
 
   // Divider
   divider: {
     height: 1,
-    backgroundColor: COLORS.border,
+    backgroundColor: ONBOARDING_COLORS.border,
     marginLeft: SPACING.lg + 36 + SPACING.md,
   },
 
   // Remove
-  removeText: { fontSize: FONT_SIZES.sm, color: COLORS.coral, fontWeight: FONT_WEIGHTS.medium },
+  removeText: { fontSize: FONT_SIZES.sm, color: ONBOARDING_COLORS.coral, fontWeight: FONT_WEIGHTS.medium },
 
   bottomSpacer: { height: 60 },
 });

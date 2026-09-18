@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
+import { ONBOARDING_COLORS } from '../screens/onboarding/theme';
 
 interface Props {
   /** Section header title — renders as a bold label above the group */
@@ -43,12 +44,13 @@ export default function SettingsGroup({
   footer,
   style,
   cardStyle,
-  accentColor = COLORS.coral,
+  accentColor = ONBOARDING_COLORS.violet,
 }: Props) {
   return (
     <View style={[styles.container, style]}>
       {header ? (
         <View style={styles.headerRow}>
+          <View style={[styles.accentDot, { backgroundColor: accentColor }]} />
           <Text style={styles.header}>{header}</Text>
         </View>
       ) : null}
@@ -72,38 +74,42 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
     marginHorizontal: SPACING.lg,
     marginBottom: SPACING.sm,
     marginTop: SPACING.lg,
+    gap: SPACING.sm,
   },
   accentDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    opacity: 0.9,
   },
   header: {
     fontSize: FONT_SIZES.sm,
     fontWeight: FONT_WEIGHTS.bold,
-    color: COLORS.text2,
+    color: ONBOARDING_COLORS.sub,
     letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   description: {
     fontSize: FONT_SIZES.xs,
-    color: COLORS.text3,
+    color: ONBOARDING_COLORS.faint,
     marginHorizontal: SPACING.lg,
     marginBottom: SPACING.sm,
     lineHeight: 16,
   },
   card: {
     marginHorizontal: SPACING.lg,
-    backgroundColor: COLORS.surface,
+    backgroundColor: ONBOARDING_COLORS.surface,
+    borderWidth: 1,
+    borderColor: ONBOARDING_COLORS.border,
     borderRadius: RADIUS.card,
-    // No borderWidth — clean flat design
+    overflow: 'hidden',
   },
   footer: {
     fontSize: FONT_SIZES.xs,
-    color: COLORS.text3,
+    color: ONBOARDING_COLORS.faint,
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.sm,
     lineHeight: 16,

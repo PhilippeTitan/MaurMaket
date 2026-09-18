@@ -3,35 +3,40 @@ import {
   View, Text, Image, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform,
   KeyboardAvoidingView, ScrollView, Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
+import { ONBOARDING_COLORS, ONBOARDING_GRADIENT } from './onboarding/theme';
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
 import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
-import { updateProfile, changePassword, updateSellerProfile } from '../api';
+import { updateProfile, changePassword, updateSellerProfile, resendVerificationEmail } from '../api';
 import { useTranslation } from '../i18n';
+import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SettingsEdit'>;
 
 const FIELD_META: Record<string, { placeholder: string; icon: string; iconColor: string; iconBg: string; description: string; keyboardType?: string; secure?: boolean; multiline?: boolean }> = {
-  name: { placeholder: 'Full name', icon: 'account-outline', iconColor: COLORS.coral, iconBg: COLORS.coralMuted, description: 'Your display name shown on your profile' },
-  email: { placeholder: 'Email', icon: 'email-outline', iconColor: COLORS.blue, iconBg: COLORS.blueMuted, description: 'Your login email address', keyboardType: 'email-address' },
-  phone: { placeholder: 'Phone', icon: 'phone-outline', iconColor: COLORS.green, iconBg: COLORS.greenMuted, description: 'MonCash payment number', keyboardType: 'phone-pad' },
-  phones: { placeholder: 'Phone numbers', icon: 'phone-outline', iconColor: COLORS.green, iconBg: COLORS.greenMuted, description: 'Manage your payment numbers' },
-  natcash_phone: { placeholder: 'NatCash number', icon: 'cellphone', iconColor: COLORS.purple, iconBg: COLORS.purpleMuted, description: 'For direct NatCash transfers', keyboardType: 'phone-pad' },
-  bio: { placeholder: 'Tell us about yourself...', icon: 'text-short', iconColor: COLORS.coral, iconBg: COLORS.coralMuted, description: 'Short bio visible on your profile', multiline: true },
-  password: { placeholder: 'New password', icon: 'lock-outline', iconColor: COLORS.yellow, iconBg: COLORS.yellowMuted, description: 'Choose a strong new password', secure: true },
-  storeName: { placeholder: 'Store name', icon: 'storefront-outline', iconColor: COLORS.blue, iconBg: COLORS.blueMuted, description: 'Your public store name for buyers' },
+  name: { placeholder: 'Full name', icon: 'account-outline', iconColor: ONBOARDING_COLORS.coral, iconBg: 'rgba(255, 77, 106, 0.15)', description: 'Your display name shown on your profile' },
+  email: { placeholder: 'Email', icon: 'email-outline', iconColor: ONBOARDING_COLORS.blue, iconBg: 'rgba(0, 194, 255, 0.15)', description: 'Your login email address', keyboardType: 'email-address' },
+  phone: { placeholder: 'Phone', icon: 'phone-outline', iconColor: ONBOARDING_COLORS.green, iconBg: 'rgba(0, 229, 160, 0.15)', description: 'MonCash payment number', keyboardType: 'phone-pad' },
+  phones: { placeholder: 'Phone numbers', icon: 'phone-outline', iconColor: ONBOARDING_COLORS.green, iconBg: 'rgba(0, 229, 160, 0.15)', description: 'Manage your payment numbers' },
+  natcash_phone: { placeholder: 'NatCash number', icon: 'cellphone', iconColor: ONBOARDING_COLORS.purple, iconBg: 'rgba(139, 92, 246, 0.15)', description: 'For direct NatCash transfers', keyboardType: 'phone-pad' },
+  bio: { placeholder: 'Tell us about yourself...', icon: 'text-short', iconColor: ONBOARDING_COLORS.coral, iconBg: 'rgba(255, 77, 106, 0.15)', description: 'Short bio visible on your profile', multiline: true },
+  password: { placeholder: 'New password', icon: 'lock-outline', iconColor: ONBOARDING_COLORS.yellow, iconBg: 'rgba(255, 224, 102, 0.15)', description: 'Choose a strong new password', secure: true },
+  storeName: { placeholder: 'Store name', icon: 'storefront-outline', iconColor: ONBOARDING_COLORS.blue, iconBg: 'rgba(0, 194, 255, 0.15)', description: 'Your public store name for buyers' },
 };
 
 export default function SettingsEditScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
+  const toast = useToast();
   const { field, title } = route.params;
   const user = store.user;
   const [loading, setLoading] = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
 
   const meta = FIELD_META[field] || FIELD_META.name;
 
@@ -77,6 +82,19 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
       Animated.timing(anim.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
     ]).start();
   }, []);
+
+  const handleVerifyEmail = async () => {
+    if (!user?.email) return;
+    setSendingVerification(true);
+    try {
+      await resendVerificationEmail(user.email);
+      toast.show({ kind: 'success', title: 'Verification email sent!' });
+    } catch (err: unknown) {
+      toast.show({ kind: 'error', title: err instanceof Error ? err.message : 'Failed to resend' });
+    } finally {
+      setSendingVerification(false);
+    }
+  };
 
   const handleSave = async () => {
     if (field === 'name') {
@@ -317,6 +335,26 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
             </View>
           )}
 
+          {field === 'email' && user?.email && !user.email_verified && (
+            <TouchableOpacity
+              style={styles.verifyCard}
+              activeOpacity={0.8}
+              onPress={handleVerifyEmail}
+              disabled={sendingVerification}
+            >
+              <View style={styles.verifyIconWrap}>
+                <MaterialCommunityIcons name="email-fast-outline" size={18} color={COLORS.white} />
+              </View>
+              <View style={styles.verifyTextWrap}>
+                <Text style={styles.verifyTitle}>Verify your email</Text>
+                <Text style={styles.verifySubtitle}>
+                  {sendingVerification ? 'Sending verification link…' : 'Resend verification link'}
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+            </TouchableOpacity>
+          )}
+
           {/* ── Character count ── */}
           {field === 'bio' && (
             <Text style={styles.charCount}>{value.length}/150</Text>
@@ -332,11 +370,17 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
               accessibilityRole="button"
               accessibilityLabel="save"
             >
-              {loading ? (
-                <ActivityIndicator color={COLORS.white} />
-              ) : (
-                <Text style={styles.saveButtonText}>{t('settingsEdit.save')}</Text>
-              )}
+              <LinearGradient
+                colors={ONBOARDING_GRADIENT}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={styles.saveButtonInner}
+              >
+                {loading ? (
+                  <ActivityIndicator color={ONBOARDING_COLORS.white} />
+                ) : (
+                  <Text style={styles.saveButtonText}>{t('settingsEdit.save')}</Text>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
           )}
 
@@ -354,7 +398,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scrollContent: { paddingBottom: SPACING.page },
-  saveTopBtn: { fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.bold, color: COLORS.coral },
+  saveTopBtn: { fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.bold, color: ONBOARDING_COLORS.violet },
 
   /* Field header */
   fieldHeader: {
@@ -375,17 +419,17 @@ const styles = StyleSheet.create({
   fieldDescription: {
     flex: 1,
     fontSize: FONT_SIZES.base,
-    color: COLORS.text2,
+    color: ONBOARDING_COLORS.sub,
     lineHeight: 22,
   },
 
   /* Input cards */
   inputCard: {
     marginHorizontal: SPACING.lg,
-    backgroundColor: COLORS.surface,
+    backgroundColor: ONBOARDING_COLORS.surface,
     borderRadius: RADIUS.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: ONBOARDING_COLORS.border,
     overflow: 'hidden',
   },
   inputRow: {
@@ -398,7 +442,7 @@ const styles = StyleSheet.create({
   inputLabel: {
     width: 120,
     fontSize: FONT_SIZES.sm,
-    color: COLORS.text2,
+    color: ONBOARDING_COLORS.sub,
     fontWeight: FONT_WEIGHTS.medium,
   },
   inputContainer: {
@@ -407,11 +451,12 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     paddingHorizontal: SPACING.lg,
     minHeight: 52,
+    backgroundColor: 'rgba(255,255,255,0.02)',
   },
   input: {
     flex: 1,
     fontSize: FONT_SIZES.lg,
-    color: COLORS.text,
+    color: ONBOARDING_COLORS.text,
     paddingVertical: SPACING.md,
     fontWeight: FONT_WEIGHTS.medium,
   },
@@ -421,22 +466,22 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: COLORS.border,
+    backgroundColor: ONBOARDING_COLORS.border,
     marginLeft: SPACING.lg + 40 + SPACING.md,
   },
   countryCode: {
     fontSize: FONT_SIZES.lg,
-    color: COLORS.text2,
+    color: ONBOARDING_COLORS.sub,
     fontWeight: FONT_WEIGHTS.semibold,
   },
 
   /* Payment cards */
   paymentCard: {
     marginHorizontal: SPACING.lg,
-    backgroundColor: COLORS.surface,
+    backgroundColor: ONBOARDING_COLORS.surface,
     borderRadius: RADIUS.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: ONBOARDING_COLORS.border,
     padding: SPACING.lg,
   },
   paymentHeader: {
@@ -449,7 +494,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: RADIUS.card,
-    backgroundColor: COLORS.blueMuted,
+    backgroundColor: 'rgba(0, 194, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -464,11 +509,11 @@ const styles = StyleSheet.create({
   paymentName: {
     fontSize: FONT_SIZES.lg,
     fontWeight: FONT_WEIGHTS.bold,
-    color: COLORS.text,
+    color: ONBOARDING_COLORS.text,
   },
   paymentSub: {
     fontSize: FONT_SIZES.xs,
-    color: COLORS.text2,
+    color: ONBOARDING_COLORS.sub,
     marginTop: 1,
   },
   paymentBadge: {
@@ -487,22 +532,61 @@ const styles = StyleSheet.create({
   charCount: {
     textAlign: 'right',
     fontSize: FONT_SIZES.xs,
-    color: COLORS.text3,
+    color: ONBOARDING_COLORS.faint,
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.sm,
+  },
+
+  /* Inline verification card */
+  verifyCard: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
+    backgroundColor: ONBOARDING_COLORS.surface,
+    borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: ONBOARDING_COLORS.border,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  verifyIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: RADIUS.sm,
+    backgroundColor: ONBOARDING_COLORS.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyTextWrap: {
+    flex: 1,
+  },
+  verifyTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: FONT_WEIGHTS.bold,
+    color: ONBOARDING_COLORS.text,
+  },
+  verifySubtitle: {
+    fontSize: FONT_SIZES.xs,
+    color: ONBOARDING_COLORS.sub,
+    marginTop: 2,
   },
 
   /* Save button */
   saveButton: {
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.xl,
-    backgroundColor: COLORS.coral,
-    borderRadius: RADIUS.pill,
+    borderRadius: RADIUS.card,
+    overflow: 'hidden',
+  },
+  saveButtonInner: {
     paddingVertical: SPACING.lg,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   saveButtonText: {
-    color: COLORS.white,
+    color: ONBOARDING_COLORS.white,
     fontSize: FONT_SIZES.md,
     fontWeight: FONT_WEIGHTS.bold,
   },
