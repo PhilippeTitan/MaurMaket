@@ -234,7 +234,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
       if (onAccountMissing && (message.includes('user not found') || message.includes('email not found'))) {
         onAccountMissing();
       } else {
-        setErrorMessage(err?.message || 'Invalid email or password');
+        setErrorMessage(err?.message || t('signin.incorrectCredentials'));
         triggerShake();
       }
     } finally { setLoading(false); }
@@ -253,7 +253,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
       setGoogleLoading(true);
       const res = await googleAuth() as { user: User; token: string };
       playSuccessAndEnter(res.user, res.token);
-    } catch (err: any) { setErrorMessage(err?.message || 'Google sign-in failed'); }
+    } catch (err: any) { setErrorMessage(err?.message || t('signin.googleFailed')); }
     finally { setGoogleLoading(false); }
   };
 
@@ -265,9 +265,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
       playSuccessAndEnter(res.user, res.token);
     } catch (err: any) {
       if (err instanceof PasskeyUnavailableError) {
-        setErrorMessage(err.message || "Passkeys aren't available on this device yet");
+        setErrorMessage(err.message || t('signin.passkeyUnavailable'));
       } else {
-        setErrorMessage(err?.message || 'Passkey sign-in failed');
+        setErrorMessage(err?.message || t('signin.passkeyFailed'));
       }
     } finally {
       setPasskeyLoading(false);
@@ -353,9 +353,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
           >
             {/* Fields */}
             <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
-              <Field icon="email-outline" label="Email address" value={email} onChangeText={setEmail} placeholder="you@email.com" onFocus={() => setFocusedField('email')} />
+              <Field icon="email-outline" label={t('signin.emailAddress')} value={email} onChangeText={setEmail} placeholder={t('signin.emailAddressPlaceholder')} onFocus={() => setFocusedField('email')} />
               <View style={{ height: 12 }} />
-              <Field icon="lock-outline" label="Password" value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('password')} right={
+              <Field icon="lock-outline" label={t('signin.passwordLabel')} value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('password')} right={
                 <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
                   <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                 </TouchableOpacity>
@@ -368,11 +368,11 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
             </TouchableOpacity>
 
             {/* Sign in button */}
-            <PrimaryButton onPress={handleLogin} disabled={!canSubmit || loading}>{loading ? t('common.loading') : 'Sign in →'}</PrimaryButton>
+            <PrimaryButton onPress={handleLogin} disabled={!canSubmit || loading}>{loading ? t('common.loading') : t('signin.signInBtn')}</PrimaryButton>
 
             <View style={s.separatorRow}>
               <View style={s.separatorLine} />
-              <Text style={s.separatorText}>or</Text>
+              <Text style={s.separatorText}>{t('signin.or')}</Text>
               <View style={s.separatorLine} />
             </View>
 
@@ -408,7 +408,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
             {/* Switch to signup */}
             <TouchableOpacity onPress={onSwitchToSignup} style={{ paddingVertical: 14 }}>
               <Text style={{ textAlign: 'center', color: C.sub, fontSize: 14, fontWeight: '500' }}>
-                New here? <Text style={{ color: C.pink, fontWeight: '700' }}>Create an account →</Text>
+                {t('signin.newHere')} <Text style={{ color: C.pink, fontWeight: '700' }}>{t('signin.createAccount')}</Text>
               </Text>
             </TouchableOpacity>
           </Animated.View>
@@ -438,13 +438,13 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
                     color={isActive ? C.violet : C.sub}
                   />
                   <View style={{ flex: 1, justifyContent: 'center' }}>
-                    <Text style={s.fieldLabel}>{isEmail ? 'Email address' : 'Password'}</Text>
+                    <Text style={s.fieldLabel}>{isEmail ? t('signin.emailAddress') : t('signin.passwordLabel')}</Text>
                     <TextInput
                       autoFocus={isActive}
                       style={s.fieldInput}
                       value={isEmail ? email : password}
                       onChangeText={isEmail ? setEmail : setPassword}
-                      placeholder={isEmail ? 'Email address' : 'Password'}
+                      placeholder={isEmail ? t('signin.emailAddressPlaceholder') : t('signin.passwordLabel')}
                       placeholderTextColor={C.sub}
                       secureTextEntry={!isEmail && !showPw}
                       autoCapitalize="none"
@@ -465,9 +465,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
                 disabled={!canSubmit || loading}
                 style={s.keyboardGhostButton}
                 accessibilityRole="button"
-                accessibilityLabel="Sign in"
+                accessibilityLabel={t('signin.signInBtnKeyboard')}
               >
-                <Text style={[s.keyboardGhostSignInText, (!canSubmit || loading) && s.keyboardGhostDisabledText]}>Sign in</Text>
+                <Text style={[s.keyboardGhostSignInText, (!canSubmit || loading) && s.keyboardGhostDisabledText]}>{t('signin.signInBtnKeyboard')}</Text>
                 <MaterialCommunityIcons name="arrow-right" size={17} color={canSubmit && !loading ? C.sub : C.faint} />
               </TouchableOpacity>
             </View>
@@ -481,13 +481,13 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
             <View style={s.errorIconRing}>
               <MaterialCommunityIcons name="shield-alert-outline" size={30} color={C.pink} />
             </View>
-            <Text style={s.errorTitle}>Couldn&apos;t sign you in</Text>
+            <Text style={s.errorTitle}>{t('signin.couldNotSignIn')}</Text>
             <Text style={s.errorMessage}>
-              {errorMessage === 'Invalid email or password' ? 'The email or password is incorrect. Check your details and try again.' : errorMessage}
+              {errorMessage === 'Invalid email or password' ? t('signin.incorrectCredentials') : errorMessage}
             </Text>
-            <TouchableOpacity style={s.errorButton} onPress={() => setErrorMessage(null)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Try again">
+            <TouchableOpacity style={s.errorButton} onPress={() => setErrorMessage(null)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={t('signin.tryAgain')}>
               <LinearGradient colors={[C.violet, C.pink, C.amber]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.errorButtonGradient}>
-                <Text style={s.errorButtonText}>Try again</Text>
+                <Text style={s.errorButtonText}>{t('signin.tryAgain')}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>

@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import { useTranslation } from '../i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -40,6 +41,7 @@ type OfferDetail = {
 export default function OfferDetailScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const { t } = useTranslation();
   const { messageId, conversationId } = route.params;
   const [offer, setOffer] = useState<OfferDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
         setOffer(res.offer);
         if (res.offer) setCounterPrice(String(res.offer.listPrice));
       })
-      .catch(() => toast.error('Could not load offer'))
+      .catch(() => toast.error(t('offer.couldNotLoad')))
       .finally(() => setLoading(false));
   }, [messageId]);
 
@@ -70,10 +72,10 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
     setActing(true);
     try {
       await respondToOffer(offer.messageId, 'accepted');
-      toast.success('Offer accepted');
+      toast.success(t('offer.acceptedToast'));
       setOffer(prev => prev ? { ...prev, status: 'accepted' } : prev);
     } catch {
-      toast.error('Could not accept offer');
+      toast.error(t('offer.couldNotAccept'));
     } finally {
       setActing(false);
     }
@@ -84,10 +86,10 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
     setActing(true);
     try {
       await respondToOffer(offer.messageId, 'declined');
-      toast.success('Offer declined');
+      toast.success(t('offer.declinedToast'));
       setOffer(prev => prev ? { ...prev, status: 'declined' } : prev);
     } catch {
-      toast.error('Could not decline offer');
+      toast.error(t('offer.couldNotDecline'));
     } finally {
       setActing(false);
     }
@@ -97,16 +99,16 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
     if (!offer) return;
     const price = Number(counterPrice.replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(price) || price <= 0) {
-      toast.error('Enter a valid price');
+      toast.error(t('offer.invalidPrice'));
       return;
     }
     setActing(true);
     try {
       const res = await counterOffer(offer.messageId, price) as any;
-      toast.success('Counter sent', `G ${formatPrice(price)}`);
+      toast.success(t('offer.counterSent'), `${formatPrice(price)} G`);
       setOffer(prev => prev ? { ...prev, offeredPrice: price, status: 'countered', negotiationRound: res.negotiationRound || prev.negotiationRound + 1 } : prev);
     } catch (err: any) {
-      toast.error('Could not send counter', err?.message || 'Try again');
+      toast.error(t('offer.couldNotCounter'), err?.message || t('common.retry'));
     } finally {
       setActing(false);
     }
@@ -132,10 +134,10 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
   if (!offer) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <ScreenHeader title="Offer" onBack={() => navigation.goBack()} bordered={false} />
+        <ScreenHeader title={t('offer.detailTitle')} onBack={() => navigation.goBack()} bordered={false} />
         <View style={styles.emptyWrap}>
           <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.text2} />
-          <Text style={styles.emptyText}>Offer not found</Text>
+          <Text style={styles.emptyText}>{t('offer.notFound')}</Text>
         </View>
       </View>
     );
@@ -145,7 +147,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Offer" onBack={() => navigation.goBack()} bordered={false} />
+      <ScreenHeader title={t('offer.detailTitle')} onBack={() => navigation.goBack()} bordered={false} />
 
       <ScrollView contentContainerStyle={styles.content}>
         {offer.productImage ? (
@@ -163,28 +165,28 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
 
         <View style={styles.priceCard}>
           <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Listed price</Text>
+            <Text style={styles.priceLabel}>{t('offer.listedPrice')}</Text>
             <Text style={styles.listPrice}>{formatPrice(offer.listPrice)} G</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Current offer</Text>
+            <Text style={styles.priceLabel}>{t('offer.currentOffer')}</Text>
             <Text style={styles.offerPrice}>{formatPrice(offer.offeredPrice)} G</Text>
           </View>
           {discount > 0 && (
-            <Text style={styles.discount}>{discount}% off listed price</Text>
+            <Text style={styles.discount}>{t('offer.discountOff', { percent: String(discount) })}</Text>
           )}
         </View>
 
         <View style={styles.infoRow}>
           <View style={[styles.statusBadge, offer.status === 'accepted' && styles.statusAccepted, offer.status === 'declined' && styles.statusDeclined, isCountered && styles.statusCountered]}>
             <Text style={styles.statusText}>
-              {offer.status === 'pending' ? 'Waiting for response' : offer.status === 'accepted' ? 'Accepted' : offer.status === 'declined' ? 'Declined' : `Countered (${offer.negotiationRound}/3)`}
+              {offer.status === 'pending' ? t('offer.pending') : offer.status === 'accepted' ? t('offer.accepted') : offer.status === 'declined' ? t('offer.declined') : t('offer.countered', { round: String(offer.negotiationRound) })}
             </Text>
           </View>
           {expiresIn !== null && !isFinalized && (
             <Text style={[styles.expiresText, expiresIn < 6 && styles.expiresUrgent]}>
-              {expiresIn}h left
+              {t('offer.expiresIn', { hours: String(expiresIn) })}
             </Text>
           )}
         </View>
@@ -192,7 +194,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
         {maxRounds && !isFinalized && (
           <View style={styles.roundBanner}>
             <MaterialCommunityIcons name="information-outline" size={18} color={COLORS.coral} />
-            <Text style={styles.roundBannerText}>Max 3 rounds reached. Accept, decline, or go to chat to buy at listed price.</Text>
+            <Text style={styles.roundBannerText}>{t('offer.maxRounds')}</Text>
           </View>
         )}
       </ScrollView>
@@ -202,10 +204,10 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
           {canRespond && (
             <>
               <TouchableOpacity style={styles.acceptBtn} onPress={handleAccept} disabled={acting} accessibilityLabel="accept offer" accessibilityRole="button">
-                <Text style={styles.acceptBtnText}>{acting ? '...' : 'Accept offer'}</Text>
+                <Text style={styles.acceptBtnText}>{acting ? '...' : t('offer.acceptOffer')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.declineBtn} onPress={handleDecline} disabled={acting} accessibilityLabel="decline offer" accessibilityRole="button">
-                <Text style={styles.declineBtnText}>Decline</Text>
+                <Text style={styles.declineBtnText}>{t('offer.declineOffer')}</Text>
               </TouchableOpacity>
             </>
           )}
@@ -216,12 +218,12 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
                 value={counterPrice}
                 onChangeText={setCounterPrice}
                 keyboardType="decimal-pad"
-                placeholder="Counter price"
+                placeholder={t('offer.counterPrice')}
                 placeholderTextColor={COLORS.text2}
                 accessibilityLabel="counter price"
               />
               <TouchableOpacity style={styles.counterBtn} onPress={handleCounter} disabled={acting} accessibilityLabel="send counter" accessibilityRole="button">
-                <Text style={styles.counterBtnText}>{acting ? '...' : 'Counter'}</Text>
+                <Text style={styles.counterBtnText}>{acting ? '...' : t('offer.counterBtn')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -229,7 +231,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
               const ou = isBuyer ? { name: offer.sellerName, avatar: offer.sellerAvatar, tier: offer.sellerTier, storeLogoUrl: offer.sellerStoreLogoUrl, useStoreIdentity: offer.sellerUseStoreIdentity } : { name: offer.buyerName, avatar: offer.buyerAvatar };
               navigation.navigate('Chat', { conversationId, otherUserName: ou.name || '', otherUserId: isBuyer ? offer.sellerId : offer.buyerId, otherUserAvatar: ou.avatar, otherUserStoreLogoUrl: (ou as any).storeLogoUrl, otherUserUseStoreIdentity: (ou as any).useStoreIdentity, otherUserTier: (ou as any).tier });
             }} accessibilityLabel="open chat" accessibilityRole="button">
-              <Text style={styles.chatBtnText}>Open chat</Text>
+              <Text style={styles.chatBtnText}>{t('offer.openChat')}</Text>
             </TouchableOpacity>
           )}
         </View>

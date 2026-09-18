@@ -22,8 +22,8 @@ const STEPS = ['name', 'email', 'password', 'phone', 'dob', 'review'] as const;
 type Step = typeof STEPS[number];
 
 const STEP_LABELS: Record<Step, string> = {
-  name: 'About you', email: 'Contact', password: 'Security',
-  phone: 'Phone', dob: 'Birthday', review: 'Review',
+  name: 'signup.aboutYou', email: 'signup.emailTitle', password: 'signup.createPassword',
+  phone: 'signup.phoneTitle', dob: 'signup.birthdayTitle', review: 'signup.reviewTitle',
 };
 const STEP_GLYPHS: Record<Step, AuthGlyph> = {
   name: 'name', email: 'email', password: 'password',
@@ -83,7 +83,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
       const data = await res.json();
       setEmailAvailable(data.available);
       if (!data.available) {
-        setErrors(prev => ({ ...prev, email: 'This email is already registered' }));
+        setErrors(prev => ({ ...prev, email: t('signup.emailTaken') }));
       } else {
         setErrors(prev => { const next = { ...prev }; delete next.email; return next; });
       }
@@ -110,25 +110,25 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
   const validateAndNext = () => {
     if (step === 'name') {
       if (!firstName.trim() || !lastName.trim()) {
-        setErrors({ name: "First and last name help sellers know who they're talking to" });
+        setErrors({ name: t('signup.nameError') });
         return;
       }
     }
     if (step === 'email') {
-      if (!emailValid) { setErrors({ email: "That doesn't look like a full email address" }); return; }
-      if (emailAvailable === false) { setErrors({ email: 'This email is already registered' }); return; }
+      if (!emailValid) { setErrors({ email: t('signup.emailInvalid') }); return; }
+      if (emailAvailable === false) { setErrors({ email: t('signup.emailTaken') }); return; }
     }
     if (step === 'password') {
-      if (!pwOk) { setErrors({ password: 'Needs at least 6 characters' }); return; }
+      if (!pwOk) { setErrors({ password: t('signup.passwordError') }); return; }
     }
     if (step === 'dob') {
-      if (!birthMonth || !birthDay || !birthYear) { setErrors({ dob: 'Please enter your full date of birth' }); return; }
+      if (!birthMonth || !birthDay || !birthYear) { setErrors({ dob: t('signup.dobError') }); return; }
       const dob = new Date(birthYear, birthMonth - 1, birthDay);
       const today = new Date();
       let age = today.getFullYear() - dob.getFullYear();
       const m = today.getMonth() - dob.getMonth();
       if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-      if (age < 18) { setErrors({ dob: 'You must be at least 18 years old' }); return; }
+      if (age < 18) { setErrors({ dob: t('signup.dobAgeError') }); return; }
     }
     goNext();
   };
@@ -169,12 +169,12 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
         <View style={styles.centeredHeader}>
           <AuthBadge variant="name" />
           <Text style={styles.brand}>Maur<Text style={styles.brandAccent}>Maket</Text></Text>
-          <Text style={styles.title}>Create your account</Text>
-          <Text style={styles.subtitle}>Join Haiti&apos;s marketplace</Text>
+          <Text style={styles.title}>{t('signup.createAccount')}</Text>
+          <Text style={styles.subtitle}>{t('signup.joinHaiti')}</Text>
         </View>
       ) : (
         <View style={styles.wizardHeader}>
-          <ProgressTrail step={stepIdx + 1} total={STEPS.length} label={STEP_LABELS[step]} />
+          <ProgressTrail step={stepIdx + 1} total={STEPS.length} label={t(STEP_LABELS[step])} />
           <AuthBadge variant={STEP_GLYPHS[step]} />
         </View>
       )}
@@ -192,24 +192,24 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
         {stepIdx > 0 && (
           <TouchableOpacity onPress={goBack} style={styles.backBtnInline}>
             <MaterialCommunityIcons name="arrow-left" size={18} color={COLORS.text2} />
-            <Text style={styles.backBtnText}>Back</Text>
+            <Text style={styles.backBtnText}>{t('signup.back')}</Text>
           </TouchableOpacity>
         )}
         {step === 'name' && (
           <>
-            <StepHeading eyebrow="Let's start with you" title="What's your name?" />
+            <StepHeading eyebrow={t('signup.aboutYou')} title={t('signup.whatsName')} />
             <AuthInput
               icon="account-outline"
               value={firstName}
               onChangeText={setFirstName}
-              placeholder="First name"
+              placeholder={t('signup.firstName')}
               autoFocus
             />
             <AuthInput
               icon="account-outline"
               value={lastName}
               onChangeText={setLastName}
-              placeholder="Last name"
+              placeholder={t('signup.lastName')}
               error={errors.name}
             />
             {showMiddle ? (
@@ -217,11 +217,11 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
                 icon="account-outline"
                 value={middleName}
                 onChangeText={setMiddleName}
-                placeholder="Middle name (optional)"
+                placeholder={t('signup.middleName')}
               />
             ) : (
               <TouchableOpacity onPress={() => setShowMiddle(true)}>
-                <Text style={styles.subtleLink}>+ Add a middle name</Text>
+                <Text style={styles.subtleLink}>{t('signup.addMiddle')}</Text>
               </TouchableOpacity>
             )}
           </>
@@ -229,7 +229,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
 
         {step === 'email' && (
           <>
-            <StepHeading eyebrow="How sellers reach you" title="What's your email?" />
+            <StepHeading eyebrow={t('signup.emailSubtitle')} title={t('signup.emailTitle')} />
             <AuthInput
               icon="email-outline"
               value={email}
@@ -242,19 +242,19 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
               rightIcon={emailAvailable === true ? 'check-circle' : emailAvailable === false ? 'close-circle' : undefined}
               rightColor={emailAvailable ? COLORS.green : COLORS.coral}
             />
-            {!emailValid && email.length === 0 && <Text style={styles.hint}>Order updates and receipts go here</Text>}
-            {emailValid && emailAvailable === true && <Text style={[styles.hint, { color: COLORS.green }]}>✓ Email is available</Text>}
+            {!emailValid && email.length === 0 && <Text style={styles.hint}>{t('signup.emailHint')}</Text>}
+            {emailValid && emailAvailable === true && <Text style={[styles.hint, { color: COLORS.green }]}>{t('signup.emailAvailable')}</Text>}
           </>
         )}
 
         {step === 'password' && (
           <>
-            <StepHeading eyebrow="Keep it yours" title="Create a password" />
+            <StepHeading eyebrow={t('signup.passwordSubtitle')} title={t('signup.createPassword')} />
             <AuthInput
               icon="lock-outline"
               value={password}
               onChangeText={setPassword}
-              placeholder="At least 6 characters"
+              placeholder={t('signup.passwordPlaceholder')}
               secureTextEntry={!showPw}
               error={errors.password}
               rightIcon={showPw ? 'eye-off-outline' : 'eye-outline'}
@@ -269,14 +269,14 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
               ))}
             </View>
             <Text style={[styles.hint, pwOk && { color: COLORS.green }]}>
-              {pwOk ? '✓ Good — that works' : `${pwLen}/6 characters minimum`}
+              {pwOk ? t('signup.passwordGood') : t('signup.passwordMin', { count: String(pwLen) })}
             </Text>
           </>
         )}
 
         {step === 'phone' && (
           <>
-            <StepHeading eyebrow="Optional, but handy for meetups" title="Add a phone number?" />
+            <StepHeading eyebrow={t('signup.phoneSubtitle')} title={t('signup.phoneTitle')} />
             <View style={styles.phoneRow}>
               <MaterialCommunityIcons name="phone-outline" size={18} color={COLORS.text2} />
               <Text style={styles.phonePrefix}>+509</Text>
@@ -291,20 +291,20 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
                 maxLength={8}
               />
             </View>
-            <Text style={styles.hint}>Used for buyer-seller meetup coordination — never shown publicly.</Text>
+            <Text style={styles.hint}>{t('signup.phoneHint')}</Text>
             <TouchableOpacity onPress={goNext}>
-              <Text style={styles.subtleLink}>Skip for now</Text>
+              <Text style={styles.subtleLink}>{t('signup.phoneSkip')}</Text>
             </TouchableOpacity>
           </>
         )}
 
         {step === 'dob' && (
           <>
-            <StepHeading eyebrow="Required for account safety" title="When's your birthday?" />
-            <Text style={styles.hint}>You must be 18 or older to use MaurMaket. This is not shown publicly.</Text>
+            <StepHeading eyebrow={t('signup.birthdaySubtitle')} title={t('signup.birthdayTitle')} />
+            <Text style={styles.hint}>{t('signup.birthdayHint')}</Text>
             <View style={styles.dobRow}>
               <View style={styles.dobCol}>
-                <Text style={styles.dobLabel}>Month</Text>
+                <Text style={styles.dobLabel}>{t('signup.month')}</Text>
                 <ScrollView style={styles.dobScroll} showsVerticalScrollIndicator={false}>
                   {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) => (
                     <TouchableOpacity
@@ -318,7 +318,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
                 </ScrollView>
               </View>
               <View style={styles.dobCol}>
-                <Text style={styles.dobLabel}>Day</Text>
+                <Text style={styles.dobLabel}>{t('signup.day')}</Text>
                 <ScrollView style={styles.dobScroll} showsVerticalScrollIndicator={false}>
                   {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
                     <TouchableOpacity
@@ -332,7 +332,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
                 </ScrollView>
               </View>
               <View style={styles.dobCol}>
-                <Text style={styles.dobLabel}>Year</Text>
+                <Text style={styles.dobLabel}>{t('signup.year')}</Text>
                 <ScrollView style={styles.dobScroll} showsVerticalScrollIndicator={false}>
                   {Array.from({ length: 80 }, (_, i) => new Date().getFullYear() - 18 - i).map(y => (
                     <TouchableOpacity
@@ -352,13 +352,13 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
 
         {step === 'review' && (
           <>
-            <StepHeading eyebrow="Last look" title="Ready to join?" />
+            <StepHeading eyebrow={t('signup.reviewSubtitle')} title={t('signup.reviewTitle')} />
             <View style={styles.reviewCard}>
-              <ReviewRow label="Name" value={[firstName, middleName, lastName].filter(Boolean).join(' ')} />
-              <ReviewRow label="Email" value={email} />
-              <ReviewRow label="Password" value={'•'.repeat(Math.min(pwLen, 10))} />
-              <ReviewRow label="Phone" value={phoneDigits ? `+509 ${phoneDigits}` : 'Not added'} muted={!phoneDigits} />
-              <ReviewRow label="Birthday" value={birthMonth && birthDay && birthYear ? `${birthMonth}/${birthDay}/${birthYear}` : 'Not provided'} muted={!birthMonth} />
+              <ReviewRow label={t('signup.reviewName')} value={[firstName, middleName, lastName].filter(Boolean).join(' ')} />
+              <ReviewRow label={t('signup.reviewEmail')} value={email} />
+              <ReviewRow label={t('signup.reviewPassword')} value={'•'.repeat(Math.min(pwLen, 10))} />
+              <ReviewRow label={t('signup.reviewPhone')} value={phoneDigits ? `+509 ${phoneDigits}` : t('signup.notAdded')} muted={!phoneDigits} />
+              <ReviewRow label={t('signup.reviewBirthday')} value={birthMonth && birthDay && birthYear ? `${birthMonth}/${birthDay}/${birthYear}` : t('signup.notProvided')} muted={!birthMonth} />
             </View>
           </>
         )}
@@ -382,7 +382,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
               (step === 'dob' && (!birthMonth || !birthDay || !birthYear))
             }
           >
-            <Text style={styles.primaryBtnText}>Continue</Text>
+            <Text style={styles.primaryBtnText}>{t('signup.continue')}</Text>
             <MaterialCommunityIcons name="arrow-right" size={17} color="#fff" />
           </TouchableOpacity>
         ) : (
@@ -392,7 +392,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
             disabled={loading}
           >
             <MaterialCommunityIcons name="check-decagram" size={16} color="#fff" />
-            <Text style={styles.primaryBtnText}>{loading ? t('common.loading') : 'Create my account'}</Text>
+            <Text style={styles.primaryBtnText}>{loading ? t('common.loading') : t('signup.createBtn')}</Text>
           </TouchableOpacity>
         )}
 

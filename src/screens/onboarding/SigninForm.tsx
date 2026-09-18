@@ -41,7 +41,7 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
       const res = await googleAuth() as { user: User; token: string };
       await store.setUser(res.user, res.token);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Google sign-in failed';
+      const message = err instanceof Error ? err.message : t('signin.googleFailed');
       setError(message);
     } finally {
       setGoogleLoading(false);
@@ -68,7 +68,7 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
       const res = await apiLogin(email.trim(), password) as { user: User; token: string };
       await store.setUser(res.user, res.token);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Login failed';
+      const message = err instanceof Error ? err.message : t('signin.loginFailed');
       setError(message);
       triggerShake();
     } finally {
@@ -86,8 +86,8 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
       <View style={styles.centeredHeader}>
         <AuthBadge variant="signin" />
         <Text style={styles.brand}>Maur<Text style={styles.brandAccent}>Maket</Text></Text>
-        <Text style={styles.title}>Welcome back</Text>
-        <Text style={styles.subtitle}>Sign in to continue</Text>
+        <Text style={styles.title}>{t('signin.welcomeBack')}</Text>
+        <Text style={styles.subtitle}>{t('signin.signInToContinue')}</Text>
       </View>
 
       <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
@@ -95,7 +95,7 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
           icon="email-outline"
           value={email}
           onChangeText={(v) => { setEmail(v); setError(''); }}
-          placeholder="you@email.com"
+          placeholder={t('signin.emailAddressPlaceholder')}
           keyboardType="email-address"
           autoCapitalize="none"
         />
@@ -103,7 +103,7 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
           icon="lock-outline"
           value={password}
           onChangeText={(v) => { setPassword(v); setError(''); }}
-          placeholder="Password"
+          placeholder={t('signin.passwordLabel')}
           secureTextEntry={!showPw}
           error={error}
           rightIcon={showPw ? 'eye-off-outline' : 'eye-outline'}

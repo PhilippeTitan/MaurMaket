@@ -4,6 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { getFollowList } from '../api';
 import type { RootStackParamList } from '../navigation';
 import { COLORS, SPACING } from '../theme';
+import { useTranslation } from '../i18n';
 import UserAvatar from '../components/UserAvatar';
 import ScreenHeader from '../components/ScreenHeader';
 
@@ -12,16 +13,17 @@ type FollowUser = { id: string; full_name: string; username?: string; avatar_url
 
 export default function FollowListScreen({ route, navigation }: Props) {
   const { userId, kind, title } = route.params;
+  const { t } = useTranslation();
   const [users, setUsers] = useState<FollowUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   useEffect(() => {
     setLoading(true); setError('');
-    getFollowList(userId, kind).then((r: any) => setUsers(r.users || [])).catch(() => setError('Could not load this list. Check your connection and try again.')).finally(() => setLoading(false));
+    getFollowList(userId, kind).then((r: any) => setUsers(r.users || [])).catch(() => setError(t('follow.loadError'))).finally(() => setLoading(false));
   }, [userId, kind]);
   return <View style={styles.container}>
     <ScreenHeader title={title} onBack={() => navigation.goBack()} />
-    {loading ? <ActivityIndicator style={{ marginTop: 32 }} color={COLORS.coral} /> : error ? <Text style={styles.empty}>{error}</Text> : <FlatList data={users} keyExtractor={item => item.id} ListEmptyComponent={<Text style={styles.empty}>No {kind} yet.</Text>} renderItem={({ item }) => <TouchableOpacity style={styles.row} onPress={() => navigation.push('Storefront', { sellerId: item.id, preloadedSeller: item as any })}>
+    {loading ? <ActivityIndicator style={{ marginTop: 32 }} color={COLORS.coral} /> : error ? <Text style={styles.empty}>{error}</Text> : <FlatList data={users} keyExtractor={item => item.id} ListEmptyComponent={<Text style={styles.empty}>{kind === 'followers' ? t('follow.noFollowers') : t('follow.noFollowing')}</Text>} renderItem={({ item }) => <TouchableOpacity style={styles.row} onPress={() => navigation.push('Storefront', { sellerId: item.id, preloadedSeller: item as any })}>
       <UserAvatar seller={item as any} size={48} animated={false} /><View style={{ flex: 1 }}><Text style={styles.name}>{item.store_name || item.full_name}</Text><Text style={styles.handle}>{item.username ? `${item.username}` : ''}</Text></View>
     </TouchableOpacity>} />}
   </View>;

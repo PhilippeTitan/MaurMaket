@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Platform, TouchableOpacity, Animated } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '../theme';
+import { ONBOARDING_COLORS, ONBOARDING_GRADIENT } from './onboarding/theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
 
@@ -86,8 +88,8 @@ export default function SettingsScreen({ navigation }: Props) {
           >
             <SettingsRow
               icon="account-cog-outline"
-              label="Account settings"
-              subtitle="Profile, contact info, preferences"
+              label={t('settings.accountSettings')}
+              subtitle={t('settings.profileContact')}
               value={user?.username ? `@${user.username}` : undefined}
               chevron
               onPress={() => navigation.navigate('AccountDashboard')}
@@ -97,11 +99,11 @@ export default function SettingsScreen({ navigation }: Props) {
 
         {/* ── Payments ── */}
         <Animated.View style={animStyle(2)}>
-          <SettingsGroup header="Payments">
+          <SettingsGroup header={t('settings.payments')}>
             <SettingsRow
               icon="cash"
-              label="Payment methods"
-              subtitle="MonCash & NatCash"
+              label={t('settings.paymentMethods')}
+              subtitle={t('settings.moncashNatcash')}
               chevron
               onPress={() => navigation.navigate('Payments')}
               divider
@@ -109,8 +111,8 @@ export default function SettingsScreen({ navigation }: Props) {
             {isSeller ? (
               <SettingsRow
               icon="bank-transfer-out"
-              label="Payouts"
-              subtitle="Manage your earnings"
+              label={t('settings.payouts')}
+              subtitle={t('settings.manageEarnings')}
               chevron
               onPress={() => navigation.navigate('Payments')}
               />
@@ -120,11 +122,11 @@ export default function SettingsScreen({ navigation }: Props) {
 
         {/* ── Notifications ── */}
         <Animated.View style={animStyle(3)}>
-          <SettingsGroup header="Notifications">
+          <SettingsGroup header={t('settings.notifications')}>
             <SettingsRow
               icon="bell-outline"
-              label="Notification preferences"
-              subtitle="Choose what you get notified about"
+              label={t('settings.notificationPrefs')}
+              subtitle={t('settings.chooseNotifs')}
               chevron
               onPress={() => navigation.navigate('NotificationsSettings')}
             />
@@ -133,11 +135,11 @@ export default function SettingsScreen({ navigation }: Props) {
 
         {/* ── Security ── */}
         <Animated.View style={animStyle(4)}>
-          <SettingsGroup header="Security">
+          <SettingsGroup header={t('settings.security')}>
             <SettingsRow
               icon="shield-lock-outline"
-              label="Password & authentication"
-              subtitle="Password, 2FA, trusted devices"
+              label={t('settings.passwordAuth')}
+              subtitle={t('settings.password2fa')}
               chevron
               onPress={() => navigation.navigate('SecuritySettings')}
             />
@@ -152,8 +154,8 @@ export default function SettingsScreen({ navigation }: Props) {
           >
             <SettingsRow
               icon="eye-outline"
-              label="Privacy controls"
-              subtitle="Profile visibility, data, blocked users"
+              label={t('settings.profileVisibility')}
+              subtitle={t('settings.nameVisibleHidden')}
               chevron
               onPress={() => navigation.navigate('PrivacySettings')}
             />
@@ -180,7 +182,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
         {/* ── App ── */}
         <Animated.View style={animStyle(7)}>
-          <SettingsGroup header="App">
+          <SettingsGroup header={t('settings.app')}>
             <SettingsRow
               icon="palette-outline"
               label="Appearance"
@@ -191,8 +193,8 @@ export default function SettingsScreen({ navigation }: Props) {
             />
             <SettingsRow
               icon="help-circle-outline"
-              label="Help & Support"
-              subtitle="FAQs, contact, report a problem"
+              label={t('settings.helpSupport')}
+              subtitle={t('settings.helpDesc')}
               chevron
               onPress={() => navigation.navigate('HelpSupport')}
               divider
@@ -209,12 +211,18 @@ export default function SettingsScreen({ navigation }: Props) {
         <Animated.View style={animStyle(8)}>
           <View style={styles.logoutSpacer} />
           <TouchableOpacity
-            style={styles.logoutButton}
+            style={styles.logoutButtonWrap}
             activeOpacity={0.7}
             onPress={handleLogout}
           >
-            <MaterialCommunityIcons name="logout" size={20} color={COLORS.coral} />
-            <Text style={styles.logoutText}>{t('settings.logout')}</Text>
+            <LinearGradient
+              colors={ONBOARDING_GRADIENT}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={styles.logoutButton}
+            >
+              <MaterialCommunityIcons name="logout" size={20} color={ONBOARDING_COLORS.white} />
+              <Text style={styles.logoutText}>{t('settings.logout')}</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </Animated.View>
 
@@ -248,22 +256,23 @@ const styles = StyleSheet.create({
   logoutSpacer: {
     height: SPACING.xxxl,
   },
+  logoutButtonWrap: {
+    marginHorizontal: SPACING.lg,
+  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: SPACING.sm,
-    marginHorizontal: SPACING.lg,
     paddingVertical: SPACING.lg,
-    backgroundColor: COLORS.coralMuted,
     borderRadius: RADIUS.card,
     borderWidth: 1,
-    borderColor: COLORS.coral + '20',
+    borderColor: ONBOARDING_COLORS.borderHi,
   },
   logoutText: {
     fontSize: FONT_SIZES.lg,
     fontWeight: FONT_WEIGHTS.semibold,
-    color: COLORS.coral,
+    color: ONBOARDING_COLORS.white,
   },
   bottomSpacer: {
     height: 60,
