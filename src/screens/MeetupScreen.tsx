@@ -90,7 +90,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
         }
       }
     } catch {
-      Alert.alert(t('common.error'), 'Could not load meetup details');
+      Alert.alert(t('common.error'), t('meetup.loadError'));
       navigation.goBack();
     }
     setLoading(false);
@@ -120,7 +120,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
     (async () => {
       const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Location needed', 'Please enable location services to check in at the meetup.');
+        Alert.alert(t('meetup.locationNeededTitle'), t('meetup.locationNeededMsg'));
         return;
       }
       locationWatcher.current = await ExpoLocation.watchPositionAsync(
@@ -148,7 +148,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
   const handleCheckin = async () => {
     if (!myLocation) {
-      Alert.alert('Location unavailable', 'Waiting for GPS signal. Please try again.');
+      Alert.alert(t('meetup.locationUnavailableTitle'), t('meetup.locationUnavailableMsg'));
       return;
     }
     setCheckinLoading(true);
@@ -165,20 +165,20 @@ export default function MeetupScreen({ route, navigation }: Props) {
         setProximityConfirmed(true);
       }
       if (res.proximityConfirmed && isSeller) {
-        Alert.alert('You\'re close!', 'You are within range. Ask the buyer for their delivery code.');
+        Alert.alert(t('meetup.closeTitle'), t('meetup.closeSellerMsg'));
       }
       if (res.proximityConfirmed && isBuyer && res.meetupCode) {
-        Alert.alert('Ready!', 'You are within range. Show the delivery code to the seller.');
+        Alert.alert(t('meetup.readyTitle'), t('meetup.readyBuyerMsg'));
       }
     } catch (err: any) {
-      Alert.alert(t('common.error'), err.message || 'Check-in failed');
+      Alert.alert(t('common.error'), err.message || t('meetup.checkinFailed'));
     }
     setCheckinLoading(false);
   };
 
   const handleScan = async () => {
     if (!scanInput.trim()) {
-      Alert.alert('Enter code', 'Please enter the buyer\'s 4-digit delivery code.');
+      Alert.alert(t('meetup.enterCodeTitle'), t('meetup.enterCodeMsg'));
       return;
     }
     setScanLoading(true);
@@ -186,11 +186,11 @@ export default function MeetupScreen({ route, navigation }: Props) {
       await meetupScan(orderId, scanInput.trim());
       setScanModalVisible(false);
       setScanInput('');
-      Alert.alert('Exchange confirmed!', 'The buyer will be asked to confirm receipt.', [
-        { text: 'OK', onPress: fetchData },
+      Alert.alert(t('meetup.exchangeConfirmedTitle'), t('meetup.exchangeConfirmedMsg'), [
+        { text: t('common.ok'), onPress: fetchData },
       ]);
     } catch (err: any) {
-      Alert.alert(t('common.error'), err.message || 'Scan failed');
+      Alert.alert(t('common.error'), err.message || t('meetup.scanFailed'));
     }
     setScanLoading(false);
   };
@@ -200,29 +200,29 @@ export default function MeetupScreen({ route, navigation }: Props) {
     try {
       await releaseEscrow(orderId);
       setReceiptModalVisible(false);
-      Alert.alert('Payment released!', 'The seller has been paid. Thank you!', [
-        { text: 'Done', onPress: () => navigation.goBack() },
+      Alert.alert(t('meetup.paymentReleasedTitle'), t('meetup.paymentReleasedMsg'), [
+        { text: t('common.done'), onPress: () => navigation.goBack() },
       ]);
     } catch (err: any) {
-      Alert.alert(t('common.error'), err.message || 'Could not release payment');
+      Alert.alert(t('common.error'), err.message || t('meetup.releaseFailed'));
     }
     setReleaseLoading(false);
   };
 
   const handleRefund = async () => {
-    Alert.alert('Cancel meetup?', 'You will receive a full refund.', [
-      { text: 'No', style: 'cancel' },
+    Alert.alert(t('meetup.cancelTitle'), t('meetup.cancelMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Yes, refund', style: 'destructive',
+        text: t('meetup.refundedTitle'), style: 'destructive',
         onPress: async () => {
           setRefunding(true);
           try {
             await refundEscrow(orderId);
-            Alert.alert('Refunded', 'Your payment has been refunded.', [
-              { text: 'OK', onPress: () => navigation.goBack() },
+            Alert.alert(t('meetup.refundedTitle'), t('meetup.refundedMsg'), [
+              { text: t('common.ok'), onPress: () => navigation.goBack() },
             ]);
           } catch (err: any) {
-            Alert.alert(t('common.error'), err.message || 'Refund failed');
+            Alert.alert(t('common.error'), err.message || t('meetup.refundFailed'));
           }
           setRefunding(false);
         },
@@ -232,29 +232,29 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
   const handleDispute = async () => {
     try {
-      await createDispute({ orderId, reason: 'item_issue', description: 'Buyer did not confirm receiving the item in good condition.' });
+      await createDispute({ orderId, reason: 'item_issue', description: t('meetup.disputeDescItemIssue') });
       setReceiptModalVisible(false);
-      Alert.alert('Dispute opened', 'Support will review this order. Your payment is held securely.');
+      Alert.alert(t('meetup.disputeOpenedTitle'), t('meetup.disputeOpenedMsg'));
     } catch (err: any) {
-      Alert.alert(t('common.error'), err.message || 'Could not open dispute');
+      Alert.alert(t('common.error'), err.message || t('meetup.disputeFailed'));
     }
   };
 
   const handleEmergencyExit = () => {
-    Alert.alert('Emergency Exit?', 'This will freeze the meetup and start a 48-hour resolution. No penalty.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('meetup.emergencyExitTitle'), t('meetup.emergencyExitMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Exit', style: 'destructive',
+        text: t('meetup.emergency'), style: 'destructive',
         onPress: async () => {
           try {
             // Emergency exit is deliberately a dispute, not an irreversible
             // refund.  The open dispute freezes escrow server-side.
-            await createDispute({ orderId, reason: 'meetup_emergency', description: 'Emergency exit requested during meetup. Please freeze this fulfillment for review.' });
-            Alert.alert('Meetup frozen', 'Your payment remains protected while support reviews the situation.', [
-              { text: 'OK', onPress: () => navigation.goBack() },
+            await createDispute({ orderId, reason: 'meetup_emergency', description: t('meetup.disputeDescEmergency') });
+            Alert.alert(t('meetup.frozenTitle'), t('meetup.frozenMsg'), [
+              { text: t('common.ok'), onPress: () => navigation.goBack() },
             ]);
           } catch (err: any) {
-            Alert.alert(t('common.error'), err.message || 'Emergency exit failed');
+            Alert.alert(t('common.error'), err.message || t('meetup.emergencyExitFailed'));
           }
         },
       },
@@ -266,9 +266,9 @@ export default function MeetupScreen({ route, navigation }: Props) {
       const result = await extendMeetup(orderId) as { meetupExpiresAt?: string };
       if (result.meetupExpiresAt) setMeetupExpiresAt(result.meetupExpiresAt);
       setTimeLeft(prev => prev + 30 * 60 * 1000);
-      Alert.alert('Extended', 'Timer extended by 30 minutes.');
+      Alert.alert(t('meetup.extendedTitle'), t('meetup.extendedMsg'));
     } catch (err: any) {
-      Alert.alert(t('common.error'), err.message || 'Could not extend');
+      Alert.alert(t('common.error'), err.message || t('meetup.extendFailed'));
     }
   };
 
@@ -293,7 +293,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Meetup" onBack={() => navigation.goBack()} variant="branded" bordered={false} />
+      <ScreenHeader title={t('meetup.screenTitle')} onBack={() => navigation.goBack()} variant="branded" bordered={false} />
 
       {meetupLat && meetupLng && (
         <View style={styles.mapContainer}>
@@ -311,11 +311,11 @@ export default function MeetupScreen({ route, navigation }: Props) {
             <View style={[styles.map, { backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
               <Icon name="map" size={48} color={COLORS.coral} />
               <Text style={{ color: COLORS.text, fontWeight: '700', marginTop: 10, textAlign: 'center' }}>
-                {order.meetup_address || 'Meetup location'}
+                {order.meetup_address || t('meetup.locationFallback')}
               </Text>
               {distance !== null && (
                 <Text style={{ color: COLORS.text2, fontSize: 13, marginTop: 6 }}>
-                  {distance}m from meetup point
+                  {t('meetup.distanceFromPoint', { distance })}
                 </Text>
               )}
             </View>
@@ -329,7 +329,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
                 color={distance <= PROXIMITY_THRESHOLD ? COLORS.white : COLORS.text}
               />
               <Text style={[styles.distanceText, distance <= PROXIMITY_THRESHOLD && styles.distanceTextClose]}>
-                {distance}m away
+                {t('meetup.metersAway', { distance })}
               </Text>
             </View>
           )}
@@ -345,20 +345,20 @@ export default function MeetupScreen({ route, navigation }: Props) {
             <View style={styles.timerRow}>
               <MaterialCommunityIcons name="timer-outline" size={16} color={timeLeft < 600000 ? COLORS.coral : COLORS.yellow} />
               <Text style={[styles.timerText, timeLeft < 600000 && { color: COLORS.coral }]}>
-                {formatTime(timeLeft)} remaining
+                {t('meetup.timeRemaining', { time: formatTime(timeLeft) })}
               </Text>
             </View>
           ) : (
             <View style={styles.timerRow}>
               <MaterialCommunityIcons name="alert-circle-outline" size={16} color={COLORS.coral} />
-              <Text style={[styles.timerText, { color: COLORS.coral }]}>Time expired</Text>
+              <Text style={[styles.timerText, { color: COLORS.coral }]}>{t('meetup.timeExpired')}</Text>
             </View>
           )
         ) : (
           <View style={styles.timerRow}>
             <MaterialCommunityIcons name="map-marker-distance" size={16} color={COLORS.text2} />
             <Text style={[styles.timerText, { color: COLORS.text2 }]}>
-              {myCheckedIn && otherCheckedIn ? 'Both arrived — starting...' : 'Waiting for both parties to arrive...'}
+              {myCheckedIn && otherCheckedIn ? t('meetup.bothArrived') : t('meetup.waitingBothParties')}
             </Text>
           </View>
         )}
@@ -371,8 +371,8 @@ export default function MeetupScreen({ route, navigation }: Props) {
               size={18}
               color={myCheckedIn ? COLORS.green : COLORS.text2}
             />
-            <Text style={[styles.statusLabel, myCheckedIn && { color: COLORS.green }]}>You</Text>
-            <Text style={styles.statusSub}>{myCheckedIn ? 'Checked in' : 'Not here yet'}</Text>
+            <Text style={[styles.statusLabel, myCheckedIn && { color: COLORS.green }]}>{t('meetup.you')}</Text>
+            <Text style={styles.statusSub}>{myCheckedIn ? t('meetup.checkedIn') : t('meetup.notHereYet')}</Text>
           </View>
           <View style={[styles.statusCard, otherCheckedIn && styles.statusCardActive]}>
             <Icon
@@ -381,9 +381,9 @@ export default function MeetupScreen({ route, navigation }: Props) {
               color={otherCheckedIn ? COLORS.green : COLORS.text2}
             />
             <Text style={[styles.statusLabel, otherCheckedIn && { color: COLORS.green }]}>
-              {isBuyer ? 'Seller' : 'Buyer'}
+              {isBuyer ? t('meetup.seller') : t('meetup.buyer')}
             </Text>
-            <Text style={styles.statusSub}>{otherCheckedIn ? 'Checked in' : 'Not here yet'}</Text>
+            <Text style={styles.statusSub}>{otherCheckedIn ? t('meetup.checkedIn') : t('meetup.notHereYet')}</Text>
           </View>
         </View>
 
@@ -391,7 +391,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
         {isBuyer && myCheckedIn && otherCheckedIn && proximityConfirmed && meetupCode && (
           <TouchableOpacity style={styles.qrButton} onPress={() => setCodeModalVisible(true)} accessibilityLabel="show delivery code" accessibilityRole="button">
             <MaterialCommunityIcons name="numeric" size={20} color={COLORS.white} />
-            <Text style={styles.qrButtonText}>Show delivery code</Text>
+            <Text style={styles.qrButtonText}>{t('meetup.showDeliveryCode')}</Text>
           </TouchableOpacity>
         )}
 
@@ -399,7 +399,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
         {isSeller && myCheckedIn && otherCheckedIn && proximityConfirmed && (
           <TouchableOpacity style={styles.scanButton} onPress={() => setScanModalVisible(true)} accessibilityLabel="enter delivery code" accessibilityRole="button">
             <MaterialCommunityIcons name="form-textbox-password" size={20} color={COLORS.white} />
-            <Text style={styles.scanButtonText}>Enter delivery code</Text>
+            <Text style={styles.scanButtonText}>{t('meetup.enterDeliveryCode')}</Text>
           </TouchableOpacity>
         )}
 
@@ -407,7 +407,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
         {myCheckedIn && !otherCheckedIn && (
           <View style={styles.waitingCard}>
             <ActivityIndicator size="small" color={COLORS.blue} />
-            <Text style={styles.waitingText}>Waiting for {isBuyer ? 'seller' : 'buyer'} to arrive...</Text>
+            <Text style={styles.waitingText}>{t('meetup.waitingForRole', { role: isBuyer ? t('meetup.seller') : t('meetup.buyer') })}</Text>
           </View>
         )}
 
@@ -415,7 +415,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
           <View style={styles.waitingCard}>
             <MaterialCommunityIcons name="map-marker-distance" size={18} color={COLORS.yellow} />
             <Text style={[styles.waitingText, { color: COLORS.yellow }]}>
-              Both checked in — move closer ({distance !== null ? `${distance}m` : '...'})
+              {t('meetup.moveCloser', { distance: distance !== null ? `${distance}m` : '...' })}
             </Text>
           </View>
         )}
@@ -434,7 +434,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             ) : (
               <>
                 <MaterialCommunityIcons name="map-marker-check" size={18} color={COLORS.white} />
-                <Text style={styles.checkinBtnText}>I'm here</Text>
+                <Text style={styles.checkinBtnText}>{t('meetup.imHere')}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -449,7 +449,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             accessibilityRole="button"
           >
             <Icon name="offer-coin" size={18} color={COLORS.white} />
-            <Text style={styles.receiptBtnText}>Confirm receipt</Text>
+            <Text style={styles.receiptBtnText}>{t('meetup.confirmReceipt')}</Text>
           </TouchableOpacity>
         )}
 
@@ -458,7 +458,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
           <View style={styles.emergencyRow}>
             <TouchableOpacity style={[styles.emergencyBtn, { borderColor: COLORS.blue }]} onPress={handleExtend} accessibilityLabel="extend time 30 minutes" accessibilityRole="button">
               <MaterialCommunityIcons name="clock-plus" size={16} color={COLORS.blue} />
-              <Text style={[styles.emergencyBtnText, { color: COLORS.blue }]}>Extend +30m</Text>
+              <Text style={[styles.emergencyBtnText, { color: COLORS.blue }]}>{t('meetup.extendPlus30m')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.emergencyBtn} onPress={handleRefund} disabled={refunding} accessibilityLabel="cancel meetup" accessibilityRole="button">
               {refunding ? (
@@ -466,13 +466,13 @@ export default function MeetupScreen({ route, navigation }: Props) {
               ) : (
                 <>
                   <MaterialCommunityIcons name="cancel" size={16} color={COLORS.coral} />
-                  <Text style={styles.emergencyBtnText}>Cancel</Text>
+                  <Text style={styles.emergencyBtnText}>{t('common.cancel')}</Text>
                 </>
               )}
             </TouchableOpacity>
             <TouchableOpacity style={[styles.emergencyBtn, { borderColor: '#FF2D2D' }]} onPress={handleEmergencyExit} accessibilityLabel="emergency exit" accessibilityRole="button">
               <MaterialCommunityIcons name="shield-alert" size={16} color="#FF2D2D" />
-              <Text style={[styles.emergencyBtnText, { color: '#FF2D2D' }]}>Emergency</Text>
+              <Text style={[styles.emergencyBtnText, { color: '#FF2D2D' }]}>{t('meetup.emergency')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -483,7 +483,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Your delivery code</Text>
+              <Text style={styles.modalTitle}>{t('meetup.yourDeliveryCode')}</Text>
                 <TouchableOpacity onPress={() => setCodeModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
                 <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
@@ -491,7 +491,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             <View style={styles.qrContainer}>
               <Text style={styles.meetupCodeText}>{meetupCode}</Text>
             </View>
-            <Text style={styles.qrHint}>Tell this code to the seller when you receive your item.</Text>
+            <Text style={styles.qrHint}>{t('meetup.codeHintBuyer')}</Text>
           </View>
         </View>
       </Modal>
@@ -501,18 +501,18 @@ export default function MeetupScreen({ route, navigation }: Props) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Enter delivery code</Text>
+              <Text style={styles.modalTitle}>{t('meetup.enterDeliveryCodeTitle')}</Text>
               <TouchableOpacity onPress={() => setScanModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
                 <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
             <Text style={styles.scanHint}>
-              Ask the buyer for the 4-digit code shown in their app.
+              {t('meetup.codeHintSeller')}
             </Text>
             <View style={styles.scanInputRow}>
               <TextInput
                 style={styles.scanInput}
-                placeholder="4-digit code"
+                placeholder={t('meetup.codePlaceholder')}
                 placeholderTextColor={COLORS.text2}
                 value={scanInput}
                 onChangeText={setScanInput}
@@ -534,7 +534,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
               {scanLoading ? (
                 <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
-                <Text style={styles.scanConfirmBtnText}>Confirm exchange</Text>
+                <Text style={styles.scanConfirmBtnText}>{t('meetup.confirmExchange')}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -546,7 +546,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Confirm receipt</Text>
+              <Text style={styles.modalTitle}>{t('meetup.confirmReceiptTitle')}</Text>
               <TouchableOpacity onPress={() => setReceiptModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
                 <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
@@ -555,10 +555,10 @@ export default function MeetupScreen({ route, navigation }: Props) {
               <Icon name="offer-coin" size={48} color={COLORS.green} />
             </View>
             <Text style={styles.receiptText}>
-              Did you receive your item in good condition?
+              {t('meetup.receiptQuestion')}
             </Text>
             <Text style={styles.receiptSubtext}>
-              Confirming will release {formatPrice(Number(order.total_amount))} G to the seller.
+              {t('meetup.receiptReleaseInfo', { amount: formatPrice(Number(order.total_amount)) })}
             </Text>
             <TouchableOpacity
               style={[styles.receiptConfirmBtn, releaseLoading && { opacity: 0.5 }]}
@@ -572,7 +572,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
               ) : (
                 <>
                   <Icon name="check-circle" size={18} color={COLORS.white} />
-                  <Text style={styles.receiptConfirmBtnText}>Yes, I received it</Text>
+                  <Text style={styles.receiptConfirmBtnText}>{t('meetup.yesReceivedIt')}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -582,7 +582,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
               accessibilityLabel="open dispute"
               accessibilityRole="button"
             >
-              <Text style={styles.receiptDisputeBtnText}>No, open a dispute</Text>
+              <Text style={styles.receiptDisputeBtnText}>{t('meetup.openDispute')}</Text>
             </TouchableOpacity>
           </View>
         </View>

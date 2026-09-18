@@ -34,15 +34,15 @@ const STATUS_COLORS: Record<string, string> = {
 
 const STATUS_STEPS = ['pending', 'paid', 'shipped', 'delivered', 'completed'];
 
-function getStatusLabel(status: string): string {
+function getStatusLabel(status: string, t: (key: string) => string): string {
   switch (status) {
-    case 'pending': return 'To Pay';
-    case 'paid': return 'Paid';
-    case 'processing': return 'Processing';
-    case 'shipped': return 'Shipped';
-    case 'delivered': return 'Delivered';
-    case 'completed': return 'Completed';
-    case 'cancelled': return 'Cancelled';
+    case 'pending': return t('notif.status.pending');
+    case 'paid': return t('notif.status.paid');
+    case 'processing': return t('notif.status.processing');
+    case 'shipped': return t('notif.status.shipped');
+    case 'delivered': return t('notif.status.delivered');
+    case 'completed': return t('notif.status.completed');
+    case 'cancelled': return t('notif.status.cancelled');
     default: return status;
   }
 }
@@ -91,20 +91,20 @@ function getNotifConfig(type: string): { icon: string; color: string; accent: st
   }
 }
 
-function timeAgo(dateStr: string): string {
+function timeAgo(dateStr: string, t: (key: string, params?: Record<string, any>) => string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t('common.justNow');
+  if (mins < 60) return t('common.minutesAgo', { mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t('common.hoursAgo', { hours: hrs });
   const days = Math.floor(hrs / 24);
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days}d ago`;
+  if (days === 1) return t('common.yesterday');
+  if (days < 7) return t('common.daysAgo', { days });
   return new Date(dateStr).toLocaleDateString('fr-HT', { day: 'numeric', month: 'short' });
 }
 
-function groupByDay(notifs: Notification[]): { label: string; data: Notification[] }[] {
+function groupByDay(notifs: Notification[], t: (key: string) => string): { label: string; data: Notification[] }[] {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today.getTime() - 86400000);
@@ -115,8 +115,8 @@ function groupByDay(notifs: Notification[]): { label: string; data: Notification
     const d = new Date(n.created_at);
     const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     let label: string;
-    if (dayStart.getTime() === today.getTime()) label = 'Today';
-    else if (dayStart.getTime() === yesterday.getTime()) label = 'Yesterday';
+    if (dayStart.getTime() === today.getTime()) label = t('common.today');
+    else if (dayStart.getTime() === yesterday.getTime()) label = t('common.yesterday');
     else if (dayStart.getTime() < weekAgo.getTime()) {
       label = d.toLocaleDateString('fr-HT', { day: 'numeric', month: 'long', year: 'numeric' });
     } else {
@@ -131,13 +131,13 @@ function groupByDay(notifs: Notification[]): { label: string; data: Notification
 const ORDER_NOTIF_TYPES = new Set(['order_status', 'payment_confirmed', 'order_cancelled']);
 const CHAT_NOTIF_TYPES = new Set(['new_message', 'new_offer', 'counter_offer', 'offer_accepted']);
 
-const SORT_OPTIONS = [
-  { value: 'date_desc', label: 'Newest first' },
-  { value: 'date_asc', label: 'Oldest first' },
-  { value: 'price_desc', label: 'Price: High to Low' },
-  { value: 'price_asc', label: 'Price: Low to High' },
-  { value: 'name_asc', label: 'Name: A-Z' },
-  { value: 'name_desc', label: 'Name: Z-A' },
+const getSortOptions = (t: (key: string) => string) => [
+  { value: 'date_desc', label: t('notif.sortNewestFirst') },
+  { value: 'date_asc', label: t('notif.sortOldestFirst') },
+  { value: 'price_desc', label: t('notif.sortPriceHighToLow') },
+  { value: 'price_asc', label: t('notif.sortPriceLowToHigh') },
+  { value: 'name_asc', label: t('notif.sortNameAZ') },
+  { value: 'name_desc', label: t('notif.sortNameZA') },
 ];
 
 export default function NotificationScreen() {
@@ -252,7 +252,7 @@ export default function NotificationScreen() {
     return filtered;
   })();
 
-  const sections = groupByDay(filteredNotifications);
+  const sections = groupByDay(filteredNotifications, t);
   const sectionsFlat: { label: string; notif: Notification; isHeader: boolean }[] = [];
   for (const section of sections) {
     sectionsFlat.push({ label: section.label, notif: section.data[0], isHeader: true });
@@ -283,36 +283,36 @@ export default function NotificationScreen() {
       switch (notif.type) {
         case 'new_order':
           return [
-            { label: 'Ship now', color: COLORS.green, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
+            { label: t('notif.action.shipNow'), color: COLORS.green, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
         case 'payment_failed':
           return [
-            { label: 'Retry payment', color: COLORS.coral, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
+            { label: t('notif.action.retryPayment'), color: COLORS.coral, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
         case 'dispute_opened':
           return [
-            { label: 'Respond', color: COLORS.coral, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) },
-            { label: 'View order', color: COLORS.text2, primary: false, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
+            { label: t('notif.action.respond'), color: COLORS.coral, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) },
+            { label: t('notif.action.viewOrder'), color: COLORS.text2, primary: false, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
         case 'meetup_proposed':
           return [
-            { label: 'Confirm', color: COLORS.blue, primary: true, onPress: () => data.orderId && nav.navigate('Meetup', { orderId: data.orderId }) },
-            { label: 'Propose new spot', color: COLORS.text2, primary: false, onPress: () => data.orderId && nav.navigate('Meetup', { orderId: data.orderId }) }];
+            { label: t('notif.action.confirm'), color: COLORS.blue, primary: true, onPress: () => data.orderId && nav.navigate('Meetup', { orderId: data.orderId }) },
+            { label: t('notif.action.proposeNewSpot'), color: COLORS.text2, primary: false, onPress: () => data.orderId && nav.navigate('Meetup', { orderId: data.orderId }) }];
         case 'new_offer':
         case 'counter_offer':
           return [
-            { label: 'Accept', color: COLORS.green, primary: true, onPress: () => data.conversationId && nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: data.senderName || 'Chat', otherUserId: data.senderId }) },
-            { label: 'Counter', color: COLORS.text2, primary: false, onPress: () => data.conversationId && nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: data.senderName || 'Chat', otherUserId: data.senderId }) }];
+            { label: t('notif.action.accept'), color: COLORS.green, primary: true, onPress: () => data.conversationId && nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: data.senderName || 'Chat', otherUserId: data.senderId }) },
+            { label: t('notif.action.counter'), color: COLORS.text2, primary: false, onPress: () => data.conversationId && nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: data.senderName || 'Chat', otherUserId: data.senderId }) }];
         case 'offer_accepted':
           return [
-            { label: 'Checkout', color: COLORS.green, primary: true, onPress: () => nav.navigate('Cart') }];
+            { label: t('notif.action.checkout'), color: COLORS.green, primary: true, onPress: () => nav.navigate('Cart') }];
         case 'subscription_expired':
           return [
-            { label: 'Renew now', color: COLORS.yellow, primary: true, onPress: () => nav.navigate('BusinessSubscription') }];
+            { label: t('notif.action.renewNow'), color: COLORS.yellow, primary: true, onPress: () => nav.navigate('BusinessSubscription') }];
         case 'verification_rejected':
           return [
-            { label: 'Resubmit ID', color: COLORS.text2, primary: false, onPress: () => nav.navigate('Verification') }];
+            { label: t('notif.action.resubmitId'), color: COLORS.text2, primary: false, onPress: () => nav.navigate('Verification') }];
         case 'low_stock':
         case 'product_sold_out':
           return [
-            { label: 'Edit listing', color: COLORS.coral, primary: true, onPress: () => data.productId && nav.navigate('EditListing', { productId: data.productId }) }];
+            { label: t('notif.action.editListing'), color: COLORS.coral, primary: true, onPress: () => data.productId && nav.navigate('EditListing', { productId: data.productId }) }];
         default:
           return [];
       }
@@ -341,7 +341,7 @@ export default function NotificationScreen() {
         <View style={styles.notifBody}>
           <View style={styles.notifRow1}>
             <Text style={[styles.notifTitle, isUnread && styles.notifTitleUnread]} numberOfLines={1}>{notif.title}</Text>
-            <Text style={styles.notifTime}>{timeAgo(notif.created_at)}</Text>
+            <Text style={styles.notifTime}>{timeAgo(notif.created_at, t)}</Text>
           </View>
           {notif.body && <Text style={styles.notifDesc} numberOfLines={2}>{notif.body}</Text>}
           {price && (
@@ -416,7 +416,7 @@ export default function NotificationScreen() {
           <View style={styles.orderDetails}>
             <Text style={styles.orderProductName} numberOfLines={1}>{itemName}</Text>
             {itemCount > 1 && (
-              <Text style={styles.orderItemCount}>+{itemCount - 1} more item{itemCount > 2 ? 's' : ''}</Text>
+              <Text style={styles.orderItemCount}>{itemCount > 2 ? t('notif.moreItemsPlural', { count: itemCount - 1 }) : t('notif.moreItems', { count: itemCount - 1 })}</Text>
             )}
             <View style={styles.orderMeta}>
               <MaterialCommunityIcons
@@ -429,19 +429,19 @@ export default function NotificationScreen() {
           </View>
           <View style={styles.orderPriceCol}>
             <Text style={styles.orderAmount}>{formatPrice(Number(item.total_amount))} G</Text>
-            <Text style={styles.orderDate}>{timeAgo(item.created_at)}</Text>
+            <Text style={styles.orderDate}>{timeAgo(item.created_at, t)}</Text>
           </View>
         </View>
         <View style={styles.orderCardBottom}>
           {isCancelled ? (
             <View style={[styles.orderStatusPill, { backgroundColor: COLORS.coral + '18' }]}>
               <MaterialCommunityIcons name="close-circle-outline" size={13} color={COLORS.coral} />
-              <Text style={[styles.orderStatusPillText, { color: COLORS.coral }]}>Cancelled</Text>
+              <Text style={[styles.orderStatusPillText, { color: COLORS.coral }]}>{t('notif.status.cancelled')}</Text>
             </View>
           ) : isHistory ? (
             <View style={[styles.orderStatusPill, { backgroundColor: COLORS.green + '18' }]}>
               <MaterialCommunityIcons name="check-circle-outline" size={13} color={COLORS.green} />
-              <Text style={[styles.orderStatusPillText, { color: COLORS.green }]}>Completed</Text>
+              <Text style={[styles.orderStatusPillText, { color: COLORS.green }]}>{t('notif.status.completed')}</Text>
             </View>
           ) : (
             <View style={styles.orderStepper}>
@@ -473,16 +473,16 @@ export default function NotificationScreen() {
   };
 
   const bottomTabs: { key: Tab; icon: string; label: string; badge: number }[] = [
-    { key: 'notifications', icon: 'bell-outline', label: 'Notifications', badge: unreadCount },
-    { key: 'buying', icon: 'shopping-outline', label: 'Buying', badge: activeOrders.filter(o => (o as any).my_role === 'buyer').length },
-    { key: 'selling', icon: 'store-outline', label: 'Selling', badge: activeOrders.filter(o => (o as any).my_role === 'seller').length },
+    { key: 'notifications', icon: 'bell-outline', label: t('notif.tab.notifications'), badge: unreadCount },
+    { key: 'buying', icon: 'shopping-outline', label: t('notif.tab.buying'), badge: activeOrders.filter(o => (o as any).my_role === 'buyer').length },
+    { key: 'selling', icon: 'store-outline', label: t('notif.tab.selling'), badge: activeOrders.filter(o => (o as any).my_role === 'seller').length },
   ];
 
   return (
     <View style={styles.container}>
       {/* Top bar */}
       <ScreenHeader
-        title={activeTab === 'notifications' ? 'Notifications' : activeTab === 'buying' ? 'Buying' : 'Selling'}
+        title={activeTab === 'notifications' ? t('notif.tab.notifications') : activeTab === 'buying' ? t('notif.tab.buying') : t('notif.tab.selling')}
         onBack={() => nav.goBack()}
         right={
           <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
@@ -496,7 +496,7 @@ export default function NotificationScreen() {
         <View style={styles.markAllRow}>
           <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
             <MaterialCommunityIcons name="check-all" size={16} color={COLORS.white} />
-            <Text style={styles.markAllText}>Mark all read</Text>
+            <Text style={styles.markAllText}>{t('notif.markAllRead')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -504,7 +504,7 @@ export default function NotificationScreen() {
         <View style={styles.markAllRow}>
           <TouchableOpacity onPress={markAllOrdersViewed} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
             <MaterialCommunityIcons name="check-all" size={16} color={COLORS.white} />
-            <Text style={styles.markAllText}>Mark all read</Text>
+            <Text style={styles.markAllText}>{t('notif.markAllRead')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -514,7 +514,7 @@ export default function NotificationScreen() {
         loading ? (
           <RowListSkeleton count={7} thumbSize={40} />
         ) : filteredNotifications.length === 0 ? (
-          <EmptyState icon="bell-outline" title="No notifications yet" size={56} />
+          <EmptyState icon="bell-outline" title={t('notif.emptyNotifications')} size={56} />
         ) : (
           <FlatList
             data={sectionsFlat}
@@ -538,7 +538,7 @@ export default function NotificationScreen() {
               ) : (
                 <EmptyState
                   icon={activeTab === 'buying' ? 'shopping-outline' : 'store-outline'}
-                  title={activeTab === 'buying' ? 'No orders to fulfill' : 'No orders from buyers'}
+                  title={activeTab === 'buying' ? t('notif.emptyBuyerOrders') : t('notif.emptySellerOrders')}
                   size={44}
                 />
               )
@@ -578,7 +578,7 @@ export default function NotificationScreen() {
       <Modal visible={showHistory} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowHistory(false)}>
         <View style={styles.container}>
           <ScreenHeader
-            title="Order History"
+            title={t('notif.orderHistory')}
             onBack={() => setShowHistory(false)}
             right={
               <TouchableOpacity
@@ -592,7 +592,7 @@ export default function NotificationScreen() {
             }
           />
           {historyOrders.length === 0 ? (
-            <EmptyState icon="clock-outline" title="No order history yet" size={56} />
+            <EmptyState icon="clock-outline" title={t('notif.emptyOrderHistory')} size={56} />
           ) : (
             <FlatList
               data={historyOrders}
@@ -609,12 +609,12 @@ export default function NotificationScreen() {
         <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>
           <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Sort by</Text>
+              <Text style={styles.modalTitle}>{t('notif.sortBy')}</Text>
               <TouchableOpacity onPress={() => setSortModal(false)} accessibilityRole="button" accessibilityLabel="close">
                 <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
-            {SORT_OPTIONS.map(option => (
+            {getSortOptions(t).map(option => (
               <TouchableOpacity
                 key={option.value}
                 style={[styles.modalItem, sortBy === option.value && styles.modalItemActive]}
@@ -632,7 +632,7 @@ export default function NotificationScreen() {
               </TouchableOpacity>
             ))}
             <View style={styles.modalDivider} />
-            <Text style={[styles.modalTitle, { marginBottom: 6 }]}>Status</Text>
+            <Text style={[styles.modalTitle, { marginBottom: 6 }]}>{t('notif.statusFilter')}</Text>
             {(['all', 'completed', 'cancelled'] as const).map(f => (
               <TouchableOpacity
                 key={f}
@@ -646,7 +646,7 @@ export default function NotificationScreen() {
                   color={historyFilter === f ? COLORS.coral : COLORS.text2}
                 />
                 <Text style={[styles.modalItemText, historyFilter === f && styles.modalItemTextActive]}>
-                  {f === 'all' ? 'All' : f === 'completed' ? 'Completed' : 'Cancelled'}
+                  {f === 'all' ? t('common.all') : f === 'completed' ? t('notif.status.completed') : t('notif.status.cancelled')}
                 </Text>
               </TouchableOpacity>
             ))}

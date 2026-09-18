@@ -27,20 +27,21 @@ type InboxTab = 'messages' | 'offers';
 const INBOX_CACHE_TTL = 15_000;
 let _inboxCache: { data: any; timestamp: number } | null = null;
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d`;
-  return new Date(dateStr).toLocaleDateString('fr-HT', { day: 'numeric', month: 'short' });
-}
-
 export default function InboxScreen() {
   const { t } = useTranslation();
+
+  const timeAgo = (dateStr: string): string => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return t('common.justNow');
+    if (mins < 60) return t('common.minutesAgo', { mins });
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return t('common.hoursAgo', { hours: hrs });
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return t('common.daysAgo', { days });
+    return new Date(dateStr).toLocaleDateString('fr-HT', { day: 'numeric', month: 'short' });
+  };
+
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteProp<RootStackParamList, 'Inbox'>>();
@@ -151,7 +152,7 @@ export default function InboxScreen() {
     });
 
   const renderConversation = ({ item }: { item: Conversation }) => {
-    const otherName = (item as any).other_party_username || ((item as any).other_party_name || 'Seller');
+    const otherName = (item as any).other_party_username || ((item as any).other_party_name || t('common.seller'));
     const hasUnread = (item.unread_count || 0) > 0;
     const storeName = (item as any).other_party_store_name;
     const sellerTier = (item as any).other_party_seller_tier;
@@ -176,7 +177,7 @@ export default function InboxScreen() {
               <Text style={[styles.convoName, hasUnread && styles.convoNameBold]} numberOfLines={1}>{otherName}</Text>
               {(item as any).has_active_offer && (
                 <View style={styles.offerBadge}>
-                  <Text style={styles.offerBadgeText}>Offer</Text>
+                  <Text style={styles.offerBadgeText}>{t('inbox.offerBadge')}</Text>
                 </View>
               )}
               <Text style={styles.convoTime}>{timeAgo(item.last_message_at || item.created_at)}</Text>
@@ -184,7 +185,7 @@ export default function InboxScreen() {
             {storeName ? (
               <Text style={styles.convoStore} numberOfLines={1}>{storeName}</Text>
             ) : sellerTier && sellerTier !== 'none' ? (
-              <Text style={styles.convoTier} numberOfLines={1}>{sellerTier} seller</Text>
+              <Text style={styles.convoTier} numberOfLines={1}>{sellerTier} {t('common.seller')}</Text>
             ) : null}
             <View style={styles.convoMsgRow}>
               {(item as any).last_message_type === 'image' && <MaterialCommunityIcons name="image-outline" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
@@ -192,7 +193,7 @@ export default function InboxScreen() {
             {!(item as any).has_active_offer && (item as any).last_message_type === 'offer' && <MaterialCommunityIcons name="tag-outline" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
               {((item as any).last_message_type && (item as any).last_message_type !== 'text') ? null : (
                 <Text style={[styles.convoMsg, hasUnread && styles.convoMsgUnread]} numberOfLines={1}>
-                  {item.last_message?.content || (item as any).last_message || 'No messages yet'}
+                  {item.last_message?.content || (item as any).last_message || t('inbox.noMessages')}
                 </Text>
               )}
             </View>
@@ -249,11 +250,11 @@ export default function InboxScreen() {
         style={[styles.topTabItem, activeTab === 'messages' && styles.topTabItemActive]}
         onPress={() => setActiveTab('messages')}
         activeOpacity={0.7}
-        accessibilityLabel="Messages"
+        accessibilityLabel={t('inbox.tabMessages')}
         accessibilityRole="button"
       >
         <Text style={[styles.topTabLabel, activeTab === 'messages' && styles.topTabLabelActive]}>
-          Messages
+          {t('inbox.tabMessages')}
         </Text>
         {conversations.length > 0 && (
           <View style={[styles.topTabCount, activeTab === 'messages' && styles.topTabCountActive]}>
@@ -268,12 +269,12 @@ export default function InboxScreen() {
         style={[styles.topTabItem, activeTab === 'offers' && styles.topTabItemActive]}
         onPress={() => setActiveTab('offers')}
         activeOpacity={0.7}
-        accessibilityLabel="Offers"
+        accessibilityLabel={t('inbox.tabOffers')}
         accessibilityRole="button"
       >
         {activeTab !== 'offers' && offerConversations.length > 0 && <View style={styles.topTabRedDot} />}
         <Text style={[styles.topTabLabel, activeTab === 'offers' && styles.topTabLabelActive]}>
-          Offers
+          {t('inbox.tabOffers')}
         </Text>
         {offerConversations.length > 0 && (
           <View style={[styles.topTabCount, activeTab === 'offers' && styles.topTabCountActive]}>
@@ -318,14 +319,14 @@ export default function InboxScreen() {
         accessibilityRole="button"
       >
         <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
-        <Text style={styles.searchBarPlaceholder}>Search messages...</Text>
+        <Text style={styles.searchBarPlaceholder}>{t('inbox.searchPlaceholder')}</Text>
       </TouchableOpacity>
 
       {activeTab === 'offers' ? (
         <FlatList
           data={offerConversations}
           renderItem={({ item }: { item: any }) => {
-            const otherName = item.other_party_username || (item.other_party_name || 'Seller');
+            const otherName = item.other_party_username || (item.other_party_name || t('common.seller'));
             const sellerTier = item.other_party_seller_tier;
             const offerStatus = item.offer_status;
             const isCountered = offerStatus === 'countered';
@@ -374,7 +375,7 @@ export default function InboxScreen() {
                       isPending && styles.offerStatusTextPending,
                       isExpired && styles.offerStatusTextDeclined,
                     ]}>
-                      {isAccepted ? '✓ Accepted' : isDeclined ? '✕ Declined' : isCountered ? `🔄 Counter (${round}/3)` : isExpired ? '✕ Expired' : '⏳ Pending'}
+                      {isAccepted ? t('inbox.offerAccepted') : isDeclined ? t('inbox.offerDeclined') : isCountered ? t('inbox.offerCounter', { round }) : isExpired ? t('inbox.offerExpired') : t('inbox.offerPending')}
                     </Text>
                   </View>
                 </View>
@@ -401,7 +402,7 @@ export default function InboxScreen() {
                   <View style={styles.offerFooter}>
                     <MaterialCommunityIcons name="clock-outline" size={12} color={expiresIn < 6 ? COLORS.coral : COLORS.text2} />
                     <Text style={[styles.offerExpiresText, expiresIn < 6 && { color: COLORS.coral }]}>
-                      {expiresIn === 0 ? 'Expiring soon' : `${expiresIn}h left to respond`}
+                      {expiresIn === 0 ? t('inbox.expiringSoon') : t('inbox.hoursLeftToRespond', { hours: expiresIn })}
                     </Text>
                   </View>
                 )}
@@ -416,7 +417,7 @@ export default function InboxScreen() {
             loading ? (
               <RowListSkeleton count={4} thumbSize={48} />
             ) : (
-              <EmptyState icon="tag-outline" title="No active offers" hint="Send an offer on a product to start negotiating" size={44} />
+              <EmptyState icon="tag-outline" title={t('inbox.noActiveOffers')} hint={t('inbox.noActiveOffersHint')} size={44} />
             )
           }
         />
@@ -450,7 +451,7 @@ export default function InboxScreen() {
       >
         <View style={styles.searchModal}>
           <View style={[styles.searchModalHeader, { paddingTop: insets.top + SPACING.sm }]}>
-            <Text style={styles.searchModalTitle}>Search</Text>
+            <Text style={styles.searchModalTitle}>{t('inbox.searchTitle')}</Text>
           </View>
           <FlatList
             data={filteredConversations as any}
@@ -460,7 +461,7 @@ export default function InboxScreen() {
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               search.trim() ? (
-                <EmptyState icon="magnify" title="No results found" size={48} />
+                <EmptyState icon="magnify" title={t('inbox.noResults')} size={48} />
               ) : null
             }
           />
@@ -478,7 +479,7 @@ export default function InboxScreen() {
               <TextInput
                 ref={searchInputRef}
                 style={styles.searchModalInput}
-                placeholder="Search messages..."
+                placeholder={t('inbox.searchPlaceholder')}
                 placeholderTextColor={COLORS.text2}
                 value={search}
                 onChangeText={setSearch}
@@ -504,10 +505,10 @@ export default function InboxScreen() {
           {showFilterDrop && (
             <View style={styles.filterDropdown}>
               {[
-                { key: 'all', label: 'All time' },
-                { key: 'today', label: 'Today' },
-                { key: 'week', label: 'This week' },
-                { key: 'unread', label: 'Unread' },
+                { key: 'all', label: t('inbox.filterAllTime') },
+                { key: 'today', label: t('inbox.filterToday') },
+                { key: 'week', label: t('inbox.filterThisWeek') },
+                { key: 'unread', label: t('inbox.filterUnread') },
               ].map(opt => (
                 <TouchableOpacity
                   key={opt.key}
