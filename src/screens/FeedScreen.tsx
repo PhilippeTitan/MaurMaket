@@ -212,9 +212,9 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
       setProducts(prev => prev.filter(item => item.id !== product.id));
       toast.show({
         kind: 'info',
-        title: 'Removed',
-        message: 'This product was hidden from your feed.',
-        actionLabel: 'Undo',
+        title: t('feed.removed'),
+        message: t('feed.removedMsg'),
+        actionLabel: t('feed.undo'),
         onAction: () => {
           setProducts(prev => [product, ...prev]);
           trackFeedEvent(product.id, 'relevant').catch(() => {});
@@ -308,7 +308,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                     onLongPress={() => setMoreProduct(item)}
                     delayLongPress={450}
                     accessibilityRole="button"
-                    accessibilityLabel="Product image. Long press for feed options."
+                    accessibilityLabel={t('feed.productImageA11y')}
                   >
                     {url ? (
                       <>
@@ -328,7 +328,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               onLongPress={() => setMoreProduct(item)}
               delayLongPress={450}
               accessibilityRole="button"
-              accessibilityLabel="Product image. Long press for feed options."
+              accessibilityLabel={t('feed.productImageA11y')}
             >
               {imgUrl ? (
                 <>
@@ -393,7 +393,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           </View>
 
 {/* Price */}
-          {feedTab === 'forYou' && item.recommendation_reason && item.recommendation_reason !== 'From a seller you follow' && (
+          {feedTab === 'forYou' && item.recommendation_reason && item.recommendation_reason !== t('feed.recommendFollow') && (
             <TouchableOpacity style={styles.reasonPill} onPress={() => setMoreProduct(item)} accessibilityRole="button" accessibilityLabel={`Why you are seeing this: ${item.recommendation_reason}`}>
               <MaterialCommunityIcons name="star-four-points" size={13} color={COLORS.white} />
               <Text style={styles.reasonText}>{item.recommendation_reason}</Text>
@@ -680,7 +680,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                   style={styles.moreItem}
                   onPress={() => { const p = moreProduct; setMoreProduct(null); nav.navigate('EditListing', { productId: p.id }); }}
                   accessibilityRole="button"
-                  accessibilityLabel="Edit listing"
+                  accessibilityLabel={t('notif.action.editListing')}
                 >
                   <MaterialCommunityIcons name="pencil-outline" size={18} color={COLORS.text} />
                   <Text style={styles.moreItemText}>Edit listing</Text>
@@ -690,7 +690,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                   style={styles.moreItem}
                   onPress={() => { const p = moreProduct; setMoreProduct(null); nav.navigate('ProductDetail', { productId: p.id }); }}
                   accessibilityRole="button"
-                  accessibilityLabel="View product"
+                  accessibilityLabel={t('accessibility.viewProduct')}
                 >
                   <MaterialCommunityIcons name="eye-outline" size={18} color={COLORS.text} />
                   <Text style={styles.moreItemText}>View product</Text>
@@ -732,7 +732,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                     setMoreProduct(null);
                     try {
                       await RNShare.share({
-                        message: `Check out ${p.name} on MaurMaket for ${p.price} G!`,
+                        message: t('feed.shareMessage', { name: p.name, price: p.price }),
                         url: `https://maurmaket.com/product/${p.id}`,
                         title: p.name,
                       });
@@ -742,7 +742,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                   accessibilityLabel={t('accessibility.share')}
                 >
                   <MaterialCommunityIcons name="share-variant-outline" size={18} color={COLORS.text} />
-                  <Text style={styles.moreItemText}>Share</Text>
+                  <Text style={styles.moreItemText}>{t('accessibility.share')}</Text>
                 </TouchableOpacity>
                 <View style={styles.moreDivider} />
                 <TouchableOpacity
@@ -752,13 +752,13 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                     if (!p) return;
                     setMoreProduct(null);
                     Alert.alert(
-                      'Report Listing',
-                      'Why are you reporting this?',
+                      t('feed.reportTitle'),
+                      t('feed.reportMessage'),
                       [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Spam', onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
-                        { text: 'Inappropriate', onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
-                        { text: 'Wrong category', onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
+                        { text: t('common.cancel'), style: 'cancel' },
+                        { text: t('feed.reportSpam'), onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
+                        { text: t('feed.reportInappropriate'), onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
+                        { text: t('feed.reportWrongCategory'), onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
                       ],
                     );
                   }}
@@ -766,7 +766,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                   accessibilityLabel={t('accessibility.report')}
                 >
                   <MaterialCommunityIcons name="flag-outline" size={18} color={COLORS.coral} />
-                  <Text style={[styles.moreItemText, { color: COLORS.coral }]}>Report</Text>
+                  <Text style={[styles.moreItemText, { color: COLORS.coral }]}>{t('productDetail.report')}</Text>
                 </TouchableOpacity>
               </>
             )}

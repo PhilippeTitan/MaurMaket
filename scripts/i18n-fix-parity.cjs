@@ -427,6 +427,135 @@ const settingsEditEn = {
   'settingsEdit.badgeOptional': 'Optional',
 };
 
+// ProductDetailScreen batch
+const productDetailEn = {
+  'feed.hidden': 'Hidden',
+  'feed.hiddenMsg': 'This product was hidden from your feed.',
+  'feed.reportThankMsg': "We'll review this listing.",
+  'feed.showMoreLike': 'Show more like this',
+  'feed.notInterested': 'Not interested',
+  'productDetail.oftenBought': 'Often bought together',
+  'productDetail.oftenBoughtHint': 'Based on completed purchases from MaurMaket shoppers.',
+  'productDetail.moreInCategory': 'More in {category}',
+  'productDetail.showFewerReviews': 'Show fewer reviews',
+  'productDetail.sellerReply': 'Seller reply',
+  'productDetail.anonymous': 'Anonymous',
+  'productDetail.salesCount': '{count} sales',
+  'productDetail.trustBusiness': 'Business',
+  'productDetail.trustRated': '{rating} rated',
+  'productDetail.protectedPayment': 'Protected payment',
+  'productDetail.productNotFound': 'Product not found',
+  'productDetail.shareMessage': 'Check out "{name}" on MaurMaket — {price} G',
+  'productDetail.moreOptions': 'More options',
+  'productDetail.sellerDetails': 'seller details',
+};
+
+// FeedScreen batch
+const feedEn = {
+  'feed.removedMsg': 'This product was hidden from your feed.',
+  'feed.undo': 'Undo',
+  'feed.shareMessage': 'Check out {name} on MaurMaket for {price} G!',
+  'feed.productImageA11y': 'Product image. Long press for feed options.',
+  'feed.recommendFollow': 'From a seller you follow',
+};
+
+// WishlistScreen batch
+const wishlistEn = {
+  'wishlist.emptyHint': "Save items you love and they'll appear here",
+  'wishlist.addedToast': '{name} added.',
+  'wishlist.outOfStockToast': 'This item is no longer available.',
+  'wishlist.outOfStockTitle': 'Out of stock',
+  'wishlist.maxStockToast': 'You already have the maximum quantity in your cart.',
+  'wishlist.maxStockTitle': 'Max quantity',
+  'wishlist.ownProductTitle': 'Your product',
+  'wishlist.ownProductToast': "You can't add your own product to cart.",
+  'accessibility.addToCart': 'add to cart',
+};
+
+const wishlistHt = {
+  'wishlist.emptyHint': 'Sove atik ou renmen yo, y ap parèt isit la',
+  'wishlist.addedToast': '{name} ajoute.',
+  'wishlist.outOfStockToast': 'Atik sa a pa disponib ankò.',
+  'wishlist.outOfStockTitle': 'Pa nan stock',
+  'wishlist.maxStockToast': 'Ou gen quantité maksimòm nan panyen ou deja.',
+  'wishlist.maxStockTitle': 'Maksimòm',
+  'wishlist.ownProductTitle': 'Pwodwi ou',
+  'wishlist.ownProductToast': 'Ou pa ka ajoute pwodwi ou nan panyen ou.',
+  'accessibility.addToCart': 'ajoute nan panyen',
+};
+
+const wishlistFr = {
+  'wishlist.emptyHint': "Enregistrez les articles que vous aimez et ils apparaîtront ici",
+  'wishlist.addedToast': '{name} ajouté.',
+  'wishlist.outOfStockToast': "Cet article n'est plus disponible.",
+  'wishlist.outOfStockTitle': 'Rupture de stock',
+  'wishlist.maxStockToast': 'Vous avez déjà la quantité maximale dans votre panier.',
+  'wishlist.maxStockTitle': 'Quantité max',
+  'wishlist.ownProductTitle': 'Votre produit',
+  'wishlist.ownProductToast': "Vous ne pouvez pas ajouter votre propre produit au panier.",
+  'accessibility.addToCart': 'ajouter au panier',
+};
+
+const feedHt = {
+  'feed.removedMsg': 'Pwodwi sa a kache nan feed ou.',
+  'feed.undo': 'Anile',
+  'feed.shareMessage': 'Gade {name} sou MaurMaket pou {price} G!',
+  'feed.productImageA11y': 'Imaj pwodwi. Peze long pou opsyon feed.',
+  'feed.recommendFollow': 'Soti nan yon vandè ou swiv',
+};
+
+const feedFr = {
+  'feed.removedMsg': 'Ce produit a été masqué de votre fil.',
+  'feed.undo': 'Annuler',
+  'feed.shareMessage': 'Découvrez {name} sur MaurMaket pour {price} G !',
+  'feed.productImageA11y': 'Image produit. Appui long pour les options du fil.',
+  'feed.recommendFollow': 'D\'un vendeur que vous suivez',
+};
+
+const productDetailHt = {
+  'feed.hidden': 'Kache',
+  'feed.hiddenMsg': 'Pwodwi sa a kache nan feed ou.',
+  'feed.reportThankMsg': 'Nou pral egzamine lis sa a.',
+  'feed.showMoreLike': 'Montre plis konsa',
+  'feed.notInterested': 'Pa enterese',
+  'productDetail.oftenBought': 'Souvan achte ansanm',
+  'productDetail.oftenBoughtHint': 'Baze sou achteman konplè soti achte MaurMaket.',
+  'productDetail.moreInCategory': 'Plis nan {category}',
+  'productDetail.showFewerReviews': 'Montre mwens komantè',
+  'productDetail.sellerReply': 'Repons vandè',
+  'productDetail.anonymous': 'Anonim',
+  'productDetail.salesCount': '{count} vend',
+  'productDetail.trustBusiness': 'Biznis',
+  'productDetail.trustRated': '{rating} nòte',
+  'productDetail.protectedPayment': 'Peyman pwoteje',
+  'productDetail.productNotFound': 'Pwodwi pa jwenn',
+  'productDetail.shareMessage': 'Gade "{name}" sou MaurMaket — {price} G',
+  'productDetail.moreOptions': 'Plis opsyon',
+  'productDetail.sellerDetails': 'detay vandè',
+};
+
+const productDetailFr = {
+  'feed.hidden': 'Masqué',
+  'feed.hiddenMsg': 'Ce produit a été masqué de votre fil.',
+  'feed.reportThankMsg': 'Nous examinerons cette annonce.',
+  'feed.showMoreLike': 'Afficher plus comme ceci',
+  'feed.notInterested': 'Pas intéressé',
+  'productDetail.oftenBought': 'Souvent achetés ensemble',
+  'productDetail.oftenBoughtHint': 'Basé sur des achats terminés d\'acheteurs MaurMaket.',
+  'productDetail.moreInCategory': 'Plus dans {category}',
+  'productDetail.showFewerReviews': 'Afficher moins d\'avis',
+  'productDetail.sellerReply': 'Réponse du vendeur',
+  'productDetail.anonymous': 'Anonyme',
+  'productDetail.salesCount': '{count} ventes',
+  'productDetail.trustBusiness': 'Business',
+  'productDetail.trustRated': '{rating} noté',
+  'productDetail.protectedPayment': 'Paiement protégé',
+  'productDetail.productNotFound': 'Produit introuvable',
+  'productDetail.shareMessage': 'Découvrez "{name}" sur MaurMaket — {price} G',
+  'productDetail.moreOptions': 'Plus d\'options',
+  'productDetail.sellerDetails': 'détails du vendeur',
+};
+
 const settingsEditHt = {
   'settingsEdit.fullNamePlaceholder': 'Non konplè',
   'settingsEdit.fullNameDesc': 'Non ou ki parèt sou profil ou',
@@ -535,7 +664,7 @@ const privacyFr = {
   'privacy.noSellingBanner': 'Nous ne vendons jamais vos données à des tiers',
 };
 
-const n1 = applyFix('messages/en.json', { ...enAdd, ...enAdd2, ...privacyEn, ...notifSettingsEn, ...settingsEditEn });
-const n2 = applyFix('messages/ht.json', { ...htAdd, ...htAdd2, ...privacyHt, ...notifSettingsHt, ...settingsEditHt });
-const n3 = applyFix('messages/fr.json', { ...frAdd, ...frAdd2, ...privacyFr, ...notifSettingsFr, ...settingsEditFr });
+const n1 = applyFix('messages/en.json', { ...enAdd, ...enAdd2, ...privacyEn, ...notifSettingsEn, ...settingsEditEn, ...productDetailEn, ...feedEn, ...wishlistEn });
+const n2 = applyFix('messages/ht.json', { ...htAdd, ...htAdd2, ...privacyHt, ...notifSettingsHt, ...settingsEditHt, ...productDetailHt, ...feedHt, ...wishlistHt });
+const n3 = applyFix('messages/fr.json', { ...frAdd, ...frAdd2, ...privacyFr, ...notifSettingsFr, ...settingsEditFr, ...productDetailFr, ...feedFr, ...wishlistFr });
 console.log(`en.json: +${n1} | ht.json: +${n2} | fr.json: +${n3}`);

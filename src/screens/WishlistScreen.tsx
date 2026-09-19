@@ -71,7 +71,7 @@ export default function WishlistScreen() {
         style={styles.removeBtn}
         onPress={() => handleRemove(item.id)}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityLabel="remove from wishlist"
+        accessibilityLabel={t('accessibility.removeFromWishlist')}
         accessibilityRole="button"
       >
         <MaterialCommunityIcons name="heart" size={18} color={COLORS.coral} />
@@ -95,17 +95,17 @@ export default function WishlistScreen() {
             stock: item.stock ?? 0,
           } as any);
           if (result.added) {
-            toast.success('Added to cart', `${item.name} added.`);
+            toast.success(t('cart.added'), t('wishlist.addedToast', { name: item.name }));
           } else if (result.reason === 'out-of-stock') {
-            toast.warning('Out of stock', 'This item is no longer available.');
+            toast.warning(t('wishlist.outOfStockTitle'), t('wishlist.outOfStockToast'));
           } else if (result.reason === 'max-stock') {
-            toast.info('Max quantity', 'You already have the maximum quantity in your cart.');
+            toast.info(t('wishlist.maxStockTitle'), t('wishlist.maxStockToast'));
           } else if (result.reason === 'own-product') {
-            toast.warning('Your product', "You can't add your own product to cart.");
+            toast.warning(t('wishlist.ownProductTitle'), t('wishlist.ownProductToast'));
           }
         }}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityLabel="add to cart"
+        accessibilityLabel={t('accessibility.addToCart')}
         accessibilityRole="button"
       >
         <MaterialCommunityIcons name="cart-plus" size={18} color={COLORS.blue} />
@@ -119,7 +119,7 @@ export default function WishlistScreen() {
       {loading ? (
         <RowListSkeleton count={6} thumbSize={56} />
       ) : items.length === 0 && !refreshing ? (
-        <EmptyState icon="heart-outline" title={t('wishlist.empty')} hint="Save items you love and they'll appear here" size={56} />
+        <EmptyState icon="heart-outline" title={t('wishlist.empty')} hint={t('wishlist.emptyHint')} size={56} />
       ) : (
         <MasonryGrid
           products={items}

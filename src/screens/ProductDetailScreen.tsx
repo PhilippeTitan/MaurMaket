@@ -87,7 +87,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     try {
       await trackFeedEvent(product.id, eventType);
       if (eventType === 'not_relevant') {
-        toast.show({ kind: 'info', title: 'Hidden', message: 'This product was hidden from your feed.' });
+        toast.show({ kind: 'info', title: t('feed.hidden'), message: t('feed.hiddenMsg') });
       }
     } catch {}
   };
@@ -97,7 +97,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     closeMenu();
     try {
       await Share.share({
-        message: `Check out "${product.name}" on MaurMaket — ${formatPrice(product.effective_price ?? product.price)} G`,
+        message: t('productDetail.shareMessage', { name: product.name, price: formatPrice(product.effective_price ?? product.price) }),
       });
     } catch {}
   };
@@ -106,13 +106,13 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     if (!product) return;
     closeMenu();
     Alert.alert(
-      'Report Listing',
-      'Why are you reporting this?',
+      t('feed.reportTitle'),
+      t('feed.reportMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Spam', onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
-        { text: 'Inappropriate', onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
-        { text: 'Wrong category', onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert('Thanks', 'We\'ll review this listing.'); } },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('feed.reportSpam'), onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
+        { text: t('feed.reportInappropriate'), onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
+        { text: t('feed.reportWrongCategory'), onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
       ],
     );
   };
@@ -232,7 +232,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         } catch { /* silent */ }
         setLoadingRelated(false);
       } catch {
-        toast.error(t('common.error'), 'Product not found');
+        toast.error(t('common.error'), t('productDetail.productNotFound'));
         navigation.goBack();
       }
       setLoading(false);
@@ -255,7 +255,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     if (!product) return;
     try {
       await Share.share({
-        message: `Check out "${product.name}" on MaurMaket — ${formatPrice(product.effective_price ?? product.price)} G`,
+        message: t('productDetail.shareMessage', { name: product.name, price: formatPrice(product.effective_price ?? product.price) }),
       });
     } catch { /* silent */ }
   };
@@ -458,7 +458,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                     style={styles.actionBtn}
                     onPress={openMenu}
                     accessibilityRole="button"
-                    accessibilityLabel="More options"
+                    accessibilityLabel={t('productDetail.moreOptions')}
                   >
                     <MaterialCommunityIcons name="dots-horizontal" size={28} color={COLORS.text} />
                   </TouchableOpacity>
@@ -482,7 +482,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                       )}
                     </View>
                     <Text style={styles.sellerMeta}>
-                      {avgRating.toFixed(1)} ★ · {product.seller?.sales_count ?? 0} sales
+                      {avgRating.toFixed(1)} ★ · {t('productDetail.salesCount', { count: product.seller?.sales_count ?? 0 })}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -495,7 +495,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   onPress={() => setSellerExpanded(!sellerExpanded)}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityLabel="seller details"
+                  accessibilityLabel={t('productDetail.sellerDetails')}
                 >
                   {!sellerExpanded ? (
                     <View style={styles.trustBarCompact}>
@@ -504,10 +504,10 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                       )}
                       <Text style={styles.trustBarCompactText} numberOfLines={1}>
                         {[
-                          (product.seller.id_verification_result === 'verified' || product.seller.id_verified) ? 'Verified' : null,
+                          (product.seller.id_verification_result === 'verified' || product.seller.id_verified) ? t('settings.verified') : null,
                           avgRating >= 4 ? `${avgRating.toFixed(1)} ★` : null,
-                          'Protected payment',
-                          product.seller.location_address ? 'Meetup' : null,
+                          t('productDetail.protectedPayment'),
+                          product.seller.location_address ? t('checkout.meetup') : null,
                         ].filter(Boolean).join('  ·  ')}
                       </Text>
                       <MaterialCommunityIcons name="chevron-down" size={14} color={COLORS.text2} />
@@ -517,29 +517,29 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                       {(product.seller.id_verification_result === 'verified' || product.seller.id_verified) && (
                         <View style={styles.trustPill}>
                           <MaterialCommunityIcons name="shield-check" size={12} color="#1D9E75" />
-                          <Text style={styles.trustPillText}>Verified</Text>
+                          <Text style={styles.trustPillText}>{t('settings.verified')}</Text>
                         </View>
                       )}
                       {product.seller.seller_tier === 'business' && (
                         <View style={styles.trustPill}>
                           <MaterialCommunityIcons name="office-building" size={12} color={COLORS.coral} />
-                          <Text style={styles.trustPillText}>Business</Text>
+                          <Text style={styles.trustPillText}>{t('productDetail.trustBusiness')}</Text>
                         </View>
                       )}
                       {avgRating >= 4 && (
                         <View style={styles.trustPill}>
                           <MaterialCommunityIcons name="star" size={12} color={COLORS.yellow} />
-                          <Text style={styles.trustPillText}>{avgRating.toFixed(1)} rated</Text>
+                          <Text style={styles.trustPillText}>{t('productDetail.trustRated', { rating: avgRating.toFixed(1) })}</Text>
                         </View>
                       )}
                       <View style={styles.trustPill}>
                         <MaterialCommunityIcons name="shield-lock" size={12} color={COLORS.coral} />
-                        <Text style={styles.trustPillText}>Protected payment</Text>
+                        <Text style={styles.trustPillText}>{t('productDetail.protectedPayment')}</Text>
                       </View>
                       {product.seller.location_address && (
                         <View style={styles.trustPill}>
                           <MaterialCommunityIcons name="map-marker" size={12} color={COLORS.coral} />
-                          <Text style={styles.trustPillText}>Meetup</Text>
+                          <Text style={styles.trustPillText}>{t('checkout.meetup')}</Text>
                         </View>
                       )}
                       <View style={{ alignSelf: 'flex-end', marginTop: 4 }}>
@@ -583,7 +583,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                         </Text>
                       </View>
                       <View>
-                        <Text style={styles.reviewerName}>{review.reviewer?.username ? `${review.reviewer.username}` : 'Anonymous'}</Text>
+                        <Text style={styles.reviewerName}>{review.reviewer?.username ? `${review.reviewer.username}` : t('productDetail.anonymous')}</Text>
                         <Text style={styles.reviewDate}>{new Date(review.created_at).toLocaleDateString()}</Text>
                       </View>
                     </View>
@@ -605,7 +605,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                     <View style={styles.sellerResponse}>
                       <View style={styles.sellerResponseHeader}>
                         <MaterialCommunityIcons name="reply" size={12} color={COLORS.coral} />
-                        <Text style={styles.sellerResponseLabel}>Seller reply</Text>
+                        <Text style={styles.sellerResponseLabel}>{t('productDetail.sellerReply')}</Text>
                       </View>
                       <Text style={styles.sellerResponseText}>{review.seller_response}</Text>
                     </View>
@@ -617,10 +617,10 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   style={{ alignItems: 'center', paddingVertical: 10 }}
                   onPress={() => setShowAllReviews(!showAllReviews)}
                   accessibilityRole="button"
-                  accessibilityLabel={showAllReviews ? 'Show fewer reviews' : t('accessibility.viewReviews')}
+                  accessibilityLabel={showAllReviews ? t('productDetail.showFewerReviews') : t('accessibility.viewReviews')}
                 >
                   <Text style={styles.seeAllReviews}>
-                    {showAllReviews ? 'Show fewer reviews' : `${t('productDetail.reviews')} (${productReviews.length})`}
+                    {showAllReviews ? t('productDetail.showFewerReviews') : `${t('productDetail.reviews')} (${productReviews.length})`}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -631,9 +631,9 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           {coPurchaseProducts.length > 0 && (
             <View style={styles.sectionBorder}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Often bought together</Text>
+                <Text style={styles.sectionTitle}>{t('productDetail.oftenBought')}</Text>
               </View>
-              <Text style={styles.sectionHint}>Based on completed purchases from MaurMaket shoppers.</Text>
+              <Text style={styles.sectionHint}>{t('productDetail.oftenBoughtHint')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.sellerScroll, { gap: 10 }]}>
                 {coPurchaseProducts.map(item => <View key={item.id} style={{ width: 130 }}>{renderSellerCard({ item })}</View>)}
               </ScrollView>
@@ -645,7 +645,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             <View style={styles.sectionBorder}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>
-                  More in {typeof product.category === 'string' ? product.category : product.category?.name || 'this category'}
+                  {t('productDetail.moreInCategory', { category: typeof product.category === 'string' ? product.category : product.category?.name || '' })}
                 </Text>
               </View>
               <MasonryGrid
@@ -676,17 +676,17 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           <Pressable style={styles.menuSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.menuHandle} />
             {[
-              { icon: 'thumb-up-outline', color: COLORS.green, label: 'Show more like this', action: () => handleFeedback('relevant') },
-              { icon: 'thumb-down-outline', color: COLORS.coral, label: 'Not interested', action: () => handleFeedback('not_relevant') },
-              { icon: 'share-variant-outline', color: COLORS.blue, label: 'Share', action: handleMenuShare },
-              { icon: 'flag-outline', color: COLORS.coral, label: 'Report', action: handleReport },
+              { icon: 'thumb-up-outline', color: COLORS.green, label: t('feed.showMoreLike'), action: () => handleFeedback('relevant') },
+              { icon: 'thumb-down-outline', color: COLORS.coral, label: t('feed.notInterested'), action: () => handleFeedback('not_relevant') },
+              { icon: 'share-variant-outline', color: COLORS.blue, label: t('accessibility.share'), action: handleMenuShare },
+              { icon: 'flag-outline', color: COLORS.coral, label: t('productDetail.report'), action: handleReport },
             ].map((item, i) => {
               const ty = iconScales[i].interpolate({ inputRange: [0, 1], outputRange: [30, 0] });
               return (
                 <Animated.View key={item.label} style={{ opacity: iconScales[i], transform: [{ translateY: ty }] }}>
                   <TouchableOpacity style={styles.menuItem} onPress={item.action} accessibilityRole="button">
                     <MaterialCommunityIcons name={item.icon as any} size={20} color={item.color} />
-                    <Text style={[styles.menuItemText, item.label === 'Report' && { color: COLORS.coral }]}>{item.label}</Text>
+                    <Text style={[styles.menuItemText, item.label === t('productDetail.report') && { color: COLORS.coral }]}>{item.label}</Text>
                   </TouchableOpacity>
                 </Animated.View>
               );
