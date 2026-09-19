@@ -511,7 +511,7 @@ router.put('/user/become-seller', authRequired, dobRequired, async (req, res) =>
         id_document_url = COALESCE($5, id_document_url), use_store_identity = $6,
         natcash_phone = $7, updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
-       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng`,
+       RETURNING id, full_name, email, phone, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng, username, show_real_name`,
       [req.user.id, sellerTier, storeName || null, storeLogoUrl || null, idDocumentUrl || null, useStoreIdentity, natcashPhone || null]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
