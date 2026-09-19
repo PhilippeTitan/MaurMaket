@@ -1,13 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Image,
-  ScrollView, ActivityIndicator, Alert, Animated,
+  ScrollView, ActivityIndicator, Alert, Animated, Easing,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { becomeSeller, upgradeTier, uploadImage } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '@/localization';
@@ -16,8 +16,10 @@ import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type Step = 'welcome' | 'choose' | 'store' | 'verify' | 'done';
+type Step = 'welcome' | 'choose' | 'store' | 'done';
 type ChosenTier = 'casual' | 'verified' | 'business' | null;
+
+const STEP_ORDER: Step[] = ['welcome', 'choose', 'store', 'done'];
 
 export default function SellerOnboardingScreen() {
   const { t } = useTranslation();
@@ -27,24 +29,39 @@ export default function SellerOnboardingScreen() {
   const [chosenTier, setChosenTier] = useState<ChosenTier>(null);
   const [storeName, setStoreName] = useState('');
   const [storeLogoUrl, setStoreLogoUrl] = useState<string | null>(null);
-  const [idDocUrl, setIdDocUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pickLoading, setPickLoading] = useState(false);
   const [natcashPhone, setNatcashPhone] = useState('');
 
-  const stepAnim = useRef({
-    opacity: new Animated.Value(0),
-    translateY: new Animated.Value(20),
-  }).current;
+  const prevStepRef = useRef<Step>('welcome');
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const [slideDir, setSlideDir] = useState(1);
 
   useEffect(() => {
-    stepAnim.opacity.setValue(0);
-    stepAnim.translateY.setValue(20);
-    Animated.parallel([
-      Animated.timing(stepAnim.opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-      Animated.timing(stepAnim.translateY, { toValue: 0, duration: 400, useNativeDriver: true }),
-    ]).start();
+    const prevIdx = STEP_ORDER.indexOf(prevStepRef.current);
+    const nextIdx = STEP_ORDER.indexOf(step);
+    const dir = nextIdx >= prevIdx ? 1 : -1;
+    prevStepRef.current = step;
+    setSlideDir(dir);
+
+    slideAnim.setValue(0);
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
   }, [step]);
+
+  const enterAnimStyle = {
+    opacity: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }),
+    transform: [{
+      translateX: slideAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [slideDir >= 0 ? 28 : -28, 0],
+      }),
+    }],
+  };
 
   const handlePickLogo = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -62,37 +79,17 @@ export default function SellerOnboardingScreen() {
     setPickLoading(false);
   };
 
-  const handlePickId = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
-    if (res.canceled || !res.assets?.[0]) return;
-    setPickLoading(true);
-    try {
-      const uploaded = await uploadImage(res.assets[0].uri);
-      setIdDocUrl(uploaded.url);
-    } catch { /* ignore */ }
-    setPickLoading(false);
-  };
-
-  const handleComplete = async (navigateBack = true): Promise<boolean> => {
-    if (!chosenTier) return false;
+  const handleCompleteWithTier = async (tier: ChosenTier): Promise<boolean> => {
+    if (!tier) return false;
     setLoading(true);
     try {
-      const data: { storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; tier: string; natcashPhone?: string } = { tier: chosenTier };
-      if (chosenTier === 'business' && storeName.trim()) data.storeName = storeName.trim();
-      if (chosenTier === 'business' && storeLogoUrl) data.storeLogoUrl = storeLogoUrl;
-      if ((chosenTier === 'verified' || chosenTier === 'business') && idDocUrl) data.idDocumentUrl = idDocUrl;
-      if (natcashPhone.trim()) data.natcashPhone = natcashPhone.trim();
-
+      const data: { tier: string } = { tier };
       const res = store.isSeller
         ? await upgradeTier(data) as { user: typeof store.user; token: string }
         : await becomeSeller(data) as { user: typeof store.user; token: string };
       if (res.user) {
         await store.setUser(res.user, store.token);
       }
-      if (navigateBack) setTimeout(() => nav.goBack(), 100);
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
@@ -107,9 +104,8 @@ export default function SellerOnboardingScreen() {
     setChosenTier(tier);
     if (tier === 'casual') {
       const success = await handleCompleteWithTier('casual');
-      if (success) setTimeout(() => nav.replace('Settings'), 100);
+      if (success) setStep('done');
     } else if (tier === 'verified') {
-      // First become a casual seller (if not already), then verify to auto-upgrade
       if (!store.isSeller) {
         const success = await handleCompleteWithTier('casual');
         if (!success) return;
@@ -120,12 +116,15 @@ export default function SellerOnboardingScreen() {
     }
   };
 
-  const handleCompleteWithTier = async (tier: ChosenTier): Promise<boolean> => {
-    if (!tier) return false;
-    console.log(`[SellerOnboarding] handleCompleteWithTier: tier=${tier} isSeller=${store.isSeller}`);
+  const handleBusinessComplete = async (): Promise<boolean> => {
+    if (!chosenTier || !storeName.trim()) return false;
     setLoading(true);
     try {
-      const data: { tier: string } = { tier };
+      const data: { tier: string; storeName?: string; storeLogoUrl?: string; natcashPhone?: string } = { tier: chosenTier };
+      if (storeName.trim()) data.storeName = storeName.trim();
+      if (storeLogoUrl) data.storeLogoUrl = storeLogoUrl;
+      if (natcashPhone.trim()) data.natcashPhone = natcashPhone.trim();
+
       const res = store.isSeller
         ? await upgradeTier(data) as { user: typeof store.user; token: string }
         : await becomeSeller(data) as { user: typeof store.user; token: string };
@@ -246,7 +245,6 @@ export default function SellerOnboardingScreen() {
                 onChangeText={setStoreName}
                 maxLength={50}
                 accessibilityLabel="store name"
-               
               />
             </View>
 
@@ -285,8 +283,8 @@ export default function SellerOnboardingScreen() {
             <TouchableOpacity
               style={[styles.primaryBtn, !storeName.trim() && styles.primaryBtnDisabled]}
               onPress={async () => {
-                const success = await handleComplete(false);
-                if (success !== false) setTimeout(() => nav.navigate('BusinessSubscription'), 100);
+                const success = await handleBusinessComplete();
+                if (success) setStep('done');
               }}
               disabled={!storeName.trim() || loading}
               accessibilityLabel="continue"
@@ -300,28 +298,66 @@ export default function SellerOnboardingScreen() {
           </View>
         );
 
+      case 'done':
+        return (
+          <View style={styles.stepContent}>
+            <View style={styles.doneCheckCircle}>
+              <MaterialCommunityIcons name="check" size={48} color={COLORS.white} />
+            </View>
+            <Text style={styles.title}>{t('sellerOnboarding.doneTitle', { defaultValue: 'You\'re All Set!' })}</Text>
+            <Text style={styles.subtitle}>
+              {chosenTier === 'business'
+                ? t('sellerOnboarding.doneBusinessSubtitle', { defaultValue: 'Your store is ready. Complete your subscription to start selling.' })
+                : t('sellerOnboarding.doneSubtitle', { defaultValue: 'You\'re now a seller on MaurMaket. Start listing your products!' })}
+            </Text>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => {
+                if (chosenTier === 'business') {
+                  nav.replace('BusinessSubscription');
+                } else {
+                  nav.replace('Main');
+                }
+              }}
+              accessibilityLabel="done"
+              accessibilityRole="button"
+            >
+              <Text style={styles.primaryBtnText}>
+                {chosenTier === 'business'
+                  ? t('sellerOnboarding.setUpSubscription', { defaultValue: 'Set Up Subscription' })
+                  : t('sellerOnboarding.startListing', { defaultValue: 'Start Listing' })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+
     }
   };
 
-  const totalSteps = chosenTier === 'business' ? 3 : chosenTier === 'verified' ? 2 : 2;
-  const currentStepIdx = step === 'welcome' ? 0 : step === 'choose' ? 1 : step === 'store' ? 2 : 3;
+  const visibleSteps = chosenTier === 'business' ? ['welcome', 'choose', 'store'] : ['welcome', 'choose'];
+  const totalSteps = visibleSteps.length;
+  const currentStepIdx = visibleSteps.indexOf(step === 'done' ? 'choose' : step);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xl, paddingBottom: insets.bottom + SPACING.xl }]}>
-      <View style={{ alignSelf: 'flex-start', marginBottom: 16 }}>
-        <BackButton onPress={() => nav.goBack()} size={24} />
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xl, paddingBottom: insets.bottom + SPACING.xl }]} keyboardShouldPersistTaps="handled">
+      <View style={styles.topBar}>
+        <BackButton onPress={() => {
+          if (step === 'choose') setStep('welcome');
+          else if (step === 'store') setStep('choose');
+          else nav.goBack();
+        }} size={24} />
+        {step !== 'welcome' && step !== 'done' && currentStepIdx >= 0 && (
+          <View style={styles.stepBadge}>
+            <Text style={styles.stepBadgeText}>{currentStepIdx + 1}/{totalSteps}</Text>
+          </View>
+        )}
       </View>
       {step !== 'welcome' && step !== 'done' && (
-        <View style={styles.stepIndicatorFlow}>
-          {Array.from({ length: totalSteps }, (_, i) => (
-            <View
-              key={i}
-              style={[styles.stepDot, i <= currentStepIdx && styles.stepDotActive]}
-            />
-          ))}
+        <View style={styles.stepProgressBar}>
+          <View style={[styles.stepProgressFill, { width: `${((currentStepIdx + 1) / totalSteps) * 100}%` }]} />
         </View>
       )}
-      <Animated.View style={{ flex: 1, opacity: stepAnim.opacity, transform: [{ translateY: stepAnim.translateY }] }}>
+      <Animated.View style={[{ flex: 1 }, enterAnimStyle]}>
         {renderStep()}
       </Animated.View>
     </ScrollView>
@@ -332,18 +368,24 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { flexGrow: 1, justifyContent: 'center', padding: SPACING.xl },
 
-  stepIndicatorFlow: {
-    flexDirection: 'row', justifyContent: 'center', gap: 8,
-    marginBottom: 16, alignSelf: 'center',
+  topBar: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 16,
   },
-  stepIndicator: {
-    flexDirection: 'row', justifyContent: 'center', gap: 8,
+  stepBadge: {
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.full,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  stepDot: {
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
+  stepBadgeText: { fontSize: 12, fontWeight: '600', color: COLORS.text2 },
+
+  stepProgressBar: {
+    height: 3, backgroundColor: COLORS.surface2, borderRadius: 2,
+    marginBottom: 20, overflow: 'hidden',
   },
-  stepDotActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
+  stepProgressFill: {
+    height: '100%', backgroundColor: COLORS.coral, borderRadius: 2,
+  },
 
   stepContent: { alignItems: 'center', gap: 12 },
 
@@ -378,16 +420,6 @@ const styles = StyleSheet.create({
   },
   currentBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.green, textTransform: 'uppercase' },
 
-  tipsList: { width: '100%', gap: 10, marginTop: 12 },
-  tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  tipIcon: {
-    width: 36, height: 36, borderRadius: RADIUS.row,
-    alignItems: 'center', justifyContent: 'center', marginTop: 1,
-  },
-  tipContent: { flex: 1 },
-  tipTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
-  tipHint: { fontSize: 11, color: COLORS.text2, marginTop: 1, lineHeight: 16 },
-
   fieldGroup: { width: '100%', gap: 6, marginTop: 8 },
   label: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   input: {
@@ -405,17 +437,11 @@ const styles = StyleSheet.create({
   logoPlaceholder: { alignItems: 'center', gap: 4 },
   logoPlaceholderText: { fontSize: 10, color: COLORS.text2 },
 
-  idPicker: {
-    width: '100%', paddingVertical: 24,
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.media,
-    borderWidth: 1.5, borderColor: COLORS.border, borderStyle: 'dashed',
-    alignItems: 'center', marginTop: 8,
+  doneCheckCircle: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: COLORS.green, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 8,
   },
-  idPlaceholder: { alignItems: 'center', gap: 4 },
-  idPlaceholderText: { fontSize: 13, color: COLORS.text2, fontWeight: '600' },
-  idPlaceholderHint: { fontSize: 11, color: COLORS.text2, opacity: 0.6 },
-  idUploaded: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  idUploadedText: { fontSize: 14, color: COLORS.green, fontWeight: '600' },
 
   primaryBtn: {
     width: '100%', paddingVertical: 14, borderRadius: RADIUS.media,
