@@ -7,7 +7,7 @@ import { COLORS, SPACING, RADIUS } from '../../theme';
 import { useTranslation } from '@/localization';
 import { signup as apiSignup, API_BASE } from '../../api';
 import { store } from '../../store';
-import AuthInput from './components/AuthInput';
+import AuthInput from '@/components/AuthInput';
 import StepHeading from './components/StepHeading';
 import ReviewRow from './components/ReviewRow';
 import Divider from './components/Divider';

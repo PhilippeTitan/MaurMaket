@@ -14,6 +14,9 @@ import SettingsRow from '../components/SettingsRow';
 import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '../api';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
+import PrimaryButton from '../components/PrimaryButton';
+import SettingsLinkButton from '../components/SettingsLinkButton';
+import SettingsToggle from '../components/SettingsToggle';
 import { useFocusEffect } from '@react-navigation/native';
 import { getSellerFulfillmentProfile, updateSellerFulfillmentProfile, getSellerFulfillmentProposals, decideFulfillmentProposal, type SellerFulfillmentProfile } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -159,13 +162,12 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
               <Icon name="sale-tag" size={18} color={COLORS.text2} />
               <Text style={styles.rowLabel}>{t('settings.useStoreIdentity')}</Text>
               <View style={styles.rowRight}>
-                <TouchableOpacity
-                  style={[styles.toggle, user?.use_store_identity && styles.toggleActive]}
-                  onPress={() => handleToggleStoreIdentity(!user?.use_store_identity)}
+                <SettingsToggle
+                  value={!!user?.use_store_identity}
+                  onValueChange={handleToggleStoreIdentity}
                   disabled={loading}
-                >
-                  <View style={[styles.toggleKnob, user?.use_store_identity && styles.toggleKnobActive]} />
-                </TouchableOpacity>
+                  accessibilityLabel={t('settings.useStoreIdentity')}
+                />
               </View>
             </View>
             <View style={styles.divider} />
@@ -201,13 +203,24 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
         <View style={styles.toggleRow}>
           <MaterialCommunityIcons name="truck-delivery-outline" size={18} color={COLORS.blue} />
           <View style={styles.settingCopy}><Text style={styles.rowLabel}>{t('sellerTools.offerDelivery')}</Text><Text style={styles.settingHint}>{t('sellerTools.offerDeliveryHint')}</Text></View>
-          <TouchableOpacity style={[styles.toggle, fulfillmentProfile?.deliveryEnabled && styles.toggleActive]} onPress={() => updateFulfillment({ deliveryEnabled: !fulfillmentProfile?.deliveryEnabled })} disabled={loading} accessibilityRole="switch" accessibilityLabel={t('sellerTools.offerDelivery')} accessibilityState={{ checked: fulfillmentProfile?.deliveryEnabled }}><View style={[styles.toggleKnob, fulfillmentProfile?.deliveryEnabled && styles.toggleKnobActive]} /></TouchableOpacity>
+          <SettingsToggle
+            value={!!fulfillmentProfile?.deliveryEnabled}
+            onValueChange={(v) => updateFulfillment({ deliveryEnabled: v })}
+            disabled={loading}
+            accent={COLORS.blue}
+            accessibilityLabel={t('sellerTools.offerDelivery')}
+          />
         </View>
         <View style={styles.divider} />
         <View style={styles.toggleRow}>
           <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
           <View style={styles.settingCopy}><Text style={styles.rowLabel}>{t('sellerTools.offerMeetups')}</Text><Text style={styles.settingHint}>{t('sellerTools.offerMeetupsHint')}</Text></View>
-          <TouchableOpacity style={[styles.toggle, fulfillmentProfile?.meetupEnabled && styles.toggleActive]} onPress={() => updateFulfillment({ meetupEnabled: !fulfillmentProfile?.meetupEnabled })} disabled={loading} accessibilityRole="switch" accessibilityLabel={t('sellerTools.offerMeetups')} accessibilityState={{ checked: fulfillmentProfile?.meetupEnabled }}><View style={[styles.toggleKnob, fulfillmentProfile?.meetupEnabled && styles.toggleKnobActive]} /></TouchableOpacity>
+          <SettingsToggle
+            value={!!fulfillmentProfile?.meetupEnabled}
+            onValueChange={(v) => updateFulfillment({ meetupEnabled: v })}
+            disabled={loading}
+            accessibilityLabel={t('sellerTools.offerMeetups')}
+          />
         </View>
         <View style={styles.divider} />
         <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ deliveryRadiusMeters: fulfillmentProfile?.deliveryRadiusMeters === 5000 ? 10000 : 5000 })} disabled={loading} accessibilityRole="button" accessibilityLabel={t('sellerTools.deliveryRadiusA11y')}>
@@ -230,7 +243,7 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
           return <View key={proposal.id} style={[styles.proposal, index < proposals.length - 1 && styles.reviewDivider]}>
             <Text style={styles.proposalTitle}>{t('sellerTools.requestsLine', { name: proposal.buyer_name || t('meetup.buyer'), type: term.method === 'meetup' ? t('sellerTools.meetupNoun') : t('sellerTools.deliveryNoun') })}</Text>
             <Text style={styles.settingHint}>{term.location?.address || t('sellerTools.locationSelected')} · {term.distanceMeters ? `${Math.round(term.distanceMeters / 1000 * 10) / 10} km` : t('sellerTools.locationVerified')}{term.method === 'delivery' ? ` · G ${term.deliveryFee || 0}` : ''}</Text>
-            <View style={styles.proposalActions}><TouchableOpacity style={styles.rejectBtn} onPress={() => decideProposal(proposal, 'reject')} disabled={loading} accessibilityRole="button"><Text style={styles.rejectText}>{t('sellerTools.decline')}</Text></TouchableOpacity><TouchableOpacity style={styles.acceptBtn} onPress={() => decideProposal(proposal, 'accept')} disabled={loading} accessibilityRole="button"><Text style={styles.acceptText}>{t('sellerTools.acceptTerms')}</Text></TouchableOpacity></View>
+            <View style={styles.proposalActions}><SettingsLinkButton danger small onPress={() => decideProposal(proposal, 'reject')} disabled={loading} style={styles.rejectFlex}>{t('sellerTools.decline')}</SettingsLinkButton><PrimaryButton small onPress={() => decideProposal(proposal, 'accept')} disabled={loading} style={styles.acceptFlex}>{t('sellerTools.acceptTerms')}</PrimaryButton></View>
           </View>;
         })}</View>
       </>}
@@ -249,9 +262,9 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
             <View style={styles.tierRow}>
               <View style={styles.tierDotWrap}><View style={[styles.tierDot, { backgroundColor: COLORS.surface2 }]} /></View>
               <Text style={[styles.tierLabel, styles.tierGreyed]}>{t('settings.verifiedSeller')}</Text>
-              <TouchableOpacity style={styles.tierUpgradeBtn} onPress={() => navigation.navigate('Verification')}>
-                <Text style={styles.tierUpgradeBtnText}>{t('settings.tierUpgrade')}</Text>
-              </TouchableOpacity>
+              <PrimaryButton small onPress={() => navigation.navigate('Verification')}>
+                {t('settings.tierUpgrade')}
+              </PrimaryButton>
             </View>
             <View style={styles.divider} />
             <View style={styles.tierRow}>
@@ -272,9 +285,9 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
             <View style={styles.tierRow}>
               <View style={styles.tierDotWrap}><View style={[styles.tierDot, { backgroundColor: COLORS.surface2 }]} /></View>
               <Text style={[styles.tierLabel, styles.tierGreyed]}>{t('settings.businessSeller')}</Text>
-              <TouchableOpacity style={styles.tierUpgradeBtn} onPress={() => navigation.navigate('BusinessSubscription')}>
-                <Text style={styles.tierUpgradeBtnText}>{t('settings.tierUpgrade')}</Text>
-              </TouchableOpacity>
+              <PrimaryButton small onPress={() => navigation.navigate('BusinessSubscription')}>
+                {t('settings.tierUpgrade')}
+              </PrimaryButton>
             </View>
           </>
         )}
@@ -336,10 +349,8 @@ const styles = StyleSheet.create({
   proposal: { padding: 14, gap: 8 },
   proposalTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text },
   proposalActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
-  rejectBtn: { minHeight: 44, paddingHorizontal: 14, borderWidth: 1, borderColor: COLORS.coral, borderRadius: RADIUS.row, justifyContent: 'center', alignItems: 'center' },
-  rejectText: { color: COLORS.coral, fontSize: 12, fontWeight: '700' },
-  acceptBtn: { flex: 1, minHeight: 44, borderRadius: RADIUS.row, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.green },
-  acceptText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
+  rejectFlex: { flex: 1 },
+  acceptFlex: { flex: 1 },
   reviewDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rowValue: { fontSize: 13, color: COLORS.text2, maxWidth: 140 },
@@ -348,14 +359,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 14, paddingVertical: 13,
   },
-  toggle: {
-    width: 44, height: 26, borderRadius: RADIUS.card, padding: 2,
-    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
-    justifyContent: 'center',
-  },
-  toggleActive: { backgroundColor: COLORS.green + '40', borderColor: COLORS.green },
-  toggleKnob: { width: 20, height: 20, borderRadius: RADIUS.row, backgroundColor: COLORS.text2 },
-  toggleKnobActive: { backgroundColor: COLORS.green, alignSelf: 'flex-end' },
   storeLogoThumb: { width: 28, height: 28, borderRadius: RADIUS.row },
   tierRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -366,9 +369,4 @@ const styles = StyleSheet.create({
   tierLabel: { flex: 1, fontSize: 14, color: COLORS.text, fontWeight: '600' },
   tierGreyed: { color: COLORS.text2, fontWeight: '400' },
   tierStatus: { fontSize: 12, fontWeight: '700' },
-  tierUpgradeBtn: {
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: RADIUS.row, backgroundColor: COLORS.blue,
-  },
-  tierUpgradeBtnText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
 });

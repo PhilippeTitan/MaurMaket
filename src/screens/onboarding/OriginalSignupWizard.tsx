@@ -14,7 +14,7 @@ import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
 import { useTranslation } from '@/localization';
 import { signup as apiSignup, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
 import { store } from '../../store';
-import AuthInput from './components/AuthInput';
+import AuthInput from '@/components/AuthInput';
 import GoogleButton from './components/GoogleButton';
 import PasskeyButton from './components/PasskeyButton';
 import AuthMethodsCard from '../../components/AuthMethodsCard';

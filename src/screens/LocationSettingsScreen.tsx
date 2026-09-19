@@ -12,6 +12,9 @@ import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackButton from '../components/BackButton';
+import AuthInput from '../components/AuthInput';
+import PrimaryButton from '../components/PrimaryButton';
+import SettingsLinkButton from '../components/SettingsLinkButton';
 import NativeMap, { MAP_STYLE_LIGHT, type NativeMapRef } from '../components/NativeMap';
 import { searchAreasHybrid, type HaitiArea } from '../data/haiti-areas';
 import { getFastLocation } from '../fast-location';
@@ -265,22 +268,17 @@ export default function LocationSettingsScreen({ navigation }: Props) {
       {step === 'map' && (
         <View style={[styles.searchContainer, { top: insets.top + 64, zIndex: 50 }]}>
           <View style={styles.searchBar}>
-            <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder={t('locationSettings.searchPlaceholder')}
-              placeholderTextColor={COLORS.text2}
+            <AuthInput
+              icon="magnify"
               value={searchQuery}
               onChangeText={setSearchQuery}
-              onFocus={() => setSearchFocused(true)}
+              placeholder={t('locationSettings.searchPlaceholder')}
               returnKeyType="search"
+              rightIcon={searchQuery.length > 0 ? 'close-circle' : undefined}
+              onRightPress={() => { setSearchQuery(''); setSearchResults([]); }}
+              style={{ marginBottom: 0 }}
               accessibilityLabel={t('locationSettings.searchA11y')}
             />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }} accessibilityLabel={t('locationSettings.clearSearchA11y')} accessibilityRole="button">
-                <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.text2} />
-              </TouchableOpacity>
-            )}
           </View>
 
           {searchFocused && (searching || searchResults.length > 0) && (
@@ -343,24 +341,12 @@ export default function LocationSettingsScreen({ navigation }: Props) {
             <Text style={styles.cardAddress} numberOfLines={2}>{address || t('locationSettings.notFound')}</Text>
             {city ? <Text style={styles.cardCity}>{city}</Text> : null}
 
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={handleConfirmLocation}
-              activeOpacity={0.7}
-              accessibilityLabel={t('locationSettings.confirmA11y')}
-              accessibilityRole="button"
-            >
-              <Text style={styles.primaryBtnText}>{t('locationSettings.confirm')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.linkBtn}
-              onPress={handleChangeLocation}
-              activeOpacity={0.7}
-              accessibilityLabel={t('locationSettings.changeA11y')}
-              accessibilityRole="button"
-            >
-              <Text style={styles.linkBtnText}>{t('locationSettings.change')}</Text>
-            </TouchableOpacity>
+            <PrimaryButton onPress={handleConfirmLocation} accessibilityLabel={t('locationSettings.confirmA11y')}>
+              {t('locationSettings.confirm')}
+            </PrimaryButton>
+            <SettingsLinkButton onPress={handleChangeLocation} style={{ marginTop: SPACING.sm }}>
+              {t('locationSettings.change')}
+            </SettingsLinkButton>
           </>
         )}
 
@@ -373,79 +359,57 @@ export default function LocationSettingsScreen({ navigation }: Props) {
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>{t('locationSettings.buildingLabel')}</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('locationSettings.buildingPlaceholder')}
-                  placeholderTextColor={COLORS.text2}
+                <AuthInput
+                  icon="home-modern"
                   value={building}
                   onChangeText={setBuilding}
+                  placeholder={t('locationSettings.buildingPlaceholder')}
                   accessibilityLabel={t('locationSettings.buildingA11y')}
                 />
               </View>
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>{t('locationSettings.aptLabel')}</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('locationSettings.aptPlaceholder')}
-                  placeholderTextColor={COLORS.text2}
+                <AuthInput
+                  icon="door-closed"
                   value={apartment}
                   onChangeText={setApartment}
+                  placeholder={t('locationSettings.aptPlaceholder')}
                   accessibilityLabel={t('locationSettings.aptA11y')}
                 />
               </View>
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>{t('locationSettings.landmarkLabel')}</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('locationSettings.landmarkPlaceholder')}
-                  placeholderTextColor={COLORS.text2}
+                <AuthInput
+                  icon="map-marker-outline"
                   value={landmark}
                   onChangeText={setLandmark}
+                  placeholder={t('locationSettings.landmarkPlaceholder')}
                   accessibilityLabel={t('locationSettings.landmarkA11y')}
                 />
               </View>
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>{t('locationSettings.instructionsLabel')}</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  placeholder={t('locationSettings.instructionsPlaceholder')}
-                  placeholderTextColor={COLORS.text2}
+                <AuthInput
+                  icon="text-box-outline"
                   value={instructions}
                   onChangeText={setInstructions}
+                  placeholder={t('locationSettings.instructionsPlaceholder')}
                   multiline
                   numberOfLines={3}
-                  textAlignVertical="top"
                   accessibilityLabel={t('locationSettings.instructionsA11y')}
                 />
               </View>
 
-              <TouchableOpacity
-                style={[styles.primaryBtn, saving && { opacity: 0.5 }]}
-                onPress={handleSave}
-                disabled={saving}
-                activeOpacity={0.7}
-                accessibilityLabel={t('locationSettings.saveA11y')}
-                accessibilityRole="button"
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color={COLORS.white} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>{t('locationSettings.save')}</Text>
-                )}
-              </TouchableOpacity>
+              <PrimaryButton onPress={handleSave} disabled={saving} loading={saving} accessibilityLabel={t('locationSettings.saveA11y')}>
+                {t('locationSettings.save')}
+              </PrimaryButton>
 
-              <TouchableOpacity
-                style={styles.linkBtn}
-                onPress={() => setStep('confirm')}
-                activeOpacity={0.7}
-                accessibilityLabel={t('locationSettings.goBackA11y')}
-                accessibilityRole="button"
-              >
-                <Text style={styles.linkBtnText}>{t('common.back')}</Text>
-              </TouchableOpacity>
+              <SettingsLinkButton onPress={() => setStep('confirm')} style={{ marginTop: SPACING.sm }}>
+                {t('common.back')}
+              </SettingsLinkButton>
 
               <View style={{ height: SPACING.xl }} />
             </ScrollView>

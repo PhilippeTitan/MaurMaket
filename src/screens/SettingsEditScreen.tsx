@@ -7,6 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
 import { ONBOARDING_COLORS, ONBOARDING_GRADIENT } from './onboarding/theme';
+import AuthInput from '../components/AuthInput';
+import PrimaryButton from '../components/PrimaryButton';
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
 import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 import { store } from '../store';
@@ -211,19 +213,17 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                     <Text style={[styles.paymentBadgeText, { color: COLORS.blue }]}>{t('settingsEdit.badgePrimary')}</Text>
                   </View>
                 </View>
-                <View style={styles.inputContainer}>
-                  <Text style={styles.countryCode}>+509</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={value}
-                    onChangeText={setValue}
-                    placeholder={t('field.phone')}
-                    placeholderTextColor={COLORS.text3}
-                    keyboardType="phone-pad"
-                    autoFocus
-                    accessibilityLabel="MonCash phone number"
-                  />
-                </View>
+                <AuthInput
+                  icon="cellphone"
+                  prefix="+509"
+                  value={value}
+                  onChangeText={setValue}
+                  placeholder={t('field.phone')}
+                  keyboardType="phone-pad"
+                  autoFocus
+                  style={{ marginBottom: 0 }}
+                  accessibilityLabel={t('settingsEdit.primaryPayment')}
+                />
               </View>
 
               {/* NatCash Card */}
@@ -240,98 +240,74 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                     <Text style={[styles.paymentBadgeText, { color: COLORS.purple }]}>{t('settingsEdit.badgeOptional')}</Text>
                   </View>
                 </View>
-                <View style={[styles.inputContainer, { borderColor: COLORS.purple + '30' }]}>
-                  <Text style={styles.countryCode}>+509</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={natcashValue}
-                    onChangeText={setNatcashValue}
-                    placeholder={t('field.phone')}
-                    placeholderTextColor={COLORS.text3}
-                    keyboardType="phone-pad"
-                    accessibilityLabel="NatCash phone number"
-                  />
-                </View>
+                <AuthInput
+                  icon="cellphone"
+                  prefix="+509"
+                  value={natcashValue}
+                  onChangeText={setNatcashValue}
+                  placeholder={t('field.phone')}
+                  keyboardType="phone-pad"
+                  style={{ marginBottom: 0 }}
+                  accessibilityLabel={t('settingsEdit.natcashDesc')}
+                />
               </View>
             </>
           ) : field === 'name' ? (
             /* ── Name (3 fields) ── */
-            <View style={styles.inputCard}>
-              <View style={styles.inputRow}>
-                <Text style={styles.inputLabel}>{t('settingsEdit.firstName')}</Text>
-                <TextInput
-                  style={styles.input}
-                  value={firstName}
-                  onChangeText={setFirstName}
-                  placeholder={t('settingsEdit.firstName')}
-                  placeholderTextColor={COLORS.text3}
-                  autoFocus
-                  accessibilityLabel={t('field.firstName')}
-                />
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.inputRow}>
-                <Text style={styles.inputLabel}>{t('settingsEdit.middleNameOptional')}</Text>
-                <TextInput
-                  style={styles.input}
-                  value={middleName}
-                  onChangeText={setMiddleName}
-                  placeholder={t('settingsEdit.middleNameOptional')}
-                  placeholderTextColor={COLORS.text3}
-                  accessibilityLabel={t('field.middleName')}
-                />
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.inputRow}>
-                <Text style={styles.inputLabel}>{t('settingsEdit.lastName')}</Text>
-                <TextInput
-                  style={styles.input}
-                  value={lastName}
-                  onChangeText={setLastName}
-                  placeholder={t('settingsEdit.lastName')}
-                  placeholderTextColor={COLORS.text3}
-                  accessibilityLabel={t('field.lastName')}
-                />
-              </View>
+            <View style={{ marginHorizontal: SPACING.lg, gap: SPACING.sm }}>
+              <AuthInput
+                icon="account-outline"
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder={t('settingsEdit.firstName')}
+                autoFocus
+                accessibilityLabel={t('field.firstName')}
+              />
+              <AuthInput
+                icon="account-outline"
+                value={middleName}
+                onChangeText={setMiddleName}
+                placeholder={t('settingsEdit.middleNameOptional')}
+                accessibilityLabel={t('field.middleName')}
+              />
+              <AuthInput
+                icon="account-outline"
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder={t('settingsEdit.lastName')}
+                accessibilityLabel={t('field.lastName')}
+              />
             </View>
           ) : (
             /* ── Single field ── */
-            <View style={styles.inputCard}>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={[styles.input, field === 'bio' && styles.multilineInput]}
-                  value={value}
-                  onChangeText={setValue}
-                  placeholder={t(meta.placeholderKey)}
-                  placeholderTextColor={COLORS.text3}
-                  secureTextEntry={meta.secure}
-                  keyboardType={(meta.keyboardType as any) || 'default'}
-                  autoCapitalize={field === 'email' ? 'none' : 'sentences'}
-                  multiline={meta.multiline}
-                  numberOfLines={meta.multiline ? 4 : 1}
-                  textAlignVertical={meta.multiline ? 'top' : 'center'}
-                  autoFocus
-                  accessibilityLabel={field}
-                />
-              </View>
+            <View style={{ marginHorizontal: SPACING.lg }}>
+              <AuthInput
+                icon={meta.icon}
+                value={value}
+                onChangeText={setValue}
+                placeholder={t(meta.placeholderKey)}
+                secureTextEntry={meta.secure}
+                keyboardType={meta.keyboardType as any}
+                autoCapitalize={field === 'email' ? 'none' : 'sentences'}
+                multiline={meta.multiline}
+                numberOfLines={meta.multiline ? 4 : 1}
+                autoFocus
+                accessibilityLabel={field}
+              />
             </View>
           )}
 
           {/* ── Password extra field ── */}
           {field === 'password' && (
-            <View style={[styles.inputCard, { marginTop: SPACING.md }]}>
-              <View style={styles.inputRow}>
-                <Text style={styles.inputLabel}>{t('settingsEdit.currentPasswordPlaceholder')}</Text>
-                <TextInput
-                  style={styles.input}
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  placeholder={t('settingsEdit.currentPasswordPlaceholder')}
-                  placeholderTextColor={COLORS.text3}
-                  secureTextEntry
-                  accessibilityLabel={t('settings.currentPassword')}
-                />
-              </View>
+            <View style={{ marginHorizontal: SPACING.lg, marginTop: SPACING.md }}>
+              <AuthInput
+                icon="lock-outline"
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                placeholder={t('settingsEdit.currentPasswordPlaceholder')}
+                secureTextEntry
+                accessibilityLabel={t('settings.currentPassword')}
+              />
             </View>
           )}
 
@@ -362,26 +338,11 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
 
           {/* ── Save button (name field only) ── */}
           {field === 'name' && (
-            <TouchableOpacity
-              style={[styles.saveButton, loading && { opacity: 0.5 }]}
-              onPress={handleSave}
-              disabled={loading}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={t('common.save')}
-            >
-              <LinearGradient
-                colors={ONBOARDING_GRADIENT}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                style={styles.saveButtonInner}
-              >
-                {loading ? (
-                  <ActivityIndicator color={ONBOARDING_COLORS.white} />
-                ) : (
-                  <Text style={styles.saveButtonText}>{t('settingsEdit.save')}</Text>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
+            <View style={{ marginHorizontal: SPACING.lg, marginTop: SPACING.xl }}>
+              <PrimaryButton onPress={handleSave} disabled={loading} loading={loading}>
+                {t('settingsEdit.save')}
+              </PrimaryButton>
+            </View>
           )}
 
         </Animated.View>

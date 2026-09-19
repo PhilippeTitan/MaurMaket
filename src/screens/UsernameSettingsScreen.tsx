@@ -8,6 +8,8 @@ import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
+import AuthInput from '../components/AuthInput';
+import PrimaryButton from '../components/PrimaryButton';
 import { updateUsername } from '../api';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
@@ -80,19 +82,15 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
             description={t('username.hint')}
           >
             <View style={styles.inputCard}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.at}>@</Text>
-                <TextInput
-                  style={[styles.input, error && styles.inputError]}
-                  value={username}
-                  onChangeText={(v) => { setUsername(v); setError(''); }}
-                  placeholder={t('username.placeholder')}
-                  placeholderTextColor={COLORS.text3}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoFocus
-                />
-              </View>
+              <AuthInput
+                icon="at"
+                prefix="@"
+                value={username}
+                onChangeText={(v) => { setUsername(v); setError(''); }}
+                placeholder={t('username.placeholder')}
+                autoCapitalize="none"
+                autoFocus
+              />
             </View>
 
             {/* Validation messages */}
@@ -120,18 +118,11 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* ── Save button ── */}
-        <TouchableOpacity
-          style={[styles.saveButton, (!isValid || !changed || saving) && styles.saveButtonDisabled]}
-          activeOpacity={0.7}
-          onPress={handleSave}
-          disabled={!isValid || !changed || saving}
-        >
-          {saving ? (
-            <ActivityIndicator size="small" color={COLORS.white} />
-          ) : (
-            <Text style={styles.saveButtonText}>{t('common.save')}</Text>
-          )}
-        </TouchableOpacity>
+        <View style={{ marginHorizontal: SPACING.lg, marginTop: SPACING.xl }}>
+          <PrimaryButton onPress={handleSave} disabled={!isValid || !changed} loading={saving}>
+            {t('common.save')}
+          </PrimaryButton>
+        </View>
 
         <View style={styles.bottomSpacer} />
       </ScrollView>

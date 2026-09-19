@@ -7,7 +7,7 @@ import { COLORS, SPACING, RADIUS } from '../../theme';
 import { useTranslation } from '@/localization';
 import { login as apiLogin, googleAuth } from '../../api';
 import { store } from '../../store';
-import AuthInput from './components/AuthInput';
+import AuthInput from '@/components/AuthInput';
 import Divider from './components/Divider';
 import AuthBadge from './components/AuthBadge';
 import GoogleButton from './components/GoogleButton';
