@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { TouchableOpacity, Text, Animated, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { COLORS, RADIUS } from '../../../theme';
-import { useTranslation } from '../../../i18n';
+import { useTranslation } from '@/localization';
 import { passkeyAuth, PasskeyUnavailableError } from '../../../api';
 import { store } from '../../../store';
 import type { User } from '../../../types';

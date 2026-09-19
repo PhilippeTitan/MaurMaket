@@ -16,7 +16,7 @@ if (Platform.OS !== 'web') {
 import { store } from '../store';
 import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow, extendMeetup, createDispute } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { SkeletonBlock } from '../components/Skeleton';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';

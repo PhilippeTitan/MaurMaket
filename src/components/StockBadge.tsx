@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Svg, Circle } from 'react-native-svg';
 import { COLORS } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 
 interface StockBadgeProps {
   stock: number;

@@ -9,7 +9,7 @@ import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/nativ
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
 import { getConversations, getFollowing, createConversation, getConversationsWithOffers } from '../api';

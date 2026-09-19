@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { signup as apiSignup, login as apiLogin, googleAuth } from '../api';
 import { store } from '../store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

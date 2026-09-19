@@ -5,7 +5,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { getSellerBalance, getSellerPayouts, requestPayout } from '../api';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';

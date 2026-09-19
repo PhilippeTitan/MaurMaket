@@ -16,7 +16,7 @@ import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';

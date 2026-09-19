@@ -26,7 +26,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice, TIER_COLORS } from '../theme';
 import UserAvatar from '../components/UserAvatar';
 import { store } from '../store';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import {
   getNearbySellers, setSellerLocation, getImageUrl,
   getProducts, toggleFollow, getFollowing, getFollowerCount,

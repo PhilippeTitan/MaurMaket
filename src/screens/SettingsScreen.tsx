@@ -13,7 +13,7 @@ import SettingsGroup from '../components/SettingsGroup';
 import SettingsRow from '../components/SettingsRow';
 import ProfileCard from '../components/ProfileCard';
 import ConfirmModal from '../components/ConfirmModal';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';

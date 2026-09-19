@@ -8,7 +8,7 @@ import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { COLORS, SPACING, RADIUS } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { getMyPromos, createPromo, togglePromo } from '../api';
 import type { PromoCode } from '../types';
 import ScreenHeader from '../components/ScreenHeader';

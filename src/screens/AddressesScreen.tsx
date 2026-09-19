@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { getAddresses, createAddress, updateAddress, deleteAddress } from '../api';
 import type { Address } from '../types';
 import type { RootStackParamList } from '../navigation';

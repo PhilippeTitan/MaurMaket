@@ -4,7 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { network } from '../network';
 import { COLORS, SPACING } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 
 export default function OfflineBanner() {
   const { t } = useTranslation();

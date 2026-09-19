@@ -19,7 +19,7 @@ import {
 import { store } from '../store';
 import type { Product, Review } from '../types';
 import type { RootStackParamList } from '../navigation';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';
 import StockBadge from '../components/StockBadge';

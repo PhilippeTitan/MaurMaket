@@ -5,7 +5,7 @@ import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { COLORS } from '../../theme';
 import { googleAuthInfo } from '../../api';
 import { store } from '../../store';
-import { useTranslation } from '../../i18n';
+import { useTranslation } from '@/localization';
 import OnboardingBackground from './components/OnboardingBackground';
 import GoogleButton from './components/GoogleButton';
 

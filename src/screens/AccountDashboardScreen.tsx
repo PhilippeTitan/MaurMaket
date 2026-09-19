@@ -10,7 +10,7 @@ import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import ProfileCard from '../components/ProfileCard';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';

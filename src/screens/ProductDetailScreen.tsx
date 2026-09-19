@@ -13,7 +13,7 @@ import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Review } from '../types';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import SalePriceTag from '../components/SalePriceTag';
 import BuyRow from '../components/BuyRow';

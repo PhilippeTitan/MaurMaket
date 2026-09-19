@@ -12,7 +12,7 @@ import {
   COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH, FONTS,
   getDisplayName, formatPrice, TIER_COLORS,
 } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useUser } from '../hooks';
 import { store } from '../store';
 import {

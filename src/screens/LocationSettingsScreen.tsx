@@ -8,7 +8,7 @@ import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../the
 import { store } from '../store';
 import { useUser } from '../hooks';
 import { updateProfile } from '../api';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackButton from '../components/BackButton';

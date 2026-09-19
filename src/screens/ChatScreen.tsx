@@ -9,7 +9,7 @@ import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, sendTyping, getTypingStatus, markConversationRead } from '../api';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Message } from '../types';

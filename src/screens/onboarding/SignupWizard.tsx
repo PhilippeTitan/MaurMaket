@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../../theme';
-import { useTranslation } from '../../i18n';
+import { useTranslation } from '@/localization';
 import { signup as apiSignup, API_BASE } from '../../api';
 import { store } from '../../store';
 import AuthInput from './components/AuthInput';

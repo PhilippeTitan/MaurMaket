@@ -11,7 +11,7 @@ import EmptyState from '../components/EmptyState';
 import ConfirmModal from '../components/ConfirmModal';
 import { store } from '../store';
 import { validatePromo, getImageUrl } from '../api';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';

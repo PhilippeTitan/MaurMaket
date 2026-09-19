@@ -5,7 +5,7 @@ import { Icon } from './icons/Icon';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
 import { store } from '../store';
 import { createConversation } from '../api';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useToast } from './Toast';
 import type { Product } from '../types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';

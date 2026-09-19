@@ -13,7 +13,7 @@ import NativeMap from '../components/NativeMap';
 import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup, getImageUrl } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { store } from '../store';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import { SkeletonBlock } from '../components/Skeleton';
 

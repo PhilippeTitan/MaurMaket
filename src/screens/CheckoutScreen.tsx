@@ -11,7 +11,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { validatePromo } from '../api';
 import ScreenHeader from '../components/ScreenHeader';
 import { store } from '../store';

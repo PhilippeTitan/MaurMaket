@@ -17,7 +17,7 @@ import type { Notification, Order } from '../types';
 import type { RootStackParamList } from '../navigation';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Tab = 'notifications' | 'buying' | 'selling';

@@ -9,7 +9,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { createSubscription, renewSubscription, getCurrentSubscription } from '../api';
 import { store } from '../store';
 import { SkeletonBlock } from '../components/Skeleton';

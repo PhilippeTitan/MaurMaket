@@ -4,7 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { getFollowList } from '../api';
 import type { RootStackParamList } from '../navigation';
 import { COLORS, SPACING } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import UserAvatar from '../components/UserAvatar';
 import ScreenHeader from '../components/ScreenHeader';
 

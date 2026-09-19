@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLike, useWishlist } from '../hooks/useEngagement';
 import { COLORS } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 
 interface ProductActionBarProps {
   productId: string;

@@ -12,7 +12,7 @@ import natcashLogo from '../../assets/MonNatCash/natcash.webp';
 import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
 import { updateProfile, changePassword, updateSellerProfile, resendVerificationEmail } from '../api';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';

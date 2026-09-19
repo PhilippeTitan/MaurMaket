@@ -9,7 +9,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, G as SvgG } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
-import { useTranslation } from '../../i18n';
+import { useTranslation } from '@/localization';
 import { login as apiLogin, googleAuth, passkeyAuth, PasskeyUnavailableError } from '../../api';
 import { store } from '../../store';
 import OnboardingBackground from './components/OnboardingBackground';

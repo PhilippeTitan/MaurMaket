@@ -11,7 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import LottieView from 'lottie-react-native';
 import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
-import { useTranslation } from '../../i18n';
+import { useTranslation } from '@/localization';
 import { signup as apiSignup, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
 import { store } from '../../store';
 import AuthInput from './components/AuthInput';

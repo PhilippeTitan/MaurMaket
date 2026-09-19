@@ -7,7 +7,7 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { getSellerItems, getImageUrl } from '../api';
 import StockBadge from './StockBadge';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 
 type SellerItem = { id: string; name: string; price: number; stock: number; image_url?: string | null };
 

@@ -9,7 +9,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import {
   createNatCashSessions, verifyNatCashSession, getNatCashSessions,
   confirmAllNatCashSessions, getSimPreferences, saveSimPreference,

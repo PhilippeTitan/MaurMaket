@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import { getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount, createConversation, getConversations } from '../api';
 import { store } from '../store';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import EmptyState from '../components/EmptyState';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';

@@ -6,7 +6,7 @@ import {
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { getOrders, cancelOrder, completeOrder, getSellerOrders, updateOrderStatus } from '../api';
 import { store } from '../store';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';

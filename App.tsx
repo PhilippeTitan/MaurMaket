@@ -9,7 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { store } from './src/store';
 import { COLORS, SPACING, RADIUS, SHADOW, FONT_SIZES, FONT_WEIGHTS, FONTS, DURATION, ICON_SIZES, TOUCH, LAYOUT } from './src/theme';
-import { i18n } from './src/i18n';
+import { i18n } from './src/localization';
 import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
 import { restoreSessionFromUrl } from './src/supabase';

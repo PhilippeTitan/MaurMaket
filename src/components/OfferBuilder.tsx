@@ -7,7 +7,7 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { sendOffer, getImageUrl } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToast } from './Toast';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import { Icon } from './icons/Icon';
 
 type Item = { id: string; name: string; price: number; image_url?: string | null };

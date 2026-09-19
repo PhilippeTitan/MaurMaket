@@ -10,7 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
 import { becomeSeller, upgradeTier, uploadImage } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTranslation } from '../i18n';
+import { useTranslation } from '@/localization';
 import BackButton from '../components/BackButton';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
