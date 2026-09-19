@@ -61,6 +61,7 @@ export default function NatCashPaymentScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<Props>();
+  const { t } = useTranslation();
 
   const { pendingId, total, sellerName, sellerPhone, sellers: routeSellers } = route.params;
   const isMultiSeller = !!(routeSellers && routeSellers.length > 1);
@@ -180,18 +181,18 @@ export default function NatCashPaymentScreen() {
         // Carrier-aware: target the specific SIM subscription
         const result = await dialUssdOnSubscription('*202#', selectedSim.subscriptionId);
         if (!result.success) {
-          Alert.alert('Error', result.errorMessage || 'Could not open NatCash menu. Please dial *202# manually.');
+          Alert.alert(t('common.error'), result.errorMessage || t('natcash.dialError'));
         }
       } else {
         // No SIM selected — never launch ambiguous *202#
         Alert.alert(
-          'No SIM Selected',
-          'NatCash requires a Natcom SIM. Please go back and select a Natcom SIM, or use MonCash instead.',
-          [{ text: 'Select SIM', onPress: () => setStep('sim') }]
+          t('natcash.noSimTitle'),
+          t('natcash.noSimMsg'),
+          [{ text: t('natcash.selectSim'), onPress: () => setStep('sim') }]
         );
       }
     } catch {
-      Alert.alert('Error', 'Could not dial USSD code. Please dial *202# manually.');
+      Alert.alert(t('common.error'), t('natcash.ussdError'));
     } finally {
       setUssdLoading(false);
     }
@@ -229,11 +230,11 @@ export default function NatCashPaymentScreen() {
           }
         }
       } else {
-        setVerifyError(res.error || 'Verification failed. Check the SMS and try again.');
+        setVerifyError(res.error || t('natcash.verifyFailed'));
         setStep('paste');
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Verification failed';
+      const msg = err instanceof Error ? err.message : t('natcash.verifyFailedShort');
       setVerifyError(msg);
       setStep('paste');
     }
@@ -249,10 +250,10 @@ export default function NatCashPaymentScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <ScreenHeader title="NatCash Payment" onBack={() => nav.goBack()} />
+        <ScreenHeader title={t('natcash.title')} onBack={() => nav.goBack()} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.coral} />
-          <Text style={styles.loadingText}>Checking SIM cards…</Text>
+          <Text style={styles.loadingText}>{t('natcash.checkingSim')}</Text>
         </View>
       </View>
     );
@@ -267,23 +268,23 @@ export default function NatCashPaymentScreen() {
           <View style={styles.stepContent}>
             <View style={[styles.infoCard, { borderColor: COLORS.coral + '33' }]}>
               <MaterialCommunityIcons name="sim-alert" size={32} color={COLORS.coral} />
-              <Text style={[styles.infoTitle, { color: COLORS.coral }]}>Natcom SIM Required</Text>
+              <Text style={[styles.infoTitle, { color: COLORS.coral }]}>{t('natcash.simRequiredTitle')}</Text>
               <Text style={styles.infoBody}>
-                NatCash requires a Natcom SIM card. No Natcom SIM was detected in your phone.
+                {t('natcash.simRequiredBody')}
               </Text>
               <View style={styles.stepsList}>
                 <View style={styles.stepItem}>
                   <View style={styles.stepNum}><Text style={styles.stepNumText}>!</Text></View>
-                  <Text style={styles.stepItemText}>Insert a Natcom SIM card</Text>
+                  <Text style={styles.stepItemText}>{t('natcash.insertSim')}</Text>
                 </View>
                 <View style={styles.stepItem}>
                   <View style={styles.stepNum}><Text style={styles.stepNumText}>!</Text></View>
-                  <Text style={styles.stepItemText}>Or use MonCash (Digicel) instead</Text>
+                  <Text style={styles.stepItemText}>{t('natcash.useMoncashInstead')}</Text>
                 </View>
               </View>
             </View>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => nav.goBack()} accessibilityLabel="go back" accessibilityRole="button">
-              <Text style={styles.secondaryBtnText}>Go Back</Text>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => nav.goBack()} accessibilityLabel={t('common.back')} accessibilityRole="button">
+              <Text style={styles.secondaryBtnText}>{t('common.back')}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -306,16 +307,16 @@ export default function NatCashPaymentScreen() {
           <StepDot done={stepIndex >= 3} active={stepIndex === 2} />
         </View>
         <View style={styles.progressLabels}>
-          <Text style={[styles.progressLabel, stepIndex === 0 && styles.progressLabelActive]}>SIM</Text>
-          <Text style={[styles.progressLabel, stepIndex === 1 && styles.progressLabelActive]}>Dial</Text>
-          <Text style={[styles.progressLabel, stepIndex === 2 && styles.progressLabelActive]}>Paste SMS</Text>
+          <Text style={[styles.progressLabel, stepIndex === 0 && styles.progressLabelActive]}>{t('natcash.progressSim')}</Text>
+          <Text style={[styles.progressLabel, stepIndex === 1 && styles.progressLabelActive]}>{t('natcash.progressDial')}</Text>
+          <Text style={[styles.progressLabel, stepIndex === 2 && styles.progressLabelActive]}>{t('natcash.progressPaste')}</Text>
         </View>
 
         {/* ── Order Summary Card ── */}
         <View style={styles.card}>
           <View style={styles.cardRow}>
             <MaterialCommunityIcons name="receipt-text-outline" size={18} color={COLORS.coral} />
-            <Text style={styles.cardLabel}>Order Total</Text>
+            <Text style={styles.cardLabel}>{t('natcash.orderTotal')}</Text>
           </View>
           <Text style={styles.cardAmount}>G {total.toFixed(0)}</Text>
           {isMultiSeller && routeSellers ? (
@@ -360,9 +361,9 @@ export default function NatCashPaymentScreen() {
           <View style={styles.stepContent}>
             <View style={styles.infoCard}>
               <MaterialCommunityIcons name="sim" size={28} color={COLORS.blue} />
-              <Text style={styles.infoTitle}>Select Natcom SIM</Text>
+              <Text style={styles.infoTitle}>{t('natcash.selectNatcomSim')}</Text>
               <Text style={styles.infoBody}>
-                Multiple Natcom SIMs detected. Choose which one to use for this NatCash payment.
+                {t('natcash.multiSimMsg')}
               </Text>
             </View>
 
@@ -377,7 +378,7 @@ export default function NatCashPaymentScreen() {
                 <View style={styles.simCardInner}>
                   <MaterialCommunityIcons name="sim" size={24} color={COLORS.coral} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.simCarrier}>{sim.carrier || 'Unknown Carrier'}</Text>
+                    <Text style={styles.simCarrier}>{sim.carrier || t('natcash.unknownCarrier')}</Text>
                     <Text style={styles.simNumber}>{sim.number || `SIM ${sim.simSlotIndex + 1}`}</Text>
                   </View>
                   <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />
@@ -386,7 +387,7 @@ export default function NatCashPaymentScreen() {
             ))}
 
             <Text style={styles.hintText}>
-              Your preference is saved for next time. You can change it before each payment.
+              {t('natcash.simPreferenceHint')}
             </Text>
           </View>
         )}
@@ -397,25 +398,27 @@ export default function NatCashPaymentScreen() {
             {selectedSim && (
               <View style={styles.simBadge}>
                 <MaterialCommunityIcons name="sim" size={14} color={COLORS.green} />
-                <Text style={styles.simBadgeText}>Using {selectedSim.carrier} ••••{selectedSim.number?.slice(-4) || `SIM ${selectedSim.simSlotIndex + 1}`}</Text>
-                <TouchableOpacity onPress={() => setStep('sim')} accessibilityLabel="change SIM">
-                  <Text style={styles.simChangeText}>Change</Text>
+                <Text style={styles.simBadgeText}>{selectedSim.number?.slice(-4)
+                  ? t('natcash.using', { carrier: selectedSim.carrier, last4: selectedSim.number.slice(-4) })
+                  : t('natcash.usingNoLast4', { carrier: selectedSim.carrier, slot: selectedSim.simSlotIndex + 1 })}</Text>
+                <TouchableOpacity onPress={() => setStep('sim')} accessibilityLabel={t('natcash.change')}>
+                  <Text style={styles.simChangeText}>{t('natcash.change')}</Text>
                 </TouchableOpacity>
               </View>
             )}
 
             <View style={styles.infoCard}>
               <MaterialCommunityIcons name="cellphone" size={28} color={COLORS.blue} />
-              <Text style={styles.infoTitle}>Dial *202#</Text>
+              <Text style={styles.infoTitle}>{t('natcash.dialTitle')}</Text>
               <Text style={styles.infoBody}>
                 {isMultiSeller && currentSeller
-                  ? `Pay ${currentSeller.name} (seller ${currentSellerIdx + 1} of ${routeSellers!.length}). Tap below to open the NatCash menu. Then:`
-                  : 'Tap below to open the NatCash menu. Then:'}
+                  ? t('natcash.multiSellerDialBody', { name: currentSeller.name, n: currentSellerIdx + 1, total: routeSellers!.length })
+                  : t('natcash.singleDialBody')}
               </Text>
               <View style={styles.stepsList}>
                 <View style={styles.stepItem}>
                   <View style={styles.stepNum}><Text style={styles.stepNumText}>1</Text></View>
-                  <Text style={styles.stepItemText}>Select <Text style={styles.bold}>Send Money</Text></Text>
+                  <Text style={styles.stepItemText}>{t('natcash.select')} <Text style={styles.bold}>{t('natcash.sendMoney')}</Text></Text>
                 </View>
                 <View style={styles.stepItem}>
                   <View style={styles.stepNum}><Text style={styles.stepNumText}>2</Text></View>
@@ -423,11 +426,11 @@ export default function NatCashPaymentScreen() {
                 </View>
                 <View style={styles.stepItem}>
                   <View style={styles.stepNum}><Text style={styles.stepNumText}>3</Text></View>
-                  <Text style={styles.stepItemText}>Enter amount: <Text style={styles.bold}>G {(isMultiSeller && currentSeller ? currentSeller.total : total).toFixed(0)}</Text></Text>
+                  <Text style={styles.stepItemText}>{t('natcash.enterAmount', { amount: `G ${(isMultiSeller && currentSeller ? currentSeller.total : total).toFixed(0)}` })}</Text>
                 </View>
                 <View style={styles.stepItem}>
                   <View style={styles.stepNum}><Text style={styles.stepNumText}>4</Text></View>
-                  <Text style={styles.stepItemText}>Confirm with your PIN</Text>
+                  <Text style={styles.stepItemText}>{t('natcash.confirmPin')}</Text>
                 </View>
               </View>
             </View>
@@ -435,7 +438,7 @@ export default function NatCashPaymentScreen() {
             {isExpired && (
               <View style={[styles.infoCard, { borderColor: COLORS.coral + '33' }]}>
                 <MaterialCommunityIcons name="clock-alert-outline" size={20} color={COLORS.coral} />
-                <Text style={[styles.infoBody, { color: COLORS.coral }]}>Payment window expired for this seller. Go back and retry.</Text>
+                <Text style={[styles.infoBody, { color: COLORS.coral }]}>{t('natcash.expiredMsg')}</Text>
               </View>
             )}
 
@@ -451,22 +454,22 @@ export default function NatCashPaymentScreen() {
               ) : (
                 <MaterialCommunityIcons name="phone-dial" size={22} color={COLORS.white} />
               )}
-              <Text style={styles.dialBtnText}>{ussdLoading ? 'Connecting…' : 'Open NatCash Menu'}</Text>
+              <Text style={styles.dialBtnText}>{ussdLoading ? t('natcash.connecting') : t('natcash.openMenu')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.pasteBtn}
               onPress={() => { setStep('paste'); setPastedText(''); setVerifyError(''); }}
               disabled={isExpired}
-              accessibilityLabel="I have sent the payment"
+              accessibilityLabel={t('natcash.iveSentPasteSms')}
               accessibilityRole="button"
             >
               <MaterialCommunityIcons name="content-paste" size={20} color={COLORS.coral} />
-              <Text style={styles.pasteBtnText}>I've Sent — Paste SMS</Text>
+              <Text style={styles.pasteBtnText}>{t('natcash.iveSentPasteSms')}</Text>
             </TouchableOpacity>
 
             <Text style={styles.hintText}>
-              After completing the transfer, copy the confirmation SMS and paste it here.
+              {t('natcash.pasteHint')}
             </Text>
           </View>
         )}
@@ -476,16 +479,16 @@ export default function NatCashPaymentScreen() {
           <View style={styles.stepContent}>
             <View style={styles.infoCard}>
               <MaterialCommunityIcons name="clipboard-text-outline" size={28} color={COLORS.blue} />
-              <Text style={styles.infoTitle}>Paste Confirmation SMS</Text>
+              <Text style={styles.infoTitle}>{t('natcash.pasteTitle')}</Text>
               <Text style={styles.infoBody}>
-                Copy the full NatCash confirmation SMS you received, then paste it below.
+                {t('natcash.pasteBody')}
               </Text>
             </View>
 
             <View style={styles.pasteInputContainer}>
               <TextInput
                 style={styles.pasteInput}
-                placeholder="Paste NatCash SMS here…"
+                placeholder={t('natcash.pastePlaceholder')}
                 placeholderTextColor={COLORS.text2}
                 value={pastedText}
                 onChangeText={setPastedText}
@@ -496,7 +499,7 @@ export default function NatCashPaymentScreen() {
                 autoCorrect={false}
               />
               {pastedText.length > 0 && (
-                <TouchableOpacity style={styles.clearBtn} onPress={() => setPastedText('')} accessibilityLabel="clear">
+                <TouchableOpacity style={styles.clearBtn} onPress={() => setPastedText('')} accessibilityLabel={t('natcash.change')}>
                   <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.text2} />
                 </TouchableOpacity>
               )}
@@ -517,7 +520,7 @@ export default function NatCashPaymentScreen() {
               accessibilityRole="button"
             >
               <MaterialCommunityIcons name="check-circle-outline" size={22} color={COLORS.white} />
-              <Text style={styles.dialBtnText}>Verify Payment</Text>
+              <Text style={styles.dialBtnText}>{t('natcash.verifyPayment')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -526,7 +529,7 @@ export default function NatCashPaymentScreen() {
               accessibilityLabel="go back"
               accessibilityRole="button"
             >
-              <Text style={styles.secondaryBtnText}>Back to Dial</Text>
+              <Text style={styles.secondaryBtnText}>{t('natcash.backToDial')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -537,9 +540,9 @@ export default function NatCashPaymentScreen() {
             <View style={styles.spinnerCircle}>
               <ActivityIndicator size="large" color={COLORS.coral} />
             </View>
-            <Text style={styles.detectingTitle}>Verifying Payment…</Text>
+            <Text style={styles.detectingTitle}>{t('natcash.verifyingPayment')}</Text>
             <Text style={styles.detectingBody}>
-              Checking your NatCash confirmation with the server.
+              {t('natcash.checkingConfirmation')}
             </Text>
           </View>
         )}
@@ -550,11 +553,11 @@ export default function NatCashPaymentScreen() {
             <View style={styles.successCircle}>
               <MaterialCommunityIcons name="check-circle" size={56} color={COLORS.green} />
             </View>
-            <Text style={styles.confirmedTitle}>Payment Verified!</Text>
+            <Text style={styles.confirmedTitle}>{t('natcash.paymentVerified')}</Text>
             <Text style={styles.confirmedBody}>
               {isMultiSeller
-                ? 'All seller payments confirmed. Creating your order…'
-                : 'NatCash transfer confirmed. Creating your order…'}
+                ? t('natcash.confirmedMultiSeller')
+                : t('natcash.confirmedSingle')}
             </Text>
           </View>
         )}
@@ -565,16 +568,16 @@ export default function NatCashPaymentScreen() {
             <View style={[styles.spinnerCircle, { borderColor: COLORS.yellow }]}>
               <MaterialCommunityIcons name="clock-alert-outline" size={40} color={COLORS.yellow} />
             </View>
-            <Text style={styles.failedTitle}>Verification Failed</Text>
+            <Text style={styles.failedTitle}>{t('natcash.verificationFailed')}</Text>
             <Text style={styles.failedBody}>
-              We couldn't verify your payment. Please check the SMS and try again.
+              {t('natcash.verifyFailed')}
             </Text>
-            <TouchableOpacity style={styles.dialBtn} onPress={() => { setStep('paste'); setPastedText(''); setVerifyError(''); }} accessibilityLabel="retry" accessibilityRole="button">
+            <TouchableOpacity style={styles.dialBtn} onPress={() => { setStep('paste'); setPastedText(''); setVerifyError(''); }} accessibilityLabel={t('common.retry')} accessibilityRole="button">
               <MaterialCommunityIcons name="refresh" size={20} color={COLORS.white} />
-              <Text style={styles.dialBtnText}>Try Again</Text>
+              <Text style={styles.dialBtnText}>{t('common.tryAgain')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => nav.navigate('Orders')} accessibilityLabel="go to orders" accessibilityRole="button">
-              <Text style={styles.secondaryBtnText}>View Orders</Text>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => nav.navigate('Orders')} accessibilityLabel={t('natcash.goToOrders')} accessibilityRole="button">
+              <Text style={styles.secondaryBtnText}>{t('natcash.viewOrders')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -583,7 +586,7 @@ export default function NatCashPaymentScreen() {
         <CheckoutSurface tone="info" style={styles.disclaimer}>
           <MaterialCommunityIcons name="information-outline" size={14} color={COLORS.text2} />
           <Text style={styles.disclaimerText}>
-            NatCash payments are sent directly from you to the seller via your Natcom SIM. MaurMaket does not hold or process your money — we only verify the confirmation.
+            {t('natcash.disclaimer')}
           </Text>
         </CheckoutSurface>
       </ScrollView>

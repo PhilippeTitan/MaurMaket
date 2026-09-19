@@ -382,7 +382,7 @@ export default function MapScreen() {
 
   const menuItems = useMemo(() => {
     const items = [
-      { icon: 'crosshairs-gps', color: COLORS.blue, action: handleFindMe, label: 'Find me' },
+      { icon: 'crosshairs-gps', color: COLORS.blue, action: handleFindMe, label: t('map.findMe') },
       { icon: refreshing ? 'loading' : 'refresh', color: COLORS.text, action: handleRefreshLocation, label: 'Refresh' },
     ];
     if (isSeller) {
@@ -636,7 +636,7 @@ export default function MapScreen() {
           <TextInput
             ref={searchInputRef}
             style={styles.searchInput}
-            placeholder="Search sellers..."
+            placeholder={t('map.searchSellers')}
             placeholderTextColor={COLORS.text2}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -703,13 +703,13 @@ export default function MapScreen() {
             maxHeight: '60%',
             opacity: sheetOpacity,
           }]}>
-            <TouchableOpacity activeOpacity={0.9} onPress={toggleSheet} style={styles.chevronRow} accessibilityLabel={sheetExpanded ? 'collapse seller details' : 'expand seller details'} accessibilityRole="button">
+            <TouchableOpacity activeOpacity={0.9} onPress={toggleSheet} style={styles.chevronRow} accessibilityLabel={sheetExpanded ? t('map.collapseSeller') : t('map.expandSeller')} accessibilityRole="button">
               <MaterialCommunityIcons name={sheetExpanded ? 'chevron-down' : 'chevron-up'} size={30} color={COLORS.text2} />
             </TouchableOpacity>
 
             <View style={styles.sheetContent}>
               <View style={styles.sheetTop}>
-                <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id, preloadedSeller: selectedSeller })} accessibilityLabel="visit seller profile" accessibilityRole="button">
+                <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Storefront', { sellerId: selectedSeller.id, preloadedSeller: selectedSeller })} accessibilityLabel={t('map.visitProfile')} accessibilityRole="button">
                   <UserAvatar seller={selectedSeller} size={50} animated={true} />
                 </TouchableOpacity>
                 <View style={styles.sheetInfo}>
@@ -720,7 +720,7 @@ export default function MapScreen() {
                     {followerCount !== null && <Text style={styles.sheetFollower}>{followerCount} follower{followerCount !== 1 ? 's' : ''}</Text>}
                   </View>
                 </View>
-                <TouchableOpacity onPress={handleFollowToggle} disabled={followBusy} style={[styles.followBtn, store.isFollowing(selectedSeller?.id || '') && styles.followBtnActive]} accessibilityLabel={store.isFollowing(selectedSeller?.id || '') ? 'unfollow seller' : 'follow seller'} accessibilityRole="button">
+                <TouchableOpacity onPress={handleFollowToggle} disabled={followBusy} style={[styles.followBtn, store.isFollowing(selectedSeller?.id || '') && styles.followBtnActive]} accessibilityLabel={store.isFollowing(selectedSeller?.id || '') ? t('map.unfollowSeller') : t('map.followSeller')} accessibilityRole="button">
                   <Text style={[styles.followText, store.isFollowing(selectedSeller?.id || '') && styles.followTextActive]}>{store.isFollowing(selectedSeller?.id || '') ? 'Following' : 'Follow'}</Text>
                 </TouchableOpacity>
               </View>

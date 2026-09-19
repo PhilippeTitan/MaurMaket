@@ -18,19 +18,21 @@ interface FAQItem {
   answer: string;
 }
 
-const FAQS: FAQItem[] = [
-  { question: 'How do I buy something?', answer: 'Browse products, tap Add to Cart, then go to Checkout. Choose delivery or meetup, pay with MonCash, and you\'re done!' },
-  { question: 'How do I become a seller?', answer: 'Go to Me → Start selling. You\'ll go through a quick onboarding to set up your store.' },
-  { question: 'What is MonCash?', answer: 'MonCash is Haiti\'s leading mobile money service. You can pay and receive money directly through the app.' },
-  { question: 'How do meetups work?', answer: 'After ordering with meetup delivery, you and the seller agree on a location. Both check in via GPS, scan a QR code to confirm exchange, and the payment is released to the seller.' },
-  { question: 'Can I return an item?', answer: 'If there\'s an issue with your order, you can open a dispute from the Order Detail screen. Our team will review and help resolve it.' },
-];
+const FAQ_KEYS = ['buy', 'sell', 'moncash', 'meetup', 'return'] as const;
+type FAQKey = typeof FAQ_KEYS[number];
+interface FAQItem {
+  question: string;
+  answer: string;
+}
+const getFaqs = (t: (k: string) => string): FAQItem[] =>
+  FAQ_KEYS.map((k: FAQKey) => ({ question: t(`faq.${k}Q`), answer: t(`faq.${k}A`) }));
 
 export default function HelpSupportScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const [expandedFAQ, setExpandedFAQ] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const FAQS = getFaqs(t);
 
   // Staggered entrance
   const sections = useRef(
@@ -77,7 +79,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Help & Support" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('help.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* 24/7 Banner */}
@@ -87,8 +89,8 @@ export default function HelpSupportScreen({ navigation }: Props) {
               <MaterialCommunityIcons name="headphones" size={28} color={COLORS.blue} />
             </View>
             <View style={styles.bannerText}>
-              <Text style={styles.bannerTitle}>Need more help?</Text>
-              <Text style={styles.bannerSubtitle}>Our support team is available 24/7</Text>
+              <Text style={styles.bannerTitle}>{t('help.bannerTitle')}</Text>
+              <Text style={styles.bannerSubtitle}>{t('help.bannerSubtitle')}</Text>
             </View>
           </View>
         </Animated.View>
@@ -99,7 +101,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
             <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text3} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search help articles..."
+              placeholder={t('help.searchPlaceholder')}
               placeholderTextColor={COLORS.text3}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -114,11 +116,11 @@ export default function HelpSupportScreen({ navigation }: Props) {
 
         {/* FAQs */}
         <Animated.View style={animStyle(2)}>
-          <SettingsGroup header="Frequently asked questions">
+          <SettingsGroup header={t('help.faqHeader')}>
             {filteredFAQs.length === 0 ? (
               <View style={styles.emptyState}>
                 <MaterialCommunityIcons name="file-search-outline" size={32} color={COLORS.text3} />
-                <Text style={styles.emptyText}>No results found</Text>
+                <Text style={styles.emptyText}>{t('help.noResults')}</Text>
               </View>
             ) : (
               filteredFAQs.map((faq, i) => (
@@ -148,13 +150,13 @@ export default function HelpSupportScreen({ navigation }: Props) {
 
         {/* Contact Options */}
         <Animated.View style={animStyle(3)}>
-          <SettingsGroup header="Contact us">
+          <SettingsGroup header={t('help.contactUs')}>
             <TouchableOpacity style={styles.contactRow} activeOpacity={0.6} onPress={handleContactUs}>
               <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="email-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.contactText}>
-                <Text style={styles.contactLabel}>Email support</Text>
+                <Text style={styles.contactLabel}>{t('help.emailSupport')}</Text>
                 <Text style={styles.contactSubtitle}>support@maurmaket.com</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
@@ -165,8 +167,8 @@ export default function HelpSupportScreen({ navigation }: Props) {
                 <MaterialCommunityIcons name="bug-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.contactText}>
-                <Text style={styles.contactLabel}>Report a problem</Text>
-                <Text style={styles.contactSubtitle}>Help us fix bugs</Text>
+                <Text style={styles.contactLabel}>{t('help.reportProblem')}</Text>
+                <Text style={styles.contactSubtitle}>{t('help.reportSubtitle')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
@@ -180,7 +182,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
                 <MaterialCommunityIcons name="file-document-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.contactText}>
-                <Text style={styles.contactLabel}>Terms & Conditions</Text>
+                <Text style={styles.contactLabel}>{t('help.terms')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
@@ -194,7 +196,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
                 <MaterialCommunityIcons name="shield-lock-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.contactText}>
-                <Text style={styles.contactLabel}>Privacy Policy</Text>
+                <Text style={styles.contactLabel}>{t('help.privacy')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>

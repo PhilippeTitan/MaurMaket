@@ -37,10 +37,10 @@ type AnalyticsData = {
 };
 
 const ORDER_TABS = [
-  { key: 'toPay', label: 'To Pay', icon: 'credit-card-outline', color: COLORS.coral },
-  { key: 'toShip', label: 'To Ship', icon: 'truck-delivery-outline', color: COLORS.blue },
-  { key: 'toReceive', label: 'To Receive', icon: 'package-variant-closed', color: COLORS.green },
-  { key: 'toReview', label: 'To Review', icon: 'star-outline', color: COLORS.yellow },
+  { key: 'toPay', labelKey: 'notif.status.pending', icon: 'credit-card-outline', color: COLORS.coral },
+  { key: 'toShip', labelKey: 'analytics.toShip', icon: 'truck-delivery-outline', color: COLORS.blue },
+  { key: 'toReceive', labelKey: 'analytics.toReceive', icon: 'package-variant-closed', color: COLORS.green },
+  { key: 'toReview', labelKey: 'analytics.toReview', icon: 'star-outline', color: COLORS.yellow },
 ] as const;
 
 export default function AnalyticsScreen() {
@@ -115,7 +115,7 @@ export default function AnalyticsScreen() {
     <View style={styles.container}>
       {/* Sticky header */}
       <View style={{ zIndex: 10 }}>
-        <ScreenHeader title="Dashboard" onBack={() => nav.goBack()} />
+        <ScreenHeader title={t('analytics.dashboard')} onBack={() => nav.goBack()} />
       </View>
 
       <ScrollView
@@ -124,15 +124,15 @@ export default function AnalyticsScreen() {
       >
         {/* Section 1: Overview Stats */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Overview</Text>
+          <Text style={styles.sectionTitle}>{t('analytics.overview')}</Text>
           <View style={styles.statsGrid}>
             {[
-              { label: 'Revenue', value: `${formatPrice(totalRevenue)} G`, icon: 'cash', color: COLORS.green },
-              { label: 'Orders', value: String(totalOrders), icon: 'package-variant-closed', color: COLORS.blue },
-              { label: 'Rating', value: avgRating > 0 ? avgRating.toFixed(1) : '—', icon: 'star', color: COLORS.yellow },
-              { label: 'Reviews', value: String(reviewCount), icon: 'comment-text-outline', color: COLORS.coral },
-              { label: 'Products', value: String(productCount), icon: 'storefront-outline', color: COLORS.blue },
-              { label: 'Followers', value: String(followerCount), icon: 'heart-outline', color: COLORS.coral },
+              { label: t('analytics.revenue'), value: `${formatPrice(totalRevenue)} G`, icon: 'cash', color: COLORS.green },
+              { label: t('analytics.orders'), value: String(totalOrders), icon: 'package-variant-closed', color: COLORS.blue },
+              { label: t('analytics.rating'), value: avgRating > 0 ? avgRating.toFixed(1) : '—', icon: 'star', color: COLORS.yellow },
+              { label: t('analytics.reviews'), value: String(reviewCount), icon: 'comment-text-outline', color: COLORS.coral },
+              { label: t('analytics.products'), value: String(productCount), icon: 'storefront-outline', color: COLORS.blue },
+              { label: t('analytics.followers'), value: String(followerCount), icon: 'heart-outline', color: COLORS.coral },
             ].map((s) => (
               <View key={s.label} style={[styles.statCard, { width: (SCREEN_W - SPACING.lg * 2 - SPACING.sm) / 2 }]}>
                 <View style={[styles.statIconWrap, { backgroundColor: s.color + '18' }]}>
@@ -157,7 +157,7 @@ export default function AnalyticsScreen() {
                   onPress={() => nav.navigate('Orders')}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityLabel={`${tab.label}, ${orderCounts[i]} items`}
+                  accessibilityLabel={`${t(tab.labelKey)}, ${orderCounts[i]} ${t('common.items')}`}
                 >
                   {orderCounts[i] > 0 && (
                     <View style={[styles.orderBadge, { backgroundColor: tab.color }]}>
@@ -167,7 +167,7 @@ export default function AnalyticsScreen() {
                   <View style={[styles.orderIconWrap, { backgroundColor: tab.color + '18' }]}>
                     <MaterialCommunityIcons name={tab.icon as any} size={20} color={tab.color} />
                   </View>
-                  <Text style={styles.orderLabel}>{tab.label}</Text>
+                  <Text style={styles.orderLabel}>{t(tab.labelKey)}</Text>
                 </TouchableOpacity>
               ))}
             </View>

@@ -579,6 +579,119 @@ const chatEn = {
   'chat.they': 'They',
 };
 
+// NatCashPaymentScreen batch
+const natcashEn = {
+  'natcash.title': 'NatCash Payment',
+  'natcash.iveSentPasteSms': "I've Sent — Paste SMS",
+  'natcash.change': 'Change',
+  'natcash.using': 'Using {carrier} ••••{last4}',
+  'natcash.usingNoLast4': 'Using {carrier} ••••SIM {slot}',
+  'natcash.multiSellerDialBody': 'Pay {name} (seller {n} of {total}). Tap below to open the NatCash menu. Then:',
+  'natcash.singleDialBody': 'Tap below to open the NatCash menu. Then:',
+  'natcash.enterAmount': 'Enter amount: {amount}',
+  'natcash.goToOrders': 'Go to Orders',
+  'natcash.select': 'Select',
+};
+
+// HelpSupportScreen + AnalyticsScreen + MapScreen batch (closes zero-t() files)
+const batch6En = {
+  'help.title': 'Help & Support',
+  'faq.buyQ': 'How do I buy something?',
+  'faq.buyA': "Browse products, tap Add to Cart, then go to Checkout. Choose delivery or meetup, pay with MonCash, and you're done!",
+  'faq.sellQ': 'How do I become a seller?',
+  'faq.sellA': "Go to Me → Start selling. You'll go through a quick onboarding to set up your store.",
+  'faq.moncashQ': 'What is MonCash?',
+  'faq.moncashA': "MonCash is Haiti's leading mobile money service. You can pay and receive money directly through the app.",
+  'faq.meetupQ': 'How do meetups work?',
+  'faq.meetupA': 'After ordering with meetup delivery, you and the seller agree on a location. Both check in via GPS, scan a QR code to confirm exchange, and the payment is released to the seller.',
+  'faq.returnQ': 'Can I return an item?',
+  'faq.returnA': "If there's an issue with your order, you can open a dispute from the Order Detail screen. Our team will review and help resolve it.",
+  'analytics.toShip': 'To Ship',
+  'analytics.toReceive': 'To Receive',
+  'analytics.toReview': 'To Review',
+  'map.findMe': 'Find me',
+  'map.searchSellers': 'Search sellers...',
+  'map.expandSeller': 'expand seller details',
+  'map.collapseSeller': 'collapse seller details',
+  'map.visitProfile': 'visit seller profile',
+  'map.followSeller': 'follow seller',
+  'map.unfollowSeller': 'unfollow seller',
+};
+
+const batch6Ht = {
+  'help.title': 'Èd ak Sipò',
+  'faq.buyQ': 'Kouman mwen achte yon bagay?',
+  'faq.buyA': 'Browse pwodwi, peze Ajoute nan Panyen, al nan Chèk. Chwazi livrezon oswa randevou, peye ak MonCash, se tout!',
+  'faq.sellQ': 'Kouman mwen vin vandè?',
+  'faq.sellA': 'Ale nan Me → Kòmanse vann. W ap fè yon ti enskripsyon pou konfigire boutik ou.',
+  'faq.moncashQ': 'Kisa MonCash ye?',
+  'faq.moncashA': 'MonCash se sèvis lajan mobil ki pi popilè ann Ayiti. Ou ka peye e resevwa lajan dirèkteman nan aplikasyon an.',
+  'faq.meetupQ': 'Kouman randevou yo mache?',
+  'faq.meetupA': 'Apre ou kòmande ak livrezon randevou, ou ak vandè a dakò sou yon kote. Toude al anrejistre ak GPS, scanne yon kòd QR pou konfime echanj la, lajan an lage bay vandè a.',
+  'faq.returnQ': 'Èske mwen ka retounen yon atik?',
+  'faq.returnA': 'Si gen yon pwoblèm ak kòmand ou, ou ka louvri yon litij soti nan ekran Detay Kòmand. Ekip nou pral egzamine e ede rezoud li.',
+  'analytics.toShip': 'Pou Voye',
+  'analytics.toReceive': 'Pou Resevwa',
+  'analytics.toReview': 'Pou Revi',
+  'map.findMe': 'Jwenn mwen',
+  'map.searchSellers': 'Chèche vandè...',
+  'map.expandSeller': 'agrandi detay vandè',
+  'map.collapseSeller': 'redwi detay vandè',
+  'map.visitProfile': 'vizite profil vandè',
+  'map.followSeller': 'swiv vandè',
+  'map.unfollowSeller': 'pa swiv vandè ankò',
+};
+
+const batch6Fr = {
+  'help.title': 'Aide et support',
+  'faq.buyQ': 'Comment acheter quelque chose ?',
+  'faq.buyA': "Parcourez les produits, touchez Ajouter au panier, puis passez à la caisse. Choisissez livraison ou rendez-vous, payez avec MonCash, et c'est tout !",
+  'faq.sellQ': 'Comment devenir vendeur ?',
+  'faq.sellA': "Allez sur Moi → Commencer à vendre. Vous passerez par une rapide inscription pour configurer votre boutique.",
+  'faq.moncashQ': "Qu'est-ce que MonCash ?",
+  'faq.moncashA': "MonCash est le principal service de monnaie mobile d'Haïti. Vous pouvez payer et recevoir de l'argent directement dans l'app.",
+  'faq.meetupQ': 'Comment fonctionnent les rendez-vous ?',
+  'faq.meetupA': "Après avoir commandé avec livraison par rendez-vous, vous et le vendeur convenez d'un lieu. Les deux s'enregistrent via GPS, scannent un code QR pour confirmer l'échange, et le paiement est versé au vendeur.",
+  'faq.returnQ': 'Puis-je retourner un article ?',
+  'faq.returnA': "En cas de problème avec votre commande, vous pouvez ouvrir un litige depuis l'écran de détail de commande. Notre équipe examinera et aidera à le résoudre.",
+  'analytics.toShip': 'À expédier',
+  'analytics.toReceive': 'À recevoir',
+  'analytics.toReview': 'À évaluer',
+  'map.findMe': 'Me localiser',
+  'map.searchSellers': 'Rechercher des vendeurs...',
+  'map.expandSeller': 'développer les détails du vendeur',
+  'map.collapseSeller': 'réduire les détails du vendeur',
+  'map.visitProfile': 'voir le profil du vendeur',
+  'map.followSeller': 'suivre le vendeur',
+  'map.unfollowSeller': 'ne plus suivre le vendeur',
+};
+
+const natcashHt = {
+  'natcash.title': 'Peyman NatCash',
+  'natcash.iveSentPasteSms': 'Mwen voye — kole SMS la',
+  'natcash.change': 'Chanje',
+  'natcash.using': 'Sèvi ak {carrier} ••••{last4}',
+  'natcash.usingNoLast4': 'Sèvi ak {carrier} ••••SIM {slot}',
+  'natcash.multiSellerDialBody': 'Peye {name} (vandè {n} sou {total}). Peze anba a pou louvri meni NatCash la. Apre sa:',
+  'natcash.singleDialBody': 'Peze anba a pou louvri meni NatCash la. Apre sa:',
+  'natcash.enterAmount': 'Antre montan: {amount}',
+  'natcash.goToOrders': 'Ale nan Kòmand yo',
+  'natcash.select': 'Chwazi',
+};
+
+const natcashFr = {
+  'natcash.title': 'Paiement NatCash',
+  'natcash.iveSentPasteSms': "J'ai envoyé — coller le SMS",
+  'natcash.change': 'Changer',
+  'natcash.using': 'Utilisation de {carrier} ••••{last4}',
+  'natcash.usingNoLast4': 'Utilisation de {carrier} ••••SIM {slot}',
+  'natcash.multiSellerDialBody': 'Payez {name} (vendeur {n} sur {total}). Touchez ci-dessous pour ouvrir le menu NatCash. Puis :',
+  'natcash.singleDialBody': 'Touchez ci-dessous pour ouvrir le menu NatCash. Puis :',
+  'natcash.enterAmount': 'Saisissez le montant : {amount}',
+  'natcash.goToOrders': 'Aller aux commandes',
+  'natcash.select': 'Sélectionner',
+};
+
 const chatHt = {
   'offer.acceptedDetail': 'Achte a ka fè chèk soti nan pri ki konveni a kounye a.',
   'offer.couldNotUpdate': 'Òf la pa ka mete ajou',
@@ -1034,7 +1147,7 @@ const signupFr2 = {
   'signup.progressA11y': "Progression de l'inscription {step} sur {total}",
 };
 
-const n1 = applyFix('messages/en.json', { ...enAdd, ...enAdd2, ...privacyEn, ...notifSettingsEn, ...settingsEditEn, ...productDetailEn, ...feedEn, ...wishlistEn, ...signupEn2, ...langApEn, ...accountEn, ...meEn, ...chatEn });
-const n2 = applyFix('messages/ht.json', { ...htAdd, ...htAdd2, ...privacyHt, ...notifSettingsHt, ...settingsEditHt, ...productDetailHt, ...feedHt, ...wishlistHt, ...signupHt2, ...langApHt, ...accountHt, ...meHt, ...chatHt });
-const n3 = applyFix('messages/fr.json', { ...frAdd, ...frAdd2, ...privacyFr, ...notifSettingsFr, ...settingsEditFr, ...productDetailFr, ...feedFr, ...wishlistFr, ...signupFr2, ...langApFr, ...accountFr, ...meFr, ...chatFr, ...{ 'field.username': "Nom d'utilisateur" } });
+const n1 = applyFix('messages/en.json', { ...enAdd, ...enAdd2, ...privacyEn, ...notifSettingsEn, ...settingsEditEn, ...productDetailEn, ...feedEn, ...wishlistEn, ...signupEn2, ...langApEn, ...accountEn, ...meEn, ...chatEn, ...natcashEn, ...batch6En });
+const n2 = applyFix('messages/ht.json', { ...htAdd, ...htAdd2, ...privacyHt, ...notifSettingsHt, ...settingsEditHt, ...productDetailHt, ...feedHt, ...wishlistHt, ...signupHt2, ...langApHt, ...accountHt, ...meHt, ...chatHt, ...natcashHt, ...batch6Ht });
+const n3 = applyFix('messages/fr.json', { ...frAdd, ...frAdd2, ...privacyFr, ...notifSettingsFr, ...settingsEditFr, ...productDetailFr, ...feedFr, ...wishlistFr, ...signupFr2, ...langApFr, ...accountFr, ...meFr, ...chatFr, ...natcashFr, ...batch6Fr, ...{ 'field.username': "Nom d'utilisateur" } });
 console.log(`en.json: +${n1} | ht.json: +${n2} | fr.json: +${n3}`);
