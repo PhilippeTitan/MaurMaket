@@ -501,8 +501,20 @@ router.put('/user/become-seller', authRequired, dobRequired, async (req, res) =>
       );
       return res.json({ success: true, alreadySeller: true, user: existing.rows[0] });
     }
-    const { storeName, storeLogoUrl, idDocumentUrl, natcashPhone } = req.body;
-    const sellerTier = 'casual';
+    const { storeName, storeLogoUrl, idDocumentUrl, natcashPhone, tier } = req.body;
+    const allowedTiers = ['casual', 'verified', 'business'];
+    const sellerTier = allowedTiers.includes(tier) ? tier : 'casual';
+
+    // If choosing verified, require id_verified
+    if (sellerTier === 'verified' && !req.user.id_verified) {
+      return res.status(400).json({ error: 'ID verification required for verified seller tier. Complete verification first.' });
+    }
+
+    // If choosing business, require id_verified
+    if (sellerTier === 'business' && !req.user.id_verified) {
+      return res.status(400).json({ error: 'ID verification required for business seller tier. Complete verification first.' });
+    }
+
     const useStoreIdentity = false;
     const result = await pool.query(
       `UPDATE users SET

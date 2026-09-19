@@ -184,9 +184,8 @@ export default function SellerOnboardingScreen() {
               const isCurrent = tier.key === currentTier;
               const isDowngrade = tierOrder.indexOf(tier.key) <= currentIdx;
               const needsVerification = tier.key === 'verified' && !store.user?.id_verified;
-              const notYetSeller = !store.isSeller && tier.key !== 'casual';
               const needsVerifiedFirst = tier.key === 'business' && currentIdx < tierOrder.indexOf('verified');
-              const locked = isDowngrade || needsVerification || notYetSeller || needsVerifiedFirst;
+              const locked = isDowngrade || needsVerification || needsVerifiedFirst;
               const disabled = loading || locked;
               return (
                 <TouchableOpacity
