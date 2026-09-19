@@ -20,7 +20,7 @@ const LANGUAGES: { code: Language; label: string; native: string; flag: string }
 ];
 
 export default function LanguageSettingsScreen({ navigation }: Props) {
-  const { language } = useTranslation();
+  const { t, language } = useTranslation();
 
   const anim = useRef({
     opacity: new Animated.Value(0),
@@ -42,14 +42,14 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Language" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('language.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
           <SettingsGroup
-            header="Select Language"
+            header={t('language.select')}
             accentColor={COLORS.blue}
-            description="Choose your preferred language for the app"
+            description={t('language.selectDesc')}
           >
             {LANGUAGES.map((lang) => {
               const isSelected = language === lang.code;

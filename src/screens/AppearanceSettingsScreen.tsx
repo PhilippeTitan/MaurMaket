@@ -14,25 +14,25 @@ import type { RootStackParamList } from '../navigation';
 type Props = NativeStackScreenProps<RootStackParamList, 'AppearanceSettings'>;
 
 const ACCENT_COLORS = [
-  { name: 'Coral', value: '#FF4D6A', emoji: '🪸' },
-  { name: 'Ocean', value: '#00C2FF', emoji: '🌊' },
-  { name: 'Emerald', value: '#00E5A0', emoji: '💚' },
-  { name: 'Amber', value: '#F59E0B', emoji: '✨' },
-  { name: 'Lavender', value: '#8B5CF6', emoji: '💜' },
-  { name: 'Rose', value: '#F472B6', emoji: '🌸' },
+  { nameKey: 'appearance.colorCoral', value: '#FF4D6A' },
+  { nameKey: 'appearance.colorOcean', value: '#00C2FF' },
+  { nameKey: 'appearance.colorEmerald', value: '#00E5A0' },
+  { nameKey: 'appearance.colorAmber', value: '#F59E0B' },
+  { nameKey: 'appearance.colorLavender', value: '#8B5CF6' },
+  { nameKey: 'appearance.colorRose', value: '#F472B6' },
 ];
 
 const THEMES = [
-  { key: 'dark', label: 'Dark', icon: 'moon-waning-crescent', description: 'Easy on the eyes' },
-  { key: 'light', label: 'Light', icon: 'white-balance-sunny', description: 'Bright and clear' },
-  { key: 'auto', label: 'Auto', icon: 'theme-light-dark', description: 'Follow system setting' },
+  { key: 'dark', labelKey: 'appearance.themeDark', icon: 'moon-waning-crescent', descKey: 'appearance.themeDarkDesc' },
+  { key: 'light', labelKey: 'appearance.themeLight', icon: 'white-balance-sunny', descKey: 'appearance.themeLightDesc' },
+  { key: 'auto', labelKey: 'appearance.themeAuto', icon: 'theme-light-dark', descKey: 'appearance.themeAutoDesc' },
 ];
 
 const APP_ICONS = [
-  { key: 'default', label: 'Default', colors: ['#FF4D6A', '#E63354'] },
-  { key: 'midnight', label: 'Midnight', colors: ['#0D1117', '#161B22'] },
-  { key: 'ocean', label: 'Ocean', colors: ['#00C2FF', '#0066CC'] },
-  { key: 'forest', label: 'Forest', colors: ['#00E5A0', '#00A36C'] },
+  { key: 'default', labelKey: 'appearance.iconDefault', colors: ['#FF4D6A', '#E63354'] },
+  { key: 'midnight', labelKey: 'appearance.iconMidnight', colors: ['#0D1117', '#161B22'] },
+  { key: 'ocean', labelKey: 'appearance.iconOcean', colors: ['#00C2FF', '#0066CC'] },
+  { key: 'forest', labelKey: 'appearance.iconForest', colors: ['#00E5A0', '#00A36C'] },
 ];
 
 export default function AppearanceSettingsScreen({ navigation }: Props) {
@@ -68,17 +68,17 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
 
   const handleSave = () => {
     // TODO: Persist to server (user preferences) and apply theme
-    toast.show({ kind: 'success', title: 'Appearance saved' });
+    toast.show({ kind: 'success', title: t('appearance.saved') });
   };
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Appearance" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('appearance.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Theme */}
         <Animated.View style={animStyle(0)}>
-          <SettingsGroup header="Theme">
+          <SettingsGroup header={t('appearance.theme')}>
             <View style={styles.themeGrid}>
               {THEMES.map(theme => (
                 <TouchableOpacity
@@ -103,8 +103,8 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
                   <Text style={[
                     styles.themeLabel,
                     selectedTheme === theme.key && { color: COLORS.coral, fontWeight: FONT_WEIGHTS.semibold },
-                  ]}>{theme.label}</Text>
-                  <Text style={styles.themeDesc}>{theme.description}</Text>
+                  ]}>{t(theme.labelKey)}</Text>
+                  <Text style={styles.themeDesc}>{t(theme.descKey)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -113,7 +113,7 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
 
         {/* Accent Color */}
         <Animated.View style={animStyle(1)}>
-          <SettingsGroup header="Accent color" accentColor={selectedAccent}>
+          <SettingsGroup header={t('appearance.accentColor')} accentColor={selectedAccent}>
             <View style={styles.colorGrid}>
               {ACCENT_COLORS.map(color => (
                 <TouchableOpacity
@@ -134,7 +134,7 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
                   <Text style={[
                     styles.colorName,
                     selectedAccent === color.value && { color: color.value, fontWeight: FONT_WEIGHTS.semibold },
-                  ]}>{color.name}</Text>
+                  ]}>{t(color.nameKey)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -143,7 +143,7 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
 
         {/* App Icon */}
         <Animated.View style={animStyle(2)}>
-          <SettingsGroup header="App icon" footer="Icon changes apply after restarting the app">
+          <SettingsGroup header={t('appearance.appIcon')} footer={t('appearance.appIconFooter')}>
             <View style={styles.iconGrid}>
               {APP_ICONS.map(icon => (
                 <TouchableOpacity
@@ -166,7 +166,7 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
                   <Text style={[
                     styles.iconLabel,
                     selectedIcon === icon.key && { color: COLORS.coral },
-                  ]}>{icon.label}</Text>
+                  ]}>{t(icon.labelKey)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -177,7 +177,7 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
         <Animated.View style={animStyle(3)}>
           <TouchableOpacity style={styles.saveButton} activeOpacity={0.7} onPress={handleSave}>
             <MaterialCommunityIcons name="check" size={20} color={COLORS.white} />
-            <Text style={styles.saveText}>Save changes</Text>
+            <Text style={styles.saveText}>{t('common.saveChanges')}</Text>
           </TouchableOpacity>
         </Animated.View>
 

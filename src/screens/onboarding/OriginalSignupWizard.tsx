@@ -75,14 +75,17 @@ function buildUsernameSuggestions(firstName: string, lastName: string, email: st
 const STEPS = ['name', 'username', 'email', 'purpose', 'dob', 'password', 'review'] as const;
 type Step = typeof STEPS[number];
 const STEP_MAX = 7;
-const STEP_LABELS: Record<Step, string> = {
-  name: 'About you', username: 'Username', email: 'Contact', purpose: 'Purpose', dob: 'Age', password: 'Security', review: 'Review',
+const STEP_LABEL_KEYS: Record<Step, string> = {
+  name: 'signup.aboutYou', username: 'field.username', email: 'signup.contactStep', purpose: 'signup.purposeStep', dob: 'signup.ageStep', password: 'signup.securityStep', review: 'signup.reviewStep',
 };
+const getStepLabels = (t: (k: string) => string): Record<Step, string> => ({
+  name: t('signup.aboutYou'), username: t('field.username'), email: t('signup.contactStep'), purpose: t('signup.purposeStep'), dob: t('signup.ageStep'), password: t('signup.securityStep'), review: t('signup.reviewStep'),
+});
 
-const PURPOSES = [
-  { id: 'buy', title: 'Discover & buy', desc: 'Find products from sellers around you', icon: 'shopping-outline' as const },
-  { id: 'sell', title: 'Build a store', desc: 'Sell products and grow your audience', icon: 'store-outline' as const },
-  { id: 'both', title: 'A little of both', desc: 'Buy, sell, and explore freely', icon: 'swap-horizontal' as const },
+const getPurposes = (t: (k: string) => string) => [
+  { id: 'buy', title: t('signup.purposeBuyTitle'), desc: t('signup.purposeBuyDesc'), icon: 'shopping-outline' as const },
+  { id: 'sell', title: t('signup.purposeSellTitle'), desc: t('signup.purposeSellDesc'), icon: 'store-outline' as const },
+  { id: 'both', title: t('signup.purposeBothTitle'), desc: t('signup.purposeBothDesc'), icon: 'swap-horizontal' as const },
 ];
 
 /* ΓöÇΓöÇ SVG Illustrations ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
@@ -128,12 +131,13 @@ function SplashIllustration({ spin }: { spin: Animated.Value }) {
 }
 
 function WelcomeIllustration() {
+  const { t } = useTranslation();
   return (
     <View style={{ height: 250, alignItems: 'center', justifyContent: 'center' }}>
       <Image
         source={require('../../../illustration/commerce-more-human.webp')}
         style={{ width: 360, height: 250, resizeMode: 'contain' }}
-        accessibilityLabel="Commerce made more human illustration"
+        accessibilityLabel={t('signup.illCommerceHuman')}
       />
     </View>
   );
@@ -263,6 +267,7 @@ function SuccessIllustration({ pulse }: { pulse: Animated.Value }) {
 }
 
 function EmailConfirmationScreen({ name, email, onDone }: { name: string; email: string; onDone: () => void }) {
+  const { t } = useTranslation();
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })).start();
@@ -271,16 +276,16 @@ function EmailConfirmationScreen({ name, email, onDone }: { name: string; email:
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingHorizontal: 32 }}>
       <SuccessIllustration pulse={pulse} />
       <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text, textAlign: 'center' }}>
-        You're all set{ name ? `, ${name}` : ''}!
+        {t('signup.allSet', { name: name ? `, ${name}` : '' })}
       </Text>
       <Text style={{ fontSize: 14, color: C.sub, textAlign: 'center', lineHeight: 20 }}>
-        We've sent a verification link to{'\n'}
+        {t('signup.verifyEmailSent')}{'\n'}
         <Text style={{ color: C.mint, fontWeight: '600' }}>{email}</Text>
-        {'\n\n'}Check your inbox and tap the link to verify your account. You can start using the app right away!
+        {'\n\n'}{t('signup.verifyInboxHint')}
       </Text>
       <View style={{ marginTop: 12, width: '100%' }}>
         <PrimaryButton onPress={onDone}>
-          Enter the app
+          {t('signup.enterApp')}
         </PrimaryButton>
       </View>
     </View>
@@ -288,6 +293,7 @@ function EmailConfirmationScreen({ name, email, onDone }: { name: string; email:
 }
 
 function VerificationScreen({ name, onDone }: { name: string; onDone: () => void }) {
+  const { t } = useTranslation();
   const [phase, setPhase] = useState<'loading' | 'tick'>('loading');
   const spinAnim = useRef(new Animated.Value(0)).current;
   const lottieRef = useRef<LottieView>(null);
@@ -315,8 +321,8 @@ function VerificationScreen({ name, onDone }: { name: string; onDone: () => void
         <View style={{ alignItems: 'center', gap: 24 }}>
           <Animated.View style={{ width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: C.border, borderTopColor: C.violet, transform: [{ rotate: spin }] }} />
           <View style={{ gap: 8, alignItems: 'center' }}>
-            <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text }}>Verifying your account</Text>
-            <Text style={{ fontSize: 14, color: C.sub }}>This won't take long...</Text>
+            <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text }}>{t('signup.verifyingAccount')}</Text>
+            <Text style={{ fontSize: 14, color: C.sub }}>{t('signup.wontTakeLong')}</Text>
           </View>
         </View>
       ) : (
@@ -329,7 +335,7 @@ function VerificationScreen({ name, onDone }: { name: string; onDone: () => void
             onAnimationFinish={() => setTimeout(onDone, 400)}
           />
           <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text }}>
-            You're all set{ name ? `, ${name}` : ''}!
+            {t('signup.allSet', { name: name ? `, ${name}` : '' })}
           </Text>
         </View>
       )}
@@ -340,8 +346,9 @@ function VerificationScreen({ name, onDone }: { name: string; onDone: () => void
 /* ΓöÇΓöÇ Shared UI ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
 function StepBadge({ step, total, label }: { step: number; total: number; label: string }) {
+  const { t } = useTranslation();
   return (
-    <Text style={s.stepCount} accessibilityLabel={`Onboarding progress ${step} of ${total}`}>{step}/{total}</Text>
+    <Text style={s.stepCount} accessibilityLabel={t('signup.progressA11y', { step, total })}>{step}/{total}</Text>
   );
 }
 
@@ -481,12 +488,13 @@ function PrimaryButton({ children, onPress, disabled }: { children: React.ReactN
 }
 
 function StepActions({ children, step, label, onBack, compact }: { children: React.ReactNode; step: number; label: string; onBack: () => void; compact?: boolean }) {
+  const { t } = useTranslation();
   return (
     <>
       <View style={s.stepTopBar}>
-        <TouchableOpacity onPress={onBack} style={s.topBackAction} accessibilityRole="button" accessibilityLabel="Go back">
+        <TouchableOpacity onPress={onBack} style={s.topBackAction} accessibilityRole="button" accessibilityLabel={t('common.back')}>
           <MaterialCommunityIcons name="arrow-left" size={18} color={C.sub} />
-          <Text style={s.backActionText}>Back</Text>
+          <Text style={s.backActionText}>{t('signup.back')}</Text>
         </TouchableOpacity>
         <StepBadge step={step} total={STEP_MAX} label={label} />
       </View>
@@ -565,6 +573,8 @@ interface Props {
 export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0, initialGoogleInfo }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
+  const STEP_LABELS = getStepLabels(t);
+  const PURPOSES = getPurposes(t);
   const [index, setIndex] = useState(initialIndex);
   const [dir, setDir] = useState(1);
   const initialBirth = initialGoogleInfo?.birthDate?.split('-').map(Number) || [];
@@ -739,7 +749,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
           const res = await fetch(`${API_BASE}/user/check-email?email=${encodeURIComponent(form.email)}`);
           const data = await res.json();
           setEmailAvailable(data.available);
-          if (!data.available) setErrors(p => ({ ...p, email: 'This email is already registered' }));
+          if (!data.available) setErrors(p => ({ ...p, email: t('signup.emailTaken') }));
           else setErrors(p => { const n = { ...p }; delete n.email; return n; });
         } catch { setEmailAvailable(null); }
         setEmailChecking(false);
@@ -758,7 +768,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
           const res = await fetch(`${API_BASE}/user/check-username?username=${encodeURIComponent(form.username)}`);
           const data = await res.json();
           setUsernameAvailable(data.available);
-          if (!data.available) setErrors(p => ({ ...p, username: 'This username is taken' }));
+          if (!data.available) setErrors(p => ({ ...p, username: t('signup.usernameTaken') }));
           else setErrors(p => { const n = { ...p }; delete n.username; return n; });
         } catch { setUsernameAvailable(null); }
         setUsernameChecking(false);
@@ -804,22 +814,22 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   };
 
   const validateAndNext = () => {
-    if (step === 'name' && (!form.first.trim() || !form.last.trim())) { setErrors({ name: "First and last name are needed" }); return; }
+    if (step === 'name' && (!form.first.trim() || !form.last.trim())) { setErrors({ name: t('signup.nameNeeded') }); return; }
     if (step === 'username') {
-      if (!usernameValid) { setErrors({ username: 'Use 5-30 lowercase letters, numbers, dots, or underscores' }); return; }
-      if (usernameAvailable !== true) { setErrors({ username: usernameAvailable === false ? 'This username is taken' : 'Checking username availability...' }); return; }
+      if (!usernameValid) { setErrors({ username: t('signup.usernameInvalid') }); return; }
+      if (usernameAvailable !== true) { setErrors({ username: usernameAvailable === false ? t('signup.usernameTaken') : t('signup.usernameChecking') }); return; }
       // If Google pre-filled email, skip email step (jump from username ΓåÆ purpose)
       if (googleInfo) { go(2); return; }
     }
     if (step === 'email') {
       // If Google pre-filled, skip this step entirely
       if (googleInfo) { go(1); return; }
-      if (!emailValid) { setErrors({ email: 'Enter the first part of a Gmail address' }); return; }
-      if (emailAvailable !== true) { setErrors({ email: emailAvailable === false ? 'This email is already registered' : 'Checking email availability...' }); return; }
+      if (!emailValid) { setErrors({ email: t('signup.emailGmailError') }); return; }
+      if (emailAvailable !== true) { setErrors({ email: emailAvailable === false ? t('signup.emailTaken') : t('signup.emailChecking') }); return; }
     }
     if (step === 'purpose' && !form.purpose) return;
     if (step === 'dob') {
-      if (!isAdult) { setErrors({ dob: 'You must be at least 18 years old' }); return; }
+      if (!isAdult) { setErrors({ dob: t('signup.dobAgeError') }); return; }
       // If Google pre-filled DOB, skip to password
       if (googleInfo?.birthDate) { go(1); return; }
     }
@@ -848,7 +858,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       setPendingEmailConfirm(!!res.emailConfirmationPending);
       go(1); // → success / verification screen
     } catch (err: any) {
-      setErrors({ email: err?.message || 'Signup failed' });
+      setErrors({ email: err?.message || t('signup.signupFailed') });
       setIndex(4); // → email step
     } finally { setLoading(false); }
   };
@@ -892,7 +902,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       setIndex(3);
     } catch (err: any) {
       if (!String(err?.message || '').includes('cancelled')) {
-        setErrors({ name: err?.message || 'Google sign-in failed' });
+        setErrors({ name: err?.message || t('signin.googleFailed') });
       }
     } finally {
       setGoogleLoading(false);
@@ -930,12 +940,12 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   };
 
   const ghostFieldMap = {
-    email: { label: 'Email address', icon: 'email-outline', placeholder: '', value: form.email, inputValue: emailLocalPart, suffix: '@gmail.com', setValue: (value: string) => { const local = value.replace(/@.*$/, '').toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, ''); set('email', `${local}@gmail.com`); }, secure: false, capitalize: 'none' as const },
-    username: { label: 'Username', icon: 'at', placeholder: undefined, value: form.username, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('username', value.toLowerCase().replace(/[^a-z0-9._]/g, '')), secure: false, capitalize: 'none' as const },
-    first: { label: 'First name', icon: 'account-outline', placeholder: undefined, value: form.first, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('first', value), secure: false, capitalize: 'words' as const },
-    last: { label: 'Last name', icon: 'account-outline', placeholder: undefined, value: form.last, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('last', value), secure: false, capitalize: 'words' as const },
-    pw: { label: 'Password', icon: 'lock-outline', placeholder: '••••••••', value: form.pw, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('pw', value), secure: !showPw, capitalize: 'none' as const },
-    pw2: { label: 'Confirm password', icon: 'lock-outline', placeholder: '••••••••', value: form.pw2, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('pw2', value), secure: !showPw, capitalize: 'none' as const },
+    email: { label: t('signin.emailAddress'), icon: 'email-outline', placeholder: '', value: form.email, inputValue: emailLocalPart, suffix: '@gmail.com', setValue: (value: string) => { const local = value.replace(/@.*$/, '').toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, ''); set('email', `${local}@gmail.com`); }, secure: false, capitalize: 'none' as const },
+    username: { label: t('field.username'), icon: 'at', placeholder: undefined, value: form.username, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('username', value.toLowerCase().replace(/[^a-z0-9._]/g, '')), secure: false, capitalize: 'none' as const },
+    first: { label: t('signup.firstName'), icon: 'account-outline', placeholder: undefined, value: form.first, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('first', value), secure: false, capitalize: 'words' as const },
+    last: { label: t('signup.lastName'), icon: 'account-outline', placeholder: undefined, value: form.last, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('last', value), secure: false, capitalize: 'words' as const },
+    pw: { label: t('signin.passwordLabel'), icon: 'lock-outline', placeholder: '••••••••', value: form.pw, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('pw', value), secure: !showPw, capitalize: 'none' as const },
+    pw2: { label: t('signup.confirmPassword'), icon: 'lock-outline', placeholder: '••••••••', value: form.pw2, inputValue: undefined, suffix: undefined, setValue: (value: string) => set('pw2', value), secure: !showPw, capitalize: 'none' as const },
   } as const;
 
   const ghostFieldKeys = focusedField === 'first' || focusedField === 'last' ? ['first', 'last'] as const
@@ -963,7 +973,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               <View style={s.screenCenter}>
                 <SplashIllustration spin={spin} />
                 <Text style={s.splashBrand}>MaurMaket</Text>
-                <Text style={s.splashSub}>{splashReady ? "Everything's set. Let's go." : "Warming up your marketplace..."}</Text>
+                <Text style={s.splashSub}>{splashReady ? t('signup.splashReady') : t('signup.splashWarming')}</Text>
                 <View style={s.dotsRow}>
                   {[0, 1, 2].map(d => (
                     <Animated.View key={d} style={[s.dot, { opacity: pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 1, 0.4] }) }]} />
@@ -977,7 +987,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     ref={holdButtonRef}
                     style={s.holdCircle}
                     accessibilityRole="button"
-                    accessibilityLabel="Press and hold to continue"
+                    accessibilityLabel={t('signup.holdToContinue')}
                   >
                     <Animated.View style={[s.holdRing, s.holdRingA, { opacity: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] }), transform: [{ scale: holdRingA.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
                     <Animated.View style={[s.holdRing, s.holdRingB, { opacity: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [0.62, 0] }), transform: [{ scale: holdRingB.interpolate({ inputRange: [0, 1], outputRange: [1, 1.85] }) }] }]} />
@@ -996,14 +1006,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                 </View>
                 <WelcomeIllustration />
                 <Text style={[s.heroTitle, { textAlign: 'center' }]}>
-                  Commerce,{'\n'}
-                  <Text style={s.heroAccent}>made more human.</Text>
+                  {t('signup.welcomeTitle1')}{'\n'}
+                  <Text style={s.heroAccent}>{t('signup.welcomeTitle2')}</Text>
                 </Text>
-                <Text style={[s.heroSub, { textAlign: 'center', alignSelf: 'center' }]}>MaurMaket connects people, products, and opportunity in one place built for how you actually buy and sell.</Text>
+                <Text style={[s.heroSub, { textAlign: 'center', alignSelf: 'center' }]}>{t('signup.welcomeBody')}</Text>
                 <View style={s.welcomeActions}>
-                  <PrimaryButton onPress={() => go(1)}>Get started</PrimaryButton>
+                  <PrimaryButton onPress={() => go(1)}>{t('signup.getStarted')}</PrimaryButton>
                   <TouchableOpacity onPress={onSwitchToSignin} style={{ paddingVertical: 14 }}>
-                    <Text style={{ textAlign: 'center', color: C.sub, fontSize: 14, fontWeight: '500' }}>I already have an account</Text>
+                    <Text style={{ textAlign: 'center', color: C.sub, fontSize: 14, fontWeight: '500' }}>{t('signup.iHaveAccount')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1013,25 +1023,25 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {index === 2 && (
               <View style={s.stepScreen}>
                 <View style={[s.centeredStepBody, s.nameStepBody]}>
-                  <AssetIllustration asset="lets-start" accessibilityLabel="Let's start illustration" />
+                  <AssetIllustration asset="lets-start" accessibilityLabel={t('signup.illLetsStart')} />
                   <View style={s.nameFields}>
-                    <Field icon="account-outline" label="First name" value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" onFocus={() => setFocusedField('first')} />
-                    <Field icon="account-outline" label="Last name" value={form.last} onChangeText={v => set('last', v)} placeholder="Reyes" onFocus={() => setFocusedField('last')} />
-                    <Text style={s.fieldHint}>Use the name you want shown on your profile.</Text>
+                    <Field icon="account-outline" label={t('signup.firstName')} value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" onFocus={() => setFocusedField('first')} />
+                    <Field icon="account-outline" label={t('signup.lastName')} value={form.last} onChangeText={v => set('last', v)} placeholder="Reyes" onFocus={() => setFocusedField('last')} />
+                    <Text style={s.fieldHint}>{t('signup.nameHint')}</Text>
                     {errors.name ? <Text style={s.fieldError}>{errors.name}</Text> : null}
                   </View>
                   {/* Google sign-up divider + button */}
                   <View style={{ width: '100%', marginTop: 20 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                       <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
-                      <Text style={{ color: C.faint, fontSize: 12, fontWeight: '600' }}>or sign up with</Text>
+                      <Text style={{ color: C.faint, fontSize: 12, fontWeight: '600' }}>{t('signup.orSignUpWith')}</Text>
                       <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
                     </View>
                     <GoogleButton onPress={handleGoogleSignup} loading={googleLoading} disabled={googleLoading} compact={false} />
                   </View>
                 </View>
                 <StepActions step={1} label={STEP_LABELS.name} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={!form.first || !form.last}>Continue</PrimaryButton>
+                  <PrimaryButton onPress={validateAndNext} disabled={!form.first || !form.last}>{t('signup.continue')}</PrimaryButton>
                 </StepActions>
               </View>
             )}
@@ -1040,20 +1050,20 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {index === 3 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
-                  <Text style={s.fieldHint}>Choose 5-30 lowercase letters, numbers, dots, or underscores.</Text>
-                  {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>Use 5-30 lowercase letters, numbers, dots, or underscores</Text> : null}
-                  {usernameAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Username is available</Text> : null}
+                  <Text style={s.fieldHint}>{t('signup.usernameHint')}</Text>
+                  {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>{t('signup.usernameInvalid')}</Text> : null}
+                  {usernameAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>{t('signup.usernameAvailable')}</Text> : null}
                   {errors.username ? <Text style={s.fieldError}>{errors.username}</Text> : null}
                 </View>
                 <StepActions step={2} label={STEP_LABELS.username} onBack={() => go(-1)}>
                   <AssetIllustration
                     asset="pick-username"
-                    accessibilityLabel="Pick your username illustration"
+                    accessibilityLabel={t('signup.illPickUsername')}
                     containerStyle={{ marginBottom: 15 }}
                   />
                   <Field
                     icon="at"
-                    label="Username"
+                    label={t('field.username')}
                     value={form.username}
                     onChangeText={v => set('username', v.toLowerCase().replace(/[^a-z0-9._]/g, ''))}
                     placeholder="jordan.reyes"
@@ -1065,7 +1075,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     }
                   />
                   <View style={{ height: 15 }} />
-                  <PrimaryButton onPress={validateAndNext} disabled={!usernameValid || usernameAvailable !== true}>Continue</PrimaryButton>
+                  <PrimaryButton onPress={validateAndNext} disabled={!usernameValid || usernameAvailable !== true}>{t('signup.continue')}</PrimaryButton>
                 </StepActions>
               </View>
             )}
@@ -1078,20 +1088,20 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     <Image
                       source={require('../../../illustration/digital-address.webp')}
                       style={{ width: 350, height: 455, resizeMode: 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
-                      accessibilityLabel="Digital address illustration"
+                      accessibilityLabel={t('signup.illDigitalAddress')}
                     />
                   </View>
-                  <Field icon="email-outline" label="Email address" value={form.email} inputValue={emailLocalPart} suffix="@gmail.com" onChangeText={v => { const local = v.replace(/@.*$/, '').toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, ''); set('email', `${local}@gmail.com`); }} placeholder="" onFocus={() => setFocusedField('email')} right={
+                  <Field icon="email-outline" label={t('signin.emailAddress')} value={form.email} inputValue={emailLocalPart} suffix="@gmail.com" onChangeText={v => { const local = v.replace(/@.*$/, '').toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, ''); set('email', `${local}@gmail.com`); }} placeholder="" onFocus={() => setFocusedField('email')} right={
                     emailChecking ? <ActivityIndicator size="small" color={C.faint} /> :
                     emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
                     emailAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
                   } />
-                  <Text style={s.fieldHint}>Enter the first part of your Gmail address.</Text>
+                  <Text style={s.fieldHint}>{t('signup.emailGmailHint')}</Text>
                   {errors.email ? <Text style={s.fieldError}>{errors.email}</Text> : null}
-                  {emailAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>✓ Email is available</Text> : null}
+                  {emailAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>{t('signup.emailAvailable')}</Text> : null}
                 </View>
                 <StepActions step={3} label={STEP_LABELS.email} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={!emailValid || emailAvailable !== true}>Continue</PrimaryButton>
+                  <PrimaryButton onPress={validateAndNext} disabled={!emailValid || emailAvailable !== true}>{t('signup.continue')}</PrimaryButton>
                 </StepActions>
               </View>
             )}
@@ -1099,7 +1109,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {/* SCREEN 5 -- PURPOSE */}
             {index === 5 && (
               <View style={s.stepScreen}>
-                <AssetIllustration asset="choose-purpose" accessibilityLabel="Choose your purpose illustration" containerStyle={s.purposeArtwork} />
+                <AssetIllustration asset="choose-purpose" accessibilityLabel={t('signup.illChoosePurpose')} containerStyle={s.purposeArtwork} />
                 <View style={s.purposeChoices}>
                   {PURPOSES.map(p => {
                     const active = form.purpose === p.id;
@@ -1120,7 +1130,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                   })}
                 </View>
                 <StepActions step={4} label={STEP_LABELS.purpose} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={!form.purpose}>Continue</PrimaryButton>
+                  <PrimaryButton onPress={validateAndNext} disabled={!form.purpose}>{t('signup.continue')}</PrimaryButton>
                 </StepActions>
               </View>
             )}
@@ -1226,7 +1236,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                       ]}
                     >
                       <View style={s.dobDateShowerPill}>
-                        <Text style={s.dobCardMiniLabel}>Date of Birth</Text>
+                        <Text style={s.dobCardMiniLabel}>{t('signup.dobLabel')}</Text>
                         <Text style={s.dobDateShowerText}>{formattedFullDate}</Text>
                         {ageNumber != null && (
                           <Text
@@ -1236,8 +1246,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                             ]}
                           >
                             {ageNumber >= 18
-                              ? `✓ ${ageNumber} years old (18+ verified)`
-                              : `! ${ageNumber} years old (Must be 18+)`}
+                              ? t('signup.ageVerified', { age: ageNumber })
+                              : t('signup.ageMinor', { age: ageNumber })}
                           </Text>
                         )}
                       </View>
@@ -1255,7 +1265,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                           openDobPicker('month');
                         }}
                         accessibilityRole="button"
-                        accessibilityLabel="Select birth month"
+                        accessibilityLabel={t('signup.selectMonth')}
                       >
                         <MaterialCommunityIcons
                           name="calendar-month-outline"
@@ -1270,7 +1280,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                             dobPickerActive && dobActiveTab === 'month' && { color: '#FFFFFF' },
                           ]}
                         >
-                          {form.birthMonth ? MONTH_NAMES[form.birthMonth - 1] : 'Month'}
+                          {form.birthMonth ? MONTH_NAMES[form.birthMonth - 1] : t('signup.month')}
                         </Text>
                         <MaterialCommunityIcons
                           name={dobPickerActive && dobActiveTab === 'month' ? 'chevron-up' : 'chevron-down'}
@@ -1289,7 +1299,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                           openDobPicker('day');
                         }}
                         accessibilityRole="button"
-                        accessibilityLabel="Select birth day"
+                        accessibilityLabel={t('signup.selectDay')}
                       >
                         <MaterialCommunityIcons
                           name="calendar-month-outline"
@@ -1304,7 +1314,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                             dobPickerActive && dobActiveTab === 'day' && { color: '#FFFFFF' },
                           ]}
                         >
-                          {form.birthDay || 'Day'}
+                          {form.birthDay || t('signup.day')}
                         </Text>
                         <MaterialCommunityIcons
                           name={dobPickerActive && dobActiveTab === 'day' ? 'chevron-up' : 'chevron-down'}
@@ -1323,7 +1333,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                           openDobPicker('year');
                         }}
                         accessibilityRole="button"
-                        accessibilityLabel="Select birth year"
+                        accessibilityLabel={t('signup.selectYear')}
                       >
                         <MaterialCommunityIcons
                           name="calendar-month-outline"
@@ -1338,7 +1348,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                             dobPickerActive && dobActiveTab === 'year' && { color: '#FFFFFF' },
                           ]}
                         >
-                          {form.birthYear || 'Year'}
+                          {form.birthYear || t('signup.year')}
                         </Text>
                         <MaterialCommunityIcons
                           name={dobPickerActive && dobActiveTab === 'year' ? 'chevron-up' : 'chevron-down'}
@@ -1385,7 +1395,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
                         <View style={s.dobWheelRow}>
                           <DobWheelColumn
-                            label="Month"
+                            label={t('signup.month')}
                             items={monthItems}
                             selectedValue={form.birthMonth}
                             onSelect={m => {
@@ -1395,7 +1405,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                             formatItem={m => MONTH_NAMES[m - 1]}
                           />
                           <DobWheelColumn
-                            label="Day"
+                            label={t('signup.day')}
                             items={dayItems}
                             selectedValue={form.birthDay}
                             onSelect={d => {
@@ -1404,7 +1414,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                             }}
                           />
                           <DobWheelColumn
-                            label="Year"
+                            label={t('signup.year')}
                             items={yearItems}
                             selectedValue={form.birthYear}
                             onSelect={y => {
@@ -1429,7 +1439,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     }}
                   >
                     <PrimaryButton onPress={validateAndNext} disabled={!birthDateValid}>
-                      Continue
+                      {t('signup.continue')}
                     </PrimaryButton>
                   </StepActions>
                 </View>
@@ -1440,20 +1450,20 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {index === 7 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
-                  <AssetIllustration asset="keep-it-protected" accessibilityLabel="Keep it protected illustration" />
+                  <AssetIllustration asset="keep-it-protected" accessibilityLabel={t('signup.illKeepProtected')} />
                 </View>
                 <StepActions step={6} label={STEP_LABELS.password} onBack={() => go(-1)}>
                   <View style={s.passwordActionContainer}>
-                    <Field icon="lock-outline" label="Password" value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw')} right={
+                    <Field icon="lock-outline" label={t('signin.passwordLabel')} value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw')} right={
                       <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                       </TouchableOpacity>
                     } />
-                    <Field icon="lock-outline" label="Confirm password" value={form.pw2} onChangeText={v => set('pw2', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw2')} right={
+                    <Field icon="lock-outline" label={t('signup.confirmPassword')} value={form.pw2} onChangeText={v => set('pw2', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw2')} right={
                       form.pw2 ? (pwMatched ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> : <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.pink }} />) : null
                     } />
-                    <Text style={s.fieldHint}>Use 6-128 characters and enter the same password twice.</Text>
-                    <PrimaryButton onPress={validateAndNext} disabled={!pwMatched}>Continue</PrimaryButton>
+                    <Text style={s.fieldHint}>{t('signup.passwordRuleHint')}</Text>
+                    <PrimaryButton onPress={validateAndNext} disabled={!pwMatched}>{t('signup.continue')}</PrimaryButton>
                   </View>
                 </StepActions>
               </View>
@@ -1463,15 +1473,15 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {index === 8 && (
               <View style={s.stepScreen}>
                 <View style={s.centeredStepBody}>
-                  <AssetIllustration asset="youre-ready" accessibilityLabel="You're ready illustration" />
+                  <AssetIllustration asset="youre-ready" accessibilityLabel={t('signup.illYoureReady')} />
                   <View style={{ gap: 10 }}>
                     {[
-                      ['Name', form.first ? `${form.first} ${form.last}` : '--', reviewItems[0]],
-                      ['Username', form.username ? `@${form.username}` : '--', reviewItems[1]],
-                      ['Email', form.email || '--', reviewItems[2]],
-                      ['Purpose', PURPOSES.find(p => p.id === form.purpose)?.title || '--', reviewItems[3]],
-                      ['Birthday', birthDateValid ? `${form.birthMonth}/${form.birthDay}/${form.birthYear}` : '--', reviewItems[4]],
-                      ['Password', pwMatched ? 'Set' : '--', reviewItems[5]],
+                      [t('signup.reviewName'), form.first ? `${form.first} ${form.last}` : '--', reviewItems[0]],
+                      [t('field.username'), form.username ? `@${form.username}` : '--', reviewItems[1]],
+                      [t('signup.reviewEmail'), form.email || '--', reviewItems[2]],
+                      [t('signup.reviewPurpose'), PURPOSES.find(p => p.id === form.purpose)?.title || '--', reviewItems[3]],
+                      [t('signup.reviewBirthday'), birthDateValid ? `${form.birthMonth}/${form.birthDay}/${form.birthYear}` : '--', reviewItems[4]],
+                      [t('signin.passwordLabel'), pwMatched ? t('signup.reviewSet') : '--', reviewItems[5]],
                     ].map(([label, val, ok], i) => (
                       <View key={i} style={s.reviewRow}>
                         <View style={{ flex: 1 }}>
@@ -1498,7 +1508,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                   </View>
                 </View>
                 <StepActions step={7} label={STEP_LABELS.review} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={loading}>{loading ? t('common.loading') : 'Create account'}</PrimaryButton>
+                  <PrimaryButton onPress={validateAndNext} disabled={loading}>{loading ? t('common.loading') : t('signup.createAccountBtn')}</PrimaryButton>
                 </StepActions>
               </View>
             )}
@@ -1519,7 +1529,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                 activeOpacity={1}
                 onPress={() => { Keyboard.dismiss(); setFocusedField(null); }}
                 style={StyleSheet.absoluteFill}
-                accessibilityLabel="Dismiss keyboard"
+                accessibilityLabel={t('signin.dismissKeyboard')}
               />
             </BlurView>
             {focusedField === 'username' && usernameSuggestions.length > 0 && (
@@ -1530,7 +1540,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     onPress={() => set('username', suggestion)}
                     style={[s.usernameSuggestion, form.username === suggestion && s.usernameSuggestionActive]}
                     accessibilityRole="button"
-                    accessibilityLabel={`Use username ${suggestion}`}
+                    accessibilityLabel={t('signup.useUsernameA11y', { username: suggestion })}
                   >
                     <Text style={[s.usernameSuggestionText, form.username === suggestion && s.usernameSuggestionTextActive]} numberOfLines={1}>
                       @{suggestion}
@@ -1561,7 +1571,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
                     emailAvailable === false ? <MaterialCommunityIcons name="close-circle" size={17} color={C.pink} /> : null
                   ) : ghostField.key === 'pw' ? (
-                    <TouchableOpacity onPress={() => setShowPw(show => !show)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }} accessibilityRole="button" accessibilityLabel={showPw ? 'Hide password' : 'Show password'}>
+                    <TouchableOpacity onPress={() => setShowPw(show => !show)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }} accessibilityRole="button" accessibilityLabel={showPw ? t('signup.hidePassword') : t('signup.showPassword')}>
                       <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                     </TouchableOpacity>
                   ) : ghostField.key === 'pw2' && ghostField.value ? (
@@ -1571,8 +1581,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               ))}
             </View>
             <View style={[s.keyboardGhostContinue, { bottom: 56 }]}>
-              <TouchableOpacity onPress={handleGhostContinue} style={s.keyboardGhostButton} accessibilityRole="button" accessibilityLabel="Continue">
-                <Text style={s.keyboardGhostContinueText}>Continue</Text>
+              <TouchableOpacity onPress={handleGhostContinue} style={s.keyboardGhostButton} accessibilityRole="button" accessibilityLabel={t('signup.continue')}>
+                <Text style={s.keyboardGhostContinueText}>{t('signup.continue')}</Text>
                 <MaterialCommunityIcons name="arrow-right" size={17} color={C.sub} />
               </TouchableOpacity>
             </View>
