@@ -48,7 +48,7 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
           <SettingsGroup
             header={t('language.select')}
-            accentColor={COLORS.blue}
+            accentColor={COLORS.coral}
             description={t('language.selectDesc')}
           >
             {LANGUAGES.map((lang) => {
@@ -62,7 +62,7 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
                 >
                   <Text style={styles.flag}>{lang.flag}</Text>
                   <View style={styles.langInfo}>
-                    <Text style={[styles.langName, isSelected && { color: COLORS.blue }]}>{lang.native}</Text>
+                    <Text style={[styles.langName, isSelected && { color: COLORS.coral }]}>{lang.native}</Text>
                     <Text style={styles.langSub}>{lang.label}</Text>
                   </View>
                   {isSelected ? (
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: COLORS.blue,
+    backgroundColor: COLORS.coral,
     alignItems: 'center',
     justifyContent: 'center',
   },

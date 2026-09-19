@@ -1,11 +1,12 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Animated, Switch,
+  View, Text, ScrollView, StyleSheet, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
+import SettingsToggle from '../components/SettingsToggle';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -157,12 +158,12 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
                     <Text style={styles.toggleLabel}>{t(notif.labelKey)}</Text>
                     <Text style={styles.toggleSubtitle}>{t(notif.subtitleKey)}</Text>
                   </View>
-                  <Switch
+                  <SettingsToggle
                     value={toggles[notif.key]}
                     onValueChange={() => handleToggle(notif.key)}
-                    trackColor={{ false: COLORS.border, true: notif.iconColor + '40' }}
-                    thumbColor={toggles[notif.key] ? notif.iconColor : COLORS.text3}
                     disabled={saving === notif.key}
+                    accent={notif.iconColor}
+                    accessibilityLabel={t(notif.labelKey)}
                   />
                 </View>
                 {i < NOTIF_TOGGLES.length - 1 && <View style={styles.divider} />}
@@ -185,11 +186,11 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
                 <Text style={styles.toggleLabel}>{t('notifSettings.doNotDisturb')}</Text>
                 <Text style={styles.toggleSubtitle}>{t('notifSettings.doNotDisturbDesc')}</Text>
               </View>
-              <Switch
+              <SettingsToggle
                 value={false}
                 onValueChange={() => toast.show({ kind: 'info', title: t('notifSettings.quietHoursSoon') })}
-                trackColor={{ false: COLORS.border, true: COLORS.purple + '40' }}
-                thumbColor={COLORS.text3}
+                accent={COLORS.purple}
+                accessibilityLabel={t('notifSettings.doNotDisturb')}
               />
             </View>
           </SettingsGroup>

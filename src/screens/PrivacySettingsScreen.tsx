@@ -1,13 +1,15 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated, Switch,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
+import { ONBOARDING_COLORS } from './onboarding/theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
+import SettingsToggle from '../components/SettingsToggle';
 import { updateProfile } from '../api';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
@@ -116,12 +118,12 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
                     : t('privacy.publicProfileOff')}
                 </Text>
               </View>
-              <Switch
+              <SettingsToggle
                 value={profilePublic}
                 onValueChange={handleToggleProfile}
-                trackColor={{ false: COLORS.border, true: '#8B5CF640' }}
-                thumbColor={profilePublic ? '#8B5CF6' : COLORS.text3}
                 disabled={loading}
+                accent={ONBOARDING_COLORS.violet}
+                accessibilityLabel={t('privacy.publicProfile')}
               />
             </View>
           </SettingsGroup>
@@ -145,11 +147,11 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
                     : t('privacy.locationSharingOff')}
                 </Text>
               </View>
-              <Switch
+              <SettingsToggle
                 value={locationSharing}
                 onValueChange={handleToggleLocation}
-                trackColor={{ false: COLORS.border, true: COLORS.blue + '40' }}
-                thumbColor={locationSharing ? COLORS.blue : COLORS.text3}
+                accent={COLORS.blue}
+                accessibilityLabel={t('privacy.locationSharing')}
               />
             </View>
             <View style={styles.divider} />
@@ -188,11 +190,11 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
                     : t('privacy.showActivityOff')}
                 </Text>
               </View>
-              <Switch
+              <SettingsToggle
                 value={showActivity}
                 onValueChange={handleToggleActivity}
-                trackColor={{ false: COLORS.border, true: COLORS.yellow + '40' }}
-                thumbColor={showActivity ? COLORS.yellow : COLORS.text3}
+                accent={COLORS.yellow}
+                accessibilityLabel={t('privacy.showActivity')}
               />
             </View>
             <View style={styles.divider} />

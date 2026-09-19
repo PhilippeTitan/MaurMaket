@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated, Switch, Platform,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
@@ -8,6 +8,7 @@ import { ONBOARDING_COLORS } from './onboarding/theme';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
+import SettingsToggle from '../components/SettingsToggle';
 import AuthMethodsCard from '../components/AuthMethodsCard';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
@@ -187,12 +188,12 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
                   {twoFactorEnabled ? t('security.twoFactorAuthApp') : t('security.addExtraLayer')}
                 </Text>
               </View>
-              <Switch
+              <SettingsToggle
                 value={twoFactorEnabled}
                 onValueChange={handleToggle2FA}
-                trackColor={{ false: ONBOARDING_COLORS.border, true: ONBOARDING_COLORS.blue + '40' }}
-                thumbColor={twoFactorEnabled ? ONBOARDING_COLORS.blue : ONBOARDING_COLORS.faint}
                 disabled={loading2FA}
+                accent={ONBOARDING_COLORS.blue}
+                accessibilityLabel={t('security.twoStepVerification')}
               />
             </View>
             <View style={styles.divider} />
