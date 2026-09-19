@@ -1147,7 +1147,12 @@ const signupFr2 = {
   'signup.progressA11y': "Progression de l'inscription {step} sur {total}",
 };
 
-const n1 = applyFix('messages/en.json', { ...enAdd, ...enAdd2, ...privacyEn, ...notifSettingsEn, ...settingsEditEn, ...productDetailEn, ...feedEn, ...wishlistEn, ...signupEn2, ...langApEn, ...accountEn, ...meEn, ...chatEn, ...natcashEn, ...batch6En });
-const n2 = applyFix('messages/ht.json', { ...htAdd, ...htAdd2, ...privacyHt, ...notifSettingsHt, ...settingsEditHt, ...productDetailHt, ...feedHt, ...wishlistHt, ...signupHt2, ...langApHt, ...accountHt, ...meHt, ...chatHt, ...natcashHt, ...batch6Ht });
-const n3 = applyFix('messages/fr.json', { ...frAdd, ...frAdd2, ...privacyFr, ...notifSettingsFr, ...settingsEditFr, ...productDetailFr, ...feedFr, ...wishlistFr, ...signupFr2, ...langApFr, ...accountFr, ...meFr, ...chatFr, ...natcashFr, ...batch6Fr, ...{ 'field.username': "Nom d'utilisateur" } });
+// GoogleButton label fixes (found by zero-t() sweep)
+const googleBtnEn = { 'auth.googleSignUp': 'Sign up with Google' };
+const googleBtnHt = { 'auth.googleSignUp': 'Enskri avèk Google' };
+const googleBtnFr = { 'auth.googleSignUp': "S'inscrire avec Google" };
+
+const n1 = applyFix('messages/en.json', { ...enAdd, ...enAdd2, ...privacyEn, ...notifSettingsEn, ...settingsEditEn, ...productDetailEn, ...feedEn, ...wishlistEn, ...signupEn2, ...langApEn, ...accountEn, ...meEn, ...chatEn, ...natcashEn, ...batch6En, ...googleBtnEn });
+const n2 = applyFix('messages/ht.json', { ...htAdd, ...htAdd2, ...privacyHt, ...notifSettingsHt, ...settingsEditHt, ...productDetailHt, ...feedHt, ...wishlistHt, ...signupHt2, ...langApHt, ...accountHt, ...meHt, ...chatHt, ...natcashHt, ...batch6Ht, ...googleBtnHt });
+const n3 = applyFix('messages/fr.json', { ...frAdd, ...frAdd2, ...privacyFr, ...notifSettingsFr, ...settingsEditFr, ...productDetailFr, ...feedFr, ...wishlistFr, ...signupFr2, ...langApFr, ...accountFr, ...meFr, ...chatFr, ...natcashFr, ...batch6Fr, ...{ 'field.username': "Nom d'utilisateur" }, ...googleBtnFr });
 console.log(`en.json: +${n1} | ht.json: +${n2} | fr.json: +${n3}`);

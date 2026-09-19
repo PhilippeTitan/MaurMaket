@@ -1037,7 +1037,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                       <Text style={{ color: C.faint, fontSize: 12, fontWeight: '600' }}>{t('signup.orSignUpWith')}</Text>
                       <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
                     </View>
-                    <GoogleButton onPress={handleGoogleSignup} loading={googleLoading} disabled={googleLoading} compact={false} />
+                    <GoogleButton onPress={handleGoogleSignup} loading={googleLoading} disabled={googleLoading} compact={false} label={t('auth.googleSignIn')} />
                   </View>
                 </View>
                 <StepActions step={1} label={STEP_LABELS.name} onBack={() => go(-1)}>

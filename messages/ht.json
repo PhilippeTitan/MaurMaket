@@ -150,6 +150,7 @@
   "auth.forgotPassword": "Bliye paswòd?",
   "auth.fullNamePlaceholder": "Non konplè",
   "auth.googleSignIn": "Kontinye avèk Google",
+  "auth.googleSignUp": "Enskri avèk Google",
   "auth.hasAccount": "Ou gen deja yon kont?",
   "auth.noAccount": "Ou pa gen kont?",
   "auth.orContinueWith": "oswa kontinye avèk",

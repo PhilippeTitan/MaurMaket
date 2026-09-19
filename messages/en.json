@@ -150,6 +150,7 @@
   "auth.forgotPassword": "Forgot password?",
   "auth.fullNamePlaceholder": "Full Name",
   "auth.googleSignIn": "Continue with Google",
+  "auth.googleSignUp": "Sign up with Google",
   "auth.hasAccount": "Already have an account?",
   "auth.noAccount": "Don't have an account?",
   "auth.orContinueWith": "or continue with",

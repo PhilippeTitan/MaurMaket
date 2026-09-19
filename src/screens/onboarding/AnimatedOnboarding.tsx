@@ -281,7 +281,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, onNaturalComplete
           <Loader autoExpand={autoExpand} onComplete={handleComplete} onPressChange={handlePressChange} />
         </Animated.View>
         <Animated.View style={[styles.authActions, { opacity: controlsOpacity }]}>
-          <GoogleButton onPress={handleGoogle} loading={googleLoading} label="Sign up with Google" />
+          <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignUp')} />
           {onSwitchToSignin && (
             <Pressable onPress={onSwitchToSignin} style={styles.signinAction}>
               <Text style={styles.signinActionText}>
