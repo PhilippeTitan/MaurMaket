@@ -83,7 +83,7 @@ export default function SettingsScreen({ navigation }: Props) {
         {/* ── Account ── */}
         <Animated.View style={animStyle(1)}>
           <SettingsGroup
-            header={t('settings.sectionAccount') || 'Account'}
+            header={t('settings.sectionAccount')}
             accentColor={COLORS.blue}
           >
             <SettingsRow
@@ -149,7 +149,7 @@ export default function SettingsScreen({ navigation }: Props) {
         {/* ── Privacy ── */}
         <Animated.View style={animStyle(5)}>
           <SettingsGroup
-            header={t('settings.sectionPrivacy') || 'Privacy'}
+            header={t('settings.sectionPrivacy')}
             accentColor="#8B5CF6"
           >
             <SettingsRow
@@ -165,7 +165,7 @@ export default function SettingsScreen({ navigation }: Props) {
         {/* ── Selling ── */}
         <Animated.View style={animStyle(6)}>
           <SettingsGroup
-            header={t('settings.sectionSelling') || 'Selling'}
+            header={t('settings.sectionSelling')}
             accentColor={isSeller ? COLORS.blue : COLORS.coral}
           >
             <SettingsRow
@@ -201,7 +201,7 @@ export default function SettingsScreen({ navigation }: Props) {
             />
             <SettingsRow
               icon="information-outline"
-              label={t('settings.version') || 'Version'}
+              label={t('settings.version')}
               value="MaurMaket v1.0.0"
             />
           </SettingsGroup>
