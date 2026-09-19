@@ -121,7 +121,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   ];
 
   const trustedDevices = [
-    { id: '1', name: Platform.OS === 'ios' ? 'This iPhone' : 'This Android', added: 'Sep 2026' },
+    { id: '1', name: t('security.thisDevice'), added: 'Sep 2026' },
   ];
 
   return (

@@ -119,9 +119,9 @@ export default function LocationSettingsScreen({ navigation }: Props) {
       setStep('confirm');
     } catch (err: any) {
       if (err?.code === 'E_LOCATION_SERVICES_DISABLED') {
-        toast.error(t('settings.error'), 'GPS is turned off. Please enable Location Services.');
+        toast.error(t('settings.error'), t('locationSettings.gpsOff'));
       } else {
-        toast.error(t('settings.error'), 'Could not detect location.');
+        toast.error(t('settings.error'), t('locationSettings.detectFailed'));
       }
     }
     setDetecting(false);
@@ -214,7 +214,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
         </View>
         <View style={styles.webFallback}>
           <MaterialCommunityIcons name="map-marker-outline" size={48} color={COLORS.text3} />
-          <Text style={styles.webFallbackText}>Map picker available on mobile</Text>
+          <Text style={styles.webFallbackText}>{t('locationSettings.mapMobileOnly')}</Text>
         </View>
       </View>
     );
@@ -250,7 +250,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
           onPress={handleFindMe}
           disabled={detecting}
           activeOpacity={0.7}
-          accessibilityLabel="find my location"
+          accessibilityLabel={t('locationSettings.findMeA11y')}
           accessibilityRole="button"
         >
           {detecting ? (
@@ -268,16 +268,16 @@ export default function LocationSettingsScreen({ navigation }: Props) {
             <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search area... (e.g. Delmas 33)"
+              placeholder={t('locationSettings.searchPlaceholder')}
               placeholderTextColor={COLORS.text2}
               value={searchQuery}
               onChangeText={setSearchQuery}
               onFocus={() => setSearchFocused(true)}
               returnKeyType="search"
-              accessibilityLabel="search area"
+              accessibilityLabel={t('locationSettings.searchA11y')}
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }} accessibilityLabel="clear search" accessibilityRole="button">
+              <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }} accessibilityLabel={t('locationSettings.clearSearchA11y')} accessibilityRole="button">
                 <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.text2} />
               </TouchableOpacity>
             )}
@@ -288,7 +288,7 @@ export default function LocationSettingsScreen({ navigation }: Props) {
               {searching && searchResults.length === 0 && (
                 <View style={styles.searchLoading}>
                   <ActivityIndicator size="small" color={COLORS.coral} />
-                  <Text style={styles.searchLoadingText}>Searching...</Text>
+                  <Text style={styles.searchLoadingText}>{t('locationSettings.searching')}</Text>
                 </View>
               )}
               {searchResults.map((area) => (
@@ -326,8 +326,8 @@ export default function LocationSettingsScreen({ navigation }: Props) {
             <View style={styles.cardIconWrap}>
               <MaterialCommunityIcons name="map-marker-plus" size={28} color={COLORS.coral} />
             </View>
-            <Text style={styles.cardTitle}>Where should we deliver?</Text>
-            <Text style={styles.cardHint}>Tap anywhere on the map to choose your delivery location.</Text>
+            <Text style={styles.cardTitle}>{t('locationSettings.deliverWhere')}</Text>
+            <Text style={styles.cardHint}>{t('locationSettings.tapMapHint')}</Text>
           </>
         )}
 
@@ -338,28 +338,28 @@ export default function LocationSettingsScreen({ navigation }: Props) {
               <View style={styles.cardIconSmall}>
                 <MaterialCommunityIcons name="map-marker" size={18} color={COLORS.coral} />
               </View>
-              <Text style={styles.cardLabel}>Selected location</Text>
+              <Text style={styles.cardLabel}>{t('locationSettings.selected')}</Text>
             </View>
-            <Text style={styles.cardAddress} numberOfLines={2}>{address || 'Address not found'}</Text>
+            <Text style={styles.cardAddress} numberOfLines={2}>{address || t('locationSettings.notFound')}</Text>
             {city ? <Text style={styles.cardCity}>{city}</Text> : null}
 
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={handleConfirmLocation}
               activeOpacity={0.7}
-              accessibilityLabel="confirm location"
+              accessibilityLabel={t('locationSettings.confirmA11y')}
               accessibilityRole="button"
             >
-              <Text style={styles.primaryBtnText}>Confirm location</Text>
+              <Text style={styles.primaryBtnText}>{t('locationSettings.confirm')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.linkBtn}
               onPress={handleChangeLocation}
               activeOpacity={0.7}
-              accessibilityLabel="change location"
+              accessibilityLabel={t('locationSettings.changeA11y')}
               accessibilityRole="button"
             >
-              <Text style={styles.linkBtnText}>Change location</Text>
+              <Text style={styles.linkBtnText}>{t('locationSettings.change')}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -368,57 +368,57 @@ export default function LocationSettingsScreen({ navigation }: Props) {
         {step === 'details' && (
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <ScrollView style={styles.detailsScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.detailsTitle}>Delivery Details</Text>
-              <Text style={styles.detailsSubtitle}>How to find you at this location</Text>
+              <Text style={styles.detailsTitle}>{t('locationSettings.deliveryDetails')}</Text>
+              <Text style={styles.detailsSubtitle}>{t('locationSettings.detailsTitle')}</Text>
 
               <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Building / House</Text>
+                <Text style={styles.label}>{t('locationSettings.buildingLabel')}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. Villa 23, Building A"
+                  placeholder={t('locationSettings.buildingPlaceholder')}
                   placeholderTextColor={COLORS.text2}
                   value={building}
                   onChangeText={setBuilding}
-                  accessibilityLabel="building or house"
+                  accessibilityLabel={t('locationSettings.buildingA11y')}
                 />
               </View>
 
               <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Apartment / Unit</Text>
+                <Text style={styles.label}>{t('locationSettings.aptLabel')}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. Apt 4B (optional)"
+                  placeholder={t('locationSettings.aptPlaceholder')}
                   placeholderTextColor={COLORS.text2}
                   value={apartment}
                   onChangeText={setApartment}
-                  accessibilityLabel="apartment or unit"
+                  accessibilityLabel={t('locationSettings.aptA11y')}
                 />
               </View>
 
               <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Nearby Landmark</Text>
+                <Text style={styles.label}>{t('locationSettings.landmarkLabel')}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. Next to Total gas station"
+                  placeholder={t('locationSettings.landmarkPlaceholder')}
                   placeholderTextColor={COLORS.text2}
                   value={landmark}
                   onChangeText={setLandmark}
-                  accessibilityLabel="nearby landmark"
+                  accessibilityLabel={t('locationSettings.landmarkA11y')}
                 />
               </View>
 
               <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Delivery Instructions</Text>
+                <Text style={styles.label}>{t('locationSettings.instructionsLabel')}</Text>
                 <TextInput
                   style={[styles.input, styles.textArea]}
-                  placeholder="e.g. Ring the blue gate, ask for Marie"
+                  placeholder={t('locationSettings.instructionsPlaceholder')}
                   placeholderTextColor={COLORS.text2}
                   value={instructions}
                   onChangeText={setInstructions}
                   multiline
                   numberOfLines={3}
                   textAlignVertical="top"
-                  accessibilityLabel="delivery instructions"
+                  accessibilityLabel={t('locationSettings.instructionsA11y')}
                 />
               </View>
 
@@ -427,13 +427,13 @@ export default function LocationSettingsScreen({ navigation }: Props) {
                 onPress={handleSave}
                 disabled={saving}
                 activeOpacity={0.7}
-                accessibilityLabel="save location"
+                accessibilityLabel={t('locationSettings.saveA11y')}
                 accessibilityRole="button"
               >
                 {saving ? (
                   <ActivityIndicator size="small" color={COLORS.white} />
                 ) : (
-                  <Text style={styles.primaryBtnText}>Save location</Text>
+                  <Text style={styles.primaryBtnText}>{t('locationSettings.save')}</Text>
                 )}
               </TouchableOpacity>
 
@@ -441,10 +441,10 @@ export default function LocationSettingsScreen({ navigation }: Props) {
                 style={styles.linkBtn}
                 onPress={() => setStep('confirm')}
                 activeOpacity={0.7}
-                accessibilityLabel="go back"
+                accessibilityLabel={t('locationSettings.goBackA11y')}
                 accessibilityRole="button"
               >
-                <Text style={styles.linkBtnText}>Back</Text>
+                <Text style={styles.linkBtnText}>{t('common.back')}</Text>
               </TouchableOpacity>
 
               <View style={{ height: SPACING.xl }} />

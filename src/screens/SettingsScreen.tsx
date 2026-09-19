@@ -170,8 +170,8 @@ export default function SettingsScreen({ navigation }: Props) {
           >
             <SettingsRow
               icon={isSeller ? 'storefront-outline' : 'store-plus-outline'}
-              label={isSeller ? t('settings.sellerTools') || 'Seller tools' : t('me.becomeSeller') || 'Become a seller'}
-              subtitle={isSeller ? `${tierLabel} seller` : 'Start selling on MaurMaket'}
+              label={isSeller ? t('settings.sellerTools') : t('me.becomeSeller')}
+              subtitle={isSeller ? t('settings.tierSeller', { tier: tierLabel }) : t('me.startSelling')}
               value={isSeller ? tierLabel : undefined}
               valueColor={isSeller ? (tierColor || COLORS.green) : undefined}
               chevron

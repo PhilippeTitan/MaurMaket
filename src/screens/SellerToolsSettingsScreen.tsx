@@ -140,7 +140,7 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
 
       {/* ── Store Profile ── */}
-      <Text style={styles.sectionHeader}>Store Profile</Text>
+      <Text style={styles.sectionHeader}>{t('sellerTools.storeProfile')}</Text>
       <View style={styles.card}>
         <TouchableOpacity
           style={styles.row}
@@ -196,47 +196,47 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
       </View>
 
       {/* ── Fulfillment policy ── */}
-      <Text style={styles.sectionHeader}>Delivery & meetup</Text>
+      <Text style={styles.sectionHeader}>{t('sellerTools.deliveryMeetup')}</Text>
       <View style={styles.card}>
         <View style={styles.toggleRow}>
           <MaterialCommunityIcons name="truck-delivery-outline" size={18} color={COLORS.blue} />
-          <View style={styles.settingCopy}><Text style={styles.rowLabel}>Offer delivery</Text><Text style={styles.settingHint}>Set the area and fee buyers see before payment.</Text></View>
-          <TouchableOpacity style={[styles.toggle, fulfillmentProfile?.deliveryEnabled && styles.toggleActive]} onPress={() => updateFulfillment({ deliveryEnabled: !fulfillmentProfile?.deliveryEnabled })} disabled={loading} accessibilityRole="switch" accessibilityLabel="Offer delivery" accessibilityState={{ checked: fulfillmentProfile?.deliveryEnabled }}><View style={[styles.toggleKnob, fulfillmentProfile?.deliveryEnabled && styles.toggleKnobActive]} /></TouchableOpacity>
+          <View style={styles.settingCopy}><Text style={styles.rowLabel}>{t('sellerTools.offerDelivery')}</Text><Text style={styles.settingHint}>{t('sellerTools.offerDeliveryHint')}</Text></View>
+          <TouchableOpacity style={[styles.toggle, fulfillmentProfile?.deliveryEnabled && styles.toggleActive]} onPress={() => updateFulfillment({ deliveryEnabled: !fulfillmentProfile?.deliveryEnabled })} disabled={loading} accessibilityRole="switch" accessibilityLabel={t('sellerTools.offerDelivery')} accessibilityState={{ checked: fulfillmentProfile?.deliveryEnabled }}><View style={[styles.toggleKnob, fulfillmentProfile?.deliveryEnabled && styles.toggleKnobActive]} /></TouchableOpacity>
         </View>
         <View style={styles.divider} />
         <View style={styles.toggleRow}>
           <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
-          <View style={styles.settingCopy}><Text style={styles.rowLabel}>Offer meetups</Text><Text style={styles.settingHint}>Buyers can only propose spots in your meetup area.</Text></View>
-          <TouchableOpacity style={[styles.toggle, fulfillmentProfile?.meetupEnabled && styles.toggleActive]} onPress={() => updateFulfillment({ meetupEnabled: !fulfillmentProfile?.meetupEnabled })} disabled={loading} accessibilityRole="switch" accessibilityLabel="Offer meetups" accessibilityState={{ checked: fulfillmentProfile?.meetupEnabled }}><View style={[styles.toggleKnob, fulfillmentProfile?.meetupEnabled && styles.toggleKnobActive]} /></TouchableOpacity>
+          <View style={styles.settingCopy}><Text style={styles.rowLabel}>{t('sellerTools.offerMeetups')}</Text><Text style={styles.settingHint}>{t('sellerTools.offerMeetupsHint')}</Text></View>
+          <TouchableOpacity style={[styles.toggle, fulfillmentProfile?.meetupEnabled && styles.toggleActive]} onPress={() => updateFulfillment({ meetupEnabled: !fulfillmentProfile?.meetupEnabled })} disabled={loading} accessibilityRole="switch" accessibilityLabel={t('sellerTools.offerMeetups')} accessibilityState={{ checked: fulfillmentProfile?.meetupEnabled }}><View style={[styles.toggleKnob, fulfillmentProfile?.meetupEnabled && styles.toggleKnobActive]} /></TouchableOpacity>
         </View>
         <View style={styles.divider} />
-        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ deliveryRadiusMeters: fulfillmentProfile?.deliveryRadiusMeters === 5000 ? 10000 : 5000 })} disabled={loading} accessibilityRole="button" accessibilityLabel="Change delivery radius">
-          <MaterialCommunityIcons name="radius-outline" size={18} color={COLORS.text2} /><Text style={styles.rowLabel}>Delivery radius</Text><Text style={styles.rowValue}>{((fulfillmentProfile?.deliveryRadiusMeters ?? 5000) / 1000).toFixed(0)} km</Text>
+        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ deliveryRadiusMeters: fulfillmentProfile?.deliveryRadiusMeters === 5000 ? 10000 : 5000 })} disabled={loading} accessibilityRole="button" accessibilityLabel={t('sellerTools.deliveryRadiusA11y')}>
+          <MaterialCommunityIcons name="radius-outline" size={18} color={COLORS.text2} /><Text style={styles.rowLabel}>{t('sellerTools.deliveryRadius')}</Text><Text style={styles.rowValue}>{((fulfillmentProfile?.deliveryRadiusMeters ?? 5000) / 1000).toFixed(0)} km</Text>
         </TouchableOpacity>
         <View style={styles.divider} />
-        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ meetupRadiusMeters: fulfillmentProfile?.meetupRadiusMeters === 12000 ? 5000 : 12000 })} disabled={loading} accessibilityRole="button" accessibilityLabel="Change meetup radius">
-          <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={COLORS.text2} /><Text style={styles.rowLabel}>Meetup radius</Text><Text style={styles.rowValue}>{((fulfillmentProfile?.meetupRadiusMeters ?? 12000) / 1000).toFixed(0)} km</Text>
+        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ meetupRadiusMeters: fulfillmentProfile?.meetupRadiusMeters === 12000 ? 5000 : 12000 })} disabled={loading} accessibilityRole="button" accessibilityLabel={t('sellerTools.meetupRadiusA11y')}>
+          <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={COLORS.text2} /><Text style={styles.rowLabel}>{t('sellerTools.meetupRadius')}</Text><Text style={styles.rowValue}>{((fulfillmentProfile?.meetupRadiusMeters ?? 12000) / 1000).toFixed(0)} km</Text>
         </TouchableOpacity>
         <View style={styles.divider} />
-        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ deliveryFeeType: fulfillmentProfile?.deliveryFeeType === 'free' ? 'flat' : 'free', flatDeliveryFee: fulfillmentProfile?.deliveryFeeType === 'free' ? 250 : 0 })} disabled={loading} accessibilityRole="button" accessibilityLabel="Change delivery fee">
-          <MaterialCommunityIcons name="cash" size={18} color={COLORS.green} /><Text style={styles.rowLabel}>Delivery fee</Text><Text style={styles.rowValue}>{fulfillmentProfile?.deliveryFeeType === 'free' ? 'Free' : `G ${fulfillmentProfile?.flatDeliveryFee ?? 0}`}</Text>
+        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ deliveryFeeType: fulfillmentProfile?.deliveryFeeType === 'free' ? 'flat' : 'free', flatDeliveryFee: fulfillmentProfile?.deliveryFeeType === 'free' ? 250 : 0 })} disabled={loading} accessibilityRole="button" accessibilityLabel={t('sellerTools.deliveryFeeA11y')}>
+          <MaterialCommunityIcons name="cash" size={18} color={COLORS.green} /><Text style={styles.rowLabel}>{t('checkout.deliveryFee')}</Text><Text style={styles.rowValue}>{fulfillmentProfile?.deliveryFeeType === 'free' ? t('sellerTools.free') : `G ${fulfillmentProfile?.flatDeliveryFee ?? 0}`}</Text>
         </TouchableOpacity>
       </View>
 
       {proposals.length > 0 && <>
-        <Text style={styles.sectionHeader}>Awaiting your approval</Text>
+        <Text style={styles.sectionHeader}>{t('sellerTools.awaitingApproval')}</Text>
         <View style={styles.card}>{proposals.map((proposal, index) => {
           const term = proposal.terms || {};
           return <View key={proposal.id} style={[styles.proposal, index < proposals.length - 1 && styles.reviewDivider]}>
-            <Text style={styles.proposalTitle}>{proposal.buyer_name || 'Buyer'} requests {term.method === 'meetup' ? 'a meetup' : 'delivery'}</Text>
-            <Text style={styles.settingHint}>{term.location?.address || 'Location selected'} · {term.distanceMeters ? `${Math.round(term.distanceMeters / 1000 * 10) / 10} km` : 'location verified'}{term.method === 'delivery' ? ` · G ${term.deliveryFee || 0}` : ''}</Text>
-            <View style={styles.proposalActions}><TouchableOpacity style={styles.rejectBtn} onPress={() => decideProposal(proposal, 'reject')} disabled={loading} accessibilityRole="button"><Text style={styles.rejectText}>Decline</Text></TouchableOpacity><TouchableOpacity style={styles.acceptBtn} onPress={() => decideProposal(proposal, 'accept')} disabled={loading} accessibilityRole="button"><Text style={styles.acceptText}>Accept terms</Text></TouchableOpacity></View>
+            <Text style={styles.proposalTitle}>{t('sellerTools.requestsLine', { name: proposal.buyer_name || t('meetup.buyer'), type: term.method === 'meetup' ? t('sellerTools.meetupNoun') : t('sellerTools.deliveryNoun') })}</Text>
+            <Text style={styles.settingHint}>{term.location?.address || t('sellerTools.locationSelected')} · {term.distanceMeters ? `${Math.round(term.distanceMeters / 1000 * 10) / 10} km` : t('sellerTools.locationVerified')}{term.method === 'delivery' ? ` · G ${term.deliveryFee || 0}` : ''}</Text>
+            <View style={styles.proposalActions}><TouchableOpacity style={styles.rejectBtn} onPress={() => decideProposal(proposal, 'reject')} disabled={loading} accessibilityRole="button"><Text style={styles.rejectText}>{t('sellerTools.decline')}</Text></TouchableOpacity><TouchableOpacity style={styles.acceptBtn} onPress={() => decideProposal(proposal, 'accept')} disabled={loading} accessibilityRole="button"><Text style={styles.acceptText}>{t('sellerTools.acceptTerms')}</Text></TouchableOpacity></View>
           </View>;
         })}</View>
       </>}
 
       {/* ── Tier Progression ── */}
-      <Text style={styles.sectionHeader}>Tier</Text>
+      <Text style={styles.sectionHeader}>{t('sellerTools.tier')}</Text>
       <View style={styles.card}>
         {user?.seller_tier === 'casual' && (
           <>
@@ -290,7 +290,7 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
       {/* ── Subscription (business) ── */}
       {user?.seller_tier === 'business' && (
         <>
-          <Text style={styles.sectionHeader}>Subscription</Text>
+          <Text style={styles.sectionHeader}>{t('sellerTools.subscription')}</Text>
           <View style={styles.card}>
             <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('BusinessSubscription')}>
               <MaterialCommunityIcons name="calendar-clock-outline" size={18} color={COLORS.green} />
