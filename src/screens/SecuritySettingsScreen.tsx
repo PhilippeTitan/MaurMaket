@@ -77,7 +77,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
 
   const handlePasskeyEnroll = async () => {
     if (Platform.OS !== 'web') {
-      toast.show({ kind: 'info', title: 'Passkeys are only available on the web version' });
+      toast.show({ kind: 'info', title: t('security.passkeysWebOnly') });
       return;
     }
     try {
@@ -90,11 +90,11 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.message || 'Failed to register passkey');
+        throw new Error(body?.message || t('security.passkeyRegisterFailed'));
       }
-      toast.show({ kind: 'success', title: 'Passkey registered successfully' });
+      toast.show({ kind: 'success', title: t('security.passkeyRegistered') });
     } catch (err: any) {
-      toast.show({ kind: 'error', title: err?.message || 'Failed to register passkey' });
+      toast.show({ kind: 'error', title: err?.message || t('security.passkeyRegisterFailed') });
     }
   };
 
@@ -102,9 +102,9 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
     setLoading2FA(true);
     try {
       setTwoFactorEnabled(!twoFactorEnabled);
-      toast.show({ kind: 'success', title: twoFactorEnabled ? 'Two-factor disabled' : 'Two-factor enabled' });
+      toast.show({ kind: 'success', title: twoFactorEnabled ? t('security.twoFactorDisabled') : t('security.twoFactorEnabled') });
     } catch {
-      toast.show({ kind: 'error', title: 'Failed to update two-factor' });
+      toast.show({ kind: 'error', title: t('security.twoFactorUpdateFailed') });
     }
     setLoading2FA(false);
   };
@@ -116,8 +116,8 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
 
   // Mock login activity
   const loginActivity = [
-    { id: '1', device: Platform.OS === 'ios' ? 'iPhone' : 'Android', location: 'Port-au-Prince, Haiti', time: 'Just now', current: true },
-    { id: '2', device: 'Chrome on Windows', location: 'Port-au-Prince, Haiti', time: '2 hours ago', current: false },
+    { id: '1', device: Platform.OS === 'ios' ? 'iPhone' : 'Android', location: 'Port-au-Prince, Haiti', time: t('common.justNow'), current: true },
+    { id: '2', device: 'Chrome on Windows', location: 'Port-au-Prince, Haiti', time: t('security.twoHoursAgo'), current: false },
   ];
 
   const trustedDevices = [
@@ -126,7 +126,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Security" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('security.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
@@ -137,12 +137,12 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
               <MaterialCommunityIcons name="shield-check" size={32} color={ONBOARDING_COLORS.white} />
             </View>
             <Text style={styles.statusTitle}>
-              {checksPassed === totalChecks ? 'Your account is secure' : `${checksPassed}/${totalChecks} checks passed`}
+              {checksPassed === totalChecks ? t('security.accountSecure') : t('security.checksPassed', { passed: checksPassed, total: totalChecks })}
             </Text>
             <Text style={styles.statusSubtitle}>
               {checksPassed === totalChecks
-                ? 'All security checks are passing'
-                : 'Complete the steps below to secure your account'}
+                ? t('security.allChecksPassing')
+                : t('security.completeStepsBelow')}
             </Text>
             {/* Progress dots */}
             <View style={styles.statusDots}>
@@ -159,20 +159,20 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         {/* ── Account Protection ── */}
         <Animated.View style={animStyle(1)}>
           <SettingsGroup
-            header="Account protection"
-            description="Keep your account safe"
+            header={t('security.accountProtection')}
+            description={t('security.keepAccountSafe')}
           >
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.6}
-              onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: 'Change password' })}
+              onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: t('settings.changePassword') })}
             >
               <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="lock-outline" size={20} color={ONBOARDING_COLORS.coral} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Change password</Text>
-                <Text style={styles.rowSubtitle}>Update your password regularly</Text>
+                <Text style={styles.rowLabel}>{t('settings.changePassword')}</Text>
+                <Text style={styles.rowSubtitle}>{t('security.updatePasswordRegularly')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
@@ -182,9 +182,9 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
                 <MaterialCommunityIcons name="cellphone-key" size={20} color={ONBOARDING_COLORS.blue} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Two-step verification</Text>
+                <Text style={styles.rowLabel}>{t('security.twoStepVerification')}</Text>
                 <Text style={styles.rowSubtitle}>
-                  {twoFactorEnabled ? 'Enabled — authenticator app' : 'Add an extra layer of security'}
+                  {twoFactorEnabled ? t('security.twoFactorAuthApp') : t('security.addExtraLayer')}
                 </Text>
               </View>
               <Switch
@@ -206,16 +206,16 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
                     <View style={styles.activityDevice}>
                       <Text style={styles.rowLabel}>{device.name}</Text>
                       <View style={styles.currentBadge}>
-                        <Text style={styles.currentText}>Current</Text>
+                        <Text style={styles.currentText}>{t('security.current')}</Text>
                       </View>
                     </View>
-                    <Text style={styles.rowSubtitle}>Added {device.added}</Text>
+                    <Text style={styles.rowSubtitle}>{t('security.added')} {device.added}</Text>
                   </View>
                   <TouchableOpacity
                     activeOpacity={0.6}
-                    onPress={() => toast.show({ kind: 'info', title: 'Device removal coming soon' })}
+                    onPress={() => toast.show({ kind: 'info', title: t('security.deviceRemovalSoon') })}
                   >
-                    <Text style={styles.removeText}>Remove</Text>
+                    <Text style={styles.removeText}>{t('security.remove')}</Text>
                   </TouchableOpacity>
                 </View>
                 {i < trustedDevices.length - 1 && <View style={styles.divider} />}
@@ -227,8 +227,8 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         {/* ── Sign-in Methods ── */}
         <Animated.View style={animStyle(2)}>
           <SettingsGroup
-            header="Sign-in methods"
-            description="How you sign into your account"
+            header={t('security.signInMethods')}
+            description={t('security.howYouSignIn')}
           >
             <AuthMethodsCard googleConnected={googleConnected} onPasskeyEnroll={handlePasskeyEnroll} />
           </SettingsGroup>
@@ -237,8 +237,8 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         {/* ── Security Activity ── */}
         <Animated.View style={animStyle(3)}>
           <SettingsGroup
-            header="Security activity"
-            description="Recent sign-in activity"
+            header={t('security.securityActivity')}
+            description={t('security.recentSignInActivity')}
           >
             {loginActivity.map((item, i) => (
               <View key={item.id}>
@@ -255,7 +255,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
                       <Text style={styles.rowLabel}>{item.device}</Text>
                       {item.current && (
                         <View style={[styles.currentBadge, { backgroundColor: COLORS.greenMuted }]}>
-                          <Text style={[styles.currentText, { color: COLORS.green }]}>Current</Text>
+                          <Text style={[styles.currentText, { color: COLORS.green }]}>{t('security.current')}</Text>
                         </View>
                       )}
                     </View>

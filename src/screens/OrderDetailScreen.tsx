@@ -35,15 +35,15 @@ const STATUS_COLORS: Record<string, string> = {
 
 const STATUS_STEPS = ['pending', 'paid', 'shipped', 'delivered', 'completed'];
 
-function getStatusLabel(status: string): string {
+function getStatusLabel(status: string, t: (k: string) => string): string {
   switch (status) {
-    case 'pending': return 'To Pay';
-    case 'paid': return 'Paid';
-    case 'processing': return 'Processing';
-    case 'shipped': return 'Shipped';
-    case 'delivered': return 'Delivered';
-    case 'completed': return 'Completed';
-    case 'cancelled': return 'Cancelled';
+    case 'pending': return t('notif.status.pending');
+    case 'paid': return t('notif.status.paid');
+    case 'processing': return t('notif.status.processing');
+    case 'shipped': return t('notif.status.shipped');
+    case 'delivered': return t('notif.status.delivered');
+    case 'completed': return t('notif.status.completed');
+    case 'cancelled': return t('notif.status.cancelled');
     default: return status;
   }
 }
@@ -95,7 +95,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       setOrder(orderRes.order);
       setEvents(timelineRes.events || []);
     } catch (err: unknown) {
-      toast.error(t('common.error'), errorMessage(err, 'Order not found'));
+      toast.error(t('common.error'), errorMessage(err, 'Order not found') || t('orderDetail.trackOrder'));
       navigation.goBack();
     }
     setLoading(false);
@@ -178,13 +178,13 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       if (addedCount > 0) {
         toast.show({
           kind: 'success',
-          title: 'Added',
-          message: `${addedCount} item${addedCount > 1 ? 's' : ''} added to your cart.`,
-          actionLabel: 'View Cart',
+          title: t('orderDetail.added'),
+          message: t('orderDetail.itemsAddedToCart', { count: addedCount }),
+          actionLabel: t('cart.viewCart'),
           onAction: () => navigation.navigate('Cart' as any),
         });
       } else {
-        toast.warning('Unavailable', 'Items from this order are no longer available.');
+        toast.warning(t('orderDetail.unavailable'), t('orderDetail.itemsNoLongerAvailable'));
       }
     } catch (err: unknown) {
       toast.error(t('common.error'), errorMessage(err, 'Could not reorder'));
@@ -203,7 +203,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       setReviewModalVisible(false);
       setReviewRating(0);
       setReviewComment('');
-      toast.success('Thanks!', t('orderDetail.reviewSubmitted'));
+      toast.success(t('orderDetail.thanks'), t('orderDetail.reviewSubmitted'));
       fetchData();
     } catch (err: unknown) {
       toast.error(t('common.error'), errorMessage(err, 'Could not submit review'));
@@ -226,7 +226,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       setDisputeModalVisible(false);
       setDisputeReason('');
       setDisputeDescription('');
-      toast.success('Report submitted', 'We will review your case and get back to you.');
+      toast.success(t('orderDetail.reportSubmitted'), t('orderDetail.reportReviewMsg'));
       fetchData();
     } catch (err: unknown) {
       toast.error(t('common.error'), errorMessage(err, 'Could not submit report'));
@@ -316,7 +316,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             <MaterialCommunityIcons name={getStatusIcon(order.status) as any} size={22} color={statusColor} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.statusHeroLabel, { color: statusColor }]}>{getStatusLabel(order.status)}</Text>
+            <Text style={[styles.statusHeroLabel, { color: statusColor }]}>{getStatusLabel(order.status, t)}</Text>
             <Text style={styles.statusHeroDate}>
               {new Date(order.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </Text>
@@ -342,7 +342,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                       {isCurrent && <View style={[styles.stepDotInner, { backgroundColor: statusColor }]} />}
                     </View>
                     <Text style={[styles.stepLabel, isActive && { color: statusColor }]} numberOfLines={1}>
-                      {getStatusLabel(step)}
+                      {getStatusLabel(step, t)}
                     </Text>
                   </View>
                   {i < STATUS_STEPS.length - 1 && (
@@ -356,7 +356,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         {isCancelled && (
           <View style={styles.cancelledBanner}>
             <MaterialCommunityIcons name="close-circle-outline" size={16} color={COLORS.coral} />
-            <Text style={styles.cancelledBannerText}>This order has been cancelled</Text>
+            <Text style={styles.cancelledBannerText}>{t('orderDetail.orderCancelledBanner')}</Text>
           </View>
         )}
       </View>
@@ -378,7 +378,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                   </View>
                 )}
                 <View style={styles.itemInfo}>
-                  <Text style={styles.itemName} numberOfLines={2}>{item.product_name || `Product #${item.product_id?.slice(0, 8)}`}</Text>
+                  <Text style={styles.itemName} numberOfLines={2}>{item.product_name || `${t('orderDetail.productN')} #${item.product_id?.slice(0, 8)}`}</Text>
                   <Text style={styles.itemQty}>x{item.quantity}</Text>
                 </View>
                 <Text style={styles.itemPrice}>{formatPrice(Number(item.price) * Number(item.quantity))} G</Text>
@@ -403,18 +403,18 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                   return (
                     <View key={idx} style={{ marginBottom: idx < escrows.length - 1 ? 8 : 0 }}>
                       {escrows.length > 1 && (
-                        <Text style={[styles.feeLabel, { fontWeight: '700', marginBottom: 4 }]}>Seller {idx + 1}</Text>
+                        <Text style={[styles.feeLabel, { fontWeight: '700', marginBottom: 4 }]}>{t('orderDetail.sellerN', { n: idx + 1 })}</Text>
                       )}
                       <View style={styles.feeRow}>
-                        <Text style={styles.feeLabel}>MaurMaket fee ({rate}%)</Text>
+                        <Text style={styles.feeLabel}>{t('orderDetail.maurmaketFee', { rate })}</Text>
                         <Text style={styles.feeValue}>-{formatPrice(Math.round(Number(e.commission_amount)))} G</Text>
                       </View>
                       <View style={styles.feeRow}>
-                        <Text style={styles.feeLabel}>MonCash fee (~7.9%)</Text>
+                        <Text style={styles.feeLabel}>{t('orderDetail.moncashFee')}</Text>
                         <Text style={styles.feeValue}>~-{formatPrice(moncashFee)} G</Text>
                       </View>
                       <View style={[styles.feeRow, { marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: COLORS.border + '40' }]}>
-                        <Text style={[styles.feeLabel, { fontWeight: '700', color: COLORS.text }]}>Seller receives</Text>
+                        <Text style={[styles.feeLabel, { fontWeight: '700', color: COLORS.text }]}>{t('orderDetail.sellerReceives')}</Text>
                         <Text style={[styles.feeValue, { color: COLORS.green, fontWeight: '700' }]}>{formatPrice(sellerReceives)} G</Text>
                       </View>
                     </View>
@@ -433,7 +433,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             <View style={[styles.infoIconWrap, { backgroundColor: COLORS.coral + '18' }]}>
               <MaterialCommunityIcons name="account-group-outline" size={18} color={COLORS.coral} />
             </View>
-            <Text style={styles.sectionTitle}>Seller Status</Text>
+            <Text style={styles.sectionTitle}>{t('orderDetail.sellerStatus')}</Text>
           </View>
           {(order as any).seller_fulfillments.map((sf: any) => (
             <View key={sf.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' }}>
@@ -442,7 +442,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   <View style={[styles.miniBadge, { backgroundColor: sf.payment_status === 'verified' ? COLORS.green + '20' : sf.payment_status === 'buyer_claimed' ? COLORS.yellow + '20' : COLORS.border + '20' }]}>
                     <Text style={[styles.miniBadgeText, { color: sf.payment_status === 'verified' ? COLORS.green : sf.payment_status === 'buyer_claimed' ? COLORS.yellow : COLORS.text2 }]}>
-                      {sf.payment_status === 'verified' ? 'Paid' : sf.payment_status === 'buyer_claimed' ? 'Claimed' : sf.payment_status}
+                      {sf.payment_status === 'verified' ? t('notif.status.paid') : sf.payment_status === 'buyer_claimed' ? t('orderDetail.claimed') : sf.payment_status}
                     </Text>
                   </View>
                   <View style={[styles.miniBadge, { backgroundColor: sf.fulfillment_status === 'completed' ? COLORS.green + '20' : COLORS.blue + '20' }]}>
@@ -588,7 +588,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             accessibilityRole="button"
           >
             <MaterialCommunityIcons name="map-marker-radius" size={18} color={COLORS.white} />
-            <Text style={styles.meetupCtaBtnText}>Go to Meetup</Text>
+            <Text style={styles.meetupCtaBtnText}>{t('orderDetail.goToMeetup')}</Text>
           </TouchableOpacity>
         )}
 
@@ -696,7 +696,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
             <TextInput
               style={styles.reviewInput}
-              placeholder="Tell others about your experience (optional)"
+              placeholder={t('orderDetail.reviewPlaceholder')}
               placeholderTextColor={COLORS.text2}
               value={reviewComment}
               onChangeText={setReviewComment}
@@ -739,11 +739,11 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
             <Text style={styles.disputeLabel}>{t('orderDetail.disputeReason')}</Text>
             {[
-              { key: 'item_not_received', label: 'Item not received' },
-              { key: 'item_not_as_described', label: 'Item not as described' },
-              { key: 'damaged', label: 'Item arrived damaged' },
-              { key: 'wrong_item', label: 'Wrong item received' },
-              { key: 'other', label: 'Other' },
+              { key: 'item_not_received', label: t('dispute.itemNotReceived') },
+              { key: 'item_not_as_described', label: t('dispute.itemNotAsDescribed') },
+              { key: 'damaged', label: t('dispute.itemArrivedDamaged') },
+              { key: 'wrong_item', label: t('dispute.wrongItemReceived') },
+              { key: 'other', label: t('dispute.other') },
             ].map(reason => (
               <TouchableOpacity
                 key={reason.key}
@@ -765,7 +765,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
             <TextInput
               style={[styles.reviewInput, { marginTop: 12 }]}
-              placeholder="Describe the issue (optional)"
+              placeholder={t('orderDetail.disputeDescriptionOptional')}
               placeholderTextColor={COLORS.text2}
               value={disputeDescription}
               onChangeText={setDisputeDescription}
@@ -796,7 +796,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         visible={showCancelModal}
         title={t('orderDetail.cancelOrder')}
         message={t('orderDetail.cancelConfirm')}
-        confirmLabel="Yes, cancel"
+        confirmLabel={t('orderDetail.yesCancel')}
         cancelLabel={t('common.cancel')}
         kind="danger"
         onConfirm={() => {
@@ -810,7 +810,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         visible={showDeclineModal}
         title={t('orderDetail.declineMeetup')}
         message={t('orderDetail.declineMeetupConfirm')}
-        confirmLabel="Yes, decline"
+        confirmLabel={t('orderDetail.yesDecline')}
         cancelLabel={t('common.cancel')}
         kind="danger"
         onConfirm={() => {

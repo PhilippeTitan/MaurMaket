@@ -41,29 +41,29 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Step = 'info' | 'didit' | 'cinFront' | 'cropConfirm' | 'cinBack' | 'selfieTip' | 'selfie' | 'reviewAll' | 'processing' | 'result';
 type FailedStage = 'card' | 'details' | 'face' | null;
 
-const PHOTO_LABELS: Record<string, string> = { cinFront: 'ID front', cinBack: 'ID back', selfie: 'Selfie' };
+const PHOTO_LABEL_KEYS: Record<string, string> = { cinFront: 'verification.idFront', cinBack: 'verification.idBack', selfie: 'verification.selfie' };
 const STAGE_LIST = [
-  { key: 'card', label: 'Reading your ID card' },
-  { key: 'details', label: 'Checking your details' },
-  { key: 'face', label: 'Comparing your face' },
+  { key: 'card', labelKey: 'verification.stageCard' },
+  { key: 'details', labelKey: 'verification.stageDetails' },
+  { key: 'face', labelKey: 'verification.stageFace' },
 ];
-const FAILURE_COPY: Record<string, { title: string; detail: string; retakeLabel: string; retakeStep: Step }> = {
+const FAILURE_COPY: Record<string, { titleKey: string; detailKey: string; retakeLabelKey: string; retakeStep: Step }> = {
   card: {
-    title: "Couldn't read your ID clearly",
-    detail: 'The front or back photo was too blurry, glared, or cropped for us to read the text on it.',
-    retakeLabel: 'Retake ID photos',
+    titleKey: 'verification.failCardTitle',
+    detailKey: 'verification.failCardDetail',
+    retakeLabelKey: 'verification.retakeIdPhotos',
     retakeStep: 'cinFront',
   },
   details: {
-    title: "Your ID details didn't match",
-    detail: "The name, number, or date on your CIN doesn't match your profile. Double-check the card or your profile info.",
-    retakeLabel: 'Retake ID photos',
+    titleKey: 'verification.failDetailsTitle',
+    detailKey: 'verification.failDetailsDetail',
+    retakeLabelKey: 'verification.retakeIdPhotos',
     retakeStep: 'cinFront',
   },
   face: {
-    title: "We couldn't match your selfie",
-    detail: 'Your ID photos read fine — this is about the face comparison. Try again in brighter, even lighting.',
-    retakeLabel: 'Retake selfie only',
+    titleKey: 'verification.failFaceTitle',
+    detailKey: 'verification.failFaceDetail',
+    retakeLabelKey: 'verification.retakeSelfie',
     retakeStep: 'selfieTip',
   },
 };
@@ -99,9 +99,9 @@ export default function VerificationScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center', padding: SPACING.xl }}>
         <MaterialCommunityIcons name="camera-off-outline" size={44} color={COLORS.text2} />
-        <Text style={{ color: COLORS.text, fontSize: 20, fontWeight: '700', marginTop: SPACING.md }}>Verification camera disabled</Text>
+        <Text style={{ color: COLORS.text, fontSize: 20, fontWeight: '700', marginTop: SPACING.md }}>{t('verification.cameraDisabledTitle')}</Text>
         <Text style={{ color: COLORS.text2, fontSize: 14, textAlign: 'center', marginTop: SPACING.sm, maxWidth: 280 }}>
-          Camera-based verification is currently disabled while you work on the UI.
+          {t('verification.cameraDisabledDesc')}
         </Text>
       </View>
     );
@@ -190,7 +190,7 @@ export default function VerificationScreen() {
       setStep('didit');
     } catch (e: any) {
       console.log(`[VERIFY] Didit unavailable, using camera fallback: ${e?.message}`);
-      setDiditError(e?.message || 'Didit unavailable');
+      setDiditError(e?.message || t('verification.diditUnavailable'));
       setStep('cinFront');
     } finally {
       setDiditLoading(false);
@@ -201,10 +201,10 @@ export default function VerificationScreen() {
     if (!WebView) {
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: SPACING.lg }}>
-          <Text style={styles.infoTitle}>WebView not available</Text>
-          <Text style={styles.infoDesc}>Please use camera verification instead.</Text>
+          <Text style={styles.infoTitle}>{t('verification.webviewUnavailable')}</Text>
+          <Text style={styles.infoDesc}>{t('verification.useCameraInstead')}</Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('cinFront')}>
-            <Text style={styles.primaryBtnText}>Use Camera</Text>
+            <Text style={styles.primaryBtnText}>{t('verification.useCameraBtn')}</Text>
           </TouchableOpacity>
         </View>
       );
@@ -262,12 +262,12 @@ export default function VerificationScreen() {
     console.log(`[VERIFY-DEBUG] captureImage called, facing=${facing}, cameraReady=${cameraReady}, cameraRef=${!!cameraRef.current}`);
     if (!permission?.granted) {
       const p = await requestPermission();
-      if (!p.granted) { Alert.alert(t('common.error'), 'Camera permission is required'); return; }
+      if (!p.granted) { Alert.alert(t('common.error'), t('verification.cameraPermRequired')); return; }
     }
     try {
       if (!cameraRef.current) {
         console.log(`[VERIFY-DEBUG] ❌ cameraRef.current is null`);
-        Alert.alert('Camera not ready', 'Camera reference is null. Please go back and try again.');
+        Alert.alert(t('verification.cameraNotReady'), t('verification.cameraNull'));
         return;
       }
       console.log(`[VERIFY-DEBUG] Calling takePictureAsync...`);
@@ -275,7 +275,7 @@ export default function VerificationScreen() {
       console.log(`[VERIFY-DEBUG] takePictureAsync returned: ${JSON.stringify(photo ? { uri: photo.uri?.substring(0, 80), width: photo.width, height: photo.height, type: photo.type } : 'null')}`);
       if (!photo?.uri) {
         console.log(`[VERIFY-DEBUG] ❌ No photo URI returned`);
-        Alert.alert('Capture failed', 'Camera did not return a photo. Please try again.');
+        Alert.alert(t('verification.captureFailed'), t('verification.noPhoto'));
         setLoading(false);
         return;
       }
@@ -303,7 +303,7 @@ export default function VerificationScreen() {
     } catch (e: any) {
       console.log(`[VERIFY-DEBUG] ❌ captureImage error: ${e?.message}`, e?.stack?.split('\n').slice(0, 3).join(' | '));
       setLoading(false);
-      Alert.alert(t('common.error'), e?.message || 'Failed to capture image');
+      Alert.alert(t('common.error'), e?.message || t('verification.captureError'));
     }
   };
 
@@ -311,15 +311,15 @@ export default function VerificationScreen() {
     console.log(`[VERIFY-DEBUG] captureSelfie called, cameraReady=${cameraReady}, cameraRef=${!!cameraRef.current}`);
     if (!permission?.granted) {
       const p = await requestPermission();
-      if (!p.granted) { Alert.alert(t('common.error'), 'Camera permission is required'); return; }
+      if (!p.granted) { Alert.alert(t('common.error'), t('verification.cameraPermRequired')); return; }
     }
-    if (!cameraReady) { Alert.alert('Camera not ready', 'Please wait for the camera to initialize.'); return; }
+    if (!cameraReady) { Alert.alert(t('verification.cameraNotReady'), t('verification.cameraInit')); return; }
     try {
       await new Promise(r => setTimeout(r, 1000));
       setLoading(true);
       if (!cameraRef.current) {
         console.log(`[VERIFY-DEBUG] ❌ selfie cameraRef.current is null after 1s delay`);
-        Alert.alert('Camera not ready', 'Camera reference is null. Please go back and try again.');
+        Alert.alert(t('verification.cameraNotReady'), t('verification.cameraNull'));
         setLoading(false);
         return;
       }
@@ -342,7 +342,7 @@ export default function VerificationScreen() {
     } catch (e: any) {
       console.log(`[VERIFY-DEBUG] ❌ captureSelfie error: ${e?.message}`, e?.stack?.split('\n').slice(0, 3).join(' | '));
       setLoading(false);
-      Alert.alert(t('common.error'), e?.message || 'Failed to capture selfie');
+      Alert.alert(t('common.error'), e?.message || t('verification.selfieFailed'));
     }
   };
 
@@ -388,14 +388,14 @@ export default function VerificationScreen() {
           return newS;
         });
         setFailedStage(fs);
-        setRejectionReasons(res.attempt.reasons || [res.attempt.rejection_reason || 'Verification failed']);
+        setRejectionReasons(res.attempt.reasons || [res.attempt.rejection_reason || t('verification.failed')]);
         setTimeout(() => setStep('result'), 800);
       }
     } catch (e: any) {
       stageTimers.forEach(clearTimeout);
       setStages({ card: 'failed', details: 'pending', face: 'pending' });
       setFailedStage('card');
-      setRejectionReasons([e.message || 'Submission failed']);
+      setRejectionReasons([e.message || t('verification.submissionFailed')]);
       setTimeout(() => setStep('result'), 600);
     }
     setLoading(false);
@@ -439,8 +439,8 @@ export default function VerificationScreen() {
       <View style={styles.keptBanner}>
         <Icon name="check-circle" size={14} color={COLORS.green} />
         <Text style={styles.keptText}>
-          <Text style={{ fontWeight: '700' }}>Kept: </Text>
-          {kept.map(k => PHOTO_LABELS[k]).join(', ')} — only redoing this one
+          <Text style={{ fontWeight: '700' }}>{t('verification.kept')} </Text>
+          {kept.map(k => t(PHOTO_LABEL_KEYS[k])).join(', ')}{t('verification.onlyRedo')}
         </Text>
       </View>
     );
@@ -486,9 +486,9 @@ export default function VerificationScreen() {
       ) : !permission.granted ? (
         <View style={styles.permissionWrap}>
           <MaterialCommunityIcons name="camera-off-outline" size={48} color={COLORS.text2} />
-          <Text style={styles.permissionText}>Camera access is required</Text>
+          <Text style={styles.permissionText}>{t('verification.cameraAccessRequired')}</Text>
           <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
-            <Text style={styles.permissionBtnText}>Grant Permission</Text>
+            <Text style={styles.permissionBtnText}>{t('verification.grantPermission')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -502,7 +502,7 @@ export default function VerificationScreen() {
           {!cameraReady && (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
               <ActivityIndicator size="large" color={COLORS.coral} />
-              <Text style={{ color: COLORS.white, marginTop: 12, fontSize: 14 }}>Initializing camera...</Text>
+              <Text style={{ color: COLORS.white, marginTop: 12, fontSize: 14 }}>{t('verification.initializingCamera')}</Text>
             </View>
           )}
         </>
@@ -522,15 +522,15 @@ export default function VerificationScreen() {
       <View style={styles.infoIcon}>
         <Icon name="secure-account" size={48} color={COLORS.coral} />
       </View>
-      <Text style={styles.infoTitle}>Verify your identity</Text>
+      <Text style={styles.infoTitle}>{t('verification.verifyIdentity')}</Text>
       <Text style={styles.infoDesc}>
-        Verified Sellers get a trust badge and lower commission. We'll check your Haitian CIN and a selfie — most people are done in under a minute.
+        {t('verification.infoDesc')}
       </Text>
       <View style={styles.requirements}>
         {[
-          ["You'll confirm each photo before it's used", 'card-account-details-outline'],
-          ["We'll tell you exactly what to fix if something fails", 'alert-circle-outline'],
-          ["Only your selfie needs retaking if the ID was fine", 'refresh'],
+          [t('verification.req1'), 'card-account-details-outline'],
+          [t('verification.req2'), 'alert-circle-outline'],
+          [t('verification.req3'), 'refresh'],
         ].map(([txt, icon], i) => (
           <View key={i} style={styles.reqItem}>
             <MaterialCommunityIcons name={icon as any} size={20} color={COLORS.coral} />
@@ -541,7 +541,7 @@ export default function VerificationScreen() {
       <TouchableOpacity style={styles.primaryBtn} onPress={launchDidit} disabled={diditLoading}>
         {diditLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
           <>
-            <Text style={styles.primaryBtnText}>Start verification</Text>
+            <Text style={styles.primaryBtnText}>{t('verification.startBtn')}</Text>
             <Icon name="chevron-right" size={18} color={COLORS.white} />
           </>
         )}
@@ -561,10 +561,10 @@ export default function VerificationScreen() {
     return (
       <View style={{ flex: 1, paddingHorizontal: SPACING.lg }}>
         <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: SPACING.lg + insets.bottom + 8 }}>
-          <Text style={styles.eyebrow}>Quick check</Text>
-          <Text style={styles.infoTitle}>Is this your face?</Text>
+          <Text style={styles.eyebrow}>{t('verification.quickCheck')}</Text>
+          <Text style={styles.infoTitle}>{t('verification.isThisYourFace')}</Text>
           <Text style={styles.infoDesc}>
-            Drag the box to move it, drag the corner handle to resize. Center it on your photo on the card.
+            {t('verification.cropDesc')}
           </Text>
           {renderKeptBanner('cinFront')}
 
@@ -593,7 +593,7 @@ export default function VerificationScreen() {
           </View>
 
           <Text style={{ fontSize: 12, color: COLORS.text2, textAlign: 'center', marginBottom: 16 }}>
-            Drag box to move · drag corner dot to resize
+            {t('verification.cropHint')}
           </Text>
 
           <View style={{ flex: 1, minHeight: 20 }} />
@@ -626,13 +626,13 @@ export default function VerificationScreen() {
             {loading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
               <>
                 <Icon name="check" size={16} color={COLORS.white} />
-                <Text style={styles.primaryBtnText}>Use this crop</Text>
+                <Text style={styles.primaryBtnText}>{t('verification.useCrop')}</Text>
               </>
             )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.outlineBtn} onPress={() => setStep('cinFront')}>
             <Icon name="back" size={15} color={COLORS.text} />
-            <Text style={styles.outlineBtnText}>Retake the whole photo instead</Text>
+            <Text style={styles.outlineBtnText}>{t('verification.retakeAll')}</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -644,12 +644,12 @@ export default function VerificationScreen() {
       <View style={[styles.infoIcon, { backgroundColor: `${COLORS.blue}1f` }]}>
         <MaterialCommunityIcons name="lightbulb-outline" size={36} color={COLORS.blue} />
       </View>
-      <Text style={styles.eyebrow}>Step 3 of 3</Text>
-      <Text style={styles.infoTitle}>Before your selfie</Text>
-      <Text style={styles.infoDesc}>Front cameras are lower quality, so a few things really help the match:</Text>
+      <Text style={styles.eyebrow}>{t('verification.step3of3')}</Text>
+      <Text style={styles.infoTitle}>{t('verification.selfieTitle')}</Text>
+      <Text style={styles.infoDesc}>{t('verification.selfieDesc')}</Text>
       {renderKeptBanner('selfie')}
       <View style={styles.tipsList}>
-        {['Face a window or light — not a dark room', 'Keep your whole face in frame, no hats or sunglasses', 'Hold the phone steady at eye level'].map((tip, i) => (
+        {[t('verification.tip1'), t('verification.tip2'), t('verification.tip3')].map((tip, i) => (
           <View key={i} style={styles.tipItem}>
             <View style={styles.tipNum}>
               <Text style={styles.tipNumText}>{i + 1}</Text>
@@ -660,7 +660,7 @@ export default function VerificationScreen() {
       </View>
       <View style={{ flex: 1, minHeight: 20 }} />
       <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('selfie')}>
-        <Text style={styles.primaryBtnText}>Got it, continue</Text>
+        <Text style={styles.primaryBtnText}>{t('verification.gotIt')}</Text>
         <Icon name="chevron-right" size={18} color={COLORS.white} />
       </TouchableOpacity>
     </ScrollView>
@@ -668,15 +668,15 @@ export default function VerificationScreen() {
 
   const renderReviewAll = () => (
     <ScrollView contentContainerStyle={contentStyle}>
-      <Text style={styles.infoTitle}>Review before submitting</Text>
-      <Text style={styles.infoDesc}>Anything look off? Retake just that one — you don't need to redo the rest.</Text>
+      <Text style={styles.infoTitle}>{t('verification.reviewTitle')}</Text>
+      <Text style={styles.infoDesc}>{t('verification.reviewDesc')}</Text>
 
       <View style={styles.reviewGrid}>
         {[
-          { key: 'cinFront', label: 'ID front', goto: 'cinFront' as Step, uri: frontPhotoUri },
-          { key: 'cinBack', label: 'ID back', goto: 'cinBack' as Step, uri: idBackUrl },
-          { key: 'face', label: 'Cropped face', goto: 'cropConfirm' as Step, uri: croppedFaceUri },
-          { key: 'selfie', label: 'Selfie', goto: 'selfieTip' as Step, uri: selfieUrl },
+          { key: 'cinFront', label: t('verification.idFront'), goto: 'cinFront' as Step, uri: frontPhotoUri },
+          { key: 'cinBack', label: t('verification.idBack'), goto: 'cinBack' as Step, uri: idBackUrl },
+          { key: 'face', label: t('verification.croppedFace'), goto: 'cropConfirm' as Step, uri: croppedFaceUri },
+          { key: 'selfie', label: t('verification.selfie'), goto: 'selfieTip' as Step, uri: selfieUrl },
         ].map((item) => (
           <View key={item.key} style={styles.reviewCard}>
             <View style={[styles.reviewThumb, item.key === 'face' && { borderRadius: 32 }]}>
@@ -688,7 +688,7 @@ export default function VerificationScreen() {
             </View>
             <Text style={styles.reviewLabel}>{item.label}</Text>
             <TouchableOpacity onPress={() => setStep(item.goto)}>
-              <Text style={styles.retakeBtn}>Retake</Text>
+              <Text style={styles.retakeBtn}>{t('verification.retake')}</Text>
             </TouchableOpacity>
           </View>
         ))}
@@ -699,7 +699,7 @@ export default function VerificationScreen() {
         {loading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
           <>
             <Icon name="check-circle" size={16} color={COLORS.white} />
-            <Text style={styles.primaryBtnText}>Submit for verification</Text>
+            <Text style={styles.primaryBtnText}>{t('verification.submitBtn')}</Text>
           </>
         )}
       </TouchableOpacity>
@@ -708,8 +708,8 @@ export default function VerificationScreen() {
 
   const renderProcessing = () => (
     <View style={styles.processingWrap}>
-      <Text style={styles.infoTitle}>Verifying…</Text>
-      <Text style={[styles.infoDesc, { marginBottom: 28 }]}>Usually takes a few seconds</Text>
+      <Text style={styles.infoTitle}>{t('verification.verifying')}</Text>
+      <Text style={[styles.infoDesc, { marginBottom: 28 }]}>{t('verification.usuallyFewSeconds')}</Text>
       {STAGE_LIST.map((stage) => {
         const status = stages[stage.key] || 'pending';
         return (
@@ -725,7 +725,7 @@ export default function VerificationScreen() {
               {status === 'active' && <ActivityIndicator size="small" color={COLORS.coral} />}
               {status === 'pending' && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.text2 }} />}
             </View>
-            <Text style={[styles.stageLabel, status !== 'pending' && { color: COLORS.text }]}>{stage.label}</Text>
+            <Text style={[styles.stageLabel, status !== 'pending' && { color: COLORS.text }]}>{t(stage.labelKey)}</Text>
           </View>
         );
       })}
@@ -739,12 +739,12 @@ export default function VerificationScreen() {
           <View style={[styles.resultIcon, { backgroundColor: COLORS.green }]}>
             <Icon name="check-circle" size={40} color="#06231A" />
           </View>
-          <Text style={styles.infoTitle}>You're verified</Text>
+          <Text style={styles.infoTitle}>{t('verification.verifiedTitle')}</Text>
           <Text style={styles.infoDesc}>
-            Your ID and selfie matched. You're now a Verified Seller with a trust badge and lower commission.
+            {t('verification.verifiedDesc')}
           </Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={() => { invalidateUser(); nav.goBack(); }}>
-            <Text style={styles.primaryBtnText}>Done</Text>
+            <Text style={styles.primaryBtnText}>{t('common.done')}</Text>
           </TouchableOpacity>
         </View>
       );
@@ -756,8 +756,8 @@ export default function VerificationScreen() {
         <View style={[styles.resultIcon, { borderWidth: 1.5, borderColor: COLORS.coral, backgroundColor: COLORS.surface2 }]}>
           <MaterialCommunityIcons name="alert-circle-outline" size={32} color={COLORS.coral} />
         </View>
-        <Text style={styles.infoTitle}>{info.title}</Text>
-        <Text style={styles.infoDesc}>{info.detail}</Text>
+        <Text style={styles.infoTitle}>{t(info.titleKey)}</Text>
+        <Text style={styles.infoDesc}>{t(info.detailKey)}</Text>
 
         {rejectionReasons.length > 0 && (
           <View style={styles.rejectionBox}>
@@ -776,9 +776,9 @@ export default function VerificationScreen() {
             return (
               <View key={s.key} style={styles.stageCheckRow}>
                 {failed ? <Icon name="close" size={14} color={COLORS.coral} /> : <Icon name="check" size={14} color={COLORS.green} />}
-                <Text style={[styles.stageCheckLabel, failed && { color: COLORS.text, fontWeight: '700' }]}>{s.label}</Text>
+                <Text style={[styles.stageCheckLabel, failed && { color: COLORS.text, fontWeight: '700' }]}>{t(s.labelKey)}</Text>
                 <Text style={[styles.stageCheckStatus, failed ? { color: COLORS.coral } : { color: COLORS.green }]}>
-                  {failed ? 'NEEDS RETAKE' : 'PASSED'}
+                  {failed ? t('verification.needsRetake') : t('verification.passed')}
                 </Text>
               </View>
             );
@@ -787,10 +787,10 @@ export default function VerificationScreen() {
 
         <TouchableOpacity style={styles.primaryBtn} onPress={() => retakeOnly(info.retakeStep)}>
           <Icon name="back" size={16} color={COLORS.white} />
-          <Text style={styles.primaryBtnText}>{info.retakeLabel}</Text>
+          <Text style={styles.primaryBtnText}>{t(info.retakeLabelKey)}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.ghostBtn} onPress={() => nav.goBack()}>
-          <Text style={styles.ghostBtnText}>Cancel for now</Text>
+          <Text style={styles.ghostBtnText}>{t('verification.cancelForNow')}</Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -798,7 +798,7 @@ export default function VerificationScreen() {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Verification" onBack={() => nav.goBack()} />
+      <ScreenHeader title={t('verification.title')} onBack={() => nav.goBack()} />
       {step !== 'info' && step !== 'didit' && step !== 'processing' && step !== 'result' && (
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${stepProgress()}%` }]} />
@@ -807,11 +807,11 @@ export default function VerificationScreen() {
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         {step === 'info' && renderInfo()}
         {step === 'didit' && renderDidit()}
-        {step === 'cinFront' && renderCamera('back', () => captureImage('front'), 'Capture the front of your CIN', 'Align card inside the frame, avoid glare')}
+        {step === 'cinFront' && renderCamera('back', () => captureImage('front'), t('verification.captureFrontLabel'), t('verification.captureFrontHint'))}
         {step === 'cropConfirm' && renderCropConfirm()}
-        {step === 'cinBack' && renderCamera('back', () => captureImage('back'), 'Capture the back of your CIN', 'Align card inside the frame, text in focus')}
+        {step === 'cinBack' && renderCamera('back', () => captureImage('back'), t('verification.captureBackLabel'), t('verification.captureBackHint'))}
         {step === 'selfieTip' && renderSelfieTip()}
-        {step === 'selfie' && renderCamera('front', captureSelfie, 'Take your selfie', 'Center your face in the guide')}
+        {step === 'selfie' && renderCamera('front', captureSelfie, t('verification.selfieLabel'), t('verification.selfieHint'))}
         {step === 'reviewAll' && renderReviewAll()}
         {step === 'processing' && renderProcessing()}
         {step === 'result' && renderResult()}
