@@ -77,8 +77,7 @@ export default function UsernameSettingsScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
           <SettingsGroup
-            header="Username"
-            accentColor={COLORS.blue}
+            header={t('field.username')}
             description={t('username.hint')}
           >
             <View style={styles.inputCard}>

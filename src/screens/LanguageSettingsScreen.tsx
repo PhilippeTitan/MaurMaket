@@ -48,7 +48,6 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
           <SettingsGroup
             header={t('language.select')}
-            accentColor={COLORS.coral}
             description={t('language.selectDesc')}
           >
             {LANGUAGES.map((lang) => {

@@ -113,7 +113,7 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
 
         {/* Accent Color */}
         <Animated.View style={animStyle(1)}>
-          <SettingsGroup header={t('appearance.accentColor')} accentColor={selectedAccent}>
+          <SettingsGroup header={t('appearance.accentColor')}>
             <View style={styles.colorGrid}>
               {ACCENT_COLORS.map(color => (
                 <TouchableOpacity

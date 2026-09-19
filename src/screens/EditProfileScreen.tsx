@@ -103,21 +103,20 @@ export default function EditProfileScreen({ navigation }: Props) {
               </View>
             </View>
             <Text style={styles.photoLabel}>
-              {avatarUploading ? 'Uploading...' : t('me.editProfile')}
+              {avatarUploading ? t('common.loading') : t('me.editProfile')}
             </Text>
           </TouchableOpacity>
 
           {/* ── Profile Fields ── */}
           <SettingsGroup
-            header="Profile"
-            accentColor={COLORS.blue}
-            description="Manage your display information"
+            header={t('settings.profile')}
+            description={t('settingsEdit.fullNameDesc')}
           >
             <SettingsRow
               icon="at"
               iconBg={COLORS.surface2}
               label="Username"
-              value={user?.username ? `@${user.username}` : 'Not set'}
+              value={user?.username ? `@${user.username}` : t('common.notSet')}
               chevron
               onPress={() => navigation.navigate('UsernameSettings')}
               divider

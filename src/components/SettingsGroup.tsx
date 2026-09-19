@@ -16,9 +16,9 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   /** Additional style for the card container */
   cardStyle?: StyleProp<ViewStyle>;
-  /** Icon name to render as a leading accent dot */
+  /** @deprecated No longer rendered — accent dot removed from headers */
   accentIcon?: string;
-  /** Accent color for the header icon dot */
+  /** @deprecated No longer rendered — accent dot removed from headers */
   accentColor?: string;
 }
 
@@ -44,13 +44,11 @@ export default function SettingsGroup({
   footer,
   style,
   cardStyle,
-  accentColor = ONBOARDING_COLORS.violet,
 }: Props) {
   return (
     <View style={[styles.container, style]}>
       {header ? (
         <View style={styles.headerRow}>
-          <View style={[styles.accentDot, { backgroundColor: accentColor }]} />
           <Text style={styles.header}>{header}</Text>
         </View>
       ) : null}
@@ -72,18 +70,9 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginHorizontal: SPACING.lg,
     marginBottom: SPACING.sm,
     marginTop: SPACING.lg,
-    gap: SPACING.sm,
-  },
-  accentDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    opacity: 0.9,
   },
   header: {
     fontSize: FONT_SIZES.sm,

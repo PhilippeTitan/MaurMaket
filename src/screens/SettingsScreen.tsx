@@ -84,7 +84,6 @@ export default function SettingsScreen({ navigation }: Props) {
         <Animated.View style={animStyle(1)}>
           <SettingsGroup
             header={t('settings.sectionAccount')}
-            accentColor={COLORS.blue}
           >
             <SettingsRow
               icon="account-cog-outline"
@@ -150,7 +149,6 @@ export default function SettingsScreen({ navigation }: Props) {
         <Animated.View style={animStyle(5)}>
           <SettingsGroup
             header={t('settings.sectionPrivacy')}
-            accentColor="#8B5CF6"
           >
             <SettingsRow
               icon="eye-outline"
@@ -166,7 +164,6 @@ export default function SettingsScreen({ navigation }: Props) {
         <Animated.View style={animStyle(6)}>
           <SettingsGroup
             header={t('settings.sectionSelling')}
-            accentColor={isSeller ? COLORS.blue : COLORS.coral}
           >
             <SettingsRow
               icon={isSeller ? 'storefront-outline' : 'store-plus-outline'}
