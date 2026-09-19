@@ -106,11 +106,8 @@ export default function SellerOnboardingScreen() {
       const success = await handleCompleteWithTier('casual');
       if (success) setStep('done');
     } else if (tier === 'verified') {
-      if (!store.isSeller) {
-        const success = await handleCompleteWithTier('casual');
-        if (!success) return;
-      }
-      setTimeout(() => nav.navigate('Verification'), 100);
+      const success = await handleCompleteWithTier('verified');
+      if (success) setStep('done');
     } else if (tier === 'business') {
       setStep('store');
     }
@@ -182,10 +179,10 @@ export default function SellerOnboardingScreen() {
 
             {tiers.map((tier) => {
               const isCurrent = tier.key === currentTier;
-              const isDowngrade = tierOrder.indexOf(tier.key) <= currentIdx;
+              const isHigher = tierOrder.indexOf(tier.key) > currentIdx;
               const needsVerification = tier.key === 'verified' && !store.user?.id_verified;
               const needsVerifiedFirst = tier.key === 'business' && currentIdx < tierOrder.indexOf('verified');
-              const locked = isDowngrade || needsVerification || needsVerifiedFirst;
+              const locked = !isHigher || needsVerification || needsVerifiedFirst;
               const disabled = loading || locked;
               return (
                 <TouchableOpacity
@@ -216,7 +213,7 @@ export default function SellerOnboardingScreen() {
                       ))}
                     </View>
                   </View>
-                  {!isDowngrade && <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />}
+                  {!isCurrent && !locked && <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />}
                 </TouchableOpacity>
               );
             })}
