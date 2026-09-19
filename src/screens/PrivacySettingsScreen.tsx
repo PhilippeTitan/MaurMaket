@@ -74,46 +74,46 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
     try {
       await updateProfile({ showRealName: String(newVal) });
       await store.setUser({ ...store.user!, show_real_name: newVal } as any, store.token!);
-      toast.show({ kind: 'success', title: newVal ? 'Profile is now public' : 'Profile is now private' });
+      toast.show({ kind: 'success', title: newVal ? t('privacy.profileNowPublic') : t('privacy.profileNowPrivate') });
     } catch {
       setProfilePublic(!newVal);
-      toast.show({ kind: 'error', title: 'Failed to update profile visibility' });
+      toast.show({ kind: 'error', title: t('privacy.profileVisibilityFailed') });
     }
     setLoading(false);
   };
 
   const handleToggleActivity = () => {
     setShowActivity(!showActivity);
-    toast.show({ kind: 'success', title: showActivity ? 'Activity hidden' : 'Activity visible' });
+    toast.show({ kind: 'success', title: showActivity ? t('privacy.activityHidden') : t('privacy.activityVisible') });
   };
 
   const handleToggleLocation = () => {
     setLocationSharing(!locationSharing);
-    toast.show({ kind: 'success', title: locationSharing ? 'Location sharing disabled' : 'Location sharing enabled' });
+    toast.show({ kind: 'success', title: locationSharing ? t('privacy.locationDisabledToast') : t('privacy.locationEnabledToast') });
   };
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Privacy" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('privacy.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* ── Profile Visibility ── */}
         <Animated.View style={animStyle(0)}>
           <SettingsGroup
-            header="Profile visibility"
-            description="Control what others see on your profile"
+            header={t('settings.profileVisibility')}
+            description={t('privacy.profileVisibilityDesc')}
           >
             <View style={styles.toggleRow}>
               <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="eye-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>Public profile</Text>
+                <Text style={styles.toggleLabel}>{t('privacy.publicProfile')}</Text>
                 <Text style={styles.toggleSubtitle}>
                   {profilePublic
-                    ? 'Your name and profile are visible to everyone'
-                    : 'Only your username is visible to others'}
+                    ? t('privacy.publicProfileOn')
+                    : t('privacy.publicProfileOff')}
                 </Text>
               </View>
               <Switch
@@ -130,19 +130,19 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
         {/* ── Discoverability ── */}
         <Animated.View style={animStyle(1)}>
           <SettingsGroup
-            header="Discoverability"
-            description="Control how others can find you"
+            header={t('privacy.discoverability')}
+            description={t('privacy.discoverabilityDesc')}
           >
             <View style={styles.toggleRow}>
               <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="map-marker-radius-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>Location sharing</Text>
+                <Text style={styles.toggleLabel}>{t('privacy.locationSharing')}</Text>
                 <Text style={styles.toggleSubtitle}>
                   {locationSharing
-                    ? 'Your location is visible on the map'
-                    : 'Other users cannot see your location'}
+                    ? t('privacy.locationSharingOn')
+                    : t('privacy.locationSharingOff')}
                 </Text>
               </View>
               <Switch
@@ -162,8 +162,8 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
                 <MaterialCommunityIcons name="map-marker-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>Delivery location</Text>
-                <Text style={styles.toggleSubtitle}>{user?.location_city || 'Set your delivery area'}</Text>
+                <Text style={styles.toggleLabel}>{t('settings.deliveryLocation')}</Text>
+                <Text style={styles.toggleSubtitle}>{user?.location_city || t('account.setLocation')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
@@ -173,19 +173,19 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
         {/* ── Data & Control ── */}
         <Animated.View style={animStyle(2)}>
           <SettingsGroup
-            header="Data & control"
-            description="Manage your data and interactions"
+            header={t('privacy.dataControl')}
+            description={t('privacy.dataControlDesc')}
           >
             <View style={styles.toggleRow}>
               <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="clock-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>Show activity status</Text>
+                <Text style={styles.toggleLabel}>{t('privacy.showActivity')}</Text>
                 <Text style={styles.toggleSubtitle}>
                   {showActivity
-                    ? 'Others can see when you\'re online'
-                    : 'Your online status is hidden'}
+                    ? t('privacy.showActivityOn')
+                    : t('privacy.showActivityOff')}
                 </Text>
               </View>
               <Switch
@@ -199,14 +199,14 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.6}
-              onPress={() => toast.show({ kind: 'info', title: 'Blocked users list coming soon' })}
+              onPress={() => toast.show({ kind: 'info', title: t('privacy.blockedUsersSoon') })}
             >
               <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="account-cancel-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>Blocked users</Text>
-                <Text style={styles.toggleSubtitle}>Manage users you've blocked</Text>
+                <Text style={styles.toggleLabel}>{t('privacy.blockedUsers')}</Text>
+                <Text style={styles.toggleSubtitle}>{t('privacy.blockedUsersDesc')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
@@ -214,14 +214,14 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.6}
-              onPress={() => toast.show({ kind: 'info', title: 'Data export coming soon' })}
+              onPress={() => toast.show({ kind: 'info', title: t('privacy.dataExportSoon') })}
             >
               <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="database-outline" size={20} color={COLORS.white} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>Your data</Text>
-                <Text style={styles.toggleSubtitle}>Download or manage your account data</Text>
+                <Text style={styles.toggleLabel}>{t('privacy.yourData')}</Text>
+                <Text style={styles.toggleSubtitle}>{t('privacy.yourDataDesc')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
@@ -232,7 +232,7 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
         <Animated.View style={animStyle(3)}>
           <View style={styles.banner}>
             <MaterialCommunityIcons name="shield-lock" size={20} color="#8B5CF6" />
-            <Text style={styles.bannerText}>We never sell your data to third parties</Text>
+            <Text style={styles.bannerText}>{t('privacy.noSellingBanner')}</Text>
           </View>
         </Animated.View>
 

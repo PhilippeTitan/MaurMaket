@@ -19,15 +19,15 @@ import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SettingsEdit'>;
 
-const FIELD_META: Record<string, { placeholder: string; icon: string; iconColor: string; iconBg: string; description: string; keyboardType?: string; secure?: boolean; multiline?: boolean }> = {
-  name: { placeholder: 'Full name', icon: 'account-outline', iconColor: ONBOARDING_COLORS.coral, iconBg: 'rgba(255, 77, 106, 0.15)', description: 'Your display name shown on your profile' },
-  email: { placeholder: 'Email', icon: 'email-outline', iconColor: ONBOARDING_COLORS.blue, iconBg: 'rgba(0, 194, 255, 0.15)', description: 'Your login email address', keyboardType: 'email-address' },
-  phone: { placeholder: 'Phone', icon: 'phone-outline', iconColor: ONBOARDING_COLORS.green, iconBg: 'rgba(0, 229, 160, 0.15)', description: 'MonCash payment number', keyboardType: 'phone-pad' },
-  phones: { placeholder: 'Phone numbers', icon: 'phone-outline', iconColor: ONBOARDING_COLORS.green, iconBg: 'rgba(0, 229, 160, 0.15)', description: 'Manage your payment numbers' },
-  natcash_phone: { placeholder: 'NatCash number', icon: 'cellphone', iconColor: ONBOARDING_COLORS.purple, iconBg: 'rgba(139, 92, 246, 0.15)', description: 'For direct NatCash transfers', keyboardType: 'phone-pad' },
-  bio: { placeholder: 'Tell us about yourself...', icon: 'text-short', iconColor: ONBOARDING_COLORS.coral, iconBg: 'rgba(255, 77, 106, 0.15)', description: 'Short bio visible on your profile', multiline: true },
-  password: { placeholder: 'New password', icon: 'lock-outline', iconColor: ONBOARDING_COLORS.yellow, iconBg: 'rgba(255, 224, 102, 0.15)', description: 'Choose a strong new password', secure: true },
-  storeName: { placeholder: 'Store name', icon: 'storefront-outline', iconColor: ONBOARDING_COLORS.blue, iconBg: 'rgba(0, 194, 255, 0.15)', description: 'Your public store name for buyers' },
+const FIELD_META: Record<string, { placeholderKey: string; icon: string; iconColor: string; iconBg: string; descriptionKey: string; keyboardType?: string; secure?: boolean; multiline?: boolean }> = {
+  name: { placeholderKey: 'settingsEdit.fullNamePlaceholder', icon: 'account-outline', iconColor: ONBOARDING_COLORS.coral, iconBg: 'rgba(255, 77, 106, 0.15)', descriptionKey: 'settingsEdit.fullNameDesc' },
+  email: { placeholderKey: 'field.email', icon: 'email-outline', iconColor: ONBOARDING_COLORS.blue, iconBg: 'rgba(0, 194, 255, 0.15)', descriptionKey: 'settingsEdit.emailDesc', keyboardType: 'email-address' },
+  phone: { placeholderKey: 'field.phone', icon: 'phone-outline', iconColor: ONBOARDING_COLORS.green, iconBg: 'rgba(0, 229, 160, 0.15)', descriptionKey: 'settingsEdit.phoneDesc', keyboardType: 'phone-pad' },
+  phones: { placeholderKey: 'settingsEdit.phonesPlaceholder', icon: 'phone-outline', iconColor: ONBOARDING_COLORS.green, iconBg: 'rgba(0, 229, 160, 0.15)', descriptionKey: 'settingsEdit.phonesDesc' },
+  natcash_phone: { placeholderKey: 'settingsEdit.natcashPlaceholder', icon: 'cellphone', iconColor: ONBOARDING_COLORS.purple, iconBg: 'rgba(139, 92, 246, 0.15)', descriptionKey: 'settingsEdit.natcashDesc', keyboardType: 'phone-pad' },
+  bio: { placeholderKey: 'settingsEdit.bioPlaceholder', icon: 'text-short', iconColor: ONBOARDING_COLORS.coral, iconBg: 'rgba(255, 77, 106, 0.15)', descriptionKey: 'settingsEdit.bioDesc', multiline: true },
+  password: { placeholderKey: 'settings.newPassword', icon: 'lock-outline', iconColor: ONBOARDING_COLORS.yellow, iconBg: 'rgba(255, 224, 102, 0.15)', descriptionKey: 'settingsEdit.newPasswordDesc', secure: true },
+  storeName: { placeholderKey: 'field.storeName', icon: 'storefront-outline', iconColor: ONBOARDING_COLORS.blue, iconBg: 'rgba(0, 194, 255, 0.15)', descriptionKey: 'settingsEdit.storeNameDesc' },
 };
 
 export default function SettingsEditScreen({ route, navigation }: Props) {
@@ -88,9 +88,9 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
     setSendingVerification(true);
     try {
       await resendVerificationEmail(user.email);
-      toast.show({ kind: 'success', title: 'Verification email sent!' });
+      toast.show({ kind: 'success', title: t('settingsEdit.verificationEmailSent') });
     } catch (err: unknown) {
-      toast.show({ kind: 'error', title: err instanceof Error ? err.message : 'Failed to resend' });
+      toast.show({ kind: 'error', title: err instanceof Error ? err.message : t('settingsEdit.resendFailed') });
     } finally {
       setSendingVerification(false);
     }
@@ -108,10 +108,10 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
         const res = await updateProfile({ fullName: combined }) as { user: typeof user };
         if (res.user) await store.setUser(res.user, store.token);
         Alert.alert(t('common.saved'), t('settingsEdit.updated', { field: title }), [
-          { text: 'OK', onPress: () => navigation.goBack() },
+          { text: t('common.ok'), onPress: () => navigation.goBack() },
         ]);
       } catch (err: unknown) {
-        Alert.alert(t('common.error'), err instanceof Error ? err.message : 'Failed');
+        Alert.alert(t('common.error'), err instanceof Error ? err.message : t('settings.failed'));
       }
       setLoading(false);
       return;
@@ -158,10 +158,10 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
         }
       }
       Alert.alert(t('common.saved'), t('settingsEdit.updated', { field: title }), [
-        { text: 'OK', onPress: () => navigation.goBack() },
+        { text: t('common.ok'), onPress: () => navigation.goBack() },
       ]);
     } catch (err: unknown) {
-      Alert.alert(t('common.error'), err instanceof Error ? err.message : 'Failed');
+      Alert.alert(t('common.error'), err instanceof Error ? err.message : t('settings.failed'));
     }
     setLoading(false);
   };
@@ -191,7 +191,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
             <View style={[styles.iconContainer, { backgroundColor: meta.iconBg }]}>
               <MaterialCommunityIcons name={meta.icon as any} size={20} color={meta.iconColor} />
             </View>
-            <Text style={styles.fieldDescription}>{meta.description}</Text>
+            <Text style={styles.fieldDescription}>{t(meta.descriptionKey)}</Text>
           </View>
 
           {field === 'phones' ? (
@@ -205,10 +205,10 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                   </View>
                   <View style={styles.paymentInfo}>
                     <Text style={styles.paymentName}>MonCash</Text>
-                    <Text style={styles.paymentSub}>Primary payment number</Text>
+                    <Text style={styles.paymentSub}>{t('settingsEdit.primaryPayment')}</Text>
                   </View>
                   <View style={[styles.paymentBadge, { backgroundColor: COLORS.blueMuted, borderColor: COLORS.blue + '30' }]}>
-                    <Text style={[styles.paymentBadgeText, { color: COLORS.blue }]}>Primary</Text>
+                    <Text style={[styles.paymentBadgeText, { color: COLORS.blue }]}>{t('settingsEdit.badgePrimary')}</Text>
                   </View>
                 </View>
                 <View style={styles.inputContainer}>
@@ -217,7 +217,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                     style={styles.input}
                     value={value}
                     onChangeText={setValue}
-                    placeholder="Phone number"
+                    placeholder={t('field.phone')}
                     placeholderTextColor={COLORS.text3}
                     keyboardType="phone-pad"
                     autoFocus
@@ -234,10 +234,10 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                   </View>
                   <View style={styles.paymentInfo}>
                     <Text style={styles.paymentName}>NatCash</Text>
-                    <Text style={styles.paymentSub}>For direct NatCash transfers</Text>
+                    <Text style={styles.paymentSub}>{t('settingsEdit.natcashDesc')}</Text>
                   </View>
                   <View style={[styles.paymentBadge, { backgroundColor: COLORS.purpleMuted, borderColor: COLORS.purple + '30' }]}>
-                    <Text style={[styles.paymentBadgeText, { color: COLORS.purple }]}>Optional</Text>
+                    <Text style={[styles.paymentBadgeText, { color: COLORS.purple }]}>{t('settingsEdit.badgeOptional')}</Text>
                   </View>
                 </View>
                 <View style={[styles.inputContainer, { borderColor: COLORS.purple + '30' }]}>
@@ -246,7 +246,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                     style={styles.input}
                     value={natcashValue}
                     onChangeText={setNatcashValue}
-                    placeholder="Number"
+                    placeholder={t('field.phone')}
                     placeholderTextColor={COLORS.text3}
                     keyboardType="phone-pad"
                     accessibilityLabel="NatCash phone number"
@@ -302,7 +302,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                   style={[styles.input, field === 'bio' && styles.multilineInput]}
                   value={value}
                   onChangeText={setValue}
-                  placeholder={meta.placeholder}
+                  placeholder={t(meta.placeholderKey)}
                   placeholderTextColor={COLORS.text3}
                   secureTextEntry={meta.secure}
                   keyboardType={(meta.keyboardType as any) || 'default'}
@@ -346,9 +346,9 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
                 <MaterialCommunityIcons name="email-fast-outline" size={18} color={COLORS.white} />
               </View>
               <View style={styles.verifyTextWrap}>
-                <Text style={styles.verifyTitle}>Verify your email</Text>
+                <Text style={styles.verifyTitle}>{t('verify.title')}</Text>
                 <Text style={styles.verifySubtitle}>
-                  {sendingVerification ? 'Sending verification link…' : 'Resend verification link'}
+                  {sendingVerification ? t('settingsEdit.sendingVerificationLink') : t('settingsEdit.resendVerificationLink')}
                 </Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />

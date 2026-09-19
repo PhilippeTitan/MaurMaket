@@ -18,10 +18,19 @@ interface NotifToggle {
   icon: string;
   iconColor: string;
   iconBg: string;
-  label: string;
-  subtitle: string;
+  labelKey: string;
+  subtitleKey: string;
   defaultValue: boolean;
 }
+
+// Toggle names shown in toasts, per data key
+const TOGGLE_NAMES: Record<string, string> = {
+  order_updates: 'notifSettings.orderUpdates',
+  messages: 'notifSettings.messages',
+  offers: 'notifSettings.offers',
+  product_activity: 'notifSettings.productActivity',
+  system: 'notifSettings.systemUpdates',
+};
 
 const NOTIF_TOGGLES: NotifToggle[] = [
   {
@@ -29,8 +38,8 @@ const NOTIF_TOGGLES: NotifToggle[] = [
     icon: 'package-variant',
     iconColor: COLORS.white,
     iconBg: 'transparent',
-    label: 'Order updates',
-    subtitle: 'Status changes, delivery updates, confirmations',
+    labelKey: 'notifSettings.orderUpdates',
+    subtitleKey: 'notifSettings.orderUpdatesDesc',
     defaultValue: true,
   },
   {
@@ -38,8 +47,8 @@ const NOTIF_TOGGLES: NotifToggle[] = [
     icon: 'message-text-outline',
     iconColor: COLORS.white,
     iconBg: 'transparent',
-    label: 'Messages',
-    subtitle: 'New messages from buyers and sellers',
+    labelKey: 'notifSettings.messages',
+    subtitleKey: 'notifSettings.messagesDesc',
     defaultValue: true,
   },
   {
@@ -47,8 +56,8 @@ const NOTIF_TOGGLES: NotifToggle[] = [
     icon: 'tag-outline',
     iconColor: COLORS.white,
     iconBg: 'transparent',
-    label: 'Offers & discounts',
-    subtitle: 'Promo codes, price drops, sale alerts',
+    labelKey: 'notifSettings.offers',
+    subtitleKey: 'notifSettings.offersDesc',
     defaultValue: true,
   },
   {
@@ -56,8 +65,8 @@ const NOTIF_TOGGLES: NotifToggle[] = [
     icon: 'heart-outline',
     iconColor: COLORS.white,
     iconBg: 'transparent',
-    label: 'Product activity',
-    subtitle: 'Wishlist items back in stock, new listings from followed sellers',
+    labelKey: 'notifSettings.productActivity',
+    subtitleKey: 'notifSettings.productActivityDesc',
     defaultValue: true,
   },
   {
@@ -65,8 +74,8 @@ const NOTIF_TOGGLES: NotifToggle[] = [
     icon: 'cog-outline',
     iconColor: COLORS.white,
     iconBg: 'transparent',
-    label: 'System updates',
-    subtitle: 'App updates, security alerts, maintenance notices',
+    labelKey: 'notifSettings.systemUpdates',
+    subtitleKey: 'notifSettings.systemUpdatesDesc',
     defaultValue: false,
   },
 ];
@@ -111,13 +120,15 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
     // TODO: Persist to server (user notification_preferences JSONB column)
     setTimeout(() => {
       setSaving(null);
-      toast.show({ kind: 'success', title: `${key.replace('_', ' ')} notifications ${newVal ? 'enabled' : 'disabled'}` });
+      const nameKey = TOGGLE_NAMES[key];
+      const name = nameKey ? t(nameKey) : key;
+      toast.show({ kind: 'success', title: t(newVal ? 'notifSettings.enabledToast' : 'notifSettings.disabledToast', { name }) });
     }, 300);
   };
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Notifications" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('settings.notifications')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Banner */}
@@ -127,15 +138,15 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
               <MaterialCommunityIcons name="bell-ring" size={28} color={COLORS.coral} />
             </View>
             <View style={styles.bannerText}>
-              <Text style={styles.bannerTitle}>Stay in the loop</Text>
-              <Text style={styles.bannerSubtitle}>Choose which notifications you receive</Text>
+              <Text style={styles.bannerTitle}>{t('notifSettings.stayInLoop')}</Text>
+              <Text style={styles.bannerSubtitle}>{t('notifSettings.stayInLoopDesc')}</Text>
             </View>
           </View>
         </Animated.View>
 
         {/* Notification Toggles */}
         <Animated.View style={animStyle(1)}>
-          <SettingsGroup header="Notification preferences">
+          <SettingsGroup header={t('settings.notificationPrefs')}>
             {NOTIF_TOGGLES.map((notif, i) => (
               <View key={notif.key}>
                 <View style={styles.toggleRow}>
@@ -143,8 +154,8 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
                     <MaterialCommunityIcons name={notif.icon as any} size={20} color={notif.iconColor} />
                   </View>
                   <View style={styles.toggleText}>
-                    <Text style={styles.toggleLabel}>{notif.label}</Text>
-                    <Text style={styles.toggleSubtitle}>{notif.subtitle}</Text>
+                    <Text style={styles.toggleLabel}>{t(notif.labelKey)}</Text>
+                    <Text style={styles.toggleSubtitle}>{t(notif.subtitleKey)}</Text>
                   </View>
                   <Switch
                     value={toggles[notif.key]}
@@ -163,20 +174,20 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
         {/* Quiet Hours Info */}
         <Animated.View style={animStyle(2)}>
           <SettingsGroup
-            header="Quiet hours"
-            footer="You'll still receive order-critical notifications"
+            header={t('notifSettings.quietHours')}
+            footer={t('notifSettings.quietHoursFooter')}
           >
             <View style={styles.quietRow}>
               <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="moon-waning-crescent" size={20} color={COLORS.white} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>Do Not Disturb</Text>
-                <Text style={styles.toggleSubtitle}>Silence all non-critical notifications</Text>
+                <Text style={styles.toggleLabel}>{t('notifSettings.doNotDisturb')}</Text>
+                <Text style={styles.toggleSubtitle}>{t('notifSettings.doNotDisturbDesc')}</Text>
               </View>
               <Switch
                 value={false}
-                onValueChange={() => toast.show({ kind: 'info', title: 'Quiet hours coming soon' })}
+                onValueChange={() => toast.show({ kind: 'info', title: t('notifSettings.quietHoursSoon') })}
                 trackColor={{ false: COLORS.border, true: COLORS.purple + '40' }}
                 thumbColor={COLORS.text3}
               />
