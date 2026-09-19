@@ -563,6 +563,44 @@ const langApEn = {
   'appearance.iconOcean': 'Ocean',
   'appearance.iconForest': 'Forest',
   'appearance.saved': 'Appearance saved',
+  'appearance.subtitle': 'Theme, accent color, app icon',
+};
+
+// ChatScreen batch
+const chatEn = {
+  'offer.acceptedDetail': 'The buyer can now check out at the agreed price.',
+  'offer.couldNotUpdate': 'Offer could not be updated',
+  'offer.counterDetail': 'The buyer can accept or decline the new price.',
+  'offer.notSentTitle': 'Counter offer not sent',
+  'offer.received': 'Offer Received',
+  'chat.messageDeleted': 'Message deleted',
+  'chat.deleteFailed': 'Failed to delete',
+  'chat.theyTyping': '{name} is typing…',
+  'chat.they': 'They',
+};
+
+const chatHt = {
+  'offer.acceptedDetail': 'Achte a ka fè chèk soti nan pri ki konveni a kounye a.',
+  'offer.couldNotUpdate': 'Òf la pa ka mete ajou',
+  'offer.counterDetail': 'Achte a ka aksepte oswa refize nouvo pri a.',
+  'offer.notSentTitle': 'Kontròf la pa voye',
+  'offer.received': 'Òf Resevwa',
+  'chat.messageDeleted': 'Mesaj efase',
+  'chat.deleteFailed': 'Pa t ka efase',
+  'chat.theyTyping': '{name} ap ekri…',
+  'chat.they': 'Li',
+};
+
+const chatFr = {
+  'offer.acceptedDetail': "L'acheteur peut maintenant payer au prix convenu.",
+  'offer.couldNotUpdate': "Impossible de mettre à jour l'offre",
+  'offer.counterDetail': "L'acheteur peut accepter ou refuser le nouveau prix.",
+  'offer.notSentTitle': 'Contre-offre non envoyée',
+  'offer.received': 'Offre reçue',
+  'chat.messageDeleted': 'Message supprimé',
+  'chat.deleteFailed': "Échec de la suppression",
+  'chat.theyTyping': '{name} est en train d\'écrire…',
+  'chat.they': 'Cette personne',
 };
 
 const langApHt = {
@@ -591,6 +629,7 @@ const langApHt = {
   'appearance.iconOcean': 'Oseyan',
   'appearance.iconForest': 'Fòre',
   'appearance.saved': 'Aparens sove',
+  'appearance.subtitle': 'Tèm, koulè aksan, ikon aplikasyon',
 };
 
 const langApFr = {
@@ -619,7 +658,61 @@ const langApFr = {
   'appearance.iconOcean': 'Océan',
   'appearance.iconForest': 'Forêt',
   'appearance.saved': 'Apparence enregistrée',
+  'appearance.subtitle': 'Thème, couleur d\'accent, icône de l\'app',
   'field.username': "Nom d'utilisateur",
+};
+
+// AccountDashboardScreen batch
+const accountEn = {
+  'account.title': 'Account',
+  'account.personalInfo': 'Personal information',
+  'account.personalInfoDesc': 'Your basic profile details',
+  'account.contactInfo': 'Contact information',
+  'account.contactInfoDesc': 'How people can reach you',
+  'account.fullName': 'Full name',
+  'account.bioPlaceholder': 'Tell people about yourself',
+  'account.language': 'Language',
+};
+
+// MeScreen batch
+const meEn = {
+  'me.noSavedItemsHint': 'Tap the heart icon on products you like',
+  'me.noListingsHint': 'Add your first product so buyers have something to open from your shop.',
+  'me.purchasesHint': 'Your purchases will appear here',
+};
+
+const meHt = {
+  'me.noSavedItemsHint': 'Peze kè a sou pwodwi ou renmen yo',
+  'me.noListingsHint': 'Ajoute premye pwodwi ou pou achte gen yon bagay pou louvri nan boutik ou.',
+  'me.purchasesHint': 'Achat ou yo ap parèt isit la',
+};
+
+const meFr = {
+  'me.noSavedItemsHint': "Touchez l'icône cœur sur les produits que vous aimez",
+  'me.noListingsHint': "Ajoutez votre premier produit pour que les acheteurs aient quelque chose à ouvrir depuis votre boutique.",
+  'me.purchasesHint': 'Vos achats apparaîtront ici',
+};
+
+const accountHt = {
+  'account.title': 'Kont',
+  'account.personalInfo': 'Enfòmasyon pèsonèl',
+  'account.personalInfoDesc': 'Detay profil ou yo',
+  'account.contactInfo': 'Enfòmasyon kontak',
+  'account.contactInfoDesc': 'Kijan moun ka rive jwenn ou',
+  'account.fullName': 'Non konplè',
+  'account.bioPlaceholder': 'Di moun kisa ou ye',
+  'account.language': 'Lang',
+};
+
+const accountFr = {
+  'account.title': 'Compte',
+  'account.personalInfo': 'Informations personnelles',
+  'account.personalInfoDesc': 'Les détails de base de votre profil',
+  'account.contactInfo': 'Coordonnées',
+  'account.contactInfoDesc': 'Comment les gens peuvent vous contacter',
+  'account.fullName': 'Nom complet',
+  'account.bioPlaceholder': 'Parlez de vous aux autres',
+  'account.language': 'Langue',
 };
 
 const wishlistHt = {
@@ -941,7 +1034,7 @@ const signupFr2 = {
   'signup.progressA11y': "Progression de l'inscription {step} sur {total}",
 };
 
-const n1 = applyFix('messages/en.json', { ...enAdd, ...enAdd2, ...privacyEn, ...notifSettingsEn, ...settingsEditEn, ...productDetailEn, ...feedEn, ...wishlistEn, ...signupEn2, ...langApEn });
-const n2 = applyFix('messages/ht.json', { ...htAdd, ...htAdd2, ...privacyHt, ...notifSettingsHt, ...settingsEditHt, ...productDetailHt, ...feedHt, ...wishlistHt, ...signupHt2, ...langApHt });
-const n3 = applyFix('messages/fr.json', { ...frAdd, ...frAdd2, ...privacyFr, ...notifSettingsFr, ...settingsEditFr, ...productDetailFr, ...feedFr, ...wishlistFr, ...signupFr2, ...langApFr, ...{ 'field.username': "Nom d'utilisateur" } });
+const n1 = applyFix('messages/en.json', { ...enAdd, ...enAdd2, ...privacyEn, ...notifSettingsEn, ...settingsEditEn, ...productDetailEn, ...feedEn, ...wishlistEn, ...signupEn2, ...langApEn, ...accountEn, ...meEn, ...chatEn });
+const n2 = applyFix('messages/ht.json', { ...htAdd, ...htAdd2, ...privacyHt, ...notifSettingsHt, ...settingsEditHt, ...productDetailHt, ...feedHt, ...wishlistHt, ...signupHt2, ...langApHt, ...accountHt, ...meHt, ...chatHt });
+const n3 = applyFix('messages/fr.json', { ...frAdd, ...frAdd2, ...privacyFr, ...notifSettingsFr, ...settingsEditFr, ...productDetailFr, ...feedFr, ...wishlistFr, ...signupFr2, ...langApFr, ...accountFr, ...meFr, ...chatFr, ...{ 'field.username': "Nom d'utilisateur" } });
 console.log(`en.json: +${n1} | ht.json: +${n2} | fr.json: +${n3}`);

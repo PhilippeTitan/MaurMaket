@@ -185,8 +185,8 @@ export default function SettingsScreen({ navigation }: Props) {
           <SettingsGroup header={t('settings.app')}>
             <SettingsRow
               icon="palette-outline"
-              label="Appearance"
-              subtitle="Theme, accent color, app icon"
+              label={t('appearance.title')}
+              subtitle={t('appearance.subtitle')}
               chevron
               onPress={() => navigation.navigate('AppearanceSettings')}
               divider

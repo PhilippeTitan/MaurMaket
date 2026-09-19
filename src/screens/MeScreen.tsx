@@ -491,16 +491,16 @@ export default function MeScreen() {
               <EmptyState
                 icon="storefront-outline"
                 title={t('me.noListings')}
-                hint="Add your first product so buyers have something to open from your shop."
-                actionLabel="Add listing"
+                hint={t('me.noListingsHint')}
+                actionLabel={t('me.addListing')}
                 onAction={() => nav.navigate('AddListing')}
               />
             )
           ) : (
             <EmptyState
               icon="shopping-outline"
-              title="No recent orders"
-              hint="Your purchases will appear here"
+              title={t('me.noRecentOrders')}
+              hint={t('me.purchasesHint')}
               size={56}
             />
           )
@@ -537,8 +537,8 @@ export default function MeScreen() {
           ) : (
             <EmptyState
               icon="star-outline"
-              title="No reviews yet"
-              hint={isSeller ? 'Reviews from buyers will appear here' : 'Reviews you leave will appear here'}
+              title={t('me.noReviews')}
+              hint={isSeller ? t('me.reviewsHintSeller') : t('me.reviewsHintBuyer')}
               size={56}
             />
           )
@@ -556,8 +556,8 @@ export default function MeScreen() {
           ) : (
             <EmptyState
               icon="heart-outline"
-              title="No saved items"
-              hint="Tap the heart icon on products you like"
+              title={t('me.noSavedItems')}
+              hint={t('me.noSavedItemsHint')}
               size={56}
             />
           )

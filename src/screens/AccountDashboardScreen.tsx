@@ -72,15 +72,15 @@ export default function AccountDashboardScreen({ navigation }: Props) {
   const langLabel = language === 'en' ? 'English' : language === 'ht' ? 'Kreyòl' : 'Français';
   const isVerified = user?.email_verified;
   const tierLabel =
-    user?.seller_tier === 'business' ? 'Business'
-    : user?.seller_tier === 'verified' ? 'Verified'
-    : user?.seller_tier === 'casual' ? 'Casual'
+    user?.seller_tier === 'business' ? t('productDetail.trustBusiness')
+    : user?.seller_tier === 'verified' ? t('settings.verified')
+    : user?.seller_tier === 'casual' ? t('sellerOnboarding.casualTitle')
     : null;
   const tierColor = user?.seller_tier ? TIER_COLORS[user.seller_tier] ?? COLORS.text2 : undefined;
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Account" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('account.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
@@ -92,20 +92,20 @@ export default function AccountDashboardScreen({ navigation }: Props) {
         {/* ── Personal Information ── */}
         <Animated.View style={animStyle(1)}>
           <SettingsGroup
-            header="Personal information"
-            description="Your basic profile details"
+            header={t('account.personalInfo')}
+            description={t('account.personalInfoDesc')}
           >
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.6}
-              onPress={() => navigation.navigate('SettingsEdit', { field: 'name', title: 'Name' })}
+              onPress={() => navigation.navigate('SettingsEdit', { field: 'name', title: t('field.name') })}
             >
               <View style={[styles.iconContainer, { backgroundColor: 'rgba(255, 77, 106, 0.15)' }]}>
                 <MaterialCommunityIcons name="account-outline" size={20} color={ONBOARDING_COLORS.coral} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Full name</Text>
-                <Text style={styles.rowValue} numberOfLines={1}>{user?.full_name || 'Not set'}</Text>
+                <Text style={styles.rowLabel}>{t('account.fullName')}</Text>
+                <Text style={styles.rowValue} numberOfLines={1}>{user?.full_name || t('common.notSet')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
@@ -113,15 +113,15 @@ export default function AccountDashboardScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.6}
-              onPress={() => navigation.navigate('SettingsEdit', { field: 'bio', title: 'Bio' })}
+              onPress={() => navigation.navigate('SettingsEdit', { field: 'bio', title: t('field.bio') })}
             >
               <View style={[styles.iconContainer, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
                 <MaterialCommunityIcons name="text-box-outline" size={20} color={ONBOARDING_COLORS.purple} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Bio</Text>
+                <Text style={styles.rowLabel}>{t('field.bio')}</Text>
                 <Text style={styles.rowValue} numberOfLines={1}>
-                  {user?.bio || 'Tell people about yourself'}
+                  {user?.bio || t('account.bioPlaceholder')}
                 </Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
@@ -132,8 +132,8 @@ export default function AccountDashboardScreen({ navigation }: Props) {
         {/* ── Contact Information ── */}
         <Animated.View style={animStyle(2)}>
           <SettingsGroup
-            header="Contact information"
-            description="How people can reach you"
+            header={t('account.contactInfo')}
+            description={t('account.contactInfoDesc')}
           >
             <TouchableOpacity
               style={styles.row}
@@ -144,9 +144,9 @@ export default function AccountDashboardScreen({ navigation }: Props) {
                 <MaterialCommunityIcons name="email-outline" size={20} color={ONBOARDING_COLORS.blue} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Email</Text>
+                <Text style={styles.rowLabel}>{t('field.email')}</Text>
                 <View style={styles.valueRow}>
-                  <Text style={styles.rowValue} numberOfLines={1}>{user?.email || 'Not set'}</Text>
+                  <Text style={styles.rowValue} numberOfLines={1}>{user?.email || t('common.notSet')}</Text>
                   {isVerified && (
                     <MaterialCommunityIcons name="check-circle" size={14} color={ONBOARDING_COLORS.green} style={{ marginLeft: 4 }} />
                   )}
@@ -159,16 +159,16 @@ export default function AccountDashboardScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.6}
-              onPress={() => navigation.navigate('SettingsEdit', { field: 'phone', title: t('settings.phone') || 'Phone' })}
+              onPress={() => navigation.navigate('SettingsEdit', { field: 'phone', title: t('field.phone') })}
             >
               <View style={[styles.iconContainer, { backgroundColor: 'rgba(0, 229, 160, 0.15)' }]}>
                 <MaterialCommunityIcons name="phone-outline" size={20} color={ONBOARDING_COLORS.green} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Phone</Text>
+                <Text style={styles.rowLabel}>{t('field.phone')}</Text>
                 <View style={styles.valueRow}>
                   <Text style={styles.rowValue} numberOfLines={1}>
-                    {user?.phone ? `+509 ${user.phone}` : 'Add your phone number'}
+                    {user?.phone ? `+509 ${user.phone}` : t('account.addPhone')}
                   </Text>
                   {user?.phone && (
                     <View style={styles.phoneBadge}>
@@ -185,8 +185,8 @@ export default function AccountDashboardScreen({ navigation }: Props) {
         {/* ── Preferences ── */}
         <Animated.View style={animStyle(3)}>
           <SettingsGroup
-            header="Preferences"
-            description="Customize your experience"
+            header={t('account.preferencesHeader')}
+            description={t('account.preferencesDesc')}
           >
             <TouchableOpacity
               style={styles.row}
@@ -197,8 +197,8 @@ export default function AccountDashboardScreen({ navigation }: Props) {
                 <MaterialCommunityIcons name="at" size={20} color={ONBOARDING_COLORS.yellow} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Username</Text>
-                <Text style={styles.rowValue}>{user?.username ? `@${user.username}` : 'Not set'}</Text>
+                <Text style={styles.rowLabel}>{t('field.username')}</Text>
+                <Text style={styles.rowValue}>{user?.username ? `@${user.username}` : t('common.notSet')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
@@ -212,7 +212,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
                 <MaterialCommunityIcons name="translate" size={20} color={ONBOARDING_COLORS.purple} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Language</Text>
+                <Text style={styles.rowLabel}>{t('account.language')}</Text>
                 <Text style={styles.rowValue}>{langLabel}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
@@ -227,8 +227,8 @@ export default function AccountDashboardScreen({ navigation }: Props) {
                 <MaterialCommunityIcons name="map-marker-outline" size={20} color={ONBOARDING_COLORS.green} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>Location</Text>
-                <Text style={styles.rowValue}>{user?.location_city || 'Set your delivery area'}</Text>
+                <Text style={styles.rowLabel}>{t('settings.location')}</Text>
+                <Text style={styles.rowValue}>{user?.location_city || t('account.setLocation')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>

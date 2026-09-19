@@ -251,17 +251,17 @@ startPolling();
       lastMessageCursor.current = null;
       await fetchMessages();
       if (action === 'accepted') {
-        toast.success('Offer accepted', 'The buyer can now check out at the agreed price.');
+        toast.success(t('offer.acceptedToast'), t('offer.acceptedDetail'));
       }
     } catch {
-      toast.error('Offer could not be updated', 'Please try again.');
+      toast.error(t('offer.couldNotUpdate'), t('common.tryAgain'));
     }
   };
 
   const handleCounterOffer = async (messageId: string) => {
     const price = Number(counterPrice.replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(price) || price <= 0) {
-      toast.error('Enter a valid counter price');
+      toast.error(t('offer.invalidPrice'));
       return;
     }
     try {
@@ -271,9 +271,9 @@ startPolling();
       setCounterPrice('');
       lastMessageCursor.current = null;
       await fetchMessages();
-      toast.success('Counter offer sent', 'The buyer can accept or decline the new price.');
+      toast.success(t('offer.counterSent'), t('offer.counterDetail'));
     } catch {
-      toast.error('Counter offer not sent', 'Please try again.');
+      toast.error(t('offer.notSentTitle'), t('common.tryAgain'));
     }
   };
 
@@ -342,13 +342,12 @@ startPolling();
     if (!actionMenuMessage) return;
     setActionMenuVisible(false);
     const msgId = actionMenuMessage.id;
-    // Optimistic: hide message
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, is_deleted: true, content: 'Message deleted', image_url: undefined } : m));
+    // Optimistic: hide message        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, is_deleted: true, content: t('chat.messageDeleted'), image_url: undefined } : m));
     try {
       const { deleteMessage } = await import('../api');
       await deleteMessage(msgId);
     } catch {
-      toast.error('Failed to delete');
+      toast.error(t('chat.deleteFailed'));
     }
     setActionMenuMessage(null);
   };
@@ -411,7 +410,7 @@ startPolling();
               <View style={styles.offerMsgTypeWrap}>
                 <Icon name="sale-tag" size={14} color={isAccepted ? '#1D9E75' : isCountered ? '#3B82F6' : COLORS.coral} />
                 <Text style={styles.offerMsgEyebrow}>
-                  {isMe ? 'Your Offer' : 'Offer Received'}
+                  {isMe ? t('offer.yourOffer') : t('offer.received')}
                 </Text>
               </View>
               <View style={[
@@ -521,7 +520,7 @@ startPolling();
                     onChangeText={setCounterPrice}
                     keyboardType="decimal-pad"
                     style={styles.counterInput}
-                    placeholder="Counter price"
+                    placeholder={t('offer.counterPrice')}
                     placeholderTextColor={COLORS.text2}
                     accessibilityLabel="counter offer price"
                     autoFocus
@@ -741,7 +740,7 @@ startPolling();
 
         {otherTyping && (
           <View style={styles.typingRow}>
-            <Text style={styles.typingText}>{otherUserName || 'They'} is typing…</Text>
+            <Text style={styles.typingText}>{t('chat.theyTyping', { name: otherUserName || t('chat.they') })}</Text>
           </View>
         )}
 
