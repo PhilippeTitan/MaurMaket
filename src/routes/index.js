@@ -19,6 +19,7 @@ import paymentsRouter from './payments.js';
 import payoutsRouter from './payouts.js';
 import subscriptionsRouter from './subscriptions.js';
 import feedRouter from './feed.js';
+import verificationRouter from './verification.js';
 
 export function registerRoutes(app) {
   // Routes WITH /api in their path → mount at root
@@ -47,6 +48,7 @@ export function registerRoutes(app) {
   app.use('/api', socialRouter);
   app.use('/api', categoriesRouter);
   app.use('/api', productsRouter);
+  app.use('/api', verificationRouter);
 
   // Batch 6: seller, messaging, offers — already have /api prefix
   app.use(sellerDashboardRouter);

@@ -374,7 +374,7 @@ export default function VerificationScreen() {
       if (res.attempt.status === 'verified') {
         setStages({ card: 'done', details: 'done', face: 'done' });
         setVerified(true);
-        if (res.user && res.token) await store.setUser(res.user, res.token);
+        if (res.user) await store.setUser(res.user, res.token || store.token);
         setTimeout(() => setStep('result'), 600);
       } else {
         const fs = res.attempt.failed_stage || 'face';

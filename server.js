@@ -1155,6 +1155,16 @@ await step('NatCash phone separation', () => c.query(`
       ALTER TABLE sessions ADD COLUMN IF NOT EXISTS login_method TEXT;
     `));
 
+    // 78. Lightning KYC verification columns
+    await step('Lightning KYC verification columns', () => c.query(`
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS liveness_score DECIMAL(5,4);
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS face_match_detail JSONB;
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS lightning_raw JSONB;
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS failed_stage VARCHAR(20);
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS ocr_fields JSONB;
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS id_face_url TEXT;
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

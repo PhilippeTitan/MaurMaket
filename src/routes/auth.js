@@ -554,7 +554,11 @@ router.put('/user/upgrade-tier', authRequired, sellerRequired, async (req, res) 
     }
 
     if (tier === 'verified' && !current.rows[0]?.id_verified) {
-      return res.status(400).json({ error: 'You must complete ID verification before upgrading to Verified.' });
+      return res.status(400).json({ error: 'Complete ID verification first to activate your Verified seller tier.' });
+    }
+
+    if (tier === 'business' && currentTier !== 'verified') {
+      return res.status(400).json({ error: 'Verified seller status is required before choosing Business.' });
     }
 
     const updates = ['seller_tier = $2', 'updated_at = CURRENT_TIMESTAMP'];
