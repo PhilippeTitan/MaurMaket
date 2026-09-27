@@ -254,8 +254,12 @@ function extractSessionToken(res: Response, body: any): string | null {
 /** Auth-fetch wrapper: calls the backend with auto-env and returns JSON. */
 async function authFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; body: any }> {
   const url = `${API_BASE}${path}`;
+  const origin = (() => {
+    try { return new URL(API_BASE).origin; } catch { return 'https://maurmaket.onrender.com'; }
+  })();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'Origin': origin,
     ...(options.headers as Record<string, string> || {}),
   };
   const res = await fetch(url, { ...options, headers });
