@@ -1189,8 +1189,15 @@ const ALLOWED_ORIGINS = [
 ];
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) callback(null, true);
-    else callback(new Error('Not allowed by CORS'));
+    // No origin (native app / curl) — allow
+    if (!origin) return callback(null, true);
+    // Known browser origins — allow
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    // LAN dev (native app sends its own IP as Origin) — allow
+    if (/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|localhost|127\.0\.0\.1)/.test(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
 }));
