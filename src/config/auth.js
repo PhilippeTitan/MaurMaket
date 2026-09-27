@@ -239,7 +239,8 @@ export function createAuth(adapter) {
         'https://maurmaket.onrender.com',
       ];
       // Derive origin from request Host header (covers LAN IPs that change)
-      const host = request?.headers?.host;
+      // request is a Fetch API Request — headers.get(), not headers.host
+      const host = request?.headers?.get?.('host') || request?.headers?.host;
       if (host) {
         base.push(`http://${host}`, `https://${host}`);
       }
