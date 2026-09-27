@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { betterAuth } from 'better-auth';
 import { dash } from '@better-auth/infra';
 import { username, phoneNumber, emailOTP, twoFactor } from 'better-auth/plugins';
+import { sendMail } from './mailer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -242,10 +243,12 @@ export function createAuth(adapter) {
       sendOnSignIn: false,
       async sendVerificationEmail({ user, url }) {
         const html = buildEmailChangeEmailHtml(url);
-
-        // TODO: replace this with the production mailer (Resend / SendGrid / SMTP)
-        console.log(`[Auth:EmailVerification] Sending verification email to ${user.email}`);
-        console.log(html);
+        await sendMail({
+          to: user.email,
+          subject: 'Verify your MaurMaket email',
+          html,
+          text: `Verify your email: ${url}`,
+        });
       },
     },
 
@@ -256,9 +259,12 @@ export function createAuth(adapter) {
       resetPasswordTokenExpiresIn: 3600,
       sendResetPassword: async ({ user, url }) => {
         const html = buildPasswordResetEmailHtml(url);
-
-        console.log(`[Auth:PasswordReset] Sending reset email to ${user.email}`);
-        console.log(html);
+        await sendMail({
+          to: user.email,
+          subject: 'Reset your MaurMaket password',
+          html,
+          text: `Reset your password: ${url}`,
+        });
       },
     },
 
