@@ -227,15 +227,22 @@ export function createAuth(adapter) {
       }),
     ],
 
-    // Allow cross-origin requests from the Expo web dev server and production URL
-    trustedOrigins: [
-      'http://localhost:8081',
-      'http://localhost:8080',
-      'http://localhost:4000',
-      'http://localhost:3001',
-      'http://localhost:19006',
-      'https://maurmaket.onrender.com',
-    ],
+    // Allow cross-origin requests from Expo dev server, LAN IPs, and production
+    trustedOrigins: (origin) => {
+      if (!origin) return true; // native app without Origin header
+      const allowed = [
+        'http://localhost:8081',
+        'http://localhost:8080',
+        'http://localhost:4000',
+        'http://localhost:3001',
+        'http://localhost:19006',
+        'https://maurmaket.onrender.com',
+      ];
+      if (allowed.includes(origin)) return true;
+      // LAN dev (phone hits laptop via private IP)
+      if (/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|localhost|127\.0\.0\.1)/.test(origin)) return true;
+      return false;
+    },
 
     emailVerification: {
       expiresIn: 600,
