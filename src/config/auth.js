@@ -228,9 +228,9 @@ export function createAuth(adapter) {
     ],
 
     // Allow cross-origin requests from Expo dev server, LAN IPs, and production
-    trustedOrigins: (origin) => {
-      if (!origin) return true; // native app without Origin header
-      const allowed = [
+    // Function form: receives request, returns array of allowed origin strings
+    trustedOrigins: async (request) => {
+      const base = [
         'http://localhost:8081',
         'http://localhost:8080',
         'http://localhost:4000',
@@ -238,10 +238,12 @@ export function createAuth(adapter) {
         'http://localhost:19006',
         'https://maurmaket.onrender.com',
       ];
-      if (allowed.includes(origin)) return true;
-      // LAN dev (phone hits laptop via private IP)
-      if (/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|localhost|127\.0\.0\.1)/.test(origin)) return true;
-      return false;
+      // Derive origin from request Host header (covers LAN IPs that change)
+      const host = request?.headers?.host;
+      if (host) {
+        base.push(`http://${host}`, `https://${host}`);
+      }
+      return base;
     },
 
     emailVerification: {
