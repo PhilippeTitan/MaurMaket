@@ -138,10 +138,15 @@ async function findOneWithJoin(queryFn, model, where, select, join) {
   const joinData = {};
   for (const jm of joinModels) {
     const joinTable = toTable(jm);
-    const fkCol = toColumn(jm, 'userId');
+    // FK is on the MAIN model (e.g. session.userId → users.id)
+    // Find the FK field name on the main model that points to the join model
+    const mainFkField = Object.entries(FIELD_MAP[model] || {})
+      .find(([baField, dbCol]) => dbCol.endsWith('_id') && baField.toLowerCase().startsWith(jm.toLowerCase()))?.[0]
+      || (model === 'session' && jm === 'user' ? 'userId' : null);
+    const fkValue = mainFkField ? mainRow[mainFkField] : mainRow.id;
     const joinResult = await queryFn(
-      `SELECT * FROM ${joinTable} WHERE ${fkCol} = $1`,
-      [mainRow.id]
+      `SELECT * FROM ${joinTable} WHERE id = $1`,
+      [fkValue]
     );
     joinData[jm] = fromDbRows(jm, joinResult.rows);
   }
