@@ -167,7 +167,7 @@ router.put('/user/profile', authRequired, async (req, res) => {
     const result = await pool.query(
       `UPDATE users SET
         full_name = COALESCE($1, full_name),
-        email = email,
+        email = COALESCE($2, email),
         phone = COALESCE($3, phone),
         bio = COALESCE($4, bio),
         avatar_url = COALESCE($5, avatar_url),
