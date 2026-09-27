@@ -16,12 +16,14 @@ const { Pool } = pg;
 // ───── Circuit Breaker State ─────
 const BREAKER_THRESHOLD = 3;
 const BREAKER_COOLDOWN_MS = 15_000;
+const QUOTA_COOLDOWN_MS = 60_000; // 1 min for quota errors — don't hammer
 
 class CircuitBreaker {
   constructor(name) {
     this.name = name;
     this.failures = 0;
     this.unavailableUntil = 0;
+    this._quotaLogged = false;
   }
 
   get isHealthy() {
@@ -30,13 +32,21 @@ class CircuitBreaker {
 
   recordSuccess() {
     this.failures = 0;
+    this._quotaLogged = false;
   }
 
-  recordFailure() {
+  recordFailure(errorMsg) {
     this.failures++;
+    const isQuota = /exceeded the quota|quota.*exceeded/i.test(errorMsg || '');
+    if (isQuota && !this._quotaLogged) {
+      console.warn(`[DB:${this.name}] Quota exhausted — backing off for ${QUOTA_COOLDOWN_MS / 1000}s`);
+      this._quotaLogged = true;
+    }
     if (this.failures >= BREAKER_THRESHOLD) {
-      this.unavailableUntil = Date.now() + BREAKER_COOLDOWN_MS;
-      console.warn(`[DB:${this.name}] Circuit breaker OPEN — cooling down for ${BREAKER_COOLDOWN_MS / 1000}s`);
+      this.unavailableUntil = Date.now() + (isQuota ? QUOTA_COOLDOWN_MS : BREAKER_COOLDOWN_MS);
+      if (!isQuota) {
+        console.warn(`[DB:${this.name}] Circuit breaker OPEN — cooling down for ${BREAKER_COOLDOWN_MS / 1000}s`);
+      }
     }
   }
 }
@@ -115,8 +125,8 @@ export class DatabaseController {
         await this.supabase.query('SELECT 1');
         this.supabaseBreaker.recordSuccess();
         results.supabase = true;
-      } catch {
-        this.supabaseBreaker.recordFailure();
+      } catch (e) {
+        this.supabaseBreaker.recordFailure(e?.message);
       }
     }
 
@@ -125,8 +135,8 @@ export class DatabaseController {
         await this.neon.query('SELECT 1');
         this.neonBreaker.recordSuccess();
         results.neon = true;
-      } catch {
-        this.neonBreaker.recordFailure();
+      } catch (e) {
+        this.neonBreaker.recordFailure(e?.message);
       }
     }
 

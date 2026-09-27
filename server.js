@@ -1584,6 +1584,8 @@ if (isMain) {
       const origHealthCheck = dbController.healthCheck.bind(dbController);
       dbController.healthCheck = async function() {
         const result = await origHealthCheck();
+        // Neon recovered → clear quota backoff
+        if (this.neonBreaker?.isHealthy) reconciler.resetQuotaBackoff();
         if (this.mode === 'RECOVERING') {
           reconciler.reconcile().catch(err => {
             console.error('[Reconciler] Error:', err.message);

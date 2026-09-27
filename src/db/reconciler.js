@@ -16,9 +16,20 @@ export class Reconciler {
   constructor(controller) {
     this.controller = controller;
     this._reconciling = false;
+    this._pausedUntil = 0;
+    this._quotaLogged = false;
   }
 
   get isReconciling() { return this._reconciling; }
+
+  /**
+   * Compute when Neon free tier resets — 1st of next month 00:00 UTC.
+   */
+  _neonResetDate() {
+    const now = new Date();
+    const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    return reset;
+  }
 
   /**
    * Full reconciliation cycle.
@@ -27,6 +38,11 @@ export class Reconciler {
   async reconcile() {
     if (this._reconciling) {
       console.log('[Reconciler] Already reconciling — skipping');
+      return;
+    }
+
+    // If we're in a quota backoff window, skip silently
+    if (Date.now() < this._pausedUntil) {
       return;
     }
 
@@ -73,10 +89,28 @@ export class Reconciler {
       console.log('[Reconciler] Reconciliation complete — mode: PRIMARY');
 
     } catch (error) {
-      console.error('[Reconciler] Reconciliation failed:', error.message);
+      const isQuota = /exceeded the quota|quota.*exceeded|compute.*quota/i.test(error.message);
+      if (isQuota) {
+        const reset = this._neonResetDate();
+        this._pausedUntil = reset.getTime();
+        if (!this._quotaLogged) {
+          console.warn(`[Reconciler] Neon quota exhausted — reconciliation paused until ${reset.toISOString()}`);
+          this._quotaLogged = true;
+        }
+      } else {
+        console.error('[Reconciler] Reconciliation failed:', error.message);
+      }
     } finally {
       this._reconciling = false;
     }
+  }
+
+  /**
+   * Reset quota backoff (called when Neon health check passes).
+   */
+  resetQuotaBackoff() {
+    this._pausedUntil = 0;
+    this._quotaLogged = false;
   }
 
   async _findMissingOperations(sourcePool, targetPool) {
