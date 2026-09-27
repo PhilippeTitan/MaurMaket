@@ -237,6 +237,7 @@ export function createAuth(adapter) {
         'http://localhost:3001',
         'http://localhost:19006',
         'https://maurmaket.onrender.com',
+        'maurmaket://', // mobile app deep link callback
       ];
       // Derive origin from request Host header (covers LAN IPs that change)
       // request is a Fetch API Request — headers.get(), not headers.host
