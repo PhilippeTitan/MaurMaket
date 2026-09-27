@@ -128,7 +128,19 @@ async function findOneWithJoin(queryFn, model, where, select, join) {
 
   // Main query
   const tableName = toTable(model);
-  const selectCols = select ? toColumns(model, select).join(',') : '*';
+  // Ensure FK fields needed for joins are always selected
+  let effectiveSelect = select;
+  if (effectiveSelect && joinModels.length > 0) {
+    for (const jm of joinModels) {
+      const fkField = Object.entries(FIELD_MAP[model] || {})
+        .find(([baField, dbCol]) => dbCol.endsWith('_id') && baField.toLowerCase().startsWith(jm.toLowerCase()))?.[0]
+        || (model === 'session' && jm === 'user' ? 'userId' : null);
+      if (fkField && !effectiveSelect.includes(fkField)) {
+        effectiveSelect = [...effectiveSelect, fkField];
+      }
+    }
+  }
+  const selectCols = effectiveSelect ? toColumns(model, effectiveSelect).join(',') : '*';
   const { conditions, values } = buildWhere(model, where);
   const result = await queryFn(`SELECT ${selectCols} FROM ${tableName} WHERE ${conditions.join(' AND ')} LIMIT 1`, values);
   const mainRow = fromDbRow(model, result.rows[0]);
@@ -144,6 +156,10 @@ async function findOneWithJoin(queryFn, model, where, select, join) {
       .find(([baField, dbCol]) => dbCol.endsWith('_id') && baField.toLowerCase().startsWith(jm.toLowerCase()))?.[0]
       || (model === 'session' && jm === 'user' ? 'userId' : null);
     const fkValue = mainFkField ? mainRow[mainFkField] : mainRow.id;
+    if (!fkValue) {
+      joinData[jm] = [];
+      continue;
+    }
     const joinResult = await queryFn(
       `SELECT * FROM ${joinTable} WHERE id = $1`,
       [fkValue]
