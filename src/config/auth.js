@@ -1,24 +1,53 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { betterAuth } from 'better-auth';
 import { dash } from '@better-auth/infra';
-import { username, phoneNumber, emailOTP, twoFactor } from 'better-auth/plugins';
+import { bearer, username, phoneNumber, emailOTP, twoFactor } from 'better-auth/plugins';
+import { passkey } from '@better-auth/passkey';
+import bcrypt from 'bcrypt';
+import { verifyPassword as verifyBetterAuthPassword } from 'better-auth/crypto';
 import { sendMail } from './mailer.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-function getLogoDataUri() {
-  try {
-    const imagePath = path.resolve(__dirname, '../../assets/Logo/webp/Maurmaket Logo Text Trans Solo.webp');
-    const fileBuffer = fs.readFileSync(imagePath);
-    return `data:image/webp;base64,${fileBuffer.toString('base64')}`;
-  } catch (error) {
-    console.warn('[Auth:Logo] Could not load local MaurMaket logo asset, falling back to text branding.', error);
-    return null;
-  }
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
+
+function buildBrandHeaderHtml() {
+  // Text branding is reliable in email clients and keeps messages below Gmail's
+  // clipping threshold (the old inline WebP logo added over 150 KB of base64).
+  return '<h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-0.5px;">MaurMaket</h1>';
+}
+
+const EMAIL_OTP_COPY = {
+  'sign-in': {
+    subject: 'Your MaurMaket sign-in code',
+    title: 'Your sign-in code',
+    description: 'Enter this code in MaurMaket to sign in to your account.',
+  },
+  'email-verification': {
+    subject: 'Verify your MaurMaket email',
+    title: 'Verify your email',
+    description: 'Enter this code in MaurMaket to verify your email address.',
+  },
+  'forget-password': {
+    subject: 'Your MaurMaket password reset code',
+    title: 'Reset your password',
+    description: 'Enter this code in MaurMaket to continue resetting your password.',
+  },
+  'change-email': {
+    subject: 'Confirm your MaurMaket email change',
+    title: 'Confirm your email change',
+    description: 'Enter this code in MaurMaket to confirm your new email address.',
+  },
+};
+
+const DEFAULT_EMAIL_OTP_COPY = {
+  subject: 'Your MaurMaket verification code',
+  title: 'Your verification code',
+  description: 'Enter this code in MaurMaket to continue.',
+};
 
 /**
  * Better Auth — lazy singleton.
@@ -32,9 +61,8 @@ function getLogoDataUri() {
 
 let _auth = null;
 
-function buildEmailChangeEmailHtml(url) {
-  const fallbackUrl = url || 'https://maurmaket.app';
-  const logoDataUri = getLogoDataUri();
+function buildEmailVerificationHtml(url) {
+  const verificationUrl = escapeHtml(url || 'https://maurmaket.app');
 
   return `<!DOCTYPE html>
 
@@ -54,7 +82,7 @@ function buildEmailChangeEmailHtml(url) {
 
           <tr>
             <td style="padding:32px 40px 20px;text-align:center;">
-              ${logoDataUri ? `<img src="${logoDataUri}" alt="MaurMaket" style="display:block;max-width:220px;height:auto;margin:0 auto;" />` : `<h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-0.5px;">MaurMaket</h1>`}
+              ${buildBrandHeaderHtml()}
             </td>
           </tr>
 
@@ -62,25 +90,25 @@ function buildEmailChangeEmailHtml(url) {
             <td style="padding:20px 40px 40px;">
 
               <h2 style="margin:0 0 16px;font-size:24px;font-weight:700;">
-                Confirm your email change
+                Verify your MaurMaket email
               </h2>
 
               <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#52525b;">
-                You requested to change the email address connected to your MaurMaket account. Confirm this email address to complete the change.
+                Confirm that this email address belongs to your MaurMaket account. Click the button below to verify your email.
               </p>
 
               <table cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="border-radius:10px;background-color:#18181b;">
-                    <a href="${fallbackUrl}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;">
-                      Confirm new email address
+                    <a href="${verificationUrl}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;">
+                      Verify email address
                     </a>
                   </td>
                 </tr>
               </table>
 
               <p style="margin:32px 0 0;font-size:13px;line-height:1.6;color:#71717a;">
-                If you didn't request this change, secure your account immediately and contact MaurMaket Support.
+                This link expires in 10 minutes. If you didn't request this email, you can safely ignore it.
               </p>
 
             </td>
@@ -105,8 +133,7 @@ function buildEmailChangeEmailHtml(url) {
 }
 
 function buildPasswordResetEmailHtml(url) {
-  const fallbackUrl = url || 'https://maurmaket.app';
-  const logoDataUri = getLogoDataUri();
+  const fallbackUrl = escapeHtml(url || 'https://maurmaket.app');
 
   return `<!DOCTYPE html>
 
@@ -126,7 +153,7 @@ function buildPasswordResetEmailHtml(url) {
 
           <tr>
             <td style="padding:32px 40px 20px;text-align:center;">
-              ${logoDataUri ? `<img src="${logoDataUri}" alt="MaurMaket" style="display:block;max-width:220px;height:auto;margin:0 auto;" />` : `<h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:-0.5px;">MaurMaket</h1>`}
+              ${buildBrandHeaderHtml()}
             </td>
           </tr>
 
@@ -176,6 +203,37 @@ function buildPasswordResetEmailHtml(url) {
 </html>`;
 }
 
+function buildEmailOtpHtml(otp, type) {
+  const copy = EMAIL_OTP_COPY[type] || DEFAULT_EMAIL_OTP_COPY;
+  const safeOtp = escapeHtml(otp);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f5f5;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#ffffff;border-radius:16px;overflow:hidden;">
+        <tr><td style="padding:32px 40px 20px;text-align:center;">${buildBrandHeaderHtml()}</td></tr>
+        <tr><td style="padding:20px 40px 40px;">
+          <h2 style="margin:0 0 16px;font-size:24px;font-weight:700;">${copy.title}</h2>
+          <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#52525b;">${copy.description}</p>
+          <div style="padding:18px 16px;border-radius:10px;background-color:#f4f4f5;text-align:center;font-size:32px;font-weight:700;letter-spacing:8px;color:#18181b;">${safeOtp}</div>
+          <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#71717a;">This code expires in 10 minutes. Never share it with anyone. If you didn't request it, you can safely ignore this email.</p>
+        </td></tr>
+        <tr><td style="padding:24px 40px;border-top:1px solid #e4e4e7;">
+          <p style="margin:0;text-align:center;font-size:12px;color:#a1a1aa;">© Maurinex. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
 /**
  * Initialize Better Auth with a database adapter (RAID adapter from DB Controller,
  * or a raw pg Pool for dev/studio fallback).
@@ -195,6 +253,8 @@ export function createAuth(adapter) {
 
     plugins: [
       dash(),
+      bearer(),
+      passkey({ rpName: 'MaurMaket' }),
 
       // Username — @publicname for marketplace identity
       username(),
@@ -210,10 +270,14 @@ export function createAuth(adapter) {
 
       // Email OTP — passwordless login + verification + password reset
       emailOTP({
-        sendOTP: async ({ email, otp }) => {
-          console.log(`[Auth:EmailOTP] OTP for ${email}: ${otp}`);
-          // TODO: Wire real email provider (Resend, SendGrid, etc.)
-          // await emailProvider.send({ to: email, subject: 'Your MaurMaket code', body: `Code: ${otp}` });
+        async sendVerificationOTP({ email, otp, type }) {
+          const copy = EMAIL_OTP_COPY[type] || DEFAULT_EMAIL_OTP_COPY;
+          await sendMail({
+            to: email,
+            subject: copy.subject,
+            html: buildEmailOtpHtml(otp, type),
+            text: `Your MaurMaket code is ${otp}. It expires in 10 minutes. Never share this code with anyone.`,
+          });
         },
         expiresIn: 600, // 10 minutes
         maxAttempts: 5,
@@ -253,7 +317,7 @@ export function createAuth(adapter) {
       sendOnSignUp: true,
       sendOnSignIn: false,
       async sendVerificationEmail({ user, url }) {
-        const html = buildEmailChangeEmailHtml(url);
+        const html = buildEmailVerificationHtml(url);
         await sendMail({
           to: user.email,
           subject: 'Verify your MaurMaket email',
@@ -268,6 +332,14 @@ export function createAuth(adapter) {
       autoVerifyEmail: true,
       minPasswordLength: 6,
       resetPasswordTokenExpiresIn: 3600,
+      // Legacy MaurMaket passwords are bcrypt hashes in users.password_hash.
+      // Better Auth continues to create new scrypt hashes; this verifier accepts
+      // both formats while legacy accounts are bridged into accounts.password.
+      password: {
+        verify: async ({ hash, password }) => /^\$2[aby]\$/.test(hash)
+          ? bcrypt.compare(password, hash)
+          : verifyBetterAuthPassword({ hash, password }),
+      },
       sendResetPassword: async ({ user, url }) => {
         const html = buildPasswordResetEmailHtml(url);
         await sendMail({

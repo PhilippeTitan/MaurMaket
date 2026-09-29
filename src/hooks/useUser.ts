@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { store } from '../store';
 import { getMe } from '../api';
@@ -43,12 +43,17 @@ export function useUser() {
     return unsub;
   }, [qc]);
 
+  const refetch = useCallback(
+    () => qc.invalidateQueries({ queryKey: USER_QUERY_KEY }),
+    [qc]
+  );
+
   return {
     user: storeUser ?? query.data ?? store.user,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     error: query.error,
-    refetch: () => qc.invalidateQueries({ queryKey: USER_QUERY_KEY }),
+    refetch,
   };
 }
 

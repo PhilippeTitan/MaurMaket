@@ -82,6 +82,10 @@ export class Replicator {
 
     if (!primaryPool || !secondaryPool) return;
 
+    // A recovered secondary cannot accept replicated rows until its application
+    // schema migrations have finished.
+    if (!this.controller.isSecondaryReady) return;
+
     // Skip replication if secondary is down (circuit breaker open)
     if (!this.controller.secondaryBreaker.isHealthy) {
       if (!this._secondaryLoggedDown) {

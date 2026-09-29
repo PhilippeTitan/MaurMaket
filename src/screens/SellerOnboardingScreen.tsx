@@ -105,10 +105,20 @@ export default function SellerOnboardingScreen() {
     if (tier === 'casual') {
       const success = await handleCompleteWithTier('casual');
       if (success) setStep('done');
-    } else if (tier === 'verified') {
+      return;
+    }
+
+    if (tier === 'verified') {
+      if (!store.user?.id_verified) {
+        nav.navigate('Verification');
+        return;
+      }
       const success = await handleCompleteWithTier('verified');
       if (success) setStep('done');
-    } else if (tier === 'business') {
+      return;
+    }
+
+    if (tier === 'business') {
       setStep('store');
     }
   };
@@ -182,13 +192,21 @@ export default function SellerOnboardingScreen() {
               const isHigher = tierOrder.indexOf(tier.key) > currentIdx;
               const needsVerification = tier.key === 'verified' && !store.user?.id_verified;
               const needsVerifiedFirst = tier.key === 'business' && currentIdx < tierOrder.indexOf('verified');
-              const locked = !isHigher || needsVerification || needsVerifiedFirst;
-              const disabled = loading || locked;
+              const locked = !isHigher || needsVerifiedFirst;
+              const isVerificationPath = tier.key === 'verified' && needsVerification && !isCurrent;
+              const disabled = loading || (!isVerificationPath && locked);
               return (
                 <TouchableOpacity
                   key={tier.key}
                   style={[styles.tierCard, disabled && styles.tierCardDisabled]}
-                  onPress={() => !disabled && handleChooseTier(tier.key)}
+                  onPress={() => {
+                    if (disabled) return;
+                    if (isVerificationPath) {
+                      nav.navigate('Verification');
+                      return;
+                    }
+                    handleChooseTier(tier.key);
+                  }}
                   activeOpacity={disabled ? 1 : 0.8}
                   disabled={disabled}
                   accessibilityLabel={`select ${tier.key} tier`}
@@ -312,7 +330,7 @@ export default function SellerOnboardingScreen() {
                 if (chosenTier === 'business') {
                   nav.replace('BusinessSubscription');
                 } else {
-                  nav.replace('Main');
+                  nav.replace('Main', { screen: 'MeTab' });
                 }
               }}
               accessibilityLabel="done"

@@ -2,6 +2,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -67,22 +68,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const api: ToastApi = {
+  const api = useMemo<ToastApi>(() => ({
     show,
-    success: (title, message) =>
-      show({ kind: 'success', title, message }),
-    error: (title, message, retry) =>
-      show({
-        kind: 'error',
-        title,
-        message,
-        actionLabel: retry ? 'Try again' : undefined,
-        onAction: retry,
-      }),
+    success: (title, message) => show({ kind: 'success', title, message }),
+    error: (title, message, retry) => show({
+      kind: 'error', title, message,
+      actionLabel: retry ? 'Try again' : undefined,
+      onAction: retry,
+    }),
     info: (title, message) => show({ kind: 'info', title, message }),
-    warning: (title, message) =>
-      show({ kind: 'warning', title, message }),
-  };
+    warning: (title, message) => show({ kind: 'warning', title, message }),
+  }), [show]);
 
   const icon =
     toast?.kind === 'success'

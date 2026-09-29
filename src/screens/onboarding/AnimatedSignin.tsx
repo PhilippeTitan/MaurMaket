@@ -10,7 +10,7 @@ import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Sto
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
 import { useTranslation } from '@/localization';
-import { login as apiLogin, googleAuth, passkeyAuth, PasskeyUnavailableError } from '../../api';
+import { login as apiLogin, completeTwoFactorLogin, googleAuth, passkeyAuth, PasskeyUnavailableError } from '../../api';
 import { store } from '../../store';
 import OnboardingBackground from './components/OnboardingBackground';
 import type { User } from '../../types';
@@ -63,8 +63,8 @@ function SigninIllustration() {
 
 /* ── Shared UI ────────────────────────────────────────────── */
 
-function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, right, onFocus }: {
-  icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode; onFocus?: () => void;
+function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry, right, onFocus, keyboardType }: {
+  icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode; onFocus?: () => void; keyboardType?: 'default' | 'number-pad';
 }) {
   const [focused, setFocused] = useState(false);
 
@@ -82,6 +82,7 @@ function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry,
           placeholder={placeholder}
           placeholderTextColor={C.faint}
           secureTextEntry={secureTextEntry}
+          keyboardType={keyboardType}
           autoCapitalize="none"
         />
       </View>
@@ -92,7 +93,7 @@ function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry,
 
 function PrimaryButton({ children, onPress, disabled }: { children: React.ReactNode; onPress: () => void; disabled?: boolean }) {
   return (
-    <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={{ opacity: disabled ? 0.7 : 1 }}>
+    <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={[s.primaryTouch, disabled ? { opacity: 0.7 } : null]}>
       <LinearGradient
         colors={disabled ? ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.08)'] : [C.violet, C.pink, C.amber]}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -122,6 +123,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
   const [googleLoading, setGoogleLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [usingBackupCode, setUsingBackupCode] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -227,7 +231,13 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
     if (!canSubmit || isSuccess) return;
     setLoading(true);
     try {
-      const res = await apiLogin(email.trim(), password) as { user: User; token: string };
+      const res = await apiLogin(email.trim(), password) as { user?: User; token?: string; requiresTwoFactor?: boolean };
+      if (res.requiresTwoFactor) {
+        setRequiresTwoFactor(true);
+        setErrorMessage(null);
+        return;
+      }
+      if (!res.user || !res.token) throw new Error('Sign in did not return an authenticated session.');
       playSuccessAndEnter(res.user, res.token);
     } catch (err: any) {
       const message = String(err?.message || '').toLowerCase();
@@ -237,6 +247,18 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
         setErrorMessage(err?.message || t('signin.incorrectCredentials'));
         triggerShake();
       }
+    } finally { setLoading(false); }
+  };
+
+  const handleTwoFactorLogin = async () => {
+    if (twoFactorCode.trim().length < 6 || loading) return;
+    setLoading(true);
+    try {
+      const res = await completeTwoFactorLogin(twoFactorCode.trim(), usingBackupCode) as { user: User; token: string };
+      playSuccessAndEnter(res.user, res.token);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'That verification code was not accepted.');
+      triggerShake();
     } finally { setLoading(false); }
   };
 
@@ -351,33 +373,54 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
             ]}
             pointerEvents={isSuccess ? 'none' : 'auto'}
           >
-            {/* Fields */}
+            {/* Credentials or Better Auth's second-factor challenge */}
             <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
-              <Field icon="email-outline" label={t('signin.emailAddress')} value={email} onChangeText={setEmail} placeholder={t('signin.emailAddressPlaceholder')} onFocus={() => setFocusedField('email')} />
-              <View style={{ height: 12 }} />
-              <Field icon="lock-outline" label={t('signin.passwordLabel')} value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('password')} right={
-                <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
-                  <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
-                </TouchableOpacity>
-              } />
+              {requiresTwoFactor ? (
+                <>
+                  <Text style={{ color: C.text, fontSize: 18, fontWeight: '700', marginBottom: 8 }}>{t('signin.twoFactorTitle')}</Text>
+                  <Text style={{ color: C.sub, fontSize: 13, marginBottom: 16 }}>{t('signin.twoFactorBody')}</Text>
+                  <Field icon={usingBackupCode ? 'key-outline' : 'shield-key-outline'} label={usingBackupCode ? t('signin.backupCode') : t('signin.authenticatorCode')} value={twoFactorCode} onChangeText={setTwoFactorCode} placeholder="000000" keyboardType={usingBackupCode ? 'default' : 'number-pad'} />
+                </>
+              ) : (
+                <>
+                  <Field icon="email-outline" label={t('signin.emailAddress')} value={email} onChangeText={setEmail} placeholder={t('signin.emailAddressPlaceholder')} onFocus={() => setFocusedField('email')} />
+                  <View style={{ height: 12 }} />
+                  <Field icon="lock-outline" label={t('signin.passwordLabel')} value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('password')} right={
+                    <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
+                      <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
+                    </TouchableOpacity>
+                  } />
+                </>
+              )}
             </Animated.View>
 
             {/* Forgot password */}
-            <TouchableOpacity onPress={onForgotPassword} style={{ alignSelf: 'flex-end', marginTop: 12, marginBottom: 16 }}>
-              <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{t('auth.forgotPassword')}</Text>
-            </TouchableOpacity>
+            {requiresTwoFactor ? (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, marginBottom: 16 }}>
+                <TouchableOpacity onPress={() => { setUsingBackupCode(value => !value); setTwoFactorCode(''); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                  <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{usingBackupCode ? t('signin.useAuthenticator') : t('signin.useBackupCode')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setRequiresTwoFactor(false); setTwoFactorCode(''); setUsingBackupCode(false); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                  <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{t('signin.backToSignIn')}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={onForgotPassword} hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }} style={{ alignSelf: 'flex-end', marginTop: 12, marginBottom: 16 }}>
+                <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{t('auth.forgotPassword')}</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Sign in button */}
-            <PrimaryButton onPress={handleLogin} disabled={!canSubmit || loading}>{loading ? t('common.loading') : t('signin.signInBtn')}</PrimaryButton>
+            <PrimaryButton onPress={requiresTwoFactor ? handleTwoFactorLogin : handleLogin} disabled={loading || (requiresTwoFactor ? twoFactorCode.trim().length < 6 : !canSubmit)}>{loading ? t('common.loading') : requiresTwoFactor ? t('signin.verifyCode') : t('signin.signInBtn')}</PrimaryButton>
 
-            <View style={s.separatorRow}>
+            {!requiresTwoFactor && <View style={s.separatorRow}>
               <View style={s.separatorLine} />
               <Text style={s.separatorText}>{t('signin.or')}</Text>
               <View style={s.separatorLine} />
-            </View>
+            </View>}
 
             {/* Social sign-in icons (no text labels) */}
-            <View style={s.providerRow}>
+            {!requiresTwoFactor && <View style={s.providerRow}>
               <TouchableOpacity onPress={handleGoogle} style={s.providerCard}>
                 <View style={s.providerIconWrap}>
                   <Animated.View style={[s.providerIconRing, { transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>
@@ -403,14 +446,14 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
                   </View>
                 </View>
               </TouchableOpacity>
-            </View>
+            </View>}
 
             {/* Switch to signup */}
-            <TouchableOpacity onPress={onSwitchToSignup} style={{ paddingVertical: 14 }}>
+            {!requiresTwoFactor && <TouchableOpacity onPress={onSwitchToSignup} hitSlop={{ top: 6, bottom: 6, left: 12, right: 12 }} style={{ paddingVertical: 14 }}>
               <Text style={{ textAlign: 'center', color: C.sub, fontSize: 14, fontWeight: '500' }}>
                 {t('signin.newHere')} <Text style={{ color: C.pink, fontWeight: '700' }}>{t('signin.createAccount')}</Text>
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity>}
           </Animated.View>
 
         </Animated.View>
@@ -510,7 +553,6 @@ const s = StyleSheet.create({
   wordmarkBig: {
     width: '100%',
     height: 48,
-    resizeMode: 'contain',
   },
   formWrap: { width: '100%' },
   welcomeHeaderWrap: {
@@ -551,10 +593,11 @@ const s = StyleSheet.create({
   keyboardGhostContainer: { position: 'absolute', left: 28, right: 28, bottom: 56 },
   keyboardGhostStack: { gap: 12, marginBottom: 15 },
   keyboardGhostSignIn: { height: 52, borderRadius: 999, backgroundColor: 'rgba(139,92,246,0.32)', borderWidth: 1, borderColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  keyboardGhostButton: { flex: 1, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  keyboardGhostButton: { flex: 1, alignSelf: 'stretch', width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   keyboardGhostSignInText: { color: C.sub, fontSize: 15, fontWeight: '800' },
   keyboardGhostDisabledText: { color: C.faint },
 
+  primaryTouch: { width: '100%', alignSelf: 'stretch' },
   primaryBtn: { height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch' },
   primaryBtnDisabled: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
   separatorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 16 },

@@ -10,7 +10,7 @@ function getTransporter() {
   const pass = process.env.SMTP_PASS;
 
   if (!host || !user || !pass) {
-    console.warn('[Mailer] SMTP not configured — emails will be logged only');
+    console.warn('[Mailer] SMTP not configured — email delivery is disabled');
     return null;
   }
 
@@ -28,8 +28,9 @@ export async function sendMail({ to, subject, html, text }) {
   const transporter = getTransporter();
 
   if (!transporter) {
-    console.log(`[Mailer] SMTP not configured — would send to ${to}: ${subject}`);
-    console.log(html);
+    // Never write message bodies to logs: they can contain verification links,
+    // password reset tokens, or one-time codes.
+    console.warn(`[Mailer] SMTP not configured — not sending "${subject}"`);
     return { sent: false, reason: 'smtp_not_configured' };
   }
 
@@ -41,10 +42,10 @@ export async function sendMail({ to, subject, html, text }) {
       html,
       text,
     });
-    console.log(`[Mailer] Sent "${subject}" to ${to} (${info.messageId})`);
+    console.log(`[Mailer] Sent "${subject}" (${info.messageId})`);
     return { sent: true, messageId: info.messageId };
   } catch (err) {
-    console.error(`[Mailer] Failed to send "${subject}" to ${to}:`, err.message);
+    console.error(`[Mailer] Failed to send "${subject}":`, err.message);
     return { sent: false, reason: err.message };
   }
 }

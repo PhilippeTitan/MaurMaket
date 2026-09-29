@@ -39,7 +39,10 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
     // Check if email is already verified via Better Auth session
     const { getMe } = require('../api');
     getMe().then((data: any) => {
-      if (data.user?.email_verified) setVerified(true);
+      if (data.user) {
+        void store.setUser(data.user, store.token);
+        if (data.user.email_verified) setVerified(true);
+      }
     }).catch(() => {});
     return () => { if (cooldownRef.current) clearInterval(cooldownRef.current); };
   }, []);
@@ -70,7 +73,17 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
       const { getMe } = require('../api');
       const data = await getMe() as any;
       if (!data.user?.email) throw new Error('No email address is associated with this account.');
-      await resendVerificationEmail(data.user.email);
+      await store.setUser(data.user, store.token);
+      if (data.user.email_verified) {
+        setVerified(true);
+        return;
+      }
+      const result = await resendVerificationEmail(data.user.email);
+      if (result.alreadyVerified) {
+        await store.refreshUser();
+        setVerified(true);
+        return;
+      }
       startCooldown();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to send code';

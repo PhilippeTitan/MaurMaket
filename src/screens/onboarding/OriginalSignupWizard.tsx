@@ -10,7 +10,7 @@ import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Sto
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import LottieView from 'lottie-react-native';
-import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
+import { COLORS, SPACING, RADIUS, FONTS, TOUCH } from '../../theme';
 import { useTranslation } from '@/localization';
 import { signup as apiSignup, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
 import { store } from '../../store';
@@ -492,7 +492,7 @@ function StepActions({ children, step, label, onBack, compact }: { children: Rea
   return (
     <>
       <View style={s.stepTopBar}>
-        <TouchableOpacity onPress={onBack} style={s.topBackAction} accessibilityRole="button" accessibilityLabel={t('common.back')}>
+        <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={s.topBackAction} accessibilityRole="button" accessibilityLabel={t('common.back')}>
           <MaterialCommunityIcons name="arrow-left" size={18} color={C.sub} />
           <Text style={s.backActionText}>{t('signup.back')}</Text>
         </TouchableOpacity>
@@ -509,7 +509,7 @@ const Field = React.forwardRef<TextInput, { icon: any; label: string; value: str
 
   return (
     <View style={[s.field, isFocused && s.fieldFocused]} accessibilityRole="none">
-      <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={{ flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <MaterialCommunityIcons name={icon} size={18} color={isFocused ? C.violet : C.sub} />
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={s.fieldLabel}>{label}</Text>
@@ -1538,6 +1538,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                   <TouchableOpacity
                     key={suggestion}
                     onPress={() => set('username', suggestion)}
+                    hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
                     style={[s.usernameSuggestion, form.username === suggestion && s.usernameSuggestionActive]}
                     accessibilityRole="button"
                     accessibilityLabel={t('signup.useUsernameA11y', { username: suggestion })}
@@ -1802,7 +1803,7 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
-  topBackAction: { minHeight: 38, paddingHorizontal: 4, paddingRight: 12, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
+  topBackAction: { minHeight: TOUCH.min, paddingHorizontal: 4, paddingRight: 12, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
   // Splash
   splashBrand: { fontFamily: FONTS.heading, fontSize: 26, fontWeight: '800', color: C.text, marginTop: 12 },
@@ -1850,7 +1851,7 @@ const s = StyleSheet.create({
   keyboardGhostValue: { color: C.text, fontSize: 14, fontWeight: '500' },
   keyboardGhostInput: { height: 22, padding: 0, color: C.text, fontSize: 14, fontWeight: '500' },
   keyboardGhostContinue: { position: 'absolute', left: 28, right: 28, height: 52, borderRadius: 999, backgroundColor: 'rgba(139,92,246,0.32)', borderWidth: 1, borderColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  keyboardGhostButton: { flex: 1, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  keyboardGhostButton: { flex: 1, alignSelf: 'stretch', width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   keyboardGhostContinueText: { color: C.sub, fontSize: 15, fontWeight: '800' },
 
   // Purpose

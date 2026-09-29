@@ -36,6 +36,15 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 let server;
 
+const REQUIRED_AUTH_MIGRATIONS = [
+  'Better Auth: sessions table',
+  'Better Auth: accounts table',
+  'Better Auth: import legacy bcrypt credentials',
+  'Better Auth: verifications table',
+  'Auth plugin: two-factor table',
+  'Auth plugin: passkey table',
+];
+
 async function runMigrations(targetPool) {
   const c = await (targetPool || pool).connect();
   let stepNum = 0;
@@ -1065,6 +1074,26 @@ await step('NatCash phone separation', () => c.query(`
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `));
+    await step('Better Auth: account lookup index', () => c.query(`
+      CREATE INDEX IF NOT EXISTS idx_accounts_user_provider ON accounts(user_id, provider_id);
+    `));
+    await step('Better Auth: import legacy bcrypt credentials', () => c.query(`
+      INSERT INTO accounts (
+        id, user_id, account_id, provider_id, password, created_at, updated_at
+      )
+      SELECT
+        gen_random_uuid()::TEXT, u.id, u.id::TEXT, 'credential', u.password_hash,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      FROM users u
+      WHERE u.password_hash IS NOT NULL
+        AND left(u.password_hash, 4) IN ('$2a$', '$2b$', '$2y$')
+        AND NOT EXISTS (
+          SELECT 1 FROM accounts a
+          WHERE a.user_id = u.id
+            AND a.provider_id = 'credential'
+            AND a.account_id = u.id::TEXT
+        );
+    `));
 
     await step('Better Auth: verifications table', () => c.query(`
       CREATE TABLE IF NOT EXISTS verifications (
@@ -1142,14 +1171,40 @@ await step('NatCash phone separation', () => c.query(`
         secret TEXT NOT NULL,
         backup_codes TEXT NOT NULL,
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        verified BOOLEAN DEFAULT TRUE,
+        verified BOOLEAN NOT NULL DEFAULT FALSE,
         failed_verification_count INTEGER DEFAULT 0,
         locked_until TIMESTAMP
       )
     `));
+    await step('Auth plugin: two-factor verification default', () => c.query(`
+      ALTER TABLE two_factor ALTER COLUMN verified SET DEFAULT FALSE;
+    `));
     await step('Auth plugin: two-factor index', () => c.query(`
       CREATE INDEX IF NOT EXISTS idx_two_factor_user_id ON two_factor(user_id);
       CREATE INDEX IF NOT EXISTS idx_two_factor_secret ON two_factor(secret);
+    `));
+    await step('Auth plugin: passkey table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS passkey (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        public_key TEXT NOT NULL,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        credential_id TEXT NOT NULL UNIQUE,
+        counter INTEGER NOT NULL DEFAULT 0,
+        device_type TEXT NOT NULL,
+        backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+        transports TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        aaguid TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_passkey_user_id ON passkey(user_id);
+    `));
+    await step('Better Auth: protect auth tables from Data API access', () => c.query(`
+      ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE verifications ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE two_factor ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE passkey ENABLE ROW LEVEL SECURITY;
     `));
     await step('Auth plugin: session loginMethod column', () => c.query(`
       ALTER TABLE sessions ADD COLUMN IF NOT EXISTS login_method TEXT;
@@ -1170,6 +1225,7 @@ await step('NatCash phone separation', () => c.query(`
     } else {
       console.log(`[MIGRATION] Complete — all ${stepNum} steps passed`);
     }
+    return failed;
   } finally {
     c.release();
   }
@@ -1200,6 +1256,7 @@ app.use(cors({
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
+  exposedHeaders: ['set-auth-token'],
 }));
 app.use(morgan('combined'));
 
@@ -1533,31 +1590,36 @@ if (isMain) {
       console.log('Cron jobs active: meetup timeout auto-refund (every 5 min), offer expiry (every 15 min)');
     });
   };
-  // Start server IMMEDIATELY — migrations run in background (non-blocking)
-  startServer();
-  runMigrations().catch(err => {
-    console.error('Migration error (non-blocking):', err.message);
+  // Better Auth needs its tables before it can serve requests. Keep startup gated
+  // on the primary migration run so requests cannot race table creation.
+  const primaryMigrations = runMigrations().catch(err => {
+    console.error('[MIGRATION] Primary database migration failed:', err.message);
+    throw err;
   });
-
-  // ───── Neon migration: ensure Better Auth tables exist on secondary ─────
-  if (neonBackupDatabaseUrl) {
-    const neonPool = new (await import('pg')).Pool({
-      connectionString: neonBackupDatabaseUrl,
-      max: 5,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 15000,
-      ssl: neonBackupDatabaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
-    });
-    runMigrations(neonPool).catch(err => {
-      console.error('[MIGRATION] Neon migration error (non-blocking):', err.message);
-    }).finally(() => neonPool.end().catch(() => {}));
-  }
 
   // ───── DB Controller: dual-database failover + replication ─────
   (async () => {
     try {
+      const migrationFailures = await primaryMigrations;
+      const failedAuthMigrations = migrationFailures.filter(name => REQUIRED_AUTH_MIGRATIONS.includes(name));
+      if (failedAuthMigrations.length > 0) {
+        throw new Error(`Required Better Auth schema migrations failed: ${failedAuthMigrations.join(', ')}`);
+      }
+
       const { getDbController, Replicator, Reconciler, createRaidAdapter } = await import('./src/db/index.js');
       const dbController = getDbController();
+
+      // Don't spend startup attempts on an offline backup. When Neon first
+      // passes its health probe, prepare its schema before marking it usable.
+      if (dbController.secondaryPool) {
+        dbController.prepareSecondary = async (secondaryPool) => {
+          console.log(`[MIGRATION] Preparing ${dbController.secondaryName} after recovery...`);
+          const failures = await runMigrations(secondaryPool);
+          if (failures.length > 0) {
+            throw new Error(`${dbController.secondaryName} schema migration failed: ${failures.join(', ')}`);
+          }
+        };
+      }
 
       // Wire the failover proxy — all pool.query(SELECT) routes through controller
       setDbController(dbController);
@@ -1606,8 +1668,9 @@ if (isMain) {
       app.locals.replicator = replicator;
 
       console.log('[DB:Controller] ✅ Dual-database failover + replication active');
+      startServer();
     } catch (err) {
-      console.error('[DB:Controller] Init failed (non-blocking):', err.message);
+      console.error('[STARTUP] Database/auth initialization failed; server not started:', err.message);
     }
   })();
 

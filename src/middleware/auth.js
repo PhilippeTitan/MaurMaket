@@ -1,5 +1,7 @@
 import { pool } from '../config/database.js';
 import { supabase } from '../config/supabase.js';
+import { getAuth } from '../config/auth.js';
+import { fromNodeHeaders } from 'better-auth/node';
 
 async function getSupabaseUser(token) {
   if (!supabase) return null;
@@ -8,45 +10,48 @@ async function getSupabaseUser(token) {
 }
 
 /**
- * Validate a Better Auth session token by querying the sessions table directly.
- * Better Auth's auth.api.getSession() only works with cookie-based sessions (via toNodeHandler).
- * For Bearer token validation from custom middleware, we query the DB directly.
- * Returns { userId, email } or null.
+ * Validate the Bearer token through Better Auth so its bearer plugin can decode
+ * the set-auth-token format before looking up the session in the configured DB.
+ * Returns { userId, email } or null for a token that is not a Better Auth session.
  */
-async function getBetterAuthUser(token) {
-  try {
-    const result = await pool.query(
-      `SELECT s.user_id, s.expires_at, u.email
-       FROM sessions s
-       JOIN users u ON u.id = s.user_id
-       WHERE s.token = $1 AND s.expires_at > NOW()`,
-      [token]
-    );
-    if (result.rows.length > 0) {
-      const row = result.rows[0];
-      return { userId: row.user_id, email: row.email };
-    }
-  } catch (err) {
-    console.log('[AUTH-MW] Session lookup error:', err.message);
-  }
-  return null;
+async function getBetterAuthUser(req) {
+  const auth = getAuth();
+  const authContext = await auth.$context;
+  const cookieName = authContext.authCookies.sessionToken.name;
+  const bearerToken = req.headers.authorization.slice(7).trim();
+  const headers = fromNodeHeaders(req.headers);
+  const cookies = (headers.get('cookie') || '')
+    .split(';')
+    .map((cookie) => cookie.trim())
+    .filter((cookie) => cookie && cookie.slice(0, cookie.indexOf('=')) !== cookieName);
+  // The bearer plugin performs this conversion on HTTP requests. Internal
+  // Better Auth API calls read the signed cookie directly, so mirror the
+  // conversion here while preserving any other request cookies.
+  cookies.push(`${cookieName}=${bearerToken}`);
+  headers.set('cookie', cookies.join('; '));
+  const sessionData = await auth.api.getSession({ headers });
+  if (!sessionData?.user?.id) return null;
+  return { userId: sessionData.user.id, email: sessionData.user.email };
 }
 
 async function optionalAuth(req, _res, next) {
   const auth = req.headers.authorization;
   if (auth && auth.startsWith('Bearer ')) {
-    const token = auth.slice(7);
     // Try Better Auth first
-    const baUser = await getBetterAuthUser(token);
-    if (baUser) {
-      const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [baUser.userId]);
-      if (result.rows.length > 0) {
-        req.user = { id: result.rows[0].id, email: result.rows[0].email, role: result.rows[0].role };
-        return next();
+    try {
+      const baUser = await getBetterAuthUser(req);
+      if (baUser) {
+        const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [baUser.userId]);
+        if (result.rows.length > 0) {
+          req.user = { id: result.rows[0].id, email: result.rows[0].email, role: result.rows[0].role };
+          return next();
+        }
       }
+    } catch (err) {
+      console.error('[AUTH-MW] Better Auth validation failed:', err.message);
     }
     // Fall back to Supabase
-    const supabaseUser = await getSupabaseUser(token);
+    const supabaseUser = await getSupabaseUser(auth.slice(7));
     if (supabaseUser) {
       req.user = { id: supabaseUser.id, email: supabaseUser.email, role: 'buyer' };
     }
@@ -61,19 +66,27 @@ async function authRequired(req, res, next) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // 1) Try Better Auth session first
+  // 1) Try Better Auth session first. Its API applies the Bearer plugin's
+  // token decoding and reads through the same adapter used by Better Auth.
+  let baUser;
   try {
-    const baUser = await getBetterAuthUser(auth.slice(7));
-    if (baUser) {
+    baUser = await getBetterAuthUser(req);
+  } catch (error) {
+    console.error('[AUTH-MW] Better Auth session validation error:', error.message);
+    return res.status(503).json({ error: 'Authentication service temporarily unavailable' });
+  }
+  if (baUser) {
+    try {
       const result = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [baUser.userId]);
       if (result.rows.length === 0 || result.rows[0].role === 'deleted') {
         return res.status(401).json({ error: 'Account no longer active' });
       }
       req.user = { id: result.rows[0].id, email: result.rows[0].email, role: result.rows[0].role };
       return next();
+    } catch (error) {
+      console.error('[AUTH-MW] Better Auth profile lookup error:', error.message);
+      return res.status(503).json({ error: 'Authentication service temporarily unavailable' });
     }
-  } catch {
-    // Not a Better Auth token — try Supabase below
   }
 
   // 2) Fall back to Supabase validation (backward compatibility)

@@ -283,7 +283,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, onNaturalComplete
         <Animated.View style={[styles.authActions, { opacity: controlsOpacity }]}>
           <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignUp')} />
           {onSwitchToSignin && (
-            <Pressable onPress={onSwitchToSignin} style={styles.signinAction}>
+            <Pressable onPress={onSwitchToSignin} hitSlop={{ top: 10, bottom: 10, left: 24, right: 24 }} style={styles.signinAction}>
               <Text style={styles.signinActionText}>
                 {t('auth.hasAccount')} <Text style={styles.signinActionLink}>{t('auth.signIn')}</Text>
               </Text>
@@ -320,7 +320,9 @@ const styles = StyleSheet.create({
   },
   signinAction: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingTop: 16,
+    minHeight: 44,
   },
   signinActionText: {
     color: COLORS.text2,

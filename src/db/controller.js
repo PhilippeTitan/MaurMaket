@@ -18,12 +18,21 @@ const BREAKER_THRESHOLD = 3;
 const BREAKER_COOLDOWN_MS = 15_000;
 const QUOTA_COOLDOWN_MS = 60_000; // 1 min for quota errors — don't hammer
 
+function isDatabaseAvailabilityError(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  return code.startsWith('08')
+    || ['53300', '57P01', '57P02', '57P03'].includes(code)
+    || /quota.*exceeded|exceeded.*quota|connection terminated|connection closed|connect(?:ion)? timeout|econn(?:refused|reset|timedout)|socket hang up/i.test(message);
+}
+
 class CircuitBreaker {
   constructor(name) {
     this.name = name;
     this.failures = 0;
     this.unavailableUntil = 0;
     this._quotaLogged = false;
+    this.lastError = null;
   }
 
   get isHealthy() {
@@ -33,20 +42,24 @@ class CircuitBreaker {
   recordSuccess() {
     this.failures = 0;
     this._quotaLogged = false;
+    this.lastError = null;
   }
 
   recordFailure(errorMsg) {
     this.failures++;
+    this.lastError = errorMsg || 'Unknown database error';
     const isQuota = /exceeded the quota|quota.*exceeded/i.test(errorMsg || '');
     if (isQuota && !this._quotaLogged) {
       console.warn(`[DB:${this.name}] Quota exhausted — backing off for ${QUOTA_COOLDOWN_MS / 1000}s`);
       this._quotaLogged = true;
     }
-    if (this.failures >= BREAKER_THRESHOLD) {
-      this.unavailableUntil = Date.now() + (isQuota ? QUOTA_COOLDOWN_MS : BREAKER_COOLDOWN_MS);
-      if (!isQuota) {
-        console.warn(`[DB:${this.name}] Circuit breaker OPEN — cooling down for ${BREAKER_COOLDOWN_MS / 1000}s`);
-      }
+    if (isQuota) {
+      // Quota failures are definitive: stop probing immediately instead of
+      // burning two more health checks before the quota backoff takes effect.
+      this.unavailableUntil = Date.now() + QUOTA_COOLDOWN_MS;
+    } else if (this.failures >= BREAKER_THRESHOLD) {
+      this.unavailableUntil = Date.now() + BREAKER_COOLDOWN_MS;
+      console.warn(`[DB:${this.name}] Circuit breaker OPEN — cooling down for ${BREAKER_COOLDOWN_MS / 1000}s`);
     }
   }
 }
@@ -75,6 +88,9 @@ export class DatabaseController {
 
     this.supabaseBreaker = new CircuitBreaker('supabase');
     this.neonBreaker = new CircuitBreaker('neon');
+    this.secondarySchemaReady = false;
+    this.prepareSecondary = null;
+    this._secondaryPreparePromise = null;
 
     // Primary state
     this._primary = process.env.DATABASE_PRIMARY || 'supabase';
@@ -117,26 +133,48 @@ export class DatabaseController {
     return this._primary === 'supabase' ? 'neon' : 'supabase';
   }
 
+  get isSecondaryReady() {
+    return !this.prepareSecondary || this.secondarySchemaReady;
+  }
+
+  async _ensureSecondarySchema(pool) {
+    if (pool !== this.secondaryPool || !this.prepareSecondary || this.secondarySchemaReady) return;
+    if (!this._secondaryPreparePromise) {
+      this._secondaryPreparePromise = Promise.resolve()
+        .then(() => this.prepareSecondary(pool))
+        .then(() => {
+          this.secondarySchemaReady = true;
+          console.log(`[DB:Controller] Secondary (${this.secondaryName}) schema is ready`);
+        })
+        .finally(() => { this._secondaryPreparePromise = null; });
+    }
+    await this._secondaryPreparePromise;
+  }
+
   async healthCheck() {
     const results = { supabase: false, neon: false };
 
-    if (this.supabase) {
+    if (this.supabase && this.supabaseBreaker.isHealthy) {
       try {
         await this.supabase.query('SELECT 1');
+        await this._ensureSecondarySchema(this.supabase);
         this.supabaseBreaker.recordSuccess();
         results.supabase = true;
       } catch (e) {
         this.supabaseBreaker.recordFailure(e?.message);
+        console.error(`[DB:supabase] Health check failed: ${e?.message || 'Unknown database error'}`);
       }
     }
 
-    if (this.neon) {
+    if (this.neon && this.neonBreaker.isHealthy) {
       try {
         await this.neon.query('SELECT 1');
+        await this._ensureSecondarySchema(this.neon);
         this.neonBreaker.recordSuccess();
         results.neon = true;
       } catch (e) {
         this.neonBreaker.recordFailure(e?.message);
+        console.error(`[DB:neon] Health check failed: ${e?.message || 'Unknown database error'}`);
       }
     }
 
@@ -173,11 +211,11 @@ export class DatabaseController {
 
   _getReadPool() {
     if (this._mode === 'FAILOVER') {
-      if (this.secondaryBreaker.isHealthy) return this.secondaryPool;
+      if (this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
       return null;
     }
     if (!this.primaryIsHealthy) {
-      if (this.secondaryBreaker.isHealthy) return this.secondaryPool;
+      if (this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
       return null;
     }
     return this.primaryPool;
@@ -186,18 +224,20 @@ export class DatabaseController {
   _getWritePool() {
     if (this._mode === 'FAILOVER') {
       // Only use secondary if it's actually healthy
-      if (this.secondaryBreaker.isHealthy) return this.secondaryPool;
+      if (this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
       return null;
     }
     if (!this.primaryIsHealthy) {
       // Primary down — try secondary if healthy
-      if (this.secondaryBreaker.isHealthy) return this.secondaryPool;
+      if (this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
       return null;
     }
     return this.primaryPool;
   }
 
-  _getWriteSource() {
+  _getWriteSource(pool = this.primaryPool) {
+    if (pool === this.supabase) return 'supabase';
+    if (pool === this.neon) return 'neon';
     return this._primary;
   }
 
@@ -208,26 +248,45 @@ export class DatabaseController {
    */
   async query(sql, params) {
     const pool = this._getReadPool();
-    if (!pool) throw new Error('[DB:Controller] No healthy database available');
+    if (!pool) {
+      const failures = [
+        this.supabaseBreaker.lastError && `Supabase: ${this.supabaseBreaker.lastError}`,
+        this.neonBreaker.lastError && `Neon: ${this.neonBreaker.lastError}`,
+      ].filter(Boolean).join('; ');
+      throw new Error(`[DB:Controller] No healthy database available${failures ? ` (${failures})` : ''}`);
+    }
 
     try {
       const result = await pool.query(sql, params);
-      this.primaryBreaker.recordSuccess();
+      this._breakerForPool(pool).recordSuccess();
       return result;
     } catch (error) {
-      // If primary failed, try secondary
-      const secondary = this._secondaryPool;
-      if (secondary && secondary !== pool) {
+      const poolBreaker = this._breakerForPool(pool);
+      if (!isDatabaseAvailabilityError(error)) throw error;
+      poolBreaker.recordFailure(error?.message);
+      // Reads may fail over to the other database. Use the actual configured
+      // secondary pool; `_secondaryPool` was never initialized.
+      const secondary = pool === this.primaryPool ? this.secondaryPool : this.primaryPool;
+      const secondaryBreaker = pool === this.primaryPool ? this.secondaryBreaker : this.primaryBreaker;
+      if (secondary && secondary !== pool && secondaryBreaker.isHealthy) {
         try {
           const result = await secondary.query(sql, params);
+          secondaryBreaker.recordSuccess();
           return result;
         } catch (secondaryError) {
-          throw error; // both failed
+          if (!isDatabaseAvailabilityError(secondaryError)) throw secondaryError;
+          secondaryBreaker.recordFailure(secondaryError?.message);
+          throw new AggregateError([error, secondaryError], '[DB:Controller] Read failed on both databases');
         }
       }
-      this.primaryBreaker.recordFailure();
       throw error;
     }
+  }
+
+  _breakerForPool(pool) {
+    if (pool === this.supabase) return this.supabaseBreaker;
+    if (pool === this.neon) return this.neonBreaker;
+    throw new Error('[DB:Controller] Query used an unregistered database pool');
   }
 
   /**
@@ -259,7 +318,7 @@ export class DatabaseController {
 
     const client = await pool.connect();
     const operationId = crypto.randomUUID();
-    const source = this._getWriteSource();
+    const source = this._getWriteSource(pool);
 
     try {
       await client.query('BEGIN');
@@ -275,11 +334,11 @@ export class DatabaseController {
       );
 
       await client.query('COMMIT');
-      this.primaryBreaker.recordSuccess();
+      this._breakerForPool(pool).recordSuccess();
       return { result, operationId };
     } catch (error) {
-      await client.query('ROLLBACK');
-      this.primaryBreaker.recordFailure();
+      await client.query('ROLLBACK').catch(() => {});
+      if (isDatabaseAvailabilityError(error)) this._breakerForPool(pool).recordFailure(error.message);
       throw error;
     } finally {
       client.release();
@@ -317,9 +376,10 @@ export class DatabaseController {
         const entries = Object.entries(data);
         const setClauses = entries.map(([key], i) => `${key} = $${i + 1}`);
         const values = entries.map(([, val]) => val);
+        if (!entries.some(([key]) => key === 'updated_at')) setClauses.push('updated_at = NOW()');
         values.push(id);
         const result = await client.query(
-          `UPDATE ${model} SET ${setClauses.join(', ')}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`,
+          `UPDATE ${model} SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`,
           values
         );
         return result.rows[0];
@@ -349,7 +409,7 @@ export class DatabaseController {
 
     const client = await pool.connect();
     const operationId = crypto.randomUUID();
-    const source = this._getWriteSource();
+    const source = this._getWriteSource(pool);
 
     try {
       await client.query('BEGIN');
@@ -383,11 +443,11 @@ export class DatabaseController {
       );
 
       await client.query('COMMIT');
-      this.primaryBreaker.recordSuccess();
+      this._breakerForPool(pool).recordSuccess();
       return record;
     } catch (error) {
-      await client.query('ROLLBACK');
-      this.primaryBreaker.recordFailure();
+      await client.query('ROLLBACK').catch(() => {});
+      if (isDatabaseAvailabilityError(error)) this._breakerForPool(pool).recordFailure(error.message);
       throw error;
     } finally {
       client.release();
@@ -403,7 +463,7 @@ export class DatabaseController {
 
     const client = await pool.connect();
     const operationId = crypto.randomUUID();
-    const source = this._getWriteSource();
+    const source = this._getWriteSource(pool);
 
     try {
       await client.query('BEGIN');
@@ -433,11 +493,11 @@ export class DatabaseController {
       }
 
       await client.query('COMMIT');
-      this.primaryBreaker.recordSuccess();
+      this._breakerForPool(pool).recordSuccess();
       return record;
     } catch (error) {
-      await client.query('ROLLBACK');
-      this.primaryBreaker.failures++;
+      await client.query('ROLLBACK').catch(() => {});
+      if (isDatabaseAvailabilityError(error)) this._breakerForPool(pool).recordFailure(error.message);
       throw error;
     } finally {
       client.release();
@@ -481,7 +541,7 @@ export class DatabaseController {
 
     const client = await pool.connect();
     const operationId = opts.model ? crypto.randomUUID() : null;
-    const source = this._getWriteSource();
+    const source = this._getWriteSource(pool);
 
     try {
       await client.query('BEGIN');
@@ -498,11 +558,11 @@ export class DatabaseController {
       }
 
       await client.query('COMMIT');
-      this.primaryBreaker.recordSuccess();
+      this._breakerForPool(pool).recordSuccess();
       return { result, operationId };
     } catch (error) {
-      await client.query('ROLLBACK');
-      this.primaryBreaker.recordFailure();
+      await client.query('ROLLBACK').catch(() => {});
+      if (isDatabaseAvailabilityError(error)) this._breakerForPool(pool).recordFailure(error.message);
       throw error;
     } finally {
       client.release();
@@ -519,6 +579,7 @@ export class DatabaseController {
       neonHealthy: this.neonBreaker.isHealthy,
       supabaseFailures: this.supabaseBreaker.failures,
       neonFailures: this.neonBreaker.failures,
+      secondarySchemaReady: this.isSecondaryReady,
     };
   }
 

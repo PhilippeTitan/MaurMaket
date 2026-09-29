@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import {
   View, Text, Image, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform,
   KeyboardAvoidingView, ScrollView, Animated,
@@ -16,6 +16,8 @@ import ScreenHeader from '../components/ScreenHeader';
 import { updateProfile, changePassword, updateSellerProfile, resendVerificationEmail } from '../api';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
+import { useFocusEffect } from '@react-navigation/native';
+import { useUser } from '../hooks/useUser';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -36,9 +38,13 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const { field, title } = route.params;
-  const user = store.user;
+  const { user, refetch: refetchUser } = useUser();
   const [loading, setLoading] = useState(false);
   const [sendingVerification, setSendingVerification] = useState(false);
+
+  useFocusEffect(useCallback(() => {
+    void refetchUser();
+  }, [refetchUser]));
 
   const meta = FIELD_META[field] || FIELD_META.name;
 
@@ -87,9 +93,18 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
 
   const handleVerifyEmail = async () => {
     if (!user?.email) return;
+    if (user.email_verified) {
+      toast.show({ kind: 'info', title: t('verify.success'), message: t('verify.successSub') });
+      return;
+    }
     setSendingVerification(true);
     try {
-      await resendVerificationEmail(user.email);
+      const result = await resendVerificationEmail(user.email);
+      if (result.alreadyVerified) {
+        await refetchUser();
+        toast.show({ kind: 'info', title: t('verify.success'), message: t('verify.successSub') });
+        return;
+      }
       toast.show({ kind: 'success', title: t('settingsEdit.verificationEmailSent') });
     } catch (err: unknown) {
       toast.show({ kind: 'error', title: err instanceof Error ? err.message : t('settingsEdit.resendFailed') });
@@ -311,7 +326,15 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {field === 'email' && user?.email && !user.email_verified && (
+          {field === 'email' && user?.email && (user.email_verified ? (
+            <View style={styles.verifyCard} accessibilityRole="summary">
+              <MaterialCommunityIcons name="check-circle" size={24} color={COLORS.green} />
+              <View style={styles.verifyTextWrap}>
+                <Text style={styles.verifyTitle}>{t('verify.success')}</Text>
+                <Text style={styles.verifySubtitle}>{t('verify.successSub')}</Text>
+              </View>
+            </View>
+          ) : (
             <TouchableOpacity
               style={styles.verifyCard}
               activeOpacity={0.8}
@@ -329,7 +352,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
-          )}
+          ))}
 
           {/* ── Character count ── */}
           {field === 'bio' && (

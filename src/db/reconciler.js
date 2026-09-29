@@ -55,6 +55,10 @@ export class Reconciler {
         console.log('[Reconciler] Missing pool — aborting');
         return;
       }
+      if (!this.controller.isSecondaryReady) {
+        console.log('[Reconciler] Secondary schema is not ready — aborting');
+        return;
+      }
 
       // 1. Find operations on secondary that primary doesn't have
       const missingOnPrimary = await this._findMissingOperations(secondaryPool, primaryPool);

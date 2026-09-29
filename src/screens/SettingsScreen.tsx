@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Platform, TouchableOpacity, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -14,6 +14,7 @@ import SettingsRow from '../components/SettingsRow';
 import ProfileCard from '../components/ProfileCard';
 import ConfirmModal from '../components/ConfirmModal';
 import { useTranslation } from '@/localization';
+import { useFocusEffect } from '@react-navigation/native';
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -24,8 +25,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export default function SettingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const { user } = useUser();
+  const { user, refetch } = useUser();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  useFocusEffect(useCallback(() => {
+    void refetch();
+  }, [refetch]));
 
   // Staggered entrance animations — 9 sections (profile + 7 groups + logout)
   const sections = useRef(

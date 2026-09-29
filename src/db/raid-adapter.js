@@ -17,6 +17,7 @@ const MODEL_TO_TABLE = {
   account: 'accounts',
   verification: 'verifications',
   twoFactor: 'two_factor',
+  passkey: 'passkey',
 };
 
 const FIELD_MAP = {
@@ -62,6 +63,14 @@ const FIELD_MAP = {
     failedVerificationCount: 'failed_verification_count',
     lockedUntil: 'locked_until',
   },
+  passkey: {
+    userId: 'user_id',
+    publicKey: 'public_key',
+    credentialID: 'credential_id',
+    deviceType: 'device_type',
+    backedUp: 'backed_up',
+    createdAt: 'created_at',
+  },
 };
 
 // Build reverse maps once at module load
@@ -72,6 +81,43 @@ for (const [model, map] of Object.entries(FIELD_MAP)) {
     rev[dbCol] = baName;
   }
   REVERSE_MAPS[model] = rev;
+}
+
+// ─── Relation map: which side owns the foreign key ──────────────────
+// 'main' → the FK column lives on the MAIN model and points at the joined row's id
+//          (e.g. sessions.user_id → users.id)
+// 'join' → the FK column lives on the JOINED model and points at the main row's id
+//          (e.g. accounts.user_id → users.id)
+const RELATIONS = {
+  'session:user': { side: 'main', field: 'userId' },
+  'account:user': { side: 'main', field: 'userId' },
+  'twoFactor:user': { side: 'main', field: 'userId' },
+  'user:account': { side: 'join', column: 'user_id' },
+  'user:session': { side: 'join', column: 'user_id' },
+  'user:twoFactor': { side: 'join', column: 'user_id' },
+  'passkey:user': { side: 'main', field: 'userId' },
+  'user:passkey': { side: 'join', column: 'user_id' },
+};
+
+/**
+ * Resolve how `joinModel` relates to `model`.
+ * Explicit map first, then infer from the field maps as a fallback.
+ */
+function resolveRelation(model, joinModel) {
+  const known = RELATIONS[`${model}:${joinModel}`];
+  if (known) return known;
+
+  // FK on the main model pointing to the joined model?
+  const mainFkField = Object.entries(FIELD_MAP[model] || {})
+    .find(([baField, dbCol]) => dbCol.endsWith('_id') && baField.toLowerCase().startsWith(joinModel.toLowerCase()))?.[0];
+  if (mainFkField) return { side: 'main', field: mainFkField };
+
+  // FK on the joined model pointing back to the main model?
+  const joinFkColumn = Object.entries(FIELD_MAP[joinModel] || {})
+    .find(([baField, dbCol]) => dbCol.endsWith('_id') && baField.toLowerCase().startsWith(model.toLowerCase()))?.[1];
+  if (joinFkColumn) return { side: 'join', column: joinFkColumn };
+
+  return null;
 }
 
 function toTable(model) { return MODEL_TO_TABLE[model] || model; }
@@ -101,18 +147,35 @@ function buildWhere(model, where, startIdx = 1) {
   const values = [];
   for (const w of where) {
     const col = toColumn(model, w.field);
-    if (w.operator === 'in') {
+    const operator = w.operator || 'eq';
+    if (operator === 'in' || operator === 'not_in') {
       const placeholders = w.value.map((_, j) => `$${startIdx + values.length + j}`).join(',');
-      conditions.push(`${col} IN (${placeholders})`);
+      conditions.push(`${col} ${operator === 'not_in' ? 'NOT IN' : 'IN'} (${placeholders})`);
       values.push(...w.value);
+    } else if (operator === 'contains' || operator === 'starts_with' || operator === 'ends_with') {
+      const escapeLike = value => String(value).replace(/[\\%_]/g, '\\$&');
+      const rawValue = escapeLike(w.value);
+      const pattern = operator === 'contains' ? `%${rawValue}%`
+        : operator === 'starts_with' ? `${rawValue}%` : `%${rawValue}`;
+      const likeOperator = w.mode === 'insensitive' ? 'ILIKE' : 'LIKE';
+      conditions.push(`${col} ${likeOperator} $${startIdx + values.length}`);
+      values.push(pattern);
+    } else if (w.value === null && (operator === 'eq' || operator === 'ne')) {
+      conditions.push(`${col} IS ${operator === 'ne' ? 'NOT ' : ''}NULL`);
     } else {
-      const op = w.operator || '=';
+      const op = ({ eq: '=', ne: '<>', lt: '<', lte: '<=', gt: '>', gte: '>=' })[operator];
+      if (!op) throw new Error(`Unsupported Better Auth where operator: ${operator}`);
       const idx = startIdx + values.length;
       conditions.push(`${col} ${op} $${idx}`);
       values.push(w.value);
     }
   }
-  return { conditions, values };
+  // Better Auth defines the connector on each predicate (default AND).
+  // Preserve that behavior while grouping each predicate for mixed connectors.
+  const connected = conditions.map((condition, index) =>
+    index === 0 ? condition : `${where[index].connector === 'OR' ? 'OR' : 'AND'} ${condition}`
+  );
+  return { conditions: connected.length ? [`(${connected.join(' ')})`] : [], values };
 }
 
 // ─── JOIN query support ─────────────────────────────────────────────
@@ -128,15 +191,15 @@ async function findOneWithJoin(queryFn, model, where, select, join) {
 
   // Main query
   const tableName = toTable(model);
-  // Ensure FK fields needed for joins are always selected
+  // Ensure fields needed to resolve the joins are always selected
   let effectiveSelect = select;
   if (effectiveSelect && joinModels.length > 0) {
+    // `id` is needed whenever a joined model holds the FK back to us
+    if (!effectiveSelect.includes('id')) effectiveSelect = ['id', ...effectiveSelect];
     for (const jm of joinModels) {
-      const fkField = Object.entries(FIELD_MAP[model] || {})
-        .find(([baField, dbCol]) => dbCol.endsWith('_id') && baField.toLowerCase().startsWith(jm.toLowerCase()))?.[0]
-        || (model === 'session' && jm === 'user' ? 'userId' : null);
-      if (fkField && !effectiveSelect.includes(fkField)) {
-        effectiveSelect = [...effectiveSelect, fkField];
+      const relation = resolveRelation(model, jm);
+      if (relation?.side === 'main' && !effectiveSelect.includes(relation.field)) {
+        effectiveSelect = [...effectiveSelect, relation.field];
       }
     }
   }
@@ -150,19 +213,22 @@ async function findOneWithJoin(queryFn, model, where, select, join) {
   const joinData = {};
   for (const jm of joinModels) {
     const joinTable = toTable(jm);
-    // FK is on the MAIN model (e.g. session.userId → users.id)
-    // Find the FK field name on the main model that points to the join model
-    const mainFkField = Object.entries(FIELD_MAP[model] || {})
-      .find(([baField, dbCol]) => dbCol.endsWith('_id') && baField.toLowerCase().startsWith(jm.toLowerCase()))?.[0]
-      || (model === 'session' && jm === 'user' ? 'userId' : null);
-    const fkValue = mainFkField ? mainRow[mainFkField] : mainRow.id;
-    if (!fkValue) {
+    const relation = resolveRelation(model, jm);
+
+    // Which column do we filter on, and with what value?
+    //   main-side FK → joined.id = mainRow.<field>
+    //   join-side FK → joined.<column> = mainRow.id
+    const column = relation?.side === 'join' ? relation.column : 'id';
+    const value = relation?.side === 'join' ? mainRow.id : (relation ? mainRow[relation.field] : null);
+
+    if (!relation || !value) {
       joinData[jm] = [];
       continue;
     }
+
     const joinResult = await queryFn(
-      `SELECT * FROM ${joinTable} WHERE id = $1`,
-      [fkValue]
+      `SELECT * FROM ${joinTable} WHERE ${column} = $1`,
+      [value]
     );
     joinData[jm] = fromDbRows(jm, joinResult.rows);
   }

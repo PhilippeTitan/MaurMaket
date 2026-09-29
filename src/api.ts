@@ -1,6 +1,9 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
+import { createAuthClient } from 'better-auth/client';
+import { twoFactorClient } from 'better-auth/client/plugins';
+import { passkeyClient } from '@better-auth/passkey/client';
 import type { Conversation, Product } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
@@ -51,6 +54,7 @@ export const UPLOAD_BASE = Platform.OS === 'web'
 
 let _cachedToken: string | null = null;
 let _tokenRead = false;
+let _betterAuthClient: any = null;
 
 // Simple platform-aware storage for Better Auth session token
 const tokenStorage = {
@@ -83,6 +87,30 @@ export function setCachedToken(token: string | null) {
   _tokenRead = true;
   if (token) tokenStorage.setItem('ba_session_token', token);
   else tokenStorage.deleteItem('ba_session_token');
+}
+
+function getBetterAuthClient() {
+  if (!_betterAuthClient) {
+    _betterAuthClient = createAuthClient({
+      baseURL: API_BASE.replace(/\/api\/?$/, ''),
+      basePath: '/api/auth',
+      plugins: [twoFactorClient(), passkeyClient()],
+      fetchOptions: {
+        credentials: 'include',
+        auth: { type: 'Bearer', token: () => _cachedToken || '' },
+        onSuccess: (context: any) => {
+          const token = context.response.headers.get('set-auth-token');
+          if (token) setCachedToken(token);
+        },
+      },
+    });
+  }
+  return _betterAuthClient;
+}
+
+async function ensureAuthTokenLoaded() {
+  await getToken();
+  return getBetterAuthClient();
 }
 
 /** Clear the stored Better Auth session token (used on logout). */
@@ -239,6 +267,9 @@ const getPasswordResetRedirectUrl = () => {
  * We grab it from Set-Cookie header or response body.
  */
 function extractSessionToken(res: Response, body: any): string | null {
+  // Better Auth's bearer plugin exposes the session token in this header.
+  const bearerToken = res.headers.get('set-auth-token');
+  if (bearerToken) return bearerToken;
   // 1) Check response body for session token
   if (body?.session?.token) return body.session.token;
   if (body?.token) return body.token;
@@ -254,6 +285,7 @@ function extractSessionToken(res: Response, body: any): string | null {
 /** Auth-fetch wrapper: calls the backend with auto-env and returns JSON. */
 async function authFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; body: any }> {
   const url = `${API_BASE}${path}`;
+  const token = await getToken();
   const origin = (() => {
     try { return new URL(API_BASE).origin; } catch { return 'https://maurmaket.onrender.com'; }
   })();
@@ -262,7 +294,8 @@ async function authFetch(path: string, options: RequestInit = {}): Promise<{ res
     'Origin': origin,
     ...(options.headers as Record<string, string> || {}),
   };
-  const res = await fetch(url, { ...options, headers });
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(url, { ...options, headers, credentials: 'include' });
   let body: any;
   try { body = await res.json(); } catch { body = {}; }
   return { res, body };
@@ -292,7 +325,14 @@ export const signup = async (fullName: string, email: string, password: string, 
   }
 
   const token = extractSessionToken(res, body);
-  if (token) setCachedToken(token);
+  if (!token) {
+    // Do not let a previous login's token make the profile request look like
+    // this sign-in succeeded. Better Auth's bearer plugin returns fresh tokens
+    // in `set-auth-token`; a successful response without one is incomplete.
+    await clearSessionToken();
+    throw new Error('Sign-in succeeded, but the server did not return a session token. Please try again.');
+  }
+  setCachedToken(token);
 
   // Bootstrap profile with extra fields that Better Auth doesn't handle (DOB, etc.)
   try {
@@ -329,8 +369,16 @@ export const resendVerificationEmail = async (email: string) => {
       callbackURL: getAuthRedirectUrl(),
     }),
   });
+  const errorText = [
+    body?.code,
+    body?.message,
+    typeof body?.error === 'string' ? body.error : body?.error?.code,
+  ].filter(Boolean).join(' ');
+  if (/EMAIL_ALREADY_VERIFIED|email.{0,30}already verified/i.test(errorText)) {
+    return { success: false, alreadyVerified: true };
+  }
   if (!res.ok) throw new Error(body?.message || body?.error || 'Failed to resend verification email');
-  return { success: true };
+  return { success: body?.status !== false, alreadyVerified: false };
 };
 
 export const login = async (email: string, password: string) => {
@@ -342,6 +390,9 @@ export const login = async (email: string, password: string) => {
     body: JSON.stringify({ email: normalizedEmail, password }),
   });
 
+  if (body?.twoFactorRedirect) {
+    return { requiresTwoFactor: true, twoFactorMethods: body.twoFactorMethods || ['totp'] };
+  }
   if (!res.ok) {
     throw new Error(body?.message || body?.error || 'Invalid email or password');
   }
@@ -364,6 +415,119 @@ export const login = async (email: string, password: string) => {
       }),
     }).then((response: any) => ({ ...response, token }));
   }
+};
+
+export const completeTwoFactorLogin = async (code: string, backupCode = false) => {
+  const client = await ensureAuthTokenLoaded();
+  const result = backupCode
+    ? await client.twoFactor.verifyBackupCode({ code, trustDevice: false })
+    : await client.twoFactor.verifyTotp({ code, trustDevice: false });
+  if (result.error) throw new Error(result.error.message || 'The verification code was not accepted.');
+  const token = _cachedToken;
+  const profile = await getMe() as any;
+  return { ...profile, token };
+};
+
+export interface BetterAuthSecuritySession {
+  id: string;
+  token: string;
+  createdAt: string;
+  expiresAt: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
+export const getSecuritySnapshot = async () => {
+  const client = await ensureAuthTokenLoaded();
+  const [sessionResult, sessionsResult, accountsResult, passkeysResult] = await Promise.all([
+    client.getSession(),
+    client.listSessions(),
+    client.listAccounts(),
+    client.passkey.listUserPasskeys(),
+  ]);
+  for (const result of [sessionResult, accountsResult, passkeysResult] as any[]) {
+    if (result?.error) throw new Error(result.error.message || 'Could not load account security details.');
+  }
+  const sessionsRequireFreshAuth = Boolean(sessionsResult?.error && Number(sessionsResult.error.status) === 403);
+  if (sessionsResult?.error && !sessionsRequireFreshAuth) {
+    throw new Error(sessionsResult.error.message || 'Could not load signed-in devices.');
+  }
+  const sessionData: any = sessionResult.data;
+  if (!sessionData?.session?.id || !sessionData?.user?.id) {
+    throw new Error('No active Better Auth session was found for this account.');
+  }
+  if ((!sessionsRequireFreshAuth && !Array.isArray(sessionsResult.data)) || !Array.isArray(accountsResult.data) || !Array.isArray(passkeysResult.data)) {
+    throw new Error('Better Auth returned an unexpected account security response.');
+  }
+  return {
+    currentSession: sessionData.session,
+    user: sessionData.user,
+    sessions: (sessionsRequireFreshAuth ? [] : sessionsResult.data) as BetterAuthSecuritySession[],
+    sessionsRequireFreshAuth,
+    accounts: accountsResult.data,
+    passkeys: passkeysResult.data,
+  };
+};
+
+export const enableAuthenticator = async (password: string) => {
+  const { res, body } = await authFetch('/auth/two-factor/enable', {
+    method: 'POST',
+    body: JSON.stringify({ password, method: 'totp', issuer: 'MaurMaket' }),
+  });
+  if (!res.ok) throw new Error(body?.message || body?.error || 'Could not start authenticator setup.');
+  return body as { totpURI: string; backupCodes: string[] };
+};
+
+export const verifyAuthenticator = async (code: string) => {
+  const { res, body } = await authFetch('/auth/two-factor/verify-totp', {
+    method: 'POST', body: JSON.stringify({ code, trustDevice: false }),
+  });
+  if (!res.ok) throw new Error(body?.message || body?.error || 'That authenticator code was not accepted.');
+  return body;
+};
+
+export const disableAuthenticator = async (password: string) => {
+  const { res, body } = await authFetch('/auth/two-factor/disable', {
+    method: 'POST', body: JSON.stringify({ password }),
+  });
+  if (!res.ok) throw new Error(body?.message || body?.error || 'Could not turn off two-step verification.');
+  return body;
+};
+
+export const revokeAuthSession = async (token: string) => {
+  const client = await ensureAuthTokenLoaded();
+  const result = await client.revokeSession({ token });
+  if (result.error) throw new Error(result.error.message || 'Could not sign out that device.');
+  return result.data;
+};
+
+export const addAccountPasskey = async (name: string) => {
+  const client = await ensureAuthTokenLoaded();
+  const result = await client.passkey.addPasskey({ name, authenticatorAttachment: 'platform' });
+  if (result.error) throw new Error(result.error.message || 'Could not add a passkey.');
+  return result.data;
+};
+
+export const deleteAccountPasskey = async (id: string) => {
+  const client = await ensureAuthTokenLoaded();
+  const result = await client.passkey.deletePasskey({ id });
+  if (result.error) throw new Error(result.error.message || 'Could not remove that passkey.');
+  return result.data;
+};
+
+export const linkGoogleAccount = async () => {
+  const client = await ensureAuthTokenLoaded();
+  if (Platform.OS !== 'web') {
+    const google = await googleAuthInfo() as { googleIdToken?: string };
+    if (!google.googleIdToken) throw new Error('Google did not provide a linkable account token.');
+    const result = await client.linkSocial({ provider: 'google', idToken: { token: google.googleIdToken } });
+    if (result.error) throw new Error(result.error.message || 'Could not link Google.');
+    return result.data;
+  }
+  const callbackURL = typeof window !== 'undefined' ? window.location.href : undefined;
+  const result = await client.linkSocial({ provider: 'google', callbackURL });
+  if (result.error) throw new Error(result.error.message || 'Could not start Google linking.');
+  return result.data;
 };
 
 export const completeDob = (dateOfBirth: string) =>
@@ -566,16 +730,11 @@ export class PasskeyUnavailableError extends Error {
 // Passkey sign-in via Better Auth WebAuthn support
 export const passkeyAuth = async () => {
   if (Platform.OS !== 'web') throw new PasskeyUnavailableError();
-
-  // Better Auth passkey sign-in
-  const { res, body } = await authFetch('/auth/sign-in/passkey', {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-
-  if (!res.ok) throw new Error(body?.message || 'Passkey sign-in failed');
-
-  const token = extractSessionToken(res, body);
+  const client = await ensureAuthTokenLoaded();
+  const result = await client.signIn.passkey({});
+  if (result.error) throw new Error(result.error.message || 'Passkey sign-in failed');
+  const body: any = result.data || {};
+  const token = _cachedToken || body?.session?.token;
   if (token) setCachedToken(token);
 
   try {

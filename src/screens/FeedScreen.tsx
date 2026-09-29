@@ -10,6 +10,7 @@ import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { ViewToken } from 'react-native';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
 import {
   getProducts, createConversation,
@@ -37,6 +38,8 @@ import { network } from '../network';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+const FEED_VIEWABILITY_CONFIG = { viewAreaCoveragePercentThreshold: 80 };
+
 export default function FeedScreen() {
   const { t } = useTranslation();
   const toast = useToast();
@@ -62,6 +65,27 @@ export default function FeedScreen() {
   const scrollOffsetRef = useRef(0);
   const dragStartIndexRef = useRef(0);
   const viewedProductIds = useRef<Set<string>>(new Set());
+
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    // Track dwell time for previous product
+    if (currentProductId.current) {
+      const dwell = Date.now() - viewStartTime.current;
+      if (dwell > 2000) {
+        trackFeedEvent(currentProductId.current, 'dwell', dwell).catch(() => {});
+      }
+    }
+    // Start tracking new product
+    const visible = viewableItems[0];
+    if (visible?.item) {
+      currentProductId.current = visible.item.id;
+      viewStartTime.current = Date.now();
+      // Fire 'view' event once per product per session
+      if (!viewedProductIds.current.has(visible.item.id)) {
+        viewedProductIds.current.add(visible.item.id);
+        trackFeedEvent(visible.item.id, 'view').catch(() => {});
+      }
+    }
+  }, []);
 
 const fetchProducts = useCallback(async (p = 1, replace = false) => {
     const cacheKey = cacheKeys.feed(feedTab, store.user?.id);
@@ -522,27 +546,8 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           offset: screenHeight * index,
           index,
         })}
-        viewabilityConfig={{ viewAreaCoveragePercentThreshold: 80 }}
-        onViewableItemsChanged={({ viewableItems }) => {
-          // Track dwell time for previous product
-          if (currentProductId.current) {
-            const dwell = Date.now() - viewStartTime.current;
-            if (dwell > 2000) {
-              trackFeedEvent(currentProductId.current, 'dwell', dwell).catch(() => {});
-            }
-          }
-          // Start tracking new product
-          const visible = viewableItems[0];
-          if (visible?.item) {
-            currentProductId.current = visible.item.id;
-            viewStartTime.current = Date.now();
-            // Fire 'view' event once per product per session
-            if (!viewedProductIds.current.has(visible.item.id)) {
-              viewedProductIds.current.add(visible.item.id);
-              trackFeedEvent(visible.item.id, 'view').catch(() => {});
-            }
-          }
-        }}
+        viewabilityConfig={FEED_VIEWABILITY_CONFIG}
+        onViewableItemsChanged={onViewableItemsChanged}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.5}
         refreshControl={
