@@ -396,16 +396,16 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
 
             {/* Forgot password */}
             {requiresTwoFactor ? (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, marginBottom: 16 }}>
-                <TouchableOpacity onPress={() => { setUsingBackupCode(value => !value); setTwoFactorCode(''); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: -1, marginBottom: 3 }}>
+                <TouchableOpacity onPress={() => { setUsingBackupCode(value => !value); setTwoFactorCode(''); }} hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }} style={s.textLink}>
                   <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{usingBackupCode ? t('signin.useAuthenticator') : t('signin.useBackupCode')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => { setRequiresTwoFactor(false); setTwoFactorCode(''); setUsingBackupCode(false); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <TouchableOpacity onPress={() => { setRequiresTwoFactor(false); setTwoFactorCode(''); setUsingBackupCode(false); }} hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }} style={s.textLink}>
                   <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{t('signin.backToSignIn')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity onPress={onForgotPassword} hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }} style={{ alignSelf: 'flex-end', marginTop: 12, marginBottom: 16 }}>
+              <TouchableOpacity onPress={onForgotPassword} hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }} style={[s.textLink, { alignSelf: 'flex-end', marginTop: -1, marginBottom: 3 }]}>
                 <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{t('auth.forgotPassword')}</Text>
               </TouchableOpacity>
             )}
@@ -598,6 +598,8 @@ const s = StyleSheet.create({
   keyboardGhostDisabledText: { color: C.faint },
 
   primaryTouch: { width: '100%', alignSelf: 'stretch' },
+  // Text links get real geometry, not just hitSlop — mouse/trackpad clicks ignore hitSlop.
+  textLink: { paddingVertical: 13, paddingHorizontal: 10, minHeight: 44, justifyContent: 'center' },
   primaryBtn: { height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch' },
   primaryBtnDisabled: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
   separatorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 16 },
