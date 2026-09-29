@@ -41,7 +41,9 @@ const REQUIRED_AUTH_MIGRATIONS = [
   'Better Auth: accounts table',
   'Better Auth: import legacy bcrypt credentials',
   'Better Auth: verifications table',
+  'Better Auth: verifications updated_at column',
   'Auth plugin: two-factor table',
+  'Auth plugin: two-factor updated_at column',
   'Auth plugin: passkey table',
 ];
 
@@ -1101,8 +1103,13 @@ await step('NatCash phone separation', () => c.query(`
         identifier TEXT NOT NULL,
         value TEXT NOT NULL,
         expires_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
+    `));
+    await step('Better Auth: verifications updated_at column', () => c.query(`
+      ALTER TABLE verifications
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     `));
 
     // ── Replication schema (dual-database failover) ──
@@ -1173,8 +1180,12 @@ await step('NatCash phone separation', () => c.query(`
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         verified BOOLEAN NOT NULL DEFAULT FALSE,
         failed_verification_count INTEGER DEFAULT 0,
-        locked_until TIMESTAMP
+        locked_until TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
+    `));
+    await step('Auth plugin: two-factor updated_at column', () => c.query(`
+      ALTER TABLE two_factor ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
     `));
     await step('Auth plugin: two-factor verification default', () => c.query(`
       ALTER TABLE two_factor ALTER COLUMN verified SET DEFAULT FALSE;

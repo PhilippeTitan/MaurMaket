@@ -448,7 +448,7 @@ router.get('/products/:id', optionalAuth, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.post('/products', authRequired, verifiedSellerRequired, dobRequired, async (req, res) => {
-  if (!req.supabaseUser?.email_confirmed_at) {
+  if (!req.user?.email_verified) {
     return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to start selling.' });
   }
   const { name, description, price, stock, categoryId, images, sale_price, sale_starts_at, sale_ends_at } = req.body;

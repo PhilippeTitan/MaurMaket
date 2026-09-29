@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Animated,
-  Easing, ScrollView, FlatList, Platform, KeyboardAvoidingView, Dimensions, Image, Keyboard, ActivityIndicator, BackHandler,
+  Easing, ScrollView, FlatList, Platform, KeyboardAvoidingView, Image, Keyboard, ActivityIndicator, BackHandler,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,7 +12,8 @@ import { BlurView } from 'expo-blur';
 import LottieView from 'lottie-react-native';
 import { COLORS, SPACING, RADIUS, FONTS, TOUCH } from '../../theme';
 import { useTranslation } from '@/localization';
-import { signup as apiSignup, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
+import { useViewport } from '@/hooks';
+import { signup as apiSignup, retrySignupProfileBootstrap, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
 import { store } from '../../store';
 import AuthInput from '@/components/AuthInput';
 import GoogleButton from './components/GoogleButton';
@@ -20,8 +21,6 @@ import PasskeyButton from './components/PasskeyButton';
 import AuthMethodsCard from '../../components/AuthMethodsCard';
 import OnboardingBackground from './components/OnboardingBackground';
 import type { User } from '../../types';
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 const C = {
   bg0: '#0A0812',
@@ -143,25 +142,70 @@ function WelcomeIllustration() {
   );
 }
 
-function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asset: 'lets-start' | 'digital-address' | 'keep-it-protected' | 'youre-ready' | 'pick-username' | 'choose-purpose' | 'birthday'; accessibilityLabel: string; containerStyle?: any }) {
+type AssetName = 'lets-start' | 'digital-address' | 'keep-it-protected' | 'youre-ready' | 'pick-username' | 'choose-purpose' | 'birthday';
+
+// Intrinsic width/height of each illustration file, so every artwork box can be derived
+// from its own aspect ratio. These pictures have an opaque near-black background baked in,
+// which makes an off-ratio box look broken either way: 'cover' slices part of the artwork
+// away (the name step's caption lost its bottom quarter) and a mismatched 'contain' box
+// shows a strip of the card's surface colour as a frame.
+const ART_SIZE: Partial<Record<AssetName, { w: number; h: number }>> = {
+  'lets-start': { w: 264, h: 180 },
+  'keep-it-protected': { w: 269, h: 266 },
+  'pick-username': { w: 423, h: 576 },
+  'choose-purpose': { w: 452, h: 394 },
+  'youre-ready': { w: 265, h: 145 },
+  'digital-address': { w: 260, h: 338 },
+};
+// Artwork that owns a fixed column instead of the slide's full content width.
+const ART_FIXED_WIDTH: Partial<Record<AssetName, number>> = { 'pick-username': 350, 'choose-purpose': 330 };
+// The birthday artwork is a tall backdrop behind the date wheels and keeps its own box.
+const BIRTHDAY_ART_HEIGHT = 455;
+// stepTopBar sits at top:28 and is TOUCH.min tall, plus a little air.
+const REVIEW_HEADER_CLEAR = 74;
+// reviewBody's centring box ends ~36px above the CTA block, which otherwise leaves
+// noticeably more air under the review rows than above the artwork. Nudging the box
+// down by the same amount evens the artwork out between the header and the button.
+const REVIEW_GAP_BALANCE = 36;
+
+function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asset: AssetName; accessibilityLabel: string; containerStyle?: any }) {
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const vp = useViewport();
   const birthdayAsset = asset === 'birthday';
-  const passwordAsset = asset === 'keep-it-protected';
-  const pickUsernameAsset = asset === 'pick-username';
+  const fixedWidth = ART_FIXED_WIDTH[asset];
   const source =
     asset === 'lets-start' ? require('../../../illustration/lets-start.webp') :
     asset === 'digital-address' ? require('../../../illustration/digital-address.webp') :
-    passwordAsset ? require('../../../illustration/keep-it-protected.webp') :
+    asset === 'keep-it-protected' ? require('../../../illustration/keep-it-protected.webp') :
     asset === 'youre-ready' ? require('../../../illustration/youre-ready.webp') :
-    pickUsernameAsset ? require('../../../illustration/pick-username.webp') :
+    asset === 'pick-username' ? require('../../../illustration/pick-username.webp') :
     asset === 'choose-purpose' ? require('../../../illustration/choose-purpose.webp') :
     require('../../../illustration/birthday.webp');
-  const imageWidth = birthdayAsset || passwordAsset || asset === 'lets-start' ? '100%' : pickUsernameAsset ? 350 : asset === 'choose-purpose' ? 330 : 360;
-  const imageHeight = birthdayAsset || pickUsernameAsset ? 455 : passwordAsset ? 280 : asset === 'choose-purpose' ? 300 : 190;
+  // Width first, then height straight from the file's own ratio, so the artwork is always
+  // shown whole. vp.contentWidth is the slide's own content width (viewport minus gutters,
+  // capped at the content column); onLayout is authoritative and also accounts for a
+  // scrollbar, while the viewport-derived value keeps the box fresh if a layout pass is
+  // missed. Taking the smaller of the two can only ever shrink a box, never stretch it.
+  const size = ART_SIZE[asset];
+  const slideWidth = vp.contentWidth;
+  const artWidth = fixedWidth ?? Math.min(measuredWidth || slideWidth, slideWidth);
+  const imageWidth = fixedWidth ?? '100%';
+  const imageHeight = birthdayAsset ? BIRTHDAY_ART_HEIGHT : size ? Math.round((artWidth * size.h) / size.w) : 190;
   return (
-    <View style={[{ height: imageHeight, width: '100%', marginBottom: 12, alignItems: 'center', justifyContent: 'center' }, containerStyle]}>
+    <View
+      style={[{ height: imageHeight, width: '100%', marginBottom: 12, alignItems: 'center', justifyContent: 'center' }, containerStyle]}
+      onLayout={(e) => setMeasuredWidth(e.nativeEvent.layout.width)}
+    >
       <Image
         source={source}
-        style={{ width: imageWidth, height: imageHeight, resizeMode: birthdayAsset ? 'stretch' : asset === 'lets-start' || pickUsernameAsset || passwordAsset ? 'cover' : 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
+        style={{ width: imageWidth, height: imageHeight, borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
+        // resizeMode must be a prop: react-native-web ignores style.resizeMode and
+        // renders this as a CSS background, so style.resizeMode left every artwork
+        // at background-size:auto. 'stretch' is exact here because every box height is
+        // derived from the same ratio as its file: the picture fills its rounded card edge
+        // to edge, with no crop (what 'cover' did) and no frame of the card's surface
+        // colour (what an off-ratio 'contain' box showed around these opaque pictures).
+        resizeMode="stretch"
         accessibilityLabel={accessibilityLabel}
       />
     </View>
@@ -509,7 +553,8 @@ const Field = React.forwardRef<TextInput, { icon: any; label: string; value: str
 
   return (
     <View style={[s.field, isFocused && s.fieldFocused]} accessibilityRole="none">
-      <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={{ flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      {/* Negative margin cancels the row's padding so the whole box is the tap target. */}
+      <TouchableOpacity activeOpacity={0.9} onPress={() => inputRef.current?.focus()} style={{ flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, marginHorizontal: -16 }}>
         <MaterialCommunityIcons name={icon} size={18} color={isFocused ? C.violet : C.sub} />
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={s.fieldLabel}>{label}</Text>
@@ -586,6 +631,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   const [googleInfo, setGoogleInfo] = useState<{ firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string } | null>(initialGoogleInfo || null);
   const [userResult, setUserResult] = useState<{ user: User; token: string | null; emailConfirmationPending?: boolean } | null>(null);
   const [pendingEmailConfirm, setPendingEmailConfirm] = useState(false);
+  const [profileSetupPending, setProfileSetupPending] = useState(false);
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [emailChecking, setEmailChecking] = useState(false);
   const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -637,7 +683,16 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   const enterAnim = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
   const holdButtonRef = useRef<View>(null);
-  const [revealOrigin, setRevealOrigin] = useState({ x: SCREEN_W / 2, y: SCREEN_H / 2 });
+  const vp = useViewport();
+  // Screens lay out to at least the window height (so the CTA anchors to the bottom edge on
+  // tall screens and the content scrolls on short ones) — from the live window, never a
+  // snapshot taken when the module was first imported.
+  const screenMin = { minHeight: vp.minScreenHeight };
+  // The reveal circle starts from the measured button once the splash is pressed, and from
+  // the window centre until then.
+  const [revealOrigin, setRevealOrigin] = useState<{ x: number; y: number } | null>(null);
+  const revealCenter = revealOrigin ?? { x: vp.width / 2, y: vp.height / 2 };
+  const revealSize = Math.max(vp.width, vp.height) * 2.2;
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -858,8 +913,34 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       setPendingEmailConfirm(!!res.emailConfirmationPending);
       go(1); // → success / verification screen
     } catch (err: any) {
+      if (err?.code === 'PROFILE_BOOTSTRAP_FAILED') {
+        setProfileSetupPending(true);
+        setErrors({});
+        return;
+      }
       setErrors({ email: err?.message || t('signup.signupFailed') });
       setIndex(4); // → email step
+    } finally { setLoading(false); }
+  };
+
+  const retryProfileSetup = async () => {
+    setLoading(true);
+    const fullName = [form.first, form.last].filter(Boolean).join(' ').trim();
+    const dob = form.birthYear && form.birthMonth && form.birthDay
+      ? `${form.birthYear}-${String(form.birthMonth).padStart(2, '0')}-${String(form.birthDay).padStart(2, '0')}`
+      : '';
+    try {
+      const res = await retrySignupProfileBootstrap(fullName, form.email, '', dob, form.username) as { user: User; token: string | null };
+      if (googleInfo?.googleIdToken) {
+        try { await linkGoogleIdentity(googleInfo.googleIdToken); }
+        catch (linkErr: any) { console.warn('[onboarding] Google link failed (non-blocking):', linkErr?.message); }
+      }
+      setProfileSetupPending(false);
+      setUserResult(res);
+      setPendingEmailConfirm(!!res.emailConfirmationPending);
+      go(1);
+    } catch (err: any) {
+      setErrors({ profileSetup: err?.message || t('signup.profileSetupIncomplete') });
     } finally { setLoading(false); }
   };
 
@@ -966,7 +1047,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
           scrollEnabled={!dobPickerActive}
         >
 
-          <Animated.View style={[s.slide, enterClass]} key={index}>
+          <Animated.View style={[s.slide, screenMin, enterClass]} key={index}>
 
             {/* SCREEN 0 -- SPLASH */}
             {index === 0 && (
@@ -999,7 +1080,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 1 -- WELCOME */}
             {index === 1 && (
-              <View style={s.welcomeScreen}>
+              <View style={[s.welcomeScreen, screenMin]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingTop: 8, paddingBottom: 24 }}>
                   <Logomark size={34} />
                   <Text style={{ fontFamily: FONTS.heading, fontSize: 17, fontWeight: '700', color: C.text }}>MaurMaket</Text>
@@ -1021,7 +1102,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 2 -- NAME */}
             {index === 2 && (
-              <View style={s.stepScreen}>
+              <View style={[s.stepScreen, screenMin]}>
                 <View style={[s.centeredStepBody, s.nameStepBody]}>
                   <AssetIllustration asset="lets-start" accessibilityLabel={t('signup.illLetsStart')} />
                   <View style={s.nameFields}>
@@ -1048,7 +1129,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 3 -- USERNAME */}
             {index === 3 && (
-              <View style={s.stepScreen}>
+              <View style={[s.stepScreen, screenMin]}>
                 <View style={s.centeredStepBody}>
                   <Text style={s.fieldHint}>{t('signup.usernameHint')}</Text>
                   {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>{t('signup.usernameInvalid')}</Text> : null}
@@ -1082,7 +1163,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 4 -- EMAIL */}
             {index === 4 && (
-              <View style={s.stepScreen}>
+              <View style={[s.stepScreen, screenMin]}>
                 <View style={{ position: 'absolute', left: 0, right: 0, bottom: 100, paddingHorizontal: 0 }}>
                   <View style={{ alignItems: 'center', marginBottom: 15 }}>
                     <Image
@@ -1108,7 +1189,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 5 -- PURPOSE */}
             {index === 5 && (
-              <View style={s.stepScreen}>
+              <View style={[s.stepScreen, screenMin]}>
                 <AssetIllustration asset="choose-purpose" accessibilityLabel={t('signup.illChoosePurpose')} containerStyle={s.purposeArtwork} />
                 <View style={s.purposeChoices}>
                   {PURPOSES.map(p => {
@@ -1164,7 +1245,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                 outputRange: [1, 0],
               });
 
-              const targetLift = Math.round((SCREEN_H / 2) - 140);
+              const targetLift = Math.round(vp.height / 2 - 140);
 
               const containerTranslateY = dobPickerAnim.interpolate({
                 inputRange: [0, 1],
@@ -1192,7 +1273,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               });
 
               return (
-                <View style={s.stepScreen}>
+                <View style={[s.stepScreen, screenMin]}>
                   {/* Backdrop dismiss when wheel is open */}
                   {dobPickerActive && (
                     <TouchableOpacity
@@ -1448,7 +1529,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 7 -- PASSWORD */}
             {index === 7 && (
-              <View style={s.stepScreen}>
+              <View style={[s.stepScreen, screenMin]}>
                 <View style={s.centeredStepBody}>
                   <AssetIllustration asset="keep-it-protected" accessibilityLabel={t('signup.illKeepProtected')} />
                 </View>
@@ -1471,10 +1552,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 8 -- REVIEW */}
             {index === 8 && (
-              <View style={s.stepScreen}>
-                <View style={s.centeredStepBody}>
-                  <AssetIllustration asset="youre-ready" accessibilityLabel={t('signup.illYoureReady')} />
-                  <View style={{ gap: 10 }}>
+              <View style={[s.stepScreen, screenMin]}>
+                <View style={s.reviewBody}>
+                  <AssetIllustration
+                    asset="youre-ready"
+                    accessibilityLabel={t('signup.illYoureReady')}
+                    containerStyle={s.reviewArtwork}
+                  />
+                  <View style={s.reviewList}>
                     {[
                       [t('signup.reviewName'), form.first ? `${form.first} ${form.last}` : '--', reviewItems[0]],
                       [t('field.username'), form.username ? `@${form.username}` : '--', reviewItems[1]],
@@ -1484,31 +1569,27 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                       [t('signin.passwordLabel'), pwMatched ? t('signup.reviewSet') : '--', reviewItems[5]],
                     ].map(([label, val, ok], i) => (
                       <View key={i} style={s.reviewRow}>
-                        <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={s.reviewLabel}>{label}</Text>
-                            {i === 2 && googleInfo && (
-                              <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: C.violet + '20', borderWidth: 1, borderColor: C.violet + '40' }}>
-                                <Text style={{ fontSize: 9, fontWeight: '700', color: C.violet }}>Google</Text>
-                              </View>
-                            )}
-                            {i === 4 && googleInfo?.birthDate && (
-                              <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: C.violet + '20', borderWidth: 1, borderColor: C.violet + '40' }}>
-                                <Text style={{ fontSize: 9, fontWeight: '700', color: C.violet }}>Google</Text>
-                              </View>
-                            )}
+                        <Text style={s.reviewLabel}>{label}</Text>
+                        <Text style={s.reviewVal} numberOfLines={1}>{val as string}</Text>
+                        {((i === 2 && googleInfo) || (i === 4 && googleInfo?.birthDate)) ? (
+                          <View style={s.reviewGoogleTag}>
+                            <Text style={s.reviewGoogleText}>Google</Text>
                           </View>
-                          <Text style={s.reviewVal}>{val as string}</Text>
-                        </View>
+                        ) : null}
                         <View style={[s.reviewCheck, ok ? { backgroundColor: C.mint + '15', borderColor: C.mint } : {}]}>
-                          {ok ? <MaterialCommunityIcons name="check" size={12} color={C.mint} /> : null}
+                          {ok ? <MaterialCommunityIcons name="check" size={11} color={C.mint} /> : null}
                         </View>
                       </View>
                     ))}
                   </View>
                 </View>
+                {profileSetupPending ? (
+                  <Text style={s.profileSetupError}>{errors.profileSetup || t('signup.profileSetupIncomplete')}</Text>
+                ) : null}
                 <StepActions step={7} label={STEP_LABELS.review} onBack={() => go(-1)}>
-                  <PrimaryButton onPress={validateAndNext} disabled={loading}>{loading ? t('common.loading') : t('signup.createAccountBtn')}</PrimaryButton>
+                  <PrimaryButton onPress={profileSetupPending ? retryProfileSetup : validateAndNext} disabled={loading}>
+                    {loading ? t('common.loading') : profileSetupPending ? t('signup.retryProfileSetup') : t('signup.createAccountBtn')}
+                  </PrimaryButton>
                 </StepActions>
               </View>
             )}
@@ -1594,7 +1675,12 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             pointerEvents="none"
             style={[
               s.revealLayer,
-              { left: revealOrigin.x - Math.max(SCREEN_W, SCREEN_H) * 1.1, top: revealOrigin.y - Math.max(SCREEN_W, SCREEN_H) * 1.1 },
+              {
+                width: revealSize,
+                height: revealSize,
+                left: revealCenter.x - revealSize / 2,
+                top: revealCenter.y - revealSize / 2,
+              },
               { opacity: revealOpacity, transform: [{ scale: reveal }] },
             ]}
           />
@@ -1608,8 +1694,10 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
 const s = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
-  slide: { flex: 1, width: '100%', maxWidth: 430, minHeight: Math.max(620, SCREEN_H - 40), alignSelf: 'center' },
-  stepScreen: { flex: 1, minHeight: Math.max(620, SCREEN_H - 40), position: 'relative', paddingBottom: 130 },
+  // minHeight is applied per-render (see screenMin) so it always matches the live window;
+  // maxWidth matches CONTENT_MAX_WIDTH in the layout hooks.
+  slide: { flex: 1, width: '100%', maxWidth: 430, alignSelf: 'center' },
+  stepScreen: { flex: 1, position: 'relative', paddingBottom: 130 },
   centeredStepBody: { flex: 1, justifyContent: 'center', marginBottom: 18 },
   nameStepBody: { alignItems: 'center' },
   nameFields: { width: '100%', gap: 12 },
@@ -1618,7 +1706,7 @@ const s = StyleSheet.create({
   emailArtwork: { width: 350, height: 455 },
   emailContent: { position: 'absolute', left: 0, right: 0, bottom: 89 },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  welcomeScreen: { minHeight: Math.max(620, SCREEN_H - 40), justifyContent: 'center', paddingVertical: 24, position: 'relative', paddingBottom: 144 },
+  welcomeScreen: { justifyContent: 'center', paddingVertical: 24, position: 'relative', paddingBottom: 144 },
   welcomeActions: { position: 'absolute', left: 0, right: 0, bottom: 18, gap: 12 },
   stepTopBar: { position: 'absolute', top: 28, left: 0, right: 0, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   stepCount: { color: C.sub, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
@@ -1815,7 +1903,7 @@ const s = StyleSheet.create({
   holdRingA: { borderColor: C.pink },
   holdRingB: { borderColor: C.violet },
   holdRingC: { borderColor: C.amber },
-  revealLayer: { position: 'absolute', width: Math.max(SCREEN_W, SCREEN_H) * 2.2, height: Math.max(SCREEN_W, SCREEN_H) * 2.2, left: SCREEN_W / 2 - Math.max(SCREEN_W, SCREEN_H) * 1.1, borderRadius: 999, backgroundColor: C.pink, shadowColor: C.amber, shadowOpacity: 0.8, shadowRadius: 70, shadowOffset: { width: 0, height: 0 }, elevation: 14 },
+  revealLayer: { position: 'absolute', borderRadius: 999, backgroundColor: C.pink, shadowColor: C.amber, shadowOpacity: 0.8, shadowRadius: 70, shadowOffset: { width: 0, height: 0 }, elevation: 14 },
 
   // Welcome
   badge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
@@ -1866,11 +1954,19 @@ const s = StyleSheet.create({
   radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center' },
   radioActive: { backgroundColor: C.pink, borderColor: C.pink },
 
-  // Review
-  reviewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  reviewLabel: { fontSize: 11, color: C.faint },
-  reviewVal: { fontSize: 14, fontWeight: '500', color: C.text, marginTop: 2 },
-  reviewCheck: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center' },
+  // Review — compact single-line rows so the artwork never collides with the header.
+  // paddingTop clears the absolutely-positioned stepTopBar and then balances the
+  // artwork between that header and the CTA block below.
+  reviewBody: { flex: 1, justifyContent: 'center', paddingTop: REVIEW_HEADER_CLEAR + REVIEW_GAP_BALANCE, marginBottom: 4 },
+  reviewArtwork: { marginBottom: 10 },
+  reviewList: { gap: 7 },
+  profileSetupError: { color: C.pink, fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 8, marginHorizontal: 8 },
+  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  reviewLabel: { width: 80, fontSize: 11, fontWeight: '600', color: C.faint },
+  reviewVal: { flex: 1, fontSize: 13.5, fontWeight: '600', color: C.text },
+  reviewGoogleTag: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: C.violet + '20', borderWidth: 1, borderColor: C.violet + '40' },
+  reviewGoogleText: { fontSize: 9, fontWeight: '700', color: C.violet },
+  reviewCheck: { width: 18, height: 18, borderRadius: 9, borderWidth: 1, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center' },
 
   // Success
   successBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: C.mint + '12', borderWidth: 1, borderColor: C.mint + '40', marginTop: 8 },

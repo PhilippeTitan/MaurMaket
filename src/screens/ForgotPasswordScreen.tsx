@@ -17,7 +17,6 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const prefilledCode = route?.params?.code || '';
-  const isSupabaseRecovery = prefilledCode === 'supabase-recovery';
 
   const [step, setStep] = useState<'email' | 'reset' | 'done'>(prefilledCode ? 'reset' : 'email');
   const [email, setEmail] = useState('');
@@ -70,7 +69,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
   };
 
   const handleResetPassword = async () => {
-    if ((!isSupabaseRecovery && code.length !== 6) || newPassword.length < 6 || newPassword !== confirmPassword) return;
+    if (!code || newPassword.length < 6 || newPassword !== confirmPassword) return;
     setLoading(true);
     try {
       await resetPassword(email.trim(), code, newPassword);
@@ -119,10 +118,10 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
           <>
             <Text style={styles.title}>Check your inbox</Text>
             <Text style={styles.subtitle}>
-              {isSupabaseRecovery ? 'Choose a new password for your account.' : <>{t('reset.codeSentTo')}{'\n'}<Text style={styles.emailHighlight}>{email}</Text></>}
+              {prefilledCode ? 'Choose a new password for your account.' : <>{t('reset.codeSentTo')}{'\n'}<Text style={styles.emailHighlight}>{email}</Text></>}
             </Text>
 
-            {!isSupabaseRecovery && <>
+            {!prefilledCode && <>
               <TouchableOpacity activeOpacity={1} onPress={() => codeInputRef.current?.focus()}>
                 <View style={styles.codeRow}>
                   {[0, 1, 2, 3, 4, 5].map(i => (
@@ -152,17 +151,17 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
             />
 
             <TouchableOpacity
-              style={[styles.btn, (loading || (!isSupabaseRecovery && code.length !== 6) || !newPassword || !confirmPassword || newPassword !== confirmPassword) && styles.btnDisabled]}
+              style={[styles.btn, (loading || !code || !newPassword || !confirmPassword || newPassword !== confirmPassword) && styles.btnDisabled]}
               onPress={handleResetPassword}
-              disabled={loading || (!isSupabaseRecovery && code.length !== 6) || !newPassword || !confirmPassword || newPassword !== confirmPassword}
+              disabled={loading || !code || !newPassword || !confirmPassword || newPassword !== confirmPassword}
             >
               <Text style={styles.btnText}>{loading ? t('common.loading') : t('reset.resetPassword')}</Text>
             </TouchableOpacity>
 
             <View style={styles.resendRow}>
-              {cooldown > 0 ? (
+              {!prefilledCode && cooldown > 0 ? (
                 <Text style={styles.resendCooldown}>{t('verify.resendIn', { seconds: String(cooldown) })}</Text>
-              ) : (
+              ) : !prefilledCode ? (
                 <TouchableOpacity onPress={handleResend}>
                   <Text style={styles.resendBtn}>{t('verify.resend')}</Text>
                 </TouchableOpacity>

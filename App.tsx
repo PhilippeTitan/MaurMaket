@@ -12,7 +12,7 @@ import { COLORS, SPACING, RADIUS, SHADOW, FONT_SIZES, FONT_WEIGHTS, FONTS, DURAT
 import { i18n } from './src/localization';
 import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
-import { restoreSessionFromUrl } from './src/supabase';
+import { getPasswordResetTokenFromUrl } from './src/authDeepLinks';
 import OfflineBanner from './src/components/OfflineBanner';
 import { PaperPlaneIcon } from './src/components/UserAvatar';
 import { getMe, getFollowerCount, getFollowing, getConversationUnreadCount } from './src/api';
@@ -322,13 +322,8 @@ export default function App() {
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
       const url = event.url;
-      void restoreSessionFromUrl(url).then((kind) => {
-        if (kind && navigationRef.isReady()) {
-          navigationRef.navigate('Auth', kind === 'recovery'
-            ? { screen: 'ForgotPassword', params: { code: 'supabase-recovery' } }
-            : { screen: 'EmailVerification' });
-        }
-      }).catch(() => {});
+      const resetToken = getPasswordResetTokenFromUrl(url);
+      if (resetToken && navigationRef.isReady()) navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code: resetToken } });
       if (url.includes('payment-return')) {
         const match = url.match(/orderId=([^&]+)/);
         const orderId = match?.[1];
@@ -339,7 +334,7 @@ export default function App() {
           pendingDeepLinkType.current = 'payment-return';
         }
       } else if (url.includes('maurmaket://verify')) {
-        const match = url.match(/code=([^&]+)/);
+        const match = url.match(/[?&](?:token|code)=([^&]+)/);
         const code = match?.[1];
         if (store.isLoggedIn) {
           if (navigationRef.isReady()) {
@@ -363,13 +358,8 @@ export default function App() {
 
     Linking.getInitialURL().then((url) => {
       if (!url) return;
-      void restoreSessionFromUrl(url).then((kind) => {
-        if (kind && navigationRef.isReady()) {
-          navigationRef.navigate('Auth', kind === 'recovery'
-            ? { screen: 'ForgotPassword', params: { code: 'supabase-recovery' } }
-            : { screen: 'EmailVerification' });
-        }
-      }).catch(() => {});
+      const resetToken = getPasswordResetTokenFromUrl(url);
+      if (resetToken && navigationRef.isReady()) navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code: resetToken } });
       if (url.includes('payment-return')) {
         const match = url.match(/orderId=([^&]+)/);
         const orderId = match?.[1];
@@ -380,7 +370,7 @@ export default function App() {
           pendingDeepLinkType.current = 'payment-return';
         }
       } else if (url.includes('maurmaket://verify')) {
-        const match = url.match(/code=([^&]+)/);
+        const match = url.match(/[?&](?:token|code)=([^&]+)/);
         const code = match?.[1];
         if (store.isLoggedIn) {
           if (navigationRef.isReady()) {

@@ -426,12 +426,20 @@ const styles = StyleSheet.create({
   emptyCard: { minHeight: 64, justifyContent: 'center', paddingHorizontal: SPACING.md, borderRadius: RADIUS.card, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   emptyText: { color: C.sub, fontSize: FONT_SIZES.sm },
   bottomSpacer: { height: SPACING.xl },
-  modalBackdrop: { flex: 1, justifyContent: 'center', padding: SPACING.lg, backgroundColor: 'rgba(0,0,0,0.72)' },
-  modalCard: { width: '100%', maxWidth: 440, alignSelf: 'center', borderRadius: RADIUS.card, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, padding: SPACING.xl, gap: SPACING.md },
+  modalBackdrop: { flex: 1, justifyContent: 'center', padding: SPACING.lg, backgroundColor: 'rgba(0,0,0,0.76)' },
+  // C.surface is intentionally translucent for in-page cards; dialogs need an
+  // opaque layer so the screen beneath cannot bleed through the form.
+  modalCard: {
+    width: '100%', maxWidth: 440, alignSelf: 'center', borderRadius: RADIUS.media,
+    borderWidth: 1, borderColor: C.borderHi, backgroundColor: C.bg1,
+    padding: SPACING.xl, gap: SPACING.lg,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 18 }, shadowOpacity: 0.42,
+    shadowRadius: 28, elevation: 24,
+  },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   modalTitle: { color: C.text, fontSize: FONT_SIZES.lg, fontWeight: FONT_WEIGHTS.bold, flex: 1 },
   closeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: -SPACING.sm, marginTop: -SPACING.sm },
-  modalCopy: { color: C.sub, fontSize: FONT_SIZES.sm, lineHeight: 20 },
+  modalCopy: { color: C.sub, fontSize: FONT_SIZES.sm, lineHeight: 22 },
   input: { minHeight: 52, borderWidth: 1, borderColor: C.border, borderRadius: RADIUS.card, paddingHorizontal: SPACING.md, color: C.text, backgroundColor: C.bg0, fontSize: FONT_SIZES.base },
   codeInput: { fontSize: 24, fontWeight: FONT_WEIGHTS.bold, letterSpacing: 8, textAlign: 'center' },
   secretRow: { minHeight: 58, paddingLeft: SPACING.md, paddingRight: SPACING.xs, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: C.border, borderRadius: RADIUS.card, backgroundColor: C.bg0 },

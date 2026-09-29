@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../config/database.js';
-import { supabaseAdmin } from '../config/supabase.js';
+import { getAuth } from '../config/auth.js';
+import { fromNodeHeaders } from 'better-auth/node';
 import { authRequired, sellerRequired, dobRequired, verifiedSellerRequired } from '../middleware/auth.js';
 import { generateUsername, isAtLeast18 } from '../utils/helpers.js';
 
@@ -9,20 +10,46 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '273654218158-k61
 const router = Router();
 
 router.post('/user/profile/bootstrap', authRequired, async (req, res) => {
-  if (!req.supabaseUser) return res.status(401).json({ error: 'Supabase authentication required' });
-  const metadata = req.supabaseUser.user_metadata || {};
+  const authenticatedUser = req.user;
+  if (!authenticatedUser?.id || !authenticatedUser?.email) {
+    return res.status(401).json({ error: 'Authenticated user identity is required' });
+  }
+  const metadata = authenticatedUser.user_metadata || {};
   const fullName = String(req.body.fullName || metadata.full_name || metadata.name || '').trim();
   const phone = String(req.body.phone || metadata.phone || '').trim();
   const dateOfBirth = req.body.dateOfBirth || metadata.date_of_birth || null;
-  const email = String(req.supabaseUser.email || '').trim().toLowerCase();
+  const email = String(authenticatedUser.email || '').trim().toLowerCase();
   const requestedUsername = req.body.username ? String(req.body.username).trim().toLowerCase().replace(/[^a-z0-9._]/g, '') : null;
   if (!fullName || !email) return res.status(400).json({ error: 'Authenticated profile is missing name or email' });
   if (fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
+  if (dateOfBirth && !isAtLeast18(dateOfBirth)) {
+    return res.status(400).json({ error: 'You must be at least 18 years old', code: 'UNDERAGE_ACCOUNT' });
+  }
   try {
-    const existing = await pool.query('SELECT id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified, taste_onboarding_completed FROM users WHERE id = $1', [req.supabaseUser.id]);
-    if (existing.rows.length > 0) return res.json({ user: existing.rows[0], isNewProfile: false });
-
     const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
+
+    // Better Auth may have inserted this row before app-specific signup data
+    // is bootstrapped. Fill missing fields instead of returning it untouched.
+    const existing = await pool.query('SELECT id FROM users WHERE id = $1', [authenticatedUser.id]);
+    if (existing.rows.length > 0) {
+      const updated = await pool.query(
+        `UPDATE users
+         SET full_name = COALESCE(NULLIF(full_name, ''), $2),
+             phone = COALESCE(phone, $3),
+             date_of_birth = COALESCE(date_of_birth, $4),
+             pending_dob = COALESCE(date_of_birth, $4::date) IS NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING id, full_name, email, phone, natcash_phone, accepted_payment_methods,
+           role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier,
+           id_submitted_at, id_verified, id_verified_at, id_verification_result,
+           use_store_identity, email_verified, location_address, location_city,
+           location_lat, location_lng, username, show_real_name, date_of_birth,
+           pending_dob, taste_onboarding_completed`,
+        [authenticatedUser.id, fullName, cleanPhone, dateOfBirth]
+      );
+      return res.json({ user: updated.rows[0], isNewProfile: false });
+    }
 
     let username;
     if (requestedUsername && requestedUsername.length >= 5 && requestedUsername.length <= 30 && /^[a-z0-9][a-z0-9._]{3,28}[a-z0-9]$/.test(requestedUsername)) {
@@ -34,8 +61,8 @@ router.post('/user/profile/bootstrap', authRequired, async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users (id, full_name, email, phone, role, username, date_of_birth, pending_dob, taste_onboarding_completed, email_verified)
        VALUES ($1, $2, $3, $4, 'buyer', $5, $6, $7, false, $8)
-       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified, pending_dob, taste_onboarding_completed`,
-      [req.supabaseUser.id, fullName, email, cleanPhone, username, dateOfBirth, !dateOfBirth, !!req.supabaseUser.email_confirmed_at]
+       RETURNING id, full_name, email, phone, role, avatar_url, username, show_real_name, created_at, seller_tier, email_verified, date_of_birth, pending_dob, taste_onboarding_completed`,
+      [authenticatedUser.id, fullName, email, cleanPhone, username, dateOfBirth, !dateOfBirth, !!authenticatedUser.email_verified]
     );
     res.status(201).json({ user: result.rows[0], isNewProfile: true });
   } catch (err) {
@@ -127,11 +154,12 @@ router.post('/user/set-password', authRequired, async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
   try {
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, { password });
-    if (error) {
-      console.error('Set password error:', error);
-      return res.status(400).json({ error: error.message || 'Failed to set password' });
-    }
+    const auth = getAuth();
+    const result = await auth.api.setPassword({
+      headers: fromNodeHeaders(req.headers),
+      body: { newPassword: password },
+    });
+    if (!result?.status) return res.status(400).json({ error: 'Failed to set password' });
     console.log(`[auth] Set password for user ${req.user.id}`);
     res.json({ success: true });
   } catch (err) {
@@ -422,6 +450,7 @@ router.delete('/user/delete-account', authRequired, async (req, res) => {
       `UPDATE users SET
         full_name = 'Deleted User', username = $1, email = $2,
         phone = NULL, avatar_url = NULL, bio = NULL,
+        password_hash = NULL,
         store_name = NULL, store_logo_url = NULL, id_document_url = NULL,
         id_verified = FALSE, role = 'deleted', seller_tier = 'none', push_token = NULL,
         updated_at = CURRENT_TIMESTAMP
@@ -429,11 +458,13 @@ router.delete('/user/delete-account', authRequired, async (req, res) => {
       [anonymizedUsername, anonymizedEmail, userId]
     );
 
+    // Keep the anonymized marketplace user row for historical order references,
+    // but remove Better Auth sessions and identities so the account cannot log in.
+    const authContext = await getAuth().$context;
+    await authContext.internalAdapter.deleteUserSessions(userId);
+    await authContext.internalAdapter.deleteAccounts(userId);
+
     await client.query('COMMIT');
-    if (supabaseAdmin) {
-      const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-      if (authDeleteError) console.error('Supabase Auth deletion error:', authDeleteError.message);
-    }
     res.json({ success: true, message: 'Account deleted successfully' });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -457,7 +488,7 @@ router.post('/user/complete-dob', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE users SET date_of_birth = $1, pending_dob = false, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2 AND pending_dob = true
+      WHERE id = $2 AND date_of_birth IS NULL
        RETURNING id, full_name, email, phone, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob`,
       [dateOfBirth, req.user.id]
     );
@@ -502,17 +533,9 @@ router.put('/user/become-seller', authRequired, dobRequired, async (req, res) =>
       return res.json({ success: true, alreadySeller: true, user: existing.rows[0] });
     }
     const { storeName, storeLogoUrl, idDocumentUrl, natcashPhone, tier } = req.body;
-    const allowedTiers = ['casual', 'verified', 'business'];
-    const sellerTier = allowedTiers.includes(tier) ? tier : 'casual';
-
-    // If choosing verified, require id_verified
-    if (sellerTier === 'verified' && !req.user.id_verified) {
-      return res.status(400).json({ error: 'ID verification required for verified seller tier. Complete verification first.' });
-    }
-
-    // If choosing business, require id_verified
-    if (sellerTier === 'business' && !req.user.id_verified) {
-      return res.status(400).json({ error: 'ID verification required for business seller tier. Complete verification first.' });
+    const sellerTier = tier || 'casual';
+    if (sellerTier !== 'casual') {
+      return res.status(400).json({ error: 'New sellers must start with the Casual tier. Upgrade after becoming a seller.' });
     }
 
     const useStoreIdentity = false;
@@ -555,6 +578,10 @@ router.put('/user/upgrade-tier', authRequired, sellerRequired, async (req, res) 
 
     if (tier === 'verified' && !current.rows[0]?.id_verified) {
       return res.status(400).json({ error: 'Complete ID verification first to activate your Verified seller tier.' });
+    }
+
+    if (tier === 'verified' && currentTier !== 'casual') {
+      return res.status(400).json({ error: 'Start as a Casual seller before upgrading to Verified.' });
     }
 
     if (tier === 'business' && currentTier !== 'verified') {

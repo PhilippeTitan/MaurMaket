@@ -119,7 +119,7 @@ router.get('/api/webhooks/didit', async (req, res) => {
       );
       const userId = attempt.rows[0]?.vendor_data;
       if (userId && /^[0-9a-f-]{36}$/i.test(userId)) {
-        await pool.query(`UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified', seller_tier = 'verified' WHERE id = $1`, [userId]);
+        await pool.query(`UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified' WHERE id = $1`, [userId]);
         await pool.query(`UPDATE verification_attempts SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = (SELECT id FROM verification_attempts WHERE user_id = $1 AND status != 'verified' ORDER BY created_at DESC LIMIT 1)`, [userId]);
         createNotification(userId, 'verification_approved', 'Identity Verified', 'Your identity has been verified via Didit!', {});
       }
@@ -157,7 +157,7 @@ router.post('/api/webhooks/didit', async (req, res) => {
       const userId = vendor_data;
       if (status === 'Approved') {
         const faceMatch = decision?.face_matches?.[0]; const faceScore = faceMatch?.score || 0;
-        await pool.query(`UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified', seller_tier = CASE WHEN seller_tier = 'casual' THEN 'verified' ELSE seller_tier END WHERE id = $1`, [userId]);
+        await pool.query(`UPDATE users SET id_verified = true, id_verified_at = CURRENT_TIMESTAMP, id_verification_result = 'verified' WHERE id = $1`, [userId]);
         await pool.query(`UPDATE verification_attempts SET status = 'verified', face_match_score = $1, verified_at = CURRENT_TIMESTAMP WHERE id = (SELECT id FROM verification_attempts WHERE user_id = $2 AND status != 'verified' ORDER BY created_at DESC LIMIT 1)`, [faceScore, userId]);
         createNotification(userId, 'verification_approved', 'Identity Verified', 'Your identity has been verified via Didit!', {});
       } else if (status === 'Declined') {

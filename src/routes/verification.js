@@ -214,16 +214,15 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
 
     const attempt = attemptResult.rows[0];
 
-    // If verified, update user + promote to casual seller
+    // Identity verification is independent from seller onboarding. It unlocks
+    // the Verified tier for existing Casual sellers but never changes role/tier.
     let updatedUser = null;
     if (finalStatus === 'verified') {
       await pool.query(
         `UPDATE users SET
            id_verified = true,
            id_verified_at = NOW(),
-           id_verification_result = 'verified',
-           role = CASE WHEN role = 'buyer' THEN 'seller' ELSE role END,
-           seller_tier = CASE WHEN seller_tier = 'none' THEN 'casual' ELSE seller_tier END
+           id_verification_result = 'verified'
          WHERE id = $1`,
         [req.user.id]
       );

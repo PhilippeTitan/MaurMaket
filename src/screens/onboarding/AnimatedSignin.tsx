@@ -67,27 +67,70 @@ function Field({ icon, label, value, onChangeText, placeholder, secureTextEntry,
   icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; right?: React.ReactNode; onFocus?: () => void; keyboardType?: 'default' | 'number-pad';
 }) {
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<TextInput>(null);
 
   return (
     <View style={[s.field, focused && s.fieldFocused]}>
-      <MaterialCommunityIcons name={icon} size={18} color={focused ? C.violet : C.faint} />
-      <View style={{ flex: 1 }}>
+      {/* Tapping anywhere in the box (icon, label, empty space) focuses the input. */}
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => inputRef.current?.focus()}
+        accessibilityRole="none"
+        style={s.fieldTap}
+      >
+        <MaterialCommunityIcons name={icon} size={18} color={focused ? C.violet : C.faint} />
+        <View style={{ flex: 1 }}>
+          <Text style={s.fieldLabel}>{label}</Text>
+          <TextInput
+            ref={inputRef}
+            style={s.fieldInput}
+            value={value}
+            onChangeText={onChangeText}
+            onFocus={() => { setFocused(true); onFocus?.(); }}
+            onBlur={() => setFocused(false)}
+            placeholder={placeholder}
+            placeholderTextColor={C.faint}
+            secureTextEntry={secureTextEntry}
+            keyboardType={keyboardType}
+            autoCapitalize="none"
+          />
+        </View>
+      </TouchableOpacity>
+      {right}
+    </View>
+  );
+}
+
+/** Ghost keyboard row — the whole box is a tap target that focuses its input. */
+function GhostField({ icon, label, value, onChangeText, placeholder, secureTextEntry, active, right }: {
+  icon: any; label: string; value: string; onChangeText: (v: string) => void; placeholder?: string; secureTextEntry?: boolean; active?: boolean; right?: React.ReactNode;
+}) {
+  const inputRef = useRef<TextInput>(null);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() => inputRef.current?.focus()}
+      accessibilityRole="none"
+      style={[s.field, active && s.fieldFocused]}
+    >
+      <MaterialCommunityIcons name={icon} size={18} color={active ? C.violet : C.sub} />
+      <View style={{ flex: 1, justifyContent: 'center' }}>
         <Text style={s.fieldLabel}>{label}</Text>
         <TextInput
+          ref={inputRef}
+          autoFocus={active}
           style={s.fieldInput}
           value={value}
           onChangeText={onChangeText}
-          onFocus={() => { setFocused(true); onFocus?.(); }}
-          onBlur={() => setFocused(false)}
           placeholder={placeholder}
-          placeholderTextColor={C.faint}
+          placeholderTextColor={C.sub}
           secureTextEntry={secureTextEntry}
-          keyboardType={keyboardType}
           autoCapitalize="none"
         />
       </View>
       {right}
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -220,10 +263,11 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
         ]),
       ]),
     ]).start(() => {
-      // Hold for the celebration beat before entering the app
+      // Keep the welcome moment visible long enough to register before
+      // switching the root navigation into the authenticated app.
       setTimeout(async () => {
         await store.setUser(user, token);
-      }, 950);
+      }, 1700);
     });
   };
 
@@ -251,7 +295,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
   };
 
   const handleTwoFactorLogin = async () => {
-    if (twoFactorCode.trim().length < 6 || loading) return;
+    if (twoFactorCode.trim().length < 6 || loading || isSuccess) return;
     setLoading(true);
     try {
       const res = await completeTwoFactorLogin(twoFactorCode.trim(), usingBackupCode) as { user: User; token: string };
@@ -287,7 +331,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
       playSuccessAndEnter(res.user, res.token);
     } catch (err: any) {
       if (err instanceof PasskeyUnavailableError) {
-        setErrorMessage(err.message || t('signin.passkeyUnavailable'));
+        setErrorMessage(t('signin.passkeyUnavailable'));
       } else {
         setErrorMessage(err?.message || t('signin.passkeyFailed'));
       }
@@ -411,7 +455,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
             )}
 
             {/* Sign in button */}
-            <PrimaryButton onPress={requiresTwoFactor ? handleTwoFactorLogin : handleLogin} disabled={loading || (requiresTwoFactor ? twoFactorCode.trim().length < 6 : !canSubmit)}>{loading ? t('common.loading') : requiresTwoFactor ? t('signin.verifyCode') : t('signin.signInBtn')}</PrimaryButton>
+            <PrimaryButton onPress={requiresTwoFactor ? handleTwoFactorLogin : handleLogin} disabled={loading || isSuccess || (requiresTwoFactor ? twoFactorCode.trim().length < 6 : !canSubmit)}>{loading ? t('common.loading') : requiresTwoFactor ? t('signin.verifyCode') : t('signin.signInBtn')}</PrimaryButton>
 
             {!requiresTwoFactor && <View style={s.separatorRow}>
               <View style={s.separatorLine} />
@@ -435,8 +479,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
                     </Svg>
                   </View>
                 </View>
+                <Text style={s.providerLabel}>{t('signin.google')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={handlePasskey} style={s.providerCard} disabled={passkeyLoading}>
+              <TouchableOpacity onPress={handlePasskey} style={s.providerCard} disabled={passkeyLoading} accessibilityRole="button" accessibilityLabel={t('signin.passkey')}>
                 <View style={s.providerIconWrap}>
                   <Animated.View style={[s.providerIconRing, { transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}> 
                     <LinearGradient colors={['#7C3AED', '#8B5CF6', '#A78BFA', '#93C5FD', '#C084FC', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.providerIconRingFill} />
@@ -445,6 +490,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
                     {passkeyLoading ? <MaterialCommunityIcons name="loading" size={40} color="#8B5CF6" /> : <MaterialCommunityIcons name="fingerprint" size={40} color="#8B5CF6" />}
                   </View>
                 </View>
+                <Text style={s.providerLabel}>{t('signin.passkey')}</Text>
               </TouchableOpacity>
             </View>}
 
@@ -474,31 +520,21 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
               const isEmail = fieldName === 'email';
               const isActive = focusedField === fieldName;
               return (
-                <View key={fieldName} style={[s.field, isActive && s.fieldFocused]}>
-                  <MaterialCommunityIcons
-                    name={isEmail ? 'email-outline' : 'lock-outline'}
-                    size={18}
-                    color={isActive ? C.violet : C.sub}
-                  />
-                  <View style={{ flex: 1, justifyContent: 'center' }}>
-                    <Text style={s.fieldLabel}>{isEmail ? t('signin.emailAddress') : t('signin.passwordLabel')}</Text>
-                    <TextInput
-                      autoFocus={isActive}
-                      style={s.fieldInput}
-                      value={isEmail ? email : password}
-                      onChangeText={isEmail ? setEmail : setPassword}
-                      placeholder={isEmail ? t('signin.emailAddressPlaceholder') : t('signin.passwordLabel')}
-                      placeholderTextColor={C.sub}
-                      secureTextEntry={!isEmail && !showPw}
-                      autoCapitalize="none"
-                    />
-                  </View>
-                  {!isEmail && (
+                <GhostField
+                  key={fieldName}
+                  icon={isEmail ? 'email-outline' : 'lock-outline'}
+                  label={isEmail ? t('signin.emailAddress') : t('signin.passwordLabel')}
+                  value={isEmail ? email : password}
+                  onChangeText={isEmail ? setEmail : setPassword}
+                  placeholder={isEmail ? t('signin.emailAddressPlaceholder') : t('signin.passwordLabel')}
+                  secureTextEntry={!isEmail && !showPw}
+                  active={isActive}
+                  right={!isEmail ? (
                     <TouchableOpacity onPress={() => setShowPw(value => !value)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
                       <MaterialCommunityIcons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={28} color={C.faint} />
                     </TouchableOpacity>
-                  )}
-                </View>
+                  ) : undefined}
+                />
               );
             })}
             </View>
@@ -585,6 +621,9 @@ const s = StyleSheet.create({
   errorButtonText: { color: '#1A0B12', fontSize: 15, fontWeight: '800' },
 
   field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: 'rgba(13, 10, 27, 0.9)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)', paddingHorizontal: 16, alignSelf: 'stretch' },
+  // Negative margin cancels the parent's padding so the tap target is the whole box,
+  // not just the icon + input. The eye toggle renders after this and stays on top.
+  fieldTap: { flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, marginHorizontal: -16 },
   fieldFocused: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)' },
   fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
@@ -606,7 +645,8 @@ const s = StyleSheet.create({
   separatorLine: { flex: 1, height: 1, backgroundColor: 'rgba(221,232,255,0.24)' },
   separatorText: { color: C.sub, fontSize: 12, fontWeight: '700', textAlign: 'center' },
   providerRow: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 3 },
-  providerCard: { alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+  providerCard: { alignItems: 'center', justifyContent: 'center', paddingVertical: 4, minWidth: 76, minHeight: 88 },
+  providerLabel: { color: C.sub, fontSize: 12, fontWeight: '600', marginTop: 5 },
   providerIconWrap: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center' },
   providerIconRing: { width: 68, height: 68, borderRadius: 34, position: 'absolute' },
   providerIconRingFill: { width: 68, height: 68, borderRadius: 34 },

@@ -401,6 +401,57 @@ export class DatabaseController {
   }
 
   /**
+   * Delete every row matching a mapped predicate and enqueue one mirror
+   * operation per row in the same transaction.
+   */
+  async deleteMany(model, where) {
+    const pool = this._getWritePool();
+    if (!pool) throw new Error('[DB:Controller] No healthy database available');
+
+    const client = await pool.connect();
+    const source = this._getWriteSource(pool);
+    try {
+      await client.query('BEGIN');
+      if (!Array.isArray(where) || !where.length) throw new Error('[DB:Controller] Refusing unfiltered deleteMany');
+      const values = [];
+      const conditions = where.map(({ column, operator = 'eq', value }) => {
+        if (operator === 'in' || operator === 'not_in') {
+          if (!Array.isArray(value) || value.length === 0) return operator === 'in' ? 'FALSE' : 'TRUE';
+          const placeholders = value.map(item => { values.push(item); return `$${values.length}`; });
+          return `"${column}" ${operator === 'not_in' ? 'NOT IN' : 'IN'} (${placeholders.join(', ')})`;
+        }
+        if (value === null && (operator === 'eq' || operator === 'ne')) {
+          return `"${column}" IS ${operator === 'ne' ? 'NOT ' : ''}NULL`;
+        }
+        const sqlOperator = ({ eq: '=', ne: '<>', lt: '<', lte: '<=', gt: '>', gte: '>=' })[operator];
+        if (!sqlOperator) throw new Error(`[DB:Controller] Unsupported deleteMany operator: ${operator}`);
+        values.push(value);
+        return `"${column}" ${sqlOperator} $${values.length}`;
+      });
+      const result = await client.query(
+        `DELETE FROM ${model} WHERE ${conditions.join(' AND ')} RETURNING *`,
+        values
+      );
+      for (const row of result.rows) {
+        await client.query(
+          `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
+           VALUES ($1, $2, 'delete', $3, $4, $5, $6)`,
+          [crypto.randomUUID(), model, String(row.id), JSON.stringify({ id: row.id }), source, this._isHighPriority(model) ? 'high' : 'normal']
+        );
+      }
+      await client.query('COMMIT');
+      this._breakerForPool(pool).recordSuccess();
+      return result.rowCount;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      if (isDatabaseAvailabilityError(error)) this._breakerForPool(pool).recordFailure(error.message);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Atomic consume: read + delete in one operation (for verification tokens, etc.)
    */
   async consumeOne(model, where) {

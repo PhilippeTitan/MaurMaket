@@ -4,6 +4,7 @@ import { bearer, username, phoneNumber, emailOTP, twoFactor } from 'better-auth/
 import { passkey } from '@better-auth/passkey';
 import bcrypt from 'bcrypt';
 import { verifyPassword as verifyBetterAuthPassword } from 'better-auth/crypto';
+import { z } from 'zod';
 import { sendMail } from './mailer.js';
 
 function escapeHtml(value) {
@@ -401,6 +402,30 @@ export function createAuth(adapter) {
           defaultValue: false,
           input: false,
         },
+        // Store DOB in the same Better Auth user insert as the account so an
+        // app-profile bootstrap failure cannot silently lose this KYC field.
+        dateOfBirth: {
+          type: 'string',
+          fieldName: 'date_of_birth',
+          required: false,
+          input: true,
+          validator: {
+            input: z.string()
+              .regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid date of birth')
+              .refine((value) => {
+                const date = new Date(`${value}T00:00:00.000Z`);
+                return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+              }, 'Enter a valid date of birth')
+              .refine((value) => {
+                const dob = new Date(`${value}T00:00:00.000Z`);
+                const today = new Date();
+                let age = today.getUTCFullYear() - dob.getUTCFullYear();
+                const monthDiff = today.getUTCMonth() - dob.getUTCMonth();
+                if (monthDiff < 0 || (monthDiff === 0 && today.getUTCDate() < dob.getUTCDate())) age--;
+                return age >= 18;
+              }, 'You must be at least 18 years old'),
+          },
+        },
         // Two-Factor plugin fields
         twoFactorEnabled: {
           type: 'boolean',
@@ -453,6 +478,7 @@ export function createAuth(adapter) {
         value: 'value',
         expiresAt: 'expires_at',
         createdAt: 'created_at',
+        updatedAt: 'updated_at',
       },
     },
 

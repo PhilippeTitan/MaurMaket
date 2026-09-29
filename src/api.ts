@@ -97,6 +97,9 @@ function getBetterAuthClient() {
       plugins: [twoFactorClient(), passkeyClient()],
       fetchOptions: {
         credentials: 'include',
+        // React Native fetch does not supply Origin automatically. Better Auth
+        // requires it for CSRF checks on POSTs such as TOTP verification.
+        ...(Platform.OS !== 'web' ? { headers: { Origin: new URL(API_BASE).origin } } : {}),
         auth: { type: 'Bearer', token: () => _cachedToken || '' },
         onSuccess: (context: any) => {
           const token = context.response.headers.get('set-auth-token');
@@ -154,7 +157,9 @@ async function request<T = Record<string, unknown>>(
     if (!res.ok) {
       const msg = data.error || data.message || 'Request failed';
       const detail = data.details ? ` (${data.details})` : '';
-      throw new Error(`${msg}${detail}`);
+      const error = new Error(`${msg}${detail}`) as Error & { code?: string };
+      error.code = data.code;
+      throw error;
     }
     return data as T;
   } catch (err: any) {
@@ -311,6 +316,7 @@ export const signup = async (fullName: string, email: string, password: string, 
       email: normalizedEmail,
       password,
       name: fullName,
+      ...(dateOfBirth ? { dateOfBirth } : {}),
       ...(username ? { username } : {}),
       ...(phone ? { phoneNumber: phone.replace(/^\+?509/, '').replace(/^\+/, '') } : {}),
     }),
@@ -334,31 +340,35 @@ export const signup = async (fullName: string, email: string, password: string, 
   }
   setCachedToken(token);
 
-  // Bootstrap profile with extra fields that Better Auth doesn't handle (DOB, etc.)
+  // Bootstrap the app profile after Better Auth has created the auth record.
   try {
     const profileRes = await request('/user/profile/bootstrap', {
       method: 'POST',
       body: JSON.stringify({ fullName, email: normalizedEmail, phone, dateOfBirth, username }),
     });
     return { ...(profileRes as any), token };
-  } catch {
-    // Bootstrap may fail if user already exists — build minimal user from response
-    const userId = body?.user?.id || '';
-    const triggerUsername = (username || normalizedEmail.split('@')[0] || 'user')
-      .toLowerCase().replace(/[^a-z0-9._]/g, '').replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
-    const cleanPhone = phone ? phone.replace(/^\+?509/, '').replace(/^\+/, '') : null;
-    return {
-      user: {
-        id: userId, full_name: fullName, email: normalizedEmail, phone: cleanPhone,
-        role: 'buyer' as const, seller_tier: 'none' as const, avatar_url: null, bio: null,
-        created_at: new Date().toISOString(), username: triggerUsername,
-        show_real_name: true, pending_dob: !dateOfBirth,
-        email_verified: false, id_verified: false,
-      },
-      token,
-      emailConfirmationPending: !token,
-    };
+  } catch (cause) {
+    // Better Auth has created the account and stored DOB, but the user must
+    // not enter the app until the remaining profile bootstrap succeeds.
+    const error = new Error('Your account was created, but profile setup did not finish. Retry profile setup to continue.') as Error & { code?: string; cause?: unknown };
+    error.code = 'PROFILE_BOOTSTRAP_FAILED';
+    error.cause = cause;
+    throw error;
   }
+};
+
+export const retrySignupProfileBootstrap = async (
+  fullName: string,
+  email: string,
+  phone: string,
+  dateOfBirth?: string,
+  username?: string,
+) => {
+  const profile = await request('/user/profile/bootstrap', {
+    method: 'POST',
+    body: JSON.stringify({ fullName, email: email.trim().toLowerCase(), phone, dateOfBirth, username }),
+  });
+  return { ...(profile as any), token: await getToken() };
 };
 
 export const resendVerificationEmail = async (email: string) => {
@@ -765,10 +775,10 @@ export const forgotPassword = async (email: string, _language?: string) => {
   return { sent: true };
 };
 
-export const resetPassword = async (_email: string, _code: string, newPassword: string) => {
+export const resetPassword = async (_email: string, code: string, newPassword: string) => {
   const { res, body } = await authFetch('/auth/reset-password', {
     method: 'POST',
-    body: JSON.stringify({ newPassword }),
+    body: JSON.stringify({ newPassword, token: code }),
   });
   if (!res.ok) throw new Error(body?.message || body?.error || 'Failed to reset password');
   // Update the session token if a new one was returned

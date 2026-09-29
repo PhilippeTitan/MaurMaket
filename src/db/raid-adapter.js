@@ -30,6 +30,7 @@ const FIELD_MAP = {
     displayUsername: 'display_username',
     phoneNumber: 'phone_number',
     phoneNumberVerified: 'phone_number_verified',
+    dateOfBirth: 'date_of_birth',
     twoFactorEnabled: 'two_factor_enabled',
   },
   session: {
@@ -56,12 +57,14 @@ const FIELD_MAP = {
   verification: {
     expiresAt: 'expires_at',
     createdAt: 'created_at',
+    updatedAt: 'updated_at',
   },
   twoFactor: {
     userId: 'user_id',
     backupCodes: 'backup_codes',
     failedVerificationCount: 'failed_verification_count',
     lockedUntil: 'locked_until',
+    updatedAt: 'updated_at',
   },
   passkey: {
     userId: 'user_id',
@@ -141,6 +144,69 @@ function fromDbRow(model, row) {
 
 function fromDbRows(model, rows) { return rows.map(r => fromDbRow(model, r)); }
 
+/**
+ * A relation is to-one when the FK lives on the MAIN model and points at the
+ * joined row (sessions.user_id → users.id). The joined side then has exactly
+ * one row, and Better Auth expects an object rather than an array.
+ */
+function isToOne(relation) { return relation?.side === 'main'; }
+
+function getJoinModels(join) {
+  return join ? Object.entries(join).filter(([, enabled]) => enabled).map(([model]) => model) : [];
+}
+
+/** Hydrate requested relations for one or more already-selected main rows. */
+async function hydrateJoinRows(queryFn, model, rows, join) {
+  const joinModels = getJoinModels(join);
+  if (!rows.length || joinModels.length === 0) return rows;
+
+  for (const joinModel of joinModels) {
+    const relation = resolveRelation(model, joinModel);
+    if (!relation) {
+      for (const row of rows) row[joinModel] = [];
+      continue;
+    }
+
+    const parentField = relation.side === 'main' ? relation.field : 'id';
+    const valuesByKey = new Map();
+    for (const row of rows) {
+      const value = row[parentField];
+      if (value !== null && value !== undefined) valuesByKey.set(String(value), value);
+    }
+    const values = [...valuesByKey.values()];
+    if (values.length === 0) {
+      for (const row of rows) row[joinModel] = isToOne(relation) ? null : [];
+      continue;
+    }
+
+    const placeholders = values.map((_, index) => `$${index + 1}`).join(',');
+    const joinColumn = relation.side === 'main' ? 'id' : relation.column;
+    const result = await queryFn(
+      `SELECT * FROM ${toTable(joinModel)} WHERE ${joinColumn} IN (${placeholders})`,
+      values
+    );
+    const joinedRows = fromDbRows(joinModel, result.rows);
+
+    if (isToOne(relation)) {
+      const byId = new Map(joinedRows.map(joined => [String(joined.id), joined]));
+      for (const row of rows) row[joinModel] = byId.get(String(row[relation.field])) ?? null;
+      continue;
+    }
+
+    const joinField = Object.entries(FIELD_MAP[joinModel] || {})
+      .find(([, column]) => column === relation.column)?.[0] || relation.column;
+    const grouped = new Map();
+    for (const joined of joinedRows) {
+      const key = String(joined[joinField]);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(joined);
+    }
+    for (const row of rows) row[joinModel] = grouped.get(String(row.id)) || [];
+  }
+
+  return rows;
+}
+
 // ─── WHERE clause builder ───────────────────────────────────────────
 function buildWhere(model, where, startIdx = 1) {
   const conditions = [];
@@ -182,12 +248,7 @@ function buildWhere(model, where, startIdx = 1) {
 // Better Auth passes join: { account: true } to findUserByEmail({ includeAccounts: true })
 // We handle this with two queries (main + joined) to avoid column ambiguity.
 async function findOneWithJoin(queryFn, model, where, select, join) {
-  const joinModels = [];
-  if (join) {
-    for (const [m, enabled] of Object.entries(join)) {
-      if (enabled) joinModels.push(m);
-    }
-  }
+  const joinModels = getJoinModels(join);
 
   // Main query
   const tableName = toTable(model);
@@ -208,31 +269,9 @@ async function findOneWithJoin(queryFn, model, where, select, join) {
   const result = await queryFn(`SELECT ${selectCols} FROM ${tableName} WHERE ${conditions.join(' AND ')} LIMIT 1`, values);
   const mainRow = fromDbRow(model, result.rows[0]);
   if (!mainRow || joinModels.length === 0) return { row: mainRow, joinData: {} };
-
-  // For each join model, query separately to avoid column ambiguity
-  const joinData = {};
-  for (const jm of joinModels) {
-    const joinTable = toTable(jm);
-    const relation = resolveRelation(model, jm);
-
-    // Which column do we filter on, and with what value?
-    //   main-side FK → joined.id = mainRow.<field>
-    //   join-side FK → joined.<column> = mainRow.id
-    const column = relation?.side === 'join' ? relation.column : 'id';
-    const value = relation?.side === 'join' ? mainRow.id : (relation ? mainRow[relation.field] : null);
-
-    if (!relation || !value) {
-      joinData[jm] = [];
-      continue;
-    }
-
-    const joinResult = await queryFn(
-      `SELECT * FROM ${joinTable} WHERE ${column} = $1`,
-      [value]
-    );
-    joinData[jm] = fromDbRows(jm, joinResult.rows);
-  }
-
+  await hydrateJoinRows(queryFn, model, [mainRow], join);
+  const joinData = Object.fromEntries(joinModels.map(joinModel => [joinModel, mainRow[joinModel]]));
+  for (const joinModel of joinModels) delete mainRow[joinModel];
   return { row: mainRow, joinData };
 }
 
@@ -248,6 +287,12 @@ function buildFindManyQuery(model, where, limit, offset, orderBy) {
     sql: `SELECT * FROM ${tableName} ${whereClause} ${orderClause} ${limitClause} ${offsetClause}`,
     values,
   };
+}
+
+async function findManyWithJoin(queryFn, model, where, limit, offset, orderBy, join) {
+  const { sql, values } = buildFindManyQuery(model, where, limit, offset, orderBy);
+  const rows = fromDbRows(model, (await queryFn(sql, values)).rows);
+  return hydrateJoinRows(queryFn, model, rows, join);
 }
 
 function buildInsertQuery(model, data) {
@@ -290,9 +335,8 @@ function createPinnedAdapter(queryFn) {
       if (row) Object.assign(row, joinData);
       return row;
     },
-    async findMany({ model, where, limit, offset, orderBy }) {
-      const { sql, values } = buildFindManyQuery(model, where, limit, offset, orderBy);
-      return fromDbRows(model, (await queryFn(sql, values)).rows);
+    async findMany({ model, where, limit, offset, orderBy, join }) {
+      return findManyWithJoin(queryFn, model, where, limit, offset, orderBy, join);
     },
     async create({ model, data }) {
       const { sql, values } = buildInsertQuery(model, data);
@@ -305,6 +349,10 @@ function createPinnedAdapter(queryFn) {
     async delete({ model, where }) {
       const { sql, values } = buildDeleteQuery(model, where);
       return fromDbRow(model, (await queryFn(sql, values)).rows[0]) || null;
+    },
+    async deleteMany({ model, where }) {
+      const { sql, values } = buildDeleteQuery(model, where);
+      return (await queryFn(sql, values)).rowCount;
     },
     async consumeOne({ model, where }) {
       const { sql, values } = buildDeleteQuery(model, where);
@@ -339,10 +387,8 @@ export function createRaidAdapter(controller) {
       return row;
     },
 
-    async findMany({ model, where, limit, offset, orderBy }) {
-      const { sql, values } = buildFindManyQuery(model, where, limit, offset, orderBy);
-      const result = await queryFn(sql, values);
-      return fromDbRows(model, result.rows);
+    async findMany({ model, where, limit, offset, orderBy, join }) {
+      return findManyWithJoin(queryFn, model, where, limit, offset, orderBy, join);
     },
 
     async create({ model, data }) {
@@ -363,6 +409,14 @@ export function createRaidAdapter(controller) {
       if (!record) return null;
       const result = await controller.delete(toTable(model), record.id);
       return fromDbRow(model, result.result || result);
+    },
+
+    async deleteMany({ model, where }) {
+      return controller.deleteMany(toTable(model), where.map(w => ({
+        column: toColumn(model, w.field),
+        operator: w.operator || 'eq',
+        value: w.value,
+      })));
     },
 
     async consumeOne({ model, where }) {
@@ -412,9 +466,11 @@ export function createRaidAdapter(controller) {
             if (row) Object.assign(row, joinData);
             return row;
           },
-          async findMany({ model, where, limit, offset, orderBy }) {
-            const { sql, values } = buildFindManyQuery(model, where, limit, offset, orderBy);
-            return fromDbRows(model, (await client.query(sql, values)).rows);
+          async findMany({ model, where, limit, offset, orderBy, join }) {
+            return findManyWithJoin(
+              (sql, params) => client.query(sql, params),
+              model, where, limit, offset, orderBy, join
+            );
           },
           async create({ model, data }) {
             const { sql, values } = buildInsertQuery(model, data);
@@ -437,6 +493,14 @@ export function createRaidAdapter(controller) {
             const row = fromDbRow(model, result.rows[0]);
             if (row) writeBuffer.push({ model: toTable(model), action: 'delete', recordId: row.id, payload: { id: row.id } });
             return row || null;
+          },
+          async deleteMany({ model, where }) {
+            const { sql, values } = buildDeleteQuery(model, where);
+            const result = await client.query(sql, values);
+            for (const row of result.rows) {
+              writeBuffer.push({ model: toTable(model), action: 'delete', recordId: row.id, payload: { id: row.id } });
+            }
+            return result.rowCount;
           },
           async consumeOne({ model, where }) {
             const { sql, values } = buildDeleteQuery(model, where);

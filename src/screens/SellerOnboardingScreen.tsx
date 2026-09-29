@@ -12,6 +12,7 @@ import { becomeSeller, upgradeTier, uploadImage } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '@/localization';
 import BackButton from '../components/BackButton';
+import DobConfirmModal from '../components/DobConfirmModal';
 import { store } from '../store';
 import type { RootStackParamList } from '../navigation';
 
@@ -32,6 +33,7 @@ export default function SellerOnboardingScreen() {
   const [loading, setLoading] = useState(false);
   const [pickLoading, setPickLoading] = useState(false);
   const [natcashPhone, setNatcashPhone] = useState('');
+  const [dobPromptVisible, setDobPromptVisible] = useState(false);
 
   const prevStepRef = useRef<Step>('welcome');
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -92,6 +94,10 @@ export default function SellerOnboardingScreen() {
       }
       return true;
     } catch (err: unknown) {
+      if (err instanceof Error && (err as Error & { code?: string }).code === 'PENDING_DOB') {
+        setDobPromptVisible(true);
+        return false;
+      }
       const msg = err instanceof Error ? err.message : 'Something went wrong';
       Alert.alert(t('common.error'), msg);
       return false;
@@ -170,9 +176,15 @@ export default function SellerOnboardingScreen() {
         );
 
       case 'choose': {
-        const currentTier = store.user?.seller_tier;
-        const tierOrder = ['casual', 'verified', 'business'];
-        const currentIdx = tierOrder.indexOf(currentTier || '');
+        // Identity verification is a separate account status. Only an existing
+        // seller's seller_tier determines which tier can be selected next.
+        const currentTier = store.user?.role === 'seller' && store.user?.seller_tier !== 'none'
+          ? store.user?.seller_tier
+          : null;
+        const nextTier = !currentTier ? 'casual'
+          : currentTier === 'casual' ? 'verified'
+          : currentTier === 'verified' ? 'business'
+          : null;
 
         const tiers = [
           { key: 'casual' as const, icon: 'account-outline', iconBg: COLORS.blue, color: COLORS.blue, title: t('sellerOnboarding.casualTitle'), desc: t('sellerOnboarding.casualDesc'), features: [t('sellerOnboarding.casualFeature1'), t('sellerOnboarding.casualFeature2')] },
@@ -189,12 +201,9 @@ export default function SellerOnboardingScreen() {
 
             {tiers.map((tier) => {
               const isCurrent = tier.key === currentTier;
-              const isHigher = tierOrder.indexOf(tier.key) > currentIdx;
-              const needsVerification = tier.key === 'verified' && !store.user?.id_verified;
-              const needsVerifiedFirst = tier.key === 'business' && currentIdx < tierOrder.indexOf('verified');
-              const locked = !isHigher || needsVerifiedFirst;
-              const isVerificationPath = tier.key === 'verified' && needsVerification && !isCurrent;
-              const disabled = loading || (!isVerificationPath && locked);
+              const canAdvance = tier.key === nextTier;
+              const isVerificationPath = canAdvance && tier.key === 'verified' && !store.user?.id_verified;
+              const disabled = loading || (!isCurrent && !canAdvance);
               return (
                 <TouchableOpacity
                   key={tier.key}
@@ -231,7 +240,7 @@ export default function SellerOnboardingScreen() {
                       ))}
                     </View>
                   </View>
-                  {!isCurrent && !locked && <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />}
+                  {canAdvance && <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />}
                 </TouchableOpacity>
               );
             })}
@@ -353,6 +362,7 @@ export default function SellerOnboardingScreen() {
   const currentStepIdx = visibleSteps.indexOf(step === 'done' ? 'choose' : step);
 
   return (
+    <>
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.xl, paddingBottom: insets.bottom + SPACING.xl }]} keyboardShouldPersistTaps="handled">
       <View style={styles.topBar}>
         <BackButton onPress={() => {
@@ -375,6 +385,11 @@ export default function SellerOnboardingScreen() {
         {renderStep()}
       </Animated.View>
     </ScrollView>
+    <DobConfirmModal visible={dobPromptVisible} allowSkip={false} onCompleted={() => {
+      setDobPromptVisible(false);
+      void handleChooseTier('casual');
+    }} />
+    </>
   );
 }
 
