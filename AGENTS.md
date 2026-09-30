@@ -2026,3 +2026,26 @@ The MonCash policy and v1 implementation were discussed with Philippe on 2026-09
 - MonCash settlement ledger, refund approval/reconciliation endpoints, seller debt payment flow, fee previews, and admin operations screen have been added in code.
 - The migration is represented in `server.js` startup migration steps and `migrate-supabase.sql`. Confirm the active database has applied the schema before enabling these flows in production.
 - No live provider transfer or production database migration was performed during this implementation. Do not claim the provider cycle is production-verified until the runbook and end-to-end provider check above are complete.
+
+## NatCash Policy — Design in Progress
+
+This is a separate discovery track from MonCash. NatCash has no MaurMaket API integration, so buyers transfer directly to sellers. Continue the one-question-at-a-time discussion with Philippe before implementation; do not assume MonCash settlement, refund, or commission rules apply.
+
+### Decisions agreed so far (2026-09-30)
+
+- NatCash access is an optional monthly seller add-on paid through MonCash. It is available to Casual and Verified sellers; Business includes it while the seller has Business access.
+- For standalone NatCash access, send one reminder each day for the final 7 days before expiry and each of the 3 grace-period days. Renewal stops the reminders. After the 3-day grace period, block new NatCash checkouts; allow existing orders to finish.
+- Business-bundled NatCash access ends when Business access ends/downgrades. It does not receive an additional NatCash grace period after the Business subscription’s own grace period.
+- Verified sellers may have up to 100 active published listings; drafts, archived listings, and sold listings do not count. If an existing Verified seller is already above 100, keep current listings visible but block new listings/reactivation until they are below the cap. Business remains unlimited.
+- A checkout may mix MonCash and NatCash, chosen per seller. Each seller’s portion settles and proceeds independently so one confirmed payment does not wait on another seller’s pending payment.
+- The monthly NatCash fee is MaurMaket’s fee for offering NatCash. Do not also charge the tier-based per-order commission on NatCash sales, and do not credit buyer-to-seller NatCash transfers to the withdrawable MaurMaket seller balance. Tier commission and wallet proceeds continue to apply to MonCash orders.
+
+### Still to decide
+
+- How NatCash receipt is confirmed without an API: buyer-provided SMS/text, seller confirmation, support review, or a combination. SMS parsing alone is user-supplied evidence and must not be represented as provider verification.
+- Mixed-checkout lifecycle for pending/failed seller payments, reservation timeouts, and the buyer’s options when only some seller transfers complete.
+- Refund and dispute handling for direct buyer-to-seller NatCash payments, including what MaurMaket can guarantee versus what requires seller cooperation/support.
+- NatCash add-on price, exact billing/renewal UX, reminders during and after grace, and any cancellation/reactivation rules. Price amount remains open.
+- Apply and verify the 100-listing cap server-side and in listing UI; handle changes to a seller’s tier while they have more than 100 active listings.
+- Update order, seller balance, earnings, analytics, and platform revenue accounting so direct NatCash payments are recorded without creating fictitious withdrawable funds or commission receivables.
+- Confirm product/stock reservation and partial-order behavior for mixed carts before implementation.
