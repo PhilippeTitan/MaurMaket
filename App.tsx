@@ -12,6 +12,8 @@ import { COLORS, SPACING, RADIUS, SHADOW, FONT_SIZES, FONT_WEIGHTS, FONTS, DURAT
 import { i18n } from './src/localization';
 import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
+// Web-only: strips the browser's own focus ring and autofill fill off our text fields.
+import './src/webInputReset';
 import { getPasswordResetTokenFromUrl } from './src/authDeepLinks';
 import OfflineBanner from './src/components/OfflineBanner';
 import { PaperPlaneIcon } from './src/components/UserAvatar';
@@ -44,6 +46,7 @@ import BusinessSubscriptionScreen from './src/screens/BusinessSubscriptionScreen
 import WishlistScreen from './src/screens/WishlistScreen';
 import AddressesScreen from './src/screens/AddressesScreen';
 import PaymentsScreen from './src/screens/PaymentsScreen';
+import MonCashSupportScreen from './src/screens/MonCashSupportScreen';
 import SellerOnboardingScreen from './src/screens/SellerOnboardingScreen';
 import EditListingScreen from './src/screens/EditListingScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
@@ -52,6 +55,7 @@ import LocationSettingsScreen from './src/screens/LocationSettingsScreen';
 import EditProfileScreen from './src/screens/EditProfileScreen';
 import AccountDashboardScreen from './src/screens/AccountDashboardScreen';
 import SellerToolsSettingsScreen from './src/screens/SellerToolsSettingsScreen';
+import SellerFulfillmentSettingsScreen from './src/screens/SellerFulfillmentSettingsScreen';
 import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
 import SecuritySettingsScreen from './src/screens/SecuritySettingsScreen';
 import NotificationsSettingsScreen from './src/screens/NotificationsSettingsScreen';
@@ -327,11 +331,13 @@ export default function App() {
       if (url.includes('payment-return')) {
         const match = url.match(/orderId=([^&]+)/);
         const orderId = match?.[1];
+        const pendingId = url.match(/[?&]pendingId=([^&]+)/)?.[1];
+        const debtPaymentId = url.match(/[?&]debtPaymentId=([^&]+)/)?.[1];
         if (navigationRef.isReady()) {
-          navigationRef.navigate('PaymentReturn', { orderId });
+          navigationRef.navigate('PaymentReturn', { orderId, pendingId, debtPaymentId });
         } else {
-          pendingDeepLink.current = orderId || null;
-          pendingDeepLinkType.current = 'payment-return';
+          pendingDeepLink.current = orderId || pendingId || debtPaymentId || null;
+          pendingDeepLinkType.current = debtPaymentId ? 'debt-payment-return' : 'payment-return';
         }
       } else if (url.includes('maurmaket://verify')) {
         const match = url.match(/[?&](?:token|code)=([^&]+)/);
@@ -363,11 +369,13 @@ export default function App() {
       if (url.includes('payment-return')) {
         const match = url.match(/orderId=([^&]+)/);
         const orderId = match?.[1];
+        const pendingId = url.match(/[?&]pendingId=([^&]+)/)?.[1];
+        const debtPaymentId = url.match(/[?&]debtPaymentId=([^&]+)/)?.[1];
         if (navigationRef.isReady()) {
-          navigationRef.navigate('PaymentReturn', { orderId });
+          navigationRef.navigate('PaymentReturn', { orderId, pendingId, debtPaymentId });
         } else {
-          pendingDeepLink.current = orderId || null;
-          pendingDeepLinkType.current = 'payment-return';
+          pendingDeepLink.current = orderId || pendingId || debtPaymentId || null;
+          pendingDeepLinkType.current = debtPaymentId ? 'debt-payment-return' : 'payment-return';
         }
       } else if (url.includes('maurmaket://verify')) {
         const match = url.match(/[?&](?:token|code)=([^&]+)/);
@@ -461,6 +469,8 @@ export default function App() {
         pendingDeepLinkType.current = null;
         if (type === 'payment-return') {
           navigationRef.navigate('PaymentReturn', { orderId: value });
+        } else if (type === 'debt-payment-return') {
+          navigationRef.navigate('PaymentReturn', { debtPaymentId: value });
         } else if (type === 'verify' && store.isLoggedIn) {
           navigationRef.navigate('EmailVerification', { code: value });
         } else if (type === 'reset-password') {
@@ -493,11 +503,13 @@ export default function App() {
             <Stack.Screen name="Wishlist" component={WishlistScreen} />
             <Stack.Screen name="Addresses" component={AddressesScreen} />
             <Stack.Screen name="Payments" component={PaymentsScreen} />
+            <Stack.Screen name="MonCashSupport" component={MonCashSupportScreen} />
             <Stack.Screen name="EditListing" component={EditListingScreen} />
             <Stack.Screen name="Analytics" component={AnalyticsScreen} />
             <Stack.Screen name="SettingsEdit" component={SettingsEditScreen} />
             <Stack.Screen name="LocationSettings" component={LocationSettingsScreen} />
             <Stack.Screen name="SellerToolsSettings" component={SellerToolsSettingsScreen} />
+            <Stack.Screen name="SellerFulfillmentSettings" component={SellerFulfillmentSettingsScreen} />
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
             <Stack.Screen name="SecuritySettings" component={SecuritySettingsScreen} />
             <Stack.Screen name="NotificationsSettings" component={NotificationsSettingsScreen} />

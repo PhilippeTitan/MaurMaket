@@ -33,6 +33,8 @@ interface Props {
   divider?: boolean;
   /** Destructive row (coral accent for logout, delete, etc.) */
   destructive?: boolean;
+  /** Compact native-settings list treatment. */
+  appearance?: 'default' | 'minimal';
 }
 
 /**
@@ -61,22 +63,26 @@ export default function SettingsRow({
   style,
   divider = false,
   destructive = false,
+  appearance = 'minimal',
 }: Props) {
   const labelColor = destructive ? ONBOARDING_COLORS.coral : ONBOARDING_COLORS.text;
-  const finalIconColor = destructive ? ONBOARDING_COLORS.coral : iconColor;
+  const finalIconColor = destructive ? ONBOARDING_COLORS.coral : appearance === 'minimal' ? COLORS.text2 : iconColor;
 
   const content = (
-    <View style={[styles.row, style]}>
+    <View style={[styles.row, appearance === 'minimal' && styles.minimalRow, style]}>
       {icon ? (
-        <View style={[styles.iconContainer, iconBg ? { backgroundColor: iconBg } : { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+        <View style={[
+          styles.iconContainer,
+          appearance === 'minimal' ? styles.minimalIcon : { backgroundColor: iconBg || 'rgba(255,255,255,0.06)' },
+        ]}>
           <MaterialCommunityIcons name={icon as any} size={22} color={finalIconColor} />
         </View>
       ) : null}
       <View style={styles.textContainer}>
-        <Text style={[styles.label, { color: labelColor }]} numberOfLines={1}>
+        <Text style={[styles.label, appearance === 'minimal' && styles.minimalLabel, { color: labelColor }]} numberOfLines={1}>
           {label}
         </Text>
-        {subtitle ? (
+        {subtitle && appearance !== 'minimal' ? (
           <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text>
         ) : null}
       </View>
@@ -108,7 +114,7 @@ export default function SettingsRow({
         ) : (
           content
         )}
-        <View style={styles.divider} />
+        <View style={[styles.divider, appearance === 'minimal' && styles.minimalDivider]} />
       </View>
     );
   }
@@ -130,6 +136,13 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
     backgroundColor: 'rgba(255,255,255,0.015)',
   },
+  minimalRow: {
+    minHeight: 54,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    gap: SPACING.md,
+    backgroundColor: 'transparent',
+  },
   iconContainer: {
     width: 36,
     height: 36,
@@ -139,6 +152,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: ONBOARDING_COLORS.border,
   },
+  minimalIcon: {
+    width: 28,
+    height: 32,
+    borderWidth: 0,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
+  },
   textContainer: {
     flex: 1,
     gap: 2,
@@ -147,6 +167,10 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.lg,
     fontWeight: FONT_WEIGHTS.medium,
     color: ONBOARDING_COLORS.text,
+  },
+  minimalLabel: {
+    fontSize: FONT_SIZES.base,
+    fontWeight: FONT_WEIGHTS.medium,
   },
   subtitle: {
     fontSize: FONT_SIZES.xs,
@@ -179,5 +203,8 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: ONBOARDING_COLORS.border,
     marginLeft: SPACING.md + 36 + SPACING.md,
+  },
+  minimalDivider: {
+    marginLeft: SPACING.sm + 28 + SPACING.md,
   },
 });

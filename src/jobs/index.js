@@ -2,8 +2,18 @@ import cron from 'node-cron';
 import { pool } from '../config/database.js';
 import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, recordProductCooccurrences, processRefundPayout, cleanupOldNotifications } from '../utils/helpers.js';
 import { createNotification } from '../utils/notifications.js';
+import { expireTemporaryStorageUploads } from '../utils/temporaryStorage.js';
 
 export function startJobs() {
+  // ───── Expire temporary KYC photos even when a user abandons the flow ─────
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      await expireTemporaryStorageUploads();
+    } catch (err) {
+      console.error('[UPLOAD EXPIRY] Cleanup job error:', err.message);
+    }
+  });
+
   // ───── Cron: Auto-refund expired meetup check-ins (every 5 minutes) ─────
   cron.schedule('*/5 * * * *', async () => {
     try {
@@ -12,6 +22,7 @@ export function startJobs() {
         FROM meetup_checkins mc
         JOIN orders o ON mc.order_id = o.id
         WHERE o.status = 'paid'
+          AND o.payment_method = 'moncash'
           AND o.delivery_method = 'meetup'
           AND mc.checked_in_at < NOW() - INTERVAL '90 minutes'
           AND NOT EXISTS (
@@ -25,6 +36,7 @@ export function startJobs() {
         console.log(`[CRON] Meetup expired for order ${orderId} — auto-refunding`);
 
         const client = await pool.connect();
+        let commissionReversed = 0;
         try {
           await client.query('BEGIN');
           const orderResult = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
@@ -39,9 +51,16 @@ export function startJobs() {
             [orderId]
           );
           for (const escrow of escrows.rows) {
+            commissionReversed += Number(escrow.commission_amount || 0);
             await client.query(
-              "UPDATE order_escrow SET status = 'refunded', released_at = CURRENT_TIMESTAMP WHERE id = $1",
+              `UPDATE order_escrow SET status = 'refunded', gross_amount = 0, commission_base = 0,
+                 collection_fee_amount = 0, commission_amount = 0, net_amount = 0, released_at = CURRENT_TIMESTAMP WHERE id = $1`,
               [escrow.id]
+            );
+            await client.query(
+              `UPDATE platform_revenue SET gross_amount = 0, commission_base = 0, collection_fee_amount = 0,
+                 commission_amount = 0, platform_fee = 0, net_to_seller = 0 WHERE order_id = $1 AND seller_id = $2`,
+              [orderId, escrow.seller_id]
             );
           }
 
@@ -56,28 +75,20 @@ export function startJobs() {
           await client.query('COMMIT');
           client.release();
 
-          const buyerRes = await pool.query('SELECT phone FROM users WHERE id = $1', [order.buyer_id]);
-          const buyerPhone = buyerRes.rows[0]?.phone;
           const totalRefund = parseFloat(order.total_amount);
-
-          if (totalRefund > 0 && buyerPhone) {
-            try {
-              const payoutRes = await fetch(
-                process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
-                {
-                  method: 'POST',
-                  headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ amount: Math.round(totalRefund), moncashNumber: buyerPhone, referenceId: `refund_${orderId}` }),
-                  signal: AbortSignal.timeout(15000),
-                }
-              );
-              if (payoutRes.ok) console.log(`[CRON] Refund G ${totalRefund} sent to buyer ${buyerPhone}`);
-              else console.error(`[CRON] Refund payout failed: ${await payoutRes.text()}`);
-            } catch (e) { console.error('[CRON] Refund payout error:', e.message); }
+          if (totalRefund > 0) {
+            const feeAmount = Math.round(totalRefund * 0.05 * 100) / 100;
+            await pool.query(
+              `INSERT INTO refund_payouts (order_id, buyer_id, amount, fee_amount, receiver_phone,
+                 moncash_reference, reason, cause, commission_reversed, destination_verified)
+               VALUES ($1, $2, $3, $4, '', $5, $6, 'maurmaket', $7, false)
+               ON CONFLICT (moncash_reference) DO NOTHING`,
+              [orderId, order.buyer_id, totalRefund, feeAmount, `meetup_refund_${orderId}`, 'Automatic meetup expiry refund awaiting support destination verification', commissionReversed]
+            );
           }
 
-          createNotification(order.buyer_id, 'order_status', 'Order Refunded',
-            `Your meetup order has expired. G ${totalRefund.toFixed(0)} refunded.`, { orderId });
+          createNotification(order.buyer_id, 'order_status', 'Refund under review',
+            `Your meetup expired. Support is confirming the MonCash refund destination for G ${totalRefund.toFixed(2)}.`, { orderId });
 
           const sellerNotify = await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [orderId]);
           for (const row of sellerNotify.rows) {
@@ -100,12 +111,12 @@ export function startJobs() {
   cron.schedule('*/5 * * * *', async () => {
     try {
       const pendingRefunds = await pool.query(
-        `SELECT order_id FROM refund_payouts
-         WHERE status IN ('pending', 'failed') AND next_attempt_at <= CURRENT_TIMESTAMP
+        `SELECT id FROM refund_payouts
+         WHERE status = 'pending' AND next_attempt_at <= CURRENT_TIMESTAMP
          ORDER BY created_at ASC LIMIT 20`
       );
       for (const refund of pendingRefunds.rows) {
-        await processRefundPayout(refund.order_id);
+        await processRefundPayout(refund.id);
       }
     } catch (err) {
       console.error('[CRON] Refund payout retry error:', err.message);
@@ -117,7 +128,7 @@ export function startJobs() {
     try {
       const staleOrders = await pool.query(
         `SELECT id, buyer_id, moncash_reference FROM orders
-         WHERE status = 'pending' AND created_at < NOW() - INTERVAL '10 minutes'
+         WHERE status = 'pending' AND payment_method = 'moncash' AND created_at < NOW() - INTERVAL '10 minutes'
          ORDER BY created_at ASC LIMIT 10`
       );
       if (staleOrders.rows.length === 0) return;
@@ -157,20 +168,22 @@ export function startJobs() {
               for (const item of items.rows) {
                 if (item.seller_id) {
                   const grossAmount = parseFloat(item.paid_total);
+                  const commissionBase = parseFloat(item.commission_base ?? grossAmount);
+                  const collectionFee = parseFloat(item.collection_fee_amount || 0);
                   const tierRes = await client.query('SELECT seller_tier FROM users WHERE id = $1', [item.seller_id]);
                   const sellerTier = tierRes.rows[0]?.seller_tier || 'none';
                   const rate = getCommissionRate(sellerTier);
-                  const commission = Math.round(grossAmount * rate * 100) / 100;
-                  const net = Math.round((grossAmount - commission) * 100) / 100;
+                  const commission = Math.round(commissionBase * rate * 100) / 100;
+                  const net = Math.round((grossAmount - commission - collectionFee) * 100) / 100;
                   await client.query(
-                    `INSERT INTO order_escrow (order_id, seller_id, gross_amount, commission_amount, net_amount, status)
-                     VALUES ($1, $2, $3, $4, $5, 'held') ON CONFLICT (order_id, seller_id) DO UPDATE SET gross_amount = $3, commission_amount = $4, net_amount = $5, status = 'held'`,
-                    [order.id, item.seller_id, grossAmount, commission, net]
+                    `INSERT INTO order_escrow (order_id, seller_id, gross_amount, commission_base, collection_fee_amount, commission_amount, net_amount, status)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, 'held') ON CONFLICT (order_id, seller_id) DO UPDATE SET gross_amount = $3, commission_base = $4, collection_fee_amount = $5, commission_amount = $6, net_amount = $7, status = 'held'`,
+                    [order.id, item.seller_id, grossAmount, commissionBase, collectionFee, commission, net]
                   );
                   await client.query(
-                    `INSERT INTO platform_revenue (order_id, seller_id, seller_tier, gross_amount, commission_rate, commission_amount, platform_fee, net_to_seller)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                    [order.id, item.seller_id, sellerTier, grossAmount, rate, commission, commission, net]
+                    `INSERT INTO platform_revenue (order_id, seller_id, seller_tier, gross_amount, commission_base, collection_fee_amount, commission_rate, commission_amount, platform_fee, net_to_seller)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                    [order.id, item.seller_id, sellerTier, grossAmount, commissionBase, collectionFee, rate, commission, commission, net]
                   );
                 }
               }

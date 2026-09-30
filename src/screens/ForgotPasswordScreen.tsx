@@ -165,7 +165,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
                 <TouchableOpacity onPress={handleResend}>
                   <Text style={styles.resendBtn}>{t('verify.resend')}</Text>
                 </TouchableOpacity>
-              )}
+              ) : null}
             </View>
           </>
         )}

@@ -442,10 +442,9 @@ const styles = StyleSheet.create({
   findMeBtn: {
     position: 'absolute', right: SPACING.lg,
     width: 48, height: 48, borderRadius: 24,
-    backgroundColor: COLORS.surface + 'EE',
+    backgroundColor: COLORS.surface,
     borderWidth: 1, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center',
-    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
     zIndex: 15,
   },
 
@@ -456,16 +455,14 @@ const styles = StyleSheet.create({
   },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.surface + 'EE', borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.pill, paddingHorizontal: SPACING.lg, height: 48,
-    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
   },
   searchInput: { flex: 1, color: COLORS.text, fontSize: FONT_SIZES.md, padding: 0 },
   searchResults: {
-    marginTop: SPACING.sm, backgroundColor: COLORS.surface + 'EE',
+    marginTop: SPACING.sm, backgroundColor: COLORS.surface,
     borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card,
     maxHeight: 220, overflow: 'hidden',
-    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
   },
   searchLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: SPACING.lg },
   searchLoadingText: { fontSize: FONT_SIZES.sm, color: COLORS.text2 },
@@ -481,8 +478,7 @@ const styles = StyleSheet.create({
   bottomCard: {
     position: 'absolute', left: SPACING.lg, right: SPACING.lg,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.media, padding: SPACING.xl,
-    elevation: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 12,
+    borderRadius: RADIUS.card, padding: SPACING.lg,
     zIndex: 20,
   },
 

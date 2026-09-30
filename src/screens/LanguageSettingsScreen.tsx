@@ -1,6 +1,6 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
@@ -22,18 +22,6 @@ const LANGUAGES: { code: Language; label: string; native: string; flag: string }
 export default function LanguageSettingsScreen({ navigation }: Props) {
   const { t, language } = useTranslation();
 
-  const anim = useRef({
-    opacity: new Animated.Value(0),
-    translateY: new Animated.Value(16),
-  }).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(anim.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-      Animated.timing(anim.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
-    ]).start();
-  }, []);
-
   const handleSelect = async (code: Language) => {
     if (code === language) return;
     await i18n.setLanguage(code);
@@ -45,25 +33,22 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
       <ScreenHeader title={t('language.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
+        <View>
           <SettingsGroup
             header={t('language.select')}
             description={t('language.selectDesc')}
           >
-            {LANGUAGES.map((lang) => {
+            {LANGUAGES.map((lang, index) => {
               const isSelected = language === lang.code;
               return (
                 <TouchableOpacity
                   key={lang.code}
-                  style={styles.langRow}
+                    style={[styles.langRow, index < LANGUAGES.length - 1 && styles.langDivider]}
                   activeOpacity={0.6}
                   onPress={() => handleSelect(lang.code)}
                 >
                   <Text style={styles.flag}>{lang.flag}</Text>
-                  <View style={styles.langInfo}>
-                    <Text style={[styles.langName, isSelected && { color: COLORS.coral }]}>{lang.native}</Text>
-                    <Text style={styles.langSub}>{lang.label}</Text>
-                  </View>
+                  <Text style={[styles.langName, isSelected && { color: COLORS.coral }]}>{lang.native}</Text>
                   {isSelected ? (
                     <View style={styles.checkCircle}>
                       <MaterialCommunityIcons name="check" size={14} color={COLORS.white} />
@@ -75,7 +60,7 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
               );
             })}
           </SettingsGroup>
-        </Animated.View>
+        </View>
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -93,25 +78,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.lg,
-    minHeight: 60,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 54,
   },
+  langDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
   flag: {
-    fontSize: 28,
-  },
-  langInfo: {
-    flex: 1,
+    fontSize: 22,
+    width: 32,
+    textAlign: 'center',
   },
   langName: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: FONT_WEIGHTS.semibold,
+    flex: 1,
+    fontSize: FONT_SIZES.base,
+    fontWeight: FONT_WEIGHTS.medium,
     color: COLORS.text,
-  },
-  langSub: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text2,
-    marginTop: 1,
   },
   checkCircle: {
     width: 24,

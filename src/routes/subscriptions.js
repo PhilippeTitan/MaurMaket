@@ -26,7 +26,7 @@ router.post('/api/subscriptions/create', authRequired, sellerRequired, async (re
     }
     const orderId = `sub_${req.user.id}_${Date.now()}`;
     await pool.query(`INSERT INTO orders (id, buyer_id, total_amount, status) VALUES ($1, $2, 2500, 'pending') ON CONFLICT (id) DO NOTHING`, [orderId, req.user.id]);
-    const payUrl = process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create';
+    const payUrl = process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create';
     const mccRes = await fetch(payUrl, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}`, 'Content-Type': 'application/json' },
@@ -55,7 +55,7 @@ router.post('/api/subscriptions/renew', authRequired, sellerRequired, async (req
   try {
     const orderId = `sub_renew_${req.user.id}_${Date.now()}`;
     await pool.query(`INSERT INTO orders (id, buyer_id, total_amount, status) VALUES ($1, $2, 2500, 'pending') ON CONFLICT (id) DO NOTHING`, [orderId, req.user.id]);
-    const payUrl = process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create';
+    const payUrl = process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create';
     const mccRes = await fetch(payUrl, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}`, 'Content-Type': 'application/json' },

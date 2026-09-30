@@ -63,9 +63,10 @@ export type RootStackParamList = {
   Wishlist: undefined;
   Addresses: undefined;
   Payments: undefined;
+  MonCashSupport: undefined;
   EditListing: { productId: string };
   SettingsEdit: { field: 'name' | 'email' | 'phone' | 'phones' | 'natcash_phone' | 'bio' | 'password' | 'storeName'; title: string };
-  PaymentReturn: { orderId?: string; pendingId?: string };
+  PaymentReturn: { orderId?: string; pendingId?: string; debtPaymentId?: string };
   Meetup: { orderId: string };
   Notification: undefined;
   PromoManagement: undefined;
@@ -74,6 +75,7 @@ export type RootStackParamList = {
   ForgotPassword: { code?: string } | undefined;
   LocationSettings: undefined;
   SellerToolsSettings: undefined;
+  SellerFulfillmentSettings: undefined;
   PrivacySettings: undefined;
   SecuritySettings: undefined;
   NotificationsSettings: undefined;

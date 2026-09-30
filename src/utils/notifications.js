@@ -1,18 +1,27 @@
 import { Expo } from 'expo-server-sdk';
 import { pool } from '../config/database.js';
+import { publishUserEvent } from './realtime.js';
 
 const expo = new Expo();
 
 // Notification helper
 async function createNotification(userId, type, title, body, data, db) {
   const exec = db || pool;
+  let saved = false;
   try {
     await exec.query(
       `INSERT INTO notifications (user_id, type, title, body, data) VALUES ($1, $2, $3, $4, $5)`,
       [userId, type, title, body || null, data ? JSON.stringify(data) : null]
     );
+    saved = true;
   } catch (err) {
     console.error('Failed to create notification:', err);
+  }
+  if (saved) {
+    // A supplied DB client may still be inside a transaction. Delay the hint
+    // until that transaction has had time to commit.
+    if (db) setTimeout(() => publishUserEvent(userId, type), 400);
+    else publishUserEvent(userId, type);
   }
   // Fire-and-forget push notification
   sendPushNotification(userId, title, body, data);

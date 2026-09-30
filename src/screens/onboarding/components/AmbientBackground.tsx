@@ -1,10 +1,17 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Animated, Easing, StyleSheet, Dimensions } from 'react-native';
+import { View, Animated, Easing, StyleSheet } from 'react-native';
 import { COLORS } from '../../../theme';
-
-const { width: SCREEN_W } = Dimensions.get('window');
+import { useViewport } from '@/hooks';
 
 export default function AmbientBackground() {
+  // Blob geometry is a fraction of the live window width, so the glow keeps its
+  // proportions when the window is resized, rotated or opened in split screen — the
+  // module-scope snapshot this used to read froze it at whatever size the app booted in.
+  const vp = useViewport();
+  const blobASize = vp.width * 0.75;
+  const blobBSize = vp.width * 0.6;
+  const blobA = { width: blobASize, height: blobASize, top: -vp.width * 0.35, right: -vp.width * 0.3 };
+  const blobB = { width: blobBSize, height: blobBSize, bottom: -vp.width * 0.25, left: -vp.width * 0.28 };
   const drift = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -23,8 +30,8 @@ export default function AmbientBackground() {
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Animated.View style={[styles.blob, styles.blobA, { transform: [{ translateY: blobATranslateY }] }]} />
-      <Animated.View style={[styles.blob, styles.blobB, { transform: [{ translateY: blobBTranslateY }] }]} />
+      <Animated.View style={[styles.blob, styles.blobA, blobA, { transform: [{ translateY: blobATranslateY }] }]} />
+      <Animated.View style={[styles.blob, styles.blobB, blobB, { transform: [{ translateY: blobBTranslateY }] }]} />
     </View>
   );
 }
@@ -39,18 +46,12 @@ const styles = StyleSheet.create({
     shadowRadius: 80,
     elevation: 0,
   },
+  // Geometry (width/height/offsets) comes per-render from the live window; these carry
+  // the parts that never change.
   blobA: {
-    width: SCREEN_W * 0.75,
-    height: SCREEN_W * 0.75,
-    top: -SCREEN_W * 0.35,
-    right: -SCREEN_W * 0.3,
     backgroundColor: 'rgba(255,77,106,0.10)',
   },
   blobB: {
-    width: SCREEN_W * 0.6,
-    height: SCREEN_W * 0.6,
-    bottom: -SCREEN_W * 0.25,
-    left: -SCREEN_W * 0.28,
     backgroundColor: 'rgba(139,92,246,0.06)',
     shadowColor: COLORS.purple,
   },

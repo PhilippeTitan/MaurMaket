@@ -203,14 +203,6 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
 
-          {/* ── Field description ── */}
-          <View style={styles.fieldHeader}>
-            <View style={[styles.iconContainer, { backgroundColor: meta.iconBg }]}>
-              <MaterialCommunityIcons name={meta.icon as any} size={20} color={meta.iconColor} />
-            </View>
-            <Text style={styles.fieldDescription}>{t(meta.descriptionKey)}</Text>
-          </View>
-
           {field === 'phones' ? (
             /* ── Phone Numbers (Dual Card) ── */
             <>
@@ -382,34 +374,12 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scrollContent: { paddingBottom: SPACING.page },
-  saveTopBtn: { fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.bold, color: ONBOARDING_COLORS.violet },
-
-  /* Field header */
-  fieldHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.md,
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fieldDescription: {
-    flex: 1,
-    fontSize: FONT_SIZES.base,
-    color: ONBOARDING_COLORS.sub,
-    lineHeight: 22,
-  },
+  saveTopBtn: { fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.coral },
 
   /* Input cards */
   inputCard: {
     marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
     backgroundColor: ONBOARDING_COLORS.surface,
     borderRadius: RADIUS.card,
     borderWidth: 1,

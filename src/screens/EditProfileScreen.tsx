@@ -143,13 +143,6 @@ export default function EditProfileScreen({ navigation }: Props) {
             />
           </SettingsGroup>
 
-          {/* ── Bio preview ── */}
-          {user?.bio ? (
-            <View style={styles.bioPreview}>
-              <Text style={styles.bioPreviewText}>{user.bio}</Text>
-            </View>
-          ) : null}
-
         </Animated.View>
 
         <View style={styles.bottomSpacer} />

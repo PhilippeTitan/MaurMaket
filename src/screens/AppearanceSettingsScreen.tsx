@@ -80,23 +80,26 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
         <Animated.View style={animStyle(0)}>
           <SettingsGroup header={t('appearance.theme')}>
             <View style={styles.themeGrid}>
-              {THEMES.map(theme => (
+              {THEMES.map((theme, index) => (
                 <TouchableOpacity
                   key={theme.key}
+                  accessibilityRole="radio"
+                  accessibilityLabel={t(theme.labelKey)}
+                  accessibilityState={{ selected: selectedTheme === theme.key }}
                   style={[
                     styles.themeCard,
-                    selectedTheme === theme.key && { borderColor: COLORS.coral, backgroundColor: COLORS.coralMuted },
+                    index < THEMES.length - 1 && styles.optionDivider,
+                    selectedTheme === theme.key && styles.selectedThemeRow,
                   ]}
                   activeOpacity={0.6}
                   onPress={() => setSelectedTheme(theme.key)}
                 >
                   <View style={[
                     styles.themeIcon,
-                    selectedTheme === theme.key && { backgroundColor: COLORS.coral + '30' },
                   ]}>
                     <MaterialCommunityIcons
                       name={theme.icon as any}
-                      size={24}
+                      size={20}
                       color={selectedTheme === theme.key ? COLORS.coral : COLORS.text2}
                     />
                   </View>
@@ -104,7 +107,7 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
                     styles.themeLabel,
                     selectedTheme === theme.key && { color: COLORS.coral, fontWeight: FONT_WEIGHTS.semibold },
                   ]}>{t(theme.labelKey)}</Text>
-                  <Text style={styles.themeDesc}>{t(theme.descKey)}</Text>
+                  {selectedTheme === theme.key && <MaterialCommunityIcons name="check" size={18} color={COLORS.coral} />}
                 </TouchableOpacity>
               ))}
             </View>
@@ -118,23 +121,20 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
               {ACCENT_COLORS.map(color => (
                 <TouchableOpacity
                   key={color.value}
+                  accessibilityRole="radio"
+                  accessibilityLabel={t(color.nameKey)}
+                  accessibilityState={{ selected: selectedAccent === color.value }}
                   style={[
                     styles.colorSwatch,
-                    { backgroundColor: color.value + '20' },
                     selectedAccent === color.value && {
                       borderColor: color.value,
                       borderWidth: 2,
-                      transform: [{ scale: 1.05 }],
                     },
                   ]}
                   activeOpacity={0.6}
                   onPress={() => setSelectedAccent(color.value)}
                 >
                   <View style={[styles.colorDot, { backgroundColor: color.value }]} />
-                  <Text style={[
-                    styles.colorName,
-                    selectedAccent === color.value && { color: color.value, fontWeight: FONT_WEIGHTS.semibold },
-                  ]}>{t(color.nameKey)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -148,6 +148,9 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
               {APP_ICONS.map(icon => (
                 <TouchableOpacity
                   key={icon.key}
+                  accessibilityRole="radio"
+                  accessibilityLabel={t(icon.labelKey)}
+                  accessibilityState={{ selected: selectedIcon === icon.key }}
                   style={[
                     styles.iconCard,
                     selectedIcon === icon.key && { borderColor: COLORS.coral },
@@ -193,50 +196,44 @@ const styles = StyleSheet.create({
 
   // Theme grid
   themeGrid: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    flexDirection: 'column',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
   },
   themeCard: {
-    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: SPACING.md,
-    borderRadius: RADIUS.card,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    gap: SPACING.md,
+    minHeight: 52,
+    paddingHorizontal: SPACING.sm,
   },
+  selectedThemeRow: { backgroundColor: 'rgba(255,77,106,0.06)' },
+  optionDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
   themeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surface2,
+    width: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: SPACING.sm,
   },
-  themeLabel: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.medium, color: COLORS.text },
-  themeDesc: { fontSize: FONT_SIZES.xs, color: COLORS.text3, marginTop: 2, textAlign: 'center' },
+  themeLabel: { flex: 1, fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: COLORS.text },
 
   // Color grid
   colorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.md,
   },
   colorSwatch: {
-    width: '30%',
+    width: 44,
+    height: 44,
     alignItems: 'center',
-    padding: SPACING.md,
-    borderRadius: RADIUS.card,
-    borderWidth: 1.5,
+    justifyContent: 'center',
+    borderRadius: RADIUS.full,
+    borderWidth: 2,
     borderColor: COLORS.border,
   },
-  colorDot: { width: 32, height: 32, borderRadius: RADIUS.full, marginBottom: SPACING.xs },
-  colorName: { fontSize: FONT_SIZES.sm, color: COLORS.text2 },
+  colorDot: { width: 26, height: 26, borderRadius: RADIUS.full },
 
   // Icon grid
   iconGrid: {

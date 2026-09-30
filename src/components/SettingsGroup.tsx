@@ -16,6 +16,8 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   /** Additional style for the card container */
   cardStyle?: StyleProp<ViewStyle>;
+  /** Compact, flat list treatment used by the top-level settings screen. */
+  appearance?: 'default' | 'minimal';
   /** @deprecated No longer rendered — accent dot removed from headers */
   accentIcon?: string;
   /** @deprecated No longer rendered — accent dot removed from headers */
@@ -44,21 +46,22 @@ export default function SettingsGroup({
   footer,
   style,
   cardStyle,
+  appearance = 'minimal',
 }: Props) {
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, appearance === 'minimal' && styles.minimalContainer, style]}>
       {header ? (
         <View style={styles.headerRow}>
-          <Text style={styles.header}>{header}</Text>
+          <Text style={[styles.header, appearance === 'minimal' && styles.minimalHeader]}>{header}</Text>
         </View>
       ) : null}
-      {description ? (
+      {description && appearance !== 'minimal' ? (
         <Text style={styles.description}>{description}</Text>
       ) : null}
-      <View style={[styles.card, cardStyle]}>
+      <View style={[styles.card, appearance === 'minimal' && styles.minimalCard, cardStyle]}>
         {children}
       </View>
-      {footer ? (
+      {footer && appearance !== 'minimal' ? (
         <Text style={styles.footer}>{footer}</Text>
       ) : null}
     </View>
@@ -68,6 +71,9 @@ export default function SettingsGroup({
 const styles = StyleSheet.create({
   container: {
     marginBottom: SPACING.xs,
+  },
+  minimalContainer: {
+    marginBottom: SPACING.md,
   },
   headerRow: {
     marginHorizontal: SPACING.lg,
@@ -80,6 +86,12 @@ const styles = StyleSheet.create({
     color: ONBOARDING_COLORS.sub,
     letterSpacing: 0.3,
     textTransform: 'uppercase',
+  },
+  minimalHeader: {
+    color: COLORS.text3,
+    letterSpacing: 0.8,
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.xs,
   },
   description: {
     fontSize: FONT_SIZES.xs,
@@ -95,6 +107,11 @@ const styles = StyleSheet.create({
     borderColor: ONBOARDING_COLORS.border,
     borderRadius: RADIUS.card,
     overflow: 'hidden',
+  },
+  minimalCard: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderRadius: 0,
   },
   footer: {
     fontSize: FONT_SIZES.xs,

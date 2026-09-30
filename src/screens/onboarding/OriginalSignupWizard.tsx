@@ -149,29 +149,41 @@ type AssetName = 'lets-start' | 'digital-address' | 'keep-it-protected' | 'youre
 // which makes an off-ratio box look broken either way: 'cover' slices part of the artwork
 // away (the name step's caption lost its bottom quarter) and a mismatched 'contain' box
 // shows a strip of the card's surface colour as a frame.
-const ART_SIZE: Partial<Record<AssetName, { w: number; h: number }>> = {
+const ART_SIZE: Record<AssetName, { w: number; h: number }> = {
   'lets-start': { w: 264, h: 180 },
   'keep-it-protected': { w: 269, h: 266 },
   'pick-username': { w: 423, h: 576 },
   'choose-purpose': { w: 452, h: 394 },
   'youre-ready': { w: 265, h: 145 },
   'digital-address': { w: 260, h: 338 },
+  'birthday': { w: 433, h: 595 },
 };
 // Artwork that owns a fixed column instead of the slide's full content width.
-const ART_FIXED_WIDTH: Partial<Record<AssetName, number>> = { 'pick-username': 350, 'choose-purpose': 330 };
-// The birthday artwork is a tall backdrop behind the date wheels and keeps its own box.
-const BIRTHDAY_ART_HEIGHT = 455;
-// stepTopBar sits at top:28 and is TOUCH.min tall, plus a little air.
-const REVIEW_HEADER_CLEAR = 74;
-// reviewBody's centring box ends ~36px above the CTA block, which otherwise leaves
-// noticeably more air under the review rows than above the artwork. Nudging the box
-// down by the same amount evens the artwork out between the header and the button.
-const REVIEW_GAP_BALANCE = 36;
+const ART_FIXED_WIDTH: Partial<Record<AssetName, number>> = { 'pick-username': 350, 'choose-purpose': 330, 'digital-address': 350 };
+// Tallest the birthday backdrop ever gets. It sits behind the date wheels rather than in the
+// step body, so it keeps its own bottom offset and is sized against the window on each render.
+const DOB_ART_HEIGHT = 455;
+const DOB_ART_BOTTOM = 184;
+// Every step screen is a column: the top bar's strip is reserved at the top, the CTA block
+// sits in flow at the bottom with the same gutter it used to be pinned at, and the body in
+// between keeps whatever is left. Nothing has to know the window height for that to work —
+// the artwork, the fields and the button stay evenly spaced on a 667px phone and on a 900px
+// one, and a step with a tall action block (password) automatically gets a shorter body.
+const STEP_TOPBAR_STRIP = 28 + TOUCH.min;
+const STEP_ACTIONBAR_GUTTER = 44;
+// Height of the primary CTA, which is what the body has to leave room for at the bottom.
+const STEP_CTA_HEIGHT = 52;
+// Breathing room under the step's scroll content — subtracted from the body ceiling so a step
+// that only just fits lands inside the window instead of leaving the CTA half a scroll below it.
+const STEP_SCROLL_PADDING = 16;
+// Minimum air the step body keeps between its content and the header / CTA block. When a
+// window is too short to hold the whole step, the artwork box is the one element that gives
+// up space (see AssetIllustration) so every control keeps its full size and the picture is
+// the only thing that shrinks — no per-screen offsets, nothing to retune on a new phone.
+const STEP_BODY_GUTTER = 16;
 
 function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asset: AssetName; accessibilityLabel: string; containerStyle?: any }) {
-  const [measuredWidth, setMeasuredWidth] = useState(0);
   const vp = useViewport();
-  const birthdayAsset = asset === 'birthday';
   const fixedWidth = ART_FIXED_WIDTH[asset];
   const source =
     asset === 'lets-start' ? require('../../../illustration/lets-start.webp') :
@@ -183,22 +195,26 @@ function AssetIllustration({ asset, accessibilityLabel, containerStyle }: { asse
     require('../../../illustration/birthday.webp');
   // Width first, then height straight from the file's own ratio, so the artwork is always
   // shown whole. vp.contentWidth is the slide's own content width (viewport minus gutters,
-  // capped at the content column); onLayout is authoritative and also accounts for a
-  // scrollbar, while the viewport-derived value keeps the box fresh if a layout pass is
-  // missed. Taking the smaller of the two can only ever shrink a box, never stretch it.
+  // capped at the content column) and is read live, so the box is right for the window the
+  // user actually has instead of the one the app happened to boot in.
   const size = ART_SIZE[asset];
   const slideWidth = vp.contentWidth;
-  const artWidth = fixedWidth ?? Math.min(measuredWidth || slideWidth, slideWidth);
-  const imageWidth = fixedWidth ?? '100%';
-  const imageHeight = birthdayAsset ? BIRTHDAY_ART_HEIGHT : size ? Math.round((artWidth * size.h) / size.w) : 190;
+  // Artwork with its own column (the username and purpose cards) is capped to the live column
+  // width too, so a 375px phone narrows the picture instead of letting it spill past the gutters.
+  const artWidth = Math.min(fixedWidth ?? slideWidth, slideWidth);
+  const maxWidth = artWidth;
+  const imageHeight = Math.round((artWidth * size.h) / size.w);
+  const frame = { borderRadius: 22, overflow: 'hidden' as const, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border };
   return (
     <View
-      style={[{ height: imageHeight, width: '100%', marginBottom: 12, alignItems: 'center', justifyContent: 'center' }, containerStyle]}
-      onLayout={(e) => setMeasuredWidth(e.nativeEvent.layout.width)}
+      style={[{ height: imageHeight, minHeight: 0, flexShrink: 50, width: '100%', marginBottom: 12, alignItems: 'center', justifyContent: 'center' }, containerStyle]}
     >
       <Image
         source={source}
-        style={{ width: imageWidth, height: imageHeight, borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
+        // height:'100%' + aspectRatio means the picture follows whatever height the step body
+        // (or the backdrop box, for the birthday artwork) can spare while keeping its own shape,
+        // capped at the asset's natural column width.
+        style={{ height: '100%', aspectRatio: size.w / size.h, maxWidth, width: 'auto', ...frame }}
         // resizeMode must be a prop: react-native-web ignores style.resizeMode and
         // renders this as a CSS background, so style.resizeMode left every artwork
         // at background-size:auto. 'stretch' is exact here because every box height is
@@ -407,7 +423,51 @@ const FULL_MONTH_NAMES = [
 const DOB_ITEM_HEIGHT = 44;
 const DOB_VISIBLE_ITEMS = 5;
 const DOB_WHEEL_HEIGHT = DOB_ITEM_HEIGHT * DOB_VISIBLE_ITEMS; // 220
-const DOB_PADDING = (DOB_WHEEL_HEIGHT - DOB_ITEM_HEIGHT) / 2; // 88
+// ── Birthday stage ────────────────────────────────────────────────────────────
+// The stage is the white date card, the three selector boxes and the wheel tray. Its
+// pieces are fixed sizes (the wheel is a physical 5-row drum and the selector row is a
+// tap target), so the only thing a step can trade is the card's height and then, on a
+// window too short even for that, the number of wheel rows on screen. Every number below
+// is either a constant of that drum or derived from the live window in the render — no
+// part of this step is pinned to a coordinate that only suits one phone.
+// Air between the stage's pieces.
+const DOB_STAGE_GAP = 14;
+// Height of the month/day/year selector row.
+const DOB_ROW_HEIGHT = 58;
+// Air between the artwork and the selector row while the wheel is shut.
+const DOB_ROW_GAP = 15;
+// Tray chrome above the drum: paddingTop + the wheel column's label row.
+const DOB_TRAY_HEADER = 26;
+// Tray chrome below it: paddingBottom + slack under the last visible row.
+const DOB_TRAY_FOOTER = 6;
+const DOB_TRAY_HEIGHT = DOB_TRAY_HEADER + DOB_WHEEL_HEIGHT + DOB_TRAY_FOOTER;
+// Shortest the tray may get (three rows) before the stage gives up its card instead.
+const DOB_TRAY_MIN_HEIGHT = 176;
+// The white card while the wheel is open is a compact summary — the wheel is the star.
+const DOB_PILL_HEIGHT = 168;
+const DOB_PILL_MIN_HEIGHT = 132;
+// Air the open stage keeps above the CTA, so the wheel never sits flush on the button.
+const DOB_STAGE_CTA_GAP = 12;
+// The three selector boxes share the row in proportion to the longest thing each one has to
+// show — a month name ('September'), a two-digit day, a four-digit year — so the month box
+// is never the one that truncates to 'Mo…' while the day box sits half empty.
+const DOB_SELECTOR_FLEX = { month: 1.45, day: 1, year: 1.12 };
+// Width the boxes need for their text, measured at the row's own type size (600/12px):
+// 'September' 60, 'Day' 23, 'Year' 27, plus a 32px frame of padding (6), gaps (2+2) and
+// chevron (16) in every box. The calendar icon adds 20 more (18 icon + 2 gap), and it is the
+// first thing the row gives up on a narrow window because it is the only part of a selector
+// that carries no meaning — the value and the chevron already say what the box does.
+const DOB_SELECTOR_TEXT_WIDTHS = 60 + 23 + 27;
+const DOB_SELECTOR_FRAME = 32;
+const DOB_SELECTOR_ICON_FRAME = 20;
+const DOB_ROW_GAP_WIDE = 15;
+const DOB_ROW_GAP_TIGHT = 10;
+// '12/31/2008' in the card's 900-weight type is 5.53px wide per point of font size, plus 3px
+// of tracking between the ten glyphs — so the card's number can be as large as this window
+// can hold and no larger, instead of a fixed 36 that overflows a narrow phone.
+const DOB_DATE_WIDTH_PER_POINT = 5.53;
+const DOB_DATE_TRACKING = 27;
+const DOB_DATE_PADDING = 40;
 const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const CURRENT_YEAR = new Date().getFullYear();
 const ALL_YEARS = Array.from({ length: 82 }, (_, i) => (CURRENT_YEAR - 18) - i);
@@ -424,12 +484,16 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
   onSelect,
   label,
   formatItem,
+  pad = 0,
 }: {
   items: (number | string)[];
   selectedValue: number | string | null;
   onSelect: (val: any) => void;
   label: string;
   formatItem?: (val: any) => string;
+  // Air above and below the item list. The parent derives it from the tray height the live
+  // window can afford, so the drum always lands centred in whatever space it was given.
+  pad?: number;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const lastIdx = useRef(-1);
@@ -475,8 +539,8 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
             if (Math.abs(v) < 0.3) pickFromOffset(e.nativeEvent.contentOffset.y);
           }}
           contentContainerStyle={{
-            paddingTop: DOB_PADDING,
-            paddingBottom: DOB_PADDING,
+            paddingTop: pad,
+            paddingBottom: pad,
           }}
           style={s.dobWheelScroll}
         >
@@ -515,6 +579,46 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
   );
 });
 
+/* ── Birthday Date Selector Box (one of three) ──────────────────────────────── */
+
+const DobSelectorBox = React.memo(function DobSelectorBox({
+  value,
+  placeholder,
+  active,
+  showIcon,
+  flexGrow,
+  label,
+  onPress,
+}: {
+  value: string | number | null;
+  placeholder: string;
+  active: boolean;
+  showIcon: boolean;
+  flexGrow: number;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[s.dateSelector, { flexGrow }, active && s.dateSelectorActive]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {showIcon && (
+        <MaterialCommunityIcons name="calendar-month-outline" size={18} color={active ? C.violet : C.text} />
+      )}
+      <Text
+        numberOfLines={1}
+        style={[s.dateSelectorText, !value && s.dateSelectorPlaceholder, active && { color: '#FFFFFF' }]}
+      >
+        {value || placeholder}
+      </Text>
+      <MaterialCommunityIcons name={active ? 'chevron-up' : 'chevron-down'} size={16} color={active ? C.violet : C.sub} />
+    </TouchableOpacity>
+  );
+});
+
 function PrimaryButton({ children, onPress, disabled }: { children: React.ReactNode; onPress: () => void; disabled?: boolean }) {
   return (
     <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={[s.primaryButtonTouch, disabled && s.primaryButtonDisabled]}>
@@ -531,7 +635,7 @@ function PrimaryButton({ children, onPress, disabled }: { children: React.ReactN
   );
 }
 
-function StepActions({ children, step, label, onBack, compact }: { children: React.ReactNode; step: number; label: string; onBack: () => void; compact?: boolean }) {
+function StepActions({ children, step, label, onBack, compact, onMeasure }: { children: React.ReactNode; step: number; label: string; onBack: () => void; compact?: boolean; onMeasure?: (height: number) => void }) {
   const { t } = useTranslation();
   return (
     <>
@@ -542,7 +646,10 @@ function StepActions({ children, step, label, onBack, compact }: { children: Rea
         </TouchableOpacity>
         <StepBadge step={step} total={STEP_MAX} label={label} />
       </View>
-      <View style={s.actions}>{children}</View>
+      {/* The step body sizes itself against this block, so its real height has to travel up:
+          the username step's field and the password step's two fields are far taller than the
+          CTA, and guessing 52 for them left those steps a scroll too tall. */}
+      <View style={s.actions} onLayout={onMeasure ? (e) => onMeasure(e.nativeEvent.layout.height) : undefined}>{children}</View>
     </>
   );
 }
@@ -688,6 +795,12 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   // tall screens and the content scrolls on short ones) — from the live window, never a
   // snapshot taken when the module was first imported.
   const screenMin = { minHeight: vp.minScreenHeight };
+  // Ceiling for a step body: what is left of the window once the top bar's strip, the CTA and
+  // its gutter are paid for. The artwork inside the body absorbs the difference, so the
+  // controls keep their size and the picture is the only thing that changes between a 667px
+  // phone and a 900px window.
+  const [actionsHeight, setActionsHeight] = useState(0);
+  const stepBodyMax = Math.max(0, vp.height - STEP_SCROLL_PADDING - STEP_TOPBAR_STRIP - STEP_ACTIONBAR_GUTTER - (actionsHeight || STEP_CTA_HEIGHT));
   // The reveal circle starts from the measured button once the splash is pressed, and from
   // the window centre until then.
   const [revealOrigin, setRevealOrigin] = useState<{ x: number; y: number } | null>(null);
@@ -900,7 +1013,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       ? `${form.birthYear}-${String(form.birthMonth).padStart(2, '0')}-${String(form.birthDay).padStart(2, '0')}`
       : '';
     try {
-      const res = await apiSignup(fullName, form.email, form.pw, '', dob, form.username) as { user: User; token: string | null; emailConfirmationPending?: boolean };
+      const res = await apiSignup(fullName, form.email, form.pw, '', dob, form.username) as { user: User; token: string | null };
       // If user signed up via Google, link the Google identity to their account
       if (googleInfo?.googleIdToken) {
         try {
@@ -910,7 +1023,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
         }
       }
       setUserResult(res);
-      setPendingEmailConfirm(!!res.emailConfirmationPending);
+      setPendingEmailConfirm(!res.user.email_verified);
       go(1); // → success / verification screen
     } catch (err: any) {
       if (err?.code === 'PROFILE_BOOTSTRAP_FAILED') {
@@ -937,7 +1050,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       }
       setProfileSetupPending(false);
       setUserResult(res);
-      setPendingEmailConfirm(!!res.emailConfirmationPending);
+      setPendingEmailConfirm(!res.user.email_verified);
       go(1);
     } catch (err: any) {
       setErrors({ profileSetup: err?.message || t('signup.profileSetupIncomplete') });
@@ -1103,7 +1216,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {/* SCREEN 2 -- NAME */}
             {index === 2 && (
               <View style={[s.stepScreen, screenMin]}>
-                <View style={[s.centeredStepBody, s.nameStepBody]}>
+                <View style={[s.centeredStepBody, s.nameStepBody, { maxHeight: stepBodyMax }]}>
                   <AssetIllustration asset="lets-start" accessibilityLabel={t('signup.illLetsStart')} />
                   <View style={s.nameFields}>
                     <Field icon="account-outline" label={t('signup.firstName')} value={form.first} onChangeText={v => set('first', v)} placeholder="Jordan" onFocus={() => setFocusedField('first')} />
@@ -1121,7 +1234,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     <GoogleButton onPress={handleGoogleSignup} loading={googleLoading} disabled={googleLoading} compact={false} label={t('auth.googleSignIn')} />
                   </View>
                 </View>
-                <StepActions step={1} label={STEP_LABELS.name} onBack={() => go(-1)}>
+                <StepActions step={1} label={STEP_LABELS.name} onBack={() => go(-1)} onMeasure={setActionsHeight}>
                   <PrimaryButton onPress={validateAndNext} disabled={!form.first || !form.last}>{t('signup.continue')}</PrimaryButton>
                 </StepActions>
               </View>
@@ -1130,18 +1243,20 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {/* SCREEN 3 -- USERNAME */}
             {index === 3 && (
               <View style={[s.stepScreen, screenMin]}>
-                <View style={s.centeredStepBody}>
-                  <Text style={s.fieldHint}>{t('signup.usernameHint')}</Text>
-                  {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>{t('signup.usernameInvalid')}</Text> : null}
-                  {usernameAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>{t('signup.usernameAvailable')}</Text> : null}
-                  {errors.username ? <Text style={s.fieldError}>{errors.username}</Text> : null}
-                </View>
-                <StepActions step={2} label={STEP_LABELS.username} onBack={() => go(-1)}>
+                <View style={[s.centeredStepBody, { maxHeight: stepBodyMax }]}>
+                  {/* The artwork lives in the body (not the CTA block) so it can give up height
+                      on a short window and still leave the hint text somewhere visible. */}
                   <AssetIllustration
                     asset="pick-username"
                     accessibilityLabel={t('signup.illPickUsername')}
                     containerStyle={{ marginBottom: 15 }}
                   />
+                  <Text style={s.fieldHint}>{t('signup.usernameHint')}</Text>
+                  {form.username.length > 0 && !usernameValid ? <Text style={s.fieldError}>{t('signup.usernameInvalid')}</Text> : null}
+                  {usernameAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>{t('signup.usernameAvailable')}</Text> : null}
+                  {errors.username ? <Text style={s.fieldError}>{errors.username}</Text> : null}
+                </View>
+                <StepActions step={2} label={STEP_LABELS.username} onBack={() => go(-1)} onMeasure={setActionsHeight}>
                   <Field
                     icon="at"
                     label={t('field.username')}
@@ -1164,14 +1279,12 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {/* SCREEN 4 -- EMAIL */}
             {index === 4 && (
               <View style={[s.stepScreen, screenMin]}>
-                <View style={{ position: 'absolute', left: 0, right: 0, bottom: 100, paddingHorizontal: 0 }}>
-                  <View style={{ alignItems: 'center', marginBottom: 15 }}>
-                    <Image
-                      source={require('../../../illustration/digital-address.webp')}
-                      style={{ width: 350, height: 455, resizeMode: 'contain', borderRadius: 22, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
-                      accessibilityLabel={t('signup.illDigitalAddress')}
-                    />
-                  </View>
+                <View style={[s.centeredStepBody, { maxHeight: stepBodyMax }]}>
+                  <AssetIllustration
+                    asset="digital-address"
+                    accessibilityLabel={t('signup.illDigitalAddress')}
+                    containerStyle={{ marginBottom: 15 }}
+                  />
                   <Field icon="email-outline" label={t('signin.emailAddress')} value={form.email} inputValue={emailLocalPart} suffix="@gmail.com" onChangeText={v => { const local = v.replace(/@.*$/, '').toLowerCase().replace(/[^a-z0-9.!#$%&'*+/=?^_{}|~-]/g, ''); set('email', `${local}@gmail.com`); }} placeholder="" onFocus={() => setFocusedField('email')} right={
                     emailChecking ? <ActivityIndicator size="small" color={C.faint} /> :
                     emailAvailable === true ? <MaterialCommunityIcons name="check-circle" size={17} color={C.mint} /> :
@@ -1181,7 +1294,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                   {errors.email ? <Text style={s.fieldError}>{errors.email}</Text> : null}
                   {emailAvailable === true ? <Text style={[s.fieldError, { color: C.mint }]}>{t('signup.emailAvailable')}</Text> : null}
                 </View>
-                <StepActions step={3} label={STEP_LABELS.email} onBack={() => go(-1)}>
+                <StepActions step={3} label={STEP_LABELS.email} onBack={() => go(-1)} onMeasure={setActionsHeight}>
                   <PrimaryButton onPress={validateAndNext} disabled={!emailValid || emailAvailable !== true}>{t('signup.continue')}</PrimaryButton>
                 </StepActions>
               </View>
@@ -1190,8 +1303,13 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {/* SCREEN 5 -- PURPOSE */}
             {index === 5 && (
               <View style={[s.stepScreen, screenMin]}>
-                <AssetIllustration asset="choose-purpose" accessibilityLabel={t('signup.illChoosePurpose')} containerStyle={s.purposeArtwork} />
-                <View style={s.purposeChoices}>
+                <View style={[s.centeredStepBody, s.purposeStepBody, { maxHeight: stepBodyMax }]}>
+                  <AssetIllustration
+                    asset="choose-purpose"
+                    accessibilityLabel={t('signup.illChoosePurpose')}
+                    containerStyle={{ marginBottom: 0 }}
+                  />
+                  <View style={s.purposeChoices}>
                   {PURPOSES.map(p => {
                     const active = form.purpose === p.id;
                     return (
@@ -1209,8 +1327,9 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                       </TouchableOpacity>
                     );
                   })}
+                  </View>
                 </View>
-                <StepActions step={4} label={STEP_LABELS.purpose} onBack={() => go(-1)}>
+                <StepActions step={4} label={STEP_LABELS.purpose} onBack={() => go(-1)} onMeasure={setActionsHeight}>
                   <PrimaryButton onPress={validateAndNext} disabled={!form.purpose}>{t('signup.continue')}</PrimaryButton>
                 </StepActions>
               </View>
@@ -1243,13 +1362,63 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               const artOpacity = dobPickerAnim.interpolate({
                 inputRange: [0, 1],
                 outputRange: [1, 0],
-              });
+              });              // How tall the step actually lays out: the window minus the scroll content's
+              // bottom padding, but never shorter than the screen minimum (below that the
+              // page scrolls instead of squashing, and the CTA stays with the content).
+              const stepLayoutHeight = Math.max(vp.height - STEP_SCROLL_PADDING, vp.minScreenHeight);
+              // Space the picker has to work with: the step header down to the CTA's top edge.
+              // actionsHeight is the measured CTA block, so a step with a taller CTA gives the
+              // wheel less room on its own — nothing here guesses a button height.
+              const ctaTop = stepLayoutHeight - STEP_ACTIONBAR_GUTTER - (actionsHeight || STEP_CTA_HEIGHT);
+              const dobStageBudget = Math.max(0, ctaTop - DOB_STAGE_CTA_GAP - STEP_TOPBAR_STRIP);
 
-              const targetLift = Math.round(vp.height / 2 - 140);
+              // Drum first: it keeps its five rows unless the window can't hold a minimal card
+              // and the selector row as well, in which case it sheds rows and the glass lens
+              // follows the drum's new centre.
+              const dobTrayHeight = Math.round(Math.max(
+                DOB_TRAY_MIN_HEIGHT,
+                Math.min(DOB_TRAY_HEIGHT, dobStageBudget - DOB_PILL_MIN_HEIGHT - DOB_ROW_HEIGHT - DOB_STAGE_GAP * 2),
+              ));
+              const dobWheelPad = Math.max(0, (dobTrayHeight - DOB_TRAY_HEADER - DOB_TRAY_FOOTER - DOB_ITEM_HEIGHT) / 2);
+              const dobLensTop = DOB_TRAY_HEADER + dobWheelPad;
+              // The card takes whatever is left over, within its own compact range.
+              const dobPillHeight = Math.round(Math.max(
+                DOB_PILL_MIN_HEIGHT,
+                Math.min(DOB_PILL_HEIGHT, dobStageBudget - dobTrayHeight - DOB_ROW_HEIGHT - DOB_STAGE_GAP * 2),
+              ));
+              const dobStageHeight = dobPillHeight + DOB_ROW_HEIGHT + dobTrayHeight + DOB_STAGE_GAP * 2;
 
+              // Selector row: a tighter gutter on a narrow window, and the calendar icons only
+              // while the row can still afford them (see the width constants).
+              const dobRowGap = vp.contentWidth >= 340 ? DOB_ROW_GAP_WIDE : DOB_ROW_GAP_TIGHT;
+              const dobSelectorIcons =
+                vp.contentWidth - dobRowGap * 2 >=
+                DOB_SELECTOR_TEXT_WIDTHS + DOB_SELECTOR_FRAME * 3 + DOB_SELECTOR_ICON_FRAME * 3;
+              const dobDateFontSize = Math.round(Math.max(24, Math.min(
+                36,
+                (vp.contentWidth - DOB_DATE_PADDING - DOB_DATE_TRACKING) / DOB_DATE_WIDTH_PER_POINT,
+              )));
+              // Bottom-anchored: the stage rests on the CTA's shoulder, so opening the wheel
+              // reads as a picker rising into place rather than a card drifting mid-screen.
+              const dobStageTop = Math.max(STEP_TOPBAR_STRIP, Math.round(ctaTop - DOB_STAGE_CTA_GAP - dobStageHeight));
+              // Where the selector row rests while the wheel is shut — tucked just under the
+              // artwork, which is where the step's own bottom offset already puts it.
+              const dobRowRestTop = stepLayoutHeight - DOB_ART_BOTTOM + DOB_ROW_GAP;
+              const dobLift = Math.max(0, Math.round(dobRowRestTop - (dobStageTop + dobPillHeight + DOB_STAGE_GAP)));
+
+              // Tallest backdrop this window can hold below the step header. Decorative, so it
+              // only ever loses height (keeping its own ratio) rather than riding up behind the
+              // Back button on a short screen.
+              const dobArtHeight = Math.round(Math.max(200, Math.min(
+                DOB_ART_HEIGHT,
+                stepLayoutHeight - DOB_ART_BOTTOM - STEP_TOPBAR_STRIP - STEP_BODY_GUTTER,
+              )));
+
+              // Closed: the stage is pushed down so the selector row sits under the artwork.
+              // Open: it slides up to its bottom-anchored place and stays there.
               const containerTranslateY = dobPickerAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, -targetLift],
+                outputRange: [dobLift, 0],
               });
 
               const headerOpacity = dobPickerAnim.interpolate({
@@ -1286,7 +1455,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                   {/* Fading Illustration */}
                   <Animated.View
                     pointerEvents={dobPickerActive ? 'none' : 'auto'}
-                    style={[s.birthdayArtwork, { opacity: artOpacity }]}
+                    style={[s.birthdayArtwork, { opacity: artOpacity, height: dobArtHeight }]}
                   >
                     <AssetIllustration
                       asset="birthday"
@@ -1301,6 +1470,8 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     style={[
                       s.dobCenterContainer,
                       {
+                        top: dobStageTop,
+                        gap: DOB_STAGE_GAP,
                         transform: [{ translateY: containerTranslateY }],
                       },
                     ]}
@@ -1311,6 +1482,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                       style={[
                         s.dobDateShower,
                         {
+                          height: dobPillHeight,
                           opacity: headerOpacity,
                           transform: [{ translateY: headerTranslateY }],
                         },
@@ -1318,7 +1490,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     >
                       <View style={s.dobDateShowerPill}>
                         <Text style={s.dobCardMiniLabel}>{t('signup.dobLabel')}</Text>
-                        <Text style={s.dobDateShowerText}>{formattedFullDate}</Text>
+                        <Text style={[s.dobDateShowerText, { fontSize: dobDateFontSize }]}>{formattedFullDate}</Text>
                         {ageNumber != null && (
                           <Text
                             style={[
@@ -1335,108 +1507,43 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     </Animated.View>
 
                     {/* 3 Date Selector Boxes */}
-                    <View style={s.datePickerRow}>
-                      <TouchableOpacity
-                        style={[
-                          s.dateSelector,
-                          dobPickerActive && dobActiveTab === 'month' && s.dateSelectorActive,
-                        ]}
+                    <View style={[s.datePickerRow, { height: DOB_ROW_HEIGHT, gap: dobRowGap }]}>
+                      <DobSelectorBox
+                        value={form.birthMonth ? MONTH_NAMES[form.birthMonth - 1] : null}
+                        placeholder={t('signup.month')}
+                        active={dobPickerActive && dobActiveTab === 'month'}
+                        showIcon={dobSelectorIcons}
+                        flexGrow={DOB_SELECTOR_FLEX.month}
+                        label={t('signup.selectMonth')}
                         onPress={() => {
                           if (!form.birthMonth) set('birthMonth', 1);
                           openDobPicker('month');
                         }}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('signup.selectMonth')}
-                      >
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'month' ? C.violet : C.text}
-                        />
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            s.dateSelectorText,
-                            !form.birthMonth && s.dateSelectorPlaceholder,
-                            dobPickerActive && dobActiveTab === 'month' && { color: '#FFFFFF' },
-                          ]}
-                        >
-                          {form.birthMonth ? MONTH_NAMES[form.birthMonth - 1] : t('signup.month')}
-                        </Text>
-                        <MaterialCommunityIcons
-                          name={dobPickerActive && dobActiveTab === 'month' ? 'chevron-up' : 'chevron-down'}
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'month' ? C.violet : C.sub}
-                        />
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.dateSelector,
-                          dobPickerActive && dobActiveTab === 'day' && s.dateSelectorActive,
-                        ]}
+                      />
+                      <DobSelectorBox
+                        value={form.birthDay}
+                        placeholder={t('signup.day')}
+                        active={dobPickerActive && dobActiveTab === 'day'}
+                        showIcon={dobSelectorIcons}
+                        flexGrow={DOB_SELECTOR_FLEX.day}
+                        label={t('signup.selectDay')}
                         onPress={() => {
                           if (!form.birthDay) set('birthDay', 1);
                           openDobPicker('day');
                         }}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('signup.selectDay')}
-                      >
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'day' ? C.violet : C.text}
-                        />
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            s.dateSelectorText,
-                            !form.birthDay && s.dateSelectorPlaceholder,
-                            dobPickerActive && dobActiveTab === 'day' && { color: '#FFFFFF' },
-                          ]}
-                        >
-                          {form.birthDay || t('signup.day')}
-                        </Text>
-                        <MaterialCommunityIcons
-                          name={dobPickerActive && dobActiveTab === 'day' ? 'chevron-up' : 'chevron-down'}
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'day' ? C.violet : C.sub}
-                        />
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.dateSelector,
-                          dobPickerActive && dobActiveTab === 'year' && s.dateSelectorActive,
-                        ]}
+                      />
+                      <DobSelectorBox
+                        value={form.birthYear}
+                        placeholder={t('signup.year')}
+                        active={dobPickerActive && dobActiveTab === 'year'}
+                        showIcon={dobSelectorIcons}
+                        flexGrow={DOB_SELECTOR_FLEX.year}
+                        label={t('signup.selectYear')}
                         onPress={() => {
                           if (!form.birthYear) set('birthYear', CURRENT_YEAR - 18);
                           openDobPicker('year');
                         }}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('signup.selectYear')}
-                      >
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'year' ? C.violet : C.text}
-                        />
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            s.dateSelectorText,
-                            !form.birthYear && s.dateSelectorPlaceholder,
-                            dobPickerActive && dobActiveTab === 'year' && { color: '#FFFFFF' },
-                          ]}
-                        >
-                          {form.birthYear || t('signup.year')}
-                        </Text>
-                        <MaterialCommunityIcons
-                          name={dobPickerActive && dobActiveTab === 'year' ? 'chevron-up' : 'chevron-down'}
-                          size={20}
-                          color={dobPickerActive && dobActiveTab === 'year' ? C.violet : C.sub}
-                        />
-                      </TouchableOpacity>
+                      />
                     </View>
 
                     {/* Revealing Vertical Carousel Tray */}
@@ -1445,13 +1552,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                         style={[
                           s.dobWheelTray,
                           {
+                            height: dobTrayHeight,
                             opacity: carouselOpacity,
                             transform: [{ translateY: carouselTranslateY }],
                           },
                         ]}
                       >
                         {/* Horizontal Frosted Glass Center Lens */}
-                        <View pointerEvents="none" style={s.dobWheelGlassLens}>
+                        <View pointerEvents="none"                    style={[s.dobWheelGlassLens, { top: dobLensTop }]}>
                           <LinearGradient
                             colors={['rgba(255,255,255,0.18)', 'rgba(139,92,246,0.12)', 'rgba(255,255,255,0.06)']}
                             start={{ x: 0, y: 0 }}
@@ -1479,6 +1587,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                             label={t('signup.month')}
                             items={monthItems}
                             selectedValue={form.birthMonth}
+                            pad={dobWheelPad}
                             onSelect={m => {
                               set('birthMonth', m);
                               setDobActiveTab('month');
@@ -1489,6 +1598,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                             label={t('signup.day')}
                             items={dayItems}
                             selectedValue={form.birthDay}
+                            pad={dobWheelPad}
                             onSelect={d => {
                               set('birthDay', d);
                               setDobActiveTab('day');
@@ -1498,6 +1608,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                             label={t('signup.year')}
                             items={yearItems}
                             selectedValue={form.birthYear}
+                            pad={dobWheelPad}
                             onSelect={y => {
                               set('birthYear', y);
                               setDobActiveTab('year');
@@ -1511,6 +1622,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                   <StepActions
                     step={5}
                     label={STEP_LABELS.dob}
+                    onMeasure={setActionsHeight}
                     onBack={() => {
                       if (dobPickerActive) {
                         closeDobPicker();
@@ -1530,10 +1642,10 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {/* SCREEN 7 -- PASSWORD */}
             {index === 7 && (
               <View style={[s.stepScreen, screenMin]}>
-                <View style={s.centeredStepBody}>
+                <View style={[s.centeredStepBody, { maxHeight: stepBodyMax }]}>
                   <AssetIllustration asset="keep-it-protected" accessibilityLabel={t('signup.illKeepProtected')} />
                 </View>
-                <StepActions step={6} label={STEP_LABELS.password} onBack={() => go(-1)}>
+                <StepActions step={6} label={STEP_LABELS.password} onBack={() => go(-1)} onMeasure={setActionsHeight}>
                   <View style={s.passwordActionContainer}>
                     <Field icon="lock-outline" label={t('signin.passwordLabel')} value={form.pw} onChangeText={v => set('pw', v)} placeholder="••••••••" secureTextEntry={!showPw} onFocus={() => setFocusedField('pw')} right={
                       <TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 20, bottom: 20, left: 50, right: 0 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, justifyContent: 'center', alignItems: 'center' }}>
@@ -1553,7 +1665,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
             {/* SCREEN 8 -- REVIEW */}
             {index === 8 && (
               <View style={[s.stepScreen, screenMin]}>
-                <View style={s.reviewBody}>
+                <View style={[s.reviewBody, { maxHeight: stepBodyMax }]}>
                   <AssetIllustration
                     asset="youre-ready"
                     accessibilityLabel={t('signup.illYoureReady')}
@@ -1586,7 +1698,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                 {profileSetupPending ? (
                   <Text style={s.profileSetupError}>{errors.profileSetup || t('signup.profileSetupIncomplete')}</Text>
                 ) : null}
-                <StepActions step={7} label={STEP_LABELS.review} onBack={() => go(-1)}>
+                <StepActions step={7} label={STEP_LABELS.review} onBack={() => go(-1)} onMeasure={setActionsHeight}>
                   <PrimaryButton onPress={profileSetupPending ? retryProfileSetup : validateAndNext} disabled={loading}>
                     {loading ? t('common.loading') : profileSetupPending ? t('signup.retryProfileSetup') : t('signup.createAccountBtn')}
                   </PrimaryButton>
@@ -1693,69 +1805,62 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 /* ΓöÇΓöÇ Styles ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
 const s = StyleSheet.create({
-  scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: 16 },
+  scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 0, paddingBottom: STEP_SCROLL_PADDING },
   // minHeight is applied per-render (see screenMin) so it always matches the live window;
   // maxWidth matches CONTENT_MAX_WIDTH in the layout hooks.
   slide: { flex: 1, width: '100%', maxWidth: 430, alignSelf: 'center' },
-  stepScreen: { flex: 1, position: 'relative', paddingBottom: 130 },
-  centeredStepBody: { flex: 1, justifyContent: 'center', marginBottom: 18 },
+  stepScreen: { flex: 1, position: 'relative', paddingTop: STEP_TOPBAR_STRIP, paddingBottom: STEP_ACTIONBAR_GUTTER },
+  // The body owns the space between the top bar and the CTA block and centres its content
+  // in it, so the air above and below the artwork is decided by the layout, not by offsets.
+  centeredStepBody: { flex: 1, justifyContent: 'center', paddingVertical: STEP_BODY_GUTTER },
   nameStepBody: { alignItems: 'center' },
   nameFields: { width: '100%', gap: 12 },
-  emailScreen: { overflow: 'hidden' },
-  emailArtWindow: { position: 'absolute', left: 0, right: 0, bottom: 184, height: 455, width: '100%', alignItems: 'center', borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
-  emailArtwork: { width: 350, height: 455 },
-  emailContent: { position: 'absolute', left: 0, right: 0, bottom: 89 },
   screenCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   welcomeScreen: { justifyContent: 'center', paddingVertical: 24, position: 'relative', paddingBottom: 144 },
   welcomeActions: { position: 'absolute', left: 0, right: 0, bottom: 18, gap: 12 },
   stepTopBar: { position: 'absolute', top: 28, left: 0, right: 0, zIndex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   stepCount: { color: C.sub, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   datePickerRow: {
-    position: 'absolute',
-    top: 202,
-    left: 0,
-    right: 0,
-    height: 58,
+    width: '100%',
     flexDirection: 'row',
     gap: 15,
     zIndex: 14,
   },
-  dateSelector: { flex: 1, height: 58, minWidth: 0, borderRadius: 14, backgroundColor: 'rgba(13,23,52,0.72)', borderWidth: 1, borderColor: '#315BA8', paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  // flexGrow comes per-box from DOB_SELECTOR_FLEX so the row's shares follow its content.
+  dateSelector: { flex: 1, minWidth: 0, alignSelf: 'stretch', borderRadius: 14, backgroundColor: 'rgba(13,23,52,0.72)', borderWidth: 1, borderColor: '#315BA8', paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', gap: 2 },
   dateSelectorActive: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   dateSelectorText: { flex: 1, color: C.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
   dateSelectorPlaceholder: { color: '#B9C7E8', fontWeight: '500' },
-  actions: { position: 'absolute', left: 0, right: 0, bottom: 44, width: '100%', alignItems: 'stretch', zIndex: 11 },
-  birthdayArtwork: { position: 'absolute', left: 0, right: 0, bottom: 184, height: 455, marginBottom: 0 },
-  birthdayDatePickerRow: { position: 'absolute', left: 0, right: 0, bottom: 111, marginBottom: 0 },
+  // marginTop:'auto' keeps the CTA block on the floor of the column on the steps whose own
+  // children are all absolutely positioned (email, purpose, birthday) — those have no flex
+  // body to soak up the slack.
+  actions: { width: '100%', alignItems: 'stretch', zIndex: 11, marginTop: 'auto' },
+  // Height comes per-render from dobArtHeight, so the backdrop can never reach the header.
+  birthdayArtwork: { position: 'absolute', left: 0, right: 0, bottom: DOB_ART_BOTTOM, marginBottom: 0 },
 
-  // Birthday animation & vertical carousel styles
+  // The stage column: white card, selector row, wheel tray. Its top, its height and its
+  // pieces all come from the live window per-render, so it lands above the CTA on any
+  // screen instead of overlapping it on a short one.
   dobCenterContainer: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: -147,
-    height: 518,
     zIndex: 10,
     overflow: 'visible',
   },
   dobDateShower: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 190,
+    width: '100%',
     zIndex: 15,
   },
-  dobHint: { position: 'absolute', top: 194, left: 28, right: 28, color: C.sub, fontSize: 12, lineHeight: 17, textAlign: 'center', zIndex: 16 },
   dobDateShowerPill: {
     width: '100%',
-    height: 190,
+    height: '100%',
     borderRadius: 22,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingVertical: 14,
     shadowColor: '#ffffff',
     shadowOpacity: 0.35,
     shadowRadius: 24,
@@ -1772,9 +1877,9 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 6,
   },
+  // fontSize comes per-render from dobDateFontSize so the date fits the card on any window.
   dobDateShowerText: {
     color: '#0A0812',
-    fontSize: 36,
     fontWeight: '900',
     letterSpacing: 3,
     textAlign: 'center',
@@ -1798,11 +1903,7 @@ const s = StyleSheet.create({
     color: '#DC2626',
   },
   dobWheelTray: {
-    position: 'absolute',
-    top: 272,
-    left: 0,
-    right: 0,
-    height: 246,
+    width: '100%',
     borderRadius: 24,
     backgroundColor: 'rgba(18,14,31,0.95)',
     borderWidth: 1.5,
@@ -1838,8 +1939,7 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 8,
     right: 8,
-    top: 114, // 28px header/padding + 88px (DOB_PADDING)
-    height: 44, // DOB_ITEM_HEIGHT
+    height: DOB_ITEM_HEIGHT,
     borderRadius: 14,
     borderWidth: 1.2,
     borderColor: 'rgba(255,255,255,0.3)',
@@ -1852,7 +1952,7 @@ const s = StyleSheet.create({
   },
   dobWheelTopFade: {
     position: 'absolute',
-    top: 26,
+    top: DOB_TRAY_HEADER,
     left: 0,
     right: 0,
     height: 48,
@@ -1880,7 +1980,7 @@ const s = StyleSheet.create({
   },
   dobWheelItem: {
     width: '100%',
-    height: 44, // DOB_ITEM_HEIGHT
+    height: DOB_ITEM_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1944,8 +2044,10 @@ const s = StyleSheet.create({
 
   // Purpose
   purposeCard: { height: 76, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border },
-  purposeChoices: { position: 'absolute', left: 0, right: 0, bottom: 111, gap: 15 },
-  purposeArtwork: { position: 'absolute', left: 0, right: 0, bottom: 384, height: 300, marginBottom: 0 },
+  // Purpose step: the artwork and the three choices are one centred stack, so the picture can
+  // shrink while the cards keep their tap size.
+  purposeStepBody: { gap: 15 },
+  purposeChoices: { gap: 15 },
   purposeCardActive: { backgroundColor: C.pink + '10', borderColor: C.pink },
   purposeIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.surfaceHi, alignItems: 'center', justifyContent: 'center' },
   purposeIconActive: { backgroundColor: C.pink },
@@ -1954,10 +2056,9 @@ const s = StyleSheet.create({
   radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: C.borderHi, alignItems: 'center', justifyContent: 'center' },
   radioActive: { backgroundColor: C.pink, borderColor: C.pink },
 
-  // Review — compact single-line rows so the artwork never collides with the header.
-  // paddingTop clears the absolutely-positioned stepTopBar and then balances the
-  // artwork between that header and the CTA block below.
-  reviewBody: { flex: 1, justifyContent: 'center', paddingTop: REVIEW_HEADER_CLEAR + REVIEW_GAP_BALANCE, marginBottom: 4 },
+  // Review — compact single-line rows; the body centres the artwork and rows between the
+  // top bar and the CTA, so the page breathes the same way on a short window and a tall one.
+  reviewBody: { flex: 1, justifyContent: 'center', paddingVertical: STEP_BODY_GUTTER },
   reviewArtwork: { marginBottom: 10 },
   reviewList: { gap: 7 },
   profileSetupError: { color: C.pink, fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 8, marginHorizontal: 8 },
@@ -1980,6 +2081,6 @@ const s = StyleSheet.create({
   // Primary button
   primaryButtonTouch: { width: '100%', opacity: 1 },
   primaryButtonDisabled: { opacity: 0.7 },
-  primaryBtn: { width: '100%', height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  primaryBtn: { width: '100%', height: STEP_CTA_HEIGHT, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   primaryBtnText: { fontSize: 15, fontWeight: '700', color: '#1A0B12' },
 });

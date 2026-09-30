@@ -333,6 +333,16 @@ export default function SellerOnboardingScreen() {
                 ? t('sellerOnboarding.doneBusinessSubtitle', { defaultValue: 'Your store is ready. Complete your subscription to start selling.' })
                 : t('sellerOnboarding.doneSubtitle', { defaultValue: 'You\'re now a seller on MaurMaket. Start listing your products!' })}
             </Text>
+            {chosenTier !== 'business' && (
+              <TouchableOpacity
+                style={styles.linkBtn}
+                onPress={() => nav.navigate('SellerFulfillmentSettings')}
+                accessibilityLabel={t('fulfillmentSettings.setup')}
+                accessibilityRole="button"
+              >
+                <Text style={styles.linkBtnText}>{t('fulfillmentSettings.setup')}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={() => {

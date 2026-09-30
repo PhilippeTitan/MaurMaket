@@ -32,7 +32,7 @@ export default function OnboardingContainer({ initialMode = 'signup' }: Onboardi
           onGoogleComplete={handleGoogleComplete}
         />
       ) : mode === 'wizard' ? (
-        <OriginalSignupWizard initialIndex={2} initialGoogleInfo={googleInfo || undefined} onSwitchToSignin={() => setMode('signin')} />
+        <OriginalSignupWizard initialIndex={googleInfo ? 3 : 1} initialGoogleInfo={googleInfo || undefined} onSwitchToSignin={() => setMode('signin')} />
       ) : (
         <AnimatedSignin onSwitchToSignup={switchMode} onAccountMissing={() => setMode('wizard')} onForgotPassword={() => setForgotOpen(true)} />
       )}

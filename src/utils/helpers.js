@@ -52,15 +52,17 @@ function getCommissionRate(tier) {
   }
 }
 
-// Allocate the amount actually paid across sellers. Promo discounts are applied
-// proportionally so escrow and commission never exceed the order total.
+// Allocate the amount actually paid across sellers. Delivery fees remain in
+// seller proceeds, but the tier commission base is discounted merchandise only.
 async function getSellerPaymentAllocations(client, orderId) {
   const result = await client.query(
     `SELECT o.total_amount,
             oi.seller_id,
-            SUM(oi.price * oi.quantity) AS line_total
+            SUM(oi.price * oi.quantity) AS line_total,
+            COALESCE(MAX(sf.delivery_fee), 0) AS delivery_fee
      FROM orders o
      JOIN order_items oi ON oi.order_id = o.id
+     LEFT JOIN seller_fulfillments sf ON sf.order_id = o.id AND sf.seller_id = oi.seller_id
      WHERE o.id = $1
      GROUP BY o.total_amount, oi.seller_id
      ORDER BY oi.seller_id`,
@@ -69,15 +71,32 @@ async function getSellerPaymentAllocations(client, orderId) {
   const subtotal = result.rows.reduce((sum, row) => sum + parseFloat(row.line_total), 0);
   const paidTotal = parseFloat(result.rows[0]?.total_amount || 0);
   if (subtotal <= 0 || paidTotal < 0) return [];
+  const deliveryTotal = result.rows.reduce((sum, row) => sum + Number(row.delivery_fee || 0), 0);
+  const merchandisePaid = Math.max(0, Math.min(subtotal, paidTotal - deliveryTotal));
+  const collectionFeeTotal = Math.round(paidTotal * 0.029 * 100) / 100;
 
   let allocated = 0;
+  let feeAllocated = 0;
   return result.rows.map((row, index) => {
     const lineTotal = parseFloat(row.line_total);
-    const paidTotalForSeller = index === result.rows.length - 1
-      ? Math.max(0, Math.round((paidTotal - allocated) * 100) / 100)
-      : Math.round((paidTotal * lineTotal / subtotal) * 100) / 100;
-    allocated += paidTotalForSeller;
-    return { seller_id: row.seller_id, total: lineTotal, paid_total: paidTotalForSeller };
+    const merchandiseForSeller = index === result.rows.length - 1
+      ? Math.max(0, Math.round((merchandisePaid - allocated) * 100) / 100)
+      : Math.round((merchandisePaid * lineTotal / subtotal) * 100) / 100;
+    allocated += merchandiseForSeller;
+    const deliveryFee = Number(row.delivery_fee || 0);
+    const sellerGross = Math.round((merchandiseForSeller + deliveryFee) * 100) / 100;
+    const collectionFeeAmount = index === result.rows.length - 1
+      ? Math.max(0, Math.round((collectionFeeTotal - feeAllocated) * 100) / 100)
+      : paidTotal > 0 ? Math.round((collectionFeeTotal * sellerGross / paidTotal) * 100) / 100 : 0;
+    feeAllocated += collectionFeeAmount;
+    return {
+      seller_id: row.seller_id,
+      total: lineTotal,
+      paid_total: sellerGross,
+      commission_base: merchandiseForSeller,
+      delivery_fee: deliveryFee,
+      collection_fee_amount: collectionFeeAmount,
+    };
   });
 }
 
@@ -106,21 +125,22 @@ async function reserveOrderStock(client, orderId) {
   return orderItems.rows;
 }
 
-async function processRefundPayout(orderId) {
+async function processRefundPayout(refundId) {
   const claim = await pool.query(
     `UPDATE refund_payouts
      SET status = 'processing', attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
-     WHERE order_id = $1 AND status IN ('pending', 'failed')
+     WHERE id = $1 AND status = 'pending' AND destination_verified = true
        AND next_attempt_at <= CURRENT_TIMESTAMP
      RETURNING *`,
-    [orderId]
+    [refundId]
   );
   if (claim.rows.length === 0) return;
   const refund = claim.rows[0];
-  const referenceId = refund.moncash_reference || `refund_${orderId}`;
+  const orderId = refund.order_id;
+  const referenceId = refund.moncash_reference || `refund_${refund.id}`;
   try {
     const payoutRes = await fetch(
-      process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
+      process.env.MONCASH_PAYOUT_CREATE_URL || 'https://api.moncashconnect.com/v1/payout-create',
       {
         method: 'POST',
         headers: {
@@ -135,27 +155,88 @@ async function processRefundPayout(orderId) {
         signal: AbortSignal.timeout(15000),
       }
     );
-    if (!payoutRes.ok) throw new Error(await payoutRes.text());
+    if (!payoutRes.ok) {
+      const details = await payoutRes.text();
+      if (payoutRes.status >= 400 && payoutRes.status < 500 && payoutRes.status !== 409) {
+        await pool.query(
+          `UPDATE refund_payouts SET status = 'failed', error_message = $2,
+             next_attempt_at = CURRENT_TIMESTAMP + INTERVAL '5 minutes', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND status = 'processing'`,
+          [refund.id, `MonCashConnect rejected the refund (${payoutRes.status}): ${details}`]
+        );
+      } else {
+        await pool.query(
+          `UPDATE refund_payouts SET error_message = $2, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND status = 'processing'`,
+          [refund.id, `MonCashConnect response ${payoutRes.status} is ambiguous; awaiting reconciliation.`]
+        );
+      }
+      return;
+    }
     const payoutData = await payoutRes.json().catch(() => ({}));
     await pool.query(
       `UPDATE refund_payouts
-       SET status = 'completed', moncash_reference = COALESCE(moncash_reference, $2),
+       SET provider_reference = $2,
            error_message = NULL, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
+       WHERE id = $1 AND status = 'processing'`,
       [refund.id, payoutData.reference || payoutData.transactionId || referenceId]
     );
-    createNotification(refund.buyer_id, 'order_status', 'Order Refunded',
-      `G ${parseFloat(refund.amount).toFixed(0)} refunded for order`, { orderId });
+    // A successful create response only means MCC accepted the transfer. The
+    // signed payout.completed webhook is the settlement confirmation.
   } catch (error) {
-    const retryMinutes = Math.min(60, 5 * (2 ** Math.min(refund.attempts, 4)));
     await pool.query(
-      `UPDATE refund_payouts SET status = 'failed', error_message = $2,
-         next_attempt_at = CURRENT_TIMESTAMP + ($3 * INTERVAL '1 minute'),
-         updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-      [refund.id, error.message, retryMinutes]
+      `UPDATE refund_payouts SET error_message = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND status = 'processing'`,
+      [refund.id, `MonCashConnect response was not confirmed; refund remains reserved for reconciliation: ${error.message}`]
     );
-    console.error(`[REFUND] Payout pending for order ${orderId}:`, error.message);
+    console.error(`[REFUND] Payout outcome is ambiguous for order ${orderId}:`, error.message);
   }
+}
+
+async function settleSellerDebtPayment(client, paymentId, paidAmount) {
+  const paymentResult = await client.query(
+    'SELECT * FROM seller_debt_payments WHERE id = $1 FOR UPDATE',
+    [paymentId]
+  );
+  if (!paymentResult.rows.length) return { status: 'missing' };
+  const payment = paymentResult.rows[0];
+  if (payment.status === 'completed') return { status: 'completed', sellerId: payment.seller_id, amount: Number(payment.debt_amount), alreadyCompleted: true };
+  if (!Number.isFinite(paidAmount) || Math.round(paidAmount) !== Math.round(Number(payment.charge_amount))) {
+    return { status: 'amount_mismatch', expected: Number(payment.charge_amount), received: paidAmount };
+  }
+
+  const debts = await client.query(
+    "SELECT id, outstanding_amount FROM seller_debts WHERE seller_id = $1 AND status = 'open' ORDER BY created_at, id FOR UPDATE",
+    [payment.seller_id]
+  );
+  let amountToApply = Number(payment.debt_amount);
+  for (const debt of debts.rows) {
+    if (amountToApply <= 0) break;
+    const outstanding = Number(debt.outstanding_amount);
+    const applied = Math.min(amountToApply, outstanding);
+    const remaining = Math.round((outstanding - applied) * 100) / 100;
+    amountToApply = Math.round((amountToApply - applied) * 100) / 100;
+    await client.query(
+      `UPDATE seller_debts SET outstanding_amount = $1, status = CASE WHEN $1 <= 0 THEN 'paid' ELSE 'open' END,
+         updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [remaining, debt.id]
+    );
+  }
+  if (amountToApply > 0) {
+    await client.query(
+      `INSERT INTO seller_balances (seller_id, balance)
+       VALUES ($1, $2) ON CONFLICT (seller_id)
+       DO UPDATE SET balance = seller_balances.balance + $2, updated_at = CURRENT_TIMESTAMP`,
+      [payment.seller_id, amountToApply]
+    );
+  }
+  await client.query(
+    `UPDATE seller_debt_payments SET status = 'completed', settlement_confirmed = true,
+       error_message = NULL, settled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1`,
+    [payment.id]
+  );
+  return { status: 'completed', sellerId: payment.seller_id, amount: Number(payment.debt_amount), credited: amountToApply, alreadyCompleted: false };
 }
 
 async function checkSubscriptionStatus(sellerId) {
@@ -243,4 +324,4 @@ function parseNatCashSms(smsText) {
   };
 }
 
-export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences, canAccessOrder, parseNatCashSms };
+export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, settleSellerDebtPayment, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences, canAccessOrder, parseNatCashSms };

@@ -132,37 +132,23 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
       <ScreenHeader title={t('settings.notifications')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Banner */}
-        <Animated.View style={animStyle(0)}>
-          <View style={styles.banner}>
-            <View style={styles.bannerIcon}>
-              <MaterialCommunityIcons name="bell-ring" size={28} color={COLORS.coral} />
-            </View>
-            <View style={styles.bannerText}>
-              <Text style={styles.bannerTitle}>{t('notifSettings.stayInLoop')}</Text>
-              <Text style={styles.bannerSubtitle}>{t('notifSettings.stayInLoopDesc')}</Text>
-            </View>
-          </View>
-        </Animated.View>
-
         {/* Notification Toggles */}
-        <Animated.View style={animStyle(1)}>
+        <Animated.View style={animStyle(0)}>
           <SettingsGroup header={t('settings.notificationPrefs')}>
             {NOTIF_TOGGLES.map((notif, i) => (
               <View key={notif.key}>
                 <View style={styles.toggleRow}>
-                  <View style={[styles.iconContainer, { backgroundColor: notif.iconBg }]}>
-                    <MaterialCommunityIcons name={notif.icon as any} size={20} color={notif.iconColor} />
+                  <View style={styles.iconContainer}>
+                    <MaterialCommunityIcons name={notif.icon as any} size={20} color={COLORS.text2} />
                   </View>
                   <View style={styles.toggleText}>
                     <Text style={styles.toggleLabel}>{t(notif.labelKey)}</Text>
-                    <Text style={styles.toggleSubtitle}>{t(notif.subtitleKey)}</Text>
                   </View>
                   <SettingsToggle
                     value={toggles[notif.key]}
                     onValueChange={() => handleToggle(notif.key)}
                     disabled={saving === notif.key}
-                    accent={notif.iconColor}
+                    accent={COLORS.coral}
                     accessibilityLabel={t(notif.labelKey)}
                   />
                 </View>
@@ -173,18 +159,14 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* Quiet Hours Info */}
-        <Animated.View style={animStyle(2)}>
-          <SettingsGroup
-            header={t('notifSettings.quietHours')}
-            footer={t('notifSettings.quietHoursFooter')}
-          >
+        <Animated.View style={animStyle(1)}>
+          <SettingsGroup header={t('notifSettings.quietHours')}>
             <View style={styles.quietRow}>
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="moon-waning-crescent" size={20} color={COLORS.white} />
+                <MaterialCommunityIcons name="moon-waning-crescent" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.toggleText}>
                 <Text style={styles.toggleLabel}>{t('notifSettings.doNotDisturb')}</Text>
-                <Text style={styles.toggleSubtitle}>{t('notifSettings.doNotDisturbDesc')}</Text>
               </View>
               <SettingsToggle
                 value={false}
@@ -206,59 +188,40 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingBottom: SPACING.page },
 
-  // Banner
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.lg,
-    padding: SPACING.lg,
-    backgroundColor: COLORS.coralMuted,
-    borderRadius: RADIUS.card,
-    borderWidth: 1,
-    borderColor: COLORS.coral + '20',
-  },
-  bannerIcon: { width: 44, height: 44, borderRadius: RADIUS.full, backgroundColor: COLORS.coral + '20', alignItems: 'center', justifyContent: 'center' },
-  bannerText: { flex: 1 },
-  bannerTitle: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.coral },
-  bannerSubtitle: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
-
   // Toggle rows
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    minHeight: 56,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 54,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.sm,
+    width: 28,
+    height: 32,
+    borderRadius: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
   toggleText: { flex: 1 },
   toggleLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: COLORS.text },
-  toggleSubtitle: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
 
   // Quiet hours
   quietRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 54,
   },
 
   // Divider
   divider: {
     height: 1,
     backgroundColor: COLORS.border,
-    marginLeft: SPACING.lg + 36 + SPACING.md,
+    marginLeft: SPACING.sm + 28 + SPACING.md,
   },
 
   bottomSpacer: { height: 60 },

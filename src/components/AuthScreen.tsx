@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  KeyboardAvoidingView, Platform, Animated, Dimensions, Alert,
+  KeyboardAvoidingView, Platform, Animated, Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../theme';
@@ -13,7 +13,6 @@ import WelcomeMoment from '../components/WelcomeMoment';
 import ForgotPasswordSheet from '../components/ForgotPasswordSheet';
 import type { User } from '../types';
 
-const { width: SCREEN_W } = Dimensions.get('window');
 const STEPS = ['name', 'email', 'password', 'phone', 'review'] as const;
 type Step = typeof STEPS[number];
 

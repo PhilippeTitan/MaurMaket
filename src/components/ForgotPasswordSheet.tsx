@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, Dimensions, KeyboardAvoidingView, Platform,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '@/localization';
+import { useViewport } from '@/hooks';
 import { forgotPassword } from '../api';
-
-const { height: SCREEN_H } = Dimensions.get('window');
 
 interface ForgotPasswordSheetProps {
   visible: boolean;
@@ -16,12 +16,17 @@ interface ForgotPasswordSheetProps {
 
 export default function ForgotPasswordSheet({ visible, onClose }: ForgotPasswordSheetProps) {
   const { t } = useTranslation();
+  // The sheet slides up from a full window below the fold, so "off screen" is measured
+  // against the live window rather than the one the app booted in — otherwise a window
+  // that grew leaves the closed sheet parked in the middle of the screen.
+  const vp = useViewport();
   const [stage, setStage] = useState<'email' | 'done'>('email');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const translateY = useRef(new Animated.Value(SCREEN_H)).current;
+  const insets = useSafeAreaInsets();
+  const translateY = useRef(new Animated.Value(vp.height)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -29,6 +34,9 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
       setStage('email');
       setEmail('');
       setError('');
+      // Park it exactly one live window below the fold first, so the sheet always rises
+      // from the bottom edge of the window it is opening in.
+      translateY.setValue(vp.height);
       Animated.parallel([
         Animated.timing(bgOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
         Animated.spring(translateY, { toValue: 0, friction: 8, tension: 80, useNativeDriver: true }),
@@ -36,7 +44,7 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
     } else {
       Animated.parallel([
         Animated.timing(bgOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: SCREEN_H, duration: 280, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: vp.height, duration: 280, useNativeDriver: true }),
       ]).start();
     }
   }, [visible]);
@@ -66,7 +74,7 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
         style={StyleSheet.absoluteFill}
         pointerEvents="box-none"
       >
-        <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
+        <Animated.View style={[styles.sheet, { paddingBottom: Math.max(34, insets.bottom + 16), transform: [{ translateY }] }]}>
           <View style={styles.handle} />
           {stage === 'email' && (
             <>
@@ -127,7 +135,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 22,
-    paddingBottom: 34,
+    // paddingBottom is applied per-render: a bottom sheet has to clear the home
+    // indicator, which is a property of the device (safe-area inset), not a constant.
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },

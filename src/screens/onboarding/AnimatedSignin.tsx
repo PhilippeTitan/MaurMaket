@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, Modal, Image,
-  Easing, Platform, KeyboardAvoidingView, Keyboard, Dimensions,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, Modal, Image, ScrollView,
+  Easing, Platform, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,8 +14,7 @@ import { login as apiLogin, completeTwoFactorLogin, googleAuth, passkeyAuth, Pas
 import { store } from '../../store';
 import OnboardingBackground from './components/OnboardingBackground';
 import type { User } from '../../types';
-
-const { width: SCREEN_W } = Dimensions.get('window');
+import { useViewport, CONTENT_MAX_WIDTH, SCREEN_GUTTER } from '@/hooks';
 
 const C = {
   bg0: '#0A0812',
@@ -158,6 +157,7 @@ interface Props {
 
 export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onAccountMissing }: Props) {
   const insets = useSafeAreaInsets();
+  const vp = useViewport();
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -349,7 +349,23 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
       <View style={{ flex: 1, backgroundColor: '#120E1F' }}>
         <OnboardingBackground />
 
-        <Animated.View style={[s.content, { transform: [{ translateY: keyboardLift }] }]}>
+        {/* The column scrolls rather than squashing: it centres itself while the window can
+            hold it, and on a window that cannot (short phone, landscape, split screen, small
+            browser window) the user scrolls to the last link instead of losing it off the
+            bottom. flexGrow + the column's own flex:1 is what keeps it centred. */}
+        <ScrollView
+          style={s.screenScroll}
+          contentContainerStyle={[
+            s.screenScrollContent,
+            {
+              paddingTop: Math.max(insets.top, SPACING.lg),
+              paddingBottom: Math.max(insets.bottom, SPACING.lg),
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View style={[s.content, { transform: [{ translateY: keyboardLift }] }]}>
 
           {/* Header wordmark: starts bigger, shrinks and moves up on success */}
           <Animated.View style={[
@@ -502,7 +518,8 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
             </TouchableOpacity>}
           </Animated.View>
 
-        </Animated.View>
+          </Animated.View>
+        </ScrollView>
       </View>
       {focusedField && (
         <Animated.View style={[s.keyboardGhostOverlay, { opacity: ghostOpacity }]}>
@@ -515,6 +532,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
             />
           </BlurView>
           <View style={s.keyboardGhostContainer}>
+            {/* Same centred column as the form behind it, so the floating stack keeps the
+                app's content width instead of stretching across a desktop window. */}
+            <View style={s.keyboardGhostColumn}>
             <View style={s.keyboardGhostStack}>
             {(['email', 'password'] as const).map((fieldName) => {
               const isEmail = fieldName === 'email';
@@ -550,6 +570,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
                 <MaterialCommunityIcons name="arrow-right" size={17} color={canSubmit && !loading ? C.sub : C.faint} />
               </TouchableOpacity>
             </View>
+            </View>
           </View>
         </Animated.View>
       )}
@@ -579,7 +600,13 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
 /* ── Styles ───────────────────────────────────────────────── */
 
 const s = StyleSheet.create({
-  content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
+  screenScroll: { flex: 1 },
+  screenScrollContent: { flexGrow: 1 },
+  // One centred column, capped at the same content width the signup wizard uses so a wide
+  // window (tablet, desktop web, split screen) centres the form instead of stretching the
+  // fields across the screen. The gutters come from the shared viewport module too, so the
+  // sign-in form lines up with every other step in the flow.
+  content: { flex: 1, width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center', justifyContent: 'center', paddingHorizontal: SCREEN_GUTTER },
   logoCenter: {
     width: '100%',
     alignItems: 'center',
@@ -593,8 +620,8 @@ const s = StyleSheet.create({
   formWrap: { width: '100%' },
   welcomeHeaderWrap: {
     position: 'absolute',
-    left: 24,
-    right: 24,
+    left: SCREEN_GUTTER,
+    right: SCREEN_GUTTER,
     top: '30%',
     height: 190,
     borderRadius: 22,
@@ -629,7 +656,8 @@ const s = StyleSheet.create({
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
   keyboardGhostOverlay: { ...StyleSheet.absoluteFill, zIndex: 15, backgroundColor: 'rgba(10,8,18,0.52)' },
   keyboardDimmer: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(10,8,18,0.52)' },
-  keyboardGhostContainer: { position: 'absolute', left: 28, right: 28, bottom: 56 },
+  keyboardGhostContainer: { position: 'absolute', left: 0, right: 0, bottom: 56, alignItems: 'center' },
+  keyboardGhostColumn: { width: '100%', maxWidth: CONTENT_MAX_WIDTH, paddingHorizontal: SCREEN_GUTTER },
   keyboardGhostStack: { gap: 12, marginBottom: 15 },
   keyboardGhostSignIn: { height: 52, borderRadius: 999, backgroundColor: 'rgba(139,92,246,0.32)', borderWidth: 1, borderColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   keyboardGhostButton: { flex: 1, alignSelf: 'stretch', width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },

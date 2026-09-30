@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 // ───── Supabase Storage (S3 protocol) ─────
 const supabaseStorage = process.env.SUPABASE_S3_ACCESS_KEY ? new S3Client({
@@ -11,6 +11,7 @@ const supabaseStorage = process.env.SUPABASE_S3_ACCESS_KEY ? new S3Client({
   forcePathStyle: true,
 }) : null;
 const SUPABASE_STORAGE_BUCKET = 'product-images';
+const SUPABASE_KYC_BUCKET = 'kyc-documents';
 const SUPABASE_PUBLIC_BASE = process.env.SUPABASE_PUBLIC_BASE || 'https://bnnluaqrktnrnnfvmqbt.supabase.co/storage/v1/object/public/product-images';
 
 // ───── Cloudflare R2 Storage (S3 protocol) ─────
@@ -26,4 +27,4 @@ const r2Storage = process.env.R2_ACCESS_KEY_ID ? new S3Client({
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'maurmaket-images';
 const R2_PUBLIC_BASE = process.env.R2_PUBLIC_BASE || 'https://pub-' + process.env.R2_ACCOUNT_ID + '.r2.dev';
 
-export { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand };
+export { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_KYC_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, GetObjectCommand, DeleteObjectCommand };

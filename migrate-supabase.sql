@@ -117,6 +117,106 @@ CREATE TABLE IF NOT EXISTS payouts (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- MonCash payout settlement fields. API acceptance is not final settlement;
+-- payout.completed / payout.failed webhooks resolve the processing state.
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS total_debit DECIMAL(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS provider_reference VARCHAR(150);
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reconciled_by UUID REFERENCES users(id);
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMP;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reconciliation_note TEXT;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS settlement_confirmed BOOLEAN NOT NULL DEFAULT false;
+UPDATE payouts SET total_debit = amount + fee_amount WHERE total_debit = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payouts_provider_reference
+  ON payouts(provider_reference) WHERE provider_reference IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS moncash_payment_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  reference_id VARCHAR(150) NOT NULL UNIQUE,
+  expected_amount DECIMAL(10,2) NOT NULL CHECK (expected_amount > 0),
+  status VARCHAR(20) NOT NULL DEFAULT 'created' CHECK (status IN ('created','processing','unknown','completed','failed','expired')),
+  provider_reference VARCHAR(150),
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_moncash_attempt_order_status
+  ON moncash_payment_attempts(order_id, status, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_moncash_one_open_attempt_per_order
+  ON moncash_payment_attempts(order_id) WHERE status IN ('created','processing','unknown');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_moncash_attempt_provider_reference
+  ON moncash_payment_attempts(provider_reference) WHERE provider_reference IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS refund_payouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  buyer_id UUID NOT NULL REFERENCES users(id),
+  amount DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+  receiver_phone VARCHAR(20) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','completed','failed')),
+  moncash_reference VARCHAR(150) UNIQUE,
+  provider_reference VARCHAR(150) UNIQUE,
+  fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  error_message TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  reason TEXT,
+  cause VARCHAR(20),
+  responsible_seller_id UUID REFERENCES users(id),
+  commission_reversed DECIMAL(10,2) NOT NULL DEFAULT 0,
+  collection_fee_kept DECIMAL(10,2) NOT NULL DEFAULT 0,
+  seller_fee_share DECIMAL(10,2) NOT NULL DEFAULT 0,
+  requested_by UUID REFERENCES users(id),
+  approved_by UUID REFERENCES users(id),
+  destination_verified BOOLEAN NOT NULL DEFAULT false,
+  reconciled_by UUID REFERENCES users(id),
+  reconciled_at TIMESTAMP,
+  reconciliation_note TEXT,
+  settlement_confirmed BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE refund_payouts DROP CONSTRAINT IF EXISTS refund_payouts_order_id_key;
+CREATE INDEX IF NOT EXISTS idx_refund_payouts_order_id ON refund_payouts(order_id, created_at);
+CREATE TABLE IF NOT EXISTS seller_debts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  seller_id UUID NOT NULL REFERENCES users(id),
+  order_id UUID REFERENCES orders(id),
+  refund_id UUID REFERENCES refund_payouts(id),
+  original_amount DECIMAL(10,2) NOT NULL CHECK (original_amount > 0),
+  outstanding_amount DECIMAL(10,2) NOT NULL CHECK (outstanding_amount >= 0),
+  reason TEXT NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open','paid')),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_seller_debts_open ON seller_debts(seller_id, created_at) WHERE status = 'open';
+
+CREATE TABLE IF NOT EXISTS seller_debt_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  seller_id UUID NOT NULL REFERENCES users(id),
+  debt_amount DECIMAL(10,2) NOT NULL CHECK (debt_amount > 0),
+  charge_amount DECIMAL(10,2) NOT NULL CHECK (charge_amount > 0),
+  collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  reference_id VARCHAR(150) NOT NULL UNIQUE,
+  provider_reference VARCHAR(150),
+  status VARCHAR(20) NOT NULL DEFAULT 'created' CHECK (status IN ('created','processing','unknown','completed','failed')),
+  settlement_confirmed BOOLEAN NOT NULL DEFAULT false,
+  reconciled_by UUID REFERENCES users(id),
+  reconciled_at TIMESTAMP,
+  reconciliation_note TEXT,
+  error_message TEXT,
+  settled_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_seller_debt_payments_seller ON seller_debt_payments(seller_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_debt_payment_one_open
+  ON seller_debt_payments(seller_id) WHERE status IN ('created','processing','unknown');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_debt_payment_provider_ref
+  ON seller_debt_payments(provider_reference) WHERE provider_reference IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS order_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id UUID REFERENCES orders(id) NOT NULL,
@@ -247,12 +347,16 @@ CREATE TABLE IF NOT EXISTS platform_revenue (
   seller_id UUID REFERENCES users(id),
   seller_tier VARCHAR(20),
   gross_amount DECIMAL(10,2) NOT NULL,
+  commission_base DECIMAL(10,2) NOT NULL DEFAULT 0,
+  collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
   commission_rate DECIMAL(5,4) NOT NULL,
   commission_amount DECIMAL(10,2) NOT NULL,
   platform_fee DECIMAL(10,2) NOT NULL,
   net_to_seller DECIMAL(10,2) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE platform_revenue ADD COLUMN IF NOT EXISTS commission_base DECIMAL(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE platform_revenue ADD COLUMN IF NOT EXISTS collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS platform_payouts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -264,6 +368,20 @@ CREATE TABLE IF NOT EXISTS platform_payouts (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE platform_payouts DROP CONSTRAINT IF EXISTS platform_payouts_status_check;
+ALTER TABLE platform_payouts ADD CONSTRAINT platform_payouts_status_check
+  CHECK (status IN ('pending','processing','completed','failed'));
+ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS total_debit DECIMAL(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS provider_reference VARCHAR(150);
+ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS reconciled_by UUID REFERENCES users(id);
+ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMP;
+ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS reconciliation_note TEXT;
+ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS settlement_confirmed BOOLEAN NOT NULL DEFAULT false;
+UPDATE platform_payouts SET total_debit = amount + fee_amount WHERE total_debit = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_payouts_provider_reference
+  ON platform_payouts(provider_reference) WHERE provider_reference IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS verification_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -296,6 +414,8 @@ CREATE TABLE IF NOT EXISTS order_escrow (
   order_id UUID REFERENCES orders(id) ON DELETE CASCADE NOT NULL,
   seller_id UUID REFERENCES users(id) NOT NULL,
   gross_amount DECIMAL(10,2) NOT NULL,
+  commission_base DECIMAL(10,2) NOT NULL DEFAULT 0,
+  collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
   commission_amount DECIMAL(10,2) NOT NULL,
   net_amount DECIMAL(10,2) NOT NULL,
   status VARCHAR(20) DEFAULT 'held' CHECK (status IN ('held', 'released', 'refunded')),
@@ -303,6 +423,8 @@ CREATE TABLE IF NOT EXISTS order_escrow (
   released_at TIMESTAMP,
   UNIQUE(order_id, seller_id)
 );
+ALTER TABLE order_escrow ADD COLUMN IF NOT EXISTS commission_base DECIMAL(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE order_escrow ADD COLUMN IF NOT EXISTS collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS meetup_checkins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -402,3 +524,17 @@ INSERT INTO categories (id, name, display_order) VALUES
   ('a0000000-0000-0000-0000-000000000008', 'Food & Drinks', 8),
   ('a0000000-0000-0000-0000-000000000009', 'Other', 9)
 ON CONFLICT (id) DO NOTHING;
+
+-- Verified payments with no active checkout/order need manual reconciliation.
+CREATE TABLE IF NOT EXISTS unmatched_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reference TEXT NOT NULL,
+  event_id TEXT,
+  event_type VARCHAR(40),
+  note TEXT,
+  resolved BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_unmatched_payments_open ON unmatched_payments(resolved, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unmatched_payments_event_id
+  ON unmatched_payments(event_id) WHERE event_id IS NOT NULL;

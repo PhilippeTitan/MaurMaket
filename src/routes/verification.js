@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
 import { verifyLimiter } from '../middleware/rateLimit.js';
+import { deleteTemporaryStorageUpload, readTemporaryKycImage } from '../utils/temporaryStorage.js';
 
 const router = Router();
 
@@ -56,18 +57,24 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
       [req.user.id]
     );
 
-    // Download images from imgbb and convert to base64
-    const downloadImage = async (url) => {
+    // New KYC uploads are private Supabase objects; old in-flight clients may
+    // still submit a temporary provider URL, which remains supported.
+    const downloadImage = async (url, deleteRef) => {
+      if (deleteRef?.startsWith('supabase:')) {
+        return readTemporaryKycImage(req.user.id, deleteRef);
+      }
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Failed to download image: ${resp.status}`);
       const buf = await resp.arrayBuffer();
-      return Buffer.from(buf).toString('base64');
+      return Buffer.from(buf);
     };
 
-    const [cinFrontB64, selfieB64] = await Promise.all([
-      downloadImage(idFrontUrl),
-      downloadImage(selfieUrl),
+    const [cinFrontImage, selfieImage] = await Promise.all([
+      downloadImage(idFrontUrl, deleteUrls?.idFront),
+      downloadImage(selfieUrl, deleteUrls?.selfie),
     ]);
+    const cinFrontB64 = cinFrontImage.toString('base64');
+    const selfieB64 = selfieImage.toString('base64');
 
     // Call Lightning /verify
     let lightningResult;
@@ -197,9 +204,9 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
       [
         req.user.id,
         finalStatus,
-        idFrontUrl,
-        idBackUrl,
-        selfieUrl,
+        null, // ID images are transient and are never retained in the verification record.
+        null,
+        null,
         lightningResult.ocr,           // ocr_result (full)
         lightningResult.ocr?.fields,   // ocr_fields (parsed)
         faceMatch.score || 0,          // face_match_score
@@ -239,11 +246,20 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
       );
     }
 
-    // Delete images from imgbb if requested
+    // Remove temporary storage objects immediately; the expiry job remains a
+    // safety net for abandoned sessions or a failed verification request.
     if (deleteUrls) {
       const deleteUrlList = [deleteUrls.idFront, deleteUrls.idFace, deleteUrls.idBack, deleteUrls.selfie].filter(Boolean);
       for (const url of deleteUrlList) {
-        try { await fetch(url, { method: 'DELETE' }); } catch {}
+        try {
+          if (/^(supabase|r2):/.test(url)) {
+            await deleteTemporaryStorageUpload(req.user.id, url);
+          } else if (url.startsWith('https://')) {
+            await fetch(url, { method: 'DELETE' });
+          }
+        } catch (deleteErr) {
+          console.warn('[VERIFY] Temporary image cleanup deferred to expiry job:', deleteErr.message);
+        }
       }
     }
 

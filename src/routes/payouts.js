@@ -1,7 +1,8 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { pool } from '../config/database.js';
 import { authRequired, verifiedSellerRequired } from '../middleware/auth.js';
-import { checkSubscriptionStatus } from '../utils/helpers.js';
+import { checkSubscriptionStatus, settleSellerDebtPayment } from '../utils/helpers.js';
 import { createNotification } from '../utils/notifications.js';
 
 const router = Router();
@@ -11,12 +12,12 @@ function sellerRequired(req, res, next) {
   next();
 }
 
-async function refundPayout(client, sellerId, amount, payoutId, errorMessage) {
+async function refundPayout(client, sellerId, amount, totalDebit, payoutId, errorMessage) {
   try {
     await client.query('BEGIN');
     await client.query(
-      'UPDATE seller_balances SET balance = balance + $1, total_paid_out = total_paid_out - $1, updated_at = CURRENT_TIMESTAMP WHERE seller_id = $2',
-      [amount, sellerId]
+      'UPDATE seller_balances SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE seller_id = $2',
+      [totalDebit, sellerId]
     );
     await client.query(
       `UPDATE payouts SET status = 'failed', error_message = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
@@ -41,6 +42,152 @@ router.get('/api/seller/balance', authRequired, sellerRequired, async (req, res)
     res.json({ balance: parseFloat(row.balance) || 0, total_earned: parseFloat(row.total_earned) || 0, total_paid_out: parseFloat(row.total_paid_out) || 0 });
   } catch (err) {
     console.error('Balance fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/api/seller/debts', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, order_id, original_amount, outstanding_amount, reason, created_at
+       FROM seller_debts WHERE seller_id = $1 AND status = 'open'
+       ORDER BY created_at ASC`,
+      [req.user.id]
+    );
+    const total = result.rows.reduce((sum, row) => sum + Number(row.outstanding_amount || 0), 0);
+    const activePayment = await pool.query(
+      `SELECT id, debt_amount, charge_amount, collection_fee_amount, status, error_message, created_at
+       FROM seller_debt_payments WHERE seller_id = $1 AND status IN ('created','processing','unknown')
+       ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    res.json({ debts: result.rows, total, activePayment: activePayment.rows[0] || null });
+  } catch (err) {
+    console.error('Seller debt fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/api/seller/debts/pay', authRequired, sellerRequired, async (req, res) => {
+  if (!req.user?.email_verified) return res.status(403).json({ error: 'email_not_verified', message: 'Verify your email before paying account debts.' });
+  const client = await pool.connect();
+  let clientReleased = false;
+  const release = () => { if (!clientReleased) { clientReleased = true; client.release(); } };
+  try {
+    await client.query('BEGIN');
+    const debts = await client.query(
+      "SELECT id, outstanding_amount FROM seller_debts WHERE seller_id = $1 AND status = 'open' ORDER BY created_at, id FOR UPDATE",
+      [req.user.id]
+    );
+    const debtAmount = Math.round(debts.rows.reduce((sum, row) => sum + Number(row.outstanding_amount || 0), 0) * 100) / 100;
+    if (debtAmount <= 0) {
+      await client.query('ROLLBACK');
+      release();
+      return res.status(409).json({ error: 'no_open_debt' });
+    }
+    const active = await client.query(
+      "SELECT id, status FROM seller_debt_payments WHERE seller_id = $1 AND status IN ('created','processing','unknown') LIMIT 1 FOR UPDATE",
+      [req.user.id]
+    );
+    if (active.rows.length) {
+      await client.query('ROLLBACK');
+      release();
+      return res.status(409).json({ error: 'debt_payment_unresolved', paymentId: active.rows[0].id, status: active.rows[0].status });
+    }
+    // Gross up so the 2.9% MonCash inbound fee leaves the full debt amount.
+    const chargeAmount = Math.ceil(debtAmount / 0.971);
+    const collectionFee = Math.round((chargeAmount - debtAmount) * 100) / 100;
+    const referenceId = `seller_debt_${randomUUID()}`;
+    const payment = await client.query(
+      `INSERT INTO seller_debt_payments (seller_id, debt_amount, charge_amount, collection_fee_amount, reference_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [req.user.id, debtAmount, chargeAmount, collectionFee, referenceId]
+    );
+    await client.query('COMMIT');
+    release();
+
+    const paymentId = payment.rows[0].id;
+    try {
+      const providerResponse = await fetch(
+        process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create',
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: chargeAmount,
+            referenceId,
+            returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?debtPaymentId=${paymentId}`,
+          }),
+          signal: AbortSignal.timeout(15000),
+        }
+      );
+      const body = await providerResponse.json().catch(() => ({}));
+      if (providerResponse.ok && body.paymentUrl) {
+        await pool.query(
+          `UPDATE seller_debt_payments SET status = 'processing', provider_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+          [body.reference || body.transactionId || referenceId, paymentId]
+        );
+        return res.json({ paymentId, paymentUrl: body.paymentUrl, status: 'processing', debtAmount, chargeAmount, collectionFee });
+      }
+      const definitiveReject = providerResponse.status >= 400 && providerResponse.status < 500 && providerResponse.status !== 409;
+      await pool.query(
+        `UPDATE seller_debt_payments SET status = $1, error_message = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+        [definitiveReject ? 'failed' : 'unknown', `MonCashConnect returned ${providerResponse.status}: ${JSON.stringify(body)}`.slice(0, 1000), paymentId]
+      );
+      return res.status(definitiveReject ? 502 : 202).json({ paymentId, status: definitiveReject ? 'failed' : 'unknown', error: 'Payment status could not be confirmed. Check its status before retrying.' });
+    } catch (providerError) {
+      await pool.query(
+        `UPDATE seller_debt_payments SET status = 'unknown', error_message = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [`MonCash response was not confirmed: ${providerError.message}`.slice(0, 1000), paymentId]
+      );
+      return res.status(202).json({ paymentId, status: 'unknown', error: 'Payment status could not be confirmed. Check its status before retrying.' });
+    }
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    release();
+    if (err.code === '23505') return res.status(409).json({ error: 'debt_payment_unresolved' });
+    console.error('Seller debt payment error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/api/seller/debts/payments/:id', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM seller_debt_payments WHERE id = $1 AND seller_id = $2', [req.params.id, req.user.id]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Debt payment not found' });
+    let payment = result.rows[0];
+    const lastProviderCheck = new Date(payment.updated_at || payment.created_at).getTime();
+    const providerCheckDue = !Number.isFinite(lastProviderCheck) || Date.now() - lastProviderCheck >= 30_000;
+    if (['created', 'processing', 'unknown'].includes(payment.status) && providerCheckDue) {
+      const statusUrl = (process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create')
+        .replace('pay-create', 'pay-status') + `?referenceId=${encodeURIComponent(payment.reference_id)}`;
+      try {
+        const providerResponse = await fetch(statusUrl, { headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}` }, signal: AbortSignal.timeout(10000) });
+        if (providerResponse.ok) {
+          const providerStatus = await providerResponse.json();
+          if (providerStatus.status === 'completed' || providerStatus.paid === true) {
+            const client = await pool.connect();
+            try {
+              await client.query('BEGIN');
+              const settled = await settleSellerDebtPayment(client, payment.id, Number(providerStatus.amount ?? providerStatus.totalAmount));
+              if (settled.status === 'amount_mismatch') {
+                await client.query("UPDATE seller_debt_payments SET status = 'unknown', error_message = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [`Provider amount ${settled.received} did not match expected ${settled.expected}`, payment.id]);
+              }
+              await client.query('COMMIT');
+              if (settled.status === 'amount_mismatch') return res.status(202).json({ ...payment, status: 'unknown', reconciliationRequired: true });
+              if (settled.status === 'completed' && !settled.alreadyCompleted) createNotification(req.user.id, 'seller_debt_paid', 'Debt payment confirmed', `MonCash confirmed G ${settled.amount.toFixed(2)} toward your outstanding seller fees.`, { paymentId: payment.id });
+            } catch (txError) { try { await client.query('ROLLBACK'); } catch {} throw txError; }
+            finally { client.release(); }
+          } else if (providerStatus.status === 'failed' || providerStatus.status === 'expired') {
+            await pool.query("UPDATE seller_debt_payments SET status = 'failed', error_message = 'MonCash confirmed the debt payment failed', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status <> 'completed'", [payment.id]);
+          }
+        }
+      } catch (pollError) { console.error('Debt payment status poll error:', pollError.message); }
+      payment = (await pool.query('SELECT * FROM seller_debt_payments WHERE id = $1', [payment.id])).rows[0];
+    }
+    res.json(payment);
+  } catch (err) {
+    console.error('Seller debt payment status error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -74,63 +221,82 @@ router.post('/api/seller/payouts/request', authRequired, sellerRequired, async (
     }
   }
   const { amount } = req.body;
-  if (!amount || amount <= 0) return res.status(400).json({ error: 'Valid amount required' });
+  const requestedAmount = Number(amount);
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) return res.status(400).json({ error: 'Valid amount required' });
+  if (!Number.isInteger(requestedAmount)) return res.status(400).json({ error: 'MonCash payouts must be requested in whole gourdes' });
   const MIN_PAYOUT = parseFloat(process.env.MIN_PAYOUT_AMOUNT || '100');
-  if (amount < MIN_PAYOUT) return res.status(400).json({ error: `Minimum payout is G ${MIN_PAYOUT}` });
+  if (requestedAmount < MIN_PAYOUT) return res.status(400).json({ error: `Minimum payout is G ${MIN_PAYOUT}` });
+  const payoutAmount = Math.round(requestedAmount * 100) / 100;
+  const feeAmount = Math.round(payoutAmount * 0.05 * 100) / 100;
+  const totalDebit = Math.round((payoutAmount + feeAmount) * 100) / 100;
 
   const c = await pool.connect();
+  let clientReleased = false;
+  const releaseClient = () => {
+    if (!clientReleased) {
+      clientReleased = true;
+      c.release();
+    }
+  };
   try {
     await c.query('BEGIN');
     const balanceResult = await c.query('SELECT balance FROM seller_balances WHERE seller_id = $1 FOR UPDATE', [req.user.id]);
     const inflightCheck = await c.query("SELECT id FROM payouts WHERE seller_id = $1 AND status = 'processing'", [req.user.id]);
     if (inflightCheck.rows.length > 0) {
       await c.query('ROLLBACK');
+      releaseClient();
       return res.status(409).json({ error: 'payout_in_progress', message: 'You already have a payout being processed.' });
     }
     const currentBalance = balanceResult.rows.length > 0 ? parseFloat(balanceResult.rows[0].balance) : 0;
-    if (currentBalance < amount) { await c.query('ROLLBACK'); return res.status(400).json({ error: 'Insufficient balance' }); }
+    if (currentBalance < totalDebit) { await c.query('ROLLBACK'); releaseClient(); return res.status(400).json({ error: 'Insufficient balance including the 5% MonCash withdrawal fee' }); }
     const userResult = await c.query('SELECT phone FROM users WHERE id = $1', [req.user.id]);
     const phone = userResult.rows[0]?.phone;
-    if (!phone) { await c.query('ROLLBACK'); return res.status(400).json({ error: 'Set your phone number in Profile before requesting a payout' }); }
+    if (!phone) { await c.query('ROLLBACK'); releaseClient(); return res.status(400).json({ error: 'Set your phone number in Profile before requesting a payout' }); }
     const payoutResult = await c.query(
-      `INSERT INTO payouts (seller_id, amount, status, receiver_phone) VALUES ($1, $2, 'processing', $3) RETURNING *`,
-      [req.user.id, amount, phone]
+      `INSERT INTO payouts (seller_id, amount, fee_amount, total_debit, status, receiver_phone) VALUES ($1, $2, $3, $4, 'processing', $5) RETURNING *`,
+      [req.user.id, payoutAmount, feeAmount, totalDebit, phone]
     );
     const payout = payoutResult.rows[0];
-    await c.query('UPDATE seller_balances SET balance = balance - $1, total_paid_out = total_paid_out + $1, updated_at = CURRENT_TIMESTAMP WHERE seller_id = $2', [amount, req.user.id]);
+    await c.query('UPDATE seller_balances SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE seller_id = $2', [totalDebit, req.user.id]);
     await c.query('COMMIT');
-    c.release();
+    releaseClient();
 
     try {
       const mccRes = await fetch(
-        process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
+        process.env.MONCASH_PAYOUT_CREATE_URL || 'https://api.moncashconnect.com/v1/payout-create',
         {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: Math.round(amount), moncashNumber: phone, referenceId: payout.id }),
+          body: JSON.stringify({ amount: Math.round(payoutAmount), moncashNumber: phone, referenceId: payout.id }),
           signal: AbortSignal.timeout(15000),
         }
       );
       if (mccRes.ok) {
         const data = await mccRes.json();
-        await pool.query(`UPDATE payouts SET status = 'completed', moncash_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [data.reference || data.transactionId || null, payout.id]);
-        return res.json({ payout: { ...payout, status: 'completed' } });
+        const providerReference = data.reference || data.transactionId || null;
+        await pool.query(`UPDATE payouts SET provider_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND status = 'processing'`, [providerReference, payout.id]);
+        return res.json({ payout: { ...payout, provider_reference: providerReference, status: 'processing' }, settlement: 'awaiting_confirmation' });
       }
       const errorText = await mccRes.text();
       console.error(`[MCC-ALERT] Payout API failure: HTTP ${mccRes.status}`, errorText);
-      let reason = 'Payout failed. Please try again later.';
+      let reason = 'Payout was rejected. Please try again later.';
       try { const parsed = JSON.parse(errorText); if (parsed.reason) reason = parsed.reason; else if (parsed.message) reason = parsed.message; } catch {}
-      const refundC = await pool.connect();
-      try { await refundPayout(refundC, req.user.id, amount, payout.id, `MonCashConnect returned ${mccRes.status}: ${errorText}`); } finally { refundC.release(); }
-      return res.status(502).json({ error: 'payout_failed', message: reason });
+      // A conflict can mean this stable reference was already accepted. Keep
+      // the funds reserved until a webhook or operator reconciliation resolves it.
+      if (mccRes.status >= 400 && mccRes.status < 500 && mccRes.status !== 409) {
+        const refundC = await pool.connect();
+        try { await refundPayout(refundC, req.user.id, payoutAmount, totalDebit, payout.id, `MonCashConnect rejected payout (${mccRes.status}): ${errorText}`); } finally { refundC.release(); }
+        return res.status(502).json({ error: 'payout_failed', message: reason });
+      }
+      await pool.query(`UPDATE payouts SET error_message = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND status = 'processing'`, [`MonCashConnect response ${mccRes.status}; settlement is being checked.`, payout.id]);
+      return res.status(202).json({ payout: { ...payout, status: 'processing' }, settlement: 'awaiting_confirmation' });
     } catch (fetchErr) {
       console.error('[MCC-ALERT] Payout network timeout/error:', fetchErr.message);
-      const refundC = await pool.connect();
-      try { await refundPayout(refundC, req.user.id, amount, payout.id, fetchErr.message); } finally { refundC.release(); }
-      return res.status(502).json({ error: 'payout_network_error', message: 'Could not reach MonCash. Your balance has been restored.' });
+      await pool.query(`UPDATE payouts SET error_message = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND status = 'processing'`, [`MonCashConnect response was not confirmed: ${fetchErr.message}`, payout.id]);
+      return res.status(202).json({ payout: { ...payout, status: 'processing' }, settlement: 'unknown_checking', message: 'MonCash did not confirm the request response yet. The payout remains reserved while its status is checked.' });
     }
   } catch (err) {
-    try { await c.query('ROLLBACK'); } catch {} c.release();
+    try { if (!clientReleased) await c.query('ROLLBACK'); } catch {} releaseClient();
     console.error('Payout request error:', err);
     res.status(500).json({ error: 'Server error' });
   }

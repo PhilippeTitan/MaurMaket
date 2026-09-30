@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity,
+  View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator, LayoutChangeEvent, Modal, Pressable, Platform, ScrollView, Share as RNShare, Alert,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
@@ -32,7 +32,7 @@ import { tapLight } from '../haptics';
 import FeedLikeButton from '../components/FeedLikeButton';
 import FeedSaveButton from '../components/FeedSaveButton';
 import { useToast } from '../components/Toast';
-import { queryClient } from '../hooks';
+import { queryClient, useViewport } from '../hooks';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 import { network } from '../network';
 
@@ -45,6 +45,10 @@ export default function FeedScreen() {
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
+  // The carousel's page width has to be the width the pages are laid out at, read live:
+  // a rotated phone or a resized window re-renders the pages at the new width, so the
+  // paging offset and the page index stay in step instead of snapping to the old size.
+  const vp = useViewport();
   const [products, setProducts] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -314,9 +318,9 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               pagingEnabled
               nestedScrollEnabled
               showsHorizontalScrollIndicator={false}
-              style={{ width: Dimensions.get('window').width, height: '100%' }}
+              style={{ width: vp.width, height: '100%' }}
               onScroll={(e) => {
-                const idx = Math.round(e.nativeEvent.contentOffset.x / Dimensions.get('window').width);
+                const idx = Math.round(e.nativeEvent.contentOffset.x / vp.width);
                 if (idx !== (feedImageIndices[item.id] ?? 0)) {
                   setFeedImageIndices(prev => ({ ...prev, [item.id]: idx }));
                 }
@@ -328,7 +332,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                 return (
                   <Pressable
                     key={String(img.id || idx)}
-                    style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}
+                    style={{ width: vp.width, height: vp.height }}
                     onLongPress={() => setMoreProduct(item)}
                     delayLongPress={450}
                     accessibilityRole="button"

@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, View, Text, StyleSheet, Animated, Dimensions, Easing, Pressable } from 'react-native';
+import { KeyboardAvoidingView, Platform, View, Text, StyleSheet, Animated, Easing, Pressable } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { COLORS } from '../../theme';
 import { googleAuthInfo } from '../../api';
 import { store } from '../../store';
 import { useTranslation } from '@/localization';
+import { useViewport } from '@/hooks';
 import OnboardingBackground from './components/OnboardingBackground';
 import GoogleButton from './components/GoogleButton';
 
@@ -15,15 +16,18 @@ interface AnimatedOnboardingProps {
   onGoogleComplete?: (result: { firstName: string; lastName: string; email: string; birthDate?: string; googleIdToken: string }) => void;
 }
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const RING_SIZES = [66, 110, 150, 190, 230];
-const COVER_SCALE = Math.hypot(SCREEN_WIDTH, SCREEN_HEIGHT) / Math.min(...RING_SIZES) + 0.5;
 
 function Loader({ autoExpand, onComplete, onPressChange }: {
   autoExpand: boolean;
   onComplete: () => void;
   onPressChange: (pressed: boolean) => void;
 }) {
+  // How far the rings expand to fill the screen when the hold completes: the window
+  // diagonal over the innermost ring. Read live, so the reveal still covers the whole
+  // screen after a resize, a rotation or on a window the app did not boot in.
+  const vp = useViewport();
+  const coverScale = Math.hypot(vp.width, vp.height) / Math.min(...RING_SIZES) + 0.5;
   const rings = useRef([
     new Animated.Value(1),
     new Animated.Value(1),
@@ -96,7 +100,7 @@ function Loader({ autoExpand, onComplete, onPressChange }: {
           Animated.sequence([
             Animated.delay(ringIndex * 90),
             Animated.timing(ring, {
-              toValue: Math.min(values[ringIndex] * 1.04, COVER_SCALE),
+              toValue: Math.min(values[ringIndex] * 1.04, coverScale),
               duration: 120,
               easing: Easing.out(Easing.cubic),
               useNativeDriver: true,
@@ -124,8 +128,8 @@ function Loader({ autoExpand, onComplete, onPressChange }: {
   const runExpansion = (startValues = [1, 1, 1, 1, 1], compensateLateStart = false) => {
     const expansion = Animated.parallel(
       [4, 3, 2, 1, 0].map((ringIndex, waveIndex) => {
-        const targetScale = ringIndex === 0 ? COVER_SCALE * 1.12 : COVER_SCALE;
-        const distanceRatio = (targetScale - startValues[ringIndex]) / (COVER_SCALE - 1);
+        const targetScale = ringIndex === 0 ? coverScale * 1.12 : coverScale;
+        const distanceRatio = (targetScale - startValues[ringIndex]) / (coverScale - 1);
         const isInnerRing = ringIndex === 0;
         const isFreshInnerRing = compensateLateStart && isInnerRing;
         const baseDuration = isInnerRing ? 1400 : 1200 * Math.max(0.85, distanceRatio);

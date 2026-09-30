@@ -9,8 +9,6 @@ import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../the
 import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
-import SettingsGroup from '../components/SettingsGroup';
-import SettingsRow from '../components/SettingsRow';
 import { uploadImage, getImageUrl, updateSellerProfile, updateProfile } from '../api';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
@@ -18,7 +16,7 @@ import PrimaryButton from '../components/PrimaryButton';
 import SettingsLinkButton from '../components/SettingsLinkButton';
 import SettingsToggle from '../components/SettingsToggle';
 import { useFocusEffect } from '@react-navigation/native';
-import { getSellerFulfillmentProfile, updateSellerFulfillmentProfile, getSellerFulfillmentProposals, decideFulfillmentProposal, type SellerFulfillmentProfile } from '../api';
+import { getSellerFulfillmentProposals, decideFulfillmentProposal } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -31,7 +29,6 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
   const isSeller = user?.role === 'seller';
   const [loading, setLoading] = useState(false);
   const [storeLogoUploading, setStoreLogoUploading] = useState(false);
-  const [fulfillmentProfile, setFulfillmentProfile] = useState<SellerFulfillmentProfile | null>(null);
   const [proposals, setProposals] = useState<any[]>([]);
 
   const anim = useRef({
@@ -46,29 +43,14 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
     ]).start();
   }, []);
 
-  const loadFulfillmentProfile = useCallback(async () => {
+  const loadProposals = useCallback(async () => {
     if (!isSeller) return;
     try {
-      const [profile, proposalResult] = await Promise.all([
-        getSellerFulfillmentProfile() as Promise<SellerFulfillmentProfile>,
-        getSellerFulfillmentProposals() as Promise<{ proposals?: any[] }>,
-      ]);
-      setFulfillmentProfile(profile);
+      const proposalResult = await getSellerFulfillmentProposals() as { proposals?: any[] };
       setProposals(proposalResult.proposals || []);
-    } catch { /* profile is optional until migration runs */ }
+    } catch { /* proposals are optional */ }
   }, [isSeller]);
-
-  useFocusEffect(useCallback(() => { loadFulfillmentProfile(); }, [loadFulfillmentProfile]));
-
-  const updateFulfillment = async (patch: Partial<SellerFulfillmentProfile>) => {
-    setLoading(true);
-    try {
-      const next = await updateSellerFulfillmentProfile(patch) as SellerFulfillmentProfile;
-      setFulfillmentProfile(next);
-    } catch (err: unknown) {
-      toast.error(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
-    } finally { setLoading(false); }
-  };
+  useFocusEffect(useCallback(() => { loadProposals(); }, [loadProposals]));
 
   const decideProposal = async (proposal: any, decision: 'accept' | 'reject') => {
     setLoading(true);
@@ -200,39 +182,11 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
       {/* ── Fulfillment policy ── */}
       <Text style={styles.sectionHeader}>{t('sellerTools.deliveryMeetup')}</Text>
       <View style={styles.card}>
-        <View style={styles.toggleRow}>
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SellerFulfillmentSettings')} accessibilityRole="button" accessibilityLabel={t('sellerTools.deliveryMeetup')}>
           <MaterialCommunityIcons name="truck-delivery-outline" size={18} color={COLORS.blue} />
-          <View style={styles.settingCopy}><Text style={styles.rowLabel}>{t('sellerTools.offerDelivery')}</Text><Text style={styles.settingHint}>{t('sellerTools.offerDeliveryHint')}</Text></View>
-          <SettingsToggle
-            value={!!fulfillmentProfile?.deliveryEnabled}
-            onValueChange={(v) => updateFulfillment({ deliveryEnabled: v })}
-            disabled={loading}
-            accent={COLORS.blue}
-            accessibilityLabel={t('sellerTools.offerDelivery')}
-          />
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.toggleRow}>
-          <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
-          <View style={styles.settingCopy}><Text style={styles.rowLabel}>{t('sellerTools.offerMeetups')}</Text><Text style={styles.settingHint}>{t('sellerTools.offerMeetupsHint')}</Text></View>
-          <SettingsToggle
-            value={!!fulfillmentProfile?.meetupEnabled}
-            onValueChange={(v) => updateFulfillment({ meetupEnabled: v })}
-            disabled={loading}
-            accessibilityLabel={t('sellerTools.offerMeetups')}
-          />
-        </View>
-        <View style={styles.divider} />
-        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ deliveryRadiusMeters: fulfillmentProfile?.deliveryRadiusMeters === 5000 ? 10000 : 5000 })} disabled={loading} accessibilityRole="button" accessibilityLabel={t('sellerTools.deliveryRadiusA11y')}>
-          <MaterialCommunityIcons name="radius-outline" size={18} color={COLORS.text2} /><Text style={styles.rowLabel}>{t('sellerTools.deliveryRadius')}</Text><Text style={styles.rowValue}>{((fulfillmentProfile?.deliveryRadiusMeters ?? 5000) / 1000).toFixed(0)} km</Text>
-        </TouchableOpacity>
-        <View style={styles.divider} />
-        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ meetupRadiusMeters: fulfillmentProfile?.meetupRadiusMeters === 12000 ? 5000 : 12000 })} disabled={loading} accessibilityRole="button" accessibilityLabel={t('sellerTools.meetupRadiusA11y')}>
-          <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={COLORS.text2} /><Text style={styles.rowLabel}>{t('sellerTools.meetupRadius')}</Text><Text style={styles.rowValue}>{((fulfillmentProfile?.meetupRadiusMeters ?? 12000) / 1000).toFixed(0)} km</Text>
-        </TouchableOpacity>
-        <View style={styles.divider} />
-        <TouchableOpacity style={styles.row} onPress={() => updateFulfillment({ deliveryFeeType: fulfillmentProfile?.deliveryFeeType === 'free' ? 'flat' : 'free', flatDeliveryFee: fulfillmentProfile?.deliveryFeeType === 'free' ? 250 : 0 })} disabled={loading} accessibilityRole="button" accessibilityLabel={t('sellerTools.deliveryFeeA11y')}>
-          <MaterialCommunityIcons name="cash" size={18} color={COLORS.green} /><Text style={styles.rowLabel}>{t('checkout.deliveryFee')}</Text><Text style={styles.rowValue}>{fulfillmentProfile?.deliveryFeeType === 'free' ? t('sellerTools.free') : `G ${fulfillmentProfile?.flatDeliveryFee ?? 0}`}</Text>
+          <Text style={styles.rowLabel}>{t('fulfillmentSettings.manage')}</Text>
+          <Text style={styles.rowValue}>{t('fulfillmentSettings.manageSummary')}</Text>
+          <Icon name="chevron-right" size={16} color={COLORS.text2} />
         </TouchableOpacity>
       </View>
 
@@ -336,15 +290,14 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.lg, marginTop: 20, marginBottom: 6,
   },
   card: {
-    marginHorizontal: SPACING.lg, backgroundColor: COLORS.surface,
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, overflow: 'hidden',
+    marginHorizontal: SPACING.lg, backgroundColor: 'transparent',
+    borderWidth: 0, borderRadius: 0, overflow: 'hidden',
   },
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 14, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm, minHeight: 54,
   },
   rowLabel: { flex: 1, fontSize: 14, color: COLORS.text },
-  settingCopy: { flex: 1, gap: 2 },
   settingHint: { fontSize: 11, color: COLORS.text2, lineHeight: 15 },
   proposal: { padding: 14, gap: 8 },
   proposalTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text },
@@ -354,15 +307,15 @@ const styles = StyleSheet.create({
   reviewDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rowValue: { fontSize: 13, color: COLORS.text2, maxWidth: 140 },
-  divider: { height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: SPACING.sm + 28 + SPACING.md },
   toggleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 14, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm, minHeight: 54,
   },
   storeLogoThumb: { width: 28, height: 28, borderRadius: RADIUS.row },
   tierRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 14, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm, minHeight: 54,
   },
   tierDotWrap: { width: 20, alignItems: 'center' },
   tierDot: { width: 10, height: 10, borderRadius: 5 },

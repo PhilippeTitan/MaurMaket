@@ -7,6 +7,7 @@ import { getImageUrl } from '../api';
 interface Props {
   user: any;
   onPress?: () => void;
+  compact?: boolean;
 }
 
 /**
@@ -19,7 +20,7 @@ interface Props {
  * - Verified/unverified email status
  * - Subtle entrance animation (fade + slide)
  */
-export default function ProfileCard({ user, onPress }: Props) {
+export default function ProfileCard({ user, onPress, compact = true }: Props) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(12)).current;
 
@@ -42,26 +43,26 @@ export default function ProfileCard({ user, onPress }: Props) {
   const tierColor = user?.seller_tier ? TIER_COLORS[user.seller_tier] ?? COLORS.text2 : null;
 
   const cardContent = (
-    <Animated.View style={[styles.card, { opacity, transform: [{ translateY }] }]}>
-      <View style={styles.inner}>
+    <Animated.View style={[styles.card, compact && styles.compactCard, { opacity, transform: [{ translateY }] }]}>
+      <View style={[styles.inner, compact && styles.compactInner]}>
         {/* Avatar with tier ring */}
-        <View style={[styles.avatarRing, { borderColor: tierColor || COLORS.border }]}>
+        <View style={[styles.avatarRing, compact && styles.compactAvatarRing, { borderColor: tierColor || COLORS.border }]}>
           {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
+            <Image source={{ uri: avatarUri }} style={[styles.avatarImg, compact && styles.compactAvatarImg]} />
           ) : (
-            <View style={styles.avatarFallback}>
-              <Text style={styles.avatarInitials}>{initials}</Text>
+            <View style={[styles.avatarFallback, compact && styles.compactAvatarFallback]}>
+              <Text style={[styles.avatarInitials, compact && styles.compactAvatarInitials]}>{initials}</Text>
             </View>
           )}
         </View>
 
         {/* Info */}
         <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
+          <Text style={[styles.name, compact && styles.compactName]} numberOfLines={1}>{displayName}</Text>
           {user?.username ? (
             <Text style={styles.username}>@{user.username}</Text>
           ) : null}
-          <View style={styles.metaRow}>
+          {!compact ? <View style={styles.metaRow}>
             {tierLabel ? (
               <View style={[styles.tierBadge, { backgroundColor: (tierColor || COLORS.text2) + '18' }]}>
                 <Text style={[styles.tierText, { color: tierColor || COLORS.text2 }]}>{tierLabel}</Text>
@@ -78,7 +79,7 @@ export default function ProfileCard({ user, onPress }: Props) {
                 <Text style={styles.unverifiedText}>Email not verified</Text>
               </View>
             )}
-          </View>
+          </View> : null}
         </View>
 
         {/* Chevron */}
@@ -105,6 +106,11 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.card,
     overflow: 'hidden',
   },
+  compactCard: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
+    backgroundColor: 'transparent',
+  },
   inner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -118,10 +124,24 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     padding: 2,
   },
+  compactInner: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  compactAvatarRing: {
+    width: 52,
+    height: 52,
+    borderWidth: 1.5,
+  },
   avatarImg: {
     width: 60,
     height: 60,
     borderRadius: 30,
+  },
+  compactAvatarImg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   avatarFallback: {
     width: 60,
@@ -131,10 +151,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  compactAvatarFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
   avatarInitials: {
     fontSize: 22,
     fontWeight: FONT_WEIGHTS.bold,
     color: COLORS.text2,
+  },
+  compactAvatarInitials: {
+    fontSize: 18,
   },
   info: {
     flex: 1,
@@ -144,6 +172,9 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.xxl,
     fontWeight: FONT_WEIGHTS.bold,
     color: COLORS.text,
+  },
+  compactName: {
+    fontSize: FONT_SIZES.lg,
   },
   username: {
     fontSize: FONT_SIZES.base,

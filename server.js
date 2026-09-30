@@ -10,7 +10,7 @@ import morgan from 'morgan';
 
 // ───── Modularized infrastructure ─────
 import { pool, isTestMode, neonBackupDatabaseUrl, setDbController } from './src/config/database.js';
-import { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand } from './src/config/storage.js';
+import { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_KYC_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand } from './src/config/storage.js';
 import { JWT_SECRET, BCRYPT_ROUNDS, PRODUCTION_URL } from './src/config/security.js';
 import { generalLimiter, authLimiter, paymentLimiter, uploadLimiter, msgLimiter, convLimiter, verifyLimiter } from './src/middleware/rateLimit.js';
 import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from './src/middleware/auth.js';
@@ -19,6 +19,7 @@ import { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSel
 import { startJobs } from './src/jobs/index.js';
 import { registerRoutes } from './src/routes/index.js';
 import { createAuth, getAuth } from './src/config/auth.js';
+import { registerTemporaryStorageUpload } from './src/utils/temporaryStorage.js';
 import { toNodeHandler } from 'better-auth/node';
 
 // ───── Better Auth Studio (admin dashboard, optional) ─────
@@ -366,6 +367,8 @@ async function runMigrations(targetPool) {
         seller_id UUID REFERENCES users(id),
         seller_tier VARCHAR(20),
         gross_amount DECIMAL(10,2) NOT NULL,
+        commission_base DECIMAL(10,2) NOT NULL DEFAULT 0,
+        collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
         commission_rate DECIMAL(5,4) NOT NULL,
         commission_amount DECIMAL(10,2) NOT NULL,
         platform_fee DECIMAL(10,2) NOT NULL,
@@ -388,6 +391,22 @@ async function runMigrations(targetPool) {
       );
     `));
 
+    await step('MonCash platform payout settlement fields', () => c.query(`
+      ALTER TABLE platform_payouts DROP CONSTRAINT IF EXISTS platform_payouts_status_check;
+      ALTER TABLE platform_payouts ADD CONSTRAINT platform_payouts_status_check
+        CHECK (status IN ('pending','processing','completed','failed'));
+      ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS total_debit DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS provider_reference VARCHAR(150);
+      ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS reconciled_by UUID REFERENCES users(id);
+      ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMP;
+      ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS reconciliation_note TEXT;
+      ALTER TABLE platform_payouts ADD COLUMN IF NOT EXISTS settlement_confirmed BOOLEAN NOT NULL DEFAULT false;
+      UPDATE platform_payouts SET total_debit = amount + fee_amount WHERE total_debit = 0;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_payouts_provider_reference
+        ON platform_payouts(provider_reference) WHERE provider_reference IS NOT NULL;
+    `));
+
     await step('refund_payouts table', () => c.query(`
       CREATE TABLE IF NOT EXISTS refund_payouts (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -400,9 +419,33 @@ async function runMigrations(targetPool) {
         error_message TEXT,
         attempts INTEGER NOT NULL DEFAULT 0,
         next_attempt_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        reason TEXT,
+        cause VARCHAR(20),
+        responsible_seller_id UUID REFERENCES users(id),
+        commission_reversed DECIMAL(10,2) NOT NULL DEFAULT 0,
+        collection_fee_kept DECIMAL(10,2) NOT NULL DEFAULT 0,
+        seller_fee_share DECIMAL(10,2) NOT NULL DEFAULT 0,
+        requested_by UUID REFERENCES users(id),
+        approved_by UUID REFERENCES users(id),
+        destination_verified BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `));
+
+    await step('unmatched_payments table', () => c.query(`
+      CREATE TABLE IF NOT EXISTS unmatched_payments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        reference TEXT NOT NULL,
+        event_id TEXT,
+        event_type VARCHAR(40),
+        note TEXT,
+        resolved BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_unmatched_payments_open ON unmatched_payments(resolved, created_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_unmatched_payments_event_id
+        ON unmatched_payments(event_id) WHERE event_id IS NOT NULL;
     `));
 
     // 19. Users onboarding columns
@@ -446,6 +489,30 @@ async function runMigrations(targetPool) {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_result VARCHAR(20);
     `));
 
+    await step('Temporary KYC upload expiry queue', () => c.query(`
+      CREATE TABLE IF NOT EXISTS temporary_storage_uploads (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL,
+        provider VARCHAR(20) NOT NULL CHECK (provider IN ('supabase', 'r2')),
+        bucket_name TEXT NOT NULL,
+        object_key TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(provider, bucket_name, object_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_temporary_storage_uploads_expiry ON temporary_storage_uploads(expires_at);
+      ALTER TABLE temporary_storage_uploads ENABLE ROW LEVEL SECURITY;
+    `));
+    if (!isTestMode && !targetPool && supabaseStorage) {
+      await step('Private Supabase KYC bucket', () => c.query(`
+        INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+        VALUES ('kyc-documents', 'kyc-documents', false, 10485760, ARRAY['image/webp']::text[])
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name, public = false, file_size_limit = EXCLUDED.file_size_limit,
+          allowed_mime_types = EXCLUDED.allowed_mime_types;
+      `));
+    }
+
     // 21. Backfill id_verification_result from legacy boolean
     await step('Backfill id_verification_result', () => c.query(`
       UPDATE users SET id_verification_result = 'verified' WHERE id_verified = true AND id_verification_result IS NULL;
@@ -459,6 +526,8 @@ async function runMigrations(targetPool) {
         order_id UUID REFERENCES orders(id) ON DELETE CASCADE NOT NULL,
         seller_id UUID REFERENCES users(id) NOT NULL,
         gross_amount DECIMAL(10,2) NOT NULL,
+        commission_base DECIMAL(10,2) NOT NULL DEFAULT 0,
+        collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
         commission_amount DECIMAL(10,2) NOT NULL,
         net_amount DECIMAL(10,2) NOT NULL,
         status VARCHAR(20) DEFAULT 'held' CHECK (status IN ('held', 'released', 'refunded')),
@@ -691,6 +760,103 @@ async function runMigrations(targetPool) {
       ON payouts (seller_id) WHERE status = 'processing';
     `));
 
+    // MonCash outbound transfers need a stable request reference and an
+    // explicit fee/debit amount. A 2xx create response is only acceptance;
+    // the webhook is the settlement confirmation.
+    await step('MonCash payout settlement fields', () => c.query(`
+      ALTER TABLE payouts ADD COLUMN IF NOT EXISTS fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE payouts ADD COLUMN IF NOT EXISTS total_debit DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE payouts ADD COLUMN IF NOT EXISTS provider_reference VARCHAR(150);
+      ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reconciled_by UUID REFERENCES users(id);
+      ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMP;
+      ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reconciliation_note TEXT;
+      ALTER TABLE payouts ADD COLUMN IF NOT EXISTS settlement_confirmed BOOLEAN NOT NULL DEFAULT false;
+      UPDATE payouts SET total_debit = amount + fee_amount WHERE total_debit = 0;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payouts_provider_reference
+        ON payouts(provider_reference) WHERE provider_reference IS NOT NULL;
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS provider_reference VARCHAR(150);
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS reason TEXT;
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS cause VARCHAR(20);
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS responsible_seller_id UUID REFERENCES users(id);
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS commission_reversed DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS collection_fee_kept DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS seller_fee_share DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS requested_by UUID REFERENCES users(id);
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id);
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS destination_verified BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS reconciled_by UUID REFERENCES users(id);
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMP;
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS reconciliation_note TEXT;
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS settlement_confirmed BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE refund_payouts DROP CONSTRAINT IF EXISTS refund_payouts_order_id_key;
+      CREATE INDEX IF NOT EXISTS idx_refund_payouts_order_id ON refund_payouts(order_id, created_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_refund_payouts_provider_reference
+        ON refund_payouts(provider_reference) WHERE provider_reference IS NOT NULL;
+    `));
+
+    await step('Seller refund fee debts', () => c.query(`
+      CREATE TABLE IF NOT EXISTS seller_debts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        seller_id UUID NOT NULL REFERENCES users(id),
+        order_id UUID REFERENCES orders(id),
+        refund_id UUID REFERENCES refund_payouts(id),
+        original_amount DECIMAL(10,2) NOT NULL CHECK (original_amount > 0),
+        outstanding_amount DECIMAL(10,2) NOT NULL CHECK (outstanding_amount >= 0),
+        reason TEXT NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open','paid')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_seller_debts_open ON seller_debts(seller_id, created_at) WHERE status = 'open';
+    `));
+
+    await step('Seller debt MonCash repayment', () => c.query(`
+      CREATE TABLE IF NOT EXISTS seller_debt_payments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        seller_id UUID NOT NULL REFERENCES users(id),
+        debt_amount DECIMAL(10,2) NOT NULL CHECK (debt_amount > 0),
+        charge_amount DECIMAL(10,2) NOT NULL CHECK (charge_amount > 0),
+        collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        reference_id VARCHAR(150) NOT NULL UNIQUE,
+        provider_reference VARCHAR(150),
+        status VARCHAR(20) NOT NULL DEFAULT 'created' CHECK (status IN ('created','processing','unknown','completed','failed')),
+        settlement_confirmed BOOLEAN NOT NULL DEFAULT false,
+        reconciled_by UUID REFERENCES users(id),
+        reconciled_at TIMESTAMP,
+        reconciliation_note TEXT,
+        error_message TEXT,
+        settled_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_seller_debt_payments_seller ON seller_debt_payments(seller_id, created_at DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_debt_payment_one_open
+        ON seller_debt_payments(seller_id) WHERE status IN ('created','processing','unknown');
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_seller_debt_payment_provider_ref
+        ON seller_debt_payments(provider_reference) WHERE provider_reference IS NOT NULL;
+    `));
+
+    await step('MonCash payment attempt ledger', () => c.query(`
+      CREATE TABLE IF NOT EXISTS moncash_payment_attempts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        reference_id VARCHAR(150) NOT NULL UNIQUE,
+        expected_amount DECIMAL(10,2) NOT NULL CHECK (expected_amount > 0),
+        status VARCHAR(20) NOT NULL DEFAULT 'created' CHECK (status IN ('created','processing','unknown','completed','failed','expired')),
+        provider_reference VARCHAR(150),
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_moncash_attempt_order_status
+        ON moncash_payment_attempts(order_id, status, created_at DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_moncash_one_open_attempt_per_order
+        ON moncash_payment_attempts(order_id) WHERE status IN ('created','processing','unknown');
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_moncash_attempt_provider_reference
+        ON moncash_payment_attempts(provider_reference) WHERE provider_reference IS NOT NULL;
+    `));
+
     // 43. Feed taste onboarding and category-level recommendation signals.
     // Existing accounts are opted out by default; newly-created accounts opt in below.
     await step('Feed preferences', () => c.query(`
@@ -907,11 +1073,17 @@ await step('NatCash phone separation', () => c.query(`
         meetup_enabled BOOLEAN NOT NULL DEFAULT false,
         delivery_radius_meters INTEGER NOT NULL DEFAULT 5000 CHECK (delivery_radius_meters BETWEEN 100 AND 50000),
         meetup_radius_meters INTEGER NOT NULL DEFAULT 12000 CHECK (meetup_radius_meters BETWEEN 100 AND 50000),
-        delivery_fee_type VARCHAR(20) NOT NULL DEFAULT 'flat' CHECK (delivery_fee_type IN ('free', 'flat', 'distance')),
+        delivery_fee_type VARCHAR(20) NOT NULL DEFAULT 'flat' CHECK (delivery_fee_type IN ('free', 'flat', 'distance', 'per_distance')),
         flat_delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (flat_delivery_fee >= 0),
         distance_fee_rules JSONB NOT NULL DEFAULT '[]'::jsonb,
+        distance_step_meters INTEGER NOT NULL DEFAULT 2000 CHECK (distance_step_meters BETWEEN 100 AND 50000),
+        distance_step_fee DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (distance_step_fee >= 0),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE seller_fulfillment_profiles ADD COLUMN IF NOT EXISTS distance_step_meters INTEGER NOT NULL DEFAULT 2000 CHECK (distance_step_meters BETWEEN 100 AND 50000);
+      ALTER TABLE seller_fulfillment_profiles ADD COLUMN IF NOT EXISTS distance_step_fee DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (distance_step_fee >= 0);
+      ALTER TABLE seller_fulfillment_profiles DROP CONSTRAINT IF EXISTS seller_fulfillment_profiles_delivery_fee_type_check;
+      ALTER TABLE seller_fulfillment_profiles ADD CONSTRAINT seller_fulfillment_profiles_delivery_fee_type_check CHECK (delivery_fee_type IN ('free', 'flat', 'distance', 'per_distance'));
 
       CREATE TABLE IF NOT EXISTS seller_fulfillment_events (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -940,6 +1112,19 @@ await step('NatCash phone separation', () => c.query(`
         UNIQUE(checkout_id, seller_id)
       );
       CREATE INDEX IF NOT EXISTS idx_pending_fulfillment_agreements_seller ON pending_fulfillment_agreements(seller_id, status, created_at DESC);
+
+      ALTER TABLE order_escrow ADD COLUMN IF NOT EXISTS commission_base DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE platform_revenue ADD COLUMN IF NOT EXISTS commission_base DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE order_escrow ADD COLUMN IF NOT EXISTS collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE platform_revenue ADD COLUMN IF NOT EXISTS collection_fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
+      UPDATE order_escrow e SET commission_base = GREATEST(0, e.gross_amount - COALESCE(sf.delivery_fee, 0))
+      FROM seller_fulfillments sf WHERE sf.order_id = e.order_id AND sf.seller_id = e.seller_id AND e.commission_base = 0;
+      UPDATE platform_revenue p SET commission_base = GREATEST(0, p.gross_amount - COALESCE(sf.delivery_fee, 0))
+      FROM seller_fulfillments sf WHERE sf.order_id = p.order_id AND sf.seller_id = p.seller_id AND p.commission_base = 0;
+      UPDATE order_escrow e SET commission_base = e.gross_amount
+      WHERE e.commission_base = 0 AND NOT EXISTS (SELECT 1 FROM seller_fulfillments sf WHERE sf.order_id = e.order_id AND sf.seller_id = e.seller_id);
+      UPDATE platform_revenue p SET commission_base = p.gross_amount
+      WHERE p.commission_base = 0 AND NOT EXISTS (SELECT 1 FROM seller_fulfillments sf WHERE sf.order_id = p.order_id AND sf.seller_id = p.seller_id);
 
       -- Provider-neutral payment lifecycle for one seller's locked agreement.
       -- NatCash may use SMS verification, while MonCash uses a provider webhook.
@@ -1302,13 +1487,15 @@ app.use('/api/upload', uploadLimiter);
 
 // Upload config — no secrets exposed
 app.get('/api/upload/config', (req, res) => {
-  res.json({ hasR2: !!r2Storage, hasSupabaseStorage: !!supabaseStorage, hasImgbb: !!process.env.IMGBB_KEY });
+  const primary = supabaseStorage ? 'supabase' : r2Storage ? 'r2' : process.env.IMGBB_KEY ? 'imgbb' : null;
+  const fallback = [supabaseStorage && r2Storage ? 'r2' : null, process.env.IMGBB_KEY ? 'imgbb' : null].filter(Boolean).join(', ') || null;
+  res.json({ primary, fallback, hasR2: !!r2Storage, hasSupabaseStorage: !!supabaseStorage, hasImgbb: !!process.env.IMGBB_KEY });
 });
 
-// Upload image — Supabase Storage primary, imgBB fallback
+// Upload image — Supabase Storage primary, R2 then imgBB fallback
 app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (req, res) => {
   try {
-    const { image, expiration } = req.body;
+    const { image, expiration, purpose } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
 
     // Decode base64 to buffer and capture original dimensions
@@ -1340,53 +1527,57 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
       console.warn('[UPLOAD] WebP conversion failed, storing original:', convErr.message);
       webpBuffer = buffer;
     }
-    const key = `${req.user.id}/${crypto.randomUUID()}.webp`;
+    const temporaryKyc = purpose === 'kyc' && Number(expiration) > 0;
+    const key = `${req.user.id}/${temporaryKyc ? 'kyc/' : ''}${crypto.randomUUID()}.webp`;
+    const storageTargets = temporaryKyc
+      ? [supabaseStorage && { provider: 'supabase', label: 'Supabase KYC', storage: supabaseStorage, bucket: SUPABASE_KYC_BUCKET, publicBase: null }].filter(Boolean)
+      : [
+        supabaseStorage && { provider: 'supabase', label: 'Supabase', storage: supabaseStorage, bucket: SUPABASE_STORAGE_BUCKET, publicBase: SUPABASE_PUBLIC_BASE },
+        r2Storage && { provider: 'r2', label: 'R2', storage: r2Storage, bucket: R2_BUCKET, publicBase: R2_PUBLIC_BASE },
+      ].filter(Boolean);
 
-    // 1. Try Cloudflare R2 first (faster CDN), then Supabase Storage
-    const activeStorage = r2Storage || supabaseStorage;
-    const activeBucket = r2Storage ? R2_BUCKET : SUPABASE_STORAGE_BUCKET;
-    const activePublicBase = r2Storage ? R2_PUBLIC_BASE : SUPABASE_PUBLIC_BASE;
-    const storageName = r2Storage ? 'R2' : 'Supabase';
-
-    if (activeStorage) {
+    for (const target of storageTargets) {
+      let uploaded = false;
       try {
-        // Upload full-size webp image — immutable cache (UUID key never changes)
-        await activeStorage.send(new PutObjectCommand({
-          Bucket: activeBucket,
+        await target.storage.send(new PutObjectCommand({
+          Bucket: target.bucket,
           Key: key,
           Body: webpBuffer,
           ContentType: 'image/webp',
-          CacheControl: 'public, max-age=31536000, immutable',
+          CacheControl: temporaryKyc ? 'private, no-store, max-age=0' : 'public, max-age=31536000, immutable',
         }));
-        const url = `${activePublicBase}/${key}`;
-
-        // Generate thumbnail (400px wide) for grid views
+        uploaded = true;
+        const url = temporaryKyc ? `kyc-storage://${target.provider}/${key}` : `${target.publicBase}/${key}`;
         let thumbnailUrl = null;
-        try {
-          const thumbKey = key.replace(/\.webp$/, '_thumb.webp');
-          const thumbBuffer = await sharp(buffer)
-            .resize({ width: 400, withoutEnlargement: true })
-            .webp({ quality: 75, effort: 6 })
-            .toBuffer();
-          await activeStorage.send(new PutObjectCommand({
-            Bucket: activeBucket,
-            Key: thumbKey,
-            Body: thumbBuffer,
-            ContentType: 'image/webp',
-            CacheControl: 'public, max-age=31536000, immutable',
-          }));
-          thumbnailUrl = `${activePublicBase}/${thumbKey}`;
-        } catch (thumbErr) {
-          console.warn('[UPLOAD] Thumbnail generation failed:', thumbErr.message);
+        if (!temporaryKyc) {
+          try {
+            const thumbKey = key.replace(/\.webp$/, '_thumb.webp');
+            const thumbBuffer = await sharp(buffer).resize({ width: 400, withoutEnlargement: true }).webp({ quality: 75, effort: 6 }).toBuffer();
+            await target.storage.send(new PutObjectCommand({
+              Bucket: target.bucket, Key: thumbKey, Body: thumbBuffer, ContentType: 'image/webp',
+              CacheControl: 'public, max-age=31536000, immutable',
+            }));
+            thumbnailUrl = `${target.publicBase}/${thumbKey}`;
+          } catch (thumbErr) {
+            console.warn(`[UPLOAD] ${target.label} thumbnail generation failed:`, thumbErr.message);
+          }
+        } else {
+          await registerTemporaryStorageUpload({ userId: req.user.id, provider: target.provider, bucketName: target.bucket, objectKey: key, expirationSeconds: Number(expiration) });
         }
-
-        return res.json({ url, thumbnailUrl, width: imgWidth, height: imgHeight, deleteUrl: `${storageName.toLowerCase()}:${key}`, provider: storageName.toLowerCase() });
-      } catch (s3Err) {
-        console.warn(`[UPLOAD] ${storageName} failed, falling back to imgBB:`, s3Err.message);
+        return res.json({ url, thumbnailUrl, width: imgWidth, height: imgHeight, deleteUrl: `${target.provider}:${key}`, provider: target.provider });
+      } catch (storageErr) {
+        if (uploaded) {
+          try { await target.storage.send(new DeleteObjectCommand({ Bucket: target.bucket, Key: key })); } catch {}
+        }
+        console.warn(`[UPLOAD] ${target.label} failed${temporaryKyc ? ' for temporary KYC image' : ''}; trying next provider:`, storageErr.message);
       }
     }
 
-    // 2. Fallback to imgBB
+    if (temporaryKyc) {
+      return res.status(503).json({ error: 'Secure KYC storage is unavailable. Please try again shortly.' });
+    }
+
+    // Last resort: imgBB supports provider-side expiration for temporary KYC images.
     if (!process.env.IMGBB_KEY) {
       return res.status(503).json({ error: 'No upload provider available' });
     }
@@ -1423,12 +1614,14 @@ app.delete('/api/upload', authRequired, async (req, res) => {
 
     // Supabase/R2 Storage delete
     if (target.startsWith('supabase:') || target.startsWith('r2:')) {
-      const storage = r2Storage || supabaseStorage;
-      const bucket = r2Storage ? R2_BUCKET : SUPABASE_STORAGE_BUCKET;
-      if (!storage) return res.status(503).json({ error: 'No storage configured' });
+      const provider = target.startsWith('supabase:') ? 'supabase' : 'r2';
+      const storage = provider === 'supabase' ? supabaseStorage : r2Storage;
       const key = target.replace(/^(supabase|r2):/, '');
+      const bucket = provider === 'supabase' ? (key.includes('/kyc/') ? SUPABASE_KYC_BUCKET : SUPABASE_STORAGE_BUCKET) : R2_BUCKET;
+      if (!storage) return res.status(503).json({ error: 'No storage configured' });
+      if (!key.startsWith(`${req.user.id}/`)) return res.status(403).json({ error: 'You can only delete your own uploads' });
       await storage.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-      return res.json({ deleted: true, provider: r2Storage ? 'r2' : 'supabase' });
+      return res.json({ deleted: true, provider });
     }
 
     // imgBB delete
@@ -1448,6 +1641,29 @@ app.delete('/api/upload', authRequired, async (req, res) => {
   }
 });
 app.use('/api', generalLimiter);
+
+// MonCashConnect returns through HTTPS, then hands the user back to the app.
+// Only known identifiers are forwarded; no caller-supplied URL is redirected.
+app.get('/payment/return', async (req, res) => {
+  let key = ['order', 'pending', 'debtPaymentId'].find((candidate) => typeof req.query[candidate] === 'string');
+  let value = key ? req.query[key] : null;
+  if (!key && typeof req.query.session === 'string') {
+    try {
+      const session = await pool.query('SELECT checkout_id FROM fulfillment_payment_sessions WHERE id = $1', [req.query.session]);
+      if (session.rows[0]?.checkout_id) {
+        key = 'pending';
+        value = session.rows[0].checkout_id;
+      }
+    } catch (error) {
+      console.error('[PAYMENT RETURN] Could not resolve session:', error.message);
+    }
+  }
+  if (!key) return res.status(400).send('Payment return reference is missing. You can return to MaurMaket.');
+  const param = key === 'order' ? 'orderId' : key === 'pending' ? 'pendingId' : key;
+  const deepLink = `maurmaket://payment-return?${param}=${encodeURIComponent(value)}`;
+  res.setHeader('Cache-Control', 'no-store');
+  res.type('html').send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${deepLink}"><title>Return to MaurMaket</title></head><body style="font:16px system-ui;background:#0d1117;color:#f0f3f6;padding:32px"><p>Returning to MaurMaket…</p><a style="color:#ff4d6a" href="${deepLink}">Tap here if the app does not open</a></body></html>`);
+});
 
 // Force UTF-8 charset on all JSON responses so accented characters render correctly
 app.use((_req, res, next) => {

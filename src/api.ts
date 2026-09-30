@@ -927,8 +927,8 @@ export const extendMeetup = (orderId: string) =>
 export const releaseEscrow = (orderId: string) =>
   request(`/orders/${orderId}/escrow/release`, { method: 'POST' });
 
-export const refundEscrow = (orderId: string) =>
-  request(`/orders/${orderId}/escrow/refund`, { method: 'POST' });
+export const refundEscrow = (orderId: string, reason = 'Buyer requested a refund because the meetup did not complete.') =>
+  request(`/orders/${orderId}/escrow/refund`, { method: 'POST', body: JSON.stringify({ reason }) });
 
 export const getEscrowStatus = (orderId: string) =>
   request(`/orders/${orderId}/escrow`);
@@ -974,6 +974,23 @@ export const addOrderNote = (orderId: string, note: string) =>
   request(`/orders/${orderId}/note`, { method: 'POST', body: JSON.stringify({ note }) });
 export const getSellerBalance = () => request('/seller/balance');
 export const getSellerPayouts = () => request('/seller/payouts');
+export const getSellerDebts = () => request('/seller/debts');
+export const createSellerDebtPayment = () => request('/seller/debts/pay', { method: 'POST' });
+export const checkSellerDebtPayment = (paymentId: string) => request(`/seller/debts/payments/${paymentId}`);
+export const getAdminMonCashRefunds = async () => {
+  const results = await Promise.all(['pending', 'processing', 'failed', 'completed'].map(status =>
+    request(`/admin/moncash/refunds?status=${status}`) as Promise<{ refunds: any[] }>
+  ));
+  return { refunds: results.flatMap(result => result.refunds || []) };
+};
+export const approveAdminMonCashRefund = (id: string, receiverPhone: string, reason: string) =>
+  request(`/admin/moncash/refunds/${id}/approve`, { method: 'POST', body: JSON.stringify({ receiverPhone, reason }) });
+export const getAdminMonCashProcessing = () => request('/admin/moncash/transfers/processing');
+export const reconcileAdminMonCashTransfer = (kind: string, id: string, providerReference: string, outcome: 'completed' | 'failed', note: string) =>
+  request(`/admin/moncash/transfers/${kind}/${id}/reconcile`, { method: 'POST', body: JSON.stringify({ providerReference, outcome, note }) });
+export const getAdminMonCashLegacyTransfers = () => request('/admin/moncash/legacy-transfers');
+export const confirmAdminMonCashLegacyTransfer = (kind: string, id: string, providerReference: string, note: string) =>
+  request(`/admin/moncash/legacy-transfers/${kind}/${id}/confirm`, { method: 'POST', body: JSON.stringify({ providerReference, note }) });
 export const requestPayout = (amount: number) =>
   request('/seller/payouts/request', { method: 'POST', body: JSON.stringify({ amount }) });
 export const getSellerAnalytics = () => request('/seller/analytics');
@@ -1055,9 +1072,11 @@ export type SellerFulfillmentProfile = {
   meetupEnabled: boolean;
   deliveryRadiusMeters: number;
   meetupRadiusMeters: number;
-  deliveryFeeType: 'free' | 'flat' | 'distance';
+  deliveryFeeType: 'free' | 'flat' | 'distance' | 'per_distance';
   flatDeliveryFee: number;
   distanceFeeRules: Array<{ maxDistanceMeters: number; fee: number }>;
+  distanceStepMeters: number;
+  distanceStepFee: number;
 };
 
 export const getSellerFulfillmentProfile = () => request('/seller/fulfillment-profile');
@@ -1207,15 +1226,11 @@ async function resizeAndConvert(uri: string): Promise<{ base64: string; mimeType
   }
 }
 
-export const uploadImage = async (uri: string, expiration?: number): Promise<{ url: string; width?: number; height?: number; deleteUrl?: string }> => {
+export const uploadImage = async (uri: string, expiration?: number, purpose?: 'kyc'): Promise<{ url: string; width?: number; height?: number; deleteUrl?: string }> => {
   console.log(`[UPLOAD-DEBUG] uploadImage called, uri=${uri?.substring(0, 80)}, expiration=${expiration}`);
-  let token: string | null = null;
-  if (Platform.OS === 'web') {
-    token = localStorage.getItem('mm_token');
-  } else {
-    const SecureStore = require('expo-secure-store');
-    token = await SecureStore.getItemAsync('mm_token');
-  }
+  // Use the same Better Auth token source as request(). `mm_token` is a
+  // retired key and is cleared when the current session is stored.
+  const token = await getToken();
   if (!token) {
     console.log(`[UPLOAD-DEBUG] ❌ No auth token found`);
     throw new Error('Not authenticated');
@@ -1225,14 +1240,17 @@ export const uploadImage = async (uri: string, expiration?: number): Promise<{ u
   const { base64 } = await resizeAndConvert(uri);
   console.log(`[UPLOAD-DEBUG] resizeAndConvert done, base64 length=${base64?.length}`);
 
-  // Send to backend — Supabase Storage primary, imgBB fallback
+  // Send to backend — Supabase Storage primary, then R2/imgBB fallback
   const res = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ image: `data:image/jpeg;base64,${base64}`, expiration }),
+    body: JSON.stringify({ image: `data:image/jpeg;base64,${base64}`, expiration, purpose }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    console.error(`[UPLOAD-DEBUG] Server upload failed, status=${res.status}, error=${data.error || 'unknown error'}`);
+    throw new Error(data.error || `Upload failed (${res.status})`);
+  }
   console.log(`[UPLOAD-DEBUG] Upload OK, provider=${data.provider}, url=${data.url?.substring(0, 60)}, dims=${data.width}x${data.height}`);
   return { url: data.url, width: data.width, height: data.height, deleteUrl: data.deleteUrl };
 };
@@ -1257,3 +1275,6 @@ export const getCurrentSubscription = () => request('/subscriptions/current');
 
 export const renewSubscription = (returnUrl?: string) =>
   request('/subscriptions/renew', { method: 'POST', body: JSON.stringify({ returnUrl }) });
+
+export const getRealtimeTopic = () =>
+  request('/realtime/topic') as Promise<{ enabled: boolean; topic?: string }>;

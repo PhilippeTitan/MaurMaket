@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, Image as NativeImage, TouchableOpacity, ScrollView, StyleSheet, Alert,
-  ActivityIndicator, Dimensions, Share, FlatList, Animated, Modal, Pressable,
+  ActivityIndicator, Share, FlatList, Animated, Modal, Pressable,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -22,23 +22,27 @@ import UserAvatar from '../components/UserAvatar';
 import BackButton from '../components/BackButton';
 import { SkeletonBlock } from '../components/Skeleton';
 import StockBadge from '../components/StockBadge';
-import { queryClient, useLike, useWishlist } from '../hooks';
+import { queryClient, useLike, useWishlist, useViewport } from '../hooks';
 import ProductActionBar from '../components/ProductActionBar';
 import MasonryGrid from '../components/MasonryGrid';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const SELLER_CARD = 80;
 const SIDE_PAD = 2;
-const HERO_MAX_H = SCREEN_H * 0.85;
-const HERO_MIN_H = SCREEN_H * 0.45;
-const HERO_DEFAULT_H = SCREEN_H * 0.65;
 
 export default function ProductDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const insets = useSafeAreaInsets();
+  // The hero is the product's own aspect ratio, clamped to a share of the window — and the
+  // carousel's page width is the width those pages are laid out at. Both are read live, so
+  // a rotated phone or a resized window re-fits the photo (and keeps the paging offset in
+  // step) instead of holding the height and width that suited the window the app booted in.
+  const vp = useViewport();
+  const HERO_MAX_H = vp.height * 0.85;
+  const HERO_MIN_H = vp.height * 0.45;
+  const HERO_DEFAULT_H = vp.height * 0.65;
   const { productId } = route.params;
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -246,10 +250,10 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
     if (!url) { setHeroHeight(HERO_DEFAULT_H); return; }
     NativeImage.getSize(url, (w, h) => {
       if (!mountedRef.current || w === 0) return;
-      const aspectH = (h / w) * SCREEN_W;
+      const aspectH = (h / w) * vp.width;
       setHeroHeight(Math.max(HERO_MIN_H, Math.min(HERO_MAX_H, aspectH)));
     }, () => { setHeroHeight(HERO_DEFAULT_H); });
-  }, [activeImageIndex, product]);
+  }, [activeImageIndex, product, vp.width, vp.height]);
 
   const handleShare = async () => {
     if (!product) return;
@@ -293,12 +297,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   }, [navigation]);
 
   if (loading || !product) {
-    const { width: SCREEN_W } = Dimensions.get('window');
-    const heroH = Math.round(SCREEN_W * 1.1);
+    const heroH = Math.round(vp.width * 1.1);
     return (
       <View style={styles.loading}>
         {/* Hero image skeleton */}
-        <SkeletonBlock width={SCREEN_W} height={heroH} radius={0} />
+        <SkeletonBlock width={vp.width} height={heroH} radius={0} />
         {/* Seller row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 }}>
           <SkeletonBlock width={40} height={40} radius={20} />
@@ -345,7 +348,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
         {/* ── Hero image — scrolls with content ── */}
-        <View style={{ width: SCREEN_W, height: heroHeight, backgroundColor: COLORS.surface2, overflow: 'hidden' }}>
+        <View style={{ width: vp.width, height: heroHeight, backgroundColor: COLORS.surface2, overflow: 'hidden' }}>
           {allImages.length > 1 ? (
             <ScrollView
               ref={flatListRef as any}
@@ -353,16 +356,16 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
               pagingEnabled
               nestedScrollEnabled
               showsHorizontalScrollIndicator={false}
-              style={{ width: SCREEN_W, height: heroHeight }}
+              style={{ width: vp.width, height: heroHeight }}
               onMomentumScrollEnd={(e: any) => {
-                const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
+                const idx = Math.round(e.nativeEvent.contentOffset.x / vp.width);
                 setActiveImageIndex(idx);
               }}
             >
               {allImages.map((img, idx) => {
                 const url = getImageUrl(img.image_url);
                 return (
-                  <View key={String(img.id || idx)} style={{ width: SCREEN_W, height: heroHeight, backgroundColor: '#000' }}>
+                  <View key={String(img.id || idx)} style={{ width: vp.width, height: heroHeight, backgroundColor: '#000' }}>
                     {url ? (
                       <>
                         <ExpoImage source={{ uri: url }} style={styles.mediaFill} contentFit="cover" blurRadius={30} cachePolicy="memory-disk" />

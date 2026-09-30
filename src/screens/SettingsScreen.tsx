@@ -1,9 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Platform, TouchableOpacity, Animated } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '../theme';
-import { ONBOARDING_COLORS, ONBOARDING_GRADIENT } from './onboarding/theme';
+import { ONBOARDING_COLORS } from './onboarding/theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
 
@@ -11,10 +10,13 @@ import ScreenContainer from '../components/ScreenContainer';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import SettingsRow from '../components/SettingsRow';
+import SettingsToggle from '../components/SettingsToggle';
 import ProfileCard from '../components/ProfileCard';
 import ConfirmModal from '../components/ConfirmModal';
 import { useTranslation } from '@/localization';
 import { useFocusEffect } from '@react-navigation/native';
+import { updateProfile } from '../api';
+import { useToast } from '../components/Toast';
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -26,30 +28,15 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 export default function SettingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { user, refetch } = useUser();
+  const toast = useToast();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showName, setShowName] = useState(user?.show_real_name ?? true);
+  const [savingName, setSavingName] = useState(false);
 
   useFocusEffect(useCallback(() => {
     void refetch();
   }, [refetch]));
-
-  // Staggered entrance animations — 9 sections (profile + 7 groups + logout)
-  const sections = useRef(
-    Array.from({ length: 9 }, () => ({
-      opacity: new Animated.Value(0),
-      translateY: new Animated.Value(16),
-    }))
-  ).current;
-
-  useEffect(() => {
-    Animated.stagger(60,
-      sections.map(s =>
-        Animated.parallel([
-          Animated.timing(s.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-          Animated.timing(s.translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
-        ])
-      )
-    ).start();
-  }, []);
+  useEffect(() => setShowName(user?.show_real_name ?? true), [user?.show_real_name]);
 
   const isSeller = user?.role === 'seller';
   const tierLabel =
@@ -69,10 +56,22 @@ export default function SettingsScreen({ navigation }: Props) {
     setShowLogoutModal(true);
   };
 
-  const animStyle = (i: number) => ({
-    opacity: sections[i].opacity,
-    transform: [{ translateY: sections[i].translateY }],
-  });
+  const handleToggleName = async (nextValue: boolean) => {
+    const previous = showName;
+    setShowName(nextValue);
+    setSavingName(true);
+    try {
+      await updateProfile({ showRealName: String(nextValue) });
+      if (store.user && store.token) {
+        await store.setUser({ ...store.user, show_real_name: nextValue } as any, store.token);
+      }
+    } catch {
+      setShowName(previous);
+      toast.show({ kind: 'error', title: t('privacy.profileVisibilityFailed') });
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   return (
     <ScreenContainer>
@@ -81,123 +80,129 @@ export default function SettingsScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* ── Profile Hero ── */}
-        <Animated.View style={animStyle(0)}>
-          <ProfileCard user={user} onPress={() => navigation.navigate('EditProfile')} />
-        </Animated.View>
+        <ProfileCard compact user={user} onPress={() => navigation.navigate('EditProfile')} />
 
         {/* ── Account ── */}
-        <Animated.View style={animStyle(1)}>
-          <SettingsGroup
-            header={t('settings.sectionAccount')}
-          >
+        <View>
+          <SettingsGroup header={t('settings.sectionAccount')} appearance="minimal">
             <SettingsRow
               icon="account-cog-outline"
               label={t('settings.accountSettings')}
-              subtitle={t('settings.profileContact')}
               value={user?.username ? `@${user.username}` : undefined}
               chevron
+              appearance="minimal"
+              divider
               onPress={() => navigation.navigate('AccountDashboard')}
             />
-          </SettingsGroup>
-        </Animated.View>
-
-        {/* ── Payments ── */}
-        <Animated.View style={animStyle(2)}>
-          <SettingsGroup header={t('settings.payments')}>
             <SettingsRow
               icon="cash"
               label={t('settings.paymentMethods')}
-              subtitle={t('settings.moncashNatcash')}
               chevron
-              onPress={() => navigation.navigate('Payments')}
+              appearance="minimal"
               divider
+              onPress={() => navigation.navigate('Payments')}
             />
             {isSeller ? (
               <SettingsRow
-              icon="bank-transfer-out"
-              label={t('settings.payouts')}
-              subtitle={t('settings.manageEarnings')}
-              chevron
-              onPress={() => navigation.navigate('Payments')}
+                icon="bank-transfer-out"
+                label={t('settings.payouts')}
+                chevron
+                appearance="minimal"
+                divider
+                onPress={() => navigation.navigate('Payments')}
               />
             ) : null}
-          </SettingsGroup>
-        </Animated.View>
-
-        {/* ── Notifications ── */}
-        <Animated.View style={animStyle(3)}>
-          <SettingsGroup header={t('settings.notifications')}>
-            <SettingsRow
-              icon="bell-outline"
-              label={t('settings.notificationPrefs')}
-              subtitle={t('settings.chooseNotifs')}
-              chevron
-              onPress={() => navigation.navigate('NotificationsSettings')}
-            />
-          </SettingsGroup>
-        </Animated.View>
-
-        {/* ── Security ── */}
-        <Animated.View style={animStyle(4)}>
-          <SettingsGroup header={t('settings.security')}>
             <SettingsRow
               icon="shield-lock-outline"
               label={t('settings.passwordAuth')}
-              subtitle={t('settings.password2fa')}
               chevron
+              appearance="minimal"
               onPress={() => navigation.navigate('SecuritySettings')}
             />
           </SettingsGroup>
-        </Animated.View>
+        </View>
 
-        {/* ── Privacy ── */}
-        <Animated.View style={animStyle(5)}>
-          <SettingsGroup
-            header={t('settings.sectionPrivacy')}
-          >
+        {/* ── Preferences ── */}
+        <View>
+          <SettingsGroup header={t('settings.preferences')} appearance="minimal">
+            <SettingsRow
+              icon="bell-outline"
+              label={t('settings.notificationPrefs')}
+              chevron
+              appearance="minimal"
+              divider
+              onPress={() => navigation.navigate('NotificationsSettings')}
+            />
+            <SettingsRow
+              icon="palette-outline"
+              label={t('appearance.title')}
+              chevron
+              appearance="minimal"
+              divider
+              onPress={() => navigation.navigate('AppearanceSettings')}
+            />
+            <SettingsRow
+              icon="account-eye-outline"
+              label={t('settings.showNameOnProfile')}
+              appearance="minimal"
+              divider
+              rightElement={(
+                <SettingsToggle
+                  value={showName}
+                  onValueChange={handleToggleName}
+                  disabled={savingName}
+                  accessibilityLabel={t('settings.showNameOnProfile')}
+                />
+              )}
+            />
             <SettingsRow
               icon="eye-outline"
-              label={t('settings.profileVisibility')}
-              subtitle={t('settings.nameVisibleHidden')}
+              label={t('settings.privacySettings')}
               chevron
+              appearance="minimal"
               onPress={() => navigation.navigate('PrivacySettings')}
             />
           </SettingsGroup>
-        </Animated.View>
+        </View>
 
         {/* ── Selling ── */}
-        <Animated.View style={animStyle(6)}>
+        <View>
           <SettingsGroup
             header={t('settings.sectionSelling')}
+            appearance="minimal"
           >
             <SettingsRow
               icon={isSeller ? 'storefront-outline' : 'store-plus-outline'}
               label={isSeller ? t('settings.sellerTools') : t('me.becomeSeller')}
-              subtitle={isSeller ? t('settings.tierSeller', { tier: tierLabel }) : t('me.startSelling')}
               value={isSeller ? tierLabel : undefined}
               valueColor={isSeller ? (tierColor || COLORS.green) : undefined}
               chevron
+              appearance="minimal"
               onPress={() => navigation.navigate(isSeller ? 'SellerToolsSettings' : 'SellerOnboarding')}
             />
           </SettingsGroup>
-        </Animated.View>
+        </View>
 
-        {/* ── App ── */}
-        <Animated.View style={animStyle(7)}>
-          <SettingsGroup header={t('settings.app')}>
-            <SettingsRow
-              icon="palette-outline"
-              label={t('appearance.title')}
-              subtitle={t('appearance.subtitle')}
-              chevron
-              onPress={() => navigation.navigate('AppearanceSettings')}
-              divider
-            />
+        {/* ── Help & about ── */}
+        <View>
+          {String((user as any)?.role) === 'admin' ? (
+            <SettingsGroup header={t('settings.adminTools')} appearance="minimal">
+              <SettingsRow
+                icon="cash-sync"
+                label={t('settings.moncashSupport')}
+                chevron
+                appearance="minimal"
+                divider
+                onPress={() => navigation.navigate('MonCashSupport')}
+              />
+            </SettingsGroup>
+          ) : null}
+          <SettingsGroup header={t('settings.helpSupport')} appearance="minimal">
             <SettingsRow
               icon="help-circle-outline"
               label={t('settings.helpSupport')}
-              subtitle={t('settings.helpDesc')}
               chevron
+              appearance="minimal"
               onPress={() => navigation.navigate('HelpSupport')}
               divider
             />
@@ -205,28 +210,25 @@ export default function SettingsScreen({ navigation }: Props) {
               icon="information-outline"
               label={t('settings.version')}
               value="MaurMaket v1.0.0"
+              appearance="minimal"
             />
           </SettingsGroup>
-        </Animated.View>
+        </View>
 
         {/* ── Log out ── */}
-        <Animated.View style={animStyle(8)}>
+        <View>
           <View style={styles.logoutSpacer} />
           <TouchableOpacity
             style={styles.logoutButtonWrap}
             activeOpacity={0.7}
             onPress={handleLogout}
           >
-            <LinearGradient
-              colors={ONBOARDING_GRADIENT}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={styles.logoutButton}
-            >
+            <View style={styles.logoutButton}>
               <MaterialCommunityIcons name="logout" size={20} color={ONBOARDING_COLORS.white} />
               <Text style={styles.logoutText}>{t('settings.logout')}</Text>
-            </LinearGradient>
+            </View>
           </TouchableOpacity>
-        </Animated.View>
+        </View>
 
         {/* ── Bottom safe area ── */}
         <View style={styles.bottomSpacer} />
@@ -267,14 +269,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: SPACING.sm,
     paddingVertical: SPACING.lg,
+    minHeight: 52,
     borderRadius: RADIUS.card,
-    borderWidth: 1,
-    borderColor: ONBOARDING_COLORS.borderHi,
+    backgroundColor: COLORS.surface,
   },
   logoutText: {
     fontSize: FONT_SIZES.lg,
     fontWeight: FONT_WEIGHTS.semibold,
-    color: ONBOARDING_COLORS.white,
+    color: COLORS.coral,
   },
   bottomSpacer: {
     height: 60,

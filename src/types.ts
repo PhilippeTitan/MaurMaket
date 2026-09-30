@@ -5,7 +5,7 @@ export interface User {
   phone: string;
   natcash_phone: string | null;
   accepted_payment_methods: string[] | null;
-  role: 'buyer' | 'seller';
+  role: 'buyer' | 'seller' | 'admin';
   avatar_url: string | null;
   bio: string | null;
   created_at: string;

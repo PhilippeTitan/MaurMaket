@@ -6,5 +6,5 @@ import type { AuthStackParamList } from '../navigation';
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export default function LoginScreen(_props: Props) {
-  return <OnboardingContainer initialMode="wizard" />;
+  return <OnboardingContainer initialMode="signin" />;
 }

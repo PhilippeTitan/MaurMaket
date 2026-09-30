@@ -82,21 +82,8 @@ export default function HelpSupportScreen({ navigation }: Props) {
       <ScreenHeader title={t('help.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* 24/7 Banner */}
-        <Animated.View style={animStyle(0)}>
-          <View style={styles.banner}>
-            <View style={styles.bannerIcon}>
-              <MaterialCommunityIcons name="headphones" size={28} color={COLORS.blue} />
-            </View>
-            <View style={styles.bannerText}>
-              <Text style={styles.bannerTitle}>{t('help.bannerTitle')}</Text>
-              <Text style={styles.bannerSubtitle}>{t('help.bannerSubtitle')}</Text>
-            </View>
-          </View>
-        </Animated.View>
-
         {/* Search Bar */}
-        <Animated.View style={animStyle(1)}>
+        <Animated.View style={animStyle(0)}>
           <View style={styles.searchContainer}>
             <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text3} />
             <TextInput
@@ -115,7 +102,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* FAQs */}
-        <Animated.View style={animStyle(2)}>
+        <Animated.View style={animStyle(1)}>
           <SettingsGroup header={t('help.faqHeader')}>
             {filteredFAQs.length === 0 ? (
               <View style={styles.emptyState}>
@@ -149,7 +136,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* Contact Options */}
-        <Animated.View style={animStyle(3)}>
+        <Animated.View style={animStyle(2)}>
           <SettingsGroup header={t('help.contactUs')}>
             <TouchableOpacity style={styles.contactRow} activeOpacity={0.6} onPress={handleContactUs}>
               <View style={styles.iconContainer}>
@@ -213,32 +200,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingBottom: SPACING.page },
 
-  // Banner
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.lg,
-    padding: SPACING.lg,
-    backgroundColor: COLORS.blueMuted,
-    borderRadius: RADIUS.card,
-    borderWidth: 1,
-    borderColor: COLORS.blue + '20',
-  },
-  bannerIcon: { width: 44, height: 44, borderRadius: RADIUS.full, backgroundColor: COLORS.blue + '20', alignItems: 'center', justifyContent: 'center' },
-  bannerText: { flex: 1 },
-  bannerTitle: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.blue },
-  bannerSubtitle: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
-
   // Search
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
     marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.lg,
+    marginTop: SPACING.md,
+    marginBottom: SPACING.md,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     backgroundColor: COLORS.surface,
@@ -255,8 +224,8 @@ const styles = StyleSheet.create({
 
   // FAQ
   faqItem: {
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
   },
   faqHeader: {
     flexDirection: 'row',
@@ -281,13 +250,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 54,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.sm,
+    width: 28,
+    height: 32,
+    borderRadius: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -297,7 +267,7 @@ const styles = StyleSheet.create({
 
   // Dividers
   divider: { height: 1, backgroundColor: COLORS.border, marginTop: SPACING.md },
-  dividerFull: { height: 1, backgroundColor: COLORS.border, marginLeft: SPACING.lg + 36 + SPACING.md },
+  dividerFull: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: SPACING.sm + 28 + SPACING.md },
 
   bottomSpacer: { height: 60 },
 });

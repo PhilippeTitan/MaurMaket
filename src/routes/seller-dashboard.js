@@ -26,7 +26,7 @@ function normalizeFulfillmentProfile(body = {}) {
     }
   }
   if (body.deliveryFeeType !== undefined) {
-    if (!['free', 'flat', 'distance'].includes(body.deliveryFeeType)) throw new Error('deliveryFeeType must be free, flat, or distance');
+    if (!['free', 'flat', 'distance', 'per_distance'].includes(body.deliveryFeeType)) throw new Error('deliveryFeeType must be free, flat, distance, or per_distance');
     profile.delivery_fee_type = body.deliveryFeeType;
   }
   if (body.flatDeliveryFee !== undefined) {
@@ -41,6 +41,16 @@ function normalizeFulfillmentProfile(body = {}) {
     profile.distance_fee_rules = body.distanceFeeRules
       .map(rule => ({ maxDistanceMeters: Math.round(Number(rule.maxDistanceMeters)), fee: Number(rule.fee) }))
       .sort((a, b) => a.maxDistanceMeters - b.maxDistanceMeters);
+  }
+  if (body.distanceStepMeters !== undefined) {
+    const value = Number(body.distanceStepMeters);
+    if (!Number.isInteger(value) || value < 100 || value > MAX_RADIUS_METERS) throw new Error(`distanceStepMeters must be between 100 and ${MAX_RADIUS_METERS}`);
+    profile.distance_step_meters = value;
+  }
+  if (body.distanceStepFee !== undefined) {
+    const value = Number(body.distanceStepFee);
+    if (!Number.isFinite(value) || value < 0) throw new Error('distanceStepFee must be a non-negative number');
+    profile.distance_step_fee = value;
   }
   return profile;
 }
@@ -60,6 +70,8 @@ router.get('/api/seller/fulfillment-profile', authRequired, sellerRequired, asyn
       deliveryFeeType: row.delivery_fee_type ?? 'flat',
       flatDeliveryFee: Number(row.flat_delivery_fee ?? 0),
       distanceFeeRules: row.distance_fee_rules ?? [],
+      distanceStepMeters: row.distance_step_meters ?? 2000,
+      distanceStepFee: Number(row.distance_step_fee ?? 0),
     });
   } catch (err) {
     console.error('Fulfillment profile fetch error:', err);
@@ -83,7 +95,7 @@ router.put('/api/seller/fulfillment-profile', authRequired, sellerRequired, asyn
     );
     const result = await pool.query('SELECT * FROM seller_fulfillment_profiles WHERE seller_id = $1', [req.user.id]);
     const row = result.rows[0];
-    res.json({ deliveryEnabled: row.delivery_enabled, meetupEnabled: row.meetup_enabled, deliveryRadiusMeters: row.delivery_radius_meters, meetupRadiusMeters: row.meetup_radius_meters, deliveryFeeType: row.delivery_fee_type, flatDeliveryFee: Number(row.flat_delivery_fee), distanceFeeRules: row.distance_fee_rules });
+    res.json({ deliveryEnabled: row.delivery_enabled, meetupEnabled: row.meetup_enabled, deliveryRadiusMeters: row.delivery_radius_meters, meetupRadiusMeters: row.meetup_radius_meters, deliveryFeeType: row.delivery_fee_type, flatDeliveryFee: Number(row.flat_delivery_fee), distanceFeeRules: row.distance_fee_rules, distanceStepMeters: row.distance_step_meters, distanceStepFee: Number(row.distance_step_fee) });
   } catch (err) {
     const status = err.message?.includes('must be') || err.message?.includes('settings') ? 400 : 500;
     if (status === 500) console.error('Fulfillment profile update error:', err);

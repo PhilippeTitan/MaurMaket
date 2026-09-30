@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test:design": "node scripts/design-guardrails.js",
     "test:i18n": "node scripts/i18n-check.js",
-    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js"
+    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js",
+    "test:realtime": "node scripts/realtime-check.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",

@@ -213,12 +213,12 @@ export default function MeetupScreen({ route, navigation }: Props) {
     Alert.alert(t('meetup.cancelTitle'), t('meetup.cancelMsg'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
-        text: t('meetup.refundedTitle'), style: 'destructive',
+        text: t('meetup.requestRefund'), style: 'destructive',
         onPress: async () => {
           setRefunding(true);
           try {
-            await refundEscrow(orderId);
-            Alert.alert(t('meetup.refundedTitle'), t('meetup.refundedMsg'), [
+            await refundEscrow(orderId, 'Buyer requested a refund after the meetup did not complete.');
+            Alert.alert(t('meetup.refundRequestTitle'), t('meetup.refundRequestMsg'), [
               { text: t('common.ok'), onPress: () => navigation.goBack() },
             ]);
           } catch (err: any) {

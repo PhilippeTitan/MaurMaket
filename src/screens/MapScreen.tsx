@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, Image, Animated, PanResponder,
+  View, Text, StyleSheet, TouchableOpacity, Platform, Image, Animated, PanResponder,
   TextInput} from 'react-native';
 import type { MapRef, CameraRef } from '@maplibre/maplibre-react-native';
 

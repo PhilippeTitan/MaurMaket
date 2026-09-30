@@ -20,6 +20,7 @@ import payoutsRouter from './payouts.js';
 import subscriptionsRouter from './subscriptions.js';
 import feedRouter from './feed.js';
 import verificationRouter from './verification.js';
+import realtimeRouter from './realtime.js';
 
 export function registerRoutes(app) {
   // Routes WITH /api in their path → mount at root
@@ -41,6 +42,7 @@ export function registerRoutes(app) {
   app.use(payoutsRouter);
   app.use(subscriptionsRouter);
   app.use(feedRouter);
+  app.use(realtimeRouter);
 
   // Mounted under /api (paths don't include /api)
   app.use('/api', authRouter);

@@ -86,7 +86,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
 
         {/* ── Profile Card ── */}
         <Animated.View style={animStyle(0)}>
-          <ProfileCard user={user} onPress={() => navigation.navigate('EditProfile')} />
+          <ProfileCard compact user={user} onPress={() => navigation.navigate('EditProfile')} />
         </Animated.View>
 
         {/* ── Personal Information ── */}
@@ -100,7 +100,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('SettingsEdit', { field: 'name', title: t('field.name') })}
             >
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(255, 77, 106, 0.15)' }]}>
+              <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="account-outline" size={20} color={ONBOARDING_COLORS.coral} />
               </View>
               <View style={styles.rowText}>
@@ -115,7 +115,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('SettingsEdit', { field: 'bio', title: t('field.bio') })}
             >
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+              <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="text-box-outline" size={20} color={ONBOARDING_COLORS.purple} />
               </View>
               <View style={styles.rowText}>
@@ -140,7 +140,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('SettingsEdit', { field: 'email', title: t('settings.email') })}
             >
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(0, 194, 255, 0.15)' }]}>
+              <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="email-outline" size={20} color={ONBOARDING_COLORS.blue} />
               </View>
               <View style={styles.rowText}>
@@ -161,7 +161,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('SettingsEdit', { field: 'phone', title: t('field.phone') })}
             >
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(0, 229, 160, 0.15)' }]}>
+              <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="phone-outline" size={20} color={ONBOARDING_COLORS.green} />
               </View>
               <View style={styles.rowText}>
@@ -193,7 +193,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('UsernameSettings')}
             >
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(255, 224, 102, 0.15)' }]}>
+              <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="at" size={20} color={ONBOARDING_COLORS.yellow} />
               </View>
               <View style={styles.rowText}>
@@ -208,7 +208,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('LanguageSettings')}
             >
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+              <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="translate" size={20} color={ONBOARDING_COLORS.purple} />
               </View>
               <View style={styles.rowText}>
@@ -223,7 +223,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('LocationSettings')}
             >
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(0, 229, 160, 0.15)' }]}>
+              <View style={styles.iconContainer}>
                 <MaterialCommunityIcons name="map-marker-outline" size={20} color={ONBOARDING_COLORS.green} />
               </View>
               <View style={styles.rowText}>
@@ -251,19 +251,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    minHeight: 56,
-    backgroundColor: 'rgba(255,255,255,0.015)',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 54,
+    backgroundColor: 'transparent',
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 28,
+    height: 32,
+    borderRadius: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: ONBOARDING_COLORS.border,
+    borderWidth: 0,
   },
   rowText: { flex: 1 },
   rowLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: ONBOARDING_COLORS.text },
@@ -284,7 +283,7 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: ONBOARDING_COLORS.border,
-    marginLeft: SPACING.lg + 36 + SPACING.md,
+    marginLeft: SPACING.sm + 28 + SPACING.md,
   },
 
   bottomSpacer: { height: 60 },

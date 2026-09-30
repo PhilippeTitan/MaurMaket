@@ -112,11 +112,6 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
               </View>
               <View style={styles.toggleText}>
                 <Text style={styles.toggleLabel}>{t('privacy.publicProfile')}</Text>
-                <Text style={styles.toggleSubtitle}>
-                  {profilePublic
-                    ? t('privacy.publicProfileOn')
-                    : t('privacy.publicProfileOff')}
-                </Text>
               </View>
               <SettingsToggle
                 value={profilePublic}
@@ -141,11 +136,6 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
               </View>
               <View style={styles.toggleText}>
                 <Text style={styles.toggleLabel}>{t('privacy.locationSharing')}</Text>
-                <Text style={styles.toggleSubtitle}>
-                  {locationSharing
-                    ? t('privacy.locationSharingOn')
-                    : t('privacy.locationSharingOff')}
-                </Text>
               </View>
               <SettingsToggle
                 value={locationSharing}
@@ -165,7 +155,7 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
               </View>
               <View style={styles.toggleText}>
                 <Text style={styles.toggleLabel}>{t('settings.deliveryLocation')}</Text>
-                <Text style={styles.toggleSubtitle}>{user?.location_city || t('account.setLocation')}</Text>
+                <Text style={styles.rowValue}>{user?.location_city || t('account.setLocation')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
@@ -184,11 +174,6 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
               </View>
               <View style={styles.toggleText}>
                 <Text style={styles.toggleLabel}>{t('privacy.showActivity')}</Text>
-                <Text style={styles.toggleSubtitle}>
-                  {showActivity
-                    ? t('privacy.showActivityOn')
-                    : t('privacy.showActivityOff')}
-                </Text>
               </View>
               <SettingsToggle
                 value={showActivity}
@@ -208,7 +193,6 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
               </View>
               <View style={styles.toggleText}>
                 <Text style={styles.toggleLabel}>{t('privacy.blockedUsers')}</Text>
-                <Text style={styles.toggleSubtitle}>{t('privacy.blockedUsersDesc')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
@@ -223,19 +207,10 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
               </View>
               <View style={styles.toggleText}>
                 <Text style={styles.toggleLabel}>{t('privacy.yourData')}</Text>
-                <Text style={styles.toggleSubtitle}>{t('privacy.yourDataDesc')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
           </SettingsGroup>
-        </Animated.View>
-
-        {/* ── Privacy banner ── */}
-        <Animated.View style={animStyle(3)}>
-          <View style={styles.banner}>
-            <MaterialCommunityIcons name="shield-lock" size={20} color="#8B5CF6" />
-            <Text style={styles.bannerText}>{t('privacy.noSellingBanner')}</Text>
-          </View>
         </Animated.View>
 
         <View style={styles.bottomSpacer} />
@@ -255,52 +230,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    minHeight: 56,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 54,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.sm,
+    width: 28,
+    height: 32,
+    borderRadius: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
   toggleText: { flex: 1 },
   toggleLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: COLORS.text },
-  toggleSubtitle: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
+  rowValue: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
 
   // Plain row for navigation items
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    minHeight: 56,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 54,
   },
 
   // Divider
   divider: {
     height: 1,
     backgroundColor: COLORS.border,
-    marginLeft: SPACING.lg + 36 + SPACING.md,
+    marginLeft: SPACING.sm + 28 + SPACING.md,
   },
-
-  // Trust banner
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.xl,
-    padding: SPACING.lg,
-    backgroundColor: '#8B5CF610',
-    borderRadius: RADIUS.card,
-    borderWidth: 1,
-    borderColor: '#8B5CF620',
-  },
-  bannerText: { flex: 1, fontSize: FONT_SIZES.sm, color: COLORS.text2, lineHeight: 18 },
 
   bottomSpacer: { height: 60 },
 });

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import LottieView from 'lottie-react-native';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Platform,
   Animated, Dimensions, ScrollView, Image, PanResponder,
@@ -281,8 +282,8 @@ export default function VerificationScreen() {
       }
       console.log(`[VERIFY-CROP] Photo captured: ${photo.width}x${photo.height} uri=${photo.uri.substring(0, 60)}`);
       setLoading(true);
-      console.log(`[VERIFY-DEBUG] Uploading image to Supabase Storage...`);
-      const uploadRes = await uploadImage(photo.uri, 3600);
+      console.log(`[VERIFY-DEBUG] Uploading temporary KYC image...`);
+      const uploadRes = await uploadImage(photo.uri, 3600, 'kyc');
       console.log(`[VERIFY-DEBUG] ✅ Image uploaded: ${uploadRes.url?.substring(0, 60)}`);
 
         if (facing === 'front') {
@@ -327,8 +328,8 @@ export default function VerificationScreen() {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
       console.log(`[VERIFY-DEBUG] Selfie takePictureAsync returned: ${JSON.stringify(photo ? { uri: photo.uri?.substring(0, 80), width: photo.width, height: photo.height } : 'null')}`);
       if (photo?.uri) {
-        console.log(`[VERIFY-DEBUG] Uploading selfie to Supabase Storage...`);
-        const uploadRes = await uploadImage(photo.uri, 3600);
+        console.log(`[VERIFY-DEBUG] Uploading temporary KYC selfie...`);
+        const uploadRes = await uploadImage(photo.uri, 3600, 'kyc');
         console.log(`[VERIFY-DEBUG] ✅ Selfie uploaded: ${uploadRes.url?.substring(0, 60)}`);
         setSelfieUrl(uploadRes.url);
         if (uploadRes.deleteUrl) setSelfieDeleteUrl(uploadRes.deleteUrl);
@@ -518,25 +519,29 @@ export default function VerificationScreen() {
   );
 
   const renderInfo = () => (
-    <ScrollView contentContainerStyle={contentStyle}>
-      <View style={styles.infoIcon}>
-        <Icon name="secure-account" size={48} color={COLORS.coral} />
-      </View>
-      <Text style={styles.infoTitle}>{t('verification.verifyIdentity')}</Text>
-      <Text style={styles.infoDesc}>
-        {t('verification.infoDesc')}
-      </Text>
-      <View style={styles.requirements}>
-        {[
-          [t('verification.req1'), 'card-account-details-outline'],
-          [t('verification.req2'), 'alert-circle-outline'],
-          [t('verification.req3'), 'refresh'],
-        ].map(([txt, icon], i) => (
-          <View key={i} style={styles.reqItem}>
-            <MaterialCommunityIcons name={icon as any} size={20} color={COLORS.coral} />
-            <Text style={styles.reqText}>{txt}</Text>
+    <ScrollView contentContainerStyle={[contentStyle, styles.introContent]} showsVerticalScrollIndicator={false}>
+      <View>
+        <View style={styles.introHeading}>
+          <View style={styles.introIcon}>
+            <Icon name="secure-account" size={24} color={COLORS.coral} />
           </View>
-        ))}
+          <Text style={[styles.infoTitle, styles.introTitle]}>{t('verification.verifyIdentity')}</Text>
+        </View>
+        <Text style={[styles.infoDesc, styles.introDesc]}>
+          {t('verification.infoDesc')}
+        </Text>
+        <View style={styles.requirements}>
+          {[
+            [t('verification.req1'), 'card-account-details-outline'],
+            [t('verification.req2'), 'alert-circle-outline'],
+            [t('verification.req3'), 'refresh'],
+          ].map(([txt, icon], i) => (
+            <View key={i} style={[styles.reqItem, i < 2 && styles.reqDivider]}>
+              <MaterialCommunityIcons name={icon as any} size={19} color={COLORS.coral} />
+              <Text style={styles.reqText}>{txt}</Text>
+            </View>
+          ))}
+        </View>
       </View>
       <TouchableOpacity style={styles.primaryBtn} onPress={launchDidit} disabled={diditLoading}>
         {diditLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
@@ -612,7 +617,7 @@ export default function VerificationScreen() {
                 );
                 console.log(`[VERIFY-CROP] Manual crop result: ${manipulated.uri.substring(0, 60)}`);
                 setCroppedFaceUri(manipulated.uri);
-                const faceUpload = await uploadImage(manipulated.uri, 3600);
+                const faceUpload = await uploadImage(manipulated.uri, 3600, 'kyc');
                 setIdFaceUrl(faceUpload.url);
                 if (faceUpload.deleteUrl) setIdFaceDeleteUrl(faceUpload.deleteUrl);
                 console.log(`[VERIFY-CROP] Face URL set: ${faceUpload.url.substring(0, 60)}`);
@@ -736,8 +741,13 @@ export default function VerificationScreen() {
     if (verified) {
       return (
         <View style={contentStyle}>
-          <View style={[styles.resultIcon, { backgroundColor: COLORS.green }]}>
-            <Icon name="check-circle" size={40} color="#06231A" />
+          <View accessible accessibilityRole="image" accessibilityLabel={t('verification.verifiedTitle')}>
+            <LottieView
+              source={require('../../assets/success-tick.json')}
+              autoPlay
+              loop={false}
+              style={styles.successAnimation}
+            />
           </View>
           <Text style={styles.infoTitle}>{t('verification.verifiedTitle')}</Text>
           <Text style={styles.infoDesc}>
@@ -826,11 +836,17 @@ const styles = StyleSheet.create({
   progressTrack: { height: 4, backgroundColor: COLORS.surface2, marginHorizontal: SPACING.lg },
   progressFill: { height: '100%', backgroundColor: COLORS.coral, borderRadius: 2 },
   eyebrow: { fontSize: 12, fontWeight: '700', color: COLORS.coral, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
+  introContent: { justifyContent: 'space-between', gap: 24 },
+  introHeading: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: SPACING.sm },
+  introIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: `${COLORS.coral}18`, alignItems: 'center', justifyContent: 'center' },
   infoIcon: { alignSelf: 'center', width: 68, height: 68, borderRadius: 20, backgroundColor: `${COLORS.coral}22`, alignItems: 'center', justifyContent: 'center', marginTop: 20, marginBottom: 16 },
+  introTitle: { textAlign: 'left', marginBottom: 0, flex: 1 },
+  introDesc: { textAlign: 'left', paddingHorizontal: 0, marginTop: SPACING.md, marginBottom: SPACING.lg, lineHeight: 21 },
   infoTitle: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: 10, textAlign: 'center' },
   infoDesc: { fontSize: 14, color: COLORS.text2, textAlign: 'center', lineHeight: 20, marginBottom: 20, paddingHorizontal: 12 },
-  requirements: { gap: 14, marginBottom: 28, paddingHorizontal: 12 },
-  reqItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  requirements: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, paddingHorizontal: SPACING.md },
+  reqItem: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 56, paddingVertical: SPACING.sm },
+  reqDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
   reqText: { fontSize: 14, color: COLORS.text, flex: 1 },
   primaryBtn: { backgroundColor: COLORS.coral, padding: 16, borderRadius: RADIUS.button, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
   primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
@@ -881,6 +897,7 @@ const styles = StyleSheet.create({
   reviewTag: { fontSize: 10, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', letterSpacing: 0.3 },
   retakeBtn: { fontSize: 12, fontWeight: '700', color: COLORS.blue },
   resultIcon: { alignSelf: 'center', width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  successAnimation: { alignSelf: 'center', width: 180, height: 180, marginBottom: 8 },
   rejectionBox: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.coral, borderRadius: RADIUS.card, padding: 14, marginBottom: 16, gap: 8 },
   rejectionItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   rejectionText: { fontSize: 13, color: COLORS.text, flex: 1, lineHeight: 18 },

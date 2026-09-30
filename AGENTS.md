@@ -1995,3 +1995,34 @@ User tested app on physical device. Multiple issues found: retry payment 400, Mo
 11. ✅ #56 — SettingsScreen version number
 12. ✅ #60 — WishlistScreen add-to-cart button
 13. ✅ #2 — CheckoutScreen cart cleared before payment (deemed acceptable)
+
+---
+
+## MonCash Support Work — Back Pocket
+
+The MonCash policy and v1 implementation were discussed with Philippe on 2026-09-30. Treat the following as the agreed direction for future support work. Do not apply it to NatCash; NatCash has a different payment and confirmation flow and needs its own discovery discussion.
+
+### Agreed payment and refund rules
+
+- MonCashConnect charges MaurMaket **0%**. Fees are from the Digicel MonCash network: **2.9% on incoming deposits** and **5% on withdrawals**. Do not label either fee as a MonCashConnect commission.
+- Seller tier commission remains MaurMaket revenue: Casual 10%, Verified 8%, Business 5%. Display MonCash network fees separately from MaurMaket commission.
+- The MaurMaket wallet is the MonCashConnect dashboard balance. MonCash refunds are sent from that wallet. Support must verify provider-side outcomes because users pass through a MonCash controlled browser/payment flow that MaurMaket cannot observe end to end.
+- A provider create/accept response is not settlement confirmation. A signed provider webhook is the normal confirmation. If an outcome is ambiguous, leave funds reserved and have an operator inspect MonCashConnect before reconciling; do not automatically resend an ambiguous transfer.
+- Refunds are handled by MaurMaket support. Support records the reason, verified MonCash destination, responsibility decision, and provider reference. Refund fee responsibility follows the buyer/seller/shared decision captured in the refund flow. Any seller share not recoverable from escrow or available balance becomes seller debt and is offset from future MonCash earnings. Sellers may also pay the outstanding balance through MonCash.
+- A return URL requests a status check; it does not prove payment. Update the app only after provider confirmation or documented operator reconciliation.
+
+### Support work deliberately left for a later pass
+
+- Define the full support case workflow around refunds: request intake, evidence and dispute review, who may decide buyer/seller/shared responsibility, response-time expectations, and what each party can see at each step.
+- Add a durable operator audit trail and permission model for support actions, including separate reviewer/approver controls if needed. The current admin MonCash operations screen is a v1 manual control surface, not a full case-management or staff-role system.
+- Establish a reconciliation runbook for MonCashConnect: how to find each reference, verify amount/destination/status, record evidence, handle missing or mismatched webhook events, and resolve old completed records. Never infer provider settlement from HTTP 200 or a browser return.
+- Review and reconcile historical payout/refund records whose `settlement_confirmed` flag defaults to false before treating them as provider-verified. Preserve evidence and record operator, timestamp, reference, and note.
+- Add operational monitoring and alerts for unresolved transfers, webhook failures, unmatched payments, and seller debt balances. Define ownership and escalation windows before automating retries.
+- Test the full MonCash sandbox/provider cycle and confirm actual callback payloads, signature fields, status-poll endpoint, fee rounding, retry/idempotency behavior, and refund destination verification before production rollout.
+- Keep NatCash out of these MonCash rules. Schedule a separate discussion for NatCash settlement, confirmation evidence, refunds, fees, and support responsibility.
+
+### Current implementation notes
+
+- MonCash settlement ledger, refund approval/reconciliation endpoints, seller debt payment flow, fee previews, and admin operations screen have been added in code.
+- The migration is represented in `server.js` startup migration steps and `migrate-supabase.sql`. Confirm the active database has applied the schema before enabling these flows in production.
+- No live provider transfer or production database migration was performed during this implementation. Do not claim the provider cycle is production-verified until the runbook and end-to-end provider check above are complete.

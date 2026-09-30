@@ -23,7 +23,7 @@ function generateMeetupCode() {
 async function createPendingMonCashPayment(checkout) {
   const referenceId = checkout.id;
   const moncashRes = await fetch(
-    process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
+    process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create',
     {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
@@ -115,6 +115,12 @@ async function activateNatCashSellerPayment(client, legacySession, transcode) {
 function deliveryFeeFor(profile, distanceMeters) {
   if (profile.delivery_fee_type === 'free') return 0;
   if (profile.delivery_fee_type === 'flat') return Number(profile.flat_delivery_fee || 0);
+  if (profile.delivery_fee_type === 'per_distance') {
+    const stepMeters = Number(profile.distance_step_meters);
+    const stepFee = Number(profile.distance_step_fee);
+    if (!Number.isFinite(stepMeters) || stepMeters <= 0 || !Number.isFinite(stepFee) || stepFee < 0) return null;
+    return Math.ceil(distanceMeters / stepMeters) * stepFee;
+  }
   const rules = Array.isArray(profile.distance_fee_rules) ? profile.distance_fee_rules : [];
   const matchingRule = rules
     .map(rule => ({ maxDistanceMeters: Number(rule.maxDistanceMeters), fee: Number(rule.fee) }))
@@ -141,7 +147,9 @@ async function buildFulfillmentTerms(client, cart, fulfillmentSelections) {
             COALESCE(fp.meetup_radius_meters, 12000) AS meetup_radius_meters,
             COALESCE(fp.delivery_fee_type, 'flat') AS delivery_fee_type,
             COALESCE(fp.flat_delivery_fee, 0) AS flat_delivery_fee,
-            COALESCE(fp.distance_fee_rules, '[]'::jsonb) AS distance_fee_rules
+            COALESCE(fp.distance_fee_rules, '[]'::jsonb) AS distance_fee_rules,
+            COALESCE(fp.distance_step_meters, 2000) AS distance_step_meters,
+            COALESCE(fp.distance_step_fee, 0) AS distance_step_fee
        FROM users u
        LEFT JOIN seller_locations sl ON sl.seller_id = u.id
        LEFT JOIN seller_fulfillment_profiles fp ON fp.seller_id = u.id
@@ -504,9 +512,23 @@ router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res
     );
     const agreement = agreementResult.rows[0];
     if (!agreement) return res.status(409).json({ error: 'This seller’s fulfillment terms are not locked yet' });
-    const cartSubtotal = pc.cart_data.filter(item => item.seller_id === sellerId).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
-    const amount = cartSubtotal + Number(agreement.terms?.deliveryFee || 0);
     const provider = pc.payment_method === 'natcash' ? 'natcash' : 'moncash';
+    const cartSubtotal = pc.cart_data.filter(item => item.seller_id === sellerId).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
+    let sellerMerchandiseAmount = cartSubtotal;
+    if (provider === 'moncash' && pc.promo_code) {
+      const allMerchandise = pc.cart_data.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
+      if (allMerchandise > 0) {
+        const promoRes = await pool.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true', [pc.promo_code]);
+        if (promoRes.rows.length) {
+          const promo = promoRes.rows[0];
+          const discount = promo.discount_type === 'percentage'
+            ? allMerchandise * Number(promo.discount_value) / 100
+            : Math.min(Number(promo.discount_value), allMerchandise);
+          sellerMerchandiseAmount = Math.round((cartSubtotal * Math.max(0, allMerchandise - discount) / allMerchandise) * 100) / 100;
+        }
+      }
+    }
+    const amount = sellerMerchandiseAmount + Number(agreement.terms?.deliveryFee || 0);
     const existing = await pool.query("SELECT * FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND seller_id = $2 AND provider = $3 AND status IN ('pending','processing')", [pc.id, sellerId, provider]);
     let session = existing.rows[0];
     if (!session) {
@@ -518,7 +540,7 @@ router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res
       session = created.rows[0];
     }
     if (provider === 'natcash') return res.json({ pendingId: pc.id, sellerId, paymentMethod: 'natcash', session });
-    const moncashRes = await fetch(process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create', {
+    const moncashRes = await fetch(process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create', {
       method: 'POST', headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount: Math.round(Number(session.amount)), referenceId: session.provider_reference, returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?session=${session.id}` }), signal: AbortSignal.timeout(15000),
     });
@@ -1341,6 +1363,7 @@ router.put('/orders/:id/cancel', authRequired, async (req, res) => {
     const order = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [req.params.id]);
     if (order.rows.length === 0) {
       await client.query('ROLLBACK');
+      client.release();
       return res.status(404).json({ error: 'Order not found' });
     }
     if (order.rows[0].buyer_id !== req.user.id) {
@@ -1355,51 +1378,30 @@ router.put('/orders/:id/cancel', authRequired, async (req, res) => {
       const hasCheckin = await client.query('SELECT 1 FROM meetup_checkins WHERE order_id = $1', [req.params.id]);
       if (hasCheckin.rows.length > 0) {
         await client.query('ROLLBACK');
+        client.release();
         return res.status(400).json({ error: 'Cannot cancel after check-in — use the meetup flow' });
       }
+      const existingRequest = await client.query(
+        "SELECT id FROM disputes WHERE order_id = $1 AND raised_by = $2 AND status IN ('open', 'under_review') AND reason = 'refund_request' LIMIT 1",
+        [req.params.id, req.user.id]
+      );
+      if (existingRequest.rows.length === 0) {
+        await client.query(
+          `INSERT INTO disputes (order_id, raised_by, reason, description, status)
+           VALUES ($1, $2, 'refund_request', 'Buyer requested cancellation and refund for this paid order', 'open')`,
+          [req.params.id, req.user.id]
+        );
+      }
+      await client.query('COMMIT');
+      client.release();
+      return res.status(202).json({ refundRequested: true, status: 'open' });
     }
     const oldStatus = order.rows[0].status;
-
-    let totalRefund = 0;
-    if (oldStatus === 'paid') {
-      const escrows = await client.query("SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE", [req.params.id]);
-      for (const escrow of escrows.rows) {
-        await client.query("UPDATE order_escrow SET status = 'refunded', released_at = CURRENT_TIMESTAMP WHERE id = $1", [escrow.id]);
-      }
-      const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
-      totalRefund = parseFloat(order.rows[0].total_amount);
-      for (const item of items.rows) {
-        await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
-        await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
-      }
-    }
 
     await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [req.params.id]);
     await client.query('COMMIT');
     client.release();
     logOrderEvent(req.params.id, 'status_change', req.user.id, oldStatus, 'cancelled', 'Cancelled by buyer');
-
-    if (oldStatus === 'paid' && totalRefund > 0) {
-      const buyerRes = await pool.query('SELECT phone FROM users WHERE id = $1', [order.rows[0].buyer_id]);
-      const buyerPhone = buyerRes.rows[0]?.phone;
-      if (buyerPhone) {
-        try {
-          const payoutRes = await fetch(
-            process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
-            {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ amount: Math.round(totalRefund), moncashNumber: buyerPhone, referenceId: `cancel_refund_${req.params.id}` }),
-              signal: AbortSignal.timeout(15000),
-            }
-          );
-          if (payoutRes.ok) console.log(`[CANCEL] Refund G ${totalRefund} sent to buyer ${buyerPhone}`);
-          else console.error(`[CANCEL] Refund payout failed: ${await payoutRes.text()}`);
-        } catch (e) { console.error('[CANCEL] Refund payout error:', e.message); }
-      }
-      createNotification(order.rows[0].buyer_id, 'order_status', 'Order Refunded',
-        `Your cancelled order has been refunded G ${totalRefund.toFixed(0)}.`, { orderId: req.params.id });
-    }
 
     const cancelledSellers = await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [req.params.id]);
     for (const row of cancelledSellers.rows) {
@@ -1851,19 +1853,47 @@ router.post('/orders/:id/escrow/release', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'No held escrow found for this order' });
     }
 
+    const debtOffsets = [];
     for (const escrow of escrows.rows) {
       const net = parseFloat(escrow.net_amount);
+      let creditAfterDebt = net;
+      let debts = { rows: [] };
+      if (o.payment_method === 'moncash') {
+        const activeDebtPayment = await client.query(
+          "SELECT id FROM seller_debt_payments WHERE seller_id = $1 AND status IN ('created','processing','unknown') LIMIT 1 FOR UPDATE",
+          [escrow.seller_id]
+        );
+        if (!activeDebtPayment.rows.length) {
+          debts = await client.query(
+            "SELECT id, outstanding_amount FROM seller_debts WHERE seller_id = $1 AND status = 'open' ORDER BY created_at, id FOR UPDATE",
+            [escrow.seller_id]
+          );
+        }
+      }
+      for (const debt of debts.rows) {
+        if (creditAfterDebt <= 0) break;
+        const outstanding = Number(debt.outstanding_amount);
+        const offset = Math.min(creditAfterDebt, outstanding);
+        const remaining = Math.round((outstanding - offset) * 100) / 100;
+        creditAfterDebt = Math.round((creditAfterDebt - offset) * 100) / 100;
+        await client.query(
+          `UPDATE seller_debts SET outstanding_amount = $1, status = CASE WHEN $1 <= 0 THEN 'paid' ELSE 'open' END,
+             updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+          [remaining, debt.id]
+        );
+        debtOffsets.push({ sellerId: escrow.seller_id, amount: offset });
+      }
       await client.query(
         `INSERT INTO seller_balances (seller_id, balance, total_earned)
-         VALUES ($1, $2, $2)
+         VALUES ($1, $2, $3)
          ON CONFLICT (seller_id)
          DO UPDATE SET balance = seller_balances.balance + $2,
-                       total_earned = seller_balances.total_earned + $2,
+                       total_earned = seller_balances.total_earned + $3,
                        updated_at = CURRENT_TIMESTAMP`,
-        [escrow.seller_id, net]
+        [escrow.seller_id, creditAfterDebt, net]
       );
       await client.query("UPDATE order_escrow SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE id = $1", [escrow.id]);
-      console.log(`Escrow released: seller ${escrow.seller_id} credited G ${net}`);
+      console.log(`Escrow released: seller ${escrow.seller_id} credited G ${creditAfterDebt}; debt offset G ${net - creditAfterDebt}`);
     }
 
     if (o.status !== 'completed') {
@@ -1872,46 +1902,73 @@ router.post('/orders/:id/escrow/release', authRequired, async (req, res) => {
 
     await client.query('COMMIT');
     client.release();
+    for (const offset of debtOffsets) {
+      createNotification(offset.sellerId, 'seller_debt_offset', 'Outstanding refund fee applied',
+        `G ${offset.amount.toFixed(2)} from this earning was applied to your outstanding refund fee.`, { orderId: req.params.id, amount: offset.amount });
+    }
 
-    // Pay out platform commission (outside transaction — best effort)
-    try {
+    // Only MonCash commission is transferred through the MonCash payout rail.
+    if (o.payment_method === 'moncash') try {
       const totalCommission = (await pool.query(
         'SELECT COALESCE(SUM(commission_amount), 0) AS total FROM order_escrow WHERE order_id = $1',
         [req.params.id]
       )).rows[0].total;
       const commissionAmount = parseFloat(totalCommission);
+      const platformTransferAmount = Math.round(commissionAmount);
 
-      if (commissionAmount > 0 && process.env.PLATFORM_PHONE) {
-        const payoutRes = await fetch(
-          process.env.MONCASH_PAYOUT_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/payout-create',
-          {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              amount: Math.round(commissionAmount),
-              moncashNumber: process.env.PLATFORM_PHONE,
-              referenceId: `platform_${req.params.id}`,
-            }),
-            signal: AbortSignal.timeout(15000),
-          }
+      if (platformTransferAmount > 0 && process.env.PLATFORM_PHONE) {
+        const existingPlatformPayout = await pool.query(
+          "SELECT id FROM platform_payouts WHERE order_id = $1 AND status IN ('pending', 'processing', 'completed') LIMIT 1",
+          [req.params.id]
         );
-        if (payoutRes.ok) {
-          const payoutData = await payoutRes.json();
-          await pool.query(
-            `INSERT INTO platform_payouts (order_id, amount, status, moncash_reference) VALUES ($1, $2, 'completed', $3)`,
-            [req.params.id, commissionAmount, payoutData.reference || payoutData.transactionId || null]
-          );
-          console.log(`Platform commission G ${commissionAmount} sent to ${process.env.PLATFORM_PHONE}`);
+        if (existingPlatformPayout.rows.length) {
+          console.log(`Platform commission transfer already recorded for order ${req.params.id}`);
         } else {
-          const errText = await payoutRes.text();
-          await pool.query(
-            `INSERT INTO platform_payouts (order_id, amount, status, error_message) VALUES ($1, $2, 'failed', $3)`,
-            [req.params.id, commissionAmount, errText]
+          const platformFee = Math.round(platformTransferAmount * 0.05 * 100) / 100;
+          const platformTotalDebit = Math.round((platformTransferAmount + platformFee) * 100) / 100;
+          const platformPayout = await pool.query(
+            `INSERT INTO platform_payouts (order_id, amount, fee_amount, total_debit, status, moncash_reference)
+             VALUES ($1, $2, $3, $4, 'processing', $5) RETURNING id`,
+            [req.params.id, platformTransferAmount, platformFee, platformTotalDebit, `platform_${req.params.id}`]
           );
-          console.error(`Platform payout failed: ${errText}`);
+          const platformPayoutId = platformPayout.rows[0].id;
+          const payoutRes = await fetch(
+            process.env.MONCASH_PAYOUT_CREATE_URL || 'https://api.moncashconnect.com/v1/payout-create',
+            {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                amount: platformTransferAmount,
+                moncashNumber: process.env.PLATFORM_PHONE,
+                referenceId: platformPayoutId,
+              }),
+              signal: AbortSignal.timeout(15000),
+            }
+          );
+          if (payoutRes.ok) {
+            const payoutData = await payoutRes.json();
+            await pool.query(
+              `UPDATE platform_payouts SET provider_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND status = 'processing'`,
+              [payoutData.reference || payoutData.transactionId || null, platformPayoutId]
+            );
+            console.log(`Platform commission transfer G ${platformTransferAmount} accepted; awaiting MonCash settlement confirmation (5% fee G ${platformFee})`);
+          } else {
+            const errText = await payoutRes.text();
+            const definitiveReject = payoutRes.status >= 400 && payoutRes.status < 500 && payoutRes.status !== 409;
+            await pool.query(
+              `UPDATE platform_payouts SET status = $1, error_message = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND status = 'processing'`,
+              [definitiveReject ? 'failed' : 'processing', `MonCashConnect returned ${payoutRes.status}: ${errText}`.slice(0, 1000), platformPayoutId]
+            );
+            console.error(`Platform payout ${definitiveReject ? 'rejected' : 'awaiting reconciliation'}: ${errText}`);
+          }
         }
       }
     } catch (payoutErr) {
+      await pool.query(
+        `UPDATE platform_payouts SET error_message = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE order_id = $2 AND status = 'processing' AND provider_reference IS NULL`,
+        [`MonCash response was not confirmed; transfer remains reserved for reconciliation: ${payoutErr.message}`.slice(0, 1000), req.params.id]
+      ).catch(() => {});
       console.error('Platform payout error:', payoutErr.message);
     }
 
@@ -1936,84 +1993,193 @@ router.post('/orders/:id/escrow/refund', authRequired, async (req, res) => {
     const order = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [req.params.id]);
     if (order.rows.length === 0) {
       await client.query('ROLLBACK');
+      client.release();
       return res.status(404).json({ error: 'Order not found' });
     }
     const o = order.rows[0];
 
-    if (o.buyer_id !== req.user.id && req.user.role !== 'admin') {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Only the buyer or admin can refund escrow' });
-    }
-
     const isAdmin = req.user.role === 'admin';
     const isBuyer = o.buyer_id === req.user.id;
-    const refundableStatuses = ['pending', 'paid', 'cancelled'];
-    if (!isAdmin && !refundableStatuses.includes(o.status)) {
+    if (!isBuyer && !isAdmin) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: `Cannot self-refund order in '${o.status}' status. Open a dispute instead.` });
+      client.release();
+      return res.status(403).json({ error: 'Only the buyer can request a refund' });
     }
 
-    if (!isAdmin && isBuyer) {
-      const checkins = await client.query('SELECT id FROM meetup_checkins WHERE order_id = $1', [req.params.id]);
-      if (checkins.rows.length > 0) {
+    if (isBuyer) {
+      const reason = String(req.body?.reason || '').trim();
+      if (reason.length < 5) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'Meetup check-in already occurred. Open a dispute to resolve this order.' });
+        client.release();
+        return res.status(400).json({ error: 'Please provide a reason for the refund request' });
       }
-    }
-
-    if (!isAdmin && isBuyer && !refundableStatuses.includes(o.status)) {
-      const disputes = await client.query("SELECT id FROM disputes WHERE order_id = $1 AND status = 'open'", [req.params.id]);
-      if (disputes.rows.length === 0) {
+      const existing = await client.query(
+        "SELECT id FROM disputes WHERE order_id = $1 AND raised_by = $2 AND status IN ('open', 'under_review') AND reason = 'refund_request' LIMIT 1",
+        [req.params.id, req.user.id]
+      );
+      if (existing.rows.length > 0) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'Order is past payment stage. Open a dispute to request a refund.' });
+        client.release();
+        return res.status(409).json({ error: 'A refund request is already open for this order' });
       }
+      await client.query(
+        `INSERT INTO disputes (order_id, raised_by, reason, description, status)
+         VALUES ($1, $2, 'refund_request', $3, 'open')`,
+        [req.params.id, req.user.id, reason]
+      );
+      await client.query('COMMIT');
+      client.release();
+      return res.status(202).json({ requested: true, status: 'open' });
     }
 
-    const buyerRes = await client.query('SELECT phone FROM users WHERE id = $1', [o.buyer_id]);
-    const buyerPhone = buyerRes.rows[0]?.phone;
-    if (!buyerPhone) {
+    if (!isAdmin) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Buyer phone number not found' });
+      client.release();
+      return res.status(403).json({ error: 'Support authorization is required to issue a refund' });
     }
 
-    const escrows = await client.query("SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE", [req.params.id]);
-    if (escrows.rows.length === 0) {
+    if (o.payment_method !== 'moncash') {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'No held escrow found for this order (may already be released or refunded)' });
+      client.release();
+      return res.status(409).json({ error: 'This refund route only settles MonCash payments' });
     }
 
-    const totalRefund = parseFloat(o.total_amount);
-    for (const escrow of escrows.rows) {
-      await client.query("UPDATE order_escrow SET status = 'refunded', released_at = CURRENT_TIMESTAMP WHERE id = $1", [escrow.id]);
+    const reason = String(req.body?.reason || '').trim();
+    const cause = String(req.body?.cause || 'maurmaket');
+    const receiverPhone = String(req.body?.receiverPhone || '').trim();
+    const responsibleSellerId = req.body?.responsibleSellerId || null;
+    if (reason.length < 5 || !['seller', 'maurmaket', 'shared'].includes(cause) || !receiverPhone || ((cause === 'seller' || cause === 'shared') && !responsibleSellerId)) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(400).json({ error: 'Support must provide a reason, fee responsibility, and verified MonCash destination' });
     }
 
-    await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [req.params.id]);
-    await logOrderEvent(req.params.id, 'status_change', req.user.id, o.status, 'cancelled', 'Escrow refunded', client);
-
-    const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
-    for (const item of items.rows) {
-      await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
-      await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
+    const escrowResult = await client.query("SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE", [req.params.id]);
+    if (escrowResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(400).json({ error: 'No held MonCash escrow is available to refund' });
+    }
+    if (responsibleSellerId && !escrowResult.rows.some(row => row.seller_id === responsibleSellerId)) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(400).json({ error: 'Fee-responsible seller must belong to this order' });
     }
 
-    await client.query(
-      `INSERT INTO refund_payouts (order_id, buyer_id, amount, receiver_phone, moncash_reference)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (order_id) DO NOTHING`,
-      [req.params.id, o.buyer_id, totalRefund, buyerPhone, `refund_${req.params.id}`]
+    const priorRefunds = await client.query(
+      "SELECT COALESCE(SUM(amount), 0) AS refunded FROM refund_payouts WHERE order_id = $1 AND status <> 'failed'",
+      [req.params.id]
     );
+    const amountRemaining = Math.max(0, Number(o.total_amount) - Number(priorRefunds.rows[0]?.refunded || 0));
+    const totalRefund = Math.round(Number(req.body?.amount ?? amountRemaining) * 100) / 100;
+    if (!Number.isFinite(totalRefund) || totalRefund <= 0 || totalRefund > amountRemaining) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(400).json({ error: 'Refund amount must be positive and no greater than the amount still refundable' });
+    }
+
+    const feeAmount = Math.round(totalRefund * 0.05 * 100) / 100;
+    const sellerFeeShare = cause === 'seller' ? feeAmount : cause === 'shared' ? Math.round(feeAmount * 0.5 * 100) / 100 : 0;
+    const reductionRatio = Math.min(1, totalRefund / amountRemaining);
+    let commissionReversed = 0;
+    let collectionFeeKept = 0;
+    const createdDebtIds = [];
+    const sellerFeeImpacts = new Map();
+    for (const escrow of escrowResult.rows) {
+      const gross = Math.round(Number(escrow.gross_amount) * (1 - reductionRatio) * 100) / 100;
+      const commissionBase = Math.round(Number(escrow.commission_base || 0) * (1 - reductionRatio) * 100) / 100;
+      const commission = Math.round(Number(escrow.commission_amount) * (1 - reductionRatio) * 100) / 100;
+      commissionReversed += Number(escrow.commission_amount) - commission;
+      const oldCollectionFee = Number(escrow.collection_fee_amount || 0);
+      const refundedCollectionFee = oldCollectionFee * reductionRatio;
+      const sellerResponsibility = escrow.seller_id !== responsibleSellerId ? 0 : cause === 'seller' ? 1 : cause === 'shared' ? 0.5 : 0;
+      const retainedCollectionFee = Math.round(refundedCollectionFee * sellerResponsibility * 100) / 100;
+      collectionFeeKept += retainedCollectionFee;
+      if (sellerResponsibility > 0) {
+        const impact = sellerFeeImpacts.get(escrow.seller_id) || { total: 0, outstanding: 0 };
+        impact.total += sellerFeeShare + retainedCollectionFee;
+        sellerFeeImpacts.set(escrow.seller_id, impact);
+      }
+      const collectionFee = Math.round((oldCollectionFee - refundedCollectionFee + retainedCollectionFee) * 100) / 100;
+      const baseNet = Math.round((gross - commission - collectionFee) * 100) / 100;
+      let net = Math.max(0, baseNet);
+      let debtDue = Math.max(0, -baseNet);
+      if (escrow.seller_id === responsibleSellerId && sellerFeeShare > 0) {
+        const fromEscrow = Math.min(net, sellerFeeShare);
+        net = Math.round((net - fromEscrow) * 100) / 100;
+        debtDue = Math.round((debtDue + sellerFeeShare - fromEscrow) * 100) / 100;
+      }
+      if (escrow.seller_id === responsibleSellerId && debtDue > 0) {
+        const balance = await client.query('SELECT balance FROM seller_balances WHERE seller_id = $1 FOR UPDATE', [responsibleSellerId]);
+        const available = Number(balance.rows[0]?.balance || 0);
+        const fromBalance = Math.min(available, debtDue);
+        if (fromBalance > 0) {
+          await client.query('UPDATE seller_balances SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE seller_id = $2', [fromBalance, responsibleSellerId]);
+          debtDue = Math.round((debtDue - fromBalance) * 100) / 100;
+        }
+        if (debtDue > 0) {
+          const debt = await client.query(
+            `INSERT INTO seller_debts (seller_id, order_id, original_amount, outstanding_amount, reason)
+             VALUES ($1, $2, $3, $3, $4) RETURNING id`,
+            [responsibleSellerId, req.params.id, debtDue, `MonCash refund fee share: ${reason}`]
+          );
+          createdDebtIds.push(debt.rows[0].id);
+        }
+        const impact = sellerFeeImpacts.get(responsibleSellerId);
+        if (impact) impact.outstanding += debtDue;
+      }
+      await client.query(
+        `UPDATE order_escrow SET gross_amount = $1, commission_base = $2, collection_fee_amount = $3,
+           commission_amount = $4, net_amount = $5, status = CASE WHEN $1 <= 0 THEN 'refunded' ELSE 'held' END,
+           released_at = CASE WHEN $1 <= 0 THEN CURRENT_TIMESTAMP ELSE released_at END WHERE id = $6`,
+        [gross, commissionBase, collectionFee, commission, net, escrow.id]
+      );
+      await client.query(
+        `UPDATE platform_revenue SET gross_amount = $1, commission_base = $2, collection_fee_amount = $3,
+           commission_amount = $4, platform_fee = $4, net_to_seller = $5 WHERE order_id = $6 AND seller_id = $7`,
+        [gross, commissionBase, collectionFee, commission, net, req.params.id, escrow.seller_id]
+      );
+    }
+
+    const fullyRefunded = totalRefund >= amountRemaining;
+    if (fullyRefunded) {
+      await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [req.params.id]);
+      const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
+      for (const item of items.rows) {
+        await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
+        await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
+      }
+    }
+
+    const refundInsert = await client.query(
+      `INSERT INTO refund_payouts
+         (order_id, buyer_id, amount, fee_amount, receiver_phone, reason, cause, responsible_seller_id,
+          commission_reversed, collection_fee_kept, seller_fee_share,
+          requested_by, approved_by, destination_verified)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, true) RETURNING id`,
+      [req.params.id, o.buyer_id, totalRefund, feeAmount, receiverPhone, reason, cause, responsibleSellerId, commissionReversed, collectionFeeKept, sellerFeeShare, req.user.id]
+    );
+    const refundId = refundInsert.rows[0].id;
+    await client.query('UPDATE refund_payouts SET moncash_reference = $1 WHERE id = $2', [`refund_${refundId}`, refundId]);
+    if (createdDebtIds.length) await client.query('UPDATE seller_debts SET refund_id = $1 WHERE id = ANY($2::uuid[])', [refundId, createdDebtIds]);
+    await logOrderEvent(req.params.id, 'status_change', req.user.id, o.status, fullyRefunded ? 'cancelled' : o.status,
+      `Support authorized MonCash refund G ${totalRefund.toFixed(2)} (${cause} fee responsibility)`, client);
 
     await client.query('COMMIT');
     client.release();
 
-    await processRefundPayout(req.params.id);
+    await processRefundPayout(refundId);
 
-    for (const escrow of escrows.rows) {
-      createNotification(escrow.seller_id, 'escrow_refunded', 'Order Refunded',
-        `An order has been refunded. G ${parseFloat(escrow.gross_amount).toFixed(0)} has been returned to the buyer.`, { orderId: req.params.id });
+    for (const escrow of escrowResult.rows) {
+      const impact = sellerFeeImpacts.get(escrow.seller_id);
+      const feeNotice = impact
+        ? ` Your assigned MonCash fees are G ${impact.total.toFixed(2)}; G ${impact.outstanding.toFixed(2)} remains due and will be offset from future MonCash seller earnings.`
+        : '';
+      createNotification(escrow.seller_id, 'escrow_refunded', 'Refund processing',
+        `Support approved a MonCash refund of G ${totalRefund.toFixed(2)} for this order. The transfer is awaiting MonCash confirmation.${feeNotice}`, { orderId: req.params.id });
     }
 
-    res.json({ refunded: true, amount: totalRefund });
+    res.status(202).json({ status: 'processing', refundId, amount: totalRefund, feeAmount, sellerFeeShare });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
     client.release();
@@ -2057,60 +2223,65 @@ router.post('/payments/retry/:orderId', authRequired, async (req, res) => {
       return res.json({ retryMethod: 'natcash', orderId: order.id });
     }
 
-    const retryReference = `${orderId}_retry_${Date.now()}`;
-
-    let moncashRes = await fetch(
-      process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
-      {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: Math.round(parseFloat(order.total_amount)),
-          referenceId: retryReference,
-          returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
-        }),
-        signal: AbortSignal.timeout(15000),
-      }
+    const lastAttempt = await pool.query(
+      'SELECT status FROM moncash_payment_attempts WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [orderId]
     );
+    if (lastAttempt.rows.length && !['failed', 'expired'].includes(lastAttempt.rows[0].status)) {
+      return res.status(409).json({ error: 'payment_attempt_unresolved', status: lastAttempt.rows[0].status, message: 'Wait for MonCash to confirm the previous attempt before retrying.' });
+    }
 
-    if (moncashRes.status === 409) {
-      const retryRef2 = `${orderId}_retry2_${Date.now()}`;
-      moncashRes = await fetch(
-        process.env.MONCASH_PAY_CREATE_URL || 'https://hvlmeoqyxaguzcujpmit.supabase.co/functions/v1/pay-create',
+    const retryReference = `${orderId}_retry_${Date.now()}`;
+    const expectedAmount = Math.round(Number(order.total_amount));
+    const attempt = await pool.query(
+      `INSERT INTO moncash_payment_attempts (order_id, reference_id, expected_amount, status)
+       VALUES ($1, $2, $3, 'created') RETURNING id`,
+      [orderId, retryReference, expectedAmount]
+    );
+    await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [retryReference, orderId]);
+    try {
+      const moncashRes = await fetch(
+        process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create',
         {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            amount: Math.round(parseFloat(order.total_amount)),
-            referenceId: retryRef2,
+            amount: expectedAmount,
+            referenceId: retryReference,
             returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
           }),
           signal: AbortSignal.timeout(15000),
         }
       );
-      if (moncashRes.ok) {
-        const retryData = await moncashRes.json();
-        if (retryData.paymentUrl) {
-          await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [retryRef2, orderId]);
-          return res.json({ paymentUrl: retryData.paymentUrl });
-        }
+      if (!moncashRes.ok) {
+        const errorText = await moncashRes.text();
+        const definitiveReject = moncashRes.status >= 400 && moncashRes.status < 500 && moncashRes.status !== 409;
+        await pool.query(
+          'UPDATE moncash_payment_attempts SET status = $1, error_message = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+          [definitiveReject ? 'failed' : 'unknown', `MonCashConnect returned ${moncashRes.status}: ${errorText}`.slice(0, 1000), attempt.rows[0].id]
+        );
+        if (moncashRes.status === 409) return res.status(409).json({ error: 'payment_attempt_unresolved', reference: retryReference });
+        return res.status(definitiveReject ? 502 : 202).json({ error: definitiveReject ? 'Payment provider rejected the request' : 'Payment outcome is unknown; do not retry yet' });
       }
+      const data = await moncashRes.json();
+      if (!data.paymentUrl) {
+        await pool.query("UPDATE moncash_payment_attempts SET status = 'unknown', error_message = 'Provider accepted request without payment URL', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [attempt.rows[0].id]);
+        return res.status(202).json({ error: 'Payment request is unresolved; check its status before trying again' });
+      }
+      await pool.query(
+        `UPDATE moncash_payment_attempts SET status = 'processing', provider_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [data.reference || data.transactionId || null, attempt.rows[0].id]
+      );
+      return res.json({ paymentUrl: data.paymentUrl });
+    } catch (providerError) {
+      await pool.query(
+        `UPDATE moncash_payment_attempts SET status = 'unknown', error_message = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [`Request outcome is unknown: ${providerError.message}`.slice(0, 1000), attempt.rows[0].id]
+      );
+      return res.status(202).json({ error: 'Payment request is unresolved; check its status before trying again' });
     }
-
-    if (!moncashRes.ok) {
-      const errorText = await moncashRes.text();
-      console.error(`MonCashConnect retry HTTP ${moncashRes.status}:`, errorText);
-      if (moncashRes.status === 401) return res.status(502).json({ error: 'Payment provider auth error' });
-      if (moncashRes.status === 400) return res.status(502).json({ error: 'Invalid payment request' });
-      return res.status(502).json({ error: 'Payment provider error' });
-    }
-    const data = await moncashRes.json();
-    if (!data.paymentUrl) return res.status(502).json({ error: 'Payment provider error' });
-
-    await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [retryReference, orderId]);
-
-    res.json({ paymentUrl: data.paymentUrl });
   } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'payment_attempt_unresolved', message: 'An existing MonCash attempt must be reconciled before retrying.' });
     console.error('Payment retry error:', err);
     res.status(500).json({ error: 'Server error' });
   }

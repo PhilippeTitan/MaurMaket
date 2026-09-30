@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, View, StyleSheet, Dimensions, ViewStyle } from 'react-native';
+import { Animated, View, StyleSheet, ViewStyle } from 'react-native';
 import { COLORS, RADIUS, SPACING } from '../theme';
+import { useViewport } from '@/hooks';
 
 interface BlockProps {
   width?: number | string;
@@ -92,24 +93,29 @@ export function RowListSkeleton({
   );
 }
 
-const { width: SCREEN_W } = Dimensions.get('window');
-
 /**
- * Skeleton for a 2-column product grid (Explore screen). Renders `count`
- * fake cards so the layout looks populated immediately instead of showing
- * a bare spinner over an empty screen while the first request resolves.
+ * Skeleton for the product grid (Explore screen). Renders `count` fake cards so the
+ * layout looks populated immediately instead of showing a bare spinner over an empty
+ * screen while the first request resolves.
+ *
+ * The card size is read from the live window and the column count follows the same
+ * breakpoints as the real grid (see MasonryGrid), so the placeholders are exactly the
+ * size of the cards that replace them — on a phone, a fold, a tablet and a desktop
+ * window alike — instead of the size of the window the app happened to boot in.
  */
 export function ProductGridSkeleton({
   count = 6,
-  columns = 2,
+  columns,
 }: {
   count?: number;
   columns?: number;
 }) {
+  const vp = useViewport();
+  const colCount = columns ?? (vp.width < 600 ? 2 : vp.width < 900 ? 3 : 4);
   const gap = SPACING.sm;
   const sidePad = SPACING.sm;
   const cardW =
-    (SCREEN_W - sidePad * 2 - gap * (columns - 1)) / columns;
+    (vp.width - sidePad * 2 - gap * (colCount - 1)) / colCount;
   const items = Array.from({ length: count });
 
   return (

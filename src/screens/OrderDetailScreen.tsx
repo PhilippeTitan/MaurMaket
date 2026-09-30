@@ -104,7 +104,11 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   useEffect(() => { fetchData(); }, [orderId]);
 
   const handleCancelConfirmed = async () => {
-    try { await cancelOrder(orderId); fetchData(); }
+    try {
+      const result = await cancelOrder(orderId) as { refundRequested?: boolean };
+      if (result.refundRequested) toast.success(t('meetup.refundRequestTitle'), t('meetup.refundRequestMsg'));
+      fetchData();
+    }
     catch (err: unknown) { toast.error(t('common.error'), errorMessage(err)); }
   };
 
@@ -260,8 +264,9 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   const handleDeclineMeetupConfirmed = async () => {
     setDeclineLoading(true);
     try {
-      await cancelOrder(orderId);
-      toast.success(t('orderDetail.orderCancelled'));
+      const result = await cancelOrder(orderId) as { refundRequested?: boolean };
+      if (result.refundRequested) toast.success(t('meetup.refundRequestTitle'), t('meetup.refundRequestMsg'));
+      else toast.success(t('orderDetail.orderCancelled'));
       fetchData();
     } catch (err: unknown) {
       toast.error(t('common.error'), errorMessage(err, 'Could not decline meetup'));

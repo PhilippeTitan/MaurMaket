@@ -32,6 +32,7 @@ export default function SettingsToggle({
       accessibilityRole="switch"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ checked: value }}
+      hitSlop={10}
       style={[
         styles.track,
         value ? { backgroundColor: accent + '40', borderColor: accent } : styles.trackOff,
