@@ -75,11 +75,17 @@ const tokenStorage = {
   },
 };
 
-async function getToken(): Promise<string | null> {
+export async function getToken(): Promise<string | null> {
   if (_cachedToken) return _cachedToken;
   _cachedToken = await tokenStorage.getItem('ba_session_token');
   _tokenRead = true;
   return _cachedToken;
+}
+
+/** WebSocket URL for realtime chat events (derived from API_BASE). */
+export function getRealtimeUrl(): string {
+  const base = API_BASE.replace(/\/api\/?$/, '');
+  return base.replace(/^http/, 'ws') + '/ws';
 }
 
 export function setCachedToken(token: string | null) {

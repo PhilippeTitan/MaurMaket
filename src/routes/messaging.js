@@ -5,6 +5,7 @@ import { msgLimiter, convLimiter, previewLimiter } from '../middleware/rateLimit
 import dns from 'node:dns/promises';
 import { dobRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
+import { emitToUsers } from '../realtime.js';
 
 const router = Router();
 
@@ -427,6 +428,23 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
     const notifData = { type: 'new_message', conversationId: req.params.id, senderId: req.user.id, senderName };
     if (senderInfo?.avatar_url) notifData.image = senderInfo.avatar_url;
     createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, notifData);
+    // Realtime: push to both participants instantly (clients dedupe by id / client_id)
+    let reply_to;
+    if (validatedReplyToId) {
+      const rt = await pool.query(
+        `SELECT rm.id, rm.content, rm.sender_id, rm.message_type, ru.full_name
+         FROM messages rm JOIN users ru ON ru.id = rm.sender_id WHERE rm.id = $1`,
+        [validatedReplyToId]
+      );
+      if (rt.rows[0]) {
+        reply_to = { id: rt.rows[0].id, content: rt.rows[0].content, senderId: rt.rows[0].sender_id, senderName: rt.rows[0].full_name, type: rt.rows[0].message_type };
+      }
+    }
+    emitToUsers([req.user.id, recipientId], {
+      type: 'message_new',
+      conversationId: req.params.id,
+      message: { ...result.rows[0], reply_to, reactions: [], delivery_status: 'sent' },
+    });
     res.status(201).json({ message: result.rows[0] });
   } catch (err) {
     // Concurrent retry with the same clientId — unique index caught it; return the winner's row
@@ -509,10 +527,19 @@ router.get('/api/conversations/:id/delivery-status', authRequired, async (req, r
 });
 
 router.post('/api/conversations/:id/typing', authRequired, async (req, res) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) return res.json({ ok: true });
   touchPresence(req.user.id);
   const key = getTypingKey(req.params.id, req.user.id);
   typingUsers.set(key, Date.now());
   setTimeout(() => { typingUsers.delete(key); }, 5000);
+  try {
+    const convr = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1', [req.params.id]);
+    if (convr.rows.length) {
+      const { buyer_id, seller_id } = convr.rows[0];
+      const other = req.user.id === buyer_id ? seller_id : (req.user.id === seller_id ? buyer_id : null);
+      if (other) emitToUsers([other], { type: 'typing', conversationId: req.params.id, userId: req.user.id });
+    }
+  } catch { /* realtime broadcast is best-effort */ }
   res.json({ ok: true });
 });
 
@@ -545,11 +572,28 @@ router.post('/api/messages/:id/react', authRequired, async (req, res) => {
     if (conv.rows.length === 0) return res.status(403).json({ error: 'Not a participant' });
     // Toggle: if exists, remove; else, add
     const existing = await pool.query('SELECT id FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3', [req.params.id, req.user.id, emoji]);
+    const broadcastReactions = async () => {
+      try {
+        const rr = await pool.query(
+          `SELECT mr.emoji, mr.user_id, u.full_name AS user_name
+           FROM message_reactions mr JOIN users u ON u.id = mr.user_id WHERE mr.message_id = $1`,
+          [req.params.id]
+        );
+        emitToUsers([conv.rows[0].buyer_id, conv.rows[0].seller_id], {
+          type: 'message_reactions',
+          conversationId: msg.rows[0].conversation_id,
+          messageId: req.params.id,
+          reactions: rr.rows.map(r => ({ emoji: r.emoji, userId: r.user_id, userName: r.user_name })),
+        });
+      } catch { /* best-effort */ }
+    };
     if (existing.rows.length > 0) {
       await pool.query('DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3', [req.params.id, req.user.id, emoji]);
+      await broadcastReactions();
       return res.json({ action: 'removed', emoji });
     }
     await pool.query('INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)', [req.params.id, req.user.id, emoji]);
+    await broadcastReactions();
     res.json({ action: 'added', emoji });
   } catch (err) {
     console.error('Reaction error:', err);
@@ -570,6 +614,16 @@ router.put('/api/messages/:id', authRequired, async (req, res) => {
       'UPDATE messages SET content = $1, is_edited = true, edited_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
       [content.trim(), req.params.id]
     );
+    try {
+      const convr = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1', [msg.rows[0].conversation_id]);
+      if (convr.rows.length) {
+        emitToUsers([convr.rows[0].buyer_id, convr.rows[0].seller_id], {
+          type: 'message_updated',
+          conversationId: msg.rows[0].conversation_id,
+          message: result.rows[0],
+        });
+      }
+    } catch { /* best-effort */ }
     res.json({ message: result.rows[0] });
   } catch (err) {
     console.error('Message edit error:', err);
@@ -582,6 +636,16 @@ router.delete('/api/messages/:id', authRequired, async (req, res) => {
     const msg = await pool.query('SELECT * FROM messages WHERE id = $1 AND sender_id = $2', [req.params.id, req.user.id]);
     if (msg.rows.length === 0) return res.status(404).json({ error: 'Message not found or not yours' });
     await pool.query('UPDATE messages SET is_deleted = true, content = NULL, image_url = NULL WHERE id = $1', [req.params.id]);
+    try {
+      const convr = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1', [msg.rows[0].conversation_id]);
+      if (convr.rows.length) {
+        emitToUsers([convr.rows[0].buyer_id, convr.rows[0].seller_id], {
+          type: 'message_deleted',
+          conversationId: msg.rows[0].conversation_id,
+          messageId: req.params.id,
+        });
+      }
+    } catch { /* best-effort */ }
     res.json({ deleted: true });
   } catch (err) {
     console.error('Message delete error:', err);
@@ -661,6 +725,10 @@ router.put('/api/conversations/:id/read', authRequired, async (req, res) => {
        RETURNING id`,
       [req.params.id, req.user.id]
     );
+    try {
+      const other = req.user.id === conv.rows[0].buyer_id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
+      emitToUsers([other], { type: 'messages_read', conversationId: req.params.id, readerId: req.user.id });
+    } catch { /* best-effort */ }
     res.json({ marked: Math.max(result.rows.length, deliveries.rows.length) });
   } catch (err) {
     console.error('Mark read error:', err);

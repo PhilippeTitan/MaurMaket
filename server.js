@@ -13,6 +13,7 @@ import { pool, isTestMode, neonBackupDatabaseUrl, setDbController } from './src/
 import { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_KYC_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand } from './src/config/storage.js';
 import { JWT_SECRET, BCRYPT_ROUNDS, PRODUCTION_URL } from './src/config/security.js';
 import { generalLimiter, authLimiter, paymentLimiter, uploadLimiter, msgLimiter, convLimiter, verifyLimiter } from './src/middleware/rateLimit.js';
+import { initRealtime, closeRealtime } from './src/realtime.js';
 import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from './src/middleware/auth.js';
 import { createNotification, sendPushNotification } from './src/utils/notifications.js';
 import { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences } from './src/utils/helpers.js';
@@ -1842,12 +1843,14 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received. Shutting down gracefully...');
+  closeRealtime();
   if (server) server.close();
   try { await pool.end(); } catch {}
   process.exit(0);
 });
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  closeRealtime();
   if (server) server.close();
   try { await pool.end(); } catch {}
   process.exit(0);
@@ -1865,6 +1868,7 @@ if (isMain) {
     server = app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
       console.log('Cron jobs active: meetup timeout auto-refund (every 5 min), offer expiry (every 15 min)');
+      initRealtime(server);
     });
   };
   // Better Auth needs its tables before it can serve requests. Keep startup gated

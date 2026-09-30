@@ -10,6 +10,7 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence, getConversationMedia, getLinkPreview } from '../api';
 import type { LinkPreviewData, ConversationMediaItem } from '../api';
+import { onRealtime } from '../realtime';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from '@/localization';
@@ -569,9 +570,49 @@ startPolling();
     };
     const sub = AppState.addEventListener('change', handleAppState);
 
+    // Realtime WebSocket: instant message/typing/read delivery layered over polling
+    const typingExpire = { timer: null as ReturnType<typeof setTimeout> | null };
+    const unsubRealtime = onRealtime((e) => {
+      if (e.type === 'message_new' && e.conversationId === conversationId && e.message) {
+        const incoming = e.message as LocalMessage;
+        setMessages(prev => {
+          if (prev.some(m => m.id === incoming.id)) return prev;
+          if (incoming.client_id) {
+            const idx = prev.findIndex(m => m.client_id === incoming.client_id);
+            if (idx >= 0) {
+              const copy = [...prev];
+              copy[idx] = { ...copy[idx], ...incoming, pending: false, failed: false, delivery_status: copy[idx].delivery_status || incoming.delivery_status || 'sent' };
+              return copy;
+            }
+          }
+          const kept = prev.filter(m => !((m.pending || m.failed) && m.client_id && m.client_id === incoming.client_id));
+          return [...kept, incoming];
+        });
+        if (incoming.sender_id !== store.user?.id && Date.now() - lastMarkReadRef.current > 3000) {
+          lastMarkReadRef.current = Date.now();
+          markConversationRead(conversationId).catch(() => {});
+        }
+      } else if (e.type === 'typing' && e.conversationId === conversationId && e.userId !== store.user?.id) {
+        setOtherTyping(true);
+        if (typingExpire.timer) clearTimeout(typingExpire.timer);
+        typingExpire.timer = setTimeout(() => setOtherTyping(false), 5500);
+      } else if (e.type === 'messages_read' && e.conversationId === conversationId && e.readerId !== store.user?.id) {
+        setMessages(prev => prev.map(m => (m.sender_id === store.user?.id ? { ...m, delivery_status: 'read' as const } : m)));
+      } else if (e.type === 'message_updated' && e.conversationId === conversationId && e.message) {
+        const upd = e.message as Message;
+        setMessages(prev => prev.map(m => (m.id === upd.id ? { ...m, content: upd.content, is_edited: upd.is_edited } : m)));
+      } else if (e.type === 'message_deleted' && e.conversationId === conversationId && e.messageId) {
+        setMessages(prev => prev.map(m => (m.id === e.messageId ? { ...m, is_deleted: true, content: t('chat.messageDeleted'), image_url: undefined, audio_url: undefined } : m)));
+      } else if (e.type === 'message_reactions' && e.conversationId === conversationId && e.messageId) {
+        setMessages(prev => prev.map(m => (m.id === e.messageId ? { ...m, reactions: e.reactions || [] } : m)));
+      }
+    });
+
     return () => {
       stopPolling();
       sub.remove();
+      unsubRealtime();
+      if (typingExpire.timer) clearTimeout(typingExpire.timer);
     };
   }, [conversationId]);
 
