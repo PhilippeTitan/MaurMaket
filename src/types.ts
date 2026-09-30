@@ -202,6 +202,7 @@ export interface Message {
   };
   reactions?: { emoji: string; userId: string; userName: string }[];
   delivery_status?: 'sent' | 'delivered' | 'read';
+  client_id?: string;
   is_edited?: boolean;
   is_deleted?: boolean;
   is_read: boolean;

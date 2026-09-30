@@ -8,7 +8,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, sendTyping, getTypingStatus, markConversationRead } from '../api';
+import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence } from '../api';
+import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from '@/localization';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -24,7 +26,42 @@ import OfferBuilder from '../components/OfferBuilder';
 import { SkeletonBlock } from '../components/Skeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
-type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string; reactions?: { emoji: string; userId: string; userName: string }[]; delivery_status?: 'sent' | 'delivered' | 'read'; reply_to?: Message['reply_to'] };
+type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string; reactions?: { emoji: string; userId: string; userName: string }[]; delivery_status?: 'sent' | 'delivered' | 'read'; reply_to?: Message['reply_to']; client_id?: string };
+
+// ───── Outbox (WhatsApp-style offline send queue) ─────
+// Messages are queued locally, flushed with a client-generated UUID (server dedupes on it),
+// and survive app restarts / network loss until acknowledged.
+type OutboxEntry = {
+  tempId: string;
+  clientId: string;
+  conversationId: string;
+  content: string | null;
+  messageType: 'text' | 'image';
+  imageUri?: string;
+  imageUrl?: string;
+  replyToId?: string;
+  attempts: number;
+  createdAt: string;
+};
+const OUTBOX_KEY = 'mm_outbox';
+
+const genClientId = () =>
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : ((r & 0x3) | 0x8);
+    return v.toString(16);
+  });
+
+const readOutbox = async (): Promise<OutboxEntry[]> => {
+  try {
+    const raw = await AsyncStorage.getItem(OUTBOX_KEY);
+    const all = raw ? JSON.parse(raw) : [];
+    return Array.isArray(all) ? all : [];
+  } catch { return []; }
+};
+const writeOutbox = async (all: OutboxEntry[]) => {
+  try { await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(all)); } catch { /* storage full */ }
+};
 
 export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -45,6 +82,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [counteringMessageId, setCounteringMessageId] = useState<string | null>(null);
   const [counterPrice, setCounterPrice] = useState('');
   const [otherTyping, setOtherTyping] = useState(false);
+  const [presence, setPresence] = useState<{ online: boolean; lastSeen: string | null } | null>(null);
+  const [offline, setOffline] = useState(false);
   const [sellerItemsVisible, setSellerItemsVisible] = useState(false);
   const [offerBuilderItem, setOfferBuilderItem] = useState<{ id: string; name: string; price: number; image_url?: string | null } | null>(null);
   const [replyTo, setReplyTo] = useState<LocalMessage | null>(null);
@@ -59,6 +98,90 @@ export default function ChatScreen({ route, navigation }: Props) {
   const lastMessageCursor = useRef<{ time: string; id: string } | null>(null);
   const sendingRef = useRef(false);
   const stickToLatest = useRef(true);
+  const outboxRef = useRef<OutboxEntry[]>([]);
+  const flushingRef = useRef(false);
+  const onlineRef = useRef(true);
+  const lastMarkReadRef = useRef(0);
+
+  // ───── Outbox: persist, flush, reconcile ─────
+
+  const persistEntry = async (entry: OutboxEntry) => {
+    const all = await readOutbox();
+    await writeOutbox([...all.filter(e => e.tempId !== entry.tempId), entry]);
+    outboxRef.current = outboxRef.current.filter(e => e.tempId !== entry.tempId).concat(entry);
+  };
+  const removeEntry = async (tempId: string) => {
+    const all = await readOutbox();
+    await writeOutbox(all.filter(e => e.tempId !== tempId));
+    outboxRef.current = outboxRef.current.filter(e => e.tempId !== tempId);
+  };
+
+  const reconcileSent = (tempId: string, serverMessage: Message) => {
+    setMessages(prev => {
+      const hasServer = prev.some(m => m.id === serverMessage.id);
+      if (hasServer) return prev.filter(m => m.id !== tempId); // poll beat us to it — drop optimistic
+      return prev.map(m => (m.id === tempId ? { ...serverMessage, pending: false, failed: false } as LocalMessage : m));
+    });
+    lastMessageCursor.current = { time: serverMessage.created_at, id: serverMessage.id };
+  };
+
+  const markFailed = (tempId: string) => {
+    setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, pending: false, failed: true } : m)));
+  };
+
+  const flushOutbox = async (opts?: { resetAttempts?: boolean }) => {
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    try {
+      let entries = (await readOutbox()).filter(e => e.conversationId === conversationId);
+      if (opts?.resetAttempts) {
+        entries = entries.map(e => ({ ...e, attempts: 0 }));
+        const others = (await readOutbox()).filter(e => e.conversationId !== conversationId);
+        await writeOutbox([...others, ...entries]);
+      }
+      for (const entry of entries) {
+        if (entry.attempts >= 5) continue; // give up until explicit retry / reconnect
+        try {
+          let imageUrl = entry.imageUrl;
+          if (entry.messageType === 'image' && !imageUrl) {
+            if (!entry.imageUri) throw new Error('missing image uri');
+            const up = await uploadImage(entry.imageUri) as { url: string };
+            imageUrl = up.url;
+            await persistEntry({ ...entry, imageUrl, attempts: entry.attempts + 1 });
+          }
+          const result = (entry.replyToId
+            ? await sendMessageWithReply(entry.conversationId, entry.content || '', entry.replyToId, imageUrl, entry.clientId)
+            : await apiSendMessage(entry.conversationId, entry.content || '', imageUrl, entry.clientId)) as { message: Message };
+          await removeEntry(entry.tempId);
+          reconcileSent(entry.tempId, result.message);
+        } catch {
+          const next = { ...entry, attempts: entry.attempts + 1 };
+          await persistEntry(next);
+          markFailed(entry.tempId);
+        }
+      }
+    } finally {
+      flushingRef.current = false;
+    }
+  };
+
+  const retryMessage = async (tempId: string) => {
+    const all = await readOutbox();
+    const entry = all.find(e => e.tempId === tempId && e.conversationId === conversationId);
+    if (!entry) {
+      // Not queued (e.g. restart wiped nothing but entry missing) — nothing to retry
+      return;
+    }
+    await persistEntry({ ...entry, attempts: 0 });
+    setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, pending: true, failed: false } : m)));
+    flushOutbox();
+  };
+
+  const enqueueLocal = (entry: OutboxEntry, optimistic: LocalMessage) => {
+    stickToLatest.current = true;
+    setMessages(prev => [...prev.filter(m => m.id !== entry.tempId), optimistic]);
+    persistEntry(entry).then(() => flushOutbox());
+  };
 
   const fetchMessages = async (pageNum = 0, older = false, quiet = false) => {
     if (older) setLoadingOlder(true);
@@ -70,18 +193,36 @@ export default function ChatScreen({ route, navigation }: Props) {
       }
       const res = await getMessages(conversationId, params) as { messages: Message[] };
       const msgs = res.messages || [];
+      const myId = store.user?.id;
+      const hasIncoming = msgs.some(m => m.sender_id !== myId);
       if (older) {
-        setMessages(prev => [...msgs, ...prev]);
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          return [...msgs.filter(m => !existingIds.has(m.id)), ...prev];
+        });
       } else if (lastMessageCursor.current) {
         if (msgs.length > 0) {
+          const incomingClientIds = new Set(msgs.map(m => (m as LocalMessage).client_id).filter(Boolean));
           setMessages(prev => {
             const existingIds = new Set(prev.map(m => m.id));
             const newMsgs = msgs.filter(m => !existingIds.has(m.id));
-            return newMsgs.length > 0 ? [...prev, ...newMsgs] : prev;
+            // Drop optimistic copies the server already echoed back (matched by client_id)
+            const kept = prev.filter(m => !(m.pending || m.failed) || !m.client_id || !incomingClientIds.has(m.client_id));
+            return newMsgs.length > 0 ? [...kept, ...newMsgs] : kept;
           });
         }
       } else {
-        setMessages(msgs);
+        setMessages(prev => {
+          // Full reload — preserve local queued/failed messages not yet acknowledged
+          const localQueued = prev.filter(m =>
+            (m.pending || m.failed) && m.client_id && !msgs.some(s => (s as LocalMessage).client_id === m.client_id) && !msgs.some(s => s.id === m.id));
+          return [...msgs, ...localQueued];
+        });
+      }
+      // WhatsApp read flow: chat is visible → flip incoming to read (blue ticks for sender)
+      if (hasIncoming && Date.now() - lastMarkReadRef.current > 3000) {
+        lastMarkReadRef.current = Date.now();
+        markConversationRead(conversationId).catch(() => {});
       }
       if (msgs.length > 0) {
         const latest = msgs[msgs.length - 1];
@@ -110,6 +251,30 @@ export default function ChatScreen({ route, navigation }: Props) {
         const res = await getTypingStatus(conversationId) as { typing?: boolean };
         setOtherTyping(!!res.typing);
       } catch { /* silent */ }
+      if (otherUserId) {
+        try {
+          const p = await getPresence(otherUserId);
+          setPresence(p);
+        } catch { /* silent */ }
+      }
+    };
+
+    // Flip our own ticks live: sent → delivered → read (WhatsApp ✓ / ✓✓ / blue ✓✓)
+    const checkStatuses = async () => {
+      try {
+        const res = await getDeliveryStatuses(conversationId);
+        const statusMap = new Map(res.statuses.map(s => [s.id, s.status]));
+        if (statusMap.size === 0) return;
+        setMessages(prev => {
+          const changed = prev.some(m => m.sender_id === store.user?.id && statusMap.has(m.id) && statusMap.get(m.id) !== m.delivery_status);
+          if (!changed) return prev;
+          return prev.map(m =>
+            m.sender_id === store.user?.id && statusMap.has(m.id) && statusMap.get(m.id) !== m.delivery_status
+              ? { ...m, delivery_status: statusMap.get(m.id) }
+              : m
+          );
+        });
+      } catch { /* silent */ }
     };
 
     const startPolling = () => {
@@ -117,6 +282,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       intervalRef.current = setInterval(() => {
         fetchMessages(0, false, true);
         checkTyping();
+        checkStatuses();
       }, 5000);
     };
     const stopPolling = () => {
@@ -131,6 +297,9 @@ export default function ChatScreen({ route, navigation }: Props) {
       } else if (appState.current.match(/inactive|background/) && next === 'active') {
         fetchMessages(0, false, true);
         checkTyping();
+        checkStatuses();
+        // WhatsApp: back to foreground → flush anything that failed while away
+        flushOutbox({ resetAttempts: onlineRef.current });
 startPolling();
 
     // Start pending pulse animation
@@ -151,6 +320,54 @@ startPolling();
     };
   }, [conversationId]);
 
+  // Rehydrate queued messages from previous sessions and flush them (WhatsApp:
+  // "your message wasn't lost — it sends as soon as you're back")
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const entries = (await readOutbox()).filter(e => e.conversationId === conversationId);
+      if (cancelled || entries.length === 0) return;
+      setMessages(prev => {
+        const ids = new Set(prev.map(m => m.id));
+        const clientIds = new Set(prev.map(m => m.client_id).filter(Boolean));
+        const missing = entries.filter(e => !ids.has(e.tempId) && !clientIds.has(e.clientId));
+        if (missing.length === 0) return prev;
+        return [...prev, ...missing.map(e => ({
+          id: e.tempId,
+          conversation_id: e.conversationId,
+          sender_id: store.user?.id || '',
+          content: e.content || '',
+          message_type: e.messageType,
+          image_url: e.imageUrl,
+          localImageUri: e.imageUri,
+          is_read: true,
+          created_at: e.createdAt,
+          pending: true,
+          failed: e.attempts >= 5,
+          client_id: e.clientId,
+        } as LocalMessage))];
+      });
+      flushOutbox();
+    })();
+    return () => { cancelled = true; };
+  }, [conversationId]);
+
+  // Connectivity: banner + auto-flush on reconnect (UnsentMessagesNetworkAvailableJob, WhatsApp-style)
+  useEffect(() => {
+    const unsub = NetInfo.addEventListener(state => {
+      const online = !(state.isConnected === false || state.isInternetReachable === false);
+      onlineRef.current = online;
+      setOffline(!online);
+      if (online) flushOutbox({ resetAttempts: true });
+    });
+    NetInfo.fetch().then(state => {
+      const online = !(state.isConnected === false || state.isInternetReachable === false);
+      onlineRef.current = online;
+      setOffline(!online);
+    }).catch(() => {});
+    return () => unsub();
+  }, [conversationId]);
+
   useEffect(() => {
     if (!draftOffer) return;
     setOfferDraftVisible(true);
@@ -158,45 +375,25 @@ startPolling();
 
 
 
-  const handleSend = async () => {
-    if (!text.trim() || sendingRef.current) return;
-    sendingRef.current = true;
-    setSending(true);
+  const handleSend = () => {
+    if (!text.trim()) return;
     const msg = text.trim();
+    const replyingTo = replyTo;
     const tempId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimistic: LocalMessage = { id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '', content: msg, message_type: 'text', is_read: true, created_at: new Date().toISOString(), pending: true, reply_to: replyTo ? { id: replyTo.id, content: replyTo.content, senderId: replyTo.sender_id, senderName: replyTo.sender_id === store.user?.id ? 'You' : otherUserName, type: replyTo.message_type } : undefined } as any;
+    const clientId = genClientId();
+    const createdAt = new Date().toISOString();
+    const optimistic: LocalMessage = {
+      id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '',
+      content: msg, message_type: 'text', is_read: true, created_at: createdAt,
+      pending: true, delivery_status: 'sent', client_id: clientId,
+      reply_to: replyingTo ? { id: replyingTo.id, content: replyingTo.content, senderId: replyingTo.sender_id, senderName: replyingTo.sender_id === store.user?.id ? 'You' : otherUserName, type: replyingTo.message_type } : undefined,
+    } as LocalMessage;
     setText('');
-    stickToLatest.current = true;
-    setMessages(prev => [...prev, optimistic]);
-    try {
-      const result = await sendMessageWithReply(conversationId, msg, replyTo?.id) as { message: Message };
-      setReplyTo(null);
-      setMessages(prev => prev.map(m => m.id === tempId ? result.message : m));
-      lastMessageCursor.current = { time: result.message.created_at, id: result.message.id };
-    } catch {
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, pending: false, failed: true } : m));
-      toast.error(t('chat.messageNotSent'), t('chat.sendFailed'), () => {
-        setText(msg);
-        setMessages(prev => prev.filter(m => m.id !== tempId));
-        handleSend();
-      });
-      setText(msg);
-    } finally {
-      setSending(false);
-      sendingRef.current = false;
-    }
-  };
-
-  const sendImage = async (uri: string, tempId: string) => {
-    try {
-      const r = await uploadImage(uri);
-      const result = await apiSendMessage(conversationId, '', r.url) as { message: Message };
-      setMessages(prev => prev.map(m => m.id === tempId ? result.message : m));
-      lastMessageCursor.current = { time: result.message.created_at, id: result.message.id };
-    } catch {
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, pending: false, failed: true } : m));
-      toast.error(t('chat.photoNotSent'), t('chat.photoStillHere'), () => sendImage(uri, tempId));
-    }
+    setReplyTo(null);
+    enqueueLocal(
+      { tempId, clientId, conversationId, content: msg, messageType: 'text', replyToId: replyingTo?.id, attempts: 0, createdAt },
+      optimistic
+    );
   };
 
   const handleSendImage = async () => {
@@ -207,17 +404,21 @@ startPolling();
         allowsEditing: false,
       });
       if (result.canceled || !result.assets?.[0]) return;
-      sendingRef.current = true;
-      setSending(true);
-      const tempId = `local-image-${Date.now()}`;
-      stickToLatest.current = true;
-      setMessages(prev => [...prev, { id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '', content: '', message_type: 'image', image_url: result.assets![0].uri, localImageUri: result.assets![0].uri, is_read: true, created_at: new Date().toISOString(), pending: true }]);
-      await sendImage(result.assets[0].uri, tempId);
+      const uri = result.assets![0].uri;
+      const tempId = `local-image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const clientId = genClientId();
+      const createdAt = new Date().toISOString();
+      const optimistic: LocalMessage = {
+        id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '',
+        content: '', message_type: 'image', image_url: uri, localImageUri: uri,
+        is_read: true, created_at: createdAt, pending: true, delivery_status: 'sent', client_id: clientId,
+      } as LocalMessage;
+      enqueueLocal(
+        { tempId, clientId, conversationId, content: null, messageType: 'image', imageUri: uri, attempts: 0, createdAt },
+        optimistic
+      );
     } catch {
       toast.error(t('chat.photoPickerFailed'), t('chat.photoPickerRetry'));
-    } finally {
-      setSending(false);
-      sendingRef.current = false;
     }
   };
 
@@ -589,6 +790,7 @@ startPolling();
       <Pressable
         style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}
         onLongPress={() => handleMessageLongPress(item)}
+        onPress={() => { if (item.failed) retryMessage(item.id); }}
       >
         {/* Reply-to quote */}
         {item.reply_to && (
@@ -619,13 +821,21 @@ startPolling();
         <View style={styles.bubbleFooter}>
           <Text style={[styles.bubbleTime, isImage && styles.bubbleTimeImage]}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
           {item.is_edited && isImage && <Text style={styles.editedLabel}>edited</Text>}
-          {/* Delivery indicator for own messages */}
+          {/* Delivery indicator for own messages (WhatsApp ticks) */}
+          {isMe && item.pending && (
+            <MaterialCommunityIcons name="clock-outline" size={11} color="rgba(255,255,255,0.55)" accessibilityLabel={t('chat.sending')} />
+          )}
+          {isMe && item.failed && (
+            <View style={styles.retryWrap} accessibilityRole="button" accessibilityLabel={t('chat.tapRetry')}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={12} color="#FFD3DE" />
+              <Text style={styles.messageFailed}>{t('chat.notSentTapRetry')}</Text>
+            </View>
+          )}
           {isMe && !item.pending && !item.failed && (
-            <Text style={[styles.deliveryCheck, item.delivery_status === 'read' && styles.deliveryRead]}>
+            <Text style={[styles.deliveryCheck, item.delivery_status === 'read' && styles.deliveryRead]} accessibilityLabel={t(item.delivery_status === 'read' ? 'chat.tickRead' : item.delivery_status === 'delivered' ? 'chat.tickDelivered' : 'chat.tickSent')}>
               {item.delivery_status === 'read' ? '✓✓' : item.delivery_status === 'delivered' ? '✓✓' : '✓'}
             </Text>
           )}
-          {item.failed && <Text style={styles.messageFailed}> !</Text>}
         </View>
         {/* Reactions */}
         {item.reactions && item.reactions.length > 0 && (
@@ -637,6 +847,17 @@ startPolling();
         )}
       </Pressable>
     );
+  };
+
+  const formatLastSeen = (iso: string) => {
+    const d = new Date(iso);
+    const now = new Date();
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (d.toDateString() === now.toDateString()) return `${t('chat.today')}, ${time}`;
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return `${t('chat.yesterday')}, ${time}`;
+    return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
   };
 
   return (
@@ -662,10 +883,18 @@ startPolling();
             />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.headerName} numberOfLines={1}>{otherUserName}</Text>
-              <View style={styles.headerOnlineRow}>
-                <View style={styles.onlineDot} />
-                <Text style={styles.onlineText}>Active now</Text>
-              </View>
+              {otherTyping || presence?.online ? (
+                <View style={styles.headerOnlineRow}>
+                  <View style={styles.onlineDot} />
+                  <Text style={[styles.onlineText, otherTyping && styles.onlineTextTyping]} numberOfLines={1}>
+                    {otherTyping ? t('chat.typing') : t('chat.online')}
+                  </Text>
+                </View>
+              ) : presence?.lastSeen ? (
+                <Text style={styles.headerLastSeen} numberOfLines={1}>{t('chat.lastSeenAt', { time: formatLastSeen(presence.lastSeen) })}</Text>
+              ) : (
+                <Text style={styles.headerLastSeen}>{' '}</Text>
+              )}
             </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerMore} onPress={() => setProfileMenuVisible(true)} accessibilityLabel="more options" accessibilityRole="button">
@@ -674,6 +903,14 @@ startPolling();
         </View>
 
 {/* Offer Reminder Banner - removed, View button is now on the offer card itself */}
+
+        {offline && (
+          <View style={styles.offlineBanner} accessibilityRole="alert">
+            <MaterialCommunityIcons name="cloud-off-outline" size={14} color="#F5A623" />
+            <Text style={styles.offlineBannerText}>{t('chat.offlineBanner')}</Text>
+          </View>
+        )}
+
         <FlatList
             data={messages}
             renderItem={renderMessage}
@@ -878,6 +1115,15 @@ const styles = StyleSheet.create({
   headerOnlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
   onlineDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#00C853' },
   onlineText: { fontSize: 11, color: COLORS.text2, fontWeight: '500' },
+  onlineTextTyping: { color: '#00C853', fontStyle: 'italic' },
+  headerLastSeen: { fontSize: 11, color: COLORS.text2, fontWeight: '400', marginTop: 1 },
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(245,166,35,0.12)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(245,166,35,0.35)',
+    paddingHorizontal: SPACING.md, paddingVertical: 6,
+  },
+  offlineBannerText: { flex: 1, fontSize: 11.5, color: '#F5A623', fontWeight: '600' },
   headerMore: { padding: 8, borderRadius: 20, backgroundColor: COLORS.surface2 },
   offerReminderBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -913,7 +1159,8 @@ const styles = StyleSheet.create({
   imageOverlay: { ...StyleSheet.absoluteFill, borderRadius: RADIUS.media, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' } as any,
   bubbleTimeImage: { marginTop: 4 },
   messageState: { fontSize: 10, color: COLORS.text2, marginTop: 3, alignSelf: 'flex-end' },
-  messageFailed: { fontSize: 10, color: COLORS.coral, marginTop: 3, alignSelf: 'flex-end', fontWeight: '700' },
+  messageFailed: { fontSize: 10, color: '#FFD3DE', fontWeight: '700' },
+  retryWrap: { flexDirection: 'row', alignItems: 'center', gap: 3 },
 
   /* Delivery indicators */
   bubbleFooter: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginTop: 4 },

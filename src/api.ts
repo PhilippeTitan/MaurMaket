@@ -1086,13 +1086,17 @@ export const getMessages = (conversationId: string, params?: { limit?: number; o
   const qs = params ? `?${new URLSearchParams({ ...(params.limit != null && { limit: String(params.limit) }), ...(params.offset != null && { offset: String(params.offset) }), ...(params.since && { since: params.since }), ...(params.sinceId && { sinceId: params.sinceId }) }).toString()}` : '';
   return request(`/conversations/${conversationId}/messages${qs}`);
 };
-export const sendMessage = (conversationId: string, content: string, imageUrl?: string) =>
-  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text' }) });
+export const sendMessage = (conversationId: string, content: string, imageUrl?: string, clientId?: string) =>
+  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text', clientId }) });
 export const getConversationUnreadCount = () => request('/conversations/unread-count');
 export const sendTyping = (conversationId: string) =>
   request(`/conversations/${conversationId}/typing`, { method: 'POST' });
 export const getTypingStatus = (conversationId: string) =>
   request(`/conversations/${conversationId}/typing`);
+export const getDeliveryStatuses = (conversationId: string) =>
+  request(`/conversations/${conversationId}/delivery-status`) as Promise<{ statuses: { id: string; status: 'sent' | 'delivered' | 'read' }[] }>;
+export const getPresence = (userId: string) =>
+  request(`/users/${userId}/presence`) as Promise<{ online: boolean; lastSeen: string | null }>;
 
 // Offers
 export const sendOffer = (conversationId: string, data: { productId: string; productName: string; offeredPrice: number; listPrice: number }) =>
@@ -1115,8 +1119,8 @@ export const editMessage = (messageId: string, content: string) =>
   request(`/messages/${messageId}`, { method: 'PUT', body: JSON.stringify({ content }) });
 export const deleteMessage = (messageId: string) =>
   request(`/messages/${messageId}`, { method: 'DELETE' });
-export const sendMessageWithReply = (conversationId: string, content: string, replyToId?: string, imageUrl?: string) =>
-  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text', replyToId }) });
+export const sendMessageWithReply = (conversationId: string, content: string, replyToId?: string, imageUrl?: string, clientId?: string) =>
+  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text', replyToId, clientId }) });
 export const markConversationRead = (conversationId: string) =>
   request(`/conversations/${conversationId}/read`, { method: 'PUT' });
 export const pinConversation = (conversationId: string) =>

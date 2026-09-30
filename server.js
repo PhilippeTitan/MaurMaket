@@ -795,6 +795,9 @@ await step('NatCash phone separation', () => c.query(`
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT false;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP;
+      -- Client-generated id for idempotent send retries (WhatsApp key_id pattern)
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS client_id UUID;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_send ON messages(conversation_id, sender_id, client_id);
 
       -- Conversation pin and mute
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT false;

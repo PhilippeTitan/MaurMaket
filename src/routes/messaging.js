@@ -7,8 +7,30 @@ import { createNotification } from '../utils/notifications.js';
 
 const router = Router();
 
+// ───── Presence (WhatsApp-style Online / Last seen) ─────
+// In-memory, single-instance. A user is "online" while messaging endpoints are being hit
+// (ChatScreen polls every 5s while open, InboxScreen on focus) — mirrors WhatsApp semantics
+// of "app/chat open on their device".
+const presenceMap = new Map(); // userId -> last active ms
+function touchPresence(userId) {
+  if (userId) presenceMap.set(userId, Date.now());
+}
+function isOnline(userId) {
+  const ts = presenceMap.get(userId);
+  return !!ts && (Date.now() - ts < 15000);
+}
+
+router.get('/api/users/:id/presence', authRequired, async (req, res) => {
+  const lastSeenMs = presenceMap.get(req.params.id) || null;
+  res.json({
+    online: isOnline(req.params.id),
+    lastSeen: lastSeenMs ? new Date(lastSeenMs).toISOString() : null,
+  });
+});
+
 // Conversations list
 router.get('/api/conversations', authRequired, async (req, res) => {
+  touchPresence(req.user.id);
   try {
     const result = await pool.query(
       `SELECT c.*,
@@ -120,6 +142,14 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
   try {
     const conv = await pool.query('SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    touchPresence(req.user.id);
+    // Flip 'sent' → 'delivered': recipient's client fetched these messages (WhatsApp 2nd gray tick)
+    await pool.query(
+      `UPDATE message_deliveries md SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
+       WHERE md.recipient_id = $1 AND md.status = 'sent'
+         AND md.message_id IN (SELECT id FROM messages WHERE conversation_id = $2 AND sender_id <> $1)`,
+      [req.user.id, req.params.id]
+    );
     const unreadCheck = await pool.query('SELECT 1 FROM messages WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false LIMIT 1', [req.params.id, req.user.id]);
     if (unreadCheck.rows.length > 0) {
       await pool.query('UPDATE messages SET is_read = true WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false', [req.params.id, req.user.id]);
@@ -216,7 +246,7 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
     return res.status(404).json({ error: 'Conversation not found' });
   }
-  const { content, imageUrl, messageType, replyToId } = req.body;
+  const { content, imageUrl, messageType, replyToId, clientId } = req.body;
   const msgType = messageType || 'text';
   if (!['text', 'image', 'offer'].includes(msgType)) return res.status(400).json({ error: 'Invalid message type' });
   if (msgType === 'image' && !imageUrl) return res.status(400).json({ error: 'Image URL required for image messages' });
@@ -225,6 +255,14 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
   try {
     const conv = await pool.query('SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    touchPresence(req.user.id);
+    // Idempotent retry: if this client already sent this message (outbox flush after reconnect),
+    // return the stored row instead of duplicating — WhatsApp's key_id dedupe pattern.
+    const validClientId = typeof clientId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId) ? clientId : null;
+    if (validClientId) {
+      const dup = await pool.query('SELECT * FROM messages WHERE conversation_id = $1 AND sender_id = $2 AND client_id = $3', [req.params.id, req.user.id, validClientId]);
+      if (dup.rows.length > 0) return res.status(200).json({ message: dup.rows[0], deduped: true });
+    }
     // Validate reply_to message exists in same conversation
     let validatedReplyToId = null;
     if (replyToId) {
@@ -233,8 +271,8 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
     }
     const storedContent = msgType === 'image' ? null : content?.trim() || null;
     const result = await pool.query(
-      `INSERT INTO messages (conversation_id, sender_id, content, message_type, image_url, reply_to_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [req.params.id, req.user.id, storedContent, msgType, imageUrl || null, validatedReplyToId]
+      `INSERT INTO messages (conversation_id, sender_id, content, message_type, image_url, reply_to_id, client_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [req.params.id, req.user.id, storedContent, msgType, imageUrl || null, validatedReplyToId, validClientId]
     );
     // Create delivery record for recipient
     const recipientId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
@@ -251,6 +289,13 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
     createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, notifData);
     res.status(201).json({ message: result.rows[0] });
   } catch (err) {
+    // Concurrent retry with the same clientId — unique index caught it; return the winner's row
+    if (err.code === '23505' && typeof req.body.clientId === 'string') {
+      try {
+        const dup = await pool.query('SELECT * FROM messages WHERE conversation_id = $1 AND sender_id = $2 AND client_id = $3', [req.params.id, req.user.id, req.body.clientId]);
+        if (dup.rows.length > 0) return res.status(200).json({ message: dup.rows[0], deduped: true });
+      } catch { /* fall through */ }
+    }
     console.error('Message send error:', err);
     res.status(500).json({ error: 'Server error' });
   }
@@ -300,7 +345,31 @@ router.get('/api/conversations/with-offers', authRequired, async (req, res) => {
 const typingUsers = new Map();
 function getTypingKey(convId, userId) { return `${convId}:${userId}`; }
 
+// Delivery statuses for the caller's own messages — polled every 5s so the sender's
+// ticks flip live (sent → delivered → read) without reloading the chat.
+router.get('/api/conversations/:id/delivery-status', authRequired, async (req, res) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT m.id, COALESCE(md.status, 'sent') AS status
+       FROM messages m
+       LEFT JOIN message_deliveries md ON md.message_id = m.id
+       WHERE m.conversation_id = $1 AND m.sender_id = $2
+       ORDER BY m.created_at DESC
+       LIMIT 100`,
+      [req.params.id, req.user.id]
+    );
+    res.json({ statuses: result.rows });
+  } catch (err) {
+    console.error('Delivery status error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.post('/api/conversations/:id/typing', authRequired, async (req, res) => {
+  touchPresence(req.user.id);
   const key = getTypingKey(req.params.id, req.user.id);
   typingUsers.set(key, Date.now());
   setTimeout(() => { typingUsers.delete(key); }, 5000);
@@ -435,23 +504,24 @@ router.put('/api/conversations/:id/read', authRequired, async (req, res) => {
   try {
     const conv = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
-    // Mark all unread incoming messages as read
+    touchPresence(req.user.id);
+    // Update delivery states first — must NOT depend on messages.is_read (GET may have
+    // already flipped it; keying off that would leave message_deliveries stuck on 'delivered').
+    const deliveries = await pool.query(
+      `UPDATE message_deliveries md SET status = 'read', read_at = CURRENT_TIMESTAMP
+       WHERE md.recipient_id = $1 AND md.status <> 'read'
+         AND md.message_id IN (SELECT id FROM messages WHERE conversation_id = $2 AND sender_id <> $1)
+       RETURNING md.message_id`,
+      [req.user.id, req.params.id]
+    );
+    // Mark all unread incoming messages as read (conversation badges)
     const result = await pool.query(
       `UPDATE messages SET is_read = true
        WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false
        RETURNING id`,
       [req.params.id, req.user.id]
     );
-    // Update delivery states
-    if (result.rows.length > 0) {
-      const ids = result.rows.map(r => r.id);
-      await pool.query(
-        `UPDATE message_deliveries SET status = 'read', read_at = CURRENT_TIMESTAMP
-         WHERE message_id = ANY($1) AND recipient_id = $2 AND status != 'read'`,
-        [ids, req.user.id]
-      );
-    }
-    res.json({ marked: result.rows.length });
+    res.json({ marked: Math.max(result.rows.length, deliveries.rows.length) });
   } catch (err) {
     console.error('Mark read error:', err);
     res.status(500).json({ error: 'Server error' });
