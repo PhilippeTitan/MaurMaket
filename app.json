@@ -41,7 +41,8 @@
       "expo-web-browser",
       "expo-asset",
       "expo-image",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "expo-audio"
     ],
     "extra": {
       "eas": {

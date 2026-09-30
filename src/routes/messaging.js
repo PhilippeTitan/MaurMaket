@@ -50,7 +50,7 @@ router.get('/api/conversations', authRequired, async (req, res) => {
        FROM conversations c
        JOIN users u ON u.id = CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END
        LEFT JOIN LATERAL (
-         SELECT CASE WHEN message_type = 'image' THEN 'Photo' WHEN message_type = 'offer' THEN 'Offer' ELSE content END AS last_message,
+         SELECT CASE WHEN message_type = 'image' THEN 'Photo' WHEN message_type = 'offer' THEN 'Offer' WHEN message_type = 'audio' THEN '🎤 Voice message' ELSE content END AS last_message,
               (SELECT message_type FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message_type
          FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1
        ) latest ON true
@@ -246,12 +246,16 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
     return res.status(404).json({ error: 'Conversation not found' });
   }
-  const { content, imageUrl, messageType, replyToId, clientId } = req.body;
+  const { content, imageUrl, messageType, replyToId, clientId, audioUrl, audioDuration } = req.body;
   const msgType = messageType || 'text';
-  if (!['text', 'image', 'offer'].includes(msgType)) return res.status(400).json({ error: 'Invalid message type' });
+  if (!['text', 'image', 'offer', 'audio'].includes(msgType)) return res.status(400).json({ error: 'Invalid message type' });
   if (msgType === 'image' && !imageUrl) return res.status(400).json({ error: 'Image URL required for image messages' });
+  if (msgType === 'audio' && !audioUrl) return res.status(400).json({ error: 'Audio URL required for voice messages' });
   if (msgType === 'text' && (!content || !content.trim())) return res.status(400).json({ error: 'Message content required' });
   if (content && content.length > 5000) return res.status(400).json({ error: 'Message too long (max 5000 characters)' });
+  const audioDur = msgType === 'audio'
+    ? (Number.isFinite(Number(audioDuration)) && Number(audioDuration) > 0 ? Math.min(600, Math.max(1, Math.round(Number(audioDuration)))) : 1)
+    : null;
   try {
     const conv = await pool.query('SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
@@ -269,10 +273,10 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
       const replyMsg = await pool.query('SELECT id FROM messages WHERE id = $1 AND conversation_id = $2', [replyToId, req.params.id]);
       if (replyMsg.rows.length > 0) validatedReplyToId = replyToId;
     }
-    const storedContent = msgType === 'image' ? null : content?.trim() || null;
+    const storedContent = (msgType === 'image' || msgType === 'audio') ? null : content?.trim() || null;
     const result = await pool.query(
-      `INSERT INTO messages (conversation_id, sender_id, content, message_type, image_url, reply_to_id, client_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [req.params.id, req.user.id, storedContent, msgType, imageUrl || null, validatedReplyToId, validClientId]
+      `INSERT INTO messages (conversation_id, sender_id, content, message_type, image_url, reply_to_id, client_id, audio_url, audio_duration) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [req.params.id, req.user.id, storedContent, msgType, imageUrl || null, validatedReplyToId, validClientId, msgType === 'audio' ? audioUrl : null, audioDur]
     );
     // Create delivery record for recipient
     const recipientId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
@@ -283,7 +287,7 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
     await pool.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
     const senderInfo = (await pool.query('SELECT full_name, avatar_url FROM users WHERE id = $1', [req.user.id])).rows[0];
     const senderName = senderInfo?.full_name || 'Someone';
-    const preview = content?.trim() ? (content.trim().length > 80 ? content.trim().substring(0, 80) + '...' : content.trim()) : '\ud83d\udcf7 Photo';
+    const preview = content?.trim() ? (content.trim().length > 80 ? content.trim().substring(0, 80) + '...' : content.trim()) : (msgType === 'audio' ? '🎤 Voice message' : '📷 Photo');
     const notifData = { type: 'new_message', conversationId: req.params.id, senderId: req.user.id, senderName };
     if (senderInfo?.avatar_url) notifData.image = senderInfo.avatar_url;
     createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, notifData);

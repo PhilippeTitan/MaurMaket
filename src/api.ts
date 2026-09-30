@@ -1105,8 +1105,8 @@ export const getMessages = (conversationId: string, params?: { limit?: number; o
   const qs = params ? `?${new URLSearchParams({ ...(params.limit != null && { limit: String(params.limit) }), ...(params.offset != null && { offset: String(params.offset) }), ...(params.since && { since: params.since }), ...(params.sinceId && { sinceId: params.sinceId }) }).toString()}` : '';
   return request(`/conversations/${conversationId}/messages${qs}`);
 };
-export const sendMessage = (conversationId: string, content: string, imageUrl?: string, clientId?: string) =>
-  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text', clientId }) });
+export const sendMessage = (conversationId: string, content: string, imageUrl?: string, clientId?: string, audioUrl?: string, audioDuration?: number) =>
+  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: audioUrl ? 'audio' : imageUrl ? 'image' : 'text', clientId, audioUrl, audioDuration }) });
 export const getConversationUnreadCount = () => request('/conversations/unread-count');
 export const sendTyping = (conversationId: string) =>
   request(`/conversations/${conversationId}/typing`, { method: 'POST' });
@@ -1138,8 +1138,8 @@ export const editMessage = (messageId: string, content: string) =>
   request(`/messages/${messageId}`, { method: 'PUT', body: JSON.stringify({ content }) });
 export const deleteMessage = (messageId: string) =>
   request(`/messages/${messageId}`, { method: 'DELETE' });
-export const sendMessageWithReply = (conversationId: string, content: string, replyToId?: string, imageUrl?: string, clientId?: string) =>
-  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: imageUrl ? 'image' : 'text', replyToId, clientId }) });
+export const sendMessageWithReply = (conversationId: string, content: string, replyToId?: string, imageUrl?: string, clientId?: string, audioUrl?: string, audioDuration?: number) =>
+  request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: audioUrl ? 'audio' : imageUrl ? 'image' : 'text', replyToId, clientId, audioUrl, audioDuration }) });
 export const markConversationRead = (conversationId: string) =>
   request(`/conversations/${conversationId}/read`, { method: 'PUT' });
 export const pinConversation = (conversationId: string) =>
@@ -1225,6 +1225,50 @@ async function resizeAndConvert(uri: string): Promise<{ base64: string; mimeType
     throw e;
   }
 }
+
+function guessAudioMime(uri: string): string {
+  const lower = uri.toLowerCase();
+  if (lower.endsWith('.3gp')) return 'audio/3gpp';
+  if (lower.endsWith('.webm')) return 'audio/webm';
+  if (lower.endsWith('.ogg')) return 'audio/ogg';
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  if (lower.endsWith('.aac')) return 'audio/aac';
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (lower.endsWith('.mp4') || lower.endsWith('.m4a')) return 'audio/mp4';
+  if (Platform.OS === 'web') return 'audio/webm';
+  return 'audio/mp4';
+}
+
+async function fileToAudioDataUri(uri: string): Promise<string> {
+  if (uri.startsWith('data:')) return uri;
+  if (Platform.OS === 'web') {
+    const res = await fetch(uri);
+    const blob = await res.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('Failed to read audio file'));
+      reader.readAsDataURL(blob);
+    });
+  }
+  const FileSystem = require('expo-file-system/legacy');
+  const base64: string = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  return `data:${guessAudioMime(uri)};base64,${base64}`;
+}
+
+export const uploadAudio = async (uri: string): Promise<{ url: string }> => {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated');
+  const dataUri = await fileToAudioDataUri(uri);
+  const res = await fetch(`${API_BASE}/upload-audio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ audio: dataUri }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Voice note upload failed (${res.status})`);
+  return { url: data.url };
+};
 
 export const uploadImage = async (uri: string, expiration?: number, purpose?: 'kyc'): Promise<{ url: string; width?: number; height?: number; deleteUrl?: string }> => {
   console.log(`[UPLOAD-DEBUG] uploadImage called, uri=${uri?.substring(0, 80)}, expiration=${expiration}`);

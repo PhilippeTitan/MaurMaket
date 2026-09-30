@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence } from '../api';
+import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence } from '../api';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from '@/localization';
@@ -27,10 +27,10 @@ import { SkeletonBlock } from '../components/Skeleton';
 import { Swipeable, Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import AnimatedRe, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
+import { useAudioRecorder, useAudioRecorderState, RecordingPresets, setAudioModeAsync, requestRecordingPermissionsAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string; reactions?: { emoji: string; userId: string; userName: string }[]; delivery_status?: 'sent' | 'delivered' | 'read'; reply_to?: Message['reply_to']; client_id?: string };
-
 // WhatsApp-style swipe-right-to-reply on a message bubble.
 function SwipeReplyRow({ children, onReply }: { children: React.ReactNode; onReply: () => void }) {
   return (
@@ -56,6 +56,52 @@ function SwipeReplyRow({ children, onReply }: { children: React.ReactNode; onRep
   );
 }
 
+// Only one voice note plays at a time (WhatsApp behavior).
+let activeVoicePlayer: { pause: () => void } | null = null;
+
+const VOICE_BARS = 22;
+function VoiceNotePlayer({ uri, isMe, duration }: { uri: string; isMe: boolean; duration: number }) {
+  const player = useAudioPlayer(uri, { updateInterval: 250 });
+  const status = useAudioPlayerStatus(player);
+  const total = status.duration && isFinite(status.duration) && status.duration > 0
+    ? status.duration
+    : (duration || 0);
+  const current = total > 0 ? Math.min(status.currentTime || 0, total) : 0;
+  const progress = total > 0 ? current / total : 0;
+  const finished = status.didJustFinish;
+  const toggle = () => {
+    try {
+      if (status.playing) {
+        player.pause();
+      } else {
+        if (activeVoicePlayer && activeVoicePlayer !== player) activeVoicePlayer.pause();
+        activeVoicePlayer = player;
+        if (finished || (total > 0 && current >= total - 0.05)) player.seekTo(0);
+        player.play();
+      }
+    } catch { /* ignore playback errors */ }
+  };
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const shownTime = status.playing || (!finished && current > 0) ? current : (finished ? total : total);
+  const fillColor = isMe ? COLORS.white : COLORS.coral;
+  const trackColor = isMe ? 'rgba(255,255,255,0.3)' : COLORS.border;
+  return (
+    <View style={styles.voiceRow} accessibilityLabel="voice message">
+      <TouchableOpacity onPress={toggle} style={[styles.voicePlay, isMe && styles.voicePlayMe]} accessibilityRole="button" accessibilityLabel={status.playing ? 'pause voice message' : 'play voice message'}>
+        <MaterialCommunityIcons name={status.playing ? 'pause' : 'play'} size={16} color={isMe ? COLORS.coral : COLORS.white} />
+      </TouchableOpacity>
+      <View style={styles.voiceBars}>
+        {Array.from({ length: VOICE_BARS }).map((_, i) => {
+          const h = 4 + ((i * 7 + 3) % 10);
+          const active = (i + 1) / VOICE_BARS <= Math.max(progress, finished ? 1 : 0);
+          return <View key={i} style={{ width: 2, height: h, borderRadius: 1, backgroundColor: active ? fillColor : trackColor }} />;
+        })}
+      </View>
+      <Text style={[styles.voiceTime, isMe && styles.voiceTimeMe]}>{fmt(Math.round(shownTime))}</Text>
+    </View>
+  );
+}
+
 // ───── Outbox (WhatsApp-style offline send queue) ─────
 // Messages are queued locally, flushed with a client-generated UUID (server dedupes on it),
 // and survive app restarts / network loss until acknowledged.
@@ -64,9 +110,12 @@ type OutboxEntry = {
   clientId: string;
   conversationId: string;
   content: string | null;
-  messageType: 'text' | 'image';
+  messageType: 'text' | 'image' | 'audio';
   imageUri?: string;
   imageUrl?: string;
+  audioUri?: string;
+  audioUrl?: string;
+  audioDuration?: number;
   replyToId?: string;
   attempts: number;
   createdAt: string;
@@ -79,6 +128,11 @@ const genClientId = () =>
     const v = c === 'x' ? r : ((r & 0x3) | 0x8);
     return v.toString(16);
   });
+
+const fmtMs = (ms: number) => {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+};
 
 const readOutbox = async (): Promise<OutboxEntry[]> => {
   try {
@@ -230,9 +284,16 @@ export default function ChatScreen({ route, navigation }: Props) {
             imageUrl = up.url;
             await persistEntry({ ...entry, imageUrl, attempts: entry.attempts + 1 });
           }
+          let audioUrl = entry.audioUrl;
+          if (entry.messageType === 'audio' && !audioUrl) {
+            if (!entry.audioUri) throw new Error('missing audio uri');
+            const up = await uploadAudio(entry.audioUri);
+            audioUrl = up.url;
+            await persistEntry({ ...entry, audioUrl, attempts: entry.attempts + 1 });
+          }
           const result = (entry.replyToId
-            ? await sendMessageWithReply(entry.conversationId, entry.content || '', entry.replyToId, imageUrl, entry.clientId)
-            : await apiSendMessage(entry.conversationId, entry.content || '', imageUrl, entry.clientId)) as { message: Message };
+            ? await sendMessageWithReply(entry.conversationId, entry.content || '', entry.replyToId, imageUrl, entry.clientId, audioUrl, entry.audioDuration)
+            : await apiSendMessage(entry.conversationId, entry.content || '', imageUrl, entry.clientId, audioUrl, entry.audioDuration)) as { message: Message };
           await removeEntry(entry.tempId);
           reconcileSent(entry.tempId, result.message);
         } catch {
@@ -421,6 +482,8 @@ startPolling();
           message_type: e.messageType,
           image_url: e.imageUrl,
           localImageUri: e.imageUri,
+          audio_url: e.audioUrl || e.audioUri,
+          audio_duration: e.audioDuration,
           is_read: true,
           created_at: e.createdAt,
           pending: true,
@@ -502,6 +565,70 @@ startPolling();
       toast.error(t('chat.photoPickerFailed'), t('chat.photoPickerRetry'));
     }
   };
+
+  // ───── Voice notes (tap mic → record → tap send / cancel) ─────
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder, 250);
+  const [recording, setRecording] = useState(false);
+  const recordStartRef = useRef(0);
+
+  const startRecording = async () => {
+    if (recording) return;
+    try {
+      const perm = await requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        toast.error(t('chat.micDenied'), t('chat.allowMic'));
+        return;
+      }
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      recordStartRef.current = Date.now();
+      setRecording(true);
+    } catch {
+      toast.error(t('chat.recordFailed'));
+    }
+  };
+
+  const stopRecording = async (send: boolean) => {
+    if (!recording) return;
+    setRecording(false);
+    let uri: string | null = null;
+    let durationSec = Math.max(1, Math.round((Date.now() - recordStartRef.current) / 1000));
+    try {
+      await recorder.stop();
+      uri = recorder.uri;
+      if (recorderState.durationMillis > 0) durationSec = Math.max(1, Math.round(recorderState.durationMillis / 1000));
+    } catch { /* recorder may already be stopped */ }
+    try { await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false }); } catch { /* ignore */ }
+    if (!send || !uri) return;
+    durationSec = Math.min(600, durationSec);
+    const tempId = `local-audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const clientId = genClientId();
+    const createdAt = new Date().toISOString();
+    const replyingTo = replyTo;
+    const optimistic: LocalMessage = {
+      id: tempId, conversation_id: conversationId, sender_id: store.user?.id || '',
+      content: '', message_type: 'audio', audio_url: uri, audio_duration: durationSec,
+      is_read: true, created_at: createdAt, pending: true, delivery_status: 'sent', client_id: clientId,
+      reply_to: replyingTo ? { id: replyingTo.id, content: replyingTo.content, senderId: replyingTo.sender_id, senderName: replyingTo.sender_id === store.user?.id ? 'You' : otherUserName, type: replyingTo.message_type } : undefined,
+    } as LocalMessage;
+    setReplyTo(null);
+    enqueueLocal(
+      { tempId, clientId, conversationId, content: null, messageType: 'audio', audioUri: uri, audioDuration: durationSec, replyToId: replyingTo?.id, attempts: 0, createdAt },
+      optimistic
+    );
+  };
+
+  // Stop any in-progress recording when leaving the chat
+  useEffect(() => {
+    return () => {
+      if (recording) {
+        recorder.stop().catch(() => {});
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   const handleSendOffer = async (price: number) => {
     if (!draftOffer || sendingRef.current) return;
@@ -645,6 +772,7 @@ startPolling();
   const renderMessage = ({ item }: { item: LocalMessage }) => {
     const isMe = item.sender_id === store.user?.id;
     const isImage = item.message_type === 'image' && item.image_url;
+    const isAudio = item.message_type === 'audio' && item.audio_url;
     const isOffer = item.message_type === 'offer';
 
     if (isOffer) {
@@ -882,7 +1010,7 @@ startPolling();
             <View style={styles.replyAccent} />
             <View style={styles.replyContent}>
               <Text style={styles.replySender} numberOfLines={1}>{item.reply_to.senderName || 'Message'}</Text>
-              <Text style={styles.replyText} numberOfLines={2}>{item.reply_to.content || (item.reply_to.type === 'image' ? '📷 Photo' : 'Message')}</Text>
+              <Text style={styles.replyText} numberOfLines={2}>{item.reply_to.content || (item.reply_to.type === 'image' ? '📷 Photo' : item.reply_to.type === 'audio' ? '🎤 Voice message' : 'Message')}</Text>
             </View>
           </View>
         )}
@@ -898,6 +1026,7 @@ startPolling();
             </View>
           </TouchableOpacity>
         ) : null}
+        {isAudio ? <VoiceNotePlayer uri={item.audio_url!} isMe={isMe} duration={item.audio_duration || 0} /> : null}
         {item.content ? (
           <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.content}</Text>
         ) : null}
@@ -1072,7 +1201,7 @@ startPolling();
             <View style={styles.replyBarAccent} />
             <View style={styles.replyBarContent}>
               <Text style={styles.replyBarSender} numberOfLines={1}>Replying to {replyTo.sender_id === store.user?.id ? 'yourself' : otherUserName}</Text>
-              <Text style={styles.replyBarText} numberOfLines={1}>{replyTo.content || (replyTo.message_type === 'image' ? '📷 Photo' : 'Message')}</Text>
+              <Text style={styles.replyBarText} numberOfLines={1}>{replyTo.content || (replyTo.message_type === 'image' ? '📷 Photo' : replyTo.message_type === 'audio' ? '🎤 Voice message' : 'Message')}</Text>
             </View>
             <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyBarClose} accessibilityLabel="cancel reply" accessibilityRole="button">
               <Icon name="close" size={16} color={COLORS.text2} />
@@ -1081,6 +1210,19 @@ startPolling();
         )}
 
         <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
+          {recording ? (
+            <View style={styles.recordingRow}>
+              <TouchableOpacity onPress={() => stopRecording(false)} style={styles.recordingCancel} accessibilityLabel={t('common.cancel')} accessibilityRole="button">
+                <MaterialCommunityIcons name="close-circle" size={28} color={COLORS.text2} />
+              </TouchableOpacity>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingTime}>{fmtMs(recorderState.durationMillis)}</Text>
+              <Text style={styles.recordingHint}>{t('chat.recording')}</Text>
+              <TouchableOpacity onPress={() => stopRecording(true)} style={styles.recordingSend} accessibilityLabel="send voice message" accessibilityRole="button">
+                <MaterialCommunityIcons name="send" size={20} color={COLORS.white} />
+              </TouchableOpacity>
+            </View>
+          ) : (
           <View style={styles.inputRow}>
             <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending} accessibilityLabel="attach photo" accessibilityRole="button">
               <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.text2} />
@@ -1110,17 +1252,31 @@ startPolling();
             }} accessibilityLabel="make an offer" accessibilityRole="button">
               <Icon name="sale-tag" size={20} color={COLORS.coral} />
             </TouchableOpacity>
-            <TouchableOpacity style={[{ opacity: sending || (!text.trim()) ? 0.4 : 1 }]} onPress={handleSend} disabled={sending || !text.trim()} accessibilityLabel="send message" accessibilityRole="button">
-              <LinearGradient
-                colors={['#FF6B81', '#FF4D6A', '#E8365A']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.sendBtn}
-              >
-              <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
-              </LinearGradient>
-            </TouchableOpacity>
+            {text.trim() ? (
+              <TouchableOpacity style={{ opacity: sending ? 0.4 : 1 }} onPress={handleSend} disabled={sending} accessibilityLabel="send message" accessibilityRole="button">
+                <LinearGradient
+                  colors={['#FF6B81', '#FF4D6A', '#E8365A']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.sendBtn}
+                >
+                <MaterialCommunityIcons name="arrow-up" size={20} color={COLORS.white} />
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={startRecording} accessibilityLabel="record voice message" accessibilityRole="button">
+                <LinearGradient
+                  colors={['#FF6B81', '#FF4D6A', '#E8365A']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.sendBtn}
+                >
+                <MaterialCommunityIcons name="microphone" size={20} color={COLORS.white} />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
           </View>
+          )}
         </View>
 
         <Modal visible={!!preview} transparent animationType="fade" onRequestClose={() => setPreview(null)}>
@@ -1656,6 +1812,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     shadowColor: COLORS.coral, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 2,
   },
+
+  /* Voice note bubble */
+  voiceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 180, paddingVertical: 2 },
+  voicePlay: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
+  voicePlayMe: { backgroundColor: COLORS.white },
+  voiceBars: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2, height: 16 },
+  voiceTime: { fontSize: 11, color: COLORS.text2, minWidth: 30, textAlign: 'right' },
+  voiceTimeMe: { color: 'rgba(255,255,255,0.85)' },
+
+  /* Recording bar */
+  recordingRow: { flexDirection: 'row', alignItems: 'center', padding: SPACING.sm, paddingHorizontal: SPACING.md, gap: 10 },
+  recordingCancel: { padding: 2 },
+  recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FF3B30' },
+  recordingTime: { fontSize: 15, fontWeight: '700', color: COLORS.text, fontVariant: ['tabular-nums'] },
+  recordingHint: { flex: 1, fontSize: 12, color: COLORS.text2, fontStyle: 'italic' },
+  recordingSend: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
   profileOverlay: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.35)',

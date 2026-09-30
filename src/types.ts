@@ -186,6 +186,8 @@ export interface Message {
   content: string;
   message_type?: string;
   image_url?: string;
+  audio_url?: string;
+  audio_duration?: number;
   offer_data?: {
     productId: string;
     productName: string;

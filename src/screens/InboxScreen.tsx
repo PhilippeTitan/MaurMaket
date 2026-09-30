@@ -189,9 +189,10 @@ export default function InboxScreen() {
             ) : null}
             <View style={styles.convoMsgRow}>
               {(item as any).last_message_type === 'image' && <MaterialCommunityIcons name="image-outline" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
+              {(item as any).last_message_type === 'audio' && <MaterialCommunityIcons name="microphone" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
               {(item as any).has_active_offer && <MaterialCommunityIcons name="tag-outline" size={14} color={COLORS.coral} style={{ marginRight: 4 }} />}
             {!(item as any).has_active_offer && (item as any).last_message_type === 'offer' && <MaterialCommunityIcons name="tag-outline" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
-              {((item as any).last_message_type && (item as any).last_message_type !== 'text') ? null : (
+              {((item as any).last_message_type && (item as any).last_message_type !== 'text' && (item as any).last_message_type !== 'audio') ? null : (
                 <Text style={[styles.convoMsg, hasUnread && styles.convoMsgUnread]} numberOfLines={1}>
                   {item.last_message?.content || (item as any).last_message || t('inbox.noMessages')}
                 </Text>

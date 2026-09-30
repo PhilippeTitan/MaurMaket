@@ -1017,6 +1017,12 @@ await step('NatCash phone separation', () => c.query(`
       ON CONFLICT (message_id, recipient_id) DO NOTHING;
     `));
 
+    // 46. Voice message columns
+    await step('Voice message columns', () => c.query(`
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio_url TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio_duration INTEGER;
+    `));
+
     // ────── Checkout v2: Multi-seller entity model ──────
     // seller_fulfillments: per-seller payment + fulfillment tracking
     await step('seller_fulfillments table', () => c.query(`
@@ -1601,6 +1607,47 @@ app.post('/api/upload', authRequired, express.json({ limit: '10mb' }), async (re
     return res.json({ url: imgbbData.data.url, width: imgWidth, height: imgHeight, deleteUrl: imgbbData.data.delete_url, provider: 'imgbb' });
   } catch (err) {
     console.error('[UPLOAD] Error:', err.message);
+    res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+// Voice note upload — raw audio bytes to Supabase/R2 (no image processing)
+app.post('/api/upload-audio', authRequired, express.json({ limit: '3mb' }), async (req, res) => {
+  try {
+    const { audio } = req.body;
+    if (!audio || typeof audio !== 'string') return res.status(400).json({ error: 'No audio data' });
+    const match = /^data:(audio\/[\w.+-]+);base64,/.exec(audio);
+    if (!match) return res.status(400).json({ error: 'Invalid audio data' });
+    const mime = match[1];
+    const allowedMimes = ['audio/mp4', 'audio/m4a', 'audio/aac', 'audio/webm', 'audio/3gpp', 'audio/ogg', 'audio/wav', 'audio/x-wav', 'audio/mpeg'];
+    if (!allowedMimes.includes(mime)) return res.status(400).json({ error: 'Unsupported audio format' });
+    const buffer = Buffer.from(audio.slice(audio.indexOf(',') + 1), 'base64');
+    if (buffer.length === 0) return res.status(400).json({ error: 'Empty audio data' });
+    if (buffer.length > 2 * 1024 * 1024) return res.status(413).json({ error: 'Voice note too large (max 2MB)' });
+    const extByMime = { 'audio/mp4': 'm4a', 'audio/m4a': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm', 'audio/3gpp': '3gp', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mpeg': 'mp3' };
+    const key = `${req.user.id}/${crypto.randomUUID()}.${extByMime[mime]}`;
+    const storageTargets = [
+      supabaseStorage && { provider: 'supabase', label: 'Supabase', storage: supabaseStorage, bucket: SUPABASE_STORAGE_BUCKET, publicBase: SUPABASE_PUBLIC_BASE },
+      r2Storage && { provider: 'r2', label: 'R2', storage: r2Storage, bucket: R2_BUCKET, publicBase: R2_PUBLIC_BASE },
+    ].filter(Boolean);
+
+    for (const target of storageTargets) {
+      try {
+        await target.storage.send(new PutObjectCommand({
+          Bucket: target.bucket,
+          Key: key,
+          Body: buffer,
+          ContentType: mime,
+          CacheControl: 'public, max-age=31536000, immutable',
+        }));
+        return res.json({ url: `${target.publicBase}/${key}`, provider: target.provider });
+      } catch (storageErr) {
+        console.warn(`[UPLOAD-AUDIO] ${target.label} failed; trying next provider:`, storageErr.message);
+      }
+    }
+    return res.status(503).json({ error: 'No upload provider available' });
+  } catch (err) {
+    console.error('[UPLOAD-AUDIO] Error:', err.message);
     res.status(500).json({ error: 'Upload failed' });
   }
 });

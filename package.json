@@ -40,6 +40,7 @@
     "dotenv": "^17.4.2",
     "expo": "^57",
     "expo-asset": "~57.0.17",
+    "expo-audio": "~57.0.5",
     "expo-auth-session": "~57.0.12",
     "expo-blur": "~57.0.3",
     "expo-camera": "~57.0.5",
