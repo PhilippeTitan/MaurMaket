@@ -11,6 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence, getConversationMedia, getLinkPreview } from '../api';
 import type { LinkPreviewData, ConversationMediaItem } from '../api';
 import { onRealtime } from '../realtime';
+import { network } from '../network';
+import { cacheKeys, readSnapshot, writeSnapshot, pruneMessageSnapshots } from '../offlineCache';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from '@/localization';
@@ -440,6 +442,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   };
 
   const fetchMessages = async (pageNum = 0, older = false, quiet = false) => {
+    // Full history load (no `since` cursor): the only point worth snapshotting
+    const isFullLoad = pageNum === 0 && !older && !lastMessageCursor.current;
     if (older) setLoadingOlder(true);
     try {
       const params: Record<string, string | number> = { limit: 50, offset: pageNum * 50 };
@@ -484,9 +488,18 @@ export default function ChatScreen({ route, navigation }: Props) {
         const latest = msgs[msgs.length - 1];
         lastMessageCursor.current = { time: latest.created_at, id: latest.id };
       }
+      // Offline-first: persist last page of history so the chat opens without a network
+      if (isFullLoad) {
+        const uid = store.user?.id;
+        if (uid) {
+          void writeSnapshot(cacheKeys.messages(uid, conversationId), { messages: msgs.slice(-50) });
+          void pruneMessageSnapshots(uid);
+        }
+      }
       if (older || !lastMessageCursor.current || pageNum === 0) setHasMore(msgs.length === 50);
     } catch {
-      if (!quiet) toast.error(t('feedback.messagesUnavailable'), t('feedback.connectionRetry'), () => fetchMessages(pageNum, older));
+      // Offline already explained by the global banner; only toast real online failures
+      if (!quiet && !network.isOffline) toast.error(t('feedback.messagesUnavailable'), t('feedback.connectionRetry'), () => fetchMessages(pageNum, older));
     } finally {
       if (older) setLoadingOlder(false);
     }
@@ -496,6 +509,23 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     lastMessageCursor.current = null;
+    // Offline-first: paint saved history instantly; fetchMessages below refreshes it.
+    // The fetch full-replaces state when it succeeds, so a late snapshot can't clobber it.
+    void (async () => {
+      const uid = store.user?.id;
+      if (!uid) return;
+      try {
+        const snap = await readSnapshot<{ messages: Message[] }>(cacheKeys.messages(uid, conversationId));
+        const cached = snap?.value?.messages;
+        if (!cached?.length) return;
+        setMessages(prev => {
+          if (prev.some(m => !(m.pending || m.failed))) return prev; // fresh data already arrived
+          const cachedIds = new Set(cached.map(m => m.id));
+          const merged = [...cached, ...prev.filter(m => !cachedIds.has(m.id))];
+          return merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        });
+      } catch { /* cache is best effort */ }
+    })();
     fetchMessages(0, false);
     setPage(0);
     setOtherTyping(false);

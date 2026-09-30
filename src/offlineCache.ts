@@ -75,4 +75,28 @@ export const cacheKeys = {
     `${params.personalized && userId ? `user:${userId}` : 'public'}:explore:${JSON.stringify(params)}:v1`,
   profile: (userId: string) => `user:${userId}:profile:v1`,
   inbox: (userId: string) => `user:${userId}:inbox:v1`,
+  messages: (userId: string, conversationId: string) => `user:${userId}:messages:${conversationId}:v1`,
 };
+
+/** Keep at most `limit` per-conversation message snapshots, evicting the oldest. */
+export async function pruneMessageSnapshots(userId: string, limit = 15): Promise<void> {
+  if (!userId) return;
+  try {
+    const prefix = `${CACHE_PREFIX}user:${userId}:messages:`;
+    const keys = await AsyncStorage.getAllKeys();
+    const mine = keys.filter(k => k.startsWith(prefix));
+    if (mine.length <= limit) return;
+    const pairs = await AsyncStorage.multiGet(mine);
+    const ranked = pairs
+      .map(([key, raw]) => {
+        let updatedAt = 0;
+        try { updatedAt = raw ? (JSON.parse(raw) as CacheRecord<unknown>).updatedAt || 0 : 0; } catch { /* unparseable → evict first */ }
+        return { key, updatedAt };
+      })
+      .sort((a, b) => a.updatedAt - b.updatedAt);
+    const excess = ranked.slice(0, ranked.length - limit).map(r => r.key);
+    if (excess.length) await AsyncStorage.multiRemove(excess);
+  } catch {
+    // Best effort only; bounded storage is an optimization, not a correctness requirement.
+  }
+}

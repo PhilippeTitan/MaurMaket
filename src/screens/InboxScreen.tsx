@@ -20,6 +20,7 @@ import type { RootStackParamList } from '../navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import UserAvatar from '../components/UserAvatar';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
+import { network } from '../network';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type InboxTab = 'messages' | 'offers';
@@ -98,7 +99,8 @@ export default function InboxScreen() {
       _inboxCache = { timestamp: Date.now(), data: { conversations, followedSellers, offerConversations } };
       if (cacheKey) void writeSnapshot(cacheKey, { conversations, followedSellers, offerConversations });
     } catch {
-      toast.error(t('feedback.inboxRefreshFailed'), t('feedback.connectionRetry'), () => fetchData(true));
+      // Offline: cached data is already on screen and the global banner explains why
+      if (!network.isOffline) toast.error(t('feedback.inboxRefreshFailed'), t('feedback.connectionRetry'), () => fetchData(true));
     }
     setLoading(false);
   }, []);
