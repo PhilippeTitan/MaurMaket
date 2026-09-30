@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Image, Pressable, AppState, AppStateStatus, Modal,
@@ -24,8 +24,9 @@ import BackButton from '../components/BackButton';
 import SellerItemsSheet from '../components/SellerItemsSheet';
 import OfferBuilder from '../components/OfferBuilder';
 import { SkeletonBlock } from '../components/Skeleton';
-import { Swipeable } from 'react-native-gesture-handler';
+import { Swipeable, Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
+import AnimatedRe, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string; reactions?: { emoji: string; userId: string; userName: string }[]; delivery_status?: 'sent' | 'delivered' | 'read'; reply_to?: Message['reply_to']; client_id?: string };
@@ -105,7 +106,60 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ uri: string; sender: string; time: string } | null>(null);
+  const [viewerChrome, setViewerChrome] = useState(true);
+  const vScale = useSharedValue(1);
+  const vSavedScale = useSharedValue(1);
+  const vTx = useSharedValue(0);
+  const vTy = useSharedValue(0);
+  const vSavedX = useSharedValue(0);
+  const vSavedY = useSharedValue(0);
+  const toggleViewerChrome = () => setViewerChrome(c => !c);
+  const viewerGesture = useMemo(() => {
+    const pinch = Gesture.Pinch()
+      .onUpdate(e => { vScale.value = vSavedScale.value * e.scale; })
+      .onEnd(() => {
+        if (vScale.value <= 1) {
+          vScale.value = withTiming(1);
+          vSavedScale.value = 1;
+          vTx.value = withTiming(0);
+          vTy.value = withTiming(0);
+          vSavedX.value = 0;
+          vSavedY.value = 0;
+        } else if (vScale.value >= 4) {
+          vScale.value = withTiming(4);
+          vSavedScale.value = 4;
+        } else {
+          vSavedScale.value = vScale.value;
+        }
+      });
+    const pan = Gesture.Pan()
+      .onUpdate(e => {
+        if (vScale.value <= 1.03) return;
+        vTx.value = vSavedX.value + e.translationX;
+        vTy.value = vSavedY.value + e.translationY;
+      })
+      .onEnd(() => {
+        if (vScale.value <= 1.03) return;
+        vSavedX.value = vTx.value;
+        vSavedY.value = vTy.value;
+      });
+    const tap = Gesture.Tap()
+      .maxDuration(300)
+      .onEnd((_e, success) => { if (success) runOnJS(toggleViewerChrome)(); });
+    return Gesture.Race(Gesture.Simultaneous(pinch, pan), tap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const viewerImageStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: vTx.value }, { translateY: vTy.value }, { scale: vScale.value }],
+  }));
+  useEffect(() => {
+    if (!preview) return;
+    setViewerChrome(true);
+    vScale.value = 1; vSavedScale.value = 1;
+    vTx.value = 0; vTy.value = 0; vSavedX.value = 0; vSavedY.value = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
   const [counteringMessageId, setCounteringMessageId] = useState<string | null>(null);
   const [counterPrice, setCounterPrice] = useState('');
   const [otherTyping, setOtherTyping] = useState(false);
@@ -833,7 +887,7 @@ startPolling();
           </View>
         )}
         {isImage ? (
-          <TouchableOpacity onPress={() => setPreviewImage(item.localImageUri || getImageUrl(item.image_url!) || item.image_url!)} accessibilityRole="imagebutton" accessibilityLabel="open photo">
+          <TouchableOpacity onPress={() => setPreview({ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url!, sender: isMe ? (store.user?.full_name || 'You') : (otherUserName || 'Message'), time: new Date(item.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })} accessibilityRole="imagebutton" accessibilityLabel="open photo">
             <View>
               <Image source={{ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" />
               {item.pending && (
@@ -1069,10 +1123,27 @@ startPolling();
           </View>
         </View>
 
-        <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
-          <Pressable style={styles.imagePreview} onPress={() => setPreviewImage(null)} accessibilityLabel="close photo" accessibilityRole="button">
-            {previewImage && <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="contain" />}
-          </Pressable>
+        <Modal visible={!!preview} transparent animationType="fade" onRequestClose={() => setPreview(null)}>
+          <View style={styles.viewerRoot}>
+            {preview && viewerChrome && (
+              <View style={[styles.viewerHeader, { paddingTop: insets.top + SPACING.xs }]}>
+                <TouchableOpacity onPress={() => setPreview(null)} style={styles.viewerHeaderBtn} accessibilityLabel="close photo" accessibilityRole="button">
+                  <MaterialCommunityIcons name="close" size={26} color={COLORS.white} />
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.viewerSender} numberOfLines={1}>{preview.sender}</Text>
+                  <Text style={styles.viewerTime}>{preview.time}</Text>
+                </View>
+              </View>
+            )}
+            {preview && (
+              <GestureDetector gesture={viewerGesture}>
+                <Animated.View style={{ flex: 1 }}>
+                  <AnimatedRe.Image source={{ uri: preview.uri }} style={[styles.viewerImage, viewerImageStyle]} resizeMode="contain" />
+                </Animated.View>
+              </GestureDetector>
+            )}
+          </View>
         </Modal>
 
         <SellerItemsSheet
@@ -1590,6 +1661,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     zIndex: 20,
   },
-  imagePreview: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: SPACING.md },
-  previewImage: { width: '100%', height: '100%' },
+  viewerRoot: { flex: 1, backgroundColor: '#000' },
+  viewerHeader: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm, backgroundColor: 'rgba(0,0,0,0.55)' },
+  viewerHeaderBtn: { padding: 6, marginRight: 4 },
+  viewerSender: { fontSize: 15, fontWeight: '600', color: COLORS.white },
+  viewerTime: { fontSize: 11, color: 'rgba(255,255,255,0.65)', marginTop: 1 },
+  viewerImage: { width: '100%', height: '100%' },
 });
