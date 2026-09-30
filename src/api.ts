@@ -1108,6 +1108,12 @@ export const getMessages = (conversationId: string, params?: { limit?: number; o
 export const sendMessage = (conversationId: string, content: string, imageUrl?: string, clientId?: string, audioUrl?: string, audioDuration?: number) =>
   request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: audioUrl ? 'audio' : imageUrl ? 'image' : 'text', clientId, audioUrl, audioDuration }) });
 export const getConversationUnreadCount = () => request('/conversations/unread-count');
+export type ConversationMediaItem = { id: string; sender_id: string; image_url: string; created_at: string };
+export const getConversationMedia = (conversationId: string) =>
+  request(`/conversations/${conversationId}/media`) as Promise<{ media: ConversationMediaItem[] }>;
+export type LinkPreviewData = { url: string; title?: string | null; description?: string | null; image?: string | null; siteName?: string | null };
+export const getLinkPreview = (url: string) =>
+  request(`/link-preview?url=${encodeURIComponent(url)}`) as Promise<{ preview: LinkPreviewData | null }>;
 export const sendTyping = (conversationId: string) =>
   request(`/conversations/${conversationId}/typing`, { method: 'POST' });
 export const getTypingStatus = (conversationId: string) =>

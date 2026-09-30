@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Image, Pressable, AppState, AppStateStatus, Modal,
-  Animated,
+  Animated, Linking,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence } from '../api';
+import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence, getConversationMedia, getLinkPreview } from '../api';
+import type { LinkPreviewData, ConversationMediaItem } from '../api';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from '@/localization';
@@ -134,6 +135,77 @@ const fmtMs = (ms: number) => {
   return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
 };
 
+// ───── Link previews ─────
+const URL_PATTERN = /(https?:\/\/[^\s<>"')\]]+)/gi;
+const stripUrlPunct = (u: string) => u.replace(/[.,;:!?"'\)\]]+$/, '');
+const findFirstUrl = (s: string) => { const m = s.match(URL_PATTERN); return m ? stripUrlPunct(m[0]) : null; };
+const urlHost = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+
+const previewCache = new Map<string, LinkPreviewData | null>();
+const previewPending = new Map<string, Promise<LinkPreviewData | null>>();
+
+function LinkPreview({ url, isMe }: { url: string; isMe: boolean }) {
+  const [preview, setPreview] = useState<LinkPreviewData | null | undefined>(() => (previewCache.has(url) ? previewCache.get(url)! : undefined));
+  useEffect(() => {
+    if (preview !== undefined) return;
+    let alive = true;
+    let p = previewPending.get(url);
+    if (!p) {
+      p = getLinkPreview(url)
+        .then(r => { const d = r.preview || null; previewCache.set(url, d); return d; })
+        .catch(() => null);
+      previewPending.set(url, p);
+    }
+    p.then(d => { previewPending.delete(url); if (alive) setPreview(d); });
+    return () => { alive = false; };
+  }, [url, preview]);
+  if (!preview) return null;
+  const host = urlHost(url);
+  return (
+    <TouchableOpacity
+      style={[styles.linkCard, isMe && styles.linkCardMe]}
+      onPress={() => Linking.openURL(stripUrlPunct(url)).catch(() => {})}
+      activeOpacity={0.8}
+      accessibilityRole="link"
+      accessibilityLabel={preview.title || host}
+    >
+      {preview.image ? (
+        <Image source={{ uri: preview.image }} style={styles.linkThumb} resizeMode="cover" />
+      ) : (
+        <View style={[styles.linkThumb, styles.linkThumbFallback]}>
+          <MaterialCommunityIcons name="link-variant" size={20} color={COLORS.text2} />
+        </View>
+      )}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.linkTitle} numberOfLines={1}>{preview.title || host}</Text>
+        {preview.description ? <Text style={styles.linkDesc} numberOfLines={2}>{preview.description}</Text> : null}
+        <Text style={styles.linkHost} numberOfLines={1}>{preview.siteName || host}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function LinkifiedText({ content, isMe }: { content: string; isMe: boolean }) {
+  const parts = content.split(URL_PATTERN);
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <Text
+            key={i}
+            style={isMe ? styles.bubbleLinkMe : styles.bubbleLink}
+            onPress={() => Linking.openURL(stripUrlPunct(p)).catch(() => {})}
+          >
+            {p}
+          </Text>
+        ) : (
+          <React.Fragment key={i}>{p}</React.Fragment>
+        )
+      )}
+    </>
+  );
+}
+
 const readOutbox = async (): Promise<OutboxEntry[]> => {
   try {
     const raw = await AsyncStorage.getItem(OUTBOX_KEY);
@@ -162,6 +234,47 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [preview, setPreview] = useState<{ uri: string; sender: string; time: string } | null>(null);
   const [viewerChrome, setViewerChrome] = useState(true);
+
+  // Shared media gallery
+  const [mediaVisible, setMediaVisible] = useState(false);
+  const [mediaTab, setMediaTab] = useState<'images' | 'links'>('images');
+  const [mediaList, setMediaList] = useState<ConversationMediaItem[]>([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+
+  const openMedia = async () => {
+    setMediaVisible(true);
+    setMediaTab('images');
+    if (mediaList.length > 0 || mediaLoading) return;
+    setMediaLoading(true);
+    try {
+      const r = await getConversationMedia(conversationId);
+      setMediaList(r.media || []);
+    } catch {
+      toast.error(t('chat.mediaLoadFailed'));
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
+  // Links tab: deduped URLs from messages already loaded in this chat
+  const linkMessages = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { url: string; sender: string; time: string }[] = [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.message_type !== 'text' || !m.content || m.is_deleted) continue;
+      const u = findFirstUrl(m.content);
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      out.push({
+        url: u,
+        sender: m.sender_id === store.user?.id ? (store.user?.full_name || 'You') : otherUserName || 'Message',
+        time: new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
   const vScale = useSharedValue(1);
   const vSavedScale = useSharedValue(1);
   const vTx = useSharedValue(0);
@@ -1028,7 +1141,12 @@ startPolling();
         ) : null}
         {isAudio ? <VoiceNotePlayer uri={item.audio_url!} isMe={isMe} duration={item.audio_duration || 0} /> : null}
         {item.content ? (
-          <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.content}</Text>
+          <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
+            <LinkifiedText content={item.content} isMe={isMe} />
+          </Text>
+        ) : null}
+        {!isImage && !isOffer && !isAudio && item.content && !item.is_deleted && findFirstUrl(item.content) ? (
+          <LinkPreview url={findFirstUrl(item.content)!} isMe={isMe} />
         ) : null}
         {item.is_edited && !isImage && <Text style={styles.editedLabel}>edited</Text>}
         <View style={styles.bubbleFooter}>
@@ -1110,6 +1228,9 @@ startPolling();
                 <Text style={styles.headerLastSeen}>{' '}</Text>
               )}
             </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerMore} onPress={openMedia} accessibilityLabel={t('chat.sharedMedia')} accessibilityRole="button">
+            <MaterialCommunityIcons name="image-multiple-outline" size={18} color={COLORS.text2} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerMore} onPress={() => setProfileMenuVisible(true)} accessibilityLabel="more options" accessibilityRole="button">
             <MaterialCommunityIcons name="dots-vertical" size={18} color={COLORS.text2} />
@@ -1278,6 +1399,83 @@ startPolling();
           </View>
           )}
         </View>
+
+        {/* Shared media gallery (images + links) */}
+        <Modal visible={mediaVisible} animationType="slide" onRequestClose={() => setMediaVisible(false)}>
+          <View style={styles.mediaRoot}>
+            <View style={[styles.mediaHeader, { paddingTop: insets.top + SPACING.xs }]}>
+              <TouchableOpacity onPress={() => setMediaVisible(false)} style={styles.mediaHeaderBtn} accessibilityLabel={t('common.close')} accessibilityRole="button">
+                <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.text} />
+              </TouchableOpacity>
+              <Text style={styles.mediaTitle}>{t('chat.sharedMedia')}</Text>
+              <View style={styles.mediaHeaderBtn} />
+            </View>
+            <View style={styles.mediaTabs}>
+              <Pressable style={[styles.mediaTabBtn, mediaTab === 'images' && styles.mediaTabBtnActive]} onPress={() => setMediaTab('images')} accessibilityRole="tab">
+                <Text style={[styles.mediaTabText, mediaTab === 'images' && styles.mediaTabTextActive]}>{t('chat.mediaImages')}</Text>
+              </Pressable>
+              <Pressable style={[styles.mediaTabBtn, mediaTab === 'links' && styles.mediaTabBtnActive]} onPress={() => setMediaTab('links')} accessibilityRole="tab">
+                <Text style={[styles.mediaTabText, mediaTab === 'links' && styles.mediaTabTextActive]}>{t('chat.mediaLinks')}</Text>
+              </Pressable>
+            </View>
+            {mediaTab === 'images' ? (
+              mediaLoading ? (
+                <View style={styles.mediaEmpty}><ActivityIndicator size="large" color={COLORS.coral} /></View>
+              ) : mediaList.length === 0 ? (
+                <View style={styles.mediaEmpty}>
+                  <MaterialCommunityIcons name="image-outline" size={44} color={COLORS.text2} />
+                  <Text style={styles.mediaEmptyText}>{t('chat.noSharedImages')}</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={mediaList}
+                  keyExtractor={item => item.id}
+                  numColumns={3}
+                  columnWrapperStyle={{ justifyContent: 'space-between' }}
+                  contentContainerStyle={styles.mediaGrid}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.mediaCell}
+                      onPress={() => {
+                        setMediaVisible(false);
+                        setPreview({
+                          uri: getImageUrl(item.image_url) || item.image_url,
+                          sender: item.sender_id === store.user?.id ? (store.user?.full_name || 'You') : otherUserName || 'Message',
+                          time: new Date(item.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                        });
+                      }}
+                      accessibilityRole="imagebutton"
+                      accessibilityLabel="open photo"
+                    >
+                      <Image source={{ uri: getImageUrl(item.image_url) || item.image_url }} style={styles.mediaCellImg} resizeMode="cover" />
+                    </TouchableOpacity>
+                  )}
+                />
+              )
+            ) : linkMessages.length === 0 ? (
+              <View style={styles.mediaEmpty}>
+                <MaterialCommunityIcons name="link-variant" size={44} color={COLORS.text2} />
+                <Text style={styles.mediaEmptyText}>{t('chat.noSharedLinks')}</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={linkMessages}
+                keyExtractor={item => item.url}
+                contentContainerStyle={styles.mediaLinks}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.mediaLinkRow} onPress={() => Linking.openURL(item.url).catch(() => {})} accessibilityRole="link" accessibilityLabel={item.url}>
+                    <MaterialCommunityIcons name="link-variant" size={16} color={COLORS.coral} style={{ marginRight: 10 }} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.mediaLinkUrl} numberOfLines={1}>{item.url}</Text>
+                      <Text style={styles.mediaLinkMeta} numberOfLines={1}>{item.sender} · {item.time}</Text>
+                    </View>
+                    <MaterialCommunityIcons name="open-in-new" size={14} color={COLORS.text2} />
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </View>
+        </Modal>
 
         <Modal visible={!!preview} transparent animationType="fade" onRequestClose={() => setPreview(null)}>
           <View style={styles.viewerRoot}>
@@ -1828,6 +2026,47 @@ const styles = StyleSheet.create({
   recordingTime: { fontSize: 15, fontWeight: '700', color: COLORS.text, fontVariant: ['tabular-nums'] },
   recordingHint: { flex: 1, fontSize: 12, color: COLORS.text2, fontStyle: 'italic' },
   recordingSend: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
+
+  /* Link previews */
+  linkCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, padding: 8,
+    borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.25)',
+    borderLeftWidth: 3, borderLeftColor: COLORS.coral,
+  },
+  linkCardMe: { backgroundColor: 'rgba(255,255,255,0.12)' },
+  linkThumb: { width: 44, height: 44, borderRadius: 8, backgroundColor: COLORS.surface2 },
+  linkThumbFallback: { alignItems: 'center', justifyContent: 'center' },
+  linkTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  linkDesc: { fontSize: 12, color: COLORS.text2, marginTop: 2, lineHeight: 16 },
+  linkHost: { fontSize: 11, color: COLORS.text3, marginTop: 2, textTransform: 'uppercase' },
+  bubbleLink: { color: '#79B8FF', textDecorationLine: 'underline' },
+  bubbleLinkMe: { color: '#FFE3EA', textDecorationLine: 'underline' },
+
+  /* Shared media gallery */
+  mediaRoot: { flex: 1, backgroundColor: COLORS.bg },
+  mediaHeader: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.sm,
+    paddingBottom: SPACING.sm, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  mediaHeaderBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  mediaTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: COLORS.text },
+  mediaTabs: { flexDirection: 'row', backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  mediaTabBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  mediaTabBtnActive: { borderBottomColor: COLORS.coral },
+  mediaTabText: { fontSize: 13, fontWeight: '600', color: COLORS.text2 },
+  mediaTabTextActive: { color: COLORS.coral },
+  mediaGrid: { padding: 6 },
+  mediaCell: { width: '31.5%', aspectRatio: 1, marginBottom: 6, borderRadius: 8, overflow: 'hidden', backgroundColor: COLORS.surface },
+  mediaCellImg: { width: '100%', height: '100%' },
+  mediaEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
+  mediaEmptyText: { fontSize: 14, color: COLORS.text2, textAlign: 'center' },
+  mediaLinks: { padding: SPACING.md, gap: 8 },
+  mediaLinkRow: {
+    flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+  },
+  mediaLinkUrl: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  mediaLinkMeta: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
   profileOverlay: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.35)',

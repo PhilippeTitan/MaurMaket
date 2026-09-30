@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
-import { msgLimiter, convLimiter } from '../middleware/rateLimit.js';
+import { msgLimiter, convLimiter, previewLimiter } from '../middleware/rateLimit.js';
+import dns from 'node:dns/promises';
 import { dobRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 
@@ -239,6 +240,141 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
     console.error('Messages fetch error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Shared media (all photos in a conversation)
+router.get('/api/conversations/:id/media', authRequired, async (req, res) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
+  try {
+    const conv = await pool.query('SELECT id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    const result = await pool.query(
+      `SELECT id, sender_id, image_url, created_at FROM messages
+       WHERE conversation_id = $1 AND message_type = 'image' AND image_url IS NOT NULL AND is_deleted = false
+       ORDER BY created_at DESC LIMIT 300`,
+      [req.params.id]
+    );
+    res.json({ media: result.rows });
+  } catch (err) {
+    console.error('Conversation media error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Link previews (WhatsApp-style OG metadata) ─────
+const previewCache = new Map(); // url -> { data: preview|null, exp: number }
+const PREVIEW_TTL = 10 * 60 * 1000;
+
+function isPrivateIp(ip) {
+  const h = ip.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h.includes(':')) {
+    return h === '::1' || h === '::' || h === '::ffff:127.0.0.1' || h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd');
+  }
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return true; // unparseable → treat as private
+  const a = +m[1], b = +m[2];
+  if (a === 127 || a === 0 || a === 10 || a > 223) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 169 && b === 254) return true;
+  return false;
+}
+
+function isBlockedHost(hostname) {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h.includes(':')) return isPrivateIp(h);
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return isPrivateIp(h);
+  return false;
+}
+
+function decodeEntities(s) {
+  return s
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&#x27;/gi, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+function getMeta(html, names) {
+  for (const name of names) {
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let m = html.match(new RegExp(`<meta[^>]+(?:property|name)\\s*=\\s*["']${esc}["'][^>]*content\\s*=\\s*["']([^"']*)["']`, 'i'));
+    if (!m) m = html.match(new RegExp(`<meta[^>]+content\\s*=\\s*["']([^"']*)["'][^>]*(?:property|name)\\s*=\\s*["']${esc}["']`, 'i'));
+    if (m && m[1] && m[1].trim()) return decodeEntities(m[1].trim());
+  }
+  return null;
+}
+
+router.get('/api/link-preview', authRequired, previewLimiter, async (req, res) => {
+  const raw = String(req.query.url || '').trim();
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+  if (isBlockedHost(parsed.hostname)) {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+  // DNS check — reject if the host resolves to a private address
+  try {
+    const addrs = await dns.lookup(parsed.hostname, { all: true });
+    if (addrs.some(a => isPrivateIp(a.address))) {
+      return res.status(400).json({ error: 'Invalid URL' });
+    }
+  } catch {
+    return res.json({ preview: null });
+  }
+
+  const cached = previewCache.get(raw);
+  if (cached && cached.exp > Date.now()) return res.json({ preview: cached.data });
+
+  let preview = null;
+  try {
+    const response = await fetch(raw, {
+      signal: AbortSignal.timeout(6000),
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MaurMaket/1.0; link-preview)', 'Accept': 'text/html,application/xhtml+xml' },
+    });
+    if (response.ok) {
+      const ctype = response.headers.get('content-type') || '';
+      if (ctype.includes('html') || ctype.includes('xhtml') || !ctype) {
+        const buf = await response.arrayBuffer();
+        const html = new TextDecoder('utf-8').decode(new Uint8Array(buf.slice(0, 1024 * 1024)));
+        const title = getMeta(html, ['og:title', 'twitter:title']) ||
+          (html.match(/<title[^>]*>([^<]+)<\/title>/i) ? decodeEntities(html.match(/<title[^>]*>([^<]+)<\/title>/i)[1].trim()) : null);
+        const description = getMeta(html, ['og:description', 'twitter:description', 'description']);
+        const siteName = getMeta(html, ['og:site_name', 'application-name']);
+        let image = getMeta(html, ['og:image', 'og:image:url', 'twitter:image']);
+        if (image) {
+          try { image = new URL(image, response.url || raw).toString(); } catch { image = null; }
+        }
+        if (title || description || image) {
+          preview = {
+            url: response.url || raw,
+            title: title ? title.slice(0, 200) : null,
+            description: description ? description.slice(0, 300) : null,
+            image: image ? image.slice(0, 2000) : null,
+            siteName: siteName ? siteName.slice(0, 80) : null,
+          };
+        }
+      }
+    }
+  } catch {
+    preview = null;
+  }
+
+  previewCache.set(raw, { data: preview, exp: Date.now() + PREVIEW_TTL });
+  if (previewCache.size > 300) {
+    const oldest = previewCache.keys().next().value;
+    previewCache.delete(oldest);
+  }
+  res.json({ preview });
 });
 
 // Send message
