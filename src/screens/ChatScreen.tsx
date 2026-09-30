@@ -24,9 +24,36 @@ import BackButton from '../components/BackButton';
 import SellerItemsSheet from '../components/SellerItemsSheet';
 import OfferBuilder from '../components/OfferBuilder';
 import { SkeletonBlock } from '../components/Skeleton';
+import { Swipeable } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string; reactions?: { emoji: string; userId: string; userName: string }[]; delivery_status?: 'sent' | 'delivered' | 'read'; reply_to?: Message['reply_to']; client_id?: string };
+
+// WhatsApp-style swipe-right-to-reply on a message bubble.
+function SwipeReplyRow({ children, onReply }: { children: React.ReactNode; onReply: () => void }) {
+  return (
+    <Swipeable
+      renderLeftActions={() => (
+        <View style={styles.swipeReplyAction} accessibilityLabel="reply" accessibilityRole="button">
+          <MaterialCommunityIcons name="reply" size={22} color={COLORS.coral} />
+        </View>
+      )}
+      onSwipeableOpen={(direction, instance) => {
+        if (direction !== 'left') return;
+        instance.close();
+        try { Haptics.selectionAsync(); } catch {}
+        onReply();
+      }}
+      overshootLeft={false}
+      overshootRight={false}
+      leftThreshold={48}
+      friction={2}
+    >
+      {children}
+    </Swipeable>
+  );
+}
 
 // ───── Outbox (WhatsApp-style offline send queue) ─────
 // Messages are queued locally, flushed with a client-generated UUID (server dedupes on it),
@@ -787,11 +814,14 @@ startPolling();
     }
 
     return (
+      <SwipeReplyRow onReply={() => setReplyTo(item)}>
       <Pressable
         style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}
         onLongPress={() => handleMessageLongPress(item)}
         onPress={() => { if (item.failed) retryMessage(item.id); }}
       >
+        {/* WhatsApp-style tail on the sender's top corner */}
+        {!isImage && (isMe ? <View style={styles.tailMe} /> : <View style={styles.tailThem} />)}
         {/* Reply-to quote */}
         {item.reply_to && (
           <View style={styles.replyQuote}>
@@ -846,6 +876,7 @@ startPolling();
           </View>
         )}
       </Pressable>
+      </SwipeReplyRow>
     );
   };
 
@@ -1144,12 +1175,23 @@ const styles = StyleSheet.create({
   },
   bubbleMe: {
     alignSelf: 'flex-end', backgroundColor: COLORS.coral,
-    borderBottomRightRadius: 4,
+    borderTopRightRadius: 4,
   },
   bubbleThem: {
     alignSelf: 'flex-start', backgroundColor: COLORS.surface,
-    borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border + '50',
+    borderTopLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border + '50',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 1,
+  },
+  tailMe: {
+    position: 'absolute', top: -4, right: -5, width: 11, height: 11,
+    backgroundColor: COLORS.coral, transform: [{ rotate: '45deg' }],
+  },
+  tailThem: {
+    position: 'absolute', top: -4, left: -5, width: 11, height: 11,
+    backgroundColor: COLORS.surface, transform: [{ rotate: '45deg' }],
+  },
+  swipeReplyAction: {
+    width: 44, justifyContent: 'center', alignItems: 'center',
   },
   bubbleImage: { padding: 3, backgroundColor: 'transparent', borderWidth: 0 },
   bubbleText: { fontSize: 15, color: COLORS.text, lineHeight: 21 },
@@ -1528,7 +1570,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border + '60',
-    borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: COLORS.text,
+    borderRadius: 24, paddingHorizontal: 16, paddingVertical: 10, color: COLORS.text,
     fontSize: 15, maxHeight: 100, lineHeight: 20,
   },
   cameraBtn: {
