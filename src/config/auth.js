@@ -296,17 +296,19 @@ export function createAuth(adapter) {
     // Function form: receives request, returns array of allowed origin strings
     trustedOrigins: async (request) => {
       const base = [
-        'http://localhost:8081',
-        'http://localhost:8080',
-        'http://localhost:4000',
-        'http://localhost:3001',
-        'http://localhost:19006',
         'https://maurmaket.onrender.com',
         'maurmaket://', // mobile app deep link callback
       ];
+      // Dynamic dev origins: any port on localhost/127.0.0.1/::1 or private LAN IPs.
+      // Metro can land on any port (8081, 8082, ...), so never hardcode ports here.
+      const headers = request?.headers;
+      const get = (name) => (headers?.get ? headers.get(name) : headers?.[name]);
+      const origin = get('origin');
+      if (origin && /^http:\/\/(localhost(:\d+)?|127\.0\.0\.1(:\d+)?|\[::1\](:\d+)?|192\.168\.\d+\.\d+(:\d+)?|10\.\d+\.\d+\.\d+(:\d+)?|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+(:\d+)?)$/.test(origin)) {
+        base.push(origin);
+      }
       // Derive origin from request Host header (covers LAN IPs that change)
-      // request is a Fetch API Request — headers.get(), not headers.host
-      const host = request?.headers?.get?.('host') || request?.headers?.host;
+      const host = get('host');
       if (host) {
         base.push(`http://${host}`, `https://${host}`);
       }
