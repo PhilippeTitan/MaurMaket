@@ -188,6 +188,13 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
           <Text style={styles.rowValue}>{t('fulfillmentSettings.manageSummary')}</Text>
           <Icon name="chevron-right" size={16} color={COLORS.text2} />
         </TouchableOpacity>
+        <View style={styles.divider} />
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('NatCashAccess')} accessibilityRole="button" accessibilityLabel={t('natcashAccess.manage')}>
+          <MaterialCommunityIcons name="cash-multiple" size={18} color={COLORS.purple} />
+          <Text style={styles.rowLabel}>{t('natcashAccess.manage')}</Text>
+          <Text style={styles.rowValue}>{t('natcashAccess.manageSummary')}</Text>
+          <Icon name="chevron-right" size={16} color={COLORS.text2} />
+        </TouchableOpacity>
       </View>
 
       {proposals.length > 0 && <>

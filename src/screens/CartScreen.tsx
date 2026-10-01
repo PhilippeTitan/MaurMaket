@@ -156,24 +156,26 @@ export default function CartScreen({ navigation }: Props) {
           <SalePriceTag price={cartItem.price} effectivePrice={cartItem.effective_price ?? cartItem.price} isOnSale={cartItem.is_on_sale || false} discountPct={cartItem.discount_pct || 0} size="md" />
           <View style={styles.qtyRow}>
             <TouchableOpacity
-              style={styles.qtyBtn}
+              style={[styles.qtyBtn, !!cartItem.acceptedOfferMessageId && styles.qtyBtnDisabled]}
               onPress={() => handleQuantity(cartItem.id, -1)}
+              disabled={!!cartItem.acceptedOfferMessageId}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.decreaseQuantity')}
             >
-              <Icon name="minus" size={14} color={COLORS.text} />
+              <Icon name="minus" size={14} color={cartItem.acceptedOfferMessageId ? COLORS.text2 : COLORS.text} />
             </TouchableOpacity>
             <Text style={styles.qtyVal}>{cartItem.quantity}</Text>
             <TouchableOpacity
               style={[styles.qtyBtn, atStockLimit && styles.qtyBtnDisabled]}
               onPress={() => handleQuantity(cartItem.id, 1)}
-              disabled={atStockLimit}
+              disabled={atStockLimit || !!cartItem.acceptedOfferMessageId}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.increaseQuantity')}
             >
-              <Icon name="plus" size={14} color={atStockLimit ? COLORS.text2 : COLORS.text} />
+              <Icon name="plus" size={14} color={atStockLimit || cartItem.acceptedOfferMessageId ? COLORS.text2 : COLORS.text} />
             </TouchableOpacity>
           </View>
+          {cartItem.acceptedOfferMessageId && <Text style={styles.stockLimit}>{t('offer.quantityLocked')}</Text>}
           {atStockLimit && <Text style={styles.stockLimit}>{t('cart.onlyAvailable', { count: String(stock) })}</Text>}
         </View>
         <TouchableOpacity

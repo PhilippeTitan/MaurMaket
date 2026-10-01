@@ -5,6 +5,48 @@ import { createNotification } from '../utils/notifications.js';
 import { expireTemporaryStorageUploads } from '../utils/temporaryStorage.js';
 
 export function startJobs() {
+  // NatCash access reminders are informational; entitlement is still checked
+  // synchronously by checkout and reminders never extend access.
+  cron.schedule('0 9 * * *', async () => {
+    try {
+      const reminders = await pool.query(
+        `WITH due AS (
+           SELECT s.id, s.seller_id, s.expires_at,
+                  (s.expires_at AT TIME ZONE 'America/Port-au-Prince')::date -
+                  (CURRENT_TIMESTAMP AT TIME ZONE 'America/Port-au-Prince')::date AS days_remaining,
+                  (CURRENT_TIMESTAMP AT TIME ZONE 'America/Port-au-Prince')::date AS local_date
+           FROM natcash_access_subscriptions s
+           WHERE s.status = 'active'
+             AND s.expires_at - INTERVAL '7 days' <= CURRENT_TIMESTAMP
+             AND s.expires_at + INTERVAL '3 days' > CURRENT_TIMESTAMP
+             AND NOT EXISTS (
+               SELECT 1 FROM seller_subscriptions b
+               JOIN users u ON u.id = b.seller_id AND u.seller_tier = 'business'
+               WHERE b.seller_id = s.seller_id AND b.status IN ('active','past_due')
+                 AND b.expires_at + make_interval(days => COALESCE(b.grace_period_days,7)) > CURRENT_TIMESTAMP
+             )
+         )
+         INSERT INTO natcash_access_reminders (subscription_id, seller_id, local_date)
+         SELECT id, seller_id, local_date FROM due
+         ON CONFLICT (subscription_id, local_date) DO NOTHING
+         RETURNING subscription_id, seller_id, local_date`
+      );
+      for (const reminder of reminders.rows) {
+        const subscription = await pool.query('SELECT expires_at FROM natcash_access_subscriptions WHERE id = $1', [reminder.subscription_id]);
+        if (!subscription.rows[0]) continue;
+        const expiresAt = new Date(subscription.rows[0].expires_at);
+        const remaining = Math.max(-3, Math.ceil((expiresAt.getTime() - Date.now()) / 86400000));
+        const title = remaining <= 0 ? 'NatCash access grace period' : 'NatCash access reminder';
+        const body = remaining <= 0
+          ? `Your NatCash access expires in ${Math.abs(remaining)} day${Math.abs(remaining) === 1 ? '' : 's'}. Renew to keep accepting new NatCash orders.`
+          : `Your NatCash access expires in ${remaining} day${remaining === 1 ? '' : 's'}. Renew to keep accepting new NatCash orders.`;
+        createNotification(reminder.seller_id, 'natcash_access_expiry', title, body, { screen: 'NatCashAccess' });
+      }
+    } catch (err) {
+      console.error('[NATCASH ACCESS] Reminder job error:', err.message);
+    }
+  }, { timezone: 'America/Port-au-Prince' });
+
   // ───── Expire temporary KYC photos even when a user abandons the flow ─────
   cron.schedule('*/5 * * * *', async () => {
     try {
@@ -277,11 +319,58 @@ export function startJobs() {
               AND (pc.status IN ('expired', 'failed') OR sr.expires_at < NOW())
             LIMIT 50
           )
-          RETURNING product_id, quantity
+          RETURNING product_id, quantity, order_id, seller_id
         `);
+        const handledNatCashPortions = new Set();
         for (const r of expired.rows) {
           await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
+          if (!r.order_id || !r.seller_id) continue;
+          const portionKey = `${r.order_id}:${r.seller_id}`;
+          if (handledNatCashPortions.has(portionKey)) continue;
+          handledNatCashPortions.add(portionKey);
+          const cancelled = await client.query(
+            `UPDATE seller_fulfillments SET payment_status = 'expired', fulfillment_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+             WHERE order_id = $1 AND seller_id = $2 AND payment_method = 'natcash'
+               AND payment_status IN ('pending','buyer_claimed','disputed') RETURNING seller_id`, [r.order_id, r.seller_id]
+          );
+          if (!cancelled.rowCount) continue;
+          await client.query(
+            `INSERT INTO order_events (order_id, event_type, note)
+             VALUES ($1, 'status_change', 'Unresolved NatCash handoff exceeded 24 hours. This seller portion was cancelled and its stock released.')`, [r.order_id]
+          );
+          const remaining = await client.query(
+            `SELECT COUNT(*) FILTER (WHERE fulfillment_status NOT IN ('cancelled','completed'))::int AS open,
+                    COUNT(*) FILTER (WHERE fulfillment_status = 'completed')::int AS completed
+             FROM seller_fulfillments WHERE order_id = $1`, [r.order_id]
+          );
+          if (remaining.rows[0].open === 0) {
+            await client.query("UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [remaining.rows[0].completed > 0 ? 'completed' : 'cancelled', r.order_id]);
+          }
+          const parties = await client.query(
+            `SELECT o.buyer_id, u.id AS seller_id FROM orders o JOIN users u ON u.id = $2 WHERE o.id = $1`, [r.order_id, r.seller_id]
+          );
+          if (parties.rows[0]) {
+            createNotification(parties.rows[0].buyer_id, 'order_cancelled', 'NatCash handoff expired', 'The unresolved transfer window ended. This seller portion was cancelled and the reserved item is available again.', { orderId: r.order_id, sellerId: r.seller_id });
+            createNotification(parties.rows[0].seller_id, 'order_cancelled', 'NatCash handoff expired', 'The unresolved transfer window ended. This seller portion was cancelled and the reserved item is available again.', { orderId: r.order_id, sellerId: r.seller_id });
+          }
         }
+        await client.query(
+          `UPDATE pending_checkouts pc SET status = 'expired'
+           WHERE pc.status IN ('pending', 'agreement_locked')
+             AND pc.created_at < NOW() - INTERVAL '30 minutes'
+             AND NOT EXISTS (SELECT 1 FROM stock_reservations sr WHERE sr.checkout_id = pc.id AND sr.status = 'active')`
+        );
+        await client.query(
+          `UPDATE message_offers mo SET accepted_checkout_id = NULL
+           FROM pending_checkouts pc
+           WHERE mo.accepted_checkout_id = pc.id
+             AND (pc.status IN ('expired', 'failed', 'rejected') OR NOT EXISTS (
+               SELECT 1 FROM stock_reservations sr
+               WHERE sr.product_id = mo.product_id AND sr.status = 'active'
+                 AND (sr.checkout_id = pc.id OR sr.order_id = pc.order_id)
+             ))
+             AND mo.status = 'accepted' AND mo.accepted_expires_at > CURRENT_TIMESTAMP`
+        );
         await client.query('COMMIT');
         if (expired.rows.length > 0) console.log(`[CRON] Released ${expired.rows.length} expired stock reservations`);
       } catch (e) {

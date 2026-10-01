@@ -6,10 +6,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '@/localization';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
-import { getOfferDetail, respondToOffer, counterOffer, getImageUrl } from '../api';
+import { getOfferDetail, respondToOffer, counterOffer, getImageUrl, markOfferSeen } from '../api';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
 import ScreenHeader from '../components/ScreenHeader';
@@ -26,6 +25,15 @@ type OfferDetail = {
   listPrice: number;
   status: string;
   negotiationRound: number;
+  counterCount: number;
+  quantity: number;
+  senderId: string;
+  currentStock: number;
+  productAvailable: boolean;
+  isBlocked: boolean;
+  acceptedExpiresAt?: string | null;
+  isInCheckout?: boolean;
+  history?: { messageId: string; offeredPrice: number; status: string; senderId: string; senderName: string; createdAt: string; quantity: number; round: number }[];
   buyerId: string;
   sellerId: string;
   buyerName?: string;
@@ -50,18 +58,25 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
 
   const userId = store.user?.id;
   const isBuyer = offer?.buyerId === userId;
-  const isSeller = offer?.sellerId === userId;
   const isPending = offer?.status === 'pending';
   const isCountered = offer?.status === 'countered';
-  const canRespond = (isSeller && isPending) || (isBuyer && isCountered);
-  const canCounter = isSeller && (isPending || isCountered);
-  const maxRounds = (offer?.negotiationRound || 0) >= 3;
+  const canRespond = !!offer && isPending && offer.senderId !== userId && !offer.isBlocked;
+  const canCounter = canRespond;
+  const maxRounds = (offer?.counterCount || 0) >= 6;
+
+  const openConversation = () => {
+    if (!offer) return;
+    const peerId = isBuyer ? offer.sellerId : offer.buyerId;
+    const peerName = isBuyer ? offer.sellerName : offer.buyerName;
+    const peerAvatar = isBuyer ? offer.sellerAvatar : offer.buyerAvatar;
+    navigation.navigate('Chat', { conversationId, otherUserName: peerName || '', otherUserId: peerId, otherUserAvatar: peerAvatar, otherUserStoreLogoUrl: isBuyer ? offer.sellerStoreLogoUrl : undefined, otherUserUseStoreIdentity: isBuyer ? offer.sellerUseStoreIdentity : undefined, otherUserTier: isBuyer ? offer.sellerTier : undefined });
+  };
 
   useEffect(() => {
     getOfferDetail(messageId)
       .then((res: any) => {
         setOffer(res.offer);
-        if (res.offer) setCounterPrice(String(res.offer.listPrice));
+        if (res.offer) { setCounterPrice(String(res.offer.listPrice)); markOfferSeen(messageId).catch(() => {}); }
       })
       .catch(() => toast.error(t('offer.couldNotLoad')))
       .finally(() => setLoading(false));
@@ -73,7 +88,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
     try {
       await respondToOffer(offer.messageId, 'accepted');
       toast.success(t('offer.acceptedToast'));
-      setOffer(prev => prev ? { ...prev, status: 'accepted' } : prev);
+      openConversation();
     } catch {
       toast.error(t('offer.couldNotAccept'));
     } finally {
@@ -87,7 +102,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
     try {
       await respondToOffer(offer.messageId, 'declined');
       toast.success(t('offer.declinedToast'));
-      setOffer(prev => prev ? { ...prev, status: 'declined' } : prev);
+      openConversation();
     } catch {
       toast.error(t('offer.couldNotDecline'));
     } finally {
@@ -104,9 +119,9 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
     }
     setActing(true);
     try {
-      const res = await counterOffer(offer.messageId, price) as any;
+      await counterOffer(offer.messageId, price);
       toast.success(t('offer.counterSent'), `${formatPrice(price)} G`);
-      setOffer(prev => prev ? { ...prev, offeredPrice: price, status: 'countered', negotiationRound: res.negotiationRound || prev.negotiationRound + 1 } : prev);
+      openConversation();
     } catch (err: any) {
       toast.error(t('offer.couldNotCounter'), err?.message || t('common.retry'));
     } finally {
@@ -143,7 +158,9 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const isFinalized = offer.status === 'accepted' || offer.status === 'declined';
+  const isFinalized = ['accepted', 'declined', 'expired', 'redeemed'].includes(offer.status);
+  const isExpired = offer.status === 'expired' || offer.status === 'redeemed' || (['pending', 'countered'].includes(offer.status) && !!offer.expiresAt && new Date(offer.expiresAt) <= new Date()) || (offer.status === 'accepted' && !!offer.acceptedExpiresAt && new Date(offer.acceptedExpiresAt) <= new Date());
+  const stockSufficient = offer.productAvailable && offer.currentStock >= offer.quantity;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -176,22 +193,39 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
           {discount > 0 && (
             <Text style={styles.discount}>{t('offer.discountOff', { percent: String(discount) })}</Text>
           )}
+          <View style={styles.divider} />
+          <View style={styles.priceRow}><Text style={styles.priceLabel}>{t('offer.quantity')}</Text><Text style={styles.quantityText}>×{offer.quantity}</Text></View>
+          <View style={styles.priceRow}><Text style={styles.priceLabel}>{t('offer.total')}</Text><Text style={styles.totalPrice}>{formatPrice(offer.offeredPrice * offer.quantity)} G</Text></View>
         </View>
 
+        <Text style={styles.stockNote}>{isExpired && offer.status === 'redeemed' ? t('offer.redeemed') : offer.isInCheckout ? t('offer.inCheckout') : offer.status === 'accepted' && offer.acceptedExpiresAt && !isExpired ? t('offer.acceptedUntil', { date: new Date(offer.acceptedExpiresAt).toLocaleString() }) : stockSufficient ? t('offer.stockNoReservation', { count: String(offer.currentStock) }) : t('offer.stockUnavailable')}</Text>
+        {offer.isBlocked && <Text style={styles.stockNote}>{t('chat.blockedNotice')}</Text>}
+
+        {!!offer.history?.length && (
+          <View style={styles.historyCard}>
+            <Text style={styles.historyTitle}>{t('offer.negotiationHistory')}</Text>
+            {offer.history.map((entry, index) => <View key={entry.messageId} style={styles.historyRow}>
+              <View style={styles.historyNumber}><Text style={styles.historyNumberText}>{index + 1}</Text></View>
+              <View style={{ flex: 1 }}><Text style={styles.historySender}>{entry.senderId === userId ? t('offer.you') : entry.senderName}</Text><Text style={styles.historyMeta}>{t('offer.quantityAndTotal', { quantity: String(entry.quantity), total: formatPrice(entry.offeredPrice * entry.quantity) })}</Text></View>
+              <Text style={styles.historyPrice}>{formatPrice(entry.offeredPrice)} G</Text>
+            </View>)}
+          </View>
+        )}
+
         <View style={styles.infoRow}>
-          <View style={[styles.statusBadge, offer.status === 'accepted' && styles.statusAccepted, offer.status === 'declined' && styles.statusDeclined, isCountered && styles.statusCountered]}>
+          <View style={[styles.statusBadge, offer.status === 'accepted' && !isExpired && styles.statusAccepted, (offer.status === 'declined' || isExpired) && styles.statusDeclined, isCountered && styles.statusCountered]}>
             <Text style={styles.statusText}>
-              {offer.status === 'pending' ? t('offer.pending') : offer.status === 'accepted' ? t('offer.accepted') : offer.status === 'declined' ? t('offer.declined') : t('offer.countered', { round: String(offer.negotiationRound) })}
+              {isExpired ? (offer.status === 'redeemed' ? t('offer.redeemed') : t('offer.expired')) : offer.status === 'pending' ? t('offer.pending') : offer.status === 'accepted' ? t('offer.accepted') : offer.status === 'declined' ? t('offer.declined') : t('offer.countered', { round: String(offer.counterCount) })}
             </Text>
           </View>
-          {expiresIn !== null && !isFinalized && (
+          {expiresIn !== null && !isFinalized && !isExpired && (
             <Text style={[styles.expiresText, expiresIn < 6 && styles.expiresUrgent]}>
               {t('offer.expiresIn', { hours: String(expiresIn) })}
             </Text>
           )}
         </View>
 
-        {maxRounds && !isFinalized && (
+        {maxRounds && !isFinalized && !isExpired && (
           <View style={styles.roundBanner}>
             <MaterialCommunityIcons name="information-outline" size={18} color={COLORS.coral} />
             <Text style={styles.roundBannerText}>{t('offer.maxRounds')}</Text>
@@ -199,11 +233,11 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
         )}
       </ScrollView>
 
-      {!isFinalized && (
+      {!isFinalized && !isExpired && (
         <View style={[styles.actions, { paddingBottom: insets.bottom + SPACING.md }]}>
           {canRespond && (
             <>
-              <TouchableOpacity style={styles.acceptBtn} onPress={handleAccept} disabled={acting} accessibilityLabel="accept offer" accessibilityRole="button">
+              <TouchableOpacity style={[styles.acceptBtn, !stockSufficient && { opacity: 0.45 }]} onPress={handleAccept} disabled={acting || !stockSufficient} accessibilityLabel="accept offer" accessibilityRole="button">
                 <Text style={styles.acceptBtnText}>{acting ? '...' : t('offer.acceptOffer')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.declineBtn} onPress={handleDecline} disabled={acting} accessibilityLabel="decline offer" accessibilityRole="button">
@@ -211,7 +245,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
               </TouchableOpacity>
             </>
           )}
-          {canCounter && !maxRounds && (
+          {canCounter && !maxRounds && stockSufficient && (
             <View style={styles.counterRow}>
               <TextInput
                 style={styles.counterInput}
@@ -227,23 +261,18 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
               </TouchableOpacity>
             </View>
           )}
-          {!canRespond && !canCounter && (            <TouchableOpacity style={styles.chatBtn} onPress={() => {
-              const ou = isBuyer ? { name: offer.sellerName, avatar: offer.sellerAvatar, tier: offer.sellerTier, storeLogoUrl: offer.sellerStoreLogoUrl, useStoreIdentity: offer.sellerUseStoreIdentity } : { name: offer.buyerName, avatar: offer.buyerAvatar };
-              navigation.navigate('Chat', { conversationId, otherUserName: ou.name || '', otherUserId: isBuyer ? offer.sellerId : offer.buyerId, otherUserAvatar: ou.avatar, otherUserStoreLogoUrl: (ou as any).storeLogoUrl, otherUserUseStoreIdentity: (ou as any).useStoreIdentity, otherUserTier: (ou as any).tier });
-            }} accessibilityLabel="open chat" accessibilityRole="button">
+          {!canRespond && !canCounter && (
+            <TouchableOpacity style={styles.chatBtn} onPress={openConversation} accessibilityLabel={t('offer.openChat')} accessibilityRole="button">
               <Text style={styles.chatBtnText}>{t('offer.openChat')}</Text>
             </TouchableOpacity>
           )}
         </View>
       )}
 
-      {isFinalized && (
+      {(isFinalized || isExpired) && (
         <View style={[styles.actions, { paddingBottom: insets.bottom + SPACING.md }]}>
-            <TouchableOpacity style={styles.chatBtn} onPress={() => {
-              const ou = isBuyer ? { name: offer.sellerName, avatar: offer.sellerAvatar, tier: offer.sellerTier, storeLogoUrl: offer.sellerStoreLogoUrl, useStoreIdentity: offer.sellerUseStoreIdentity } : { name: offer.buyerName, avatar: offer.buyerAvatar };
-              navigation.navigate('Chat', { conversationId, otherUserName: ou.name || '', otherUserId: isBuyer ? offer.sellerId : offer.buyerId, otherUserAvatar: ou.avatar, otherUserStoreLogoUrl: (ou as any).storeLogoUrl, otherUserUseStoreIdentity: (ou as any).useStoreIdentity, otherUserTier: (ou as any).tier });
-            }} accessibilityLabel="open chat" accessibilityRole="button">
-            <Text style={styles.chatBtnText}>Open chat</Text>
+          <TouchableOpacity style={styles.chatBtn} onPress={openConversation} accessibilityLabel={t('offer.openChat')} accessibilityRole="button">
+            <Text style={styles.chatBtnText}>{t('offer.openChat')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -274,6 +303,8 @@ const styles = StyleSheet.create({
   priceLabel: { fontSize: 13, color: COLORS.text2 },
   listPrice: { fontSize: 14, color: COLORS.text2, textDecorationLine: 'line-through' },
   offerPrice: { fontSize: 18, fontWeight: '700', color: COLORS.coral },
+  quantityText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  totalPrice: { color: COLORS.coral, fontSize: 16, fontWeight: '800' },
   divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 4 },
   discount: { fontSize: 12, fontWeight: '700', color: COLORS.green, marginTop: 6 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: SPACING.md },
@@ -289,6 +320,15 @@ const styles = StyleSheet.create({
     padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border,
   },
   roundBannerText: { flex: 1, fontSize: 13, color: COLORS.text2, lineHeight: 18 },
+  stockNote: { fontSize: 12, lineHeight: 18, color: COLORS.text2, marginBottom: SPACING.md },
+  historyCard: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, padding: SPACING.md, marginBottom: SPACING.md },
+  historyTitle: { color: COLORS.text, fontSize: 14, fontWeight: '800', marginBottom: SPACING.sm },
+  historyRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
+  historyNumber: { width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  historyNumberText: { color: COLORS.text2, fontSize: 11, fontWeight: '800' },
+  historySender: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  historyMeta: { color: COLORS.text2, fontSize: 11, marginTop: 2 },
+  historyPrice: { color: COLORS.coral, fontSize: 13, fontWeight: '800' },
   actions: { paddingHorizontal: SPACING.md, gap: 10 },
   acceptBtn: { backgroundColor: COLORS.coral, borderRadius: RADIUS.pill, paddingVertical: 14, alignItems: 'center' },
   acceptBtnText: { fontSize: 15, fontWeight: '700', color: COLORS.white },

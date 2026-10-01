@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput, ScrollView, Modal, Keyboard,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput, Modal, Keyboard,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -12,7 +12,7 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '@/localization';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
-import { getConversations, getFollowing, createConversation, getConversationsWithOffers } from '../api';
+import { getConversations, getFollowing, createConversation, getConversationsWithOffers, markOfferSeen, searchSellersForChat } from '../api';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
 import type { Conversation } from '../types';
@@ -57,9 +57,12 @@ export default function InboxScreen() {
   const [search, setSearch] = useState('');
   const [searchFilter, setSearchFilter] = useState<'all' | 'today' | 'week' | 'unread'>('all');
   const [showFilterDrop, setShowFilterDrop] = useState(false);
+  const [newChatVisible, setNewChatVisible] = useState(false);
+  const [sellerSearch, setSellerSearch] = useState('');
+  const [sellerResults, setSellerResults] = useState<any[]>([]);
+  const [sellerSearchLoading, setSellerSearchLoading] = useState(false);
   const searchInputRef = useRef<any>(null);
 
-  const followedIds = new Set(followedSellers.map((s: any) => s.seller_id));
 
   const fetchData = useCallback(async (force = false) => {
     const cacheKey = store.user?.id ? cacheKeys.inbox(store.user.id) : null;
@@ -105,7 +108,24 @@ export default function InboxScreen() {
     setLoading(false);
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchData(); }, []));
+  useFocusEffect(useCallback(() => { fetchData(true); }, []));
+
+  useEffect(() => {
+    if (!newChatVisible || sellerSearch.trim().length < 2) {
+      setSellerResults([]);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(async () => {
+      setSellerSearchLoading(true);
+      try {
+        const result = await searchSellersForChat(sellerSearch.trim());
+        if (active) setSellerResults(result.sellers || []);
+      } catch { if (active) setSellerResults([]); }
+      finally { if (active) setSellerSearchLoading(false); }
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [newChatVisible, sellerSearch]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -154,7 +174,9 @@ export default function InboxScreen() {
     });
 
   const renderConversation = ({ item }: { item: Conversation }) => {
-    const otherName = (item as any).other_party_username || ((item as any).other_party_name || t('common.seller'));
+    const otherName = (item as any).other_party_use_store_identity && (item as any).other_party_store_name
+      ? (item as any).other_party_store_name
+      : ((item as any).other_party_username || (item as any).other_party_name || t('common.seller'));
     const hasUnread = (item.unread_count || 0) > 0;
     const storeName = (item as any).other_party_store_name;
     const sellerTier = (item as any).other_party_seller_tier;
@@ -170,7 +192,7 @@ export default function InboxScreen() {
           activeOpacity={0.7}
         >
           <View style={{ position: 'relative' }}>
-             <UserAvatar seller={{ avatar_url: (item as any).other_party_avatar, full_name: otherName, username: (item as any).other_party_username, seller_tier: sellerTier } as any} size={48} animated={false} />
+             <UserAvatar seller={{ avatar_url: (item as any).other_party_avatar, store_logo_url: (item as any).other_party_store_logo_url, use_store_identity: (item as any).other_party_use_store_identity, full_name: otherName, username: (item as any).other_party_username, seller_tier: sellerTier } as any} size={48} animated={false} />
             {hasUnread && <View style={styles.convoUnreadBadge} />}
           </View>
           <View style={styles.convoBody}>
@@ -189,6 +211,7 @@ export default function InboxScreen() {
             ) : sellerTier && sellerTier !== 'none' ? (
               <Text style={styles.convoTier} numberOfLines={1}>{sellerTier} {t('common.seller')}</Text>
             ) : null}
+            {(item as any).order_id && <Text style={styles.orderContext} numberOfLines={1}>{t('inbox.orderContext', { item: (item as any).order_product_name || t('inbox.order') })}</Text>}
             <View style={styles.convoMsgRow}>
               {(item as any).last_message_type === 'image' && <MaterialCommunityIcons name="image-outline" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
               {(item as any).last_message_type === 'audio' && <MaterialCommunityIcons name="microphone" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
@@ -202,7 +225,7 @@ export default function InboxScreen() {
             </View>
           </View>
         </TouchableOpacity>
-        {otherUserId && (
+        {otherUserId && sellerTier && sellerTier !== 'none' && (
           <TouchableOpacity
             style={styles.convoStoreBtn}
             onPress={() => nav.navigate('Storefront', { sellerId: otherUserId, preloadedSeller: { username: (item as any).other_party_username, full_name: otherName, avatar_url: (item as any).other_party_avatar, seller_tier: sellerTier, store_name: storeName } })}
@@ -217,34 +240,15 @@ export default function InboxScreen() {
     );
   };
 
-  const SellerBubble = ({ seller }: { seller: any }) => {
-    const displayName = seller.store_name || seller.username || seller.full_name?.split(' ')[0];
-    const handlePress = async () => {
-      try {
-        const existing = conversations.find(c => c.seller_id === seller.seller_id || c.buyer_id === seller.seller_id);
-        if (existing) {
-          nav.navigate('Chat', { conversationId: existing.id, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url, otherUserStoreLogoUrl: seller.store_logo_url, otherUserUseStoreIdentity: seller.use_store_identity, otherUserTier: seller.seller_tier });
-          return;
-        }
-        const res = await createConversation({ sellerId: seller.seller_id }) as { conversationId: string };
-        if (res.conversationId) {
-          nav.navigate('Chat', { conversationId: res.conversationId, otherUserName: displayName, otherUserId: seller.seller_id, otherUserAvatar: seller.avatar_url, otherUserStoreLogoUrl: seller.store_logo_url, otherUserUseStoreIdentity: seller.use_store_identity, otherUserTier: seller.seller_tier });
-        }
-      } catch {
-        toast.error(t('feedback.messagesUnavailable'), t('feedback.connectionRetry'), handlePress);
-      }
-    };
-    return (
-      <TouchableOpacity style={styles.sellerBubble} onPress={handlePress} accessibilityLabel={`message ${displayName}`} accessibilityRole="button">
-        <View style={{ position: 'relative' }}>
-          <UserAvatar seller={seller} size={64} animated={false} />
-          <View style={styles.sellerOnlineDot} />
-        </View>
-        <Text style={styles.sellerBubbleName} numberOfLines={1}>
-          {displayName}
-        </Text>
-      </TouchableOpacity>
-    );
+  const startChatWith = async (seller: any) => {
+    const sellerId = seller.seller_id || seller.id;
+    const displayName = seller.use_store_identity && seller.store_name ? seller.store_name : (seller.username || seller.full_name?.split(' ')[0]);
+    try {
+      const existing = conversations.find(c => !c.order_id && (c.seller_id === sellerId || c.buyer_id === sellerId));
+      const conversationId = existing?.id || (await createConversation({ sellerId }) as { conversationId: string }).conversationId;
+      setNewChatVisible(false); setSellerSearch('');
+      nav.navigate('Chat', { conversationId, otherUserName: displayName, otherUserId: sellerId, otherUserAvatar: seller.avatar_url, otherUserStoreLogoUrl: seller.store_logo_url, otherUserUseStoreIdentity: seller.use_store_identity, otherUserTier: seller.seller_tier });
+    } catch { toast.error(t('feedback.messagesUnavailable'), t('feedback.connectionRetry'), () => startChatWith(seller)); }
   };
 
   const topSegmentedTabs = (
@@ -275,14 +279,14 @@ export default function InboxScreen() {
         accessibilityLabel={t('inbox.tabOffers')}
         accessibilityRole="button"
       >
-        {activeTab !== 'offers' && offerConversations.length > 0 && <View style={styles.topTabRedDot} />}
+        {activeTab !== 'offers' && offerConversations.some((o: any) => o.needs_action) && <View style={styles.topTabRedDot} />}
         <Text style={[styles.topTabLabel, activeTab === 'offers' && styles.topTabLabelActive]}>
           {t('inbox.tabOffers')}
         </Text>
-        {offerConversations.length > 0 && (
+        {offerConversations.filter((o: any) => o.needs_action).length > 0 && (
           <View style={[styles.topTabCount, activeTab === 'offers' && styles.topTabCountActive]}>
             <Text style={[styles.topTabCountText, activeTab === 'offers' && styles.topTabCountTextActive]}>
-              {offerConversations.length > 9 ? '9+' : offerConversations.length}
+              {offerConversations.filter((o: any) => o.needs_action).length > 9 ? '9+' : offerConversations.filter((o: any) => o.needs_action).length}
             </Text>
           </View>
         )}
@@ -292,13 +296,6 @@ export default function InboxScreen() {
 
   const conversationsListHeader = (
     <>
-      <View style={styles.bubblesSection}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bubblesRow}>
-          {followedSellers.map((seller: any) => (
-            <SellerBubble key={seller.seller_id} seller={seller} />
-          ))}
-        </ScrollView>
-      </View>
       {topSegmentedTabs}
     </>
   );
@@ -312,7 +309,45 @@ export default function InboxScreen() {
     >
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.xs }]}>
         <Text style={styles.title}>{t('inbox.title')}</Text>
+        <TouchableOpacity style={styles.newChatButton} onPress={() => setNewChatVisible(true)} accessibilityRole="button" accessibilityLabel={t('chat.newChat')}>
+          <MaterialCommunityIcons name="message-plus-outline" size={19} color={COLORS.coral} />
+          <Text style={styles.newChatButtonText}>{t('chat.newChat')}</Text>
+        </TouchableOpacity>
       </View>
+
+      <Modal visible={newChatVisible} animationType="slide" onRequestClose={() => { setNewChatVisible(false); setSellerSearch(''); }}>
+        <View style={[styles.newChatRoot, { paddingTop: insets.top + SPACING.sm, paddingBottom: insets.bottom + SPACING.sm }]}>
+          <View style={styles.newChatHeader}>
+            <Text style={styles.newChatTitle}>{t('chat.newChat')}</Text>
+            <TouchableOpacity onPress={() => { setNewChatVisible(false); setSellerSearch(''); }} accessibilityLabel={t('common.close')} accessibilityRole="button">
+              <MaterialCommunityIcons name="close" size={24} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.newChatSearch}>
+            <MaterialCommunityIcons name="magnify" size={19} color={COLORS.text2} />
+            <TextInput value={sellerSearch} onChangeText={setSellerSearch} placeholder={t('chat.searchSellers')} placeholderTextColor={COLORS.text2} style={styles.newChatSearchInput} autoFocus accessibilityLabel={t('chat.searchSellers')} />
+            {sellerSearchLoading && <ActivityIndicator size="small" color={COLORS.coral} />}
+          </View>
+          <FlatList
+            data={sellerSearch.trim().length >= 2 ? sellerResults : followedSellers}
+            keyExtractor={(item: any) => item.seller_id || item.id}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }: { item: any }) => {
+              const id = item.seller_id || item.id;
+              const name = item.use_store_identity && item.store_name
+                ? item.store_name
+                : (item.username || item.full_name || t('common.seller'));
+              return <TouchableOpacity style={styles.newChatSellerRow} onPress={() => startChatWith(item)} accessibilityRole="button">
+                <UserAvatar seller={{ ...item, avatar_url: item.avatar_url, full_name: item.full_name || name, seller_tier: item.seller_tier } as any} size={44} animated={false} />
+                <View style={{ flex: 1 }}><Text style={styles.newChatSellerName} numberOfLines={1}>{name}</Text>{item.username ? <Text style={styles.newChatSellerHandle} numberOfLines={1}>@{item.username}</Text> : null}</View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />
+              </TouchableOpacity>;
+            }}
+            ListEmptyComponent={!sellerSearchLoading ? <Text style={styles.newChatEmpty}>{sellerSearch.trim().length >= 2 ? t('chat.noMatchingSellers') : t('chat.noFollowedSellers')}</Text> : null}
+            contentContainerStyle={{ paddingBottom: SPACING.lg }}
+          />
+        </View>
+      </Modal>
 
       <TouchableOpacity
         style={styles.searchBar}
@@ -329,21 +364,23 @@ export default function InboxScreen() {
         <FlatList
           data={offerConversations}
           renderItem={({ item }: { item: any }) => {
-            const otherName = item.other_party_username || (item.other_party_name || t('common.seller'));
+            const otherName = item.other_party_use_store_identity && item.other_party_store_name
+              ? item.other_party_store_name
+              : (item.other_party_username || item.other_party_name || t('common.seller'));
             const sellerTier = item.other_party_seller_tier;
             const offerStatus = item.offer_status;
             const isCountered = offerStatus === 'countered';
             const isAccepted = offerStatus === 'accepted';
+            const isRedeemed = offerStatus === 'redeemed';
             const isDeclined = offerStatus === 'declined';
-            const isExpired = offerStatus === 'expired';
-            const isPending = !isCountered && !isAccepted && !isDeclined && !isExpired;
-            const round = item.negotiation_round || 1;
+            const isExpired = offerStatus === 'expired' || (!!item.is_history && offerStatus === 'pending') || (isAccepted && !!item.accepted_expires_at && new Date(item.accepted_expires_at) <= new Date());
+            const isPending = !isCountered && !isAccepted && !isRedeemed && !isDeclined && !isExpired;
+            const round = item.counter_count || 0;
             const expiresIn = item.offer_expires_at ? Math.max(0, Math.floor((new Date(item.offer_expires_at).getTime() - Date.now()) / 3600000)) : null;
-            if (isExpired) return null; // Don't show expired offers at all
             return (
               <TouchableOpacity
-                style={styles.offerCard}
-                onPress={() => nav.navigate('OfferDetail', { messageId: item.offer_message_id, conversationId: item.id })}
+                style={[styles.offerCard, item.is_history && styles.offerCardHistory]}
+                onPress={() => { setOfferConversations(prev => prev.map(o => o.offer_message_id === item.offer_message_id ? { ...o, needs_action: false } : o)); markOfferSeen(item.offer_message_id).catch(() => {}); nav.navigate('OfferDetail', { messageId: item.offer_message_id, conversationId: item.id }); }}
                 accessibilityLabel={`offer with ${otherName}`}
                 accessibilityRole="button"
                 activeOpacity={0.7}
@@ -356,7 +393,7 @@ export default function InboxScreen() {
                 />
                 <View style={styles.offerCardHeader}>
                   <View style={styles.offerCardUserRow}>
-                    <UserAvatar seller={{ avatar_url: item.other_party_avatar, full_name: otherName, username: item.other_party_username, seller_tier: sellerTier } as any} size={30} animated={false} />
+                    <UserAvatar seller={{ avatar_url: item.other_party_avatar, store_logo_url: item.other_party_store_logo_url, use_store_identity: item.other_party_use_store_identity, full_name: otherName, username: item.other_party_username, seller_tier: sellerTier } as any} size={30} animated={false} />
                     <View style={{ flex: 1, minWidth: 0, marginLeft: 8 }}>
                       <Text style={styles.offerCardUsername} numberOfLines={1}>{otherName}</Text>
                       <Text style={styles.offerCardTime}>{timeAgo(item.last_message_at || item.created_at)}</Text>
@@ -365,6 +402,7 @@ export default function InboxScreen() {
                   <View style={[
                     styles.offerStatusBadge,
                     isAccepted && styles.offerStatusBadgeAccepted,
+                    isRedeemed && styles.offerStatusBadgeAccepted,
                     isDeclined && styles.offerStatusBadgeDeclined,
                     isCountered && styles.offerStatusBadgeCountered,
                     isPending && styles.offerStatusBadgePending,
@@ -373,12 +411,13 @@ export default function InboxScreen() {
                     <Text style={[
                       styles.offerStatusText,
                       isAccepted && styles.offerStatusTextAccepted,
+                      isRedeemed && styles.offerStatusTextAccepted,
                       isDeclined && styles.offerStatusTextDeclined,
                       isCountered && styles.offerStatusTextCountered,
                       isPending && styles.offerStatusTextPending,
                       isExpired && styles.offerStatusTextDeclined,
                     ]}>
-                      {isAccepted ? t('inbox.offerAccepted') : isDeclined ? t('inbox.offerDeclined') : isCountered ? t('inbox.offerCounter', { round }) : isExpired ? t('inbox.offerExpired') : t('inbox.offerPending')}
+                      {isRedeemed ? t('offer.redeemed') : isExpired ? t('inbox.offerExpired') : isAccepted ? t('inbox.offerAccepted') : isDeclined ? t('inbox.offerDeclined') : isCountered ? t('inbox.offerCounter', { round }) : t('inbox.offerPending')}
                     </Text>
                   </View>
                 </View>
@@ -397,9 +436,12 @@ export default function InboxScreen() {
                         <Text style={styles.offerListPriceValue}>G {formatPrice(item.list_price)}</Text>
                       ) : null}
                     </View>
+                    <Text style={styles.offerTotalText}>{t('offer.quantityAndTotal', { quantity: String(item.quantity || 1), total: formatPrice(item.offered_price * (item.quantity || 1)) })}</Text>
                   </View>
                   <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />
                 </View>
+
+                {item.needs_action && <Text style={styles.needsResponse}>{t('inbox.needsYourResponse')}</Text>}
 
                 {expiresIn !== null && isPending && (
                   <View style={styles.offerFooter}>
@@ -412,7 +454,7 @@ export default function InboxScreen() {
               </TouchableOpacity>
             );
           }}
-          keyExtractor={(item: any) => `${item.id}-${item.product_id}`}
+          keyExtractor={(item: any) => item.offer_message_id}
           ListHeaderComponent={conversationsListHeader}
           contentContainerStyle={{ paddingBottom: insets.bottom + 90, paddingHorizontal: SPACING.md, paddingTop: SPACING.xs }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
@@ -534,11 +576,23 @@ export default function InboxScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   topBar: {
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.sm,
   },
-  title: { fontSize: 28, color: COLORS.text, fontWeight: '800', letterSpacing: -0.3, textAlign: 'center' },
+  title: { fontSize: 28, color: COLORS.text, fontWeight: '800', letterSpacing: -0.3, textAlign: 'left' },
+  newChatButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 10, borderRadius: RADIUS.pill, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  newChatButtonText: { color: COLORS.coral, fontSize: 12, fontWeight: '700' },
+  newChatRoot: { flex: 1, backgroundColor: COLORS.bg, paddingHorizontal: SPACING.md },
+  newChatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
+  newChatTitle: { color: COLORS.text, fontSize: 22, fontWeight: '800' },
+  newChatSearch: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: COLORS.surface, borderRadius: RADIUS.pill, paddingHorizontal: 14, minHeight: 46, marginBottom: SPACING.md },
+  newChatSearchInput: { flex: 1, color: COLORS.text, fontSize: 15, paddingVertical: 10 },
+  newChatSellerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  newChatSellerName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  newChatSellerHandle: { color: COLORS.text2, fontSize: 12, marginTop: 2 },
+  newChatEmpty: { color: COLORS.text2, textAlign: 'center', marginTop: 34, fontSize: 14 },
+  orderContext: { color: COLORS.text2, fontSize: 11, marginTop: 2 },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -638,6 +692,9 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
   },
+  offerCardHistory: { padding: 10, marginBottom: 5, opacity: 0.86 },
+  offerTotalText: { color: COLORS.text2, fontSize: 10, marginTop: 3 },
+  needsResponse: { color: COLORS.coral, fontSize: 11, fontWeight: '700', marginTop: 5 },
   offerCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',

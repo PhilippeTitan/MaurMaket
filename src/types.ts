@@ -24,6 +24,7 @@ export interface User {
   location_lng: number | null;
   username: string | null;
   show_real_name: boolean;
+  presence_visibility?: 'everyone' | 'chatted_with' | 'nobody';
   sales_count?: number;
   pending_dob?: boolean;
   taste_onboarding_completed?: boolean;
@@ -87,6 +88,7 @@ export interface CartItem {
   seller_name?: string | null;
   store_name?: string | null;
   stock: number;
+  acceptedOfferMessageId?: string;
 }
 
 export interface OrderItem {
@@ -177,27 +179,60 @@ export interface Conversation {
   other_user?: User;
   last_message?: Message;
   unread_count?: number;
+  is_pinned?: boolean;
+  is_muted?: boolean;
+  order_status?: string | null;
+  order_product_name?: string | null;
+  other_party_id?: string;
+  other_party_name?: string;
+  other_party_username?: string | null;
+  last_message_type?: string;
 }
 
 export interface Message {
   id: string;
   conversation_id: string;
   sender_id: string;
-  content: string;
+  content: string | null;
   message_type?: string;
   image_url?: string;
   audio_url?: string;
   audio_duration?: number;
+  product_data?: {
+    productId: string;
+    sellerId: string;
+    name: string;
+    description?: string | null;
+    price: number;
+    listPrice: number;
+    imageUrl?: string | null;
+    sharedAt: string;
+    availableAtShare: boolean;
+    currentlyAvailable?: boolean;
+    currentStock?: number;
+  };
   offer_data?: {
     productId: string;
     productName: string;
     offeredPrice: number;
     listPrice: number;
-    status: 'pending' | 'accepted' | 'declined' | 'countered';
+    quantity: number;
+    status: 'pending' | 'accepted' | 'declined' | 'countered' | 'expired' | 'redeemed';
+    negotiationRound?: number;
+    counterCount?: number;
+    negotiationId?: string;
+    buyerId?: string;
+    sellerId?: string;
+    senderId?: string;
+    expiresAt?: string;
+    acceptedExpiresAt?: string | null;
+    isInCheckout?: boolean;
+    currentStock?: number;
+    productAvailable?: boolean;
   };
   reply_to?: {
     id: string;
-    content: string;
+    content: string | null;
     senderId: string;
     senderName: string;
     type?: string;

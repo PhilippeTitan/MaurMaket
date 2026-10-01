@@ -10,12 +10,13 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import ConfirmModal from '../components/ConfirmModal';
 import NativeMap from '../components/NativeMap';
-import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup, getImageUrl } from '../api';
+import { getOrder, getOrderTimeline, cancelOrder, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup, getImageUrl, confirmNatCashSeller, confirmNatCashReceived, reportNatCashNotReceived } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { store } from '../store';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import { SkeletonBlock } from '../components/Skeleton';
+import { useUser } from '../hooks';
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -67,6 +68,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const insets = useSafeAreaInsets();
+  const { user } = useUser();
 
   const { orderId } = route.params;
   const [order, setOrder] = useState<Order | null>(null);
@@ -123,29 +125,24 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
     setActionLoading(false);
   };
 
+  const updateNatCash = async (action: 'claim' | 'received' | 'not_received', sellerId?: string) => {
+    setActionLoading(true);
+    try {
+      if (action === 'claim' && sellerId) await confirmNatCashSeller(orderId, sellerId);
+      else if (action === 'received') await confirmNatCashReceived(orderId);
+      else if (action === 'not_received') await reportNatCashNotReceived(orderId);
+      await fetchData();
+    } catch (err: unknown) {
+      toast.error(t('common.error'), errorMessage(err));
+    } finally { setActionLoading(false); }
+  };
+
   const handleRetryPayment = async () => {
     setActionLoading(true);
     try {
       const res = await retryPayment(orderId) as { paymentUrl?: string; retryMethod?: string; orderId?: string };
       if (res.retryMethod === 'natcash') {
-        // NatCash order — go back to NatCash payment screen
-        const otherSellers = (order as any)?.other_sellers;
-        if (otherSellers && otherSellers.length > 1) {
-          // Multi-seller: pass all sellers
-          navigation.navigate('NatCashPayment', {
-            orderId: res.orderId || orderId,
-            total: Number((order as any)?.total_amount || 0),
-            sellers: otherSellers.map((s: any) => ({
-              sellerId: s.id,
-              name: s.full_name || 'Seller',
-              phone: s.natcash_phone || s.phone || '',
-              total: 0, // Will be calculated from escrow
-              items: [],
-            })),
-          });
-        } else {
-          navigation.navigate('NatCashPayment', { orderId: res.orderId || orderId, total: Number((order as any)?.total_amount || 0), sellerName: (order as any)?.other_party?.full_name || '', sellerPhone: (order as any)?.other_party?.natcash_phone || (order as any)?.other_party?.phone || '' });
-        }
+        toast.info(t('natcash.handoffTitle'), t('natcash.retryHandoff'));
       } else if (res.paymentUrl) {
         // Store pending order ID so we can detect abandonment when user returns
         try {
@@ -431,6 +428,35 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {(order as any).payment_method === 'natcash' && Array.isArray((order as any).seller_fulfillments) && (
+        <View style={styles.card}>
+          <View style={styles.infoHeader}>
+            <View style={[styles.infoIconWrap, { backgroundColor: COLORS.purpleMuted }]}>
+              <MaterialCommunityIcons name="cash-multiple" size={18} color={COLORS.purple} />
+            </View>
+            <Text style={styles.sectionTitle}>{t('natcash.handoffTitle')}</Text>
+          </View>
+          <Text style={styles.infoText}>{t('natcash.handoffDisclosure')}</Text>
+          {(order as any).my_role === 'buyer' && (order as any).seller_fulfillments.filter((sf: any) => sf.payment_method === 'natcash' && sf.payment_status === 'pending').map((sf: any) => (
+            <TouchableOpacity key={sf.id} disabled={actionLoading} onPress={() => updateNatCash('claim', sf.seller_id)} style={styles.natcashAction} accessibilityRole="button">
+              <Text style={styles.natcashActionText}>{t('natcash.iSent')}</Text>
+            </TouchableOpacity>
+          ))}
+          {(order as any).my_role === 'seller' && (() => {
+            const own = (order as any).seller_fulfillments.find((sf: any) => sf.seller_id === user?.id && sf.payment_method === 'natcash');
+            if (!own || own.payment_status !== 'buyer_claimed') return null;
+            return <View style={styles.natcashButtons}>
+              <TouchableOpacity disabled={actionLoading} onPress={() => updateNatCash('received')} style={styles.natcashAction} accessibilityRole="button">
+                <Text style={styles.natcashActionText}>{t('natcash.iReceived')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity disabled={actionLoading} onPress={() => updateNatCash('not_received')} style={styles.natcashSecondary} accessibilityRole="button">
+                <Text style={styles.natcashSecondaryText}>{t('natcash.notReceived')}</Text>
+              </TouchableOpacity>
+            </View>;
+          })()}
+        </View>
+      )}
+
       {/* ── Seller Fulfillment Status (multi-seller) ── */}
       {(order as any).seller_fulfillments && (order as any).seller_fulfillments.length > 1 && (
         <View style={styles.card}>
@@ -447,7 +473,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   <View style={[styles.miniBadge, { backgroundColor: sf.payment_status === 'verified' ? COLORS.green + '20' : sf.payment_status === 'buyer_claimed' ? COLORS.yellow + '20' : COLORS.border + '20' }]}>
                     <Text style={[styles.miniBadgeText, { color: sf.payment_status === 'verified' ? COLORS.green : sf.payment_status === 'buyer_claimed' ? COLORS.yellow : COLORS.text2 }]}>
-                      {sf.payment_status === 'verified' ? t('notif.status.paid') : sf.payment_status === 'buyer_claimed' ? t('orderDetail.claimed') : sf.payment_status}
+                      {sf.payment_status === 'verified' ? ((order as any).payment_method === 'natcash' ? t('natcash.sellerConfirmed') : t('notif.status.paid')) : sf.payment_status === 'buyer_claimed' ? t('natcash.buyerClaimed') : sf.payment_status}
                     </Text>
                   </View>
                   <View style={[styles.miniBadge, { backgroundColor: sf.fulfillment_status === 'completed' ? COLORS.green + '20' : COLORS.blue + '20' }]}>
@@ -891,6 +917,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.coral + '12', borderRadius: RADIUS.row,
   },
   cancelledBannerText: { fontSize: 13, fontWeight: '600', color: COLORS.coral },
+  natcashButtons: { gap: 10 },
+  natcashAction: { minHeight: 48, backgroundColor: COLORS.purple, borderRadius: RADIUS.button, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  natcashActionText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  natcashSecondary: { minHeight: 44, borderWidth: 1, borderColor: COLORS.borderLight, borderRadius: RADIUS.button, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  natcashSecondaryText: { color: COLORS.text2, fontWeight: '600', fontSize: 14 },
 
   /* ── Card ── */
   card: {

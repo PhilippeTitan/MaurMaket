@@ -57,6 +57,7 @@ import EditProfileScreen from './src/screens/EditProfileScreen';
 import AccountDashboardScreen from './src/screens/AccountDashboardScreen';
 import SellerToolsSettingsScreen from './src/screens/SellerToolsSettingsScreen';
 import SellerFulfillmentSettingsScreen from './src/screens/SellerFulfillmentSettingsScreen';
+import NatCashAccessScreen from './src/screens/NatCashAccessScreen';
 import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
 import SecuritySettingsScreen from './src/screens/SecuritySettingsScreen';
 import NotificationsSettingsScreen from './src/screens/NotificationsSettingsScreen';
@@ -511,6 +512,7 @@ export default function App() {
             <Stack.Screen name="LocationSettings" component={LocationSettingsScreen} />
             <Stack.Screen name="SellerToolsSettings" component={SellerToolsSettingsScreen} />
             <Stack.Screen name="SellerFulfillmentSettings" component={SellerFulfillmentSettingsScreen} />
+            <Stack.Screen name="NatCashAccess" component={NatCashAccessScreen} />
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
             <Stack.Screen name="SecuritySettings" component={SecuritySettingsScreen} />
             <Stack.Screen name="NotificationsSettings" component={NotificationsSettingsScreen} />

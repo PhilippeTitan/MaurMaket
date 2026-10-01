@@ -138,6 +138,7 @@ router.get('/api/payments/:orderId/status', authRequired, async (req, res) => {
                 const updateResult = await client.query(`UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'`, [order.id]);
                 if (updateResult.rowCount === 0) { await client.query('ROLLBACK'); }
                 else {
+                  await client.query(`UPDATE message_offers SET status = 'redeemed', accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'`, [order.id]);
                   await logOrderEvent(order.id, 'payment_received', null, 'pending', 'paid', 'Payment confirmed via pay-status poll', client);
                   await reserveOrderStock(client, order.id);
                   await recordProductCooccurrences(order.id, client);
@@ -236,6 +237,55 @@ router.post('/api/payments/webhook', async (req, res) => {
           throw debtError;
         } finally { client.release(); }
       }
+      const natcashAccessPayment = await pool.query(
+        'SELECT * FROM natcash_access_payments WHERE reference_id = $1 LIMIT 1', [eventReference]
+      );
+      if (natcashAccessPayment.rows.length) {
+        const payment = natcashAccessPayment.rows[0];
+        const paidAmount = Number(req.body.amount ?? req.body.totalAmount ?? req.body.paidAmount);
+        if (!Number.isFinite(paidAmount) || Math.round(paidAmount * 100) !== Math.round(Number(payment.amount_htg) * 100)) {
+          await pool.query(
+            `UPDATE natcash_access_payments SET status = 'reconciliation_required', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'`, [payment.id]
+          );
+          await recordUnmatchedPayment({ reference: eventReference, eventId, event, note: `NatCash access payment amount mismatch: expected ${payment.amount_htg}, received ${Number.isFinite(paidAmount) ? paidAmount : 'missing'}` });
+          return res.status(202).json({ received: true, reconciliationRequired: true });
+        }
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const lockedPayment = await client.query('SELECT * FROM natcash_access_payments WHERE id = $1 FOR UPDATE', [payment.id]);
+          if (lockedPayment.rows[0]?.status === 'completed') {
+            await client.query('ROLLBACK');
+            return res.json({ received: true, idempotent: true });
+          }
+          const existing = await client.query(
+            `SELECT id FROM natcash_access_subscriptions WHERE seller_id = $1 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [payment.seller_id]
+          );
+          if (existing.rows[0]) {
+            await client.query(
+              `UPDATE natcash_access_subscriptions
+               SET status = 'active', expires_at = GREATEST(expires_at, CURRENT_TIMESTAMP) + INTERVAL '30 days',
+                   paused_at = NULL, last_payment_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [existing.rows[0].id]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO natcash_access_subscriptions (seller_id, status, expires_at, last_payment_at)
+               VALUES ($1, 'active', CURRENT_TIMESTAMP + INTERVAL '30 days', CURRENT_TIMESTAMP)`, [payment.seller_id]
+            );
+          }
+          await client.query(
+            `UPDATE natcash_access_payments SET status = 'completed', provider_payment_id = $2, paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+            [payment.id, eventId || null]
+          );
+          if (eventId) await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
+          await client.query('COMMIT');
+          createNotification(payment.seller_id, 'natcash_access_renewed', 'NatCash access active', 'Your NatCash access is active for 30 days. New orders can now use NatCash.', {});
+          return res.json({ received: true, natcashAccess: 'completed' });
+        } catch (accessError) {
+          try { await client.query('ROLLBACK'); } catch {}
+          throw accessError;
+        } finally { client.release(); }
+      }
       // New fulfillment-level MonCash session. A reference resolves to exactly
       // one seller, while the first paid session materializes the shared order.
       const sessionResult = await pool.query('SELECT * FROM fulfillment_payment_sessions WHERE provider_reference = $1 AND provider = \'moncash\'', [reference]);
@@ -285,7 +335,17 @@ router.post('/api/payments/webhook', async (req, res) => {
           // A later session can discover the order created by an earlier
           // session; persist that linkage in the same transaction.
           await client.query("UPDATE fulfillment_payment_sessions SET order_id = $1, status = 'completed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [orderId, session.id]);
+          await client.query('UPDATE pending_checkouts SET order_id = $1 WHERE id = $2 AND order_id IS NULL', [orderId, pc.id]);
           await client.query("UPDATE seller_fulfillments SET payment_status = 'verified', fulfillment_status = 'processing', payment_reference = $1, payment_method = 'moncash', updated_at = CURRENT_TIMESTAMP WHERE order_id = $2 AND seller_id = $3", [reference, orderId, session.seller_id]);
+          for (const item of pc.cart_data || []) {
+            if (!item.acceptedOfferMessageId || item.seller_id !== session.seller_id) continue;
+            await client.query(
+              `UPDATE message_offers SET status = 'redeemed', accepted_checkout_id = NULL
+               WHERE message_id = $1 AND buyer_id = $2 AND seller_id = $3
+                 AND status = 'accepted' AND accepted_checkout_id = $4`,
+              [item.acceptedOfferMessageId, pc.user_id, session.seller_id, pc.id]
+            );
+          }
           await client.query("UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND seller_id = $2 AND status = 'active'", [pc.id, session.seller_id]);
           const deliveryFee = Number((await client.query('SELECT delivery_fee FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2', [orderId, session.seller_id])).rows[0]?.delivery_fee || 0);
           const commissionBase = Math.max(0, Number(session.amount) - deliveryFee);
@@ -358,7 +418,7 @@ router.post('/api/payments/webhook', async (req, res) => {
               const promoRes = await client2.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true FOR UPDATE', [pc.promo_code]);
               if (promoRes.rows.length > 0) {
                 const promo = promoRes.rows[0];
-                const discount = promo.discount_type === 'percentage' ? merchandiseSubtotal * (promo.discount_value / 100) : Math.min(promo.discount_value, merchandiseSubtotal);
+                const discount = promo.discount_type === 'percentage' ? Math.min(merchandiseSubtotal * (promo.discount_value / 100), promo.discount_value * 10) : Math.min(promo.discount_value, merchandiseSubtotal);
                 merchandisePaid = Math.max(0, merchandiseSubtotal - discount);
               }
             } catch { /* ignore */ }
@@ -448,6 +508,10 @@ router.post('/api/payments/webhook', async (req, res) => {
 
           await client2.query("INSERT INTO order_events (order_id, event_type, note) VALUES ($1, 'payment_received', 'Payment completed via MonCash')", [orderId]);
           await client2.query("UPDATE pending_checkouts SET status = 'completed' WHERE id = $1", [reference]);
+          await client2.query(
+            `UPDATE message_offers SET status = 'redeemed', accepted_checkout_id = NULL
+             WHERE accepted_checkout_id = $1 AND status = 'accepted'`, [pc.id]
+          );
           await recordProductCooccurrences(orderId, client2);
           await client2.query('COMMIT');
 
@@ -519,6 +583,7 @@ router.post('/api/payments/webhook', async (req, res) => {
           }
           return res.json({ received: true, already_processed: true });
         }
+        await client.query(`UPDATE message_offers SET status = 'redeemed', accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'`, [reference]);
         if (paymentAttempt) {
           await client.query("UPDATE moncash_payment_attempts SET status = 'completed', error_message = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1", [paymentAttempt.id]);
         }
@@ -603,6 +668,7 @@ router.post('/api/payments/webhook', async (req, res) => {
           await client.query('BEGIN');
           if (eventId) await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);
           await client.query("UPDATE pending_checkouts SET status = 'failed' WHERE id = $1", [reference]);
+          await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [reference]);
           // Idempotent release: mark released first, then increment stock
           const released = await client.query(
             "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity",
@@ -623,6 +689,7 @@ router.post('/api/payments/webhook', async (req, res) => {
             await client.query("UPDATE moncash_payment_attempts SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status <> 'completed'", [failedAttempt.id]);
           } else {
             await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [reference]);
+            await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [reference]);
             await logOrderEvent(reference, 'status_change', null, 'pending', 'cancelled', 'Payment failed', client);
           }
           await client.query('COMMIT');

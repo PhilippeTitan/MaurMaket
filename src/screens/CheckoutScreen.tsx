@@ -15,7 +15,7 @@ import { useTranslation } from '@/localization';
 import { validatePromo } from '../api';
 import ScreenHeader from '../components/ScreenHeader';
 import { store } from '../store';
-import { createPendingCheckout, getPendingSellerInfo, getAddresses, getImageUrl } from '../api';
+import { createPendingCheckout, getPendingSellerInfo, getAddresses, getImageUrl, getNatCashAvailability } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Address } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
@@ -41,6 +41,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
   const [step, setStep] = useState<Step>(1);
   const [paymentMethod, setPaymentMethod] = useState<'moncash' | 'natcash'>('moncash');
+  const [natCashAvailable, setNatCashAvailable] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -181,6 +182,18 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   }, []);
   const sellerCount = sellerGroups.length;
 
+  const sellerIdKey = sellerGroups.map(seller => seller.sellerId).sort().join(',');
+  useFocusEffect(useCallback(() => {
+    let current = true;
+    if (!sellerIdKey) { setNatCashAvailable(false); return () => { current = false; }; }
+    getNatCashAvailability(sellerIdKey.split(',')).then((result: any) => {
+      if (!current) return;
+      setNatCashAvailable(!!result.available);
+      if (!result.available) setPaymentMethod('moncash');
+    }).catch(() => { if (current) { setNatCashAvailable(false); setPaymentMethod('moncash'); } });
+    return () => { current = false; };
+  }, [sellerIdKey]));
+
   useEffect(() => {
     setFulfillmentMethods(current => {
       const next = { ...current };
@@ -238,6 +251,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       const cartData = cart.map(item => ({
         id: item.id, productId: item.id, quantity: item.quantity,
         name: item.name, price: item.effective_price ?? item.price,
+        acceptedOfferMessageId: item.acceptedOfferMessageId,
         seller_id: item.seller_id, store_name: item.store_name,
         seller_name: item.seller_name, images: item.images
       }));
@@ -360,7 +374,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     <Text style={styles.stepLabel}>{t("checkout.payment")}</Text>
     <View style={styles.paymentOptions}>
       <TouchableOpacity style={[styles.paymentCard,paymentMethod==="moncash"&&styles.paymentCardActive]} onPress={()=>setPaymentMethod("moncash")} accessibilityRole="button"><View style={styles.paymentCardLeft}><Image source={moncashLogo} style={styles.paymentLogo} resizeMode="cover"/><View style={styles.paymentInfo}><Text style={styles.paymentName}>MonCash</Text><Text style={styles.paymentSub}>{t("checkout.securePayment")}</Text></View></View><View style={[styles.radio,paymentMethod==="moncash"&&styles.radioActive]}>{paymentMethod==="moncash"&&<View style={styles.radioDot}/>}</View></TouchableOpacity>
-      <TouchableOpacity style={[styles.paymentCard,paymentMethod==="natcash"&&styles.paymentCardActive]} onPress={()=>setPaymentMethod("natcash")} accessibilityRole="button"><View style={styles.paymentCardLeft}><Image source={natcashLogo} style={styles.paymentLogo} resizeMode="cover"/><View style={styles.paymentInfo}><Text style={styles.paymentName}>NatCash</Text><Text style={styles.paymentSub}>Pay directly via NatCash</Text></View></View><View style={[styles.radio,paymentMethod==="natcash"&&styles.radioActive]}>{paymentMethod==="natcash"&&<View style={styles.radioDot}/>}</View></TouchableOpacity>
+      <TouchableOpacity style={[styles.paymentCard,paymentMethod==="natcash"&&styles.paymentCardActive,!natCashAvailable&&{opacity:0.45}]} onPress={()=>natCashAvailable&&setPaymentMethod("natcash")} disabled={!natCashAvailable} accessibilityRole="button" accessibilityState={{ disabled: !natCashAvailable }}><View style={styles.paymentCardLeft}><Image source={natcashLogo} style={styles.paymentLogo} resizeMode="cover"/><View style={styles.paymentInfo}><Text style={styles.paymentName}>NatCash</Text><Text style={styles.paymentSub}>{natCashAvailable ? t('natcashAccess.directAtHandoff') : t('natcashAccess.unavailableForCart')}</Text></View></View><View style={[styles.radio,paymentMethod==="natcash"&&styles.radioActive]}>{paymentMethod==="natcash"&&<View style={styles.radioDot}/>}</View></TouchableOpacity>
     </View>
     <View style={styles.trustBox}><MaterialCommunityIcons name="information-outline" size={16} color={COLORS.blue}/><Text style={styles.trustText}>{t("checkout.secureNote")}</Text></View>
     <View style={styles.trustRow}><MaterialCommunityIcons name="shield-check" size={16} color={COLORS.green}/><Text style={styles.trustItem}>{t("checkout.trustProtected")}</Text></View>

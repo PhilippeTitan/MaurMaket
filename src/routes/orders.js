@@ -4,6 +4,7 @@ import { pool } from '../config/database.js';
 import { authRequired, dobRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { logOrderEvent, canAccessOrder, processRefundPayout, parseNatCashSms, getCommissionRate } from '../utils/helpers.js';
+import { getNatCashAccess } from '../utils/natcashAccess.js';
 
 const router = Router();
 
@@ -47,6 +48,51 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   const dLng = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function createNatCashHandoffOrder(client, checkoutId) {
+  const lockedCheckout = await client.query('SELECT * FROM pending_checkouts WHERE id = $1 FOR UPDATE', [checkoutId]);
+  const checkout = lockedCheckout.rows[0];
+  if (!checkout) throw new Error('Pending checkout not found');
+  if (checkout.order_id) return checkout.order_id;
+  const agreements = await client.query(
+    `SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 FOR UPDATE`, [checkoutId]
+  );
+  if (!agreements.rows.length || agreements.rows.some(row => row.status !== 'accepted' || !row.terms_locked_at)) return null;
+  if (agreements.rows.some(row => row.terms?.method !== 'meetup')) throw new Error('NatCash handoff orders require every seller to agree to an in-person meetup');
+  const created = await client.query(
+    `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
+     VALUES ($1,$2,'pending','natcash','meetup',$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+    [checkout.user_id, checkout.total_amount, checkout.delivery_name, checkout.delivery_phone, checkout.delivery_address, checkout.delivery_city, checkout.delivery_note, checkout.meetup_lat, checkout.meetup_lng, checkout.meetup_address, checkout.meetup_name]
+  );
+  const orderId = created.rows[0].id;
+  for (const item of checkout.cart_data) {
+    const productId = item.id || item.productId;
+    const product = await client.query('SELECT seller_id FROM products WHERE id = $1', [productId]);
+    if (!product.rows[0]) throw new Error(`Product ${productId} is no longer available`);
+    await client.query(
+      'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1,$2,$3,$4,$5)',
+      [orderId, productId, product.rows[0].seller_id, item.quantity || 1, item.price || 0]
+    );
+  }
+  for (const agreement of agreements.rows) {
+    const term = agreement.terms || {};
+    await client.query(
+      `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, seller_accepted_at, terms_locked_at)
+       VALUES ($1,$2,'pending','pending','natcash','meetup',$3,$4,$5,$6,$7,'locked',$8,$9,$10) ON CONFLICT (order_id,seller_id) DO NOTHING`,
+      [orderId, agreement.seller_id, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, agreement.buyer_accepted_at, agreement.seller_accepted_at, agreement.terms_locked_at]
+    );
+  }
+  await client.query(
+    `UPDATE stock_reservations SET order_id = $1, checkout_id = NULL, expires_at = TIMESTAMP 'infinity'
+     WHERE checkout_id = $2 AND status = 'active'`, [orderId, checkoutId]
+  );
+  await client.query("UPDATE pending_checkouts SET status = 'completed', order_id = $1 WHERE id = $2", [orderId, checkoutId]);
+  await client.query(
+    `INSERT INTO order_events (order_id, event_type, actor_id, note) VALUES ($1,'status_change',$2,'NatCash order created. Payment is due in person at the agreed meetup; no transfer has been verified.')`,
+    [orderId, checkout.user_id]
+  );
+  return orderId;
 }
 
 async function activateNatCashSellerPayment(client, legacySession, transcode) {
@@ -100,6 +146,15 @@ async function activateNatCashSellerPayment(client, legacySession, transcode) {
   }
   await client.query("UPDATE fulfillment_payment_sessions SET order_id = $1, status = 'completed', sms_transcode = $2, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $3", [orderId, transcode, session.id]);
   await client.query("UPDATE seller_fulfillments SET payment_status = 'verified', fulfillment_status = 'processing', payment_method = 'natcash', payment_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE order_id = $2 AND seller_id = $3", [transcode, orderId, legacySession.seller_id]);
+  for (const item of checkout.cart_data || []) {
+    if (!item.acceptedOfferMessageId || item.seller_id !== legacySession.seller_id) continue;
+    await client.query(
+      `UPDATE message_offers SET status = 'redeemed', accepted_checkout_id = NULL
+       WHERE message_id = $1 AND buyer_id = $2 AND seller_id = $3
+         AND status = 'accepted' AND accepted_checkout_id = $4`,
+      [item.acceptedOfferMessageId, checkout.user_id, legacySession.seller_id, checkout.id]
+    );
+  }
   await client.query("UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND seller_id = $2 AND status = 'active'", [checkout.id, legacySession.seller_id]);
   const items = await client.query('SELECT SUM(price * quantity) AS gross FROM order_items WHERE order_id = $1 AND seller_id = $2', [orderId, legacySession.seller_id]);
   const gross = Number(items.rows[0]?.gross || 0) + Number(term.deliveryFee || 0);
@@ -337,10 +392,55 @@ router.get('/orders', authRequired, async (req, res) => {
 // ── Deferred checkout ──────────────────────────────────────────────────────
 
 router.post('/checkout/pending', authRequired, async (req, res) => {
-  const { cart, fulfillmentSelections, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, meetupLat, meetupLng, meetupAddress, meetupName, paymentMethod, promoCode, totalAmount } = req.body;
+  const { cart, fulfillmentSelections, deliveryMethod, deliveryName, deliveryPhone, deliveryAddress, deliveryCity, deliveryNote, meetupLat, meetupLng, meetupAddress, meetupName, paymentMethod, promoCode } = req.body;
   if (!cart || !Array.isArray(cart) || cart.length === 0) return res.status(400).json({ error: 'Cart is empty' });
 
   try {
+    // Never trust client prices or seller ids in checkout snapshots. Accepted
+    // offers are checked against the exact product, buyer, quantity and expiry.
+    const normalizedCart = [];
+    const seenProductIds = new Set();
+    for (const item of cart) {
+      const productId = item.id || item.productId;
+      const quantity = Number(item.quantity || 1);
+      if (!productId || !/^[0-9a-f-]{36}$/i.test(productId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+        return res.status(400).json({ error: 'Each cart item needs a valid product and quantity' });
+      }
+      if (seenProductIds.has(productId)) return res.status(400).json({ error: 'A product can only appear once in the cart' });
+      seenProductIds.add(productId);
+      const productResult = await pool.query(
+        `SELECT id, seller_id, name, price, sale_price, sale_starts_at, sale_ends_at, stock, is_available
+         FROM products WHERE id = $1`, [productId]
+      );
+      const product = productResult.rows[0];
+      if (!product || !product.is_available) return res.status(409).json({ error: 'A listing in your cart is no longer available' });
+      if (product.seller_id === req.user.id) return res.status(400).json({ error: 'You cannot purchase your own product' });
+      if (Number(product.stock) < quantity) return res.status(409).json({ error: `Insufficient stock for "${product.name}"` });
+      let price;
+      if (item.acceptedOfferMessageId) {
+        if (typeof item.acceptedOfferMessageId !== 'string' || !/^[0-9a-f-]{36}$/i.test(item.acceptedOfferMessageId)) {
+          return res.status(400).json({ error: 'Invalid accepted offer reference' });
+        }
+        const acceptedOffer = await pool.query(
+          `SELECT mo.offered_price FROM message_offers mo
+           WHERE mo.message_id = $1 AND mo.product_id = $2 AND mo.buyer_id = $3
+             AND mo.seller_id = $4 AND mo.quantity = $5 AND mo.status = 'accepted'
+             AND mo.accepted_checkout_id IS NULL
+             AND mo.accepted_expires_at > CURRENT_TIMESTAMP`,
+          [item.acceptedOfferMessageId, product.id, req.user.id, product.seller_id, quantity]
+        );
+        if (!acceptedOffer.rows.length) return res.status(409).json({ error: 'This accepted offer is no longer valid for the selected quantity' });
+        price = Number(acceptedOffer.rows[0].offered_price);
+      } else {
+        const saleActive = product.sale_price && (!product.sale_starts_at || new Date(product.sale_starts_at) <= new Date()) && (!product.sale_ends_at || new Date(product.sale_ends_at) >= new Date());
+        price = Number(saleActive ? product.sale_price : product.price);
+        const clientPrice = Number(item.effective_price ?? item.price);
+        if (!Number.isFinite(clientPrice) || Math.round(clientPrice * 100) !== Math.round(price * 100)) {
+          return res.status(409).json({ error: `The price for "${product.name}" changed. Refresh your cart and review the new total.` });
+        }
+      }
+      normalizedCart.push({ ...item, id: product.id, productId: product.id, name: product.name, seller_id: product.seller_id, quantity, price });
+    }
     // `fulfillmentSelections` is authoritative.  The legacy order-wide fields
     // below are retained only to render historic orders during the migration.
     const legacyLocation = deliveryMethod === 'meetup'
@@ -348,15 +448,44 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
       : { lat: req.user.location_lat, lng: req.user.location_lng, address: deliveryAddress || null, note: deliveryNote || null };
     const selections = Array.isArray(fulfillmentSelections) && fulfillmentSelections.length > 0
       ? fulfillmentSelections
-      : [...new Set(cart.map(item => item.seller_id))].filter(Boolean).map(sellerId => ({ sellerId, method: deliveryMethod, location: legacyLocation }));
+      : [...new Set(normalizedCart.map(item => item.seller_id))].filter(Boolean).map(sellerId => ({ sellerId, method: deliveryMethod, location: legacyLocation }));
+    if ((paymentMethod || 'moncash') === 'natcash') {
+      const sellerIds = [...new Set(normalizedCart.map(item => item.seller_id).filter(Boolean))];
+      const unavailable = [];
+      for (const sellerId of sellerIds) {
+        const access = await getNatCashAccess(sellerId);
+        if (!access.entitled || !access.paymentMethodEnabled) unavailable.push(sellerId);
+      }
+      if (unavailable.length) return res.status(403).json({ error: 'One or more sellers do not currently accept NatCash', code: 'NATCASH_ACCESS_REQUIRED', sellerIds: unavailable });
+    }
     // Validate seller capability and calculate seller-owned fees server-side.
     // The resulting snapshot is immutable input to the later agreement.
-    const fulfillmentTerms = await buildFulfillmentTerms(pool, cart, selections);
+    const fulfillmentTerms = await buildFulfillmentTerms(pool, normalizedCart, selections);
+    if ((paymentMethod || 'moncash') === 'natcash' && fulfillmentTerms.some(term => term.method !== 'meetup')) {
+      return res.status(400).json({ error: 'NatCash payments require every seller to agree to an in-person meetup', code: 'NATCASH_MEETUP_REQUIRED' });
+    }
     const fulfillmentFee = fulfillmentTerms.reduce((sum, term) => sum + Number(term.deliveryFee || 0), 0);
+    const merchandiseTotal = normalizedCart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
+    let checkoutDiscount = 0;
+    if (promoCode) {
+      const promoResult = await pool.query(
+        `SELECT * FROM promo_codes WHERE code = $1 AND is_active = true
+         AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)`, [String(promoCode).toUpperCase()]
+      );
+      const promo = promoResult.rows[0];
+      if (!promo || (promo.max_uses && promo.uses_count >= promo.max_uses) || merchandiseTotal < Number(promo.min_order_amount || 0)) {
+        return res.status(400).json({ error: 'Promo code is no longer valid for this cart' });
+      }
+      const alreadyUsed = await pool.query('SELECT 1 FROM promo_uses WHERE promo_id = $1 AND user_id = $2', [promo.id, req.user.id]);
+      if (alreadyUsed.rows.length) return res.status(400).json({ error: 'You have already used this promo code' });
+      checkoutDiscount = promo.discount_type === 'percentage'
+        ? Math.min(merchandiseTotal * Number(promo.discount_value) / 100, Number(promo.discount_value) * 10)
+        : Math.min(merchandiseTotal, Number(promo.discount_value));
+    }
     const result = await pool.query(
       `INSERT INTO pending_checkouts (user_id, cart_data, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, payment_method, promo_code, total_amount, fulfillment_terms)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
-      [req.user.id, JSON.stringify(cart), deliveryMethod, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null, meetupLat || null, meetupLng || null, meetupAddress || null, meetupName || null, paymentMethod || 'moncash', promoCode || null, Number(totalAmount || 0) + fulfillmentFee, JSON.stringify(fulfillmentTerms)]
+      [req.user.id, JSON.stringify(normalizedCart), deliveryMethod, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null, meetupLat || null, meetupLng || null, meetupAddress || null, meetupName || null, paymentMethod || 'moncash', promoCode || null, Math.max(0, merchandiseTotal - checkoutDiscount) + fulfillmentFee, JSON.stringify(fulfillmentTerms)]
     );
     const pendingId = result.rows[0].id;
 
@@ -367,17 +496,36 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
       await stockClient.query('BEGIN');
 
       // Lock ALL products first (consistent ordering to prevent deadlocks)
-      const productIds = cart.map(i => i.id || i.productId).filter(Boolean).sort();
+      const productIds = normalizedCart.map(i => i.id || i.productId).filter(Boolean).sort();
       for (const pid of productIds) {
         await stockClient.query('SELECT stock FROM products WHERE id = $1 FOR UPDATE', [pid]);
       }
 
+      // Claim each accepted offer for this checkout so a second checkout
+      // cannot reuse the negotiated price before payment settles.
+      let offerReservationFailed = false;
+      for (const item of normalizedCart.filter(i => i.acceptedOfferMessageId)) {
+        const claimed = await stockClient.query(
+          `UPDATE message_offers SET accepted_checkout_id = $1
+           WHERE message_id = $2 AND product_id = $3 AND buyer_id = $4 AND seller_id = $5
+             AND quantity = $6 AND status = 'accepted' AND accepted_checkout_id IS NULL
+             AND accepted_expires_at > CURRENT_TIMESTAMP RETURNING message_id`,
+          [pendingId, item.acceptedOfferMessageId, item.id, req.user.id, item.seller_id, item.quantity]
+        );
+        if (!claimed.rowCount) { offerReservationFailed = true; break; }
+      }
+      if (offerReservationFailed) {
+        await stockClient.query('ROLLBACK');
+        await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [pendingId]);
+        return res.status(409).json({ error: 'This accepted offer is already in checkout or has expired. Refresh the offer and try again.' });
+      }
+
       // Validate all stock in one pass
-      for (const item of cart) {
+      for (const item of normalizedCart) {
         const productId = item.id || item.productId;
         if (!productId) continue;
-        const stockCheck = await stockClient.query('SELECT stock FROM products WHERE id = $1', [productId]);
-        if (stockCheck.rows.length === 0 || stockCheck.rows[0].stock < (item.quantity || 1)) {
+        const stockCheck = await stockClient.query('SELECT stock, is_available FROM products WHERE id = $1', [productId]);
+        if (stockCheck.rows.length === 0 || !stockCheck.rows[0].is_available || stockCheck.rows[0].stock < (item.quantity || 1)) {
           await stockClient.query('ROLLBACK');
           // Mark checkout as failed (stock unavailable)
           await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [pendingId]);
@@ -386,7 +534,7 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
       }
 
       // All stock valid — decrement and create reservations (with seller_id for per-seller expiry)
-      for (const item of cart) {
+      for (const item of normalizedCart) {
         const productId = item.id || item.productId;
         if (!productId) continue;
         await stockClient.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [item.quantity || 1, productId]);
@@ -428,6 +576,24 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
   }
 });
 
+router.get('/checkout/natcash-availability', authRequired, async (req, res) => {
+  try {
+    const sellerIds = String(req.query.sellerIds || '').split(',').filter(Boolean);
+    if (!sellerIds.length || sellerIds.length > 30 || sellerIds.some(id => !/^[0-9a-f-]{36}$/i.test(id))) {
+      return res.status(400).json({ error: 'Valid sellerIds are required' });
+    }
+    const sellers = [];
+    for (const sellerId of [...new Set(sellerIds)]) {
+      const access = await getNatCashAccess(sellerId);
+      sellers.push({ sellerId, available: access.entitled && access.paymentMethodEnabled });
+    }
+    res.json({ sellers, available: sellers.length > 0 && sellers.every(seller => seller.available) });
+  } catch (err) {
+    console.error('NatCash availability error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.get('/seller/fulfillment-proposals', authRequired, async (req, res) => {
   try {
     const proposals = await pool.query(
@@ -461,12 +627,17 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
     const agreement = proposal.rows[0];
     if (!agreement) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Fulfillment proposal not found' }); }
     if (agreement.checkout_status !== 'pending' || agreement.status !== 'proposed') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This proposal is no longer available' }); }
+    if (decision === 'accept' && agreement.payment_method === 'natcash') {
+      const access = await getNatCashAccess(req.user.id, client);
+      if (!access.entitled || !access.paymentMethodEnabled) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'NatCash access is no longer active or is turned off for new orders', code: 'NATCASH_ACCESS_REQUIRED' }); }
+    }
     const status = decision === 'accept' ? 'accepted' : 'rejected';
     await client.query(
       `UPDATE pending_fulfillment_agreements SET status = $1, seller_accepted_at = CASE WHEN $1 = 'accepted' THEN CURRENT_TIMESTAMP ELSE NULL END
        WHERE id = $2`, [status, agreement.id]
     );
     const paymentReady = decision === 'accept';
+    let natCashOrderId = null;
     if (paymentReady) {
       // Lock only this seller's accepted terms. Other sellers remain entirely
       // independent: a delayed or rejected response cannot block this one.
@@ -488,10 +659,16 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
         );
         await client.query("UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [remaining.rows[0].count === 0 ? 'paid' : 'partially_paid', existingOrder.rows[0].order_id]);
       }
+      if (agreement.payment_method === 'natcash') {
+        const remainingProposals = await client.query(
+          "SELECT COUNT(*)::int AS count FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND status <> 'accepted'", [req.params.id]
+        );
+        if (remainingProposals.rows[0].count === 0) natCashOrderId = await createNatCashHandoffOrder(client, req.params.id);
+      }
     }
     await client.query('COMMIT');
-    createNotification(agreement.user_id, decision === 'accept' ? 'fulfillment_accepted' : 'fulfillment_rejected', decision === 'accept' ? 'Fulfillment accepted' : 'Fulfillment declined', paymentReady ? 'This seller’s payment is ready.' : 'A seller responded to your fulfillment proposal.', { pendingId: req.params.id, sellerId: req.user.id });
-    res.json({ status, paymentReady });
+    createNotification(agreement.user_id, decision === 'accept' ? 'fulfillment_accepted' : 'fulfillment_rejected', decision === 'accept' ? 'Fulfillment accepted' : 'Fulfillment declined', natCashOrderId ? 'Every seller accepted. Your NatCash order is ready for its in-person meetup; payment is due when you meet.' : paymentReady ? 'This seller’s payment is ready.' : 'A seller responded to your fulfillment proposal.', { pendingId: req.params.id, sellerId: req.user.id, ...(natCashOrderId ? { orderId: natCashOrderId } : {}) });
+    res.json({ status, paymentReady, ...(natCashOrderId ? { orderId: natCashOrderId } : {}) });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
     console.error('Fulfillment proposal decision error:', err);
@@ -506,6 +683,10 @@ router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res
     const checkout = await pool.query("SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'pending'", [req.params.id, req.user.id]);
     const pc = checkout.rows[0];
     if (!pc) return res.status(404).json({ error: 'Pending checkout not found or expired' });
+    if (pc.payment_method === 'natcash') {
+      const access = await getNatCashAccess(sellerId);
+      if (!access.entitled || !access.paymentMethodEnabled) return res.status(403).json({ error: 'This seller has NatCash access disabled or inactive', code: 'NATCASH_ACCESS_REQUIRED', sellerId });
+    }
     const agreementResult = await pool.query(
       `SELECT terms FROM pending_fulfillment_agreements
        WHERE checkout_id = $1 AND seller_id = $2 AND status = 'accepted' AND terms_locked_at IS NOT NULL`, [pc.id, sellerId]
@@ -522,7 +703,7 @@ router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res
         if (promoRes.rows.length) {
           const promo = promoRes.rows[0];
           const discount = promo.discount_type === 'percentage'
-            ? allMerchandise * Number(promo.discount_value) / 100
+            ? Math.min(allMerchandise * Number(promo.discount_value) / 100, Number(promo.discount_value) * 10)
             : Math.min(Number(promo.discount_value), allMerchandise);
           sellerMerchandiseAmount = Math.round((cartSubtotal * Math.max(0, allMerchandise - discount) / allMerchandise) * 100) / 100;
         }
@@ -557,7 +738,7 @@ router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res
 router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, status, created_at FROM pending_checkouts WHERE id = $1 AND user_id = $2',
+      'SELECT id, order_id, status, created_at FROM pending_checkouts WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
@@ -580,6 +761,7 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
         for (const r of released.rows) {
           await relClient.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
         }
+        await relClient.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [req.params.id]);
         await relClient.query('COMMIT');
       } catch (e) {
         await relClient.query('ROLLBACK');
@@ -589,6 +771,7 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
       return res.json({ status: 'expired', agreements: agreements.rows });
     }
     if (pc.status === 'completed') {
+      if (pc.order_id) return res.json({ status: 'completed', orderId: pc.order_id, agreements: agreements.rows });
       const orderRes = await pool.query(
         'SELECT id FROM orders WHERE buyer_id = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT 1',
         [req.user.id, pc.created_at]
@@ -652,6 +835,7 @@ router.get('/checkout/pending/:id/seller-info', authRequired, async (req, res) =
 // ── NatCash confirm ────────────────────────────────────────────────────────
 
 router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, res) => {
+  return res.status(410).json({ error: 'NatCash is completed with the seller at the in-person handoff. Checkout SMS verification is no longer supported.', code: 'NATCASH_HANDOFF_REQUIRED' });
   try {
     const result = await pool.query(
       "SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'agreement_locked'",
@@ -706,7 +890,7 @@ router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, r
           const promoRes = await client.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true FOR UPDATE', [pc.promo_code]);
           if (promoRes.rows.length > 0) {
             const promo = promoRes.rows[0];
-            discountAmount = promo.discount_type === 'percentage' ? totalAmount * (promo.discount_value / 100) : Math.min(promo.discount_value, totalAmount);
+            discountAmount = promo.discount_type === 'percentage' ? Math.min(totalAmount * (promo.discount_value / 100), promo.discount_value * 10) : Math.min(promo.discount_value, totalAmount);
             totalAmount = Math.max(0, totalAmount - discountAmount);
           }
         } catch { /* ignore */ }
@@ -777,7 +961,7 @@ router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, r
 // For multi-seller orders: buyer pays each seller individually via USSD
 router.post('/orders/:id/confirm-natcash-seller', authRequired, async (req, res) => {
   try {
-    const { sellerId, smsData } = req.body || {};
+    const { sellerId } = req.body || {};
     if (!sellerId) return res.status(400).json({ error: 'sellerId required' });
 
     const order = await canAccessOrder(req.user.id, req.params.id);
@@ -805,30 +989,27 @@ router.post('/orders/:id/confirm-natcash-seller', authRequired, async (req, res)
       }
 
       // Idempotency check
-      const idempotencyKey = smsData?.transcode ? `natcash_${req.params.id}_${sellerId}_${smsData.transcode}` : null;
-      if (idempotencyKey && sf.idempotency_key === idempotencyKey) {
-        await client.query('ROLLBACK');
-        return res.json({ success: true, alreadyClaimed: true });
-      }
-
-      const smsNote = smsData
-        ? `NatCash payment claimed (transcode: ${smsData.transcode}, seller: ${sellerId})`
-        : `NatCash payment claimed by buyer (seller: ${sellerId})`;
+      // A buyer claim is a statement only. Pasted SMS and transcodes are not
+      // provider verification and must never move this row to `verified`.
+      const claimNote = 'Buyer reported sending NatCash directly to seller; awaiting seller confirmation.';
 
       await client.query(
         `UPDATE seller_fulfillments
          SET payment_status = 'buyer_claimed',
-             payment_reference = $3,
+             payment_reference = NULL,
              claimed_at = CURRENT_TIMESTAMP,
-             idempotency_key = COALESCE($4, idempotency_key),
              updated_at = CURRENT_TIMESTAMP
          WHERE order_id = $1 AND seller_id = $2 AND payment_status = 'pending'`,
-        [req.params.id, sellerId, smsData?.transcode || null, idempotencyKey]
+        [req.params.id, sellerId]
+      );
+      await client.query(
+        `UPDATE stock_reservations SET expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours'
+         WHERE order_id = $1 AND seller_id = $2 AND status = 'active'`, [req.params.id, sellerId]
       );
 
       await client.query(
         "INSERT INTO order_events (order_id, event_type, actor_id, note) VALUES ($1, 'payment_received', $2, $3)",
-        [req.params.id, req.user.id, smsNote]
+        [req.params.id, req.user.id, claimNote]
       );
 
       // Check if all sellers have claimed payment
@@ -867,6 +1048,116 @@ router.post('/orders/:id/confirm-natcash-seller', authRequired, async (req, res)
   }
 });
 
+router.post('/orders/:id/confirm-natcash-received', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const sellerId = req.user.id;
+    await client.query('BEGIN');
+    const result = await client.query(
+      `SELECT * FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2 FOR UPDATE`, [req.params.id, sellerId]
+    );
+    const fulfillment = result.rows[0];
+    if (!fulfillment || fulfillment.payment_method !== 'natcash') {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'NatCash seller fulfillment not found' });
+    }
+    if (fulfillment.payment_status === 'verified') {
+      await client.query('ROLLBACK');
+      return res.json({ success: true, alreadyConfirmed: true });
+    }
+    if (fulfillment.payment_status !== 'buyer_claimed') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'There is no buyer payment claim to confirm yet' });
+    }
+    const elapsedReservation = await client.query(
+      `SELECT 1 FROM stock_reservations WHERE order_id = $1 AND seller_id = $2
+       AND status = 'active' AND expires_at < CURRENT_TIMESTAMP LIMIT 1`, [req.params.id, sellerId]
+    );
+    if (elapsedReservation.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'The 24-hour handoff window has expired. Resolve the transfer directly with the buyer before arranging another exchange.' });
+    }
+    await client.query(
+      `UPDATE seller_fulfillments SET payment_status = 'verified', fulfillment_status = 'processing',
+       payment_reference = NULL, updated_at = CURRENT_TIMESTAMP WHERE order_id = $1 AND seller_id = $2`,
+      [req.params.id, sellerId]
+    );
+    await client.query(
+      `UPDATE stock_reservations SET status = 'confirmed' WHERE order_id = $1 AND seller_id = $2 AND status = 'active'`,
+      [req.params.id, sellerId]
+    );
+    const checkoutForOrder = await client.query(
+      'SELECT id, user_id, cart_data FROM pending_checkouts WHERE order_id = $1 FOR UPDATE', [req.params.id]
+    );
+    for (const item of checkoutForOrder.rows[0]?.cart_data || []) {
+      if (!item.acceptedOfferMessageId || item.seller_id !== sellerId) continue;
+      await client.query(
+        `UPDATE message_offers SET status = 'redeemed', accepted_checkout_id = NULL
+         WHERE message_id = $1 AND buyer_id = $2 AND seller_id = $3
+           AND status = 'accepted' AND accepted_checkout_id = $4`,
+        [item.acceptedOfferMessageId, checkoutForOrder.rows[0].user_id, sellerId, checkoutForOrder.rows[0].id]
+      );
+    }
+    await client.query(
+      `INSERT INTO order_events (order_id, event_type, actor_id, note)
+       VALUES ($1, 'payment_received', $2, 'Seller confirmed receiving the direct NatCash transfer in person.')`,
+      [req.params.id, sellerId]
+    );
+    await client.query('COMMIT');
+    createNotification(order.buyer_id, 'payment_confirmed', 'Seller confirmed receipt', 'The seller confirmed receiving your NatCash transfer. Complete the handoff together.', { orderId: req.params.id });
+    res.json({ success: true, paymentStatus: 'verified' });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('NatCash seller receipt confirmation error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
+});
+
+router.post('/orders/:id/report-natcash-not-received', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    await client.query('BEGIN');
+    const result = await client.query(
+      `SELECT * FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2 FOR UPDATE`, [req.params.id, req.user.id]
+    );
+    const fulfillment = result.rows[0];
+    if (!fulfillment || fulfillment.payment_method !== 'natcash') {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'NatCash seller fulfillment not found' });
+    }
+    if (fulfillment.payment_status !== 'buyer_claimed') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'There is no unverified NatCash claim to report' });
+    }
+    const claimedAtMs = fulfillment.claimed_at ? new Date(fulfillment.claimed_at).getTime() : Date.now();
+    const waitingMs = Date.now() - claimedAtMs;
+    if (waitingMs < 15 * 60 * 1000) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Wait 15 minutes from the buyer’s claim before reporting that the transfer has not arrived', availableAt: new Date(claimedAtMs + 15 * 60 * 1000).toISOString() });
+    }
+    await client.query(
+      `UPDATE seller_fulfillments SET payment_status = 'disputed', updated_at = CURRENT_TIMESTAMP
+       WHERE order_id = $1 AND seller_id = $2`, [req.params.id, req.user.id]
+    );
+    await client.query(
+      `INSERT INTO order_events (order_id, event_type, actor_id, note)
+       VALUES ($1, 'payment_received', $2, 'Seller reported that the NatCash transfer has not arrived; handoff is paused for both parties to resolve.')`,
+      [req.params.id, req.user.id]
+    );
+    await client.query('COMMIT');
+    createNotification(order.buyer_id, 'payment_disputed', 'Transfer not received yet', 'The seller has not received the NatCash transfer yet. Do not hand over the item or send another transfer; contact the seller to resolve it.', { orderId: req.params.id });
+    res.json({ success: true, paymentStatus: 'disputed' });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('NatCash not-received report error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NatCash PASTE-VERIFICATION SESSIONS (no SMS permissions)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -877,6 +1168,7 @@ router.post('/orders/:id/confirm-natcash-seller', authRequired, async (req, res)
  * Returns: { sessions: [{ id, sellerId, amount, recipientPhone, expiresAt }] }
  */
 router.post('/natcash/sessions', authRequired, async (req, res) => {
+  return res.status(410).json({ error: 'Checkout-time SMS verification is retired. NatCash transfers are reported at the in-person handoff.', code: 'NATCASH_HANDOFF_REQUIRED' });
   try {
     const { pendingId, sellers } = req.body || {};
     if (!pendingId || !sellers?.length) {
@@ -939,6 +1231,7 @@ router.post('/natcash/sessions', authRequired, async (req, res) => {
  * Returns: { verified: true, status: 'verified' } or error
  */
 router.post('/natcash/sessions/:sessionId/verify', authRequired, async (req, res) => {
+  return res.status(410).json({ error: 'Pasted SMS cannot verify a NatCash transfer. Use the in-person order handoff flow.', code: 'NATCASH_HANDOFF_REQUIRED' });
   try {
     const { smsText } = req.body || {};
     if (!smsText?.trim()) {
@@ -1109,6 +1402,7 @@ router.get('/natcash/sessions', authRequired, async (req, res) => {
  * Creates order + order_items + seller_fulfillments in a single transaction.
  */
 router.post('/natcash/sessions/confirm-all', authRequired, async (req, res) => {
+  return res.status(410).json({ error: 'Checkout-time NatCash verification is retired. Use the in-person order handoff flow.', code: 'NATCASH_HANDOFF_REQUIRED' });
   try {
     const { pendingId } = req.body || {};
     if (!pendingId) return res.status(400).json({ error: 'pendingId required' });
@@ -1240,25 +1534,24 @@ router.post('/orders', authRequired, dobRequired, async (req, res) => {
       const p = prod.rows[0];
       let price;
       const offerCheck = await client.query(
-        `SELECT mo.offered_price FROM message_offers mo
+        `SELECT mo.id, mo.offered_price FROM message_offers mo
          WHERE mo.product_id = $1 AND mo.buyer_id = $2 AND mo.status = 'accepted'
-         AND mo.responded_at IS NOT NULL
+         AND mo.accepted_checkout_id IS NULL
+         AND mo.accepted_expires_at > CURRENT_TIMESTAMP AND mo.quantity = $3
          ORDER BY mo.responded_at DESC LIMIT 1
          FOR UPDATE`,
-        [item.productId, req.user.id]
+        [item.productId, req.user.id, item.quantity || 1]
       );
       if (offerCheck.rows.length > 0) {
         price = parseFloat(offerCheck.rows[0].offered_price);
-        await client.query(
-          "UPDATE message_offers SET status = 'redeemed' WHERE product_id = $1 AND buyer_id = $2 AND status = 'accepted' AND responded_at = (SELECT MAX(responded_at) FROM message_offers WHERE product_id = $1 AND buyer_id = $2 AND status = 'accepted')",
-          [item.productId, req.user.id]
-        );
+        // Claim against the order and redeem only after payment succeeds.
+        orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id, acceptedOfferId: offerCheck.rows[0].id });
       } else {
         const onSale = p.sale_price && (p.sale_starts_at === null || new Date(p.sale_starts_at) <= new Date()) && (p.sale_ends_at === null || new Date(p.sale_ends_at) >= new Date());
         price = onSale ? parseFloat(p.sale_price) : parseFloat(p.price);
+        orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id });
       }
       total += price * (item.quantity || 1);
-      orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id });
     }
 
     let discountAmount = 0;
@@ -1295,6 +1588,16 @@ router.post('/orders', authRequired, dobRequired, async (req, res) => {
        meetupLat && meetupLng ? req.user.id : null]
     );
     const order = orderResult.rows[0];
+
+    for (const item of orderItems) {
+      if (!item.acceptedOfferId) continue;
+      const claim = await client.query(
+        `UPDATE message_offers SET accepted_checkout_id = $1
+         WHERE id = $2 AND status = 'accepted' AND accepted_checkout_id IS NULL
+         AND accepted_expires_at > CURRENT_TIMESTAMP RETURNING id`, [order.id, item.acceptedOfferId]
+      );
+      if (!claim.rowCount) throw new Error('Accepted offer is already in another checkout or has expired');
+    }
 
     for (const oi of orderItems) {
       await client.query(
@@ -1399,6 +1702,7 @@ router.put('/orders/:id/cancel', authRequired, async (req, res) => {
     const oldStatus = order.rows[0].status;
 
     await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [req.params.id]);
+    await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [req.params.id]);
     await client.query('COMMIT');
     client.release();
     logOrderEvent(req.params.id, 'status_change', req.user.id, oldStatus, 'cancelled', 'Cancelled by buyer');
@@ -1519,9 +1823,10 @@ router.post('/orders/:id/meetup/checkin', authRequired, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Meetup location must be confirmed before checking in' });
     }
-    if (order.status !== 'paid') {
+    const natcashMeetupOrder = order.payment_method === 'natcash' && ['pending', 'active', 'partially_paid'].includes(order.status);
+    if (order.status !== 'paid' && !natcashMeetupOrder) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Order must be paid to check in' });
+      return res.status(400).json({ error: 'Order must be paid or awaiting an in-person NatCash handoff to check in' });
     }
     if (order.meetup_expires_at && new Date(order.meetup_expires_at).getTime() <= Date.now()) {
       await client.query('ROLLBACK');
@@ -1643,6 +1948,16 @@ router.post('/orders/:id/meetup/scan', authRequired, async (req, res) => {
     if (sellerItem.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Only a seller on this order can enter the delivery code' });
+    }
+    if (order.payment_method === 'natcash') {
+      const received = await client.query(
+        "SELECT payment_status FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2 AND payment_method = 'natcash' FOR UPDATE",
+        [req.params.id, req.user.id]
+      );
+      if (received.rows[0]?.payment_status !== 'verified') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'The seller must confirm receiving NatCash before the handoff code can complete the exchange', code: 'NATCASH_RECEIPT_REQUIRED' });
+      }
     }
 
     const buyerCheckin = await pool.query(

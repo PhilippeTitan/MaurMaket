@@ -270,7 +270,8 @@ router.post('/follow/:sellerId', authRequired, async (req, res) => {
 router.get('/following', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT f.*, u.full_name, u.avatar_url, u.seller_tier,
+      `SELECT f.*, u.full_name, u.username, u.avatar_url, u.seller_tier,
+        u.store_name, u.store_logo_url, u.use_store_identity,
         EXISTS(
           SELECT 1 FROM notifications n
           WHERE n.user_id = f.follower_id
@@ -432,12 +433,32 @@ router.get('/sellers/nearby', async (req, res) => {
 // SELLER PROFILE / STATS (used by storefront)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+router.get('/sellers/search', authRequired, async (req, res) => {
+  const query = String(req.query.q || '').trim().slice(0, 80);
+  if (query.length < 2) return res.json({ sellers: [] });
+  try {
+    const result = await pool.query(
+      `SELECT id, full_name, username, avatar_url, store_name, store_logo_url, seller_tier, use_store_identity
+       FROM users WHERE id <> $1 AND role = 'seller'
+         AND (full_name ILIKE $2 OR username ILIKE $2 OR store_name ILIKE $2)
+       ORDER BY CASE WHEN username ILIKE $3 OR store_name ILIKE $3 THEN 0 ELSE 1 END, full_name
+       LIMIT 30`, [req.user.id, `%${query}%`, `${query}%`]
+    );
+    res.json({ sellers: result.rows });
+  } catch (err) { console.error('Seller search error:', err); res.status(500).json({ error: 'Server error' }); }
+});
+
 router.get('/sellers/:id', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT u.id, u.full_name, u.avatar_url, u.bio, u.created_at, u.store_name, u.store_logo_url,
               u.seller_tier, u.id_verified, u.id_verification_result, u.use_store_identity, u.username, u.show_real_name,
-              u.location_city, u.natcash_phone, u.accepted_payment_methods,
+              u.location_city, u.natcash_phone,
+              CASE WHEN u.natcash_phone IS NOT NULL
+                     AND 'natcash' = ANY(COALESCE(u.accepted_payment_methods, ARRAY[]::text[]))
+                     AND ((u.seller_tier = 'business' AND EXISTS (SELECT 1 FROM seller_subscriptions bs WHERE bs.seller_id = u.id AND bs.status IN ('active','past_due') AND bs.expires_at + make_interval(days => COALESCE(bs.grace_period_days,7)) > CURRENT_TIMESTAMP))
+                       OR EXISTS (SELECT 1 FROM natcash_access_subscriptions ns WHERE ns.seller_id = u.id AND ns.status = 'active' AND ns.expires_at + INTERVAL '3 days' > CURRENT_TIMESTAMP))
+                   THEN u.accepted_payment_methods ELSE array_remove(COALESCE(u.accepted_payment_methods, ARRAY['moncash']::text[]), 'natcash') END AS accepted_payment_methods,
               (SELECT COUNT(*) FROM products p WHERE p.seller_id = u.id AND p.is_available = true) AS product_count,
               (SELECT COALESCE(AVG(r.rating)::numeric(3,2), 0) FROM reviews r WHERE r.seller_id = u.id) AS avg_rating,
               (SELECT COUNT(*) FROM reviews r2 WHERE r2.seller_id = u.id) AS review_count,

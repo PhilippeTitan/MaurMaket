@@ -408,7 +408,13 @@ router.get('/products/:id', optionalAuth, async (req, res) => {
     const result = await pool.query(
       `SELECT p.*, u.full_name AS seller_name, u.avatar_url AS seller_avatar,
               u.store_name, u.store_logo_url, u.seller_tier, u.id_verified, u.use_store_identity, u.username AS seller_username,
-              u.natcash_phone, u.accepted_payment_methods, u.phone AS seller_phone,
+              u.natcash_phone,
+              CASE WHEN u.natcash_phone IS NOT NULL
+                     AND 'natcash' = ANY(COALESCE(u.accepted_payment_methods, ARRAY[]::text[]))
+                     AND ((u.seller_tier = 'business' AND EXISTS (SELECT 1 FROM seller_subscriptions bs WHERE bs.seller_id = u.id AND bs.status IN ('active','past_due') AND bs.expires_at + make_interval(days => COALESCE(bs.grace_period_days,7)) > CURRENT_TIMESTAMP))
+                       OR EXISTS (SELECT 1 FROM natcash_access_subscriptions ns WHERE ns.seller_id = u.id AND ns.status = 'active' AND ns.expires_at + INTERVAL '3 days' > CURRENT_TIMESTAMP))
+                   THEN u.accepted_payment_methods ELSE array_remove(COALESCE(u.accepted_payment_methods, ARRAY['moncash']::text[]), 'natcash') END AS accepted_payment_methods,
+              u.phone AS seller_phone,
               c.name AS category,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
@@ -496,15 +502,6 @@ router.post('/products', authRequired, verifiedSellerRequired, dobRequired, asyn
 
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
   const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
-  if (sellerTier === 'casual') {
-    const countResult = await pool.query(
-      'SELECT COUNT(*) FROM products WHERE seller_id = $1 AND is_available = true',
-      [req.user.id]
-    );
-    if (parseInt(countResult.rows[0].count) >= 10) {
-      return res.status(403).json({ error: 'Casual sellers can list up to 10 products. Upgrade to Verified for unlimited listings.' });
-    }
-  }
   if (sellerTier === 'business') {
     const subStatus = await checkSubscriptionStatus(req.user.id);
     if (subStatus === 'expired') {
@@ -517,6 +514,15 @@ router.post('/products', authRequired, verifiedSellerRequired, dobRequired, asyn
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const currentTier = await client.query('SELECT seller_tier FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
+    if (currentTier.rows[0]?.seller_tier === 'verified') {
+      const count = await client.query('SELECT COUNT(*)::int AS count FROM products WHERE seller_id = $1 AND is_available = true', [req.user.id]);
+      if (count.rows[0].count >= 100) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(403).json({ error: 'Verified sellers can have up to 100 active listings. Archive a listing or upgrade to Business to add another.', code: 'VERIFIED_LISTING_LIMIT', limit: 100 });
+      }
+    }
     const productResult = await client.query(
       `INSERT INTO products (seller_id, category_id, name, description, price, stock, sale_price, sale_starts_at, sale_ends_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
@@ -594,7 +600,7 @@ router.delete('/products/:id', authRequired, sellerRequired, async (req, res) =>
 router.put('/products/:id', authRequired, verifiedSellerRequired, async (req, res) => {
   const client = await pool.connect();
   try {
-    const check = await client.query('SELECT seller_id, price FROM products WHERE id = $1', [req.params.id]);
+    const check = await client.query('SELECT seller_id, price, is_available FROM products WHERE id = $1', [req.params.id]);
     if (check.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
     if (check.rows[0].seller_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not your product' });
@@ -644,6 +650,16 @@ router.put('/products/:id', authRequired, verifiedSellerRequired, async (req, re
     }
 
     await client.query('BEGIN');
+    if (isAvailable === true && check.rows[0].is_available === false && req.user.role !== 'admin') {
+      const tier = await client.query('SELECT seller_tier FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
+      if (tier.rows[0]?.seller_tier === 'verified') {
+        const count = await client.query('SELECT COUNT(*)::int AS count FROM products WHERE seller_id = $1 AND is_available = true', [req.user.id]);
+        if (count.rows[0].count >= 100) {
+          await client.query('ROLLBACK');
+          return res.status(403).json({ error: 'Verified sellers can have up to 100 active listings. Archive a listing or upgrade to Business to reactivate this one.', code: 'VERIFIED_LISTING_LIMIT', limit: 100 });
+        }
+      }
+    }
     const result = await client.query(
       `UPDATE products SET name = COALESCE($1, name), description = COALESCE($2, description),
        price = COALESCE($3, price), stock = COALESCE($4, stock),

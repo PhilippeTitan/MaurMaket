@@ -490,6 +490,47 @@ async function runMigrations(targetPool) {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_result VARCHAR(20);
     `));
 
+    await step('NatCash access subscriptions and payments', () => c.query(`
+      CREATE TABLE IF NOT EXISTS natcash_access_subscriptions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        seller_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status VARCHAR(20) NOT NULL DEFAULT 'active'
+          CHECK (status IN ('active','paused','expired')),
+        started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMPTZ NOT NULL,
+        paused_at TIMESTAMPTZ,
+        last_payment_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_natcash_access_seller_expiry
+        ON natcash_access_subscriptions(seller_id, expires_at DESC);
+      CREATE TABLE IF NOT EXISTS natcash_access_payments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        seller_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reference_id VARCHAR(150) NOT NULL UNIQUE,
+        amount_htg DECIMAL(10,2) NOT NULL CHECK (amount_htg = 500),
+        status VARCHAR(20) NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending','completed','failed','reconciliation_required')),
+        provider_payment_id TEXT,
+        paid_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_natcash_access_payments_seller
+        ON natcash_access_payments(seller_id, created_at DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_natcash_access_one_unresolved_payment
+        ON natcash_access_payments(seller_id) WHERE status IN ('pending','reconciliation_required');
+      CREATE TABLE IF NOT EXISTS natcash_access_reminders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        subscription_id UUID NOT NULL REFERENCES natcash_access_subscriptions(id) ON DELETE CASCADE,
+        seller_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        local_date DATE NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(subscription_id, local_date)
+      );
+    `));
+
     await step('Temporary KYC upload expiry queue', () => c.query(`
       CREATE TABLE IF NOT EXISTS temporary_storage_uploads (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -646,6 +687,7 @@ async function runMigrations(targetPool) {
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_url TEXT;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_width INTEGER;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_height INTEGER;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS product_data JSONB;
     `));
 
     // 34. Allow NULL content for image messages
@@ -685,6 +727,59 @@ async function runMigrations(targetPool) {
     await step('message_offers CHECK constraint (re-add)', () => c.query(`
       ALTER TABLE message_offers ADD CONSTRAINT message_offers_status_check
         CHECK (status IN ('pending', 'accepted', 'declined', 'expired', 'redeemed', 'countered'));
+    `));
+
+    // Inbox/chat v1: durable product cards, negotiation history, and per-user controls.
+    await step('Inbox and chat v1 schema', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS presence_visibility VARCHAR(30) NOT NULL DEFAULT 'chatted_with';
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_presence_visibility_check;
+      ALTER TABLE users ADD CONSTRAINT users_presence_visibility_check
+        CHECK (presence_visibility IN ('everyone', 'chatted_with', 'nobody'));
+      ALTER TABLE messages ALTER COLUMN content DROP NOT NULL;
+      ALTER TABLE message_offers ADD COLUMN IF NOT EXISTS negotiation_id UUID;
+      ALTER TABLE message_offers ADD COLUMN IF NOT EXISTS counter_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE message_offers ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE message_offers ADD COLUMN IF NOT EXISTS accepted_expires_at TIMESTAMP;
+      ALTER TABLE message_offers ADD COLUMN IF NOT EXISTS accepted_checkout_id UUID;
+      UPDATE message_offers SET negotiation_id = message_id WHERE negotiation_id IS NULL;
+      ALTER TABLE message_offers ALTER COLUMN negotiation_id SET NOT NULL;
+      ALTER TABLE message_offers DROP CONSTRAINT IF EXISTS message_offers_quantity_check;
+      ALTER TABLE message_offers ADD CONSTRAINT message_offers_quantity_check CHECK (quantity > 0);
+      CREATE INDEX IF NOT EXISTS idx_message_offers_negotiation ON message_offers(negotiation_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_message_offers_user_action ON message_offers(status, buyer_id, seller_id, expires_at);
+
+      CREATE TABLE IF NOT EXISTS conversation_user_settings (
+        conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE NOT NULL,
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        is_pinned BOOLEAN NOT NULL DEFAULT false,
+        is_muted BOOLEAN NOT NULL DEFAULT false,
+        muted_until TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (conversation_id, user_id)
+      );
+      ALTER TABLE conversation_user_settings ADD COLUMN IF NOT EXISTS is_muted BOOLEAN NOT NULL DEFAULT false;
+      CREATE INDEX IF NOT EXISTS idx_conversation_user_settings_user ON conversation_user_settings(user_id, is_pinned DESC, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS message_reports (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        reporter_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        reported_user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+        reason VARCHAR(40) NOT NULL CHECK (reason IN ('harassment', 'scam', 'inappropriate', 'spam', 'other')),
+        details TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'reviewing', 'resolved', 'dismissed')),
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CHECK (reporter_id <> reported_user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_message_reports_status_created ON message_reports(status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_message_reports_reported_user ON message_reports(reported_user_id, created_at DESC);
+
+      -- Preserve existing settings as the starting point, then make them participant-specific.
+      INSERT INTO conversation_user_settings (conversation_id, user_id, is_pinned, muted_until)
+      SELECT c.id, participant.user_id, COALESCE(c.is_pinned, false), c.muted_until
+      FROM conversations c
+      CROSS JOIN LATERAL (VALUES (c.buyer_id), (c.seller_id)) AS participant(user_id)
+      ON CONFLICT (conversation_id, user_id) DO NOTHING;
     `));
 
     // 38. Performance indexes
@@ -1182,6 +1277,9 @@ await step('NatCash phone separation', () => c.query(`
       -- seller_id for per-seller stock release on NatCash expiry
       ALTER TABLE stock_reservations ADD COLUMN IF NOT EXISTS seller_id UUID REFERENCES users(id);
       CREATE INDEX IF NOT EXISTS idx_stock_reservations_seller ON stock_reservations(seller_id) WHERE status = 'active';
+    `));
+    await step('Pending checkout order linkage', () => c.query(`
+      ALTER TABLE pending_checkouts ADD COLUMN IF NOT EXISTS order_id UUID REFERENCES orders(id) ON DELETE SET NULL;
     `));
 
     // NatCash payment sessions: paste-verification flow (no SMS permissions)

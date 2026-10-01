@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence, getConversationMedia, getLinkPreview } from '../api';
+import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence, getConversationMedia, getLinkPreview, sendProductCard, pinConversation, muteConversation, blockUser, reportConversationUser } from '../api';
 import type { LinkPreviewData, ConversationMediaItem } from '../api';
 import { onRealtime } from '../realtime';
 import { network } from '../network';
@@ -229,8 +229,22 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [offerDraftVisible, setOfferDraftVisible] = useState(Boolean(draftOffer));
-  const [, setProfileMenuVisible] = useState(false);
+  const [profileMenuVisible, setProfileMenuVisible] = useState(false);
+  const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
+  const [mutePickerVisible, setMutePickerVisible] = useState(false);
+  const [muteCustomHours, setMuteCustomHours] = useState('24');
+  const [confirmBlockVisible, setConfirmBlockVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [privacyInfoVisible, setPrivacyInfoVisible] = useState(false);
+  const [peerProfileVisible, setPeerProfileVisible] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [conversationRole, setConversationRole] = useState<'buyer' | 'seller'>('buyer');
+  const [conversationPinned, setConversationPinned] = useState(false);
+  const [conversationIsMuted, setConversationIsMuted] = useState(false);
+  const [blockedByMe, setBlockedByMe] = useState(false);
+  const [blockedByOther, setBlockedByOther] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
   const [, setHeaderHeight] = useState(0);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -330,13 +344,11 @@ export default function ChatScreen({ route, navigation }: Props) {
     vTx.value = 0; vTy.value = 0; vSavedX.value = 0; vSavedY.value = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
-  const [counteringMessageId, setCounteringMessageId] = useState<string | null>(null);
-  const [counterPrice, setCounterPrice] = useState('');
   const [otherTyping, setOtherTyping] = useState(false);
   const [presence, setPresence] = useState<{ online: boolean; lastSeen: string | null } | null>(null);
   const [offline, setOffline] = useState(false);
   const [sellerItemsVisible, setSellerItemsVisible] = useState(false);
-  const [offerBuilderItem, setOfferBuilderItem] = useState<{ id: string; name: string; price: number; image_url?: string | null } | null>(null);
+  const [offerBuilderItem, setOfferBuilderItem] = useState<{ id: string; name: string; price: number; stock?: number; image_url?: string | null } | null>(null);
   const [replyTo, setReplyTo] = useState<LocalMessage | null>(null);
   const [actionMenuMessage, setActionMenuMessage] = useState<LocalMessage | null>(null);
   const [actionMenuVisible, setActionMenuVisible] = useState(false);
@@ -451,8 +463,15 @@ export default function ChatScreen({ route, navigation }: Props) {
         (params as Record<string, string>).since = lastMessageCursor.current.time;
         (params as Record<string, string>).sinceId = lastMessageCursor.current.id;
       }
-      const res = await getMessages(conversationId, params) as { messages: Message[] };
+      const res = await getMessages(conversationId, params) as { messages: Message[]; context?: any };
       const msgs = res.messages || [];
+      if (res.context) {
+        setConversationRole(res.context.myRole || 'buyer');
+        setConversationPinned(!!res.context.isPinned);
+        setConversationIsMuted(!!res.context.isMuted);
+        setBlockedByMe(!!res.context.blockedByMe);
+        setBlockedByOther(!!res.context.blockedByOther);
+      }
       const myId = store.user?.id;
       const hasIncoming = msgs.some(m => m.sender_id !== myId);
       if (older) {
@@ -628,6 +647,16 @@ startPolling();
         typingExpire.timer = setTimeout(() => setOtherTyping(false), 5500);
       } else if (e.type === 'messages_read' && e.conversationId === conversationId && e.readerId !== store.user?.id) {
         setMessages(prev => prev.map(m => (m.sender_id === store.user?.id ? { ...m, delivery_status: 'read' as const } : m)));
+      } else if (e.type === 'offer_updated' && e.conversationId === conversationId) {
+        lastMessageCursor.current = null;
+        fetchMessages(0, false, true);
+      } else if (e.type === 'block_updated' && e.blockerId && e.blockedId) {
+        const myId = store.user?.id;
+        const isThisPair = (e.blockerId === myId && e.blockedId === otherUserId) || (e.blockedId === myId && e.blockerId === otherUserId);
+        if (isThisPair) {
+          lastMessageCursor.current = null;
+          fetchMessages(0, false, true);
+        }
       } else if (e.type === 'message_updated' && e.conversationId === conversationId && e.message) {
         const upd = e.message as Message;
         setMessages(prev => prev.map(m => (m.id === upd.id ? { ...m, content: upd.content, is_edited: upd.is_edited } : m)));
@@ -698,7 +727,7 @@ startPolling();
 
   useEffect(() => {
     if (!draftOffer) return;
-    setOfferDraftVisible(true);
+    setOfferBuilderItem({ id: draftOffer.productId, name: draftOffer.productName, price: draftOffer.listPrice, stock: 99 });
   }, [draftOffer]);
 
 
@@ -814,59 +843,78 @@ startPolling();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
-  const handleSendOffer = async (price: number) => {
-    if (!draftOffer || sendingRef.current) return;
-    sendingRef.current = true;
-    setSending(true);
+  const shareListing = async (item: { id: string; name: string }) => {
+    if (offline) { toast.error(t('chat.connectToShare')); return; }
     try {
-      const { sendOffer } = await import('../api');
-      await sendOffer(conversationId, {
-        productId: draftOffer.productId,
-        productName: draftOffer.productName,
-        offeredPrice: price,
-        listPrice: draftOffer.listPrice,
-      });
+      await sendProductCard(conversationId, item.id);
+      setSellerItemsVisible(false);
       lastMessageCursor.current = null;
       await fetchMessages();
-      setOfferDraftVisible(false);
-    } catch {
-      toast.error(t('offer.notSent'), t('chat.sendFailed'));
-    } finally {
-      setSending(false);
-      sendingRef.current = false;
-    }
+    } catch (err: any) { toast.error(err?.message || t('chat.sendFailed')); }
   };
 
-  const handleOfferRespond = async (messageId: string, action: 'accepted' | 'declined') => {
+  const togglePin = async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
     try {
-      const { respondToOffer } = await import('../api');
-      await respondToOffer(messageId, action);
-      lastMessageCursor.current = null;
-      await fetchMessages();
-      if (action === 'accepted') {
-        toast.success(t('offer.acceptedToast'), t('offer.acceptedDetail'));
-      }
-    } catch {
-      toast.error(t('offer.couldNotUpdate'), t('common.tryAgain'));
-    }
+      const result = await pinConversation(conversationId) as { pinned: boolean };
+      setConversationPinned(result.pinned);
+      setProfileMenuVisible(false);
+    } catch { toast.error(t('chat.actionFailed')); }
+    finally { setActionBusy(false); }
   };
 
-  const handleCounterOffer = async (messageId: string) => {
-    const price = Number(counterPrice.replace(/[^0-9.]/g, ''));
-    if (!Number.isFinite(price) || price <= 0) {
-      toast.error(t('offer.invalidPrice'));
-      return;
-    }
+  const applyMute = async (durationHours: number | null, enabled = true) => {
+    if (actionBusy) return;
+    setActionBusy(true);
     try {
-      const { counterOffer } = await import('../api');
-      await counterOffer(messageId, price);
-      setCounteringMessageId(null);
-      setCounterPrice('');
-      lastMessageCursor.current = null;
-      await fetchMessages();
-      toast.success(t('offer.counterSent'), t('offer.counterDetail'));
-    } catch {
-      toast.error(t('offer.notSentTitle'), t('common.tryAgain'));
+      const result = await muteConversation(conversationId, durationHours, enabled) as { muted: boolean; mutedUntil: string | null };
+      setConversationIsMuted(result.muted);
+      setMutePickerVisible(false);
+      setProfileMenuVisible(false);
+    } catch { toast.error(t('chat.actionFailed')); }
+    finally { setActionBusy(false); }
+  };
+
+  const toggleBlock = async () => {
+    if (!otherUserId || actionBusy) return;
+    setActionBusy(true);
+    try {
+      const result = await blockUser(otherUserId) as { blocked: boolean };
+      setBlockedByMe(result.blocked);
+      setConfirmBlockVisible(false);
+      setProfileMenuVisible(false);
+      toast.success(result.blocked ? t('chat.userBlocked') : t('chat.userUnblocked'));
+    } catch { toast.error(t('chat.actionFailed')); }
+    finally { setActionBusy(false); }
+  };
+
+  const submitReport = async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      await reportConversationUser(conversationId, reportReason, reportDetails.trim() || undefined);
+      setReportVisible(false);
+      setProfileMenuVisible(false);
+      setReportReason('');
+      setReportDetails('');
+      toast.success(t('chat.reportSent'));
+    } catch (err: any) { toast.error(err?.message || t('chat.actionFailed')); }
+    finally { setActionBusy(false); }
+  };
+
+  const closeReport = () => {
+    setReportVisible(false);
+    setReportReason('');
+    setReportDetails('');
+  };
+
+  const viewPeerProfile = () => {
+    if (!otherUserId) return;
+    if (otherUserTier && otherUserTier !== 'none') {
+      navigation.navigate('Storefront', { sellerId: otherUserId, preloadedSeller: { full_name: otherUserName, avatar_url: otherUserAvatar, seller_tier: otherUserTier, store_name: otherUserName } });
+    } else {
+      setPeerProfileVisible(true);
     }
   };
 
@@ -924,7 +972,7 @@ startPolling();
     try {
       const Clipboard = require('expo-clipboard');
       Clipboard.setStringAsync(actionMenuMessage.content);
-      toast.success('Copied');
+      toast.success(t('chat.copied'));
     } catch {
       // fallback: do nothing silently
     }
@@ -935,7 +983,8 @@ startPolling();
     if (!actionMenuMessage) return;
     setActionMenuVisible(false);
     const msgId = actionMenuMessage.id;
-    // Optimistic: hide message        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, is_deleted: true, content: t('chat.messageDeleted'), image_url: undefined } : m));
+    // Optimistically hide the message while the server delete completes.
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, is_deleted: true, content: t('chat.messageDeleted'), image_url: undefined } : m));
     try {
       const { deleteMessage } = await import('../api');
       await deleteMessage(msgId);
@@ -959,29 +1008,69 @@ startPolling();
     const isAudio = item.message_type === 'audio' && item.audio_url;
     const isOffer = item.message_type === 'offer';
 
+    if (item.message_type === 'product' && item.product_data) {
+      const product = item.product_data;
+      const available = product.currentlyAvailable ?? product.availableAtShare;
+      const canOffer = product.sellerId === otherUserId && store.user?.id !== product.sellerId && available && !offline && !blockedByMe && !blockedByOther;
+      return (
+        <View style={[styles.productMsgWrap, isMe ? styles.offerMsgWrapMe : styles.offerMsgWrapThem]}>
+          <View style={styles.productMsgCard}>
+            <TouchableOpacity
+              style={styles.productMsgMain}
+              onPress={() => navigation.navigate('ProductDetail', { productId: product.productId })}
+              accessibilityRole="button"
+              accessibilityLabel={`${product.name}, ${formatPrice(product.price)} gourdes`}
+            >
+              {product.imageUrl ? <Image source={{ uri: getImageUrl(product.imageUrl) ?? product.imageUrl }} style={styles.productMsgImage} /> : (
+                <View style={[styles.productMsgImage, styles.productMsgPlaceholder]}><MaterialCommunityIcons name="package-variant" size={24} color={COLORS.text2} /></View>
+              )}
+              <View style={styles.productMsgDetails}>
+                <Text style={styles.productMsgName} numberOfLines={2}>{product.name}</Text>
+                <Text style={styles.productMsgPrice}>G {formatPrice(product.price)}</Text>
+                <Text style={[styles.productMsgAvailability, !available && styles.productMsgUnavailable]}>
+                  {available ? `${t('chat.inStock')} · ${t('chat.stockCount', { count: String(product.currentStock ?? 0) })}` : t('chat.listingUnavailable')}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {canOffer && (
+              <TouchableOpacity
+                style={styles.productOfferAction}
+                onPress={() => setOfferBuilderItem({ id: product.productId, name: product.name, price: product.price, image_url: product.imageUrl, stock: product.currentStock || 1 })}
+                accessibilityRole="button"
+              >
+                <Text style={styles.productOfferActionText}>{t('chat.makeOffer')}</Text>
+                <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.coral} />
+              </TouchableOpacity>
+            )}
+            <Text style={styles.offerMsgTime}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+          </View>
+        </View>
+      );
+    }
+
     if (isOffer) {
-      const offerData = item.offer_data as { productId: string; productName: string; offeredPrice: number; listPrice: number; status: 'pending' | 'accepted' | 'declined' | 'countered' | 'expired'; negotiationRound?: number } | undefined;
+      const offerData = item.offer_data;
       if (!offerData) return null;
-      // Hide expired offers from chat
-      if (offerData.status === 'expired') return null;
       const isPending = offerData.status === 'pending';
       const isAccepted = offerData.status === 'accepted';
       const isDeclined = offerData.status === 'declined';
       const isCountered = offerData.status === 'countered';
-      const sellerCanRespond = isPending && !isMe;
-      const buyerCanRespond = isCountered && isMe;
+      const isExpired = offerData.status === 'expired' || offerData.status === 'redeemed' || (['pending', 'countered'].includes(offerData.status) && !!offerData.expiresAt && new Date(offerData.expiresAt) <= new Date()) || (isAccepted && !!offerData.acceptedExpiresAt && new Date(offerData.acceptedExpiresAt) <= new Date());
+      const isAcceptedCurrent = isAccepted && !isExpired;
       const discountPct = offerData.listPrice && offerData.listPrice > offerData.offeredPrice
         ? Math.round(((offerData.listPrice - offerData.offeredPrice) / offerData.listPrice) * 100)
         : null;
 
-      const handleCheckoutOffer = () => {
-        store.addToCart({
+      const handleCheckoutOffer = async () => {
+        const result = await store.addAcceptedOfferToCart({
           id: offerData.productId,
           name: offerData.productName,
           price: offerData.offeredPrice,
-          stock: 1,
-          quantity: 1,
-        } as any);
+          stock: offerData.currentStock || offerData.quantity || 1,
+          quantity: offerData.quantity || 1,
+          seller_id: offerData.sellerId,
+        } as any, item.id);
+        if (!result.added) { toast.error(t('offer.stockUnavailable')); return; }
         navigation.navigate('Cart');
       };
 
@@ -994,7 +1083,7 @@ startPolling();
             isCountered && styles.offerMsgCardCountered,
           ]}>
             <LinearGradient
-              colors={isAccepted ? ['rgba(29,158,117,0.08)', 'transparent'] : isDeclined ? ['rgba(226,75,74,0.06)', 'transparent'] : isCountered ? ['rgba(59,130,246,0.06)', 'transparent'] : ['rgba(216,90,48,0.07)', 'transparent']}
+              colors={isAcceptedCurrent ? ['rgba(29,158,117,0.08)', 'transparent'] : isDeclined || isExpired ? ['rgba(226,75,74,0.06)', 'transparent'] : isCountered ? ['rgba(59,130,246,0.06)', 'transparent'] : ['rgba(216,90,48,0.07)', 'transparent']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={{ ...StyleSheet.absoluteFill, borderRadius: RADIUS.media }}
@@ -1009,17 +1098,20 @@ startPolling();
               </View>
               <View style={[
                 styles.offerStatusBadge,
-                isAccepted && styles.offerStatusBadgeAccepted,
+                isAcceptedCurrent && styles.offerStatusBadgeAccepted,
                 isDeclined && styles.offerStatusBadgeDeclined,
                 isCountered && styles.offerStatusBadgeCountered,
+                isExpired && styles.offerStatusBadgeDeclined,
                 isPending && styles.offerStatusBadgePending,
               ]}>
-                {isAccepted ? (
-                  <Text style={[styles.offerStatusText, styles.offerStatusTextAccepted]}>✓ Accepted</Text>
+                {isAcceptedCurrent ? (
+                  <Text style={[styles.offerStatusText, styles.offerStatusTextAccepted]}>{offerData.isInCheckout ? t('offer.inCheckout') : t('offer.accepted')}</Text>
                 ) : isDeclined ? (
-                  <Text style={[styles.offerStatusText, styles.offerStatusTextDeclined]}>✕ Declined</Text>
+                  <Text style={[styles.offerStatusText, styles.offerStatusTextDeclined]}>{t('offer.declined')}</Text>
+                ) : isExpired ? (
+                  <Text style={[styles.offerStatusText, styles.offerStatusTextDeclined]}>{offerData.status === 'redeemed' ? t('offer.redeemed') : t('offer.expired')}</Text>
                 ) : isCountered ? (
-                  <Text style={[styles.offerStatusText, styles.offerStatusTextCountered]}>🔄 Counter ({offerData.negotiationRound || 1}/3)</Text>
+                  <Text style={[styles.offerStatusText, styles.offerStatusTextCountered]}>{t('offer.counterCount', { count: String(offerData.counterCount || 0) })}</Text>
                 ) : (
                   <View style={styles.offerStatusPendingIcon}>
                     <Animated.View style={{
@@ -1036,7 +1128,7 @@ startPolling();
             <View style={styles.offerMsgDivider} />
 
             {/* Product & Price Details */}
-            <View style={styles.offerMsgBody}>
+            <TouchableOpacity style={styles.offerMsgBody} onPress={() => navigation.navigate('OfferDetail', { messageId: item.id, conversationId })} accessibilityRole="button" accessibilityLabel={t('offer.openNegotiation')}>
               <View style={styles.offerMsgProductIconWrap}>
                 <MaterialCommunityIcons name="shopping-outline" size={20} color={COLORS.coral} />
               </View>
@@ -1052,112 +1144,18 @@ startPolling();
                       <Text style={styles.offerDiscountText}>-{discountPct}%</Text>
                     </View>
                   )}
+                  <Text style={styles.offerMsgQuantity}>{t('offer.quantityAndTotal', { quantity: String(offerData.quantity || 1), total: formatPrice(offerData.offeredPrice * (offerData.quantity || 1)) })}</Text>
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
 
-            {/* Action Buttons for Seller */}
-            {sellerCanRespond && (
-              <View style={styles.offerMsgActions}>
-                <TouchableOpacity
-                  style={styles.offerMsgDecline}
-                  onPress={() => handleOfferRespond(item.id, 'declined')}
-                  accessibilityLabel="decline offer"
-                  accessibilityRole="button"
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.offerMsgDeclineText}>Decline</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.offerMsgCounter}
-                  onPress={() => { setCounteringMessageId(item.id); setCounterPrice(String(offerData.offeredPrice || offerData.listPrice)); }}
-                  accessibilityLabel="counter offer"
-                  accessibilityRole="button"
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.offerMsgCounterText}>Counter</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.offerMsgAccept}
-                  onPress={() => handleOfferRespond(item.id, 'accepted')}
-                  accessibilityLabel="accept offer"
-                  accessibilityRole="button"
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.offerMsgAcceptText}>Accept</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* View Offer Details Button - for users who can't respond */}
-            {!sellerCanRespond && !buyerCanRespond && !isAccepted && (
-              <View style={styles.offerMsgActions}>
-                <TouchableOpacity
-                  style={styles.offerMsgView}
-                  onPress={() => navigation.navigate('OfferDetail', { messageId: item.id, conversationId })}
-                  accessibilityLabel="view offer details"
-                  accessibilityRole="button"
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.offerMsgViewText}>View</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Counter Price Entry Form */}
-            {counteringMessageId === item.id && (
-              <View style={styles.counterEntry}>
-                <View style={styles.counterInputWrap}>
-                  <Text style={styles.counterCurrencyPrefix}>G</Text>
-                  <TextInput
-                    value={counterPrice}
-                    onChangeText={setCounterPrice}
-                    keyboardType="decimal-pad"
-                    style={styles.counterInput}
-                    placeholder={t('offer.counterPrice')}
-                    placeholderTextColor={COLORS.text2}
-                    accessibilityLabel="counter offer price"
-                    autoFocus
-                  />
-                </View>
-                <TouchableOpacity
-                  style={styles.counterSubmitBtn}
-                  onPress={() => handleCounterOffer(item.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel="send counter offer"
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.counterSubmitText}>Send</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Action Buttons for Buyer Counter */}
-            {buyerCanRespond && (
-              <View style={styles.offerMsgActions}>
-                <TouchableOpacity
-                  style={styles.offerMsgDecline}
-                  onPress={() => handleOfferRespond(item.id, 'declined')}
-                  accessibilityLabel="decline counter offer"
-                  accessibilityRole="button"
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.offerMsgDeclineText}>Decline</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.offerMsgAccept}
-                  onPress={() => handleOfferRespond(item.id, 'accepted')}
-                  accessibilityLabel="accept counter offer"
-                  accessibilityRole="button"
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.offerMsgAcceptText}>Accept Counter</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            <TouchableOpacity style={styles.offerMsgView} onPress={() => navigation.navigate('OfferDetail', { messageId: item.id, conversationId })} accessibilityRole="button">
+              <Text style={styles.offerMsgViewText}>{isPending ? t('offer.openNegotiation') : t('offer.viewHistory')}</Text>
+              <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.text2} />
+            </TouchableOpacity>
 
             {/* Instant Checkout Button for Buyer when Accepted */}
-            {isAccepted && isMe && (
+            {isAcceptedCurrent && !offerData.isInCheckout && offerData.buyerId === store.user?.id && offerData.productAvailable && (offerData.currentStock || 0) >= (offerData.quantity || 1) && offerData.acceptedExpiresAt && new Date(offerData.acceptedExpiresAt) > new Date() && (
               <TouchableOpacity
                 style={styles.offerCheckoutBtn}
                 onPress={handleCheckoutOffer}
@@ -1167,7 +1165,7 @@ startPolling();
               >
                 <MaterialCommunityIcons name="lightning-bolt" size={16} color={COLORS.white} />
                 <Text style={styles.offerCheckoutBtnText}>
-                  Checkout Now • G {formatPrice(offerData.offeredPrice)}
+                  {t('offer.checkoutNow', { total: formatPrice(offerData.offeredPrice * (offerData.quantity || 1)) })}
                 </Text>
                 <MaterialCommunityIcons name="arrow-right" size={16} color={COLORS.white} />
               </TouchableOpacity>
@@ -1275,7 +1273,7 @@ startPolling();
           <BackButton onPress={() => navigation.goBack()} />
           <TouchableOpacity
             style={styles.headerProfile}
-            onPress={() => { if (otherUserId) navigation.navigate('Storefront', { sellerId: otherUserId, preloadedSeller: { username: otherUserName, avatar_url: otherUserAvatar, seller_tier: otherUserTier } }); }}
+            onPress={viewPeerProfile}
             activeOpacity={0.7}
             accessibilityLabel="view profile"
             accessibilityRole="button"
@@ -1303,7 +1301,7 @@ startPolling();
           <TouchableOpacity style={styles.headerMore} onPress={openMedia} accessibilityLabel={t('chat.sharedMedia')} accessibilityRole="button">
             <MaterialCommunityIcons name="image-multiple-outline" size={18} color={COLORS.text2} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerMore} onPress={() => setProfileMenuVisible(true)} accessibilityLabel="more options" accessibilityRole="button">
+          <TouchableOpacity style={styles.headerMore} onPress={() => setProfileMenuVisible(true)} accessibilityLabel={t('chat.moreOptions')} accessibilityRole="button">
             <MaterialCommunityIcons name="dots-vertical" size={18} color={COLORS.text2} />
           </TouchableOpacity>
         </View>
@@ -1343,44 +1341,6 @@ startPolling();
             }}
           />
 
-        {draftOffer && offerDraftVisible && (
-          <View style={styles.offerDock}>
-            <LinearGradient
-              colors={['rgba(59,130,246,0.06)', 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ ...StyleSheet.absoluteFill, borderRadius: RADIUS.media }}
-            />
-            <View style={styles.offerIcon}>
-              <Icon name="sale-tag" size={18} color={COLORS.white} />
-            </View>
-            <View style={styles.offerBody}>
-              <Text style={styles.offerEyebrow}>{t('chat.negotiationDraft')}</Text>
-              <Text style={styles.offerTitle} numberOfLines={1}>{draftOffer.productName}</Text>
-              <View style={styles.offerChips}>
-                {[0.85, 0.9, 0.95].map(multiplier => {
-                  const price = Math.max(1, Math.round(draftOffer.listPrice * multiplier));
-                  return (
-                    <TouchableOpacity
-                      key={multiplier}
-                      style={styles.offerChip}
-                      onPress={() => handleSendOffer(price)}
-                      disabled={sending}
-                      accessibilityLabel={`send offer rs ${price}`}
-                      accessibilityRole="button"
-                    >
-                      <Text style={styles.offerChipText}>{formatPrice(price)} G</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-            <TouchableOpacity onPress={() => setOfferDraftVisible(false)} style={styles.offerClose} accessibilityLabel="close offer" accessibilityRole="button">
-              <Icon name="close" size={16} color={COLORS.text2} />
-            </TouchableOpacity>
-          </View>
-        )}
-
         {otherTyping && (
           <View style={styles.typingRow}>
             <Text style={styles.typingText}>{t('chat.theyTyping', { name: otherUserName || t('chat.they') })}</Text>
@@ -1392,16 +1352,22 @@ startPolling();
           <View style={styles.replyBar}>
             <View style={styles.replyBarAccent} />
             <View style={styles.replyBarContent}>
-              <Text style={styles.replyBarSender} numberOfLines={1}>Replying to {replyTo.sender_id === store.user?.id ? 'yourself' : otherUserName}</Text>
+              <Text style={styles.replyBarSender} numberOfLines={1}>{t('chat.replyingTo', { name: replyTo.sender_id === store.user?.id ? t('chat.yourself') : otherUserName })}</Text>
               <Text style={styles.replyBarText} numberOfLines={1}>{replyTo.content || (replyTo.message_type === 'image' ? '📷 Photo' : replyTo.message_type === 'audio' ? '🎤 Voice message' : 'Message')}</Text>
             </View>
-            <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyBarClose} accessibilityLabel="cancel reply" accessibilityRole="button">
+            <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyBarClose} accessibilityLabel={t('chat.cancelReply')} accessibilityRole="button">
               <Icon name="close" size={16} color={COLORS.text2} />
             </TouchableOpacity>
           </View>
         )}
 
-        <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
+        {(blockedByMe || blockedByOther) && (
+          <View style={styles.blockedBanner}>
+            <Text style={styles.blockedBannerText}>{t('chat.blockedNotice')}</Text>
+            {blockedByMe && <TouchableOpacity onPress={toggleBlock} disabled={actionBusy}><Text style={styles.unblockText}>{t('chat.unblock')}</Text></TouchableOpacity>}
+          </View>
+        )}
+        <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md), opacity: blockedByMe || blockedByOther ? 0.55 : 1 }]}>
           {recording ? (
             <View style={styles.recordingRow}>
               <TouchableOpacity onPress={() => stopRecording(false)} style={styles.recordingCancel} accessibilityLabel={t('common.cancel')} accessibilityRole="button">
@@ -1416,8 +1382,8 @@ startPolling();
             </View>
           ) : (
           <View style={styles.inputRow}>
-            <TouchableOpacity style={styles.cameraBtn} onPress={handleSendImage} disabled={sending} accessibilityLabel="attach photo" accessibilityRole="button">
-              <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.text2} />
+            <TouchableOpacity style={styles.cameraBtn} onPress={() => setAttachmentMenuVisible(true)} disabled={sending || blockedByMe || blockedByOther} accessibilityLabel={t('chat.addAttachment')} accessibilityRole="button">
+              <MaterialCommunityIcons name="plus" size={24} color={COLORS.text2} />
             </TouchableOpacity>
             <TextInput
               style={styles.input}
@@ -1433,19 +1399,11 @@ startPolling();
               placeholder={t('chat.placeholder')}
               placeholderTextColor={COLORS.text2}
               multiline
+              editable={!blockedByMe && !blockedByOther}
               accessibilityLabel="message input"
             />
-            <TouchableOpacity style={styles.offerBtn} onPress={() => {
-              if (draftOffer) {
-                setOfferDraftVisible(true);
-              } else if (otherUserId) {
-                setSellerItemsVisible(true);
-              }
-            }} accessibilityLabel="make an offer" accessibilityRole="button">
-              <Icon name="sale-tag" size={20} color={COLORS.coral} />
-            </TouchableOpacity>
             {text.trim() ? (
-              <TouchableOpacity style={{ opacity: sending ? 0.4 : 1 }} onPress={handleSend} disabled={sending} accessibilityLabel="send message" accessibilityRole="button">
+              <TouchableOpacity style={{ opacity: sending || blockedByMe || blockedByOther ? 0.4 : 1 }} onPress={handleSend} disabled={sending || blockedByMe || blockedByOther} accessibilityLabel="send message" accessibilityRole="button">
                 <LinearGradient
                   colors={['#FF6B81', '#FF4D6A', '#E8365A']}
                   start={{ x: 0, y: 0 }}
@@ -1456,7 +1414,7 @@ startPolling();
                 </LinearGradient>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity onPress={startRecording} accessibilityLabel="record voice message" accessibilityRole="button">
+              <TouchableOpacity onPress={startRecording} disabled={blockedByMe || blockedByOther} accessibilityLabel="record voice message" accessibilityRole="button">
                 <LinearGradient
                   colors={['#FF6B81', '#FF4D6A', '#E8365A']}
                   start={{ x: 0, y: 0 }}
@@ -1573,11 +1531,116 @@ startPolling();
 
         <SellerItemsSheet
           visible={sellerItemsVisible}
-          sellerId={otherUserId || ''}
-          sellerName={otherUserName || 'Seller'}
+          sellerId={conversationRole === 'seller' ? (store.user?.id || '') : (otherUserId || '')}
+          sellerName={conversationRole === 'seller' ? (store.user?.full_name || t('common.seller')) : (otherUserName || t('common.seller'))}
           onClose={() => setSellerItemsVisible(false)}
-          onSelectItem={(item) => { setSellerItemsVisible(false); setOfferBuilderItem(item); }}
+          onSelectItem={(item) => { void shareListing(item); }}
         />
+
+        <Modal visible={attachmentMenuVisible} transparent animationType="fade" onRequestClose={() => setAttachmentMenuVisible(false)}>
+          <Pressable style={styles.modalShade} onPress={() => setAttachmentMenuVisible(false)}>
+            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+              <Text style={styles.chatSheetTitle}>{t('chat.addAttachment')}</Text>
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setAttachmentMenuVisible(false); handleSendImage(); }} accessibilityRole="button">
+                <MaterialCommunityIcons name="image-outline" size={21} color={COLORS.coral} /><Text style={styles.menuRowText}>{t('chat.photo')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setAttachmentMenuVisible(false); if (!offline) setSellerItemsVisible(true); else toast.error(t('chat.connectToShare')); }} accessibilityRole="button">
+                <MaterialCommunityIcons name="tag-outline" size={21} color={COLORS.coral} /><Text style={styles.menuRowText}>{t('chat.shareListing')}</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={profileMenuVisible} transparent animationType="fade" onRequestClose={() => setProfileMenuVisible(false)}>
+          <Pressable style={styles.modalShade} onPress={() => setProfileMenuVisible(false)}>
+            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+              <Text style={styles.chatSheetTitle}>{otherUserName}</Text>
+              <TouchableOpacity style={styles.menuRow} onPress={togglePin} disabled={actionBusy} accessibilityRole="button">
+                <MaterialCommunityIcons name={conversationPinned ? 'pin-off-outline' : 'pin-outline'} size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{conversationPinned ? t('chat.unpinChat') : t('chat.pinChat')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setProfileMenuVisible(false); setMutePickerVisible(true); }} accessibilityRole="button">
+                <MaterialCommunityIcons name={conversationIsMuted ? 'bell-outline' : 'bell-off-outline'} size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{conversationIsMuted ? t('chat.changeMute') : t('chat.muteChat')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setProfileMenuVisible(false); viewPeerProfile(); }} accessibilityRole="button">
+                <MaterialCommunityIcons name="account-outline" size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{t('chat.viewProfile')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setProfileMenuVisible(false); setReportReason(''); setReportDetails(''); setReportVisible(true); }} accessibilityRole="button">
+                <MaterialCommunityIcons name="flag-outline" size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{t('chat.reportUser')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setProfileMenuVisible(false); setPrivacyInfoVisible(true); }} accessibilityRole="button">
+                <MaterialCommunityIcons name="lock-outline" size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{t('chat.privacyInfo')}</Text>
+              </TouchableOpacity>
+              {!blockedByOther && <TouchableOpacity style={styles.menuRow} onPress={() => { setProfileMenuVisible(false); setConfirmBlockVisible(true); }} accessibilityRole="button">
+                <MaterialCommunityIcons name="block-helper" size={20} color={COLORS.coral} /><Text style={[styles.menuRowText, { color: COLORS.coral }]}>{blockedByMe ? t('chat.unblockUser') : t('chat.blockUser')}</Text>
+              </TouchableOpacity>}
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={mutePickerVisible} transparent animationType="fade" onRequestClose={() => setMutePickerVisible(false)}>
+          <Pressable style={styles.modalShade} onPress={() => setMutePickerVisible(false)}>
+            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+              <Text style={styles.chatSheetTitle}>{t('chat.muteChat')}</Text>
+              {[{ label: t('chat.muteEightHours'), hours: 8 }, { label: t('chat.muteOneWeek'), hours: 168 }, { label: t('chat.muteIndefinitely'), hours: null as number | null }].map(option => (
+                <TouchableOpacity key={option.label} style={styles.menuRow} onPress={() => applyMute(option.hours)} accessibilityRole="button">
+                  <MaterialCommunityIcons name="bell-off-outline" size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{option.label}</Text>
+                </TouchableOpacity>
+              ))}
+              <View style={styles.customMuteRow}>
+                <TextInput style={styles.customMuteInput} value={muteCustomHours} onChangeText={setMuteCustomHours} keyboardType="number-pad" placeholder={t('chat.customHours')} placeholderTextColor={COLORS.text2} accessibilityLabel={t('chat.customHours')} />
+                <TouchableOpacity style={styles.smallAction} onPress={() => applyMute(Number(muteCustomHours))} accessibilityRole="button"><Text style={styles.smallActionText}>{t('chat.apply')}</Text></TouchableOpacity>
+              </View>
+              {conversationIsMuted && <TouchableOpacity style={styles.menuRow} onPress={() => applyMute(null, false)} accessibilityRole="button"><MaterialCommunityIcons name="bell-outline" size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{t('chat.unmute')}</Text></TouchableOpacity>}
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={confirmBlockVisible} transparent animationType="fade" onRequestClose={() => setConfirmBlockVisible(false)}>
+          <Pressable style={styles.modalShade} onPress={() => setConfirmBlockVisible(false)}>
+            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+              <Text style={styles.chatSheetTitle}>{blockedByMe ? t('chat.unblockUser') : t('chat.blockUser')}</Text>
+              <Text style={styles.sheetHint}>{blockedByMe ? t('chat.unblockConfirm') : t('chat.blockConfirm')}</Text>
+              <View style={styles.sheetActions}>
+                <TouchableOpacity style={styles.secondaryAction} onPress={() => setConfirmBlockVisible(false)}><Text style={styles.secondaryActionText}>{t('common.cancel')}</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.dangerAction} onPress={toggleBlock} disabled={actionBusy}><Text style={styles.dangerActionText}>{t('common.confirm')}</Text></TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={reportVisible} transparent animationType="fade" onRequestClose={closeReport}>
+          <Pressable style={styles.modalShade} onPress={closeReport}>
+            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+              <Text style={styles.chatSheetTitle}>{t('chat.reportUser')}</Text>
+              {(['harassment', 'scam', 'inappropriate', 'spam', 'other'] as const).map(reason => (
+                <TouchableOpacity key={reason} style={styles.reasonRow} onPress={() => setReportReason(reason)} accessibilityRole="radio" accessibilityState={{ selected: reportReason === reason }}>
+                  <MaterialCommunityIcons name={reportReason === reason ? 'radiobox-marked' : 'radiobox-blank'} size={20} color={reportReason === reason ? COLORS.coral : COLORS.text2} /><Text style={styles.menuRowText}>{t(`chat.reportReason.${reason}`)}</Text>
+                </TouchableOpacity>
+              ))}
+              <TextInput style={styles.reportInput} value={reportDetails} onChangeText={setReportDetails} multiline maxLength={1500} placeholder={t('chat.reportDetails')} placeholderTextColor={COLORS.text2} accessibilityLabel={t('chat.reportDetails')} />
+              <TouchableOpacity style={[styles.primaryAction, (!reportReason || actionBusy) && { opacity: 0.45 }]} onPress={submitReport} disabled={!reportReason || actionBusy}><Text style={styles.primaryActionText}>{t('chat.submitReport')}</Text></TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={privacyInfoVisible} transparent animationType="fade" onRequestClose={() => setPrivacyInfoVisible(false)}>
+          <Pressable style={styles.modalShade} onPress={() => setPrivacyInfoVisible(false)}>
+            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+              <Text style={styles.chatSheetTitle}>{t('chat.privacyInfo')}</Text>
+              <Text style={styles.sheetHint}>{t('chat.privacyNotice')}</Text>
+              <TouchableOpacity style={styles.primaryAction} onPress={() => setPrivacyInfoVisible(false)} accessibilityRole="button"><Text style={styles.primaryActionText}>{t('common.confirm')}</Text></TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={peerProfileVisible} transparent animationType="fade" onRequestClose={() => setPeerProfileVisible(false)}>
+          <Pressable style={styles.modalShade} onPress={() => setPeerProfileVisible(false)}>
+            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+              <View style={styles.peerProfileHeader}><UserAvatar seller={{ avatar_url: otherUserAvatar, full_name: otherUserName, seller_tier: 'none' } as any} size={66} animated={false} /><View style={{ flex: 1 }}><Text style={styles.peerProfileName}>{otherUserName || t('common.seller')}</Text><Text style={styles.peerProfileType}>{t('chat.marketplaceMember')}</Text></View></View>
+              <TouchableOpacity style={styles.primaryAction} onPress={() => setPeerProfileVisible(false)} accessibilityRole="button"><Text style={styles.primaryActionText}>{t('common.confirm')}</Text></TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         <OfferBuilder
           visible={!!offerBuilderItem}
@@ -1603,22 +1666,22 @@ startPolling();
               {/* Action buttons */}
               <TouchableOpacity style={styles.actionMenuItem} onPress={handleReply} accessibilityRole="button">
                 <MaterialCommunityIcons name="reply" size={18} color={COLORS.text} />
-                <Text style={styles.actionMenuText}>Reply</Text>
+                <Text style={styles.actionMenuText}>{t('chat.reply')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.actionMenuItem} onPress={handleCopy} accessibilityRole="button">
                 <MaterialCommunityIcons name="content-copy" size={18} color={COLORS.text} />
-                <Text style={styles.actionMenuText}>Copy</Text>
+                <Text style={styles.actionMenuText}>{t('chat.copy')}</Text>
               </TouchableOpacity>
               {actionMenuMessage?.sender_id === store.user?.id && actionMenuMessage?.message_type === 'text' && (
                 <TouchableOpacity style={styles.actionMenuItem} onPress={handleEdit} accessibilityRole="button">
                   <MaterialCommunityIcons name="pencil" size={18} color={COLORS.text} />
-                  <Text style={styles.actionMenuText}>Edit</Text>
+                  <Text style={styles.actionMenuText}>{t('chat.edit')}</Text>
                 </TouchableOpacity>
               )}
               {actionMenuMessage?.sender_id === store.user?.id && (
                 <TouchableOpacity style={[styles.actionMenuItem, { borderBottomWidth: 0 }]} onPress={handleDelete} accessibilityRole="button">
                   <MaterialCommunityIcons name="delete-outline" size={18} color="#FF4D6A" />
-                  <Text style={[styles.actionMenuText, { color: '#FF4D6A' }]}>Delete</Text>
+                  <Text style={[styles.actionMenuText, { color: '#FF4D6A' }]}>{t('chat.delete')}</Text>
                 </TouchableOpacity>
               )}
             </Pressable>
@@ -1651,6 +1714,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md, paddingVertical: 6,
   },
   offlineBannerText: { flex: 1, fontSize: 11.5, color: '#F5A623', fontWeight: '600' },
+  blockedBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.md, paddingVertical: 10, backgroundColor: COLORS.surface2, borderTopWidth: 1, borderColor: COLORS.border },
+  blockedBannerText: { flex: 1, color: COLORS.text2, fontSize: 12 },
+  unblockText: { color: COLORS.coral, fontWeight: '700', marginLeft: 12 },
   headerMore: { padding: 8, borderRadius: 20, backgroundColor: COLORS.surface2 },
   offerReminderBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -1736,9 +1802,43 @@ const styles = StyleSheet.create({
   actionMenuDivider: { height: 1, backgroundColor: COLORS.border + '40', marginVertical: 4 },
   actionMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border + '20' },
   actionMenuText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.58)', justifyContent: 'flex-end' },
+  chatSheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: RADIUS.media, borderTopRightRadius: RADIUS.media, paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg, paddingBottom: SPACING.xl, borderWidth: 1, borderColor: COLORS.border, gap: 3 },
+  chatSheetTitle: { color: COLORS.text, fontSize: 17, fontWeight: '800', marginBottom: SPACING.sm },
+  menuRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  menuRowText: { flex: 1, color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  customMuteRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: SPACING.sm },
+  customMuteInput: { flex: 1, minHeight: 44, backgroundColor: COLORS.surface2, borderRadius: RADIUS.row, paddingHorizontal: 12, color: COLORS.text },
+  smallAction: { backgroundColor: COLORS.coral, borderRadius: RADIUS.pill, paddingHorizontal: 16, paddingVertical: 11 },
+  smallActionText: { color: COLORS.white, fontWeight: '700' },
+  sheetHint: { fontSize: 13, color: COLORS.text2, lineHeight: 19, marginBottom: SPACING.md },
+  sheetActions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
+  secondaryAction: { paddingVertical: 12, paddingHorizontal: 18, borderRadius: RADIUS.pill, backgroundColor: COLORS.surface2 },
+  secondaryActionText: { color: COLORS.text, fontWeight: '700' },
+  dangerAction: { paddingVertical: 12, paddingHorizontal: 18, borderRadius: RADIUS.pill, backgroundColor: COLORS.coral },
+  dangerActionText: { color: COLORS.white, fontWeight: '800' },
+  reasonRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  reportInput: { minHeight: 86, maxHeight: 130, backgroundColor: COLORS.surface2, color: COLORS.text, borderRadius: RADIUS.row, padding: 12, textAlignVertical: 'top', marginTop: SPACING.sm },
+  primaryAction: { alignItems: 'center', backgroundColor: COLORS.coral, borderRadius: RADIUS.pill, paddingVertical: 13, marginTop: SPACING.md },
+  primaryActionText: { color: COLORS.white, fontWeight: '800' },
+  peerProfileHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: SPACING.sm, marginBottom: SPACING.sm },
+  peerProfileName: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  peerProfileType: { color: COLORS.text2, fontSize: 12, marginTop: 3 },
 
   /* Rich Offer Message Card */
   offerMsgWrap: { maxWidth: '95%', width: '95%', marginBottom: 8 },
+  productMsgWrap: { maxWidth: '85%', width: '85%', marginBottom: 8 },
+  productMsgCard: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.media, padding: 10 },
+  productMsgMain: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  productMsgImage: { width: 72, height: 72, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
+  productMsgPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  productMsgDetails: { flex: 1, minWidth: 0 },
+  productMsgName: { fontSize: 13, lineHeight: 18, color: COLORS.text, fontWeight: '700' },
+  productMsgPrice: { fontSize: 15, color: COLORS.coral, fontWeight: '800', marginTop: 4 },
+  productMsgAvailability: { fontSize: 11, color: COLORS.green || '#1D9E75', marginTop: 3 },
+  productMsgUnavailable: { color: COLORS.text2 },
+  productOfferAction: { minHeight: 42, borderTopWidth: 1, borderTopColor: COLORS.border, marginTop: 8, paddingHorizontal: 3, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  productOfferActionText: { fontSize: 13, fontWeight: '700', color: COLORS.coral },
   offerMsgWrapMe: { alignSelf: 'flex-end' },
   offerMsgWrapThem: { alignSelf: 'flex-start' },
   offerMsgCard: {
@@ -1837,6 +1937,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  offerMsgQuantity: { fontSize: 12, color: COLORS.text2, marginTop: 5 },
   offerMsgProductIconWrap: {
     width: 40,
     height: 40,
@@ -1923,15 +2024,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   offerMsgView: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: RADIUS.pill,
-    alignItems: 'center',
-    backgroundColor: COLORS.coral,
+    minHeight: 42, marginTop: 6, paddingVertical: 8, paddingHorizontal: 10,
+    borderRadius: RADIUS.pill, alignItems: 'center', justifyContent: 'space-between', flexDirection: 'row',
+    backgroundColor: COLORS.surface2,
   },
   offerMsgViewText: {
     fontSize: 12,
-    color: COLORS.white,
+    color: COLORS.text,
     fontWeight: '700',
   },
   counterEntry: {

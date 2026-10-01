@@ -10,7 +10,7 @@ import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import SettingsToggle from '../components/SettingsToggle';
-import { updateProfile } from '../api';
+import { updateProfile, getPresenceVisibility, setPresenceVisibility } from '../api';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -43,7 +43,8 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [profilePublic, setProfilePublic] = useState(user?.show_real_name ?? true);
-  const [showActivity, setShowActivity] = useState(true);
+  const [presenceVisibility, setPresenceVisibilityState] = useState<'everyone' | 'chatted_with' | 'nobody'>('chatted_with');
+  const [presenceSaving, setPresenceSaving] = useState(false);
   const [locationSharing, setLocationSharing] = useState(Boolean(user?.location_lat));
 
   const sections = useRef(
@@ -62,6 +63,10 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
         ])
       )
     ).start();
+  }, []);
+
+  useEffect(() => {
+    getPresenceVisibility().then(result => setPresenceVisibilityState(result.visibility)).catch(() => {});
   }, []);
 
   const animStyle = (i: number) => ({
@@ -84,9 +89,18 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
     setLoading(false);
   };
 
-  const handleToggleActivity = () => {
-    setShowActivity(!showActivity);
-    toast.show({ kind: 'success', title: showActivity ? t('privacy.activityHidden') : t('privacy.activityVisible') });
+  const handlePresenceVisibility = async (next: 'everyone' | 'chatted_with' | 'nobody') => {
+    if (presenceSaving || next === presenceVisibility) return;
+    const previous = presenceVisibility;
+    setPresenceVisibilityState(next);
+    setPresenceSaving(true);
+    try {
+      await setPresenceVisibility(next);
+      if (store.user) await store.setUser({ ...store.user, presence_visibility: next } as any, store.token!);
+    } catch {
+      setPresenceVisibilityState(previous);
+      toast.show({ kind: 'error', title: t('privacy.presenceUpdateFailed') });
+    } finally { setPresenceSaving(false); }
   };
 
   const handleToggleLocation = () => {
@@ -168,19 +182,30 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
             header={t('privacy.dataControl')}
             description={t('privacy.dataControlDesc')}
           >
-            <View style={styles.toggleRow}>
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="clock-outline" size={20} color={COLORS.white} />
+            <View style={styles.presenceRow}>
+              <View style={styles.presenceTitleRow}>
+                <View style={styles.iconContainer}>
+                  <MaterialCommunityIcons name="clock-outline" size={20} color={COLORS.white} />
+                </View>
+                <View style={styles.toggleText}>
+                  <Text style={styles.toggleLabel}>{t('privacy.presenceVisibility')}</Text>
+                  <Text style={styles.rowValue}>{t('privacy.presenceReciprocal')}</Text>
+                </View>
               </View>
-              <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>{t('privacy.showActivity')}</Text>
+              <View style={styles.presenceChoices}>
+                {(['everyone', 'chatted_with', 'nobody'] as const).map(option => (
+                  <TouchableOpacity
+                    key={option}
+                    style={[styles.presenceChoice, presenceVisibility === option && styles.presenceChoiceSelected]}
+                    onPress={() => handlePresenceVisibility(option)}
+                    disabled={presenceSaving}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: presenceVisibility === option, disabled: presenceSaving }}
+                  >
+                    <Text style={[styles.presenceChoiceText, presenceVisibility === option && styles.presenceChoiceTextSelected]}>{t(`privacy.presence.${option}`)}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-              <SettingsToggle
-                value={showActivity}
-                onValueChange={handleToggleActivity}
-                accent={COLORS.yellow}
-                accessibilityLabel={t('privacy.showActivity')}
-              />
             </View>
             <View style={styles.divider} />
             <TouchableOpacity
@@ -242,6 +267,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   toggleText: { flex: 1 },
+  presenceRow: { paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm },
+  presenceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, minHeight: 44 },
+  presenceChoices: { flexDirection: 'row', gap: 6, marginTop: SPACING.xs },
+  presenceChoice: { flex: 1, minHeight: 40, paddingHorizontal: 4, borderRadius: RADIUS.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border },
+  presenceChoiceSelected: { backgroundColor: COLORS.coral + '20', borderColor: COLORS.coral },
+  presenceChoiceText: { color: COLORS.text2, fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  presenceChoiceTextSelected: { color: COLORS.coral },
   toggleLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: COLORS.text },
   rowValue: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
 

@@ -815,7 +815,7 @@ export const changePassword = async (currentPassword: string, newPassword: strin
 export const becomeSeller = (data?: { storeName?: string; storeLogoUrl?: string; idDocumentUrl?: string; tier?: string; natcashPhone?: string }) =>
   request('/user/become-seller', { method: 'PUT', body: data ? JSON.stringify(data) : undefined });
 
-export const updateSellerProfile = (data: Record<string, string | boolean>) =>
+export const updateSellerProfile = (data: Record<string, string | boolean | string[] | null>) =>
   request('/user/seller-profile', { method: 'PUT', body: JSON.stringify(data) });
 
 export const updateUsername = (username: string) =>
@@ -849,11 +849,17 @@ export const getCategories = () => request('/categories');
 // Orders
 export const createPendingCheckout = (data: Record<string, unknown>) =>
   request('/checkout/pending', { method: 'POST', body: JSON.stringify(data) });
+export const getNatCashAvailability = (sellerIds: string[]) =>
+  request(`/checkout/natcash-availability?sellerIds=${encodeURIComponent(sellerIds.join(','))}`);
 
 export const checkPendingStatus = (pendingId: string) =>
   request(`/checkout/pending/${pendingId}/status`);
 
 export const getSellerFulfillmentProposals = () => request('/seller/fulfillment-proposals');
+export const getNatCashAccess = () => request('/natcash-access');
+export const createNatCashAccessPayment = () => request('/natcash-access/payment', { method: 'POST', body: JSON.stringify({}) });
+export const pauseNatCashAccess = () => request('/natcash-access/pause', { method: 'POST', body: JSON.stringify({}) });
+export const reactivateNatCashAccess = () => request('/natcash-access/reactivate', { method: 'POST', body: JSON.stringify({}) });
 export const decideFulfillmentProposal = (pendingId: string, sellerId: string, decision: 'accept' | 'reject') =>
   request(`/checkout/pending/${pendingId}/agreements/${sellerId}`, { method: 'PUT', body: JSON.stringify({ decision }) });
 export const beginPendingPayment = (pendingId: string, sellerId: string) =>
@@ -867,6 +873,10 @@ export const confirmNatCashPayment = (pendingId: string, smsData?: Record<string
 
 export const confirmNatCashSeller = (orderId: string, sellerId: string, smsData?: Record<string, unknown>) =>
   request(`/orders/${orderId}/confirm-natcash-seller`, { method: 'POST', body: JSON.stringify({ sellerId, smsData }) });
+export const confirmNatCashReceived = (orderId: string) =>
+  request(`/orders/${orderId}/confirm-natcash-received`, { method: 'POST', body: JSON.stringify({}) });
+export const reportNatCashNotReceived = (orderId: string) =>
+  request(`/orders/${orderId}/report-natcash-not-received`, { method: 'POST', body: JSON.stringify({}) });
 
 // ── NatCash paste-verification sessions ──
 export const createNatCashSessions = (pendingId: string, sellers: Array<{ sellerId: string; phone: string; total: number }>) =>
@@ -1128,16 +1138,25 @@ export const getDeliveryStatuses = (conversationId: string) =>
   request(`/conversations/${conversationId}/delivery-status`) as Promise<{ statuses: { id: string; status: 'sent' | 'delivered' | 'read' }[] }>;
 export const getPresence = (userId: string) =>
   request(`/users/${userId}/presence`) as Promise<{ online: boolean; lastSeen: string | null }>;
+export const getPresenceVisibility = () =>
+  request('/users/me/presence-visibility') as Promise<{ visibility: 'everyone' | 'chatted_with' | 'nobody' }>;
+export const setPresenceVisibility = (visibility: 'everyone' | 'chatted_with' | 'nobody') =>
+  request('/users/me/presence-visibility', { method: 'PUT', body: JSON.stringify({ visibility }) });
+export const sendProductCard = (conversationId: string, productId: string) =>
+  request(`/conversations/${conversationId}/products`, { method: 'POST', body: JSON.stringify({ productId }) });
 
 // Offers
-export const sendOffer = (conversationId: string, data: { productId: string; productName: string; offeredPrice: number; listPrice: number }) =>
+export const sendOffer = (conversationId: string, data: { productId: string; offeredPrice: number; quantity: number }) =>
   request(`/conversations/${conversationId}/offer`, { method: 'POST', body: JSON.stringify(data) });
 export const respondToOffer = (messageId: string, action: 'accepted' | 'declined') =>
   request(`/offers/${messageId}/respond`, { method: 'POST', body: JSON.stringify({ action }) });
 export const counterOffer = (messageId: string, offeredPrice: number) =>
   request(`/offers/${messageId}/counter`, { method: 'POST', body: JSON.stringify({ offeredPrice }) });
+export const markOfferSeen = (messageId: string) => request(`/offers/${messageId}/seen`, { method: 'PUT' });
 export const getSellerItems = (sellerId: string) =>
   request(`/sellers/${sellerId}/items`);
+export const searchSellersForChat = (query: string) =>
+  request(`/sellers/search?q=${encodeURIComponent(query)}`) as Promise<{ sellers: any[] }>;
 export const getConversationsWithOffers = () =>
   request('/conversations/with-offers');
 export const getOfferDetail = (messageId: string) =>
@@ -1156,10 +1175,12 @@ export const markConversationRead = (conversationId: string) =>
   request(`/conversations/${conversationId}/read`, { method: 'PUT' });
 export const pinConversation = (conversationId: string) =>
   request(`/conversations/${conversationId}/pin`, { method: 'PUT' });
-export const muteConversation = (conversationId: string, hours?: number) =>
-  request(`/conversations/${conversationId}/mute`, { method: 'PUT', body: JSON.stringify({ hours: hours ?? 8 }) });
+export const muteConversation = (conversationId: string, durationHours: number | null, enabled = true) =>
+  request(`/conversations/${conversationId}/mute`, { method: 'PUT', body: JSON.stringify({ durationHours, enabled }) });
 export const blockUser = (userId: string) =>
   request(`/users/${userId}/block`, { method: 'POST' });
+export const reportConversationUser = (conversationId: string, reason: string, details?: string) =>
+  request(`/conversations/${conversationId}/report`, { method: 'POST', body: JSON.stringify({ reason, details }) });
 
 // Promos
 export const validatePromo = (code: string, orderTotal: number) =>

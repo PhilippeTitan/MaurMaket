@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
@@ -10,7 +10,7 @@ import { useToast } from './Toast';
 import { useTranslation } from '@/localization';
 import { Icon } from './icons/Icon';
 
-type Item = { id: string; name: string; price: number; image_url?: string | null };
+type Item = { id: string; name: string; price: number; stock?: number; image_url?: string | null };
 
 type Props = {
   visible: boolean;
@@ -28,12 +28,16 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
   const { t } = useTranslation();
   const toast = useToast();
   const [price, setPrice] = useState('');
+  const [quantity, setQuantity] = useState(1);
   const [sending, setSending] = useState(false);
+
+  useEffect(() => { setPrice(''); setQuantity(1); }, [item?.id, visible]);
 
   const listPrice = item?.price || 0;
   const offerPrice = parseFloat(price) || 0;
   const isValid = offerPrice > 0 && offerPrice < listPrice && offerPrice <= MAX_PRICE;
   const discount = listPrice > 0 && offerPrice > 0 ? Math.round(((listPrice - offerPrice) / listPrice) * 100) : 0;
+  const maxQuantity = Math.max(1, Math.min(Number(item?.stock) || 1, 99));
 
   const applyPreset = (pct: number) => {
     const p = Math.round(listPrice * (1 - pct / 100));
@@ -46,9 +50,8 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
     try {
       await sendOffer(conversationId, {
         productId: item.id,
-        productName: item.name,
         offeredPrice: offerPrice,
-        listPrice,
+        quantity,
       });
       toast.success(t('offer.sent'), t('offer.sentDetail', { price: formatPrice(offerPrice) }));
       setPrice('');
@@ -90,6 +93,17 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
               <Text style={styles.listPrice}>{t('offer.listed', { price: formatPrice(listPrice) })}</Text>
             </View>
           </View>
+
+          <View style={styles.quantityRow}>
+            <Text style={styles.sectionLabel}>{t('offer.quantity')}</Text>
+            <View style={styles.quantityControls}>
+              <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity(q => Math.max(1, q - 1))} disabled={quantity <= 1} accessibilityLabel={t('offer.decreaseQuantity')} accessibilityRole="button"><MaterialCommunityIcons name="minus" size={17} color={COLORS.text} /></TouchableOpacity>
+              <Text style={styles.quantityValue}>{quantity}</Text>
+              <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity(q => Math.min(maxQuantity, q + 1))} disabled={quantity >= maxQuantity} accessibilityLabel={t('offer.increaseQuantity')} accessibilityRole="button"><MaterialCommunityIcons name="plus" size={17} color={COLORS.text} /></TouchableOpacity>
+            </View>
+          </View>
+          <Text style={styles.totalText}>{t('offer.totalAtPrice', { total: formatPrice(offerPrice * quantity) })}</Text>
+          <Text style={styles.termsText}>{t('offer.offerTerms')}</Text>
 
           <Text style={styles.sectionLabel}>{t('offer.yourOffer')}</Text>
           <View style={styles.priceInputWrap}>
@@ -162,6 +176,12 @@ const styles = StyleSheet.create({
   listPrice: { fontSize: 13, color: COLORS.text2, marginTop: 4 },
 
   sectionLabel: { fontSize: 11, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', marginBottom: 6 },
+  quantityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: SPACING.xs },
+  quantityControls: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  quantityButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  quantityValue: { color: COLORS.text, fontSize: 15, fontWeight: '800', minWidth: 22, textAlign: 'center' },
+  totalText: { color: COLORS.text2, fontSize: 12, marginTop: -2, marginBottom: SPACING.sm },
+  termsText: { color: COLORS.text2, fontSize: 11, lineHeight: 16, marginBottom: SPACING.sm },
 
   priceInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, paddingHorizontal: 12, marginBottom: 4 },
   currencySymbol: { fontSize: 16, fontWeight: '700', color: COLORS.coral, marginRight: 6 },

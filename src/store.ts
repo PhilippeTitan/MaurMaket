@@ -152,6 +152,31 @@ export const store = {
     return { added: true, quantity, stock };
   },
 
+  async addAcceptedOfferToCart(product: CartItem, offerMessageId: string) {
+    if (product.seller_id && state.user?.id && product.seller_id === state.user.id) {
+      return { added: false, reason: 'own-product' as const };
+    }
+    const stock = Math.max(0, Number(product.stock) || 0);
+    const quantity = Math.floor(Number(product.quantity) || 0);
+    if (stock < quantity || quantity < 1) return { added: false, reason: 'out-of-stock' as const };
+    const existing = state.cart.find(item => item.id === product.id);
+    const acceptedItem: CartItem = {
+      ...existing,
+      ...product,
+      stock,
+      quantity,
+      acceptedOfferMessageId: offerMessageId,
+      effective_price: Number(product.price),
+      is_on_sale: false,
+      discount_pct: 0,
+    };
+    if (existing) Object.assign(existing, acceptedItem);
+    else state.cart.push(acceptedItem);
+    await storage.setItem('mm_cart', JSON.stringify(state.cart));
+    notify();
+    return { added: true, quantity, stock };
+  },
+
   async removeFromCart(productId: string) {
     state.cart = state.cart.filter(c => c.id !== productId);
     await storage.setItem('mm_cart', JSON.stringify(state.cart));

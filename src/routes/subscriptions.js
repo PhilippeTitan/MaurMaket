@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
+import { getNatCashAccess } from '../utils/natcashAccess.js';
 
 const router = Router();
 
@@ -10,6 +11,73 @@ function sellerRequired(req, res, next) {
   if (req.user.role !== 'seller') return res.status(403).json({ error: 'Seller access required' });
   next();
 }
+
+router.get('/api/natcash-access', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const access = await getNatCashAccess(req.user.id);
+    const pending = await pool.query(
+      "SELECT reference_id, status, created_at FROM natcash_access_payments WHERE seller_id = $1 AND status IN ('pending','reconciliation_required') ORDER BY created_at DESC LIMIT 1",
+      [req.user.id]
+    );
+    res.json({ access, pendingPayment: pending.rows[0] || null, monthlyPriceHtg: 500, termDays: 30, gracePeriodDays: 3, remindersDays: 7 });
+  } catch (err) { console.error('NatCash access fetch error:', err); res.status(500).json({ error: 'Server error' }); }
+});
+
+router.post('/api/natcash-access/payment', authRequired, sellerRequired, async (req, res) => {
+  let referenceId = null;
+  try {
+    const access = await getNatCashAccess(req.user.id);
+    if (access.source === 'business' && access.entitled) return res.status(409).json({ error: 'NatCash access is included with your active Business tier' });
+    const existing = await pool.query(
+      "SELECT reference_id, status FROM natcash_access_payments WHERE seller_id = $1 AND status IN ('pending','reconciliation_required') ORDER BY created_at DESC LIMIT 1",
+      [req.user.id]
+    );
+    if (existing.rows[0]) return res.status(409).json({ error: existing.rows[0].status === 'reconciliation_required' ? 'A previous payment needs reconciliation before another attempt' : 'A NatCash access payment is already awaiting confirmation', referenceId: existing.rows[0].reference_id });
+    referenceId = `natcash_access_${crypto.randomUUID().replaceAll('-', '')}`;
+    await pool.query(
+      "INSERT INTO natcash_access_payments (seller_id, reference_id, amount_htg) VALUES ($1, $2, 500)",
+      [req.user.id, referenceId]
+    );
+    const payUrl = process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create';
+    const providerResponse = await fetch(payUrl, {
+      method: 'POST', headers: { Authorization: `Bearer ${process.env.MCC_KEY || ''}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 500, referenceId, returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?natcashAccess=${encodeURIComponent(referenceId)}` }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const providerData = await providerResponse.json();
+    if (!providerResponse.ok || !providerData.paymentUrl) throw new Error('Payment creation failed');
+    res.status(201).json({ paymentUrl: providerData.paymentUrl, referenceId, amountHtg: 500 });
+  } catch (err) {
+    if (referenceId) await pool.query("UPDATE natcash_access_payments SET status = 'reconciliation_required', updated_at = CURRENT_TIMESTAMP WHERE reference_id = $1 AND status = 'pending'", [referenceId]).catch(() => {});
+    console.error('NatCash access payment creation error:', err);
+    if (err.code === '23505') return res.status(409).json({ error: 'A NatCash access payment is already unresolved. Confirm or reconcile it before retrying.' });
+    res.status(502).json({ error: err.message || 'Payment creation failed' });
+  }
+});
+
+router.post('/api/natcash-access/pause', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE natcash_access_subscriptions SET status = 'paused', paused_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = (SELECT id FROM natcash_access_subscriptions WHERE seller_id = $1 ORDER BY created_at DESC LIMIT 1)
+         AND status = 'active' RETURNING id`, [req.user.id]
+    );
+    if (!result.rowCount) return res.status(409).json({ error: 'No active standalone NatCash access to pause' });
+    res.json({ success: true, access: await getNatCashAccess(req.user.id) });
+  } catch (err) { console.error('NatCash access pause error:', err); res.status(500).json({ error: 'Server error' }); }
+});
+
+router.post('/api/natcash-access/reactivate', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE natcash_access_subscriptions SET status = 'active', paused_at = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = (SELECT id FROM natcash_access_subscriptions WHERE seller_id = $1 ORDER BY created_at DESC LIMIT 1)
+         AND status = 'paused' AND expires_at + INTERVAL '3 days' > CURRENT_TIMESTAMP RETURNING id`, [req.user.id]
+    );
+    if (!result.rowCount) return res.status(409).json({ error: 'This paid NatCash access period can no longer be reactivated' });
+    res.json({ success: true, access: await getNatCashAccess(req.user.id) });
+  } catch (err) { console.error('NatCash access reactivate error:', err); res.status(500).json({ error: 'Server error' }); }
+});
 
 // Create subscription
 router.post('/api/subscriptions/create', authRequired, sellerRequired, async (req, res) => {
