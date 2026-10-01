@@ -333,6 +333,9 @@ export function createAuth(adapter) {
       autoVerifyEmail: true,
       minPasswordLength: 6,
       resetPasswordTokenExpiresIn: 3600,
+      // Password resets happen precisely when an account may be compromised —
+      // kill every existing session so an attacker holding one is signed out.
+      revokeSessionsOnPasswordReset: true,
       // Legacy MaurMaket passwords are bcrypt hashes in users.password_hash.
       // Better Auth continues to create new scrypt hashes; this verifier accepts
       // both formats while legacy accounts are bridged into accounts.password.

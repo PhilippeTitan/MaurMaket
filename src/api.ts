@@ -266,10 +266,15 @@ const getAuthRedirectUrl = () => {
   return process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL || `${window.location.origin}/`;
 };
 
-const getPasswordResetRedirectUrl = () => {
-  if (Platform.OS !== 'web') return 'maurmaket://reset-password';
-  const baseUrl = process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL || `${window.location.origin}/`;
-  return new URL('/reset-password', baseUrl).toString();
+// Better Auth error bodies vary: { message } | { error: string } | { error: { code, message } } | { code }.
+const authErrorMessage = (body: any, fallback: string): string => {
+  const raw = body?.message ?? body?.error ?? body?.code;
+  if (typeof raw === 'string' && raw.trim()) return raw;
+  if (raw && typeof raw === 'object') {
+    const nested = raw.message ?? raw.code;
+    if (typeof nested === 'string' && nested.trim()) return nested;
+  }
+  return fallback;
 };
 
 /**
@@ -768,28 +773,28 @@ export const passkeyAuth = async () => {
   }
 };
 
-// Forgot / Reset Password via Better Auth
+// Forgot / Reset Password via Better Auth emailOTP (6-digit code flow).
+// The screen collects a code, so we use the emailOTP endpoints rather than
+// the core link-based /forget-password (which doesn't exist) — 404 before.
 export const forgotPassword = async (email: string, _language?: string) => {
-  const { res, body } = await authFetch('/auth/forget-password', {
+  const { res, body } = await authFetch('/auth/email-otp/request-password-reset', {
     method: 'POST',
-    body: JSON.stringify({
-      email: email.trim().toLowerCase(),
-      redirectTo: getPasswordResetRedirectUrl(),
-    }),
+    body: JSON.stringify({ email: email.trim().toLowerCase() }),
   });
-  if (!res.ok) throw new Error(body?.message || body?.error || 'Failed to send reset email');
+  if (!res.ok) throw new Error(authErrorMessage(body, 'Failed to send reset code'));
   return { sent: true };
 };
 
-export const resetPassword = async (_email: string, code: string, newPassword: string) => {
-  const { res, body } = await authFetch('/auth/reset-password', {
+export const resetPassword = async (email: string, code: string, newPassword: string) => {
+  const { res, body } = await authFetch('/auth/email-otp/reset-password', {
     method: 'POST',
-    body: JSON.stringify({ newPassword, token: code }),
+    body: JSON.stringify({
+      email: email.trim().toLowerCase(),
+      otp: code,
+      password: newPassword,
+    }),
   });
-  if (!res.ok) throw new Error(body?.message || body?.error || 'Failed to reset password');
-  // Update the session token if a new one was returned
-  const token = extractSessionToken(res, body);
-  if (token) setCachedToken(token);
+  if (!res.ok) throw new Error(authErrorMessage(body, 'Failed to reset password'));
   return { updated: true };
 };
 

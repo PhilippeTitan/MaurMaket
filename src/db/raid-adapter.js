@@ -327,6 +327,27 @@ function buildDeleteQuery(model, where) {
   };
 }
 
+function buildUpdateManyQuery(model, where, update) {
+  const tableName = toTable(model);
+  const mapped = mapData(model, update);
+  const setClauses = Object.keys(mapped).map((k, i) => `"${k}" = $${i + 1}`);
+  const setValues = Object.values(mapped);
+  const { conditions, values: whereValues } = buildWhere(model, where, setValues.length + 1);
+  // RETURNING id so transactional callers can buffer each touched row for the outbox.
+  const whereClause = conditions.length ? conditions.join(' AND ') : 'TRUE';
+  return {
+    sql: `UPDATE ${tableName} SET ${setClauses.join(', ')} WHERE ${whereClause} RETURNING id`,
+    values: [...setValues, ...whereValues],
+  };
+}
+
+function buildCountQuery(model, where) {
+  const tableName = toTable(model);
+  const { conditions, values } = where?.length ? buildWhere(model, where) : { conditions: [], values: [] };
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  return { sql: `SELECT COUNT(*)::int AS count FROM ${tableName} ${whereClause}`, values };
+}
+
 // ─── Pinned adapter (single DB connection for transactions) ─────────
 function createPinnedAdapter(queryFn) {
   return {
@@ -353,6 +374,14 @@ function createPinnedAdapter(queryFn) {
     async deleteMany({ model, where }) {
       const { sql, values } = buildDeleteQuery(model, where);
       return (await queryFn(sql, values)).rowCount;
+    },
+    async updateMany({ model, where, update }) {
+      const { sql, values } = buildUpdateManyQuery(model, where, update);
+      return (await queryFn(sql, values)).rowCount;
+    },
+    async count({ model, where }) {
+      const { sql, values } = buildCountQuery(model, where);
+      return (await queryFn(sql, values)).rows[0]?.count ?? 0;
     },
     async consumeOne({ model, where }) {
       const { sql, values } = buildDeleteQuery(model, where);
@@ -417,6 +446,23 @@ export function createRaidAdapter(controller) {
         operator: w.operator || 'eq',
         value: w.value,
       })));
+    },
+
+    async updateMany({ model, where, update }) {
+      // Update row-by-row through the controller so every touched row gets its
+      // mirror_outbox entry (matches the replication behavior of update/deleteMany).
+      const records = await this.findMany({ model, where });
+      const mappedUpdate = mapData(model, update);
+      for (const record of records) {
+        await controller.update(toTable(model), record.id, mappedUpdate);
+      }
+      return records.length;
+    },
+
+    async count({ model, where }) {
+      const { sql, values } = buildCountQuery(model, where);
+      const result = await queryFn(sql, values);
+      return result.rows[0]?.count ?? 0;
     },
 
     async consumeOne({ model, where }) {
@@ -501,6 +547,19 @@ export function createRaidAdapter(controller) {
               writeBuffer.push({ model: toTable(model), action: 'delete', recordId: row.id, payload: { id: row.id } });
             }
             return result.rowCount;
+          },
+          async updateMany({ model, where, update }) {
+            const { sql, values } = buildUpdateManyQuery(model, where, update);
+            const result = await client.query(sql, values);
+            for (const row of result.rows) {
+              writeBuffer.push({ model: toTable(model), action: 'update', recordId: row.id, payload: mapData(model, update) });
+            }
+            return result.rowCount;
+          },
+          async count({ model, where }) {
+            const { sql, values } = buildCountQuery(model, where);
+            const result = await client.query(sql, values);
+            return result.rows[0]?.count ?? 0;
           },
           async consumeOne({ model, where }) {
             const { sql, values } = buildDeleteQuery(model, where);

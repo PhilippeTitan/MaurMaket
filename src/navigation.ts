@@ -4,7 +4,7 @@ export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
   EmailVerification: { code?: string } | undefined;
-  ForgotPassword: { code?: string } | undefined;
+  ForgotPassword: { code?: string; email?: string } | undefined;
 };
 
 export type TabParamList = {
@@ -72,7 +72,7 @@ export type RootStackParamList = {
   PromoManagement: undefined;
   Analytics: undefined;
   EmailVerification: { code?: string } | undefined;
-  ForgotPassword: { code?: string } | undefined;
+  ForgotPassword: { code?: string; email?: string } | undefined;
   LocationSettings: undefined;
   SellerToolsSettings: undefined;
   SellerFulfillmentSettings: undefined;

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '@/localization';
@@ -16,11 +16,11 @@ interface ForgotPasswordSheetProps {
 
 export default function ForgotPasswordSheet({ visible, onClose }: ForgotPasswordSheetProps) {
   const { t } = useTranslation();
+  const navigation = useNavigation<any>();
   // The sheet slides up from a full window below the fold, so "off screen" is measured
   // against the live window rather than the one the app booted in — otherwise a window
   // that grew leaves the closed sheet parked in the middle of the screen.
   const vp = useViewport();
-  const [stage, setStage] = useState<'email' | 'done'>('email');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -31,7 +31,6 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
 
   useEffect(() => {
     if (visible) {
-      setStage('email');
       setEmail('');
       setError('');
       // Park it exactly one live window below the fold first, so the sheet always rises
@@ -49,15 +48,19 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
     }
   }, [visible]);
 
-  const handleSendLink = async () => {
+  const handleSendCode = async () => {
     if (!email.trim()) return;
     setLoading(true);
     setError('');
     try {
       await forgotPassword(email.trim());
-      setStage('done');
+      // Hand off to the code screen: the sheet is email-only, the code entry
+      // (and resend) live on ForgotPasswordScreen.
+      const sentTo = email.trim().toLowerCase();
+      onClose();
+      navigation.navigate('ForgotPassword', { email: sentTo });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to send reset link');
+      setError(err instanceof Error && err.message ? err.message : t('reset.sendFailed'));
     } finally {
       setLoading(false);
     }
@@ -76,45 +79,27 @@ export default function ForgotPasswordSheet({ visible, onClose }: ForgotPassword
       >
         <Animated.View style={[styles.sheet, { paddingBottom: Math.max(34, insets.bottom + 16), transform: [{ translateY }] }]}>
           <View style={styles.handle} />
-          {stage === 'email' && (
-            <>
-              <Text style={styles.title}>{t('reset.title')}</Text>
-              <Text style={styles.subtitle}>{t('reset.enterEmail')}</Text>
-              <TextInput
-                style={styles.input}
-                placeholder={t('auth.emailPlaceholder')}
-                placeholderTextColor={COLORS.text2}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                returnKeyType="done"
-                onSubmitEditing={handleSendLink}
-              />
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              <TouchableOpacity
-                style={[styles.btn, (!email.trim() || loading) && styles.btnDisabled]}
-                onPress={handleSendLink}
-                disabled={!email.trim() || loading}
-              >
-                <Text style={styles.btnText}>{loading ? t('common.loading') : t('reset.sendCode')}</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          {stage === 'done' && (
-            <>
-              <View style={styles.doneRow}>
-                <View style={styles.doneIcon}>
-                  <MaterialCommunityIcons name="check" size={16} color="#06231A" />
-                </View>
-                <Text style={styles.title}>Check your inbox</Text>
-              </View>
-              <Text style={styles.subtitle}>We sent a password reset link to {email}. Open it to choose a new password.</Text>
-              <TouchableOpacity style={styles.btn} onPress={onClose}>
-                <Text style={styles.btnText}>Back to sign in</Text>
-              </TouchableOpacity>
-            </>
-          )}
+          <Text style={styles.title}>{t('reset.title')}</Text>
+          <Text style={styles.subtitle}>{t('reset.enterEmail')}</Text>
+          <TextInput
+            style={styles.input}
+            placeholder={t('auth.emailPlaceholder')}
+            placeholderTextColor={COLORS.text2}
+            value={email}
+            onChangeText={(v) => { setEmail(v); if (error) setError(''); }}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            returnKeyType="done"
+            onSubmitEditing={handleSendCode}
+          />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <TouchableOpacity
+            style={[styles.btn, (!email.trim() || loading) && styles.btnDisabled]}
+            onPress={handleSendCode}
+            disabled={!email.trim() || loading}
+          >
+            <Text style={styles.btnText}>{loading ? t('common.loading') : t('reset.sendCode')}</Text>
+          </TouchableOpacity>
         </Animated.View>
       </KeyboardAvoidingView>
     </View>
@@ -192,19 +177,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15.5,
     fontWeight: '700',
-  },
-  doneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 6,
-  },
-  doneIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.green,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

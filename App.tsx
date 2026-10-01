@@ -325,84 +325,52 @@ export default function App() {
   const pendingDeepLink = useRef<string | null>(null);
   const pendingDeepLinkType = useRef<string | null>(null);
 
-  useEffect(() => {
-    const handleDeepLink = (event: { url: string }) => {
-      const url = event.url;
-      const resetToken = getPasswordResetTokenFromUrl(url);
-      if (resetToken && navigationRef.isReady()) navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code: resetToken } });
-      if (url.includes('payment-return')) {
-        const match = url.match(/orderId=([^&]+)/);
-        const orderId = match?.[1];
-        const pendingId = url.match(/[?&]pendingId=([^&]+)/)?.[1];
-        const debtPaymentId = url.match(/[?&]debtPaymentId=([^&]+)/)?.[1];
+  // Single handler for both cold-start and warm URLs. The reset branch must be
+  // the ONLY place a reset URL is handled: the old code also ran a standalone
+  // token pre-check first, so reset links navigated twice — the second pass
+  // overwrote the real token with undefined and dropped the user out of the
+  // reset flow.
+  const processDeepLink = (url: string) => {
+    if (url.includes('payment-return')) {
+      const match = url.match(/orderId=([^&]+)/);
+      const orderId = match?.[1];
+      const pendingId = url.match(/[?&]pendingId=([^&]+)/)?.[1];
+      const debtPaymentId = url.match(/[?&]debtPaymentId=([^&]+)/)?.[1];
+      if (navigationRef.isReady()) {
+        navigationRef.navigate('PaymentReturn', { orderId, pendingId, debtPaymentId });
+      } else {
+        pendingDeepLink.current = orderId || pendingId || debtPaymentId || null;
+        pendingDeepLinkType.current = debtPaymentId ? 'debt-payment-return' : 'payment-return';
+      }
+    } else if (url.includes('maurmaket://verify')) {
+      const match = url.match(/[?&](?:token|code)=([^&]+)/);
+      const code = match?.[1];
+      if (store.isLoggedIn) {
         if (navigationRef.isReady()) {
-          navigationRef.navigate('PaymentReturn', { orderId, pendingId, debtPaymentId });
-        } else {
-          pendingDeepLink.current = orderId || pendingId || debtPaymentId || null;
-          pendingDeepLinkType.current = debtPaymentId ? 'debt-payment-return' : 'payment-return';
-        }
-      } else if (url.includes('maurmaket://verify')) {
-        const match = url.match(/[?&](?:token|code)=([^&]+)/);
-        const code = match?.[1];
-        if (store.isLoggedIn) {
-          if (navigationRef.isReady()) {
-            navigationRef.navigate('EmailVerification', { code });
-          } else {
-            pendingDeepLink.current = code || null;
-            pendingDeepLinkType.current = 'verify';
-          }
-        }
-      } else if (url.includes('maurmaket://reset-password')) {
-        const match = url.match(/code=([^&]+)/);
-        const code = match?.[1];
-        if (navigationRef.isReady()) {
-          navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code } });
+          navigationRef.navigate('EmailVerification', { code });
         } else {
           pendingDeepLink.current = code || null;
-          pendingDeepLinkType.current = 'reset-password';
+          pendingDeepLinkType.current = 'verify';
         }
       }
-    };
+    } else if (url.includes('reset-password')) {
+      const code = getPasswordResetTokenFromUrl(url);
+      if (!code) return;
+      if (navigationRef.isReady()) {
+        navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code } });
+      } else {
+        pendingDeepLink.current = code;
+        pendingDeepLinkType.current = 'reset-password';
+      }
+    }
+  };
 
+  useEffect(() => {
     Linking.getInitialURL().then((url) => {
-      if (!url) return;
-      const resetToken = getPasswordResetTokenFromUrl(url);
-      if (resetToken && navigationRef.isReady()) navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code: resetToken } });
-      if (url.includes('payment-return')) {
-        const match = url.match(/orderId=([^&]+)/);
-        const orderId = match?.[1];
-        const pendingId = url.match(/[?&]pendingId=([^&]+)/)?.[1];
-        const debtPaymentId = url.match(/[?&]debtPaymentId=([^&]+)/)?.[1];
-        if (navigationRef.isReady()) {
-          navigationRef.navigate('PaymentReturn', { orderId, pendingId, debtPaymentId });
-        } else {
-          pendingDeepLink.current = orderId || pendingId || debtPaymentId || null;
-          pendingDeepLinkType.current = debtPaymentId ? 'debt-payment-return' : 'payment-return';
-        }
-      } else if (url.includes('maurmaket://verify')) {
-        const match = url.match(/[?&](?:token|code)=([^&]+)/);
-        const code = match?.[1];
-        if (store.isLoggedIn) {
-          if (navigationRef.isReady()) {
-            navigationRef.navigate('EmailVerification', { code });
-          } else {
-            pendingDeepLink.current = code || null;
-            pendingDeepLinkType.current = 'verify';
-          }
-        }
-      } else if (url.includes('maurmaket://reset-password')) {
-        const match = url.match(/code=([^&]+)/);
-        const code = match?.[1];
-        if (navigationRef.isReady()) {
-          navigationRef.navigate('Auth', { screen: 'ForgotPassword', params: { code } });
-        } else {
-          pendingDeepLink.current = code || null;
-          pendingDeepLinkType.current = 'reset-password';
-        }
-      }
+      if (url) processDeepLink(url);
     }).catch(() => {});
 
-    const sub = Linking.addEventListener('url', handleDeepLink);
+    const sub = Linking.addEventListener('url', (event) => processDeepLink(event.url));
     return () => sub.remove();
   }, []);
 

@@ -17,16 +17,28 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const prefilledCode = route?.params?.code || '';
+  const routeEmail = route?.params?.email || '';
 
-  const [step, setStep] = useState<'email' | 'reset' | 'done'>(prefilledCode ? 'reset' : 'email');
-  const [email, setEmail] = useState('');
+  const [step, setStep] = useState<'email' | 'reset' | 'done'>(
+    prefilledCode || routeEmail ? 'reset' : 'email',
+  );
+  const [email, setEmail] = useState(routeEmail);
   const [code, setCode] = useState(prefilledCode);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const codeInputRef = useRef<TextInput>(null);
+
+  // Surface OTP failures in the user's language; anything else falls through
+  // to the caller's fallback (server messages are English-only).
+  const localizedError = (err: unknown, fallbackKey: string) => {
+    const msg = err instanceof Error ? err.message : '';
+    if (/OTP|TOO_MANY_ATTEMPTS|USER_NOT_FOUND/i.test(msg)) return t('verify.invalidCode');
+    return msg || t(fallbackKey);
+  };
 
   useEffect(() => {
     return () => { if (cooldownRef.current) clearInterval(cooldownRef.current); };
@@ -49,12 +61,13 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
   const handleSendCode = async () => {
     if (!email.trim()) return;
     setLoading(true);
+    setError(null);
     try {
       await forgotPassword(email.trim());
       setStep('reset');
       startCooldown();
     } catch (err: unknown) {
-      // error handled below
+      setError(localizedError(err, 'reset.sendFailed'));
     } finally {
       setLoading(false);
     }
@@ -62,20 +75,24 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
 
   const handleResend = async () => {
     if (cooldown > 0) return;
+    setError(null);
     try {
       await forgotPassword(email.trim());
       startCooldown();
-    } catch {}
+    } catch (err: unknown) {
+      setError(localizedError(err, 'reset.sendFailed'));
+    }
   };
 
   const handleResetPassword = async () => {
     if (!code || newPassword.length < 6 || newPassword !== confirmPassword) return;
     setLoading(true);
+    setError(null);
     try {
       await resetPassword(email.trim(), code, newPassword);
       setStep('done');
     } catch (err: unknown) {
-      // error handled below
+      setError(localizedError(err, 'reset.resetFailed'));
     } finally {
       setLoading(false);
     }
@@ -99,11 +116,12 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
             <AuthInput
               icon="email-outline"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(v) => { setEmail(v); if (error) setError(null); }}
               placeholder={t('auth.emailPlaceholder')}
               keyboardType="email-address"
               autoCapitalize="none"
             />
+            {error ? <ErrorBanner message={error} /> : null}
             <TouchableOpacity
               style={[styles.btn, (!email.trim() || loading) && styles.btnDisabled]}
               onPress={handleSendCode}
@@ -116,9 +134,9 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
 
         {step === 'reset' && (
           <>
-            <Text style={styles.title}>Check your inbox</Text>
+            <Text style={styles.title}>{t('reset.checkInbox')}</Text>
             <Text style={styles.subtitle}>
-              {prefilledCode ? 'Choose a new password for your account.' : <>{t('reset.codeSentTo')}{'\n'}<Text style={styles.emailHighlight}>{email}</Text></>}
+              {prefilledCode ? t('reset.chooseNewPassword') : <>{t('reset.codeSentTo')}{'\n'}<Text style={styles.emailHighlight}>{email}</Text></>}
             </Text>
 
             {!prefilledCode && <>
@@ -131,7 +149,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
                   ))}
                 </View>
               </TouchableOpacity>
-              <TextInput ref={codeInputRef} style={styles.hiddenInput} value={code} onChangeText={text => setCode(text.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" maxLength={6} autoFocus />
+              <TextInput ref={codeInputRef} style={styles.hiddenInput} value={code} onChangeText={text => { setCode(text.replace(/\D/g, '').slice(0, 6)); if (error) setError(null); }} keyboardType="number-pad" maxLength={6} autoFocus />
             </>}
 
             <AuthInput
@@ -149,6 +167,8 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               secureTextEntry
               error={confirmPassword && newPassword !== confirmPassword ? t('reset.passwordMismatch') : undefined}
             />
+
+            {error ? <ErrorBanner message={error} /> : null}
 
             <TouchableOpacity
               style={[styles.btn, (loading || !code || !newPassword || !confirmPassword || newPassword !== confirmPassword) && styles.btnDisabled]}
@@ -176,16 +196,25 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               <View style={styles.doneIcon}>
                 <MaterialCommunityIcons name="check" size={16} color="#06231A" />
               </View>
-              <Text style={styles.title}>Password reset</Text>
+              <Text style={styles.title}>{t('reset.success')}</Text>
             </View>
-            <Text style={styles.subtitle}>Sign in with your new password.</Text>
+            <Text style={styles.subtitle}>{t('reset.successMessage')}</Text>
             <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.btnText}>Back to sign in</Text>
+              <Text style={styles.btnText}>{t('signin.backToSignIn')}</Text>
             </TouchableOpacity>
           </>
         )}
       </View>
     </KeyboardAvoidingView>
+  );
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <View style={inputStyles.errorBanner} accessibilityRole="alert">
+      <MaterialCommunityIcons name="alert-circle-outline" size={14} color={COLORS.coral} />
+      <Text style={inputStyles.errorText}>{message}</Text>
+    </View>
   );
 }
 
@@ -276,5 +305,8 @@ const inputStyles = StyleSheet.create({
     color: COLORS.text, fontSize: 16, fontWeight: '500', padding: 0,
   },
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  errorText: { color: COLORS.coral, fontSize: 13, fontWeight: '500' },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -8, marginBottom: 10,
+  },
+  errorText: { color: COLORS.coral, fontSize: 13, fontWeight: '500', flex: 1 },
 });
