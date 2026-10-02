@@ -102,7 +102,7 @@ async function getSellerPaymentAllocations(client, orderId) {
 
 async function reserveOrderStock(client, orderId) {
   const orderItems = await client.query(
-    'SELECT product_id, quantity FROM order_items WHERE order_id = $1',
+    'SELECT product_id, quantity, variant_id FROM order_items WHERE order_id = $1',
     [orderId]
   );
   for (const item of orderItems.rows) {
@@ -115,12 +115,29 @@ async function reserveOrderStock(client, orderId) {
       error.code = 'INSUFFICIENT_STOCK';
       throw error;
     }
+    if (item.variant_id) {
+      const variant = await client.query(
+        'SELECT stock FROM product_variants WHERE id = $1 FOR UPDATE',
+        [item.variant_id]
+      );
+      if (variant.rows.length === 0 || variant.rows[0].stock < item.quantity) {
+        const error = new Error(`Insufficient stock for product ${item.product_id}`);
+        error.code = 'INSUFFICIENT_STOCK';
+        throw error;
+      }
+    }
   }
   for (const item of orderItems.rows) {
     await client.query(
       'UPDATE products SET stock = stock - $1 WHERE id = $2',
       [item.quantity, item.product_id]
     );
+    if (item.variant_id) {
+      await client.query(
+        'UPDATE product_variants SET stock = stock - $1 WHERE id = $2',
+        [item.quantity, item.variant_id]
+      );
+    }
   }
   return orderItems.rows;
 }
@@ -261,10 +278,17 @@ async function checkSubscriptionStatus(sellerId) {
 async function cleanupOldNotifications() {
   try {
     const result = await Promise.race([
-      pool.query("DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '7 days'"),
+      pool.query(`
+        DELETE FROM notifications
+        WHERE (
+          (is_read = true AND created_at < NOW() - INTERVAL '90 days')
+          OR (action_resolved = true AND created_at < NOW() - INTERVAL '90 days')
+          OR (created_at < NOW() - INTERVAL '180 days')
+        )
+      `),
       new Promise((_, re) => setTimeout(() => re(new Error('Notification cleanup timeout')), 15000))
     ]);
-    if (result.rowCount > 0) console.log(`[CRON] Cleaned up ${result.rowCount} old read notifications`);
+    if (result.rowCount > 0) console.log(`[CRON] Cleaned up ${result.rowCount} old notifications`);
   } catch (err) {
     console.error('[CRON] Notification cleanup error:', err.message);
   }
@@ -324,4 +348,32 @@ function parseNatCashSms(smsText) {
   };
 }
 
-export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, settleSellerDebtPayment, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences, canAccessOrder, parseNatCashSms };
+async function populateSellerOrderSnapshot(client, orderId) {
+  try {
+    const item = await client.query(
+      `SELECT oi.seller_id, u.full_name, u.username, u.store_name, u.store_logo_url, u.avatar_url, u.use_store_identity, u.show_real_name
+       FROM order_items oi
+       JOIN users u ON u.id = oi.seller_id
+       WHERE oi.order_id = $1
+       LIMIT 1`,
+      [orderId]
+    );
+    if (item.rows.length > 0) {
+      const u = item.rows[0];
+      const snapshotName = (u.use_store_identity && u.store_name)
+        ? u.store_name
+        : (u.show_real_name ? u.full_name : (u.username || u.full_name));
+      const snapshotLogo = (u.use_store_identity && u.store_logo_url)
+        ? u.store_logo_url
+        : u.avatar_url;
+      await client.query(
+        `UPDATE orders SET seller_snapshot_name = $1, seller_snapshot_logo_url = $2 WHERE id = $3 AND seller_snapshot_name IS NULL`,
+        [snapshotName, snapshotLogo, orderId]
+      );
+    }
+  } catch (err) {
+    console.error('[ORDER SNAPSHOT] Error populating seller snapshot for order', orderId, err);
+  }
+}
+
+export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, settleSellerDebtPayment, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences, canAccessOrder, parseNatCashSms, populateSellerOrderSnapshot };

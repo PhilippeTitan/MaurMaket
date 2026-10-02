@@ -2,8 +2,9 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
-import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, recordProductCooccurrences, settleSellerDebtPayment } from '../utils/helpers.js';
+import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, recordProductCooccurrences, settleSellerDebtPayment, populateSellerOrderSnapshot } from '../utils/helpers.js';
 import { createNotification } from '../utils/notifications.js';
+import { applyStockSideEffects } from '../utils/listingPolicy.js';
 
 const router = Router();
 
@@ -312,22 +313,29 @@ router.post('/api/payments/webhook', async (req, res) => {
           }
           if (!orderId) {
             const createdOrder = await client.query(
-              `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
-               VALUES ($1, $2, 'partially_paid', 'moncash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-              [pc.user_id, pc.total_amount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
+              `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, meetup_scheduled_at)
+               VALUES ($1, $2, 'partially_paid', 'moncash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+              [pc.user_id, pc.total_amount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name, pc.meetup_at]
             );
             orderId = createdOrder.rows[0].id;
             for (const item of pc.cart_data) {
-              const product = await client.query('SELECT seller_id FROM products WHERE id = $1', [item.id || item.productId]);
-              if (product.rows[0]) await client.query('INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)', [orderId, item.id || item.productId, product.rows[0].seller_id, item.quantity || 1, item.price || 0]);
+              const product = await client.query('SELECT seller_id, name FROM products WHERE id = $1', [item.id || item.productId]);
+              if (product.rows[0]) await client.query(
+                `INSERT INTO order_items (order_id, product_id, seller_id, quantity, price, variant_id, variant_label, product_name, product_image)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [orderId, item.id || item.productId, product.rows[0].seller_id, item.quantity || 1, item.price || 0,
+                 item.variantId || null, item.variantLabel || null,
+                 item.product_name || product.rows[0].name, item.product_image || null]
+              );
             }
+            await populateSellerOrderSnapshot(client, orderId);
             const agreements = await client.query("SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND status = 'accepted' AND terms_locked_at IS NOT NULL", [pc.id]);
             for (const agreement of agreements.rows) {
               const term = agreement.terms;
               await client.query(
-                `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, seller_accepted_at, terms_locked_at)
-                 VALUES ($1, $2, 'pending', 'pending', 'moncash', $3, $4, $5, $6, $7, $8, 'locked', $9, $10, $11) ON CONFLICT (order_id, seller_id) DO NOTHING`,
-                [orderId, agreement.seller_id, term.method, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, agreement.buyer_accepted_at, agreement.seller_accepted_at, agreement.terms_locked_at]
+                `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, seller_accepted_at, terms_locked_at, meetup_at)
+                 VALUES ($1, $2, 'pending', 'pending', 'moncash', $3, $4, $5, $6, $7, $8, 'locked', $9, $10, $11, $12) ON CONFLICT (order_id, seller_id) DO NOTHING`,
+                [orderId, agreement.seller_id, term.method, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, agreement.buyer_accepted_at, agreement.seller_accepted_at, agreement.terms_locked_at, term.meetupAt || null]
               );
             }
             await client.query('UPDATE fulfillment_payment_sessions SET order_id = $1 WHERE checkout_id = $2', [orderId, pc.id]);
@@ -429,9 +437,9 @@ router.post('/api/payments/webhook', async (req, res) => {
           let collectionFeeAllocated = 0;
 
           const orderRes = await client2.query(
-            `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
-             VALUES ($1, $2, 'paid', 'moncash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-            [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
+            `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, meetup_scheduled_at)
+             VALUES ($1, $2, 'paid', 'moncash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+            [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name, pc.meetup_at]
           );
           const orderId = orderRes.rows[0].id;
 
@@ -440,15 +448,18 @@ router.post('/api/payments/webhook', async (req, res) => {
           const sellerIds = new Set();
           for (const item of cartData) {
             const productId = item.id || item.productId;
-            const prodRes = await client2.query('SELECT seller_id FROM products WHERE id = $1 FOR UPDATE', [productId]);
+            const prodRes = await client2.query('SELECT seller_id, name FROM products WHERE id = $1 FOR UPDATE', [productId]);
             if (prodRes.rows.length > 0) {
               const sellerId = prodRes.rows[0].seller_id;
               sellerIds.add(sellerId);
               const lockedPrice = item.price || 0;
               const qty = item.quantity || 1;
               await client2.query(
-                'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
-                [orderId, productId, sellerId, qty, lockedPrice]
+                `INSERT INTO order_items (order_id, product_id, seller_id, quantity, price, variant_id, variant_label, product_name, product_image)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [orderId, productId, sellerId, qty, lockedPrice,
+                 item.variantId || null, item.variantLabel || null,
+                 item.product_name || prodRes.rows[0].name, item.product_image || null]
               );
               // Confirm the stock reservation (stock already decremented at checkout creation)
               await client2.query(
@@ -457,6 +468,7 @@ router.post('/api/payments/webhook', async (req, res) => {
               );
             }
           }
+          await populateSellerOrderSnapshot(client2, orderId);
 
           // Escrow + platform revenue for each seller
           for (const sid of [...sellerIds].sort()) {
@@ -589,10 +601,16 @@ router.post('/api/payments/webhook', async (req, res) => {
         }
         await logOrderEvent(reference, 'payment_received', null, 'pending', 'paid', 'Payment completed via MonCash', client);
         await recordProductCooccurrences(reference, client);
-        const orderItems = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [reference]);
+        const orderItems = await client.query('SELECT product_id, quantity, variant_id FROM order_items WHERE order_id = $1', [reference]);
+        const stockTouched = new Set();
         for (const oi of orderItems.rows) {
           const stockCheck = await client.query('SELECT stock FROM products WHERE id = $1 FOR UPDATE', [oi.product_id]);
-          if (stockCheck.rows.length === 0 || stockCheck.rows[0].stock < oi.quantity) {
+          let shortStock = stockCheck.rows.length === 0 || stockCheck.rows[0].stock < oi.quantity;
+          if (!shortStock && oi.variant_id) {
+            const variantCheck = await client.query('SELECT stock FROM product_variants WHERE id = $1 FOR UPDATE', [oi.variant_id]);
+            shortStock = variantCheck.rows.length === 0 || variantCheck.rows[0].stock < oi.quantity;
+          }
+          if (shortStock) {
             await client.query('ROLLBACK');
             releaseClient();
             await pool.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'pending'", [reference]);
@@ -625,8 +643,11 @@ router.post('/api/payments/webhook', async (req, res) => {
             return res.status(200).json({ received: true, stock_issue: true, refundQueued, manualRefundRequired });
           }
           await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.product_id]);
-          const stockRes = await client.query('SELECT stock, seller_id, name FROM products WHERE id = $1', [oi.product_id]);
-          if (stockRes.rows.length > 0 && stockRes.rows[0].stock <= 0) createNotification(stockRes.rows[0].seller_id, 'product_sold_out', 'Product Sold Out', `"${stockRes.rows[0].name}" is now out of stock.`, { productId: oi.product_id });
+          if (oi.variant_id) await client.query('UPDATE product_variants SET stock = stock - $1 WHERE id = $2', [oi.quantity, oi.variant_id]);
+          stockTouched.add(oi.product_id);
+        }
+        for (const pid of stockTouched) {
+          try { await applyStockSideEffects(pid, client); } catch (e) { console.error('Stock side effects error:', e.message); }
         }
         const items = { rows: await getSellerPaymentAllocations(client, reference) };
         for (const item of items.rows) { if (item.seller_id) { const grossAmount = parseFloat(item.paid_total); const commissionBase = parseFloat(item.commission_base ?? grossAmount); const collectionFee = parseFloat(item.collection_fee_amount || 0); const tierRes = await client.query('SELECT seller_tier FROM users WHERE id = $1', [item.seller_id]); const sellerTier = tierRes.rows[0]?.seller_tier || 'none'; const rate = getCommissionRate(sellerTier); const commission = Math.round(commissionBase * rate * 100) / 100; const net = Math.round((grossAmount - commission - collectionFee) * 100) / 100;
@@ -671,11 +692,12 @@ router.post('/api/payments/webhook', async (req, res) => {
           await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [reference]);
           // Idempotent release: mark released first, then increment stock
           const released = await client.query(
-            "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity",
+            "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity, variant_id",
             [reference]
           );
           for (const r of released.rows) {
             await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
+            if (r.variant_id) await client.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [r.quantity, r.variant_id]);
           }
           await client.query('COMMIT');
           createNotification(pendingFail.rows[0].user_id, 'payment_failed', 'Payment Failed', 'Your payment could not be processed. Please try again.', { orderId: reference });

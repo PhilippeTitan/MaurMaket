@@ -4,7 +4,7 @@ import { authRequired } from '../middleware/auth.js';
 import { msgLimiter, convLimiter, previewLimiter } from '../middleware/rateLimit.js';
 import dns from 'node:dns/promises';
 import { dobRequired } from '../middleware/auth.js';
-import { createNotification } from '../utils/notifications.js';
+import { sendPushNotification } from '../utils/notifications.js';
 import { emitToUsers } from '../realtime.js';
 import { touchPresence, markConversationActive, isConversationOpen, isOnline, lastSeen } from '../utils/chatActivity.js';
 
@@ -503,7 +503,9 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
     if (senderInfo?.avatar_url) notifData.image = senderInfo.avatar_url;
     const recipientSettings = await pool.query('SELECT is_muted, muted_until FROM conversation_user_settings WHERE conversation_id = $1 AND user_id = $2', [req.params.id, recipientId]);
     const isMuted = !!recipientSettings.rows[0]?.is_muted && (!recipientSettings.rows[0]?.muted_until || new Date(recipientSettings.rows[0].muted_until) > new Date());
-    if (!isConversationOpen(recipientId, req.params.id) && !isMuted) createNotification(recipientId, 'new_message', 'New Message', `${senderName}: ${preview}`, notifData);
+    // Keep chat unread state in the Inbox. A push alert is still sent when
+    // appropriate, but ordinary messages should not inflate the bell count.
+    if (!isConversationOpen(recipientId, req.params.id) && !isMuted) sendPushNotification(recipientId, 'New Message', `${senderName}: ${preview}`, notifData);
     // Realtime: push to both participants instantly (clients dedupe by id / client_id)
     let reply_to;
     if (validatedReplyToId) {
@@ -569,7 +571,7 @@ router.post('/api/conversations/:id/products', authRequired, msgLimiter, dobRequ
     const senderName = (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name || 'Someone';
     const recipientSettings = await pool.query('SELECT is_muted, muted_until FROM conversation_user_settings WHERE conversation_id = $1 AND user_id = $2', [req.params.id, otherId]);
     const isMuted = !!recipientSettings.rows[0]?.is_muted && (!recipientSettings.rows[0]?.muted_until || new Date(recipientSettings.rows[0].muted_until) > new Date());
-    if (!isConversationOpen(otherId, req.params.id) && !isMuted) createNotification(otherId, 'new_message', 'Listing shared', `${senderName} shared ${p.name}`, { conversationId: req.params.id, senderId: req.user.id, senderName });
+    if (!isConversationOpen(otherId, req.params.id) && !isMuted) sendPushNotification(otherId, 'Listing shared', `${senderName} shared ${p.name}`, { type: 'new_message', conversationId: req.params.id, senderId: req.user.id, senderName });
     const payload = { ...message.rows[0], product_data: productData, delivery_status: 'sent', reactions: [] };
     emitToUsers([req.user.id, otherId], { type: 'message_new', conversationId: req.params.id, message: payload });
     res.status(201).json({ message: payload });
@@ -703,40 +705,65 @@ router.get('/api/conversations/:id/typing', authRequired, async (req, res) => {
 
 router.post('/api/messages/:id/react', authRequired, async (req, res) => {
   const { emoji } = req.body;
-  if (!emoji || typeof emoji !== 'string' || emoji.length > 10) return res.status(400).json({ error: 'Valid emoji required' });
+  const allowedEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉'];
+  if (!allowedEmojis.includes(emoji)) return res.status(400).json({ error: 'Choose a supported reaction' });
+  let client;
   try {
-    const msg = await pool.query('SELECT conversation_id FROM messages WHERE id = $1', [req.params.id]);
-    if (msg.rows.length === 0) return res.status(404).json({ error: 'Message not found' });
-    const conv = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [msg.rows[0].conversation_id, req.user.id]);
-    if (conv.rows.length === 0) return res.status(403).json({ error: 'Not a participant' });
-    // Toggle: if exists, remove; else, add
-    const existing = await pool.query('SELECT id FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3', [req.params.id, req.user.id, emoji]);
-    const broadcastReactions = async () => {
-      try {
-        const rr = await pool.query(
-          `SELECT mr.emoji, mr.user_id, u.full_name AS user_name
-           FROM message_reactions mr JOIN users u ON u.id = mr.user_id WHERE mr.message_id = $1`,
-          [req.params.id]
-        );
-        emitToUsers([conv.rows[0].buyer_id, conv.rows[0].seller_id], {
-          type: 'message_reactions',
-          conversationId: msg.rows[0].conversation_id,
-          messageId: req.params.id,
-          reactions: rr.rows.map(r => ({ emoji: r.emoji, userId: r.user_id, userName: r.user_name })),
-        });
-      } catch { /* best-effort */ }
-    };
-    if (existing.rows.length > 0) {
-      await pool.query('DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3', [req.params.id, req.user.id, emoji]);
-      await broadcastReactions();
-      return res.json({ action: 'removed', emoji });
+    client = await pool.connect();
+    await client.query('BEGIN');
+    // Serialize updates for this message so a person's previous reaction is
+    // replaced atomically, including when they react from two devices at once.
+    const msg = await client.query('SELECT conversation_id FROM messages WHERE id = $1 FOR UPDATE', [req.params.id]);
+    if (msg.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Message not found' });
     }
-    await pool.query('INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)', [req.params.id, req.user.id, emoji]);
-    await broadcastReactions();
-    res.json({ action: 'added', emoji });
+    const conv = await client.query(
+      'SELECT buyer_id, seller_id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [msg.rows[0].conversation_id, req.user.id]
+    );
+    if (conv.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Not a participant' });
+    }
+
+    const existing = await client.query(
+      'SELECT id, emoji FROM message_reactions WHERE message_id = $1 AND user_id = $2 FOR UPDATE',
+      [req.params.id, req.user.id]
+    );
+    let action;
+    if (existing.rows[0]?.emoji === emoji) {
+      await client.query('DELETE FROM message_reactions WHERE id = $1', [existing.rows[0].id]);
+      action = 'removed';
+    } else if (existing.rows.length > 0) {
+      await client.query('UPDATE message_reactions SET emoji = $1, created_at = CURRENT_TIMESTAMP WHERE id = $2', [emoji, existing.rows[0].id]);
+      action = 'changed';
+    } else {
+      await client.query('INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)', [req.params.id, req.user.id, emoji]);
+      action = 'added';
+    }
+    const rr = await client.query(
+      `SELECT mr.emoji, mr.user_id, u.full_name AS user_name
+       FROM message_reactions mr JOIN users u ON u.id = mr.user_id WHERE mr.message_id = $1`,
+      [req.params.id]
+    );
+    await client.query('COMMIT');
+    const reactions = rr.rows.map(r => ({ emoji: r.emoji, userId: r.user_id, userName: r.user_name }));
+    emitToUsers([conv.rows[0].buyer_id, conv.rows[0].seller_id], {
+      type: 'message_reactions',
+      conversationId: msg.rows[0].conversation_id,
+      messageId: req.params.id,
+      reactions,
+    });
+    res.json({ action, emoji, reactions });
   } catch (err) {
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch { /* transaction may already be closed */ }
+    }
     console.error('Reaction error:', err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client?.release();
   }
 });
 

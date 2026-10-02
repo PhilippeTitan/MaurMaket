@@ -409,6 +409,17 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
         </View>
 
         <View style={styles.contentSheet}>
+          {product.paused_reason === 'tier_cap' && (
+            <View style={styles.tierCapBanner}>
+              <MaterialCommunityIcons name="clock-alert-outline" size={20} color={COLORS.yellow} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.tierCapTitle}>Temporarily Unavailable</Text>
+                <Text style={styles.tierCapMsg}>
+                  This listing is temporarily paused due to seller plan listing limits. You can explore available listings from this seller below.
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* ── Seller row ── */}
           {product.seller && (
@@ -740,6 +751,27 @@ const styles = StyleSheet.create({
   dotActive: { backgroundColor: COLORS.white, width: 16 },
 
   /* Content sheet — scrolls over hero */
+  tierCapBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(234, 179, 8, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.35)',
+    borderRadius: RADIUS.card,
+    padding: 12,
+    marginBottom: SPACING.md,
+  },
+  tierCapTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.yellow,
+  },
+  tierCapMsg: {
+    fontSize: 12,
+    color: COLORS.text2,
+    lineHeight: 16,
+  },
   contentSheet: {
     backgroundColor: COLORS.bg,
     borderTopLeftRadius: 16,

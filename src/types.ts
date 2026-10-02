@@ -28,6 +28,24 @@ export interface User {
   sales_count?: number;
   pending_dob?: boolean;
   taste_onboarding_completed?: boolean;
+  store_description?: string | null;
+  store_service_area?: string | null;
+  store_category?: string | null;
+  show_public_city?: boolean;
+  hide_follower_lists?: boolean;
+  hide_follower_counts?: boolean;
+  language?: string;
+  pinned_product_id?: string | null;
+  pinned_product?: {
+    id: string;
+    name: string;
+    price: number;
+    is_available: boolean;
+    condition?: string;
+    image_url?: string | null;
+  } | null;
+  followers_count?: number | null;
+  following_count?: number | null;
 }
 
 export interface ProductImage {
@@ -38,6 +56,18 @@ export interface ProductImage {
   display_order: number;
   image_width?: number;
   image_height?: number;
+}
+
+export interface ProductVariant {
+  id: string;
+  product_id: string;
+  options: Record<string, string>;
+  option_label: string;
+  price: number;
+  stock: number;
+  sku: string | null;
+  display_order: number;
+  is_active: boolean;
 }
 
 export interface Product {
@@ -56,6 +86,8 @@ export interface Product {
   sale_ends_at: string | null;
   effective_price: number;
   is_on_sale: boolean;
+  paused_reason?: 'tier_cap' | 'seller_manual' | 'out_of_stock' | null;
+  is_pinned?: boolean;
   discount_pct: number;
   images?: ProductImage[];
   seller?: User;
@@ -67,6 +99,55 @@ export interface Product {
   is_liked?: boolean;
   is_wishlisted?: boolean;
   recommendation_reason?: string;
+  condition?: 'new' | 'like_new' | 'good' | 'fair' | 'for_parts' | null;
+  flaw_notes?: string | null;
+  sku?: string | null;
+  offers_enabled?: boolean;
+  language_label?: string | null;
+  listing_status?: 'active' | 'pending_review' | 'rejected';
+  moderation_reason?: string | null;
+  appeal_note?: string | null;
+  has_variants?: boolean;
+  attrs?: Record<string, string> | null;
+  meetup_enabled?: boolean | null;
+  delivery_enabled?: boolean | null;
+  low_stock_threshold?: number | null;
+  variants?: ProductVariant[];
+}
+
+export interface ListingDraft {
+  id: string;
+  seller_id: string;
+  data: Partial<ListingForm>;
+  source_product_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListingForm {
+  name: string;
+  description: string;
+  categoryId: string | null;
+  condition: 'new' | 'like_new' | 'good' | 'fair' | 'for_parts' | '';
+  flawNotes: string;
+  sku: string;
+  attrs: Record<string, string>;
+  languageLabel: string;
+  images: string[];
+  price: string;
+  stock: string;
+  salePrice: string;
+  saleEndDate: string;
+  clearSale: boolean;
+  offersEnabled: boolean;
+  meetupEnabled: boolean | null;
+  deliveryEnabled: boolean | null;
+  lowStockThreshold: string;
+  hasVariants: boolean;
+  variantDims: Array<{ name: string; values: string[] }>;
+  variants: Array<{ options: Record<string, string>; price: string; stock: string; sku: string }>;
+  fulfillPickup: boolean;
+  fulfillDelivery: boolean;
 }
 
 export interface Category {
@@ -89,6 +170,9 @@ export interface CartItem {
   store_name?: string | null;
   stock: number;
   acceptedOfferMessageId?: string;
+  variantId?: string | null;
+  variantLabel?: string | null;
+  variantOptions?: Record<string, string> | null;
 }
 
 export interface OrderItem {
@@ -98,6 +182,10 @@ export interface OrderItem {
   seller_id: string;
   quantity: number;
   price: number;
+  variant_id?: string | null;
+  variant_label?: string | null;
+  product_name?: string | null;
+  product_image?: string | null;
   product?: Product;
 }
 
@@ -116,6 +204,7 @@ export interface Order {
   meetup_lat: number | null;
   meetup_lng: number | null;
   meetup_address: string | null;
+  meetup_scheduled_at?: string | null;
   meetup_note: string | null;
   meetup_confirmed: boolean;
   meetup_proposed_by: string | null;
@@ -130,6 +219,8 @@ export interface Order {
   item_count?: number;
   first_product_name?: string;
   product_image?: string | null;
+  seller_snapshot_name?: string | null;
+  seller_snapshot_logo_url?: string | null;
 }
 
 export interface OrderEvent {
@@ -155,6 +246,12 @@ export interface Review {
   is_edited: boolean;
   created_at: string;
   reviewer?: User;
+  reviewer_name?: string;
+  reviewer_avatar?: string | null;
+  reviewer_username?: string | null;
+  is_verified_purchase?: boolean;
+  is_transaction_level?: boolean;
+  updated_at?: string;
 }
 
 export interface Notification {
@@ -163,9 +260,42 @@ export interface Notification {
   type: string;
   title: string;
   body: string | null;
-  data: Record<string, unknown> | null;
+  data: Record<string, any> | null;
   is_read: boolean;
   created_at: string;
+  dismissed_from_feed?: boolean;
+  action_required?: boolean;
+  action_resolved?: boolean;
+  action_deadline?: string | null;
+  group_key?: string | null;
+  is_group?: boolean;
+  group_count?: number;
+  group_items?: Notification[];
+}
+
+export interface NotificationPreferences {
+  categories: {
+    security_account?: 'push_now';
+    orders_payments?: 'push_now';
+    meetups?: 'push_now';
+    disputes?: 'push_now';
+    inventory_alerts?: 'push_now';
+    follows?: 'push_now' | 'daily_summary' | 'in_app';
+    offers?: 'push_now' | 'daily_summary' | 'in_app';
+    reviews?: 'push_now' | 'daily_summary' | 'in_app';
+    seller_updates?: 'push_now' | 'daily_summary' | 'in_app';
+    marketing_promos?: 'push_now' | 'in_app' | 'off';
+  };
+  quiet_hours: {
+    enabled: boolean;
+    start: string;
+    end: string;
+    days: 'all' | 'weekdays' | 'weekends';
+  };
+  snooze_until: string | null;
+  daily_summary_time: string;
+  hide_sensitive_previews: boolean;
+  muted_seller_ids: string[];
 }
 
 export interface Conversation {
@@ -273,9 +403,20 @@ export interface SellerProfile {
   review_count: number;
   username: string | null;
   show_real_name: boolean;
+  show_public_city?: boolean;
+  hide_follower_lists?: boolean;
+  hide_follower_counts?: boolean;
+  followers_count?: number | null;
+  following_count?: number | null;
+  role?: string;
   location_city: string | null;
   natcash_phone: string | null;
   accepted_payment_methods: string[] | null;
+  store_description?: string | null;
+  store_service_area?: string | null;
+  store_category?: string | null;
+  pinned_product_id?: string | null;
+  pinned_product?: any;
 }
 
 export interface PromoCode {
@@ -288,4 +429,40 @@ export interface PromoCode {
   uses_count: number;
   valid_until: string | null;
   is_active: boolean;
+}
+
+
+export interface RatingBreakdown {
+  5: number;
+  4: number;
+  3: number;
+  2: number;
+  1: number;
+}
+
+export interface SellerReviewStats {
+  avg_rating: number;
+  review_count: number;
+  breakdown: RatingBreakdown;
+}
+
+export interface BlockedUser {
+  id: string;
+  full_name: string;
+  username: string | null;
+  avatar_url: string | null;
+  store_name: string | null;
+  store_logo_url: string | null;
+  seller_tier: string;
+  use_store_identity: boolean;
+  blocked_at: string;
+}
+
+export interface UserReportPayload {
+  targetType: 'profile' | 'review' | 'reply' | 'order';
+  targetId: string;
+  reportedUserId?: string;
+  reason: string;
+  details?: string;
+  orderContext?: any;
 }

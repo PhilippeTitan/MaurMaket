@@ -36,6 +36,24 @@ export function routeNotification(nav: Nav, type: string, data: Record<string, a
       else nav.navigate('Orders');
       break;
 
+    // ── Checkout meetup negotiation ──
+    case 'fulfillment_proposed':
+      nav.navigate('SellerToolsSettings');
+      break;
+    case 'fulfillment_accepted':
+    case 'fulfillment_rejected':
+    case 'fulfillment_countered':
+      if (data?.pendingId) nav.navigate('MeetupProposal', { pendingId: data.pendingId });
+      else nav.navigate('Orders');
+      break;
+    case 'fulfillment_expired':
+      if (data?.pendingId) nav.navigate('MeetupProposal', { pendingId: data.pendingId });
+      else nav.navigate('Orders');
+      break;
+    case 'fulfillment_proposal_expired':
+      nav.navigate('SellerToolsSettings');
+      break;
+
     // ── Escrow / Payout ──
     case 'escrow_refunded':
     case 'payout_failed':

@@ -51,7 +51,7 @@ const TIER_CONFIG: Record<Tier, {
 
 export default function AnimatedTierRing({ tier, size, ringWidth, animated = true }: AnimatedTierRingProps) {
   const config = TIER_CONFIG[tier];
-  const rw = ringWidth ?? Math.max(3, Math.round(size * 0.14));
+  const rw = ringWidth ?? Math.max(3, Math.round(size * 0.06));
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {

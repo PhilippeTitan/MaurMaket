@@ -3,8 +3,9 @@ import crypto from 'crypto';
 import { pool } from '../config/database.js';
 import { authRequired, dobRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
-import { logOrderEvent, canAccessOrder, processRefundPayout, parseNatCashSms, getCommissionRate } from '../utils/helpers.js';
+import { logOrderEvent, canAccessOrder, processRefundPayout, parseNatCashSms, getCommissionRate, populateSellerOrderSnapshot } from '../utils/helpers.js';
 import { getNatCashAccess } from '../utils/natcashAccess.js';
+import { applyStockSideEffects } from '../utils/listingPolicy.js';
 
 const router = Router();
 
@@ -61,26 +62,30 @@ async function createNatCashHandoffOrder(client, checkoutId) {
   if (!agreements.rows.length || agreements.rows.some(row => row.status !== 'accepted' || !row.terms_locked_at)) return null;
   if (agreements.rows.some(row => row.terms?.method !== 'meetup')) throw new Error('NatCash handoff orders require every seller to agree to an in-person meetup');
   const created = await client.query(
-    `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
-     VALUES ($1,$2,'pending','natcash','meetup',$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-    [checkout.user_id, checkout.total_amount, checkout.delivery_name, checkout.delivery_phone, checkout.delivery_address, checkout.delivery_city, checkout.delivery_note, checkout.meetup_lat, checkout.meetup_lng, checkout.meetup_address, checkout.meetup_name]
+    `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, meetup_scheduled_at)
+     VALUES ($1,$2,'pending','natcash','meetup',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+    [checkout.user_id, checkout.total_amount, checkout.delivery_name, checkout.delivery_phone, checkout.delivery_address, checkout.delivery_city, checkout.delivery_note, checkout.meetup_lat, checkout.meetup_lng, checkout.meetup_address, checkout.meetup_name, checkout.meetup_at]
   );
   const orderId = created.rows[0].id;
   for (const item of checkout.cart_data) {
     const productId = item.id || item.productId;
-    const product = await client.query('SELECT seller_id FROM products WHERE id = $1', [productId]);
+    const product = await client.query('SELECT seller_id, name FROM products WHERE id = $1', [productId]);
     if (!product.rows[0]) throw new Error(`Product ${productId} is no longer available`);
     await client.query(
-      'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1,$2,$3,$4,$5)',
-      [orderId, productId, product.rows[0].seller_id, item.quantity || 1, item.price || 0]
+      `INSERT INTO order_items (order_id, product_id, seller_id, quantity, price, variant_id, variant_label, product_name, product_image)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [orderId, productId, product.rows[0].seller_id, item.quantity || 1, item.price || 0,
+       item.variantId || null, item.variantLabel || null,
+       item.product_name || product.rows[0].name, item.product_image || null]
     );
   }
+  await populateSellerOrderSnapshot(client, orderId);
   for (const agreement of agreements.rows) {
     const term = agreement.terms || {};
     await client.query(
-      `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, seller_accepted_at, terms_locked_at)
-       VALUES ($1,$2,'pending','pending','natcash','meetup',$3,$4,$5,$6,$7,'locked',$8,$9,$10) ON CONFLICT (order_id,seller_id) DO NOTHING`,
-      [orderId, agreement.seller_id, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, agreement.buyer_accepted_at, agreement.seller_accepted_at, agreement.terms_locked_at]
+      `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, seller_accepted_at, terms_locked_at, meetup_at)
+       VALUES ($1,$2,'pending','pending','natcash','meetup',$3,$4,$5,$6,$7,'locked',$8,$9,$10,$11) ON CONFLICT (order_id,seller_id) DO NOTHING`,
+      [orderId, agreement.seller_id, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, agreement.buyer_accepted_at, agreement.seller_accepted_at, agreement.terms_locked_at, term.meetupAt || null]
     );
   }
   await client.query(
@@ -124,22 +129,29 @@ async function activateNatCashSellerPayment(client, legacySession, transcode) {
   }
   if (!orderId) {
     const createdOrder = await client.query(
-      `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
-       VALUES ($1,$2,'partially_paid','natcash',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-      [checkout.user_id, checkout.total_amount, checkout.delivery_method, checkout.delivery_name, checkout.delivery_phone, checkout.delivery_address, checkout.delivery_city, checkout.delivery_note, checkout.meetup_lat, checkout.meetup_lng, checkout.meetup_address, checkout.meetup_name]
+      `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, meetup_scheduled_at)
+       VALUES ($1,$2,'partially_paid','natcash',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+      [checkout.user_id, checkout.total_amount, checkout.delivery_method, checkout.delivery_name, checkout.delivery_phone, checkout.delivery_address, checkout.delivery_city, checkout.delivery_note, checkout.meetup_lat, checkout.meetup_lng, checkout.meetup_address, checkout.meetup_name, checkout.meetup_at]
     );
     orderId = createdOrder.rows[0].id;
     for (const item of checkout.cart_data) {
-      const product = await client.query('SELECT seller_id FROM products WHERE id = $1', [item.id || item.productId]);
-      if (product.rows[0]) await client.query('INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1,$2,$3,$4,$5)', [orderId, item.id || item.productId, product.rows[0].seller_id, item.quantity || 1, item.price || 0]);
+      const product = await client.query('SELECT seller_id, name FROM products WHERE id = $1', [item.id || item.productId]);
+      if (product.rows[0]) await client.query(
+        `INSERT INTO order_items (order_id, product_id, seller_id, quantity, price, variant_id, variant_label, product_name, product_image)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [orderId, item.id || item.productId, product.rows[0].seller_id, item.quantity || 1, item.price || 0,
+         item.variantId || null, item.variantLabel || null,
+         item.product_name || product.rows[0].name, item.product_image || null]
+      );
     }
+    await populateSellerOrderSnapshot(client, orderId);
     const locked = await client.query("SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND status = 'accepted' AND terms_locked_at IS NOT NULL", [checkout.id]);
     for (const row of locked.rows) {
       const lockedTerm = row.terms;
       await client.query(
-        `INSERT INTO seller_fulfillments (order_id,seller_id,payment_status,fulfillment_status,payment_method,fulfillment_method,delivery_fee,fulfillment_lat,fulfillment_lng,fulfillment_address,fulfillment_note,agreement_status,buyer_accepted_at,seller_accepted_at,terms_locked_at)
-         VALUES ($1,$2,'pending','pending','natcash',$3,$4,$5,$6,$7,$8,'locked',$9,$10,$11) ON CONFLICT (order_id,seller_id) DO NOTHING`,
-        [orderId,row.seller_id,lockedTerm.method,Number(lockedTerm.deliveryFee || 0),lockedTerm.location?.lat || null,lockedTerm.location?.lng || null,lockedTerm.location?.address || null,lockedTerm.location?.note || null,row.buyer_accepted_at,row.seller_accepted_at,row.terms_locked_at]
+        `INSERT INTO seller_fulfillments (order_id,seller_id,payment_status,fulfillment_status,payment_method,fulfillment_method,delivery_fee,fulfillment_lat,fulfillment_lng,fulfillment_address,fulfillment_note,agreement_status,buyer_accepted_at,seller_accepted_at,terms_locked_at,meetup_at)
+         VALUES ($1,$2,'pending','pending','natcash',$3,$4,$5,$6,$7,$8,'locked',$9,$10,$11,$12) ON CONFLICT (order_id,seller_id) DO NOTHING`,
+        [orderId,row.seller_id,lockedTerm.method,Number(lockedTerm.deliveryFee || 0),lockedTerm.location?.lat || null,lockedTerm.location?.lng || null,lockedTerm.location?.address || null,lockedTerm.location?.note || null,row.buyer_accepted_at,row.seller_accepted_at,row.terms_locked_at,lockedTerm.meetupAt || null]
       );
     }
     await client.query('UPDATE fulfillment_payment_sessions SET order_id = $1 WHERE checkout_id = $2', [orderId, checkout.id]);
@@ -187,11 +199,21 @@ function deliveryFeeFor(profile, distanceMeters) {
 async function buildFulfillmentTerms(client, cart, fulfillmentSelections) {
   const productIds = [...new Set(cart.map(item => item.id || item.productId).filter(Boolean))];
   const productRows = await client.query(
-    'SELECT id, seller_id FROM products WHERE id = ANY($1)',
+    'SELECT id, seller_id, meetup_enabled, delivery_enabled FROM products WHERE id = ANY($1)',
     [productIds]
   );
   const sellerByProduct = new Map(productRows.rows.map(row => [row.id, row.seller_id]));
   if (sellerByProduct.size !== productIds.length) throw new Error('One or more products are unavailable');
+
+  // Listing-level fulfillment flags intersect with the seller profile:
+  // NULL = follow seller setting, false = method disabled for this listing.
+  const listingSupport = new Map();
+  for (const row of productRows.rows) {
+    const support = listingSupport.get(row.seller_id) || { delivery: true, meetup: true };
+    if (row.delivery_enabled === false) support.delivery = false;
+    if (row.meetup_enabled === false) support.meetup = false;
+    listingSupport.set(row.seller_id, support);
+  }
 
   const sellerIds = [...new Set(productRows.rows.map(row => row.seller_id))];
   const profiles = await client.query(
@@ -218,8 +240,9 @@ async function buildFulfillmentTerms(client, cart, fulfillmentSelections) {
     const selection = fulfillmentSelections.find(item => item?.sellerId === sellerId);
     if (!selection || !['delivery', 'meetup'].includes(selection.method)) throw new Error('Choose delivery or meetup for every seller');
     const { method, location } = selection;
-    const enabled = method === 'delivery' ? profile.delivery_enabled : profile.meetup_enabled;
-    if (!enabled) throw new Error(`This seller does not offer ${method}`);
+    const profileEnabled = method === 'delivery' ? profile.delivery_enabled : profile.meetup_enabled;
+    const listingOk = (listingSupport.get(sellerId) || { delivery: true, meetup: true })[method];
+    if (!profileEnabled || !listingOk) throw new Error(`This seller does not offer ${method} for every item in your cart`);
     if (profile.lat == null || profile.lng == null) throw new Error('This seller has not configured a fulfillment location yet');
     if (!location || !Number.isFinite(Number(location.lat)) || !Number.isFinite(Number(location.lng))) {
       throw new Error('A precise buyer location is required to calculate fulfillment eligibility');
@@ -232,7 +255,11 @@ async function buildFulfillmentTerms(client, cart, fulfillmentSelections) {
       ? deliveryFeeFor(profile, distanceMeters ?? 0)
       : 0;
     if (fee === null) throw new Error('This delivery address is outside the seller’s delivery pricing area');
-    terms.push({ sellerId, method, deliveryFee: fee, distanceMeters, location: { lat: Number(location.lat), lng: Number(location.lng), address: location.address || null, note: location.note || null } });
+    const meetupAt = method === 'meetup' ? new Date(selection.meetupAt || location.meetupAt || NaN) : null;
+    if (method === 'meetup' && (!Number.isFinite(meetupAt?.getTime()) || meetupAt.getTime() <= Date.now())) {
+      throw new Error('Choose a future meetup date and time');
+    }
+    terms.push({ sellerId, method, deliveryFee: fee, distanceMeters, meetupAt: meetupAt?.toISOString() || null, location: { lat: Number(location.lat), lng: Number(location.lng), address: location.address || null, note: location.note || null } });
   }
   return terms;
 }
@@ -264,8 +291,8 @@ router.get('/orders/:id', authRequired, async (req, res) => {
     const order = await canAccessOrder(req.user.id, req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     const items = await pool.query(
-      `SELECT oi.*, p.name AS product_name, p.price AS product_price,
-              pi.image_url AS product_image
+      `SELECT oi.*, COALESCE(oi.product_name, p.name) AS product_name, p.price AS product_price,
+              COALESCE(oi.product_image, pi.image_url) AS product_image
        FROM order_items oi
        JOIN products p ON oi.product_id = p.id
        LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = true
@@ -354,7 +381,7 @@ router.get('/orders', authRequired, async (req, res) => {
     const buyerOrders = await pool.query(
       `SELECT * FROM (
         SELECT DISTINCT ON (o.id) o.*,
-                u.full_name AS seller_name, u.phone AS seller_phone, u.natcash_phone,
+                COALESCE(o.seller_snapshot_name, u.full_name) AS seller_name, o.seller_snapshot_logo_url, u.phone AS seller_phone, u.natcash_phone,
                 'buyer' AS my_role,
                 (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) AS item_count,
                 (SELECT p.name FROM order_items oi2 JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
@@ -399,15 +426,19 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
     // Never trust client prices or seller ids in checkout snapshots. Accepted
     // offers are checked against the exact product, buyer, quantity and expiry.
     const normalizedCart = [];
-    const seenProductIds = new Set();
+    const seenKeys = new Set();
     for (const item of cart) {
       const productId = item.id || item.productId;
       const quantity = Number(item.quantity || 1);
       if (!productId || !/^[0-9a-f-]{36}$/i.test(productId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
         return res.status(400).json({ error: 'Each cart item needs a valid product and quantity' });
       }
-      if (seenProductIds.has(productId)) return res.status(400).json({ error: 'A product can only appear once in the cart' });
-      seenProductIds.add(productId);
+      if (item.variantId != null && !/^[0-9a-f-]{36}$/i.test(item.variantId)) {
+        return res.status(400).json({ error: 'Invalid product option' });
+      }
+      const itemKey = `${productId}::${item.variantId || ''}`;
+      if (seenKeys.has(itemKey)) return res.status(400).json({ error: 'Each listing option can only appear once in the cart' });
+      seenKeys.add(itemKey);
       const productResult = await pool.query(
         `SELECT id, seller_id, name, price, sale_price, sale_starts_at, sale_ends_at, stock, is_available
          FROM products WHERE id = $1`, [productId]
@@ -415,7 +446,22 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
       const product = productResult.rows[0];
       if (!product || !product.is_available) return res.status(409).json({ error: 'A listing in your cart is no longer available' });
       if (product.seller_id === req.user.id) return res.status(400).json({ error: 'You cannot purchase your own product' });
-      if (Number(product.stock) < quantity) return res.status(409).json({ error: `Insufficient stock for "${product.name}"` });
+
+      let variantRow = null;
+      if (item.variantId) {
+        const vr = await pool.query(
+          'SELECT id, product_id, option_label, price, stock FROM product_variants WHERE id = $1',
+          [item.variantId]
+        );
+        variantRow = vr.rows[0];
+        if (!variantRow || variantRow.product_id !== product.id) {
+          return res.status(400).json({ error: 'Invalid product option' });
+        }
+      }
+
+      const availableStock = variantRow ? Number(variantRow.stock) : Number(product.stock);
+      const stockLabel = variantRow ? ` (${variantRow.option_label})` : '';
+      if (availableStock < quantity) return res.status(409).json({ error: `Insufficient stock for "${product.name}"${stockLabel}` });
       let price;
       if (item.acceptedOfferMessageId) {
         if (typeof item.acceptedOfferMessageId !== 'string' || !/^[0-9a-f-]{36}$/i.test(item.acceptedOfferMessageId)) {
@@ -431,6 +477,13 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
         );
         if (!acceptedOffer.rows.length) return res.status(409).json({ error: 'This accepted offer is no longer valid for the selected quantity' });
         price = Number(acceptedOffer.rows[0].offered_price);
+      } else if (variantRow) {
+        // Variant listings never carry a sale price, so the variant price is final.
+        price = Number(variantRow.price);
+        const clientPrice = Number(item.effective_price ?? item.price);
+        if (!Number.isFinite(clientPrice) || Math.round(clientPrice * 100) !== Math.round(price * 100)) {
+          return res.status(409).json({ error: `The price for "${product.name}"${stockLabel} changed. Refresh your cart and review the new total.` });
+        }
       } else {
         const saleActive = product.sale_price && (!product.sale_starts_at || new Date(product.sale_starts_at) <= new Date()) && (!product.sale_ends_at || new Date(product.sale_ends_at) >= new Date());
         price = Number(saleActive ? product.sale_price : product.price);
@@ -439,7 +492,23 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
           return res.status(409).json({ error: `The price for "${product.name}" changed. Refresh your cart and review the new total.` });
         }
       }
-      normalizedCart.push({ ...item, id: product.id, productId: product.id, name: product.name, seller_id: product.seller_id, quantity, price });
+      const imageRes = await pool.query(
+        'SELECT image_url FROM product_images WHERE product_id = $1 ORDER BY is_primary DESC, display_order ASC LIMIT 1',
+        [product.id]
+      );
+      normalizedCart.push({
+        ...item,
+        id: product.id,
+        productId: product.id,
+        name: product.name,
+        seller_id: product.seller_id,
+        quantity,
+        price,
+        variantId: variantRow ? variantRow.id : null,
+        variantLabel: variantRow ? variantRow.option_label : null,
+        product_name: product.name,
+        product_image: item.product_image || imageRes.rows[0]?.image_url || null,
+      });
     }
     // `fulfillmentSelections` is authoritative.  The legacy order-wide fields
     // below are retained only to render historic orders during the migration.
@@ -482,15 +551,16 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
         ? Math.min(merchandiseTotal * Number(promo.discount_value) / 100, Number(promo.discount_value) * 10)
         : Math.min(merchandiseTotal, Number(promo.discount_value));
     }
+    const meetupAt = fulfillmentTerms.find(term => term.method === 'meetup')?.meetupAt || null;
     const result = await pool.query(
-      `INSERT INTO pending_checkouts (user_id, cart_data, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, payment_method, promo_code, total_amount, fulfillment_terms)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
-      [req.user.id, JSON.stringify(normalizedCart), deliveryMethod, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null, meetupLat || null, meetupLng || null, meetupAddress || null, meetupName || null, paymentMethod || 'moncash', promoCode || null, Math.max(0, merchandiseTotal - checkoutDiscount) + fulfillmentFee, JSON.stringify(fulfillmentTerms)]
+      `INSERT INTO pending_checkouts (user_id, cart_data, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, payment_method, promo_code, total_amount, fulfillment_terms, expires_at, meetup_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP + INTERVAL '24 hours', $17) RETURNING id`,
+      [req.user.id, JSON.stringify(normalizedCart), deliveryMethod, deliveryName || null, deliveryPhone || null, deliveryAddress || null, deliveryCity || null, deliveryNote || null, meetupLat || null, meetupLng || null, meetupAddress || null, meetupName || null, paymentMethod || 'moncash', promoCode || null, Math.max(0, merchandiseTotal - checkoutDiscount) + fulfillmentFee, JSON.stringify(fulfillmentTerms), meetupAt]
     );
     const pendingId = result.rows[0].id;
 
     // Reserve stock for each item — ALL-OR-NOTHING in a single transaction
-    const reservationExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30min, matches checkout expiry
+    const reservationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // negotiated proposal window
     const stockClient = await pool.connect();
     try {
       await stockClient.query('BEGIN');
@@ -531,6 +601,14 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
           await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [pendingId]);
           return res.status(400).json({ error: `Insufficient stock for "${item.name || productId}"` });
         }
+        if (item.variantId) {
+          const variantCheck = await stockClient.query('SELECT stock FROM product_variants WHERE id = $1 AND product_id = $2 FOR UPDATE', [item.variantId, productId]);
+          if (variantCheck.rows.length === 0 || variantCheck.rows[0].stock < (item.quantity || 1)) {
+            await stockClient.query('ROLLBACK');
+            await pool.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [pendingId]);
+            return res.status(400).json({ error: `Insufficient stock for "${item.name || productId}"${item.variantLabel ? ` (${item.variantLabel})` : ''}` });
+          }
+        }
       }
 
       // All stock valid — decrement and create reservations (with seller_id for per-seller expiry)
@@ -538,13 +616,16 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
         const productId = item.id || item.productId;
         if (!productId) continue;
         await stockClient.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [item.quantity || 1, productId]);
+        if (item.variantId) {
+          await stockClient.query('UPDATE product_variants SET stock = stock - $1 WHERE id = $2', [item.quantity || 1, item.variantId]);
+        }
         // Fetch seller_id for per-seller NatCash stock release
         const sellerRes = await stockClient.query('SELECT seller_id FROM products WHERE id = $1', [productId]);
         const sellerId = sellerRes.rows[0]?.seller_id || null;
         await stockClient.query(
-          `INSERT INTO stock_reservations (checkout_id, product_id, quantity, expires_at, status, seller_id)
-           VALUES ($1, $2, $3, $4, 'active', $5)`,
-          [pendingId, productId, item.quantity || 1, reservationExpiry, sellerId]
+          `INSERT INTO stock_reservations (checkout_id, product_id, quantity, expires_at, status, seller_id, variant_id)
+           VALUES ($1, $2, $3, $4, 'active', $5, $6)`,
+          [pendingId, productId, item.quantity || 1, reservationExpiry, sellerId, item.variantId || null]
         );
       }
 
@@ -562,9 +643,13 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
     // the terms the buyer just accepted. This is the agreement gate.
     for (const term of fulfillmentTerms) {
       await pool.query(
-        `INSERT INTO pending_fulfillment_agreements (checkout_id, seller_id, terms)
-         VALUES ($1, $2, $3) ON CONFLICT (checkout_id, seller_id) DO NOTHING`,
-        [pendingId, term.sellerId, JSON.stringify(term)]
+        `INSERT INTO pending_fulfillment_agreements (checkout_id, seller_id, terms, last_proposed_by, response_expires_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '24 hours') ON CONFLICT (checkout_id, seller_id) DO NOTHING`,
+        [pendingId, term.sellerId, JSON.stringify(term), req.user.id]
+      );
+      await pool.query(
+        `INSERT INTO pending_fulfillment_history (checkout_id, seller_id, actor_id, action, version, terms)
+         VALUES ($1,$2,$3,'buyer_proposed',1,$4)`, [pendingId, term.sellerId, req.user.id, JSON.stringify(term)]
       );
       createNotification(term.sellerId, 'fulfillment_proposed', 'Fulfillment proposal', 'Review and accept the buyer’s delivery or meetup terms before payment.', { pendingId, sellerId: term.sellerId });
     }
@@ -594,6 +679,54 @@ router.get('/checkout/natcash-availability', authRequired, async (req, res) => {
   }
 });
 
+router.get('/checkout/popular-meetup-spots', authRequired, async (req, res) => {
+  try {
+    const sellerIds = String(req.query.sellerIds || '').split(',').filter(Boolean);
+    if (!sellerIds.length || sellerIds.length > 20 || sellerIds.some(id => !/^[0-9a-f-]{36}$/i.test(id))) return res.status(400).json({ error: 'Valid sellerIds are required' });
+    const [buyerResult, sellersResult, spotsResult] = await Promise.all([
+      pool.query('SELECT location_lat, location_lng FROM users WHERE id = $1', [req.user.id]),
+      pool.query(
+        `SELECT u.id, sl.lat, sl.lng, COALESCE(fp.meetup_radius_meters, 12000) AS radius
+         FROM users u LEFT JOIN seller_locations sl ON sl.seller_id = u.id
+         LEFT JOIN seller_fulfillment_profiles fp ON fp.seller_id = u.id WHERE u.id = ANY($1)`, [sellerIds]
+      ),
+      pool.query(`
+        WITH mutual AS (
+          SELECT c.order_id, c.seller_id, c.place_key, c.place_label,
+                 AVG(c.lat)::float AS lat, AVG(c.lng)::float AS lng
+          FROM meetup_place_confirmations c
+          JOIN seller_fulfillments sf ON sf.order_id = c.order_id AND sf.seller_id = c.seller_id
+          WHERE c.created_at >= CURRENT_TIMESTAMP - INTERVAL '90 days'
+            AND sf.fulfillment_method = 'meetup' AND sf.fulfillment_status = 'completed'
+          GROUP BY c.order_id, c.seller_id, c.place_key, c.place_label
+          HAVING COUNT(DISTINCT c.user_id) = 2
+        ), flagged AS (
+          SELECT place_key FROM meetup_place_reports
+          WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '90 days'
+          GROUP BY place_key HAVING COUNT(DISTINCT order_id) >= 2
+        )
+        SELECT m.place_key, MIN(m.place_label) AS name, AVG(m.lat)::float AS lat, AVG(m.lng)::float AS lng,
+               COUNT(DISTINCT m.order_id)::int AS completed_orders
+        FROM mutual m LEFT JOIN flagged f ON f.place_key = m.place_key
+        WHERE f.place_key IS NULL
+        GROUP BY m.place_key
+        HAVING COUNT(DISTINCT m.order_id) >= 7
+        ORDER BY COUNT(DISTINCT m.order_id) DESC LIMIT 100
+      `),
+    ]);
+    const buyer = buyerResult.rows[0];
+    const sellers = sellersResult.rows;
+    const spots = spotsResult.rows.filter(spot => {
+      if (buyer?.location_lat != null && buyer?.location_lng != null && haversineDistance(Number(buyer.location_lat), Number(buyer.location_lng), spot.lat, spot.lng) > 50000) return false;
+      return sellers.every(seller => seller.lat != null && seller.lng != null && haversineDistance(Number(seller.lat), Number(seller.lng), spot.lat, spot.lng) <= Number(seller.radius));
+    }).map(spot => ({ id: spot.place_key, name: spot.name, lat: spot.lat, lng: spot.lng, communitySignal: '7+ completed meetups in the past 90 days', label: 'Popular meetup spot' }));
+    res.json({ spots });
+  } catch (err) {
+    console.error('Popular meetup spots error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.get('/seller/fulfillment-proposals', authRequired, async (req, res) => {
   try {
     const proposals = await pool.query(
@@ -602,7 +735,7 @@ router.get('/seller/fulfillment-proposals', authRequired, async (req, res) => {
        FROM pending_fulfillment_agreements a
        JOIN pending_checkouts pc ON pc.id = a.checkout_id
        JOIN users u ON u.id = pc.user_id
-       WHERE a.seller_id = $1 AND a.status = 'proposed' AND pc.status = 'pending'
+       WHERE a.seller_id = $1 AND a.status = 'proposed' AND a.last_proposed_by IS DISTINCT FROM $1 AND pc.status = 'pending'
        ORDER BY a.created_at DESC`, [req.user.id]
     );
     res.json({ proposals: proposals.rows });
@@ -610,6 +743,194 @@ router.get('/seller/fulfillment-proposals', authRequired, async (req, res) => {
     console.error('Fulfillment proposals error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+router.get('/checkout/pending/:id/agreements', authRequired, async (req, res) => {
+  try {
+    const checkout = await pool.query('SELECT id, status, payment_method, expires_at, meetup_at, meetup_lat, meetup_lng, meetup_address, meetup_name FROM pending_checkouts WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    if (!checkout.rows[0]) return res.status(404).json({ error: 'Pending checkout not found' });
+    const agreements = await pool.query(
+      `SELECT a.*, u.full_name AS seller_name
+       FROM pending_fulfillment_agreements a JOIN users u ON u.id = a.seller_id
+       WHERE a.checkout_id = $1 ORDER BY a.created_at`, [req.params.id]
+    );
+    const history = await pool.query(
+      `SELECT seller_id, actor_id, action, version, terms, created_at FROM pending_fulfillment_history
+       WHERE checkout_id = $1 ORDER BY created_at ASC`, [req.params.id]
+    );
+    res.json({ checkout: checkout.rows[0], agreements: agreements.rows, history: history.rows });
+  } catch (err) {
+    console.error('Checkout agreement fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+async function normalizeMeetupCounter(db, checkoutId, location, meetupAt) {
+  const checkout = await db.query("SELECT cart_data FROM pending_checkouts WHERE id = $1 AND status = 'pending'", [checkoutId]);
+  if (!checkout.rows[0]) return { error: 'Pending checkout not found or expired' };
+  const current = await db.query('SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 FOR UPDATE', [checkoutId]);
+  const meetupAgreements = current.rows.filter(row => row.terms?.method === 'meetup');
+  if (!meetupAgreements.length) return { error: 'This checkout has no meetup sellers' };
+  const selections = meetupAgreements.map(row => ({
+    sellerId: row.seller_id,
+    method: 'meetup',
+    meetupAt,
+    location: { ...location, note: row.terms?.location?.note || location?.note || null },
+  }));
+  const cart = checkout.rows[0].cart_data;
+  const terms = await buildFulfillmentTerms(db, cart, selections);
+  return { terms, agreements: meetupAgreements };
+}
+
+router.post('/checkout/pending/:id/agreements/:sellerId/counter', authRequired, async (req, res) => {
+  const sellerId = req.params.sellerId;
+  if (sellerId !== req.user.id) return res.status(403).json({ error: 'Only this checkout seller can counter' });
+  const { location, meetupAt } = req.body || {};
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const row = await client.query(
+      `SELECT a.*, pc.user_id, pc.status AS checkout_status FROM pending_fulfillment_agreements a
+       JOIN pending_checkouts pc ON pc.id = a.checkout_id WHERE a.checkout_id = $1 AND a.seller_id = $2 FOR UPDATE`,
+      [req.params.id, sellerId]
+    );
+    const agreement = row.rows[0];
+    if (!agreement || agreement.checkout_status !== 'pending' || !['proposed','rejected'].includes(agreement.status) || agreement.last_proposed_by === sellerId) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This proposal can no longer be countered' });
+    }
+    if (agreement.terms?.method !== 'meetup') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Only meetup locations can be countered here' }); }
+    const inProgress = await client.query("SELECT 1 FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND status IN ('pending','processing','completed') LIMIT 1", [req.params.id]);
+    if (inProgress.rowCount) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'The meetup plan is locked while payment is in progress or complete' }); }
+    const normalized = await normalizeMeetupCounter(client, req.params.id, location, meetupAt);
+    if (normalized.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: normalized.error }); }
+    await client.query(
+      `UPDATE pending_checkouts SET meetup_lat = $1, meetup_lng = $2, meetup_address = $3, meetup_name = $4, meetup_at = $5,
+       expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours' WHERE id = $6`,
+      [location.lat, location.lng, location.address || null, location.name || null, new Date(meetupAt).toISOString(), req.params.id]
+    );
+    for (const term of normalized.terms) {
+      const currentAgreement = normalized.agreements.find(item => item.seller_id === term.sellerId);
+      const version = Number(currentAgreement.proposal_version || 1) + 1;
+      await client.query(
+        `UPDATE pending_fulfillment_agreements SET terms = $1, status = 'proposed', buyer_accepted_at = NULL,
+         seller_accepted_at = CASE WHEN seller_id = $2 THEN CURRENT_TIMESTAMP ELSE NULL END, terms_locked_at = NULL,
+         last_proposed_by = $2, proposal_version = $3, response_expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours'
+         WHERE id = $4`, [JSON.stringify(term), sellerId, version, currentAgreement.id]
+      );
+      await client.query(
+        `INSERT INTO pending_fulfillment_history (checkout_id, seller_id, actor_id, action, version, terms)
+         VALUES ($1,$2,$3,'seller_countered',$4,$5)`, [req.params.id, term.sellerId, sellerId, version, JSON.stringify(term)]
+      );
+      if (term.sellerId !== sellerId) createNotification(term.sellerId, 'fulfillment_proposed', 'Meetup plan changed', 'The buyer and another seller are discussing a shared meetup change. Review and confirm the proposed location and time.', { pendingId: req.params.id, sellerId: term.sellerId });
+    }
+    await client.query("UPDATE stock_reservations SET expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours' WHERE checkout_id = $1 AND status = 'active'", [req.params.id]);
+    await client.query('COMMIT');
+    createNotification(agreement.user_id, 'fulfillment_countered', 'Meetup proposal updated', 'The seller suggested a different meetup plan. Review the new location and time.', { pendingId: req.params.id, sellerId });
+    res.json({ status: 'proposed', version, responseExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Fulfillment counter error:', err);
+    res.status(500).json({ error: err.message || 'Server error' });
+  } finally { client.release(); }
+});
+
+router.put('/checkout/pending/:id/agreements/:sellerId/buyer-decision', authRequired, async (req, res) => {
+  const { decision } = req.body || {};
+  if (!['accept','counter','cancel'].includes(decision)) return res.status(400).json({ error: 'decision must be accept, counter, or cancel' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const row = await client.query(
+      `SELECT a.*, pc.user_id, pc.status AS checkout_status FROM pending_fulfillment_agreements a
+       JOIN pending_checkouts pc ON pc.id = a.checkout_id WHERE a.checkout_id = $1 AND a.seller_id = $2 FOR UPDATE`,
+      [req.params.id, req.params.sellerId]
+    );
+    const agreement = row.rows[0];
+    if (!agreement || agreement.user_id !== req.user.id || agreement.checkout_status !== 'pending') {
+      await client.query('ROLLBACK'); return res.status(404).json({ error: 'Pending proposal not found or expired' });
+    }
+    if (decision === 'cancel') {
+      await client.query("UPDATE pending_checkouts SET status = 'cancelled' WHERE id = $1", [req.params.id]);
+      const released = await client.query("UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity, variant_id", [req.params.id]);
+      for (const item of released.rows) {
+        await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
+        if (item.variant_id) await client.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [item.quantity, item.variant_id]);
+      }
+      await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [req.params.id]);
+      await client.query('COMMIT');
+      return res.json({ status: 'cancelled' });
+    }
+    if (decision === 'accept') {
+      if (agreement.last_proposed_by !== agreement.seller_id || agreement.terms?.method !== 'meetup') {
+        await client.query('ROLLBACK'); return res.status(409).json({ error: 'There is no seller meetup counter waiting for your confirmation' });
+      }
+      await client.query(
+        `UPDATE pending_fulfillment_agreements SET buyer_accepted_at = CURRENT_TIMESTAMP,
+         status = CASE WHEN seller_accepted_at IS NOT NULL THEN 'accepted' ELSE 'proposed' END,
+         terms_locked_at = CASE WHEN seller_accepted_at IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
+         last_proposed_by = $3, response_expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours'
+         WHERE checkout_id = $1 AND terms->>'method' = 'meetup'`, [req.params.id, agreement.seller_id, req.user.id]
+      );
+      const meetupAgreements = await client.query("SELECT seller_id, proposal_version, terms FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND terms->>'method' = 'meetup'", [req.params.id]);
+      for (const item of meetupAgreements.rows) {
+        await client.query(
+          `INSERT INTO pending_fulfillment_history (checkout_id, seller_id, actor_id, action, version, terms)
+           VALUES ($1,$2,$3,'buyer_accepted_counter',$4,$5)`, [req.params.id, item.seller_id, req.user.id, item.proposal_version, JSON.stringify(item.terms)]
+        );
+      }
+    }
+    if (decision === 'counter') {
+      if (agreement.terms?.method !== 'meetup' || (!['accepted','rejected'].includes(agreement.status) && agreement.last_proposed_by !== agreement.seller_id)) {
+        await client.query('ROLLBACK'); return res.status(409).json({ error: 'There is no meetup proposal waiting for a buyer counter' });
+      }
+      const paymentAttempt = await client.query(
+        "SELECT 1 FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND status IN ('pending','processing','completed') LIMIT 1",
+        [req.params.id]
+      );
+      if (paymentAttempt.rowCount) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This meetup plan is locked while payment is in progress or complete' }); }
+      const normalized = await normalizeMeetupCounter(client, req.params.id, req.body.location, req.body.meetupAt);
+      if (normalized.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: normalized.error }); }
+      await client.query(
+        `UPDATE pending_checkouts SET meetup_lat = $1, meetup_lng = $2, meetup_address = $3, meetup_name = $4, meetup_at = $5,
+         expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours' WHERE id = $6`,
+        [req.body.location.lat, req.body.location.lng, req.body.location.address || null, req.body.location.name || null, new Date(req.body.meetupAt).toISOString(), req.params.id]
+      );
+      for (const term of normalized.terms) {
+        const currentAgreement = normalized.agreements.find(item => item.seller_id === term.sellerId);
+        const version = Number(currentAgreement.proposal_version || 1) + 1;
+        await client.query(
+          `UPDATE pending_fulfillment_agreements SET terms = $1, status = 'proposed', buyer_accepted_at = CURRENT_TIMESTAMP,
+           seller_accepted_at = NULL, terms_locked_at = NULL, last_proposed_by = $2, proposal_version = $3,
+           response_expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours' WHERE id = $4`,
+          [JSON.stringify(term), req.user.id, version, currentAgreement.id]
+        );
+        await client.query(
+          `INSERT INTO pending_fulfillment_history (checkout_id, seller_id, actor_id, action, version, terms)
+           VALUES ($1,$2,$3,'buyer_countered',$4,$5)`, [req.params.id, term.sellerId, req.user.id, version, JSON.stringify(term)]
+        );
+        createNotification(term.sellerId, 'fulfillment_proposed', 'Buyer suggested a meetup change', 'Review the updated shared meetup location and time.', { pendingId: req.params.id, sellerId: term.sellerId });
+      }
+      await client.query("UPDATE pending_checkouts SET expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours' WHERE id = $1", [req.params.id]);
+      await client.query("UPDATE stock_reservations SET expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours' WHERE checkout_id = $1 AND status = 'active'", [req.params.id]);
+      await client.query(
+        `INSERT INTO pending_fulfillment_history (checkout_id, seller_id, actor_id, action, version, terms)
+         VALUES ($1,$2,$3,'buyer_countered',$4,$5)`, [req.params.id, agreement.seller_id, req.user.id, version, JSON.stringify(normalized.term)]
+      );
+    }
+    const remaining = await client.query("SELECT COUNT(*)::int AS count FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND status <> 'accepted'", [req.params.id]);
+    if (remaining.rows[0].count === 0) {
+      await client.query("UPDATE pending_checkouts SET expires_at = CURRENT_TIMESTAMP + INTERVAL '15 minutes' WHERE id = $1", [req.params.id]);
+      await client.query("UPDATE stock_reservations SET expires_at = CURRENT_TIMESTAMP + INTERVAL '15 minutes' WHERE checkout_id = $1 AND status = 'active'", [req.params.id]);
+    }
+    await client.query('COMMIT');
+    if (decision === 'counter') createNotification(agreement.seller_id, 'fulfillment_proposed', 'Buyer suggested a meetup change', 'Review the buyer’s updated meetup location and time.', { pendingId: req.params.id, sellerId: agreement.seller_id });
+    res.json({ status: decision === 'accept' ? 'accepted' : 'proposed', allAgreed: remaining.rows[0].count === 0 });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Buyer fulfillment decision error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
 });
 
 router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (req, res) => {
@@ -627,6 +948,7 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
     const agreement = proposal.rows[0];
     if (!agreement) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Fulfillment proposal not found' }); }
     if (agreement.checkout_status !== 'pending' || agreement.status !== 'proposed') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This proposal is no longer available' }); }
+    if (agreement.last_proposed_by === req.user.id) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This is your counterproposal; wait for the buyer to respond' }); }
     if (decision === 'accept' && agreement.payment_method === 'natcash') {
       const access = await getNatCashAccess(req.user.id, client);
       if (!access.entitled || !access.paymentMethodEnabled) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'NatCash access is no longer active or is turned off for new orders', code: 'NATCASH_ACCESS_REQUIRED' }); }
@@ -647,9 +969,9 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
         const locked = await client.query('SELECT * FROM pending_fulfillment_agreements WHERE id = $1', [agreement.id]);
         const term = locked.rows[0].terms;
         await client.query(
-          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, seller_accepted_at, terms_locked_at)
-           VALUES ($1,$2,'pending','pending',$3,$4,$5,$6,$7,$8,$9,'locked',$10,$11,CURRENT_TIMESTAMP) ON CONFLICT (order_id,seller_id) DO NOTHING`,
-          [existingOrder.rows[0].order_id, req.user.id, agreement.payment_method || 'moncash', term.method, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, locked.rows[0].buyer_accepted_at, locked.rows[0].seller_accepted_at]
+          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, seller_accepted_at, terms_locked_at, meetup_at)
+           VALUES ($1,$2,'pending','pending',$3,$4,$5,$6,$7,$8,$9,'locked',$10,$11,CURRENT_TIMESTAMP,$12) ON CONFLICT (order_id,seller_id) DO NOTHING`,
+          [existingOrder.rows[0].order_id, req.user.id, agreement.payment_method || 'moncash', term.method, Number(term.deliveryFee || 0), term.location?.lat || null, term.location?.lng || null, term.location?.address || null, term.location?.note || null, locked.rows[0].buyer_accepted_at, locked.rows[0].seller_accepted_at, term.meetupAt || null]
         );
         const remaining = await client.query(
           `SELECT COUNT(*)::int AS count FROM pending_fulfillment_agreements a
@@ -665,6 +987,14 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
         );
         if (remainingProposals.rows[0].count === 0) natCashOrderId = await createNatCashHandoffOrder(client, req.params.id);
       }
+    }
+    const openAgreements = await client.query(
+      "SELECT COUNT(*)::int AS count FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND status <> 'accepted'",
+      [req.params.id]
+    );
+    if (openAgreements.rows[0].count === 0) {
+      await client.query("UPDATE pending_checkouts SET expires_at = CURRENT_TIMESTAMP + INTERVAL '15 minutes' WHERE id = $1", [req.params.id]);
+      await client.query("UPDATE stock_reservations SET expires_at = CURRENT_TIMESTAMP + INTERVAL '15 minutes' WHERE checkout_id = $1 AND status = 'active'", [req.params.id]);
     }
     await client.query('COMMIT');
     createNotification(agreement.user_id, decision === 'accept' ? 'fulfillment_accepted' : 'fulfillment_rejected', decision === 'accept' ? 'Fulfillment accepted' : 'Fulfillment declined', natCashOrderId ? 'Every seller accepted. Your NatCash order is ready for its in-person meetup; payment is due when you meet.' : paymentReady ? 'This seller’s payment is ready.' : 'A seller responded to your fulfillment proposal.', { pendingId: req.params.id, sellerId: req.user.id, ...(natCashOrderId ? { orderId: natCashOrderId } : {}) });
@@ -683,6 +1013,14 @@ router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res
     const checkout = await pool.query("SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'pending'", [req.params.id, req.user.id]);
     const pc = checkout.rows[0];
     if (!pc) return res.status(404).json({ error: 'Pending checkout not found or expired' });
+    if (pc.expires_at && new Date(pc.expires_at).getTime() <= Date.now()) return res.status(410).json({ error: 'The 15-minute payment window has expired. Start checkout again to reserve these items.' });
+    const agreementReadiness = await pool.query(
+      "SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'accepted' AND terms_locked_at IS NOT NULL)::int AS locked FROM pending_fulfillment_agreements WHERE checkout_id = $1",
+      [pc.id]
+    );
+    if (!agreementReadiness.rows[0]?.total || agreementReadiness.rows[0].total !== agreementReadiness.rows[0].locked) {
+      return res.status(409).json({ error: 'All sellers must agree to the shared fulfillment plan before payment can start', code: 'FULFILLMENT_NOT_LOCKED' });
+    }
     if (pc.payment_method === 'natcash') {
       const access = await getNatCashAccess(sellerId);
       if (!access.entitled || !access.paymentMethodEnabled) return res.status(403).json({ error: 'This seller has NatCash access disabled or inactive', code: 'NATCASH_ACCESS_REQUIRED', sellerId });
@@ -738,7 +1076,7 @@ router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res
 router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, order_id, status, created_at FROM pending_checkouts WHERE id = $1 AND user_id = $2',
+      'SELECT id, order_id, status, created_at, expires_at FROM pending_checkouts WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
@@ -747,19 +1085,20 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
       `SELECT seller_id, status, buyer_accepted_at, seller_accepted_at, terms_locked_at
        FROM pending_fulfillment_agreements WHERE checkout_id = $1 ORDER BY created_at`, [pc.id]
     );
-    const age = Date.now() - new Date(pc.created_at).getTime();
-    if ((pc.status === 'pending' || pc.status === 'agreement_locked') && age > 30 * 60 * 1000) {
+    const isExpired = pc.expires_at && new Date(pc.expires_at).getTime() <= Date.now();
+    if ((pc.status === 'pending' || pc.status === 'agreement_locked') && isExpired) {
       const relClient = await pool.connect();
       try {
         await relClient.query('BEGIN');
-        await relClient.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1", [req.params.id]);
+        await relClient.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1 AND status IN ('pending','agreement_locked')", [req.params.id]);
         // Idempotent release: mark released first, then increment stock
         const released = await relClient.query(
-          "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity",
+          "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity, variant_id",
           [req.params.id]
         );
         for (const r of released.rows) {
           await relClient.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [r.quantity, r.product_id]);
+          if (r.variant_id) await relClient.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [r.quantity, r.variant_id]);
         }
         await relClient.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [req.params.id]);
         await relClient.query('COMMIT');
@@ -768,7 +1107,7 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
       } finally {
         relClient.release();
       }
-      return res.json({ status: 'expired', agreements: agreements.rows });
+      return res.json({ status: 'expired', agreements: agreements.rows, expiresAt: pc.expires_at });
     }
     if (pc.status === 'completed') {
       if (pc.order_id) return res.json({ status: 'completed', orderId: pc.order_id, agreements: agreements.rows });
@@ -778,7 +1117,7 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
       );
       return res.json({ status: 'completed', orderId: orderRes.rows[0]?.id, agreements: agreements.rows });
     }
-    res.json({ status: pc.status, agreements: agreements.rows });
+    res.json({ status: pc.status, agreements: agreements.rows, expiresAt: pc.expires_at });
   } catch (err) {
     console.error('Pending checkout status error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -897,23 +1236,26 @@ router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, r
       }
 
       const orderRes = await client.query(
-        `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name)
-         VALUES ($1, $2, 'paid', 'natcash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-        [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name]
+        `INSERT INTO orders (buyer_id, total_amount, status, payment_method, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_name, meetup_scheduled_at)
+         VALUES ($1, $2, 'paid', 'natcash', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+        [pc.user_id, totalAmount, pc.delivery_method, pc.delivery_name, pc.delivery_phone, pc.delivery_address, pc.delivery_city, pc.delivery_note, pc.meetup_lat, pc.meetup_lng, pc.meetup_address, pc.meetup_name, pc.meetup_at]
       );
       const orderId = orderRes.rows[0].id;
 
       // Create order_items with LOCKED prices from cart_data
       const sellerIds = new Set();
       for (const item of cartData) {
-        const prodRes = await client.query('SELECT seller_id FROM products WHERE id = $1', [item.productId || item.id]);
+        const prodRes = await client.query('SELECT seller_id, name FROM products WHERE id = $1', [item.productId || item.id]);
         if (prodRes.rows.length > 0) {
           const sellerId = prodRes.rows[0].seller_id;
           sellerIds.add(sellerId);
           const lockedPrice = item.price || 0;
           await client.query(
-            'INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
-            [orderId, item.productId || item.id, sellerId, item.quantity || 1, lockedPrice]
+            `INSERT INTO order_items (order_id, product_id, seller_id, quantity, price, variant_id, variant_label, product_name, product_image)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [orderId, item.productId || item.id, sellerId, item.quantity || 1, lockedPrice,
+             item.variantId || null, item.variantLabel || null,
+             item.product_name || prodRes.rows[0].name, item.product_image || null]
           );
           // Stock was already decremented at checkout creation — confirm the reservation
           await client.query(
@@ -922,15 +1264,16 @@ router.post('/checkout/pending/:id/confirm-natcash', authRequired, async (req, r
           );
         }
       }
+      await populateSellerOrderSnapshot(client, orderId);
 
       // Create seller_fulfillments for each seller
       for (const sellerId of sellerIds) {
         const term = (pc.fulfillment_terms || []).find(item => item.sellerId === sellerId);
         await client.query(
-          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference, idempotency_key, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at)
-           VALUES ($1, $2, 'verified', 'pending', 'natcash', $3, $4, $5, $6, $7, $8, $9, $10, 'proposed', CURRENT_TIMESTAMP)
+          `INSERT INTO seller_fulfillments (order_id, seller_id, payment_status, fulfillment_status, payment_method, payment_reference, idempotency_key, fulfillment_method, delivery_fee, fulfillment_lat, fulfillment_lng, fulfillment_address, fulfillment_note, agreement_status, buyer_accepted_at, meetup_at)
+           VALUES ($1, $2, 'verified', 'pending', 'natcash', $3, $4, $5, $6, $7, $8, $9, $10, 'proposed', CURRENT_TIMESTAMP, $11)
            ON CONFLICT (order_id, seller_id) DO NOTHING`,
-          [orderId, sellerId, smsData?.transcode || null, idempotencyKey, term?.method || pc.delivery_method, Number(term?.deliveryFee || 0), term?.location?.lat || null, term?.location?.lng || null, term?.location?.address || null, term?.location?.note || null]
+          [orderId, sellerId, smsData?.transcode || null, idempotencyKey, term?.method || pc.delivery_method, Number(term?.deliveryFee || 0), term?.location?.lat || null, term?.location?.lng || null, term?.location?.address || null, term?.location?.note || null, term?.meetupAt || null]
         );
       }
 
@@ -1521,7 +1864,7 @@ router.post('/orders', authRequired, dobRequired, async (req, res) => {
     const orderItems = [];
 
     for (const item of items) {
-      const prod = await client.query('SELECT id, price, sale_price, sale_starts_at, sale_ends_at, seller_id, stock FROM products WHERE id = $1 AND is_available = TRUE FOR UPDATE', [item.productId]);
+      const prod = await client.query('SELECT id, price, sale_price, sale_starts_at, sale_ends_at, seller_id, stock, name FROM products WHERE id = $1 AND is_available = TRUE FOR UPDATE', [item.productId]);
       if (prod.rows.length === 0) {
         throw new Error(`Product ${item.productId} not found or unavailable`);
       }
@@ -1532,6 +1875,14 @@ router.post('/orders', authRequired, dobRequired, async (req, res) => {
         throw new Error(`Insufficient stock for product ${item.productId}`);
       }
       const p = prod.rows[0];
+      let variant = null;
+      if (item.variantId) {
+        if (!/^[0-9a-f-]{36}$/i.test(item.variantId)) throw new Error('Invalid product option');
+        const vr = await client.query('SELECT id, product_id, option_label, price, stock FROM product_variants WHERE id = $1 FOR UPDATE', [item.variantId]);
+        variant = vr.rows[0];
+        if (!variant || variant.product_id !== p.id) throw new Error('Invalid product option');
+        if (variant.stock < (item.quantity || 1)) throw new Error(`Insufficient stock for "${p.name}" (${variant.option_label})`);
+      }
       let price;
       const offerCheck = await client.query(
         `SELECT mo.id, mo.offered_price FROM message_offers mo
@@ -1545,11 +1896,11 @@ router.post('/orders', authRequired, dobRequired, async (req, res) => {
       if (offerCheck.rows.length > 0) {
         price = parseFloat(offerCheck.rows[0].offered_price);
         // Claim against the order and redeem only after payment succeeds.
-        orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id, acceptedOfferId: offerCheck.rows[0].id });
+        orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id, acceptedOfferId: offerCheck.rows[0].id, variantId: variant?.id || null, variantLabel: variant?.option_label || null, productName: p.name });
       } else {
-        const onSale = p.sale_price && (p.sale_starts_at === null || new Date(p.sale_starts_at) <= new Date()) && (p.sale_ends_at === null || new Date(p.sale_ends_at) >= new Date());
-        price = onSale ? parseFloat(p.sale_price) : parseFloat(p.price);
-        orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id });
+        const onSale = !variant && p.sale_price && (p.sale_starts_at === null || new Date(p.sale_starts_at) <= new Date()) && (p.sale_ends_at === null || new Date(p.sale_ends_at) >= new Date());
+        price = variant ? parseFloat(variant.price) : (onSale ? parseFloat(p.sale_price) : parseFloat(p.price));
+        orderItems.push({ productId: item.productId, quantity: item.quantity || 1, price, sellerId: prod.rows[0].seller_id, variantId: variant?.id || null, variantLabel: variant?.option_label || null, productName: p.name });
       }
       total += price * (item.quantity || 1);
     }
@@ -1600,11 +1951,19 @@ router.post('/orders', authRequired, dobRequired, async (req, res) => {
     }
 
     for (const oi of orderItems) {
+      const imgRes = await client.query(
+        'SELECT image_url FROM product_images WHERE product_id = $1 ORDER BY is_primary DESC, display_order ASC LIMIT 1',
+        [oi.productId]
+      );
       await client.query(
-        `INSERT INTO order_items (order_id, product_id, seller_id, quantity, price) VALUES ($1, $2, $3, $4, $5)`,
-        [order.id, oi.productId, oi.sellerId, oi.quantity, oi.price]
+        `INSERT INTO order_items (order_id, product_id, seller_id, quantity, price, variant_id, variant_label, product_name, product_image)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [order.id, oi.productId, oi.sellerId, oi.quantity, oi.price,
+         oi.variantId || null, oi.variantLabel || null, oi.productName || null,
+         imgRes.rows[0]?.image_url || null]
       );
     }
+    await populateSellerOrderSnapshot(client, order.id);
 
     if (promoId && discountAmount > 0) {
       await client.query(
@@ -1641,11 +2000,12 @@ router.post('/orders', authRequired, dobRequired, async (req, res) => {
     for (const sid of sellerIds) {
       const notifData = { orderId: order.id };
       if (imageBySeller[sid]) notifData.image = imageBySeller[sid];
-      createNotification(sid, 'new_order', 'New order', `${buyerName} bought ${orderItems[0]?.name || 'an item'}`, notifData);
-      const lowStock = await pool.query('SELECT id, name, stock FROM products WHERE seller_id = $1 AND stock <= 3 AND is_available = true', [sid]);
-      for (const p of lowStock.rows) {
-        createNotification(sid, 'low_stock', 'Low Stock Alert', `"${p.name}" has only ${p.stock} left`, { productId: p.id });
-      }
+      createNotification(sid, 'new_order', 'New order', `${buyerName} bought ${orderItems[0]?.productName || 'an item'}`, notifData);
+    }
+    // Per-listing stock side effects (low-stock alert / out-of-stock auto-pause)
+    const touchedProducts = [...new Set(orderItems.map(i => i.productId).filter(Boolean))];
+    for (const pid of touchedProducts) {
+      try { await applyStockSideEffects(pid); } catch (e) { console.error('Stock side effects error:', e.message); }
     }
     res.status(201).json({ order, sellerInfo });
   } catch (err) {
@@ -1727,21 +2087,33 @@ router.post('/orders/:id/reorder', authRequired, async (req, res) => {
     const order = await canAccessOrder(req.user.id, req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     const items = await pool.query(
-      `SELECT oi.product_id, oi.quantity, p.name, p.price, p.stock, p.is_available, p.seller_id,
-              p.sale_price, p.sale_starts_at, p.sale_ends_at,
+      `SELECT oi.product_id, oi.quantity, oi.variant_id, oi.variant_label, p.name, p.price, p.stock, p.is_available, p.seller_id,
+              p.sale_price, p.sale_starts_at, p.sale_ends_at, p.has_variants,
+              v.id AS v_id, v.price AS v_price, v.stock AS v_stock, v.option_label AS v_label,
               (SELECT json_agg(json_build_object('id', pi.id, 'url', pi.image_url, 'is_primary', pi.is_primary, 'display_order', pi.display_order) ORDER BY pi.is_primary DESC, pi.display_order)
                FROM product_images pi WHERE pi.product_id = p.id) AS images
-       FROM order_items oi JOIN products p ON oi.product_id = p.id
+       FROM order_items oi
+       JOIN products p ON oi.product_id = p.id
+       LEFT JOIN product_variants v ON v.id = oi.variant_id
        WHERE oi.order_id = $1`,
       [req.params.id]
     );
     const availableItems = items.rows
-      .filter(item => item.is_available && item.stock > 0 && item.seller_id !== req.user.id)
+      .filter(item => item.is_available && item.seller_id !== req.user.id)
       .map(item => {
+        if (item.variant_id) {
+          // Variant orders reorder only when the exact option still exists and is in stock
+          if (!item.v_id || item.v_stock < 1) return null;
+          return { productId: item.product_id, sellerId: item.seller_id, name: item.name, price: parseFloat(item.v_price), stock: item.v_stock, images: item.images || [], variantId: item.v_id, variantLabel: item.v_label || item.variant_label };
+        }
+        // The listing has since gained variants — the original option no longer exists
+        if (item.has_variants) return null;
+        if (item.stock < 1) return null;
         const isOnSale = item.sale_price && (item.sale_starts_at === null || new Date(item.sale_starts_at) <= new Date()) && (item.sale_ends_at === null || new Date(item.sale_ends_at) >= new Date());
         const effectivePrice = isOnSale ? parseFloat(item.sale_price) : parseFloat(item.price);
         return { productId: item.product_id, sellerId: item.seller_id, name: item.name, price: effectivePrice, stock: item.stock, images: item.images || [] };
-      });
+      })
+      .filter(Boolean);
     res.json({ items: availableItems });
   } catch (err) {
     console.error('Reorder error:', err);
@@ -1806,6 +2178,65 @@ router.put('/orders/:id/meetup/confirm', authRequired, async (req, res) => {
 });
 
 // ── Meetup Check-in ───────────────────────────────────────────────────────
+
+router.post('/orders/:id/meetup/place-confirm', authRequired, async (req, res) => {
+  const { sellerId } = req.body || {};
+  if (!sellerId || !/^[0-9a-f-]{36}$/i.test(sellerId)) return res.status(400).json({ error: 'sellerId is required' });
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order || order.status !== 'completed') return res.status(409).json({ error: 'Meetup place confirmation is available after the order is completed' });
+    const fulfillment = await pool.query(
+      `SELECT fulfillment_lat, fulfillment_lng, fulfillment_address FROM seller_fulfillments
+       WHERE order_id = $1 AND seller_id = $2 AND fulfillment_method = 'meetup' AND fulfillment_status = 'completed'`,
+      [req.params.id, sellerId]
+    );
+    const place = fulfillment.rows[0];
+    if (!place?.fulfillment_lat || !place?.fulfillment_lng || !place.fulfillment_address) return res.status(409).json({ error: 'This completed seller order has no recorded meetup location' });
+    const eligible = req.user.id === order.buyer_id || req.user.id === sellerId;
+    if (!eligible) return res.status(403).json({ error: 'Only the buyer and seller can confirm this meetup place' });
+    const lat = Number(place.fulfillment_lat), lng = Number(place.fulfillment_lng);
+    const label = String(place.fulfillment_address).split(',').slice(0, 2).join(',').trim().slice(0, 160);
+    const placeKey = `${lat.toFixed(3)}|${lng.toFixed(3)}|${label.toLocaleLowerCase()}`;
+    await pool.query(
+      `INSERT INTO meetup_place_confirmations (order_id, seller_id, user_id, place_key, place_label, lat, lng)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (order_id,seller_id,user_id) DO NOTHING`,
+      [req.params.id, sellerId, req.user.id, placeKey, label, lat, lng]
+    );
+    const confirmations = await pool.query('SELECT COUNT(DISTINCT user_id)::int AS count FROM meetup_place_confirmations WHERE order_id = $1 AND seller_id = $2 AND place_key = $3', [req.params.id, sellerId, placeKey]);
+    res.json({ confirmed: true, bothConfirmed: confirmations.rows[0].count === 2, label });
+  } catch (err) {
+    console.error('Meetup place confirmation error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/orders/:id/meetup/place-report', authRequired, async (req, res) => {
+  const { sellerId, reason, details } = req.body || {};
+  if (!sellerId || !['wrong_details','not_a_meetup_place','other'].includes(reason)) return res.status(400).json({ error: 'Choose a valid map issue' });
+  if (details != null && (typeof details !== 'string' || details.length > 500)) return res.status(400).json({ error: 'Details must be 500 characters or fewer' });
+  try {
+    const order = await canAccessOrder(req.user.id, req.params.id);
+    if (!order || order.status !== 'completed' || (req.user.id !== order.buyer_id && req.user.id !== sellerId)) return res.status(403).json({ error: 'Only order participants can report a completed meetup place' });
+    const fulfillment = await pool.query(
+      `SELECT fulfillment_lat, fulfillment_lng, fulfillment_address FROM seller_fulfillments
+       WHERE order_id = $1 AND seller_id = $2 AND fulfillment_method = 'meetup' AND fulfillment_status = 'completed'`, [req.params.id, sellerId]
+    );
+    const place = fulfillment.rows[0];
+    if (!place?.fulfillment_lat || !place?.fulfillment_lng || !place.fulfillment_address) return res.status(409).json({ error: 'No meetup location is recorded for this order' });
+    const label = String(place.fulfillment_address).split(',').slice(0, 2).join(',').trim().slice(0, 160);
+    const placeKey = `${Number(place.fulfillment_lat).toFixed(3)}|${Number(place.fulfillment_lng).toFixed(3)}|${label.toLocaleLowerCase()}`;
+    await pool.query(
+      `INSERT INTO meetup_place_reports (order_id, seller_id, reporter_id, place_key, reason, details)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (order_id,seller_id,reporter_id) DO NOTHING`,
+      [req.params.id, sellerId, req.user.id, placeKey, reason, details?.trim() || null]
+    );
+    const reports = await pool.query('SELECT COUNT(DISTINCT order_id)::int AS count FROM meetup_place_reports WHERE place_key = $1 AND created_at >= CURRENT_TIMESTAMP - INTERVAL \'90 days\'', [placeKey]);
+    res.json({ reported: true, suggestionPaused: reports.rows[0].count >= 2 });
+  } catch (err) {
+    console.error('Meetup place report error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 router.post('/orders/:id/meetup/checkin', authRequired, async (req, res) => {
   const { lat, lng } = req.body;
@@ -2459,10 +2890,11 @@ router.post('/orders/:id/escrow/refund', authRequired, async (req, res) => {
     const fullyRefunded = totalRefund >= amountRemaining;
     if (fullyRefunded) {
       await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [req.params.id]);
-      const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [req.params.id]);
+      const items = await client.query('SELECT product_id, quantity, variant_id FROM order_items WHERE order_id = $1', [req.params.id]);
       for (const item of items.rows) {
         await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
         await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
+        if (item.variant_id) await client.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [item.quantity, item.variant_id]);
       }
     }
 

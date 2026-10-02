@@ -171,7 +171,9 @@ router.post('/user/set-password', authRequired, async (req, res) => {
 router.get('/user/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed FROM users WHERE id = $1`,
+      `SELECT id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed,
+              store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, language, pinned_product_id
+       FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -183,12 +185,18 @@ router.get('/user/me', authRequired, async (req, res) => {
 });
 
 router.put('/user/profile', authRequired, async (req, res) => {
-  let { fullName, email, phone, natcashPhone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng, showRealName, useStoreIdentity, acceptedPaymentMethods } = req.body;
+  let {
+    fullName, email, phone, natcashPhone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng,
+    showRealName, useStoreIdentity, acceptedPaymentMethods,
+    storeName, storeLogoUrl, storeDescription, storeServiceArea, storeCategory,
+    showPublicCity, hideFollowerLists, hideFollowerCounts, language, pinnedProductId
+  } = req.body;
   email = undefined;
   if (phone) phone = phone.replace(/^\+?509/, '').replace(/^\+/, '');
   if (natcashPhone) natcashPhone = natcashPhone.replace(/^\+?509/, '').replace(/^\+/, '');
   if (fullName && fullName.length > 100) return res.status(400).json({ error: 'Name too long (max 100 characters)' });
   if (bio && bio.length > 500) return res.status(400).json({ error: 'Bio too long (max 500 characters)' });
+  if (storeDescription && storeDescription.length > 1000) return res.status(400).json({ error: 'Store description too long (max 1000 characters)' });
   if (locationAddress && locationAddress.length > 200) return res.status(400).json({ error: 'Address too long (max 200 characters)' });
   if (locationCity && locationCity.length > 100) return res.status(400).json({ error: 'City too long (max 100 characters)' });
   try {
@@ -207,14 +215,32 @@ router.put('/user/profile', authRequired, async (req, res) => {
         location_lng = COALESCE($10, location_lng),
         show_real_name = COALESCE($11, show_real_name),
         use_store_identity = COALESCE($12, use_store_identity),
+        store_name = COALESCE($15, store_name),
+        store_logo_url = COALESCE($16, store_logo_url),
+        store_description = COALESCE($17, store_description),
+        store_service_area = COALESCE($18, store_service_area),
+        store_category = COALESCE($19, store_category),
+        show_public_city = COALESCE($20, show_public_city),
+        hide_follower_lists = COALESCE($21, hide_follower_lists),
+        hide_follower_counts = COALESCE($22, hide_follower_counts),
+        language = COALESCE($23, language),
+        pinned_product_id = CASE WHEN $24::text = 'clear' THEN NULL WHEN $24 IS NOT NULL THEN $24::uuid ELSE pinned_product_id END,
         email_verified = email_verified,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $6
        RETURNING id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,
-                 location_address, location_city, location_lat, location_lng, username, show_real_name`,
-      [fullName, email || null, phone, bio, avatarUrl, req.user.id, locationAddress || null, locationCity || null, locationLat || null, locationLng || null,
-       showRealName !== undefined ? showRealName : null, useStoreIdentity !== undefined ? useStoreIdentity : null,
-       natcashPhone || null, acceptedPaymentMethods || null]
+                 location_address, location_city, location_lat, location_lng, username, show_real_name,
+                 store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, language, pinned_product_id`,
+      [
+        fullName, email || null, phone, bio, avatarUrl, req.user.id, locationAddress || null, locationCity || null, locationLat || null, locationLng || null,
+        showRealName !== undefined ? showRealName : null, useStoreIdentity !== undefined ? useStoreIdentity : null,
+        natcashPhone || null, acceptedPaymentMethods || null,
+        storeName || null, storeLogoUrl || null, storeDescription !== undefined ? storeDescription : null,
+        storeServiceArea !== undefined ? storeServiceArea : null, storeCategory !== undefined ? storeCategory : null,
+        showPublicCity !== undefined ? showPublicCity : null, hideFollowerLists !== undefined ? hideFollowerLists : null,
+        hideFollowerCounts !== undefined ? hideFollowerCounts : null, language || null,
+        pinnedProductId !== undefined ? pinnedProductId : null
+      ]
     );
     res.json({ user: result.rows[0] });
   } catch (err) {

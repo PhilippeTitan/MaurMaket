@@ -35,7 +35,9 @@ export type RootStackParamList = {
   ProductDetail: { productId: string };
   Cart: undefined;
   Checkout: { promoCode?: string } | undefined;
-  AddListing: undefined;
+  MeetupProposal: { pendingId: string };
+  AddListing: { draftId?: string } | undefined;
+  MyListings: undefined;
   SellerOnboarding: undefined;
   Storefront: { sellerId: string; preloadedSeller?: PreloadedSeller };
   Settings: undefined;
@@ -78,6 +80,7 @@ export type RootStackParamList = {
   SellerFulfillmentSettings: undefined;
   NatCashAccess: undefined;
   PrivacySettings: undefined;
+  BlockedUsers: undefined;
   SecuritySettings: undefined;
   NotificationsSettings: undefined;
   HelpSupport: undefined;

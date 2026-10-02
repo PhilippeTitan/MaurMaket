@@ -15,7 +15,10 @@ function sellerRequired(req, res, next) {
 router.get('/api/seller/products/low-stock', authRequired, sellerRequired, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM products WHERE seller_id = $1 AND stock <= 3 AND is_available = true ORDER BY stock ASC`,
+      `SELECT * FROM products
+        WHERE seller_id = $1 AND is_available = true
+          AND stock <= COALESCE(low_stock_threshold, 3)
+        ORDER BY stock ASC`,
       [req.user.id]
     );
     res.json({ products: result.rows });

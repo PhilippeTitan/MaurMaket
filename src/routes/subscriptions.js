@@ -4,6 +4,7 @@ import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { getNatCashAccess } from '../utils/natcashAccess.js';
+import { handleBusinessUpgrade } from '../utils/tierCap.js';
 
 const router = Router();
 
@@ -164,7 +165,7 @@ router.post('/api/subscriptions/webhook', async (req, res) => {
             await client.query(`INSERT INTO seller_subscriptions (seller_id, status, started_at, expires_at, last_payment_at) VALUES ($1, 'active', CURRENT_TIMESTAMP, $2, CURRENT_TIMESTAMP)`, [sellerId, expiresAt]);
           }
           await client.query('UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['completed', orderId]);
-          await client.query(`UPDATE users SET seller_tier = 'business', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND seller_tier != 'business'`, [sellerId]);
+          await handleBusinessUpgrade(sellerId, client);
           createNotification(sellerId, 'subscription_activated', 'Business Subscription Active', `Your Business subscription is active until ${expiresAt.toLocaleDateString()}.`, {});
         }
         if (eventId) await client.query('INSERT INTO processed_events (id) VALUES ($1) ON CONFLICT DO NOTHING', [eventId]);

@@ -120,6 +120,26 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
     await store.updateQuantity(product.id, cartQty - 1);
   };
 
+  if (product.paused_reason === 'tier_cap' || (!product.is_available && !isOwnProduct)) {
+    return (
+      <View style={styles.unavailableRow}>
+        <View style={styles.unavailableBadge}>
+          <MaterialCommunityIcons name="clock-alert-outline" size={16} color={COLORS.yellow} />
+          <Text style={styles.unavailableBadgeText}>Temporarily Unavailable</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.visitSellerBtn}
+          onPress={() => navigation.navigate('Storefront', { sellerId: product.seller_id, preloadedSeller: product.seller })}
+          accessibilityRole="button"
+          accessibilityLabel="view seller store"
+        >
+          <Text style={styles.visitSellerText}>Visit Store</Text>
+          <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.white} />
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (isOwnProduct) {
     return (
       <TouchableOpacity
@@ -272,6 +292,45 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.35)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.5)',
+  },
+  unavailableRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  unavailableBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: RADIUS.card,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  unavailableBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  visitSellerBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 12,
+    borderRadius: RADIUS.card,
+    backgroundColor: COLORS.coral,
+    minHeight: 44,
+  },
+  visitSellerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.white,
   },
   ownListingText: {
     fontSize: 14,

@@ -3,8 +3,72 @@ import { pool } from '../config/database.js';
 import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { checkSubscriptionStatus } from '../utils/helpers.js';
+import {
+  checkTierCap,
+  validateListingPayload,
+  assessModeration,
+  isMaterialChange,
+  hasActiveCommitment,
+  applyStockSideEffects,
+  DEFAULT_LOW_STOCK_THRESHOLD,
+} from '../utils/listingPolicy.js';
 
 const router = Router();
+
+// Replace-all variant insert (option labels are recomputed server-side).
+async function insertVariants(client, productId, variants) {
+  await client.query('DELETE FROM product_variants WHERE product_id = $1', [productId]);
+  for (let i = 0; i < variants.length; i++) {
+    const v = variants[i];
+    const options = v.options && typeof v.options === 'object' ? v.options : {};
+    const optionLabel = Object.entries(options).map(([k, val]) => `${k}: ${val}`).join(' / ');
+    await client.query(
+      `INSERT INTO product_variants (product_id, options, option_label, price, stock, sku, display_order)
+       VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7)`,
+      [
+        productId,
+        JSON.stringify(options),
+        optionLabel,
+        parseFloat(v.price),
+        Math.max(0, parseInt(v.stock, 10) || 0),
+        v.sku || null,
+        i,
+      ]
+    );
+  }
+}
+
+// Price-drop fanout: wishlisting users are notified once per drop (saved_price
+// advances with each drop so the same cut never re-notifies). Push delivery is
+// opt-in via the price_drops notification category; the in-app record always exists.
+async function notifyPriceDrop(productId, oldPrice, newPrice) {
+  try {
+    if (isNaN(Number(newPrice)) || isNaN(Number(oldPrice))) return;
+    if (!(Number(newPrice) < Number(oldPrice))) return;
+    await pool.query(
+      `UPDATE wishlists SET saved_price = $2
+        WHERE product_id = $1 AND saved_price IS NULL`,
+      [productId, oldPrice]
+    );
+    const r = await pool.query(
+      `UPDATE wishlists SET saved_price = $2
+        WHERE product_id = $1 AND saved_price > $2
+        RETURNING user_id`,
+      [productId, Number(newPrice)]
+    );
+    for (const row of r.rows) {
+      createNotification(
+        row.user_id,
+        'price_drop',
+        'Price drop on a saved item',
+        `An item you saved dropped from G ${Number(oldPrice)} to G ${Number(newPrice)}.`,
+        { productId }
+      ).catch(() => {});
+    }
+  } catch (e) {
+    console.error('Price-drop notification error:', e.message);
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DIVERSITY RERANKER
@@ -293,6 +357,7 @@ router.get('/products', optionalAuth, async (req, res) => {
       `SELECT COUNT(*) OVER() AS total_count,
               p.id, p.name, p.description, p.price, p.stock, p.created_at, p.category_id,
               p.sale_price, p.sale_starts_at, p.sale_ends_at,
+              p.condition, p.has_variants, p.offers_enabled, p.paused_reason, p.listing_status,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END)::DECIMAL(10,2) AS effective_price,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN true ELSE false END) AS is_on_sale,
               (CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN ROUND((1 - p.sale_price / p.price) * 100) ELSE 0 END)::INTEGER AS discount_pct,
@@ -423,7 +488,8 @@ router.get('/products/:id', optionalAuth, async (req, res) => {
               COALESCE(wishlist_counts.wishlist_count, 0) AS wishlist_count,
               CASE WHEN $2::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM feed_events fe WHERE fe.product_id = p.id AND fe.user_id = $2 AND fe.event_type = 'like') THEN true ELSE false END AS is_liked,
               CASE WHEN $2::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM wishlists w WHERE w.product_id = p.id AND w.user_id = $2) THEN true ELSE false END AS is_wishlisted,
-              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary, 'image_width', pi.image_width, 'image_height', pi.image_height) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images
+              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary, 'image_width', pi.image_width, 'image_height', pi.image_height) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images,
+              (SELECT json_agg(json_build_object('id', pv.id, 'options', pv.options, 'option_label', pv.option_label, 'price', pv.price, 'stock', pv.stock, 'sku', pv.sku, 'display_order', pv.display_order, 'is_active', pv.is_active) ORDER BY pv.display_order ASC) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = TRUE) AS variants
        FROM products p
        JOIN users u ON p.seller_id = u.id
        LEFT JOIN categories c ON p.category_id = c.id
@@ -438,7 +504,11 @@ router.get('/products/:id', optionalAuth, async (req, res) => {
          FROM wishlists
          GROUP BY product_id
        ) wishlist_counts ON wishlist_counts.product_id = p.id
-      WHERE p.id = $1 AND p.is_available = TRUE`,
+      WHERE p.id = $1
+        AND (p.is_available = TRUE
+             OR ($2::uuid IS NOT NULL
+                 AND ($2::uuid = p.seller_id
+                      OR EXISTS (SELECT 1 FROM users ua WHERE ua.id = $2 AND ua.role = 'admin'))))`,
       [req.params.id, userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
@@ -457,48 +527,11 @@ router.post('/products', authRequired, verifiedSellerRequired, dobRequired, asyn
   if (!req.user?.email_verified) {
     return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to start selling.' });
   }
-  const { name, description, price, stock, categoryId, images, sale_price, sale_starts_at, sale_ends_at } = req.body;
-  if (!name || !price) {
-    return res.status(400).json({ error: 'Name and price required' });
-  }
-  if (Number(price) > 99999) {
-    return res.status(400).json({ error: 'Maximum price is 99,999 G (MonCash limit)' });
-  }
-  if (Number(price) < 100) {
-    return res.status(400).json({ error: 'Minimum price is 100 G' });
-  }
-  if (name.length > 200) return res.status(400).json({ error: 'Product name too long (max 200 characters)' });
-  if (description && description.length > 5000) return res.status(400).json({ error: 'Description too long (max 5000 characters)' });
-  if (stock !== undefined && stock !== null && stock !== '' && parseInt(stock) < 1) {
-    return res.status(400).json({ error: 'Stock must be at least 1' });
-  }
-  if (!images || !Array.isArray(images) || images.length === 0) {
-    return res.status(400).json({ error: 'At least one image is required' });
-  }
-  if (images.length > 8) {
-    return res.status(400).json({ error: 'Maximum 8 images allowed' });
-  }
-
-  if (sale_price !== undefined && sale_price !== null && sale_price !== '') {
-    const saleP = parseFloat(sale_price);
-    const origP = parseFloat(price);
-    if (isNaN(saleP) || saleP <= 0) {
-      return res.status(400).json({ error: 'Sale price must be a positive number' });
-    }
-    if (saleP >= origP) {
-      return res.status(400).json({ error: 'Sale price must be lower than the original price' });
-    }
-    const discountPct = Math.round((1 - saleP / origP) * 100);
-    if (discountPct > 25) {
-      return res.status(400).json({ error: 'Maximum discount is 25%' });
-    }
-    if (!sale_ends_at) {
-      return res.status(400).json({ error: 'Sale end date is required when setting a sale price' });
-    }
-    if (new Date(sale_ends_at) <= new Date()) {
-      return res.status(400).json({ error: 'Sale end date must be in the future' });
-    }
-  }
+  const {
+    name, description, price, stock, categoryId, images, sale_price, sale_starts_at, sale_ends_at,
+    condition, flawNotes, sku, offersEnabled, languageLabel, attrs,
+    meetupEnabled, deliveryEnabled, lowStockThreshold, variants, draftId,
+  } = req.body;
 
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
   const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
@@ -511,23 +544,87 @@ router.post('/products', authRequired, verifiedSellerRequired, dobRequired, asyn
     }
   }
 
+  const hasVariants = Array.isArray(variants) && variants.length > 0;
+  let finalPrice = price;
+  let finalStock = stock;
+  if (hasVariants) {
+    const vPrices = variants.map((v) => parseFloat(v.price)).filter((p) => !isNaN(p));
+    if (vPrices.length !== variants.length) {
+      return res.status(400).json({ error: 'Every variant needs a price', code: 'LISTING_INVALID' });
+    }
+    finalPrice = Math.min(...vPrices);
+    finalStock = variants.reduce((s, v) => s + (parseInt(v.stock, 10) || 0), 0);
+  }
+
+  const errors = validateListingPayload(
+    {
+      name, description, price: finalPrice, stock: finalStock, categoryId, images,
+      condition, flawNotes, sku, languageLabel, attrs, lowStockThreshold,
+      variants: hasVariants ? variants : undefined,
+      salePrice: sale_price, saleEndDate: sale_ends_at,
+    },
+    { publish: true }
+  );
+  if (errors.length) {
+    return res.status(400).json({ error: errors[0], errors, code: 'LISTING_INVALID' });
+  }
+
+  // v1 moderation: conservative keyword policy; flagged listings go to review
+  // instead of going live, and the seller sees a Pending review state.
+  const mod = assessModeration({ name, description, flawNotes });
+
+  if (draftId) {
+    const draftOwn = await pool.query(
+      'SELECT id FROM product_drafts WHERE id = $1 AND seller_id = $2',
+      [draftId, req.user.id]
+    );
+    if (draftOwn.rows.length === 0) {
+      return res.status(404).json({ error: 'Draft not found', code: 'DRAFT_NOT_FOUND' });
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const currentTier = await client.query('SELECT seller_tier FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
-    if (currentTier.rows[0]?.seller_tier === 'verified') {
-      const count = await client.query('SELECT COUNT(*)::int AS count FROM products WHERE seller_id = $1 AND is_available = true', [req.user.id]);
-      if (count.rows[0].count >= 100) {
+    const tier = currentTier.rows[0]?.seller_tier || 'none';
+    if (!mod.flagged) {
+      const cap = await checkTierCap(req.user.id, tier, 1, client);
+      if (!cap.ok) {
         await client.query('ROLLBACK');
         client.release();
-        return res.status(403).json({ error: 'Verified sellers can have up to 100 active listings. Archive a listing or upgrade to Business to add another.', code: 'VERIFIED_LISTING_LIMIT', limit: 100 });
+        return res.status(403).json({
+          error: `Your ${tier === 'verified' ? 'Verified' : tier} plan allows ${cap.cap} active listings (${cap.count} active). Pause a listing or upgrade to add another.`,
+          code: tier === 'verified' ? 'VERIFIED_LISTING_LIMIT' : 'TIER_CAP',
+          limit: cap.cap,
+          active: cap.count,
+        });
       }
     }
+
     const productResult = await client.query(
-      `INSERT INTO products (seller_id, category_id, name, description, price, stock, sale_price, sale_starts_at, sale_ends_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [req.user.id, categoryId || null, name, description || '', price, stock || 0,
-       sale_price || null, sale_starts_at || null, sale_ends_at || null]
+      `INSERT INTO products (seller_id, category_id, name, description, price, stock,
+                              sale_price, sale_starts_at, sale_ends_at,
+                              condition, flaw_notes, sku, offers_enabled, language_label, attrs,
+                              meetup_enabled, delivery_enabled, low_stock_threshold,
+                              has_variants, listing_status, is_available)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+               $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+       RETURNING *`,
+      [
+        req.user.id, categoryId || null, name.trim(), description || '', finalPrice, finalStock || 0,
+        sale_price || null, sale_starts_at || null, sale_ends_at || null,
+        condition || null, (flawNotes || '').trim() || null, sku || null,
+        offersEnabled === undefined ? true : !!offersEnabled,
+        languageLabel || null,
+        attrs && Object.keys(attrs).length ? JSON.stringify(attrs) : null,
+        meetupEnabled === undefined ? null : !!meetupEnabled,
+        deliveryEnabled === undefined ? null : !!deliveryEnabled,
+        lowStockThreshold ? parseInt(lowStockThreshold, 10) : DEFAULT_LOW_STOCK_THRESHOLD,
+        hasVariants,
+        mod.flagged ? 'pending_review' : 'active',
+        mod.flagged ? false : true,
+      ]
     );
     const product = productResult.rows[0];
 
@@ -545,8 +642,21 @@ router.post('/products', authRequired, verifiedSellerRequired, dobRequired, asyn
       );
     }
 
+    if (hasVariants) {
+      await insertVariants(client, product.id, variants);
+    }
+
+    if (draftId) {
+      await client.query('DELETE FROM product_drafts WHERE id = $1 AND seller_id = $2', [draftId, req.user.id]);
+    }
+
     await client.query('COMMIT');
     client.release();
+
+    if (mod.flagged) {
+      return res.status(201).json({ product, moderated: 'pending_review' });
+    }
+
     try {
       const followers = await pool.query('SELECT follower_id FROM follows WHERE seller_id = $1', [req.user.id]);
       if (followers.rows.length > 0) {
@@ -556,13 +666,13 @@ router.post('/products', authRequired, verifiedSellerRequired, dobRequired, asyn
           const notifData = { productId: product.id, sellerId: req.user.id };
           if (productImage) notifData.image = productImage;
           createNotification(f.follower_id, 'new_product_from_followed', `New Listing from ${sellerName}`,
-            `${sellerName} just listed "${name}" for G ${price}`, notifData);
+            `${sellerName} just listed "${name}" for G ${finalPrice}`, notifData);
         }
       }
     } catch (e) { console.error('Follower notification error:', e.message); }
-    res.status(201).json({ product });
+    res.status(201).json({ product, moderated: 'approved' });
   } catch (err) {
-    try { await client.query('ROLLBACK'); } catch {}
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
     client.release();
     console.error('Product create error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -600,77 +710,227 @@ router.delete('/products/:id', authRequired, sellerRequired, async (req, res) =>
 router.put('/products/:id', authRequired, verifiedSellerRequired, async (req, res) => {
   const client = await pool.connect();
   try {
-    const check = await client.query('SELECT seller_id, price, is_available FROM products WHERE id = $1', [req.params.id]);
+    const check = await client.query(
+      `SELECT seller_id, price, stock, is_available, listing_status, paused_reason,
+              name, description, category_id, condition, flaw_notes, attrs, has_variants
+         FROM products WHERE id = $1 FOR UPDATE`,
+      [req.params.id]
+    );
     if (check.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
-    if (check.rows[0].seller_id !== req.user.id && req.user.role !== 'admin') {
+    const before = check.rows[0];
+    if (before.seller_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not your product' });
     }
-    const { name, description, price, stock, isAvailable, categoryId, images, sale_price, sale_starts_at, sale_ends_at, clearSale } = req.body;
+    const {
+      name, description, price, stock, isAvailable, categoryId, images,
+      sale_price, sale_starts_at, sale_ends_at, clearSale,
+      condition, flawNotes, sku, offersEnabled, languageLabel, attrs,
+      meetupEnabled, deliveryEnabled, lowStockThreshold, variants,
+    } = req.body;
 
-    if (stock !== undefined && stock !== null && stock !== '' && parseInt(stock) < 1) {
-      return res.status(400).json({ error: 'Stock must be at least 1' });
+    // ── structural validation of whatever was sent ──
+    const structural = validateListingPayload({
+      name, description, condition, flawNotes, sku, languageLabel, attrs,
+      lowStockThreshold, variants: variants !== undefined ? variants : undefined,
+    }, { publish: false });
+    if (structural.length) return res.status(400).json({ error: structural[0], errors: structural });
+
+    // ── variant handling (replace-all) ──
+    let incomingVariants = null;
+    let variantsChanged = false;
+    let effHasVariants = !!before.has_variants;
+    if (variants !== undefined) {
+      incomingVariants = Array.isArray(variants) ? variants : [];
+      const oldV = await client.query(
+        'SELECT options, price, stock, sku FROM product_variants WHERE product_id = $1 ORDER BY display_order ASC',
+        [req.params.id]
+      );
+      const norm = (list) => JSON.stringify(
+        list
+          .map((v) => ({ o: v.options || {}, p: Number(v.price), s: parseInt(v.stock, 10) || 0, k: v.sku || null }))
+          .sort((a, b) => JSON.stringify(a.o).localeCompare(JSON.stringify(b.o)))
+      );
+      variantsChanged = norm(oldV.rows) !== norm(incomingVariants);
+      effHasVariants = incomingVariants.length > 0;
     }
-    if (price !== undefined && price !== null && Number(price) > 99999) {
+
+    // ── price/stock computation ──
+    let newPrice = price !== undefined && price !== null && price !== '' ? parseFloat(price) : null;
+    let newStock = stock !== undefined && stock !== null && stock !== '' ? parseInt(stock, 10) : null;
+    if (effHasVariants && incomingVariants) {
+      const vp = incomingVariants.map((v) => parseFloat(v.price)).filter((n) => !isNaN(n));
+      if (vp.length !== incomingVariants.length) {
+        return res.status(400).json({ error: 'Every variant needs a price', code: 'LISTING_INVALID' });
+      }
+      newPrice = Math.min(...vp);
+      newStock = incomingVariants.reduce((s, v) => s + (parseInt(v.stock, 10) || 0), 0);
+    }
+
+    if (newStock !== null && newStock < 0) {
+      return res.status(400).json({ error: 'Stock cannot be negative' });
+    }
+    if (newPrice !== null && newPrice > 99999) {
       return res.status(400).json({ error: 'Maximum price is 99,999 G (MonCash limit)' });
     }
-    if (price !== undefined && price !== null && Number(price) < 100) {
+    if (newPrice !== null && newPrice < 100) {
       return res.status(400).json({ error: 'Minimum price is 100 G' });
     }
 
-    const effectivePrice = parseFloat(price || check.rows[0].price);
-    if (sale_price !== undefined && sale_price !== null && sale_price !== '') {
-      const saleP = parseFloat(sale_price);
-      if (isNaN(saleP) || saleP <= 0) {
-        return res.status(400).json({ error: 'Sale price must be a positive number' });
+    const effectivePrice = newPrice !== null ? newPrice : parseFloat(before.price);
+    if ((sale_price !== undefined && sale_price !== null && sale_price !== '') || clearSale) {
+      if (effHasVariants && !clearSale) {
+        return res.status(400).json({ error: 'Sale prices are not available for listings with variants' });
       }
-      if (saleP >= effectivePrice) {
-        return res.status(400).json({ error: 'Sale price must be lower than the original price' });
-      }
-      const discountPct = Math.round((1 - saleP / effectivePrice) * 100);
-      if (discountPct > 25) {
-        return res.status(400).json({ error: 'Maximum discount is 25%' });
-      }
-      if (!sale_ends_at) {
-        return res.status(400).json({ error: 'Sale end date is required when setting a sale price' });
-      }
-      if (new Date(sale_ends_at) <= new Date()) {
-        return res.status(400).json({ error: 'Sale end date must be in the future' });
-      }
-    }
-
-    let salePriceVal, saleStartsVal, saleEndsVal;
-    if (clearSale) {
-      salePriceVal = null;
-      saleStartsVal = null;
-      saleEndsVal = null;
-    } else {
-      salePriceVal = sale_price !== undefined ? (sale_price || null) : undefined;
-      saleStartsVal = sale_starts_at !== undefined ? (sale_starts_at || null) : undefined;
-      saleEndsVal = sale_ends_at !== undefined ? (sale_ends_at || null) : undefined;
-    }
-
-    await client.query('BEGIN');
-    if (isAvailable === true && check.rows[0].is_available === false && req.user.role !== 'admin') {
-      const tier = await client.query('SELECT seller_tier FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
-      if (tier.rows[0]?.seller_tier === 'verified') {
-        const count = await client.query('SELECT COUNT(*)::int AS count FROM products WHERE seller_id = $1 AND is_available = true', [req.user.id]);
-        if (count.rows[0].count >= 100) {
-          await client.query('ROLLBACK');
-          return res.status(403).json({ error: 'Verified sellers can have up to 100 active listings. Archive a listing or upgrade to Business to reactivate this one.', code: 'VERIFIED_LISTING_LIMIT', limit: 100 });
+      if (!clearSale) {
+        const saleP = parseFloat(sale_price);
+        if (isNaN(saleP) || saleP <= 0) {
+          return res.status(400).json({ error: 'Sale price must be a positive number' });
+        }
+        if (saleP >= effectivePrice) {
+          return res.status(400).json({ error: 'Sale price must be lower than the original price' });
+        }
+        const discountPct = Math.round((1 - saleP / effectivePrice) * 100);
+        if (discountPct > 25) {
+          return res.status(400).json({ error: 'Maximum discount is 25%' });
+        }
+        if (!sale_ends_at) {
+          return res.status(400).json({ error: 'Sale end date is required when setting a sale price' });
+        }
+        if (new Date(sale_ends_at) <= new Date()) {
+          return res.status(400).json({ error: 'Sale end date must be in the future' });
         }
       }
     }
-    const result = await client.query(
-      `UPDATE products SET name = COALESCE($1, name), description = COALESCE($2, description),
-       price = COALESCE($3, price), stock = COALESCE($4, stock),
-       is_available = COALESCE($5, is_available), category_id = COALESCE($6, category_id),
-       sale_price = COALESCE($7, sale_price), sale_starts_at = COALESCE($8, sale_starts_at),
-       sale_ends_at = COALESCE($9, sale_ends_at),
-       updated_at = CURRENT_TIMESTAMP WHERE id = $10 RETURNING *`,
-      [name, description, price, stock, isAvailable, categoryId,
-       salePriceVal, saleStartsVal, saleEndsVal, req.params.id]
+
+    // ── commitment locks: active orders/reservations freeze price/stock/variants ──
+    const priceChanged = newPrice !== null && newPrice !== Number(before.price);
+    const stockChanged = newStock !== null && newStock !== Number(before.stock);
+    const locked = await hasActiveCommitment(req.params.id, client);
+    if (locked && (priceChanged || stockChanged || variantsChanged)) {
+      return res.status(409).json({
+        error: 'This listing has an active order or reservation. Price, stock, and options stay locked until it completes.',
+        code: 'PRICE_STOCK_LOCKED',
+      });
+    }
+
+    // ── material vs routine change (only live listings go through moderation) ──
+    let imagesChanged = false;
+    if (images !== undefined && Array.isArray(images)) {
+      const oldImgs = await client.query(
+        'SELECT image_url FROM product_images WHERE product_id = $1 ORDER BY display_order ASC',
+        [req.params.id]
+      );
+      const urlOf = (img) => (typeof img === 'string' ? img : img && img.url);
+      imagesChanged =
+        JSON.stringify(oldImgs.rows.map((r) => r.image_url)) !== JSON.stringify(images.map(urlOf));
+    }
+    const material = isMaterialChange(
+      {
+        name: before.name,
+        description: before.description,
+        categoryId: before.category_id,
+        condition: before.condition,
+        flawNotes: before.flaw_notes,
+        attrs: before.attrs,
+      },
+      { name, description, categoryId, condition, flawNotes, attrs, imagesChanged, variantsChanged }
     );
-    if (images && Array.isArray(images)) {
+
+    // ── reactivation requires an active moderation state + tier cap ──
+    const reactivating = isAvailable === true && before.is_available === false;
+    if (reactivating && req.user.role !== 'admin') {
+      if (before.listing_status !== 'active') {
+        return res.status(409).json({
+          error: before.listing_status === 'pending_review'
+            ? 'This listing is waiting for review and will go live automatically if approved.'
+            : 'Edit and resubmit this listing before making it live.',
+          code: before.listing_status === 'rejected' ? 'LISTING_REJECTED' : 'LISTING_PENDING',
+        });
+      }
+      if (before.paused_reason === 'tier_cap') {
+        return res.status(403).json({ error: 'Upgrade your plan or pause another listing to free up space.', code: 'TIER_CAP' });
+      }
+      const tierR = await client.query('SELECT seller_tier FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
+      const tier = tierR.rows[0]?.seller_tier || 'none';
+      const cap = await checkTierCap(req.user.id, tier, 1, client);
+      if (!cap.ok) {
+        return res.status(403).json({
+          error: `Your ${tier} plan allows ${cap.cap} active listings (${cap.count} active). Pause another listing first.`,
+          code: tier === 'verified' ? 'VERIFIED_LISTING_LIMIT' : 'TIER_CAP',
+          limit: cap.cap,
+          active: cap.count,
+        });
+      }
+    }
+
+    // ── build SET clause ──
+    const updates = [];
+    const values = [];
+    const add = (col, val, cast) => {
+      values.push(val);
+      updates.push(`${col} = $${values.length}${cast || ''}`);
+    };
+    if (name !== undefined) add('name', String(name).trim());
+    if (description !== undefined) add('description', description || '');
+    if (newPrice !== null) add('price', newPrice);
+    if (newStock !== null) add('stock', newStock);
+    if (isAvailable !== undefined) add('is_available', !!isAvailable);
+    if (categoryId !== undefined) add('category_id', categoryId || null);
+    if (condition !== undefined) add('condition', condition || null);
+    if (flawNotes !== undefined) add('flaw_notes', String(flawNotes || '').trim() || null);
+    if (sku !== undefined) add('sku', sku || null);
+    if (offersEnabled !== undefined) add('offers_enabled', !!offersEnabled);
+    if (languageLabel !== undefined) add('language_label', languageLabel || null);
+    if (attrs !== undefined) add('attrs', attrs && Object.keys(attrs).length ? JSON.stringify(attrs) : null, '::jsonb');
+    if (meetupEnabled !== undefined) add('meetup_enabled', meetupEnabled === null ? null : !!meetupEnabled);
+    if (deliveryEnabled !== undefined) add('delivery_enabled', deliveryEnabled === null ? null : !!deliveryEnabled);
+    if (lowStockThreshold !== undefined && lowStockThreshold !== null && lowStockThreshold !== '') {
+      add('low_stock_threshold', parseInt(lowStockThreshold, 10) || 3);
+    }
+    if (variants !== undefined) add('has_variants', effHasVariants);
+    if (isAvailable === false && before.is_available === true && before.listing_status === 'active') {
+      add('paused_reason', 'seller_manual');
+    } else if (reactivating) {
+      add('paused_reason', null);
+    }
+    if (clearSale) {
+      add('sale_price', null);
+      add('sale_starts_at', null);
+      add('sale_ends_at', null);
+    } else {
+      if (sale_price !== undefined) add('sale_price', sale_price || null);
+      if (sale_starts_at !== undefined) add('sale_starts_at', sale_starts_at || null);
+      if (sale_ends_at !== undefined) add('sale_ends_at', sale_ends_at || null);
+    }
+
+    // ── moderation on material changes to a live listing ──
+    let flaggedChange = false;
+    if (material && before.listing_status === 'active') {
+      const mod = assessModeration({
+        name: name !== undefined ? name : before.name,
+        description: description !== undefined ? description : before.description,
+        flawNotes: flawNotes !== undefined ? flawNotes : before.flaw_notes,
+      });
+      if (mod.flagged) {
+        flaggedChange = true;
+        add('listing_status', 'pending_review');
+        add('is_available', false);
+        add('moderation_reason', mod.reason);
+        updates.push('reviewed_at = CURRENT_TIMESTAMP');
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.json({ product: before });
+    }
+    values.push(req.params.id);
+    const result = await client.query(
+      `UPDATE products SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $${values.length} RETURNING *`,
+      values
+    );
+
+    if (images !== undefined && Array.isArray(images)) {
       await client.query('DELETE FROM product_images WHERE product_id = $1', [req.params.id]);
       if (images.length > 0) {
         const imageValues = images.map((img, i) => {
@@ -686,10 +946,35 @@ router.put('/products/:id', authRequired, verifiedSellerRequired, async (req, re
         );
       }
     }
+
+    if (incomingVariants && incomingVariants.length > 0 && variantsChanged) {
+      await insertVariants(client, req.params.id, incomingVariants);
+    }
+
     await client.query('COMMIT');
-    res.json({ product: result.rows[0] });
+    const product = result.rows[0];
+
+    if (flaggedChange) {
+      createNotification(
+        req.user.id,
+        'listing_in_review',
+        'Listing sent for review',
+        `Your changes to "${product.name}" need a quick review before the listing goes live again.`,
+        { screen: 'MyListings', productId: product.id }
+      ).catch(() => {});
+    }
+    if (priceChanged || variantsChanged) {
+      notifyPriceDrop(product.id, before.price, product.price).catch(() => {});
+    }
+    try {
+      await applyStockSideEffects(product.id);
+    } catch (e) {
+      console.error('Stock side effects error:', e.message);
+    }
+
+    res.json({ product });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
     console.error('Product update error:', err);
     res.status(500).json({ error: 'Server error' });
   } finally {

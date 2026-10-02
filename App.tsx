@@ -23,6 +23,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, invalidateUser } from './src/hooks';
 import { ToastProvider } from './src/components/Toast';
 import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/notifications';
+import ForegroundNotificationBanner from './src/components/ForegroundNotificationBanner';
 import type { User } from './src/types';
 import type { RootStackParamList, AuthStackParamList, TabParamList } from './src/navigation';
 
@@ -38,6 +39,7 @@ import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import CartScreen from './src/screens/CartScreen';
 // CheckoutScreen + OrderDetailScreen lazy-loaded to avoid NativeMap/MapLibre crashing in Expo Go
 import AddListingScreen from './src/screens/AddListingScreen';
+import MyListingsScreen from './src/screens/MyListingsScreen';
 import StorefrontScreen from './src/screens/StorefrontScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import OrdersScreen from './src/screens/OrdersScreen';
@@ -59,6 +61,7 @@ import SellerToolsSettingsScreen from './src/screens/SellerToolsSettingsScreen';
 import SellerFulfillmentSettingsScreen from './src/screens/SellerFulfillmentSettingsScreen';
 import NatCashAccessScreen from './src/screens/NatCashAccessScreen';
 import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
+import BlockedUsersScreen from './src/screens/BlockedUsersScreen';
 import SecuritySettingsScreen from './src/screens/SecuritySettingsScreen';
 import NotificationsSettingsScreen from './src/screens/NotificationsSettingsScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
@@ -78,6 +81,7 @@ const MapScreen = React.lazy(() => import('./src/screens/MapScreen'));
 const MeetupScreen = React.lazy(() => import('./src/screens/MeetupScreen'));
 const LazyVerificationScreen = React.lazy(() => import('./src/screens/VerificationScreen'));
 const LazyCheckoutScreen = React.lazy(() => import('./src/screens/CheckoutScreen'));
+const LazyMeetupProposalScreen = React.lazy(() => import('./src/screens/MeetupProposalScreen'));
 const LazyOrderDetailScreen = React.lazy(() => import('./src/screens/OrderDetailScreen'));
 
 function LazyMapScreen(props: any) {
@@ -91,6 +95,9 @@ function LazyVerificationScreenWrapper(props: any) {
 }
 function LazyCheckoutScreenWrapper(props: any) {
   return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><LazyCheckoutScreen {...props} /></Suspense>;
+}
+function LazyMeetupProposalScreenWrapper(props: any) {
+  return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><LazyMeetupProposalScreen {...props} /></Suspense>;
 }
 function LazyOrderDetailScreenWrapper(props: any) {
   return <Suspense fallback={<View style={styles.loading}><ActivityIndicator size="large" color={COLORS.coral} /></View>}><LazyOrderDetailScreen {...props} /></Suspense>;
@@ -458,7 +465,9 @@ export default function App() {
             <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
             <Stack.Screen name="Cart" component={CartScreen} />
             <Stack.Screen name="Checkout" component={LazyCheckoutScreenWrapper} />
+            <Stack.Screen name="MeetupProposal" component={LazyMeetupProposalScreenWrapper} />
             <Stack.Screen name="AddListing" component={AddListingScreen} />
+            <Stack.Screen name="MyListings" component={MyListingsScreen} />
             <Stack.Screen name="SellerOnboarding" component={SellerOnboardingScreen} />
             <Stack.Screen name="Storefront" component={StorefrontScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
@@ -482,6 +491,7 @@ export default function App() {
             <Stack.Screen name="SellerFulfillmentSettings" component={SellerFulfillmentSettingsScreen} />
             <Stack.Screen name="NatCashAccess" component={NatCashAccessScreen} />
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
+            <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
             <Stack.Screen name="SecuritySettings" component={SecuritySettingsScreen} />
             <Stack.Screen name="NotificationsSettings" component={NotificationsSettingsScreen} />
             <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
@@ -503,7 +513,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <GestureHandlerRootView style={{ flex: 1 }}><QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner />{appContent}<DobConfirmModal visible={pendingDob} allowSkip onCompleted={() => setPendingDob(false)} />{isLoggedIn && !pendingDob && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}<Modal visible={!!paymentFailed} transparent animationType="fade"><Pressable style={pmStyles.overlay} onPress={() => setPaymentFailed(null)}><Pressable style={pmStyles.card} onPress={() => {}}><View style={pmStyles.iconWrap}><MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} /></View><Text style={pmStyles.title}>{paymentFailed?.title}</Text><Text style={pmStyles.message}>{paymentFailed?.message}</Text><TouchableOpacity style={pmStyles.retryBtn} onPress={() => { paymentFailed?.onRetry(); setPaymentFailed(null); }}><Text style={pmStyles.retryText}>Retry Payment</Text></TouchableOpacity><TouchableOpacity style={pmStyles.cancelBtn} onPress={() => setPaymentFailed(null)}><Text style={pmStyles.cancelText}>Cancel</Text></TouchableOpacity></Pressable></Pressable></Modal></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider></GestureHandlerRootView>;
+  return <GestureHandlerRootView style={{ flex: 1 }}><QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner /><ForegroundNotificationBanner navigationRef={navigationRef} />{appContent}<DobConfirmModal visible={pendingDob} allowSkip onCompleted={() => setPendingDob(false)} />{isLoggedIn && !pendingDob && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}<Modal visible={!!paymentFailed} transparent animationType="fade"><Pressable style={pmStyles.overlay} onPress={() => setPaymentFailed(null)}><Pressable style={pmStyles.card} onPress={() => {}}><View style={pmStyles.iconWrap}><MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} /></View><Text style={pmStyles.title}>{paymentFailed?.title}</Text><Text style={pmStyles.message}>{paymentFailed?.message}</Text><TouchableOpacity style={pmStyles.retryBtn} onPress={() => { paymentFailed?.onRetry(); setPaymentFailed(null); }}><Text style={pmStyles.retryText}>Retry Payment</Text></TouchableOpacity><TouchableOpacity style={pmStyles.cancelBtn} onPress={() => setPaymentFailed(null)}><Text style={pmStyles.cancelText}>Cancel</Text></TouchableOpacity></Pressable></Pressable></Modal></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider></GestureHandlerRootView>;
 }
 
 const styles = StyleSheet.create({

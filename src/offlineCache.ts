@@ -74,6 +74,8 @@ export const cacheKeys = {
   explore: (params: Record<string, string>, userId?: string | null) =>
     `${params.personalized && userId ? `user:${userId}` : 'public'}:explore:${JSON.stringify(params)}:v1`,
   profile: (userId: string) => `user:${userId}:profile:v1`,
+  /** Public seller profile, cached on the visitor's device for offline viewing. */
+  seller: (sellerId: string) => `public:seller:${sellerId}:v1`,
   inbox: (userId: string) => `user:${userId}:inbox:v1`,
   messages: (userId: string, conversationId: string) => `user:${userId}:messages:${conversationId}:v1`,
 };

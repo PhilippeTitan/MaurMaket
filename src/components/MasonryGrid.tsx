@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Platform, useWindowDimensions, RefreshControl } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, RADIUS } from '../theme';
+import { COLORS, RADIUS, formatPrice } from '../theme';
+import { useReduceMotion } from '../hooks';
 import { getImageUrl } from '../api';
 import { getCardHeight as computeCardHeight, getCachedSize, preloadProductDimensions } from '../utils/imageDimensionCache';
 import SalePriceTag from './SalePriceTag';
@@ -34,6 +35,22 @@ interface MasonryGridProps {
   renderCardOverlay?: (item: Product) => React.ReactNode;
   /** Custom name row rendered below each card image (replaces default cardName text) */
   renderCardBottom?: (item: Product) => React.ReactNode;
+  /**
+   * Width the grid is allowed to fill when it lives in a centred container
+   * (profile columns). Defaults to the live window width.
+   */
+  availableWidth?: number;
+  /** Explicit column count; defaults to the width-based breakpoints. */
+  columns?: number;
+  /** Fade + slight stagger the tiles in on first appearance (skips Reduce Motion). */
+  animateOnMount?: boolean;
+  /**
+   * What sits under each photo. `full` adds price and condition beside the
+   * title — the profile catalog treatment — while keeping a fixed tile height.
+   */
+  detailsBelow?: 'name' | 'full';
+  /** Keep the price badge over the photo (default). Profiles turn it off when the price is below. */
+  priceOverlay?: boolean;
 }
 
 export default function MasonryGrid({
@@ -53,16 +70,24 @@ export default function MasonryGrid({
   onCardWidth,
   renderCardOverlay,
   renderCardBottom,
+  availableWidth,
+  columns,
+  animateOnMount = false,
+  detailsBelow = 'name',
+  priceOverlay = true,
 }: MasonryGridProps) {
-  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
+  const { width: windowWidth, height: SCREEN_H } = useWindowDimensions();
+  const SCREEN_W = availableWidth ?? windowWidth;
 
   // ── Pinterest algorithm: dynamic column count from available width ──
-  const COLUMN_COUNT = SCREEN_W < 600 ? 2 : SCREEN_W < 900 ? 3 : 4;
+  const COLUMN_COUNT = columns ?? (SCREEN_W < 600 ? 2 : SCREEN_W < 900 ? 3 : 4);
   const CARD_W = (SCREEN_W - sidePad * 2 - columnGap * (COLUMN_COUNT - 1)) / COLUMN_COUNT;
   useEffect(() => { onCardWidth?.(CARD_W); }, [CARD_W]);
   const MIN_H = CARD_W * 0.6;
   const MAX_H = SCREEN_H * 0.52;
-  const NAME_AREA_H = 52;
+  // Space reserved under each photo for its text block — the grid lays cards
+  // out absolutely, so this must stay >= the rendered details height.
+  const NAME_AREA_H = detailsBelow === 'full' ? 56 : 52;
 
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [imageIndices, setImageIndices] = useState<Record<string, number>>({});
@@ -213,9 +238,11 @@ export default function MasonryGrid({
                   ))}
                 </View>
               )}
-              <View style={styles.cardPriceTop} pointerEvents="none">
-                <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
-              </View>
+              {priceOverlay && (
+                <View style={styles.cardPriceTop} pointerEvents="none">
+                  <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+                </View>
+              )}
               <View style={styles.cardStockBadge} pointerEvents="none">
                 <StockBadge stock={item.stock} size="sm" />
               </View>
@@ -223,7 +250,32 @@ export default function MasonryGrid({
             </View>
           </View>
         </TouchableOpacity>
-        {renderCardBottom ? renderCardBottom(item) : <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>}
+        {renderCardBottom
+          ? renderCardBottom(item)
+          : detailsBelow === 'full'
+            ? renderFullDetails(item)
+            : <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>}
+      </View>
+    );
+  };
+
+  /** Title + price + condition under the photo — the profile catalog treatment. */
+  const renderFullDetails = (item: Product) => {
+    const onSale =
+      !!item.is_on_sale &&
+      typeof item.effective_price === 'number' &&
+      item.effective_price < item.price;
+    const condition = (item as any).condition as string | null | undefined;
+    return (
+      <View style={styles.detailsBlock}>
+        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+        <View style={styles.detailsMetaRow}>
+          {onSale ? <Text style={styles.detailsStrike}>{formatPrice(item.price)}</Text> : null}
+          <Text style={styles.detailsPrice}>{formatPrice(item.effective_price ?? item.price)}</Text>
+          {condition ? (
+            <Text style={styles.detailsCondition} numberOfLines={1}>· {condition}</Text>
+          ) : null}
+        </View>
       </View>
     );
   };
@@ -234,10 +286,15 @@ export default function MasonryGrid({
 
   const gridContent = (
     <View style={[styles.absoluteGrid, { height: layoutItems.totalHeight, paddingLeft: sidePad, paddingRight: sidePad }]}>
-      {layoutItems.items.map(({ item, x, y, w, h }) => (
-        <View key={item.id} style={{ position: 'absolute', left: x, top: y, width: w }}>
+      {layoutItems.items.map(({ item, x, y, w, h }, index) => (
+        <FadeInTile
+          key={item.id}
+          enabled={animateOnMount}
+          delay={Math.min(index, 8) * 40}
+          style={{ position: 'absolute', left: x, top: y, width: w }}
+        >
           {renderDefaultCard(item, w, h)}
-        </View>
+        </FadeInTile>
       ))}
     </View>
   );
@@ -255,6 +312,57 @@ export default function MasonryGrid({
       {ListHeaderComponent}
       {gridContent}
     </ScrollView>
+  );
+}
+
+/**
+ * Wraps one grid tile in the initial-appearance fade. Animates once, on mount,
+ * so scrolling and dimension re-renders never replay it; Reduce Motion renders
+ * the tile fully opaque from the start.
+ */
+function FadeInTile({
+  enabled,
+  delay,
+  style,
+  children,
+}: {
+  enabled: boolean;
+  delay: number;
+  style: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  const reduceMotion = useReduceMotion();
+  const progress = useRef(new Animated.Value(enabled && !reduceMotion ? 0 : 1)).current;
+
+  useEffect(() => {
+    if (!enabled || reduceMotion) {
+      progress.setValue(1);
+      return;
+    }
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 240,
+      delay,
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+    // Mount-only on purpose: the grid must not re-animate while browsing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: progress,
+          transform: [
+            { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
+          ],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
   );
 }
 
@@ -361,6 +469,33 @@ export const masonryStyles = StyleSheet.create({
   cardName: {
     color: COLORS.text, fontSize: 13, fontWeight: '500',
     marginTop: 6, marginBottom: 2, paddingHorizontal: 2,
+  },
+  detailsBlock: {
+    height: 56,
+    paddingHorizontal: 2,
+    paddingTop: 6,
+    justifyContent: 'flex-start',
+  },
+  detailsMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
+  },
+  detailsPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.coral,
+  },
+  detailsStrike: {
+    fontSize: 12,
+    color: COLORS.text3,
+    textDecorationLine: 'line-through',
+  },
+  detailsCondition: {
+    flexShrink: 1,
+    fontSize: 12,
+    color: COLORS.text2,
   },
   imgDot: {
     width: 5, height: 5, borderRadius: 2.5,

@@ -123,6 +123,7 @@ async function runMigrations(targetPool) {
         delivery_method VARCHAR(20) DEFAULT 'meetup',
         delivery_name TEXT, delivery_phone TEXT, delivery_address TEXT, delivery_city TEXT, delivery_note TEXT,
         meetup_lat DECIMAL(10,7), meetup_lng DECIMAL(10,7), meetup_address TEXT, meetup_note TEXT,
+        meetup_scheduled_at TIMESTAMPTZ,
         meetup_confirmed BOOLEAN DEFAULT false, meetup_proposed_by UUID REFERENCES users(id),
         meetup_started_at TIMESTAMP,
         meetup_expires_at TIMESTAMP,
@@ -979,6 +980,7 @@ async function runMigrations(targetPool) {
 
     // ── Thumbnail URL column ──
     await step('Thumbnail URL column', () => c.query(`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;`));
+    await step('Scheduled meetup column', () => c.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS meetup_scheduled_at TIMESTAMPTZ;`));
 
     // ── NatCash phone number separation ──
     
@@ -997,6 +999,7 @@ async function runMigrations(targetPool) {
         meetup_lng DECIMAL(10,7),
         meetup_address TEXT,
         meetup_name TEXT,
+        meetup_at TIMESTAMPTZ,
         payment_method VARCHAR(20) DEFAULT 'moncash',
         promo_code TEXT,
         total_amount DECIMAL(10,2),
@@ -1006,6 +1009,7 @@ async function runMigrations(targetPool) {
         expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '30 minutes')
       );
       ALTER TABLE pending_checkouts ADD COLUMN IF NOT EXISTS fulfillment_terms JSONB NOT NULL DEFAULT '[]'::jsonb;
+      ALTER TABLE pending_checkouts ADD COLUMN IF NOT EXISTS meetup_at TIMESTAMPTZ;
     `));
 await step('NatCash phone separation', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS natcash_phone VARCHAR(20);
@@ -1074,6 +1078,15 @@ await step('NatCash phone separation', () => c.query(`
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(message_id, user_id, emoji)
       );
+      -- Keep the most recent legacy reaction per person/message, then enforce
+      -- the WhatsApp-style one-reaction-per-person rule for future writes.
+      DELETE FROM message_reactions older
+      USING message_reactions newer
+      WHERE older.message_id = newer.message_id
+        AND older.user_id = newer.user_id
+        AND (older.created_at < newer.created_at OR (older.created_at = newer.created_at AND older.id < newer.id));
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_message_reactions_one_per_user
+        ON message_reactions(message_id, user_id);
       CREATE INDEX IF NOT EXISTS idx_message_reactions_message ON message_reactions(message_id);
 
       -- Message delivery/read states per recipient
@@ -1166,6 +1179,7 @@ await step('NatCash phone separation', () => c.query(`
       ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS fulfillment_note TEXT;
       ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS meetup_started_at TIMESTAMPTZ;
       ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS meetup_expires_at TIMESTAMPTZ;
+      ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS meetup_at TIMESTAMPTZ;
       ALTER TABLE seller_fulfillments ADD COLUMN IF NOT EXISTS dispute_id UUID REFERENCES disputes(id);
       CREATE INDEX IF NOT EXISTS idx_seller_fulfillments_agreement ON seller_fulfillments(order_id, agreement_status);
 
@@ -1214,6 +1228,23 @@ await step('NatCash phone separation', () => c.query(`
         UNIQUE(checkout_id, seller_id)
       );
       CREATE INDEX IF NOT EXISTS idx_pending_fulfillment_agreements_seller ON pending_fulfillment_agreements(seller_id, status, created_at DESC);
+      ALTER TABLE pending_checkouts ALTER COLUMN expires_at SET DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours');
+      ALTER TABLE pending_fulfillment_agreements ADD COLUMN IF NOT EXISTS response_expires_at TIMESTAMPTZ NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours');
+      ALTER TABLE pending_fulfillment_agreements ADD COLUMN IF NOT EXISTS last_proposed_by UUID REFERENCES users(id);
+      ALTER TABLE pending_fulfillment_agreements ADD COLUMN IF NOT EXISTS proposal_version INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE pending_fulfillment_agreements ALTER COLUMN buyer_accepted_at DROP NOT NULL;
+      CREATE TABLE IF NOT EXISTS pending_fulfillment_history (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        checkout_id UUID NOT NULL REFERENCES pending_checkouts(id) ON DELETE CASCADE,
+        seller_id UUID NOT NULL REFERENCES users(id),
+        actor_id UUID REFERENCES users(id),
+        action VARCHAR(30) NOT NULL,
+        version INTEGER NOT NULL,
+        terms JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_pending_fulfillment_history_lookup
+        ON pending_fulfillment_history(checkout_id, seller_id, created_at);
 
       ALTER TABLE order_escrow ADD COLUMN IF NOT EXISTS commission_base DECIMAL(10,2) NOT NULL DEFAULT 0;
       ALTER TABLE platform_revenue ADD COLUMN IF NOT EXISTS commission_base DECIMAL(10,2) NOT NULL DEFAULT 0;
@@ -1241,13 +1272,41 @@ await step('NatCash phone separation', () => c.query(`
         status VARCHAR(20) NOT NULL DEFAULT 'pending'
           CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'expired', 'refunded')),
         completed_at TIMESTAMPTZ,
-        expires_at TIMESTAMPTZ NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '30 minutes'),
+        expires_at TIMESTAMPTZ NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '15 minutes'),
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(checkout_id, seller_id, provider)
       );
       CREATE INDEX IF NOT EXISTS idx_fulfillment_payment_sessions_reference ON fulfillment_payment_sessions(provider_reference);
       CREATE INDEX IF NOT EXISTS idx_fulfillment_payment_sessions_checkout ON fulfillment_payment_sessions(checkout_id, status);
+      ALTER TABLE fulfillment_payment_sessions ALTER COLUMN expires_at SET DEFAULT (CURRENT_TIMESTAMP + INTERVAL '15 minutes');
+      CREATE TABLE IF NOT EXISTS meetup_place_confirmations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        seller_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        place_key TEXT NOT NULL,
+        place_label TEXT NOT NULL,
+        lat DECIMAL(10,7) NOT NULL,
+        lng DECIMAL(10,7) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(order_id, seller_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_meetup_place_confirmations_recent
+        ON meetup_place_confirmations(place_key, created_at DESC);
+      CREATE TABLE IF NOT EXISTS meetup_place_reports (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        seller_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reporter_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        place_key TEXT NOT NULL,
+        reason VARCHAR(40) NOT NULL,
+        details TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(order_id, seller_id, reporter_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_meetup_place_reports_recent
+        ON meetup_place_reports(place_key, created_at DESC);
       ALTER TABLE fulfillment_payment_sessions ADD COLUMN IF NOT EXISTS sms_transcode TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_fulfillment_payment_sessions_natcash_transcode
         ON fulfillment_payment_sessions(sms_transcode) WHERE sms_transcode IS NOT NULL;
@@ -1522,6 +1581,178 @@ await step('NatCash phone separation', () => c.query(`
       ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS failed_stage VARCHAR(20);
       ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS ocr_fields JSONB;
       ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS id_face_url TEXT;
+    `));
+
+    // 79. Notifications discovery columns and preferences
+    await step('Notifications discovery columns and preferences', () => c.query(`
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS dismissed_from_feed BOOLEAN DEFAULT false;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS action_required BOOLEAN DEFAULT false;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS action_resolved BOOLEAN DEFAULT false;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS action_deadline TIMESTAMPTZ;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS group_key TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_notifications_feed ON notifications(user_id, dismissed_from_feed, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_notifications_action ON notifications(user_id, action_required, action_resolved);
+      CREATE INDEX IF NOT EXISTS idx_notifications_group_key ON notifications(user_id, group_key) WHERE group_key IS NOT NULL;
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{
+        "categories": {
+          "security_account": "push_now",
+          "orders_payments": "push_now",
+          "meetups": "push_now",
+          "disputes": "push_now",
+          "inventory_alerts": "push_now",
+          "follows": "push_now",
+          "offers": "push_now",
+          "reviews": "daily_summary",
+          "seller_updates": "daily_summary",
+          "marketing_promos": "off"
+        },
+        "quiet_hours": {
+          "enabled": false,
+          "start": "22:00",
+          "end": "08:00",
+          "days": "all"
+        },
+        "snooze_until": null,
+        "daily_summary_time": "09:00",
+        "hide_sensitive_previews": true,
+        "muted_seller_ids": []
+      }'::jsonb;
+    `));
+
+    // 80. Profile & Settings discovery columns and tables
+    await step('Profile & Settings discovery columns and tables', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS store_description TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS store_service_area TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS store_category TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS show_public_city BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS hide_follower_lists BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS hide_follower_counts BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'en';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS pinned_product_id UUID;
+
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS paused_reason VARCHAR(30);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT false;
+
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS seller_snapshot_name TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS seller_snapshot_logo_url TEXT;
+
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS is_moderated BOOLEAN DEFAULT false;
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderation_reason TEXT;
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderated_at TIMESTAMPTZ;
+
+      CREATE TABLE IF NOT EXISTS user_reports (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        reporter_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reported_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        target_type VARCHAR(30) NOT NULL,
+        target_id TEXT NOT NULL,
+        reason VARCHAR(50) NOT NULL,
+        details TEXT,
+        order_context JSONB,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_reports_target ON user_reports(target_type, target_id);
+      CREATE INDEX IF NOT EXISTS idx_user_reports_reporter ON user_reports(reporter_id);
+    `));
+
+    // 81. Add Product experience: condition/disclosure, lifecycle states, drafts,
+    // variants, order snapshots, saved prices, fulfillment flags, low-stock.
+    await step('Add Product: listing columns, variants, drafts, snapshots', () => c.query(`
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS condition VARCHAR(20);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS flaw_notes TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS offers_enabled BOOLEAN DEFAULT true;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS language_label VARCHAR(10);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS listing_status VARCHAR(20) DEFAULT 'active';
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS moderation_reason TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS appeal_note TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS appealed_at TIMESTAMPTZ;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS has_variants BOOLEAN DEFAULT false;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS attrs JSONB;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS meetup_enabled BOOLEAN;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_enabled BOOLEAN;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS low_stock_threshold INTEGER DEFAULT 3;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS low_stock_notified_at TIMESTAMPTZ;
+
+      -- Backfill: paused rows before this feature only flipped is_available.
+      -- listing_status is the moderation lifecycle (active/pending_review/rejected);
+      -- commercial pause stays is_available = false + paused_reason.
+      UPDATE products SET paused_reason = 'seller_manual'
+       WHERE is_available = false AND paused_reason IS NULL;
+
+      CREATE TABLE IF NOT EXISTS product_variants (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        options JSONB NOT NULL DEFAULT '{}'::jsonb,
+        option_label TEXT NOT NULL DEFAULT '',
+        price DECIMAL(10,2) NOT NULL,
+        stock INTEGER NOT NULL DEFAULT 0,
+        sku TEXT,
+        display_order INTEGER NOT NULL DEFAULT 0,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants(product_id);
+
+      CREATE TABLE IF NOT EXISTS product_drafts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        seller_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        data JSONB NOT NULL DEFAULT '{}'::jsonb,
+        source_product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_product_drafts_seller ON product_drafts(seller_id, updated_at DESC);
+
+      ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS saved_price DECIMAL(10,2);
+
+      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL;
+      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_label TEXT;
+      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS product_name TEXT;
+      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS product_image TEXT;
+
+      ALTER TABLE stock_reservations ADD COLUMN IF NOT EXISTS variant_id UUID;
+
+      -- Multi-variant carts need one reservation row per (product, variant):
+      -- rebuild the safety unique indexes to include the variant (NULL for simple).
+      DROP INDEX IF EXISTS idx_stock_reservations_checkout_product;
+      DROP INDEX IF EXISTS idx_stock_reservations_order_product;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_reservations_checkout_product
+        ON stock_reservations(product_id, checkout_id,
+          COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))
+        WHERE checkout_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_reservations_order_product
+        ON stock_reservations(product_id, order_id,
+          COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))
+        WHERE order_id IS NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_products_seller_status ON products(seller_id, listing_status, is_available);
+      CREATE INDEX IF NOT EXISTS idx_products_condition ON products(condition) WHERE condition IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_order_items_variant ON order_items(variant_id) WHERE variant_id IS NOT NULL;
+    `));
+
+    // 82. Seed default categories (idempotent, skips names that already exist)
+    await step('Seed default categories', () => c.query(`
+      INSERT INTO categories (id, name, display_order)
+      SELECT v.id, v.name, v.display_order
+      FROM (VALUES
+        ('a0000000-0000-0000-0000-000000000001'::uuid, 'Electronics', 1),
+        ('a0000000-0000-0000-0000-000000000002'::uuid, 'Clothing', 2),
+        ('a0000000-0000-0000-0000-000000000003'::uuid, 'Home & Garden', 3),
+        ('a0000000-0000-0000-0000-000000000004'::uuid, 'Sports', 4),
+        ('a0000000-0000-0000-0000-000000000005'::uuid, 'Beauty', 5),
+        ('a0000000-0000-0000-0000-000000000006'::uuid, 'Vehicles', 6),
+        ('a0000000-0000-0000-0000-000000000007'::uuid, 'Books', 7),
+        ('a0000000-0000-0000-0000-000000000008'::uuid, 'Food & Drinks', 8),
+        ('a0000000-0000-0000-0000-000000000009'::uuid, 'Other', 9)
+      ) AS v(id, name, display_order)
+      WHERE NOT EXISTS (SELECT 1 FROM categories c WHERE lower(c.name) = lower(v.name))
+      ON CONFLICT (id) DO NOTHING;
     `));
 
     if (failed.length > 0) {

@@ -56,7 +56,7 @@ export default function UserAvatar({ seller, name, uri, size = 35, ringColor, an
     );
   }
 
-  const outerSize = size * 100 / 80;
+  const outerSize = size * 1.1;
 
   if (tier) {
     return (

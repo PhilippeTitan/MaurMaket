@@ -1,93 +1,127 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, Pressable,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  RefreshControl,
+  Modal,
+  Pressable,
+  Animated,
+  PanResponder,
+  AccessibilityInfo,
+  ScrollView,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
-import { getNotifications, markNotificationRead, markAllNotificationsRead, getImageUrl, getOrders, getSellerOrders } from '../api';
+import {
+  getNotifications,
+  getUnreadCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  dismissNotification,
+  undoDismissNotification,
+  clearReadNotifications,
+  muteSellerUpdates,
+  getImageUrl,
+} from '../api';
 import { routeNotification } from '../notificationRouting';
-import type { Notification, Order } from '../types';
+import type { Notification } from '../types';
 import type { RootStackParamList } from '../navigation';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
 import { useTranslation } from '@/localization';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type Tab = 'notifications' | 'buying' | 'selling';
+type FilterTab = 'all' | 'action_needed' | 'social' | 'marketplace';
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: COLORS.blue,
-  paid: COLORS.green,
-  processing: COLORS.blue,
-  shipped: COLORS.blue,
-  delivered: COLORS.green,
-  completed: COLORS.green,
-  cancelled: COLORS.coral,
-};
-
-const STATUS_STEPS = ['pending', 'paid', 'shipped', 'delivered', 'completed'];
-
-function getStatusLabel(status: string, t: (key: string) => string): string {
-  switch (status) {
-    case 'pending': return t('notif.status.pending');
-    case 'paid': return t('notif.status.paid');
-    case 'processing': return t('notif.status.processing');
-    case 'shipped': return t('notif.status.shipped');
-    case 'delivered': return t('notif.status.delivered');
-    case 'completed': return t('notif.status.completed');
-    case 'cancelled': return t('notif.status.cancelled');
-    default: return status;
-  }
+// Inbox activity is stored and surfaced by Inbox. Filter stale cached rows
+// created by older builds so they cannot reappear while the device is offline.
+function isInboxActivity(item: Notification): boolean {
+  const type = String(item.type || '').toLowerCase();
+  const dataType = String((item.data as any)?.type || '').toLowerCase();
+  const title = String(item.title || '').trim().toLowerCase();
+  return [
+    'new_message', 'new_offer', 'counter_offer', 'offer_accepted', 'offer_declined', 'offer_expired',
+    'message', 'message_received', 'direct_message',
+  ].includes(type)
+    || ['new_message', 'new_offer', 'counter_offer', 'offer_accepted', 'offer_declined', 'offer_expired'].includes(dataType)
+    || title === 'new message'
+    || title === 'listing shared';
 }
 
 function getNotifConfig(type: string): { icon: string; color: string; accent: string; bg: string } {
   switch (type) {
     // ── Order & Payment ──
     case 'new_order':
-    case 'order_placed': return { icon: 'package-variant', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    case 'order_placed':
+      return { icon: 'package-variant', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
     case 'escrow_held':
     case 'payment_confirmed':
-    case 'order_status': return { icon: 'bank-outline', color: COLORS.blue, accent: COLORS.blue, bg: COLORS.blue + '18' };
+    case 'order_status':
+      return { icon: 'bank-outline', color: COLORS.blue, accent: COLORS.blue, bg: COLORS.blue + '18' };
     case 'payout_released':
-    case 'escrow_released': return { icon: 'check-circle-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    case 'escrow_released':
+      return { icon: 'check-circle-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
     case 'payment_failed':
-    case 'order_cancelled': return { icon: 'close-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    case 'order_cancelled':
+      return { icon: 'close-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
     case 'order_note':
-    case 'note_from_seller': return { icon: 'note-text-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
-    case 'dispute_opened': return { icon: 'alert-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
-    // ── Meetup ──
+    case 'note_from_seller':
+      return { icon: 'note-text-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
+    case 'dispute_opened':
+      return { icon: 'alert-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    // ── Meetup & Fulfillment ──
+    case 'fulfillment_proposed':
+    case 'fulfillment_countered':
     case 'meetup_proposed':
-    case 'meetup_confirmed': return { icon: 'map-marker-outline', color: COLORS.blue, accent: COLORS.blue, bg: COLORS.blue + '18' };
-    case 'meetup_expired': return { icon: 'clock-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
-    // ── Chat & Offers ──
-    case 'new_message':
-    case 'new_offer':
-    case 'counter_offer': return { icon: 'message-text-outline', color: COLORS.blue, accent: COLORS.blue, bg: COLORS.blue + '18' };
-    case 'offer_accepted': return { icon: 'check-circle-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+      return { icon: 'map-marker-radius-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    case 'fulfillment_accepted':
+    case 'meetup_confirmed':
+      return { icon: 'map-marker-check-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    case 'fulfillment_rejected':
+    case 'fulfillment_expired':
+    case 'fulfillment_proposal_expired':
+    case 'meetup_expired':
+      return { icon: 'clock-alert-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
     // ── Reviews ──
-    case 'review_received': return { icon: 'star-outline', color: COLORS.yellow, accent: COLORS.yellow, bg: COLORS.yellow + '18' };
+    case 'review_received':
+      return { icon: 'star-outline', color: COLORS.yellow, accent: COLORS.yellow, bg: COLORS.yellow + '18' };
     // ── Social & Product ──
-    case 'new_follower': return { icon: 'account-plus-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
-    case 'new_product_from_followed': return { icon: 'tag-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    case 'new_follower':
+      return { icon: 'account-plus-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    case 'new_product_from_followed':
+    case 'product_saved':
+      return { icon: 'tag-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
     case 'low_stock':
-    case 'product_sold_out': return { icon: 'alert-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    case 'product_sold_out':
+      return { icon: 'alert-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
     // ── Escrow / Payout ──
     case 'escrow_refunded':
-    case 'payout_failed': return { icon: 'currency-usd', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
-    // ── Account ──
-    case 'subscription_expired': return { icon: 'crown-outline', color: COLORS.yellow, accent: COLORS.yellow, bg: COLORS.yellow + '18' };
-    case 'subscription_activated': return { icon: 'crown-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    case 'payout_failed':
+      return { icon: 'currency-usd', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    // ── Account / Subscription ──
+    case 'subscription_expired':
+    case 'natcash_access_expiry':
+      return { icon: 'crown-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    case 'subscription_activated':
+    case 'natcash_access_renewed':
+      return { icon: 'crown-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
     case 'verification_approved':
-    case 'verified': return { icon: 'shield-check-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
-    case 'verification_rejected': return { icon: 'shield-remove-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
-    default: return { icon: 'bell-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
+      return { icon: 'shield-check-outline', color: COLORS.green, accent: COLORS.green, bg: COLORS.green + '18' };
+    case 'verification_rejected':
+      return { icon: 'shield-remove-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
+    default:
+      return { icon: 'bell-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
   }
 }
 
@@ -99,557 +133,669 @@ function timeAgo(dateStr: string, t: (key: string, params?: Record<string, any>)
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return t('common.hoursAgo', { hours: hrs });
   const days = Math.floor(hrs / 24);
-  if (days === 1) return t('common.yesterday');
+  if (days === 1) return t('notif.section.yesterday');
   if (days < 7) return t('common.daysAgo', { days });
   return new Date(dateStr).toLocaleDateString('fr-HT', { day: 'numeric', month: 'short' });
 }
 
-function groupByDay(notifs: Notification[], t: (key: string) => string): { label: string; data: Notification[] }[] {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 86400000);
-  const weekAgo = new Date(today.getTime() - 7 * 86400000);
-
-  const groups: Record<string, Notification[]> = {};
-  for (const n of notifs) {
-    const d = new Date(n.created_at);
-    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    let label: string;
-    if (dayStart.getTime() === today.getTime()) label = t('common.today');
-    else if (dayStart.getTime() === yesterday.getTime()) label = t('common.yesterday');
-    else if (dayStart.getTime() < weekAgo.getTime()) {
-      label = d.toLocaleDateString('fr-HT', { day: 'numeric', month: 'long', year: 'numeric' });
-    } else {
-      label = d.toLocaleDateString('fr-HT', { weekday: 'long', day: 'numeric', month: 'long' });
-    }
-    if (!groups[label]) groups[label] = [];
-    groups[label].push(n);
-  }
-  return Object.entries(groups).map(([label, data]) => ({ label, data }));
+function formatDeadline(deadlineStr: string | null | undefined, t: (key: string, params?: Record<string, any>) => string): string | null {
+  if (!deadlineStr) return null;
+  const diff = new Date(deadlineStr).getTime() - Date.now();
+  if (diff <= 0) return t('notif.expired');
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return t('notif.expiresInMins', { mins });
+  const hrs = Math.floor(mins / 60);
+  return t('notif.expiresInHours', { hours: hrs });
 }
 
-const ORDER_NOTIF_TYPES = new Set(['order_status', 'payment_confirmed', 'order_cancelled']);
-const CHAT_NOTIF_TYPES = new Set(['new_message', 'new_offer', 'counter_offer', 'offer_accepted']);
-
-const getSortOptions = (t: (key: string) => string) => [
-  { value: 'date_desc', label: t('notif.sortNewestFirst') },
-  { value: 'date_asc', label: t('notif.sortOldestFirst') },
-  { value: 'price_desc', label: t('notif.sortPriceHighToLow') },
-  { value: 'price_asc', label: t('notif.sortPriceLowToHigh') },
-  { value: 'name_asc', label: t('notif.sortNameAZ') },
-  { value: 'name_desc', label: t('notif.sortNameZA') },
-];
+interface SectionItem {
+  isHeader: boolean;
+  sectionLabel?: string;
+  item?: Notification;
+}
 
 export default function NotificationScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<Tab>('notifications');
+
+  const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [buyOrders, setBuyOrders] = useState<Order[]>([]);
-  const [sellOrders, setSellOrders] = useState<Order[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [historyFilter, setHistoryFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
-  const [sortModal, setSortModal] = useState(false);
-  const [sortBy, setSortBy] = useState('date_desc');
-  const viewedOrdersRef = useRef<Set<string>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [actionNeededCount, setActionNeededCount] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
 
-  // Per-user key for viewed orders (prevents cross-account bleed)
-  const viewedKey = `viewed_orders_${store.user?.id || 'anon'}`;
+  // Group detail sheet
+  const [selectedGroup, setSelectedGroup] = useState<Notification | null>(null);
+  const [mutedSellers, setMutedSellers] = useState<Set<string>>(new Set());
 
-  // Load viewed orders from AsyncStorage (namespaced per user)
+  // Clear confirmation modal
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Undo dismiss banner
+  const [dismissedItem, setDismissedItem] = useState<{ id: string; notif: Notification } | null>(null);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Reduce motion check
+  const [reduceMotion, setReduceMotion] = useState(false);
   useEffect(() => {
-    (async () => {
-      // Reset on mount to avoid stale data from previous user
-      viewedOrdersRef.current = new Set();
-      try {
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        const raw = await AsyncStorage.getItem(viewedKey);
-        if (raw) viewedOrdersRef.current = new Set(JSON.parse(raw));
-      } catch {}
-    })();
-  }, [viewedKey]);
-
-  const markOrderViewed = useCallback(async (orderId: string) => {
-    viewedOrdersRef.current.add(orderId);
-    try {
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      await AsyncStorage.setItem(viewedKey, JSON.stringify([...viewedOrdersRef.current]));
-    } catch {}
-  }, [viewedKey]);
-
-  const fetchData = useCallback(async (force = false) => {
-    try {
-      const [notifResult, buyOrdersResult, sellOrdersResult] = await Promise.allSettled([
-        getNotifications() as Promise<{ notifications: Notification[] }>,
-        getOrders() as Promise<{ buyerOrders: Order[] }>,
-        store.isSeller ? getSellerOrders() as Promise<{ orders: Order[] }> : Promise.resolve({ orders: [] }),
-      ]);
-      const notifs = notifResult.status === 'fulfilled' ? notifResult.value.notifications || [] : [];
-      const buy = buyOrdersResult.status === 'fulfilled' ? buyOrdersResult.value.buyerOrders || [] : [];
-      const sell = sellOrdersResult.status === 'fulfilled' ? sellOrdersResult.value.orders || [] : [];
-      setNotifications(notifs);
-      setBuyOrders(buy);
-      setSellOrders(sell);
-    } catch { toast.error(t('feedback.notificationsLoadFailed'), t('feedback.connectionRetry'), () => fetchData(true)); }
-    setLoading(false);
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchData(true); }, []));
+  const cacheKey = `cached_notifs_${store.user?.id || 'anon'}`;
+
+  const saveCache = useCallback(async (data: Notification[]) => {
+    try {
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+    } catch {}
+  }, [cacheKey]);
+
+  const loadCached = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(cacheKey);
+      if (raw) {
+        const data = (JSON.parse(raw) as Notification[]).filter(item => !isInboxActivity(item));
+        setNotifications(data);
+        saveCache(data);
+      }
+    } catch {}
+  }, [cacheKey, saveCache]);
+
+  const fetchData = useCallback(async (filter: FilterTab = activeFilter, isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    try {
+      const [notifRes, countRes] = await Promise.all([
+        getNotifications(filter) as Promise<{ notifications: Notification[] }>,
+        getUnreadCount() as Promise<{ count: number; actionNeededCount: number }>,
+      ]);
+
+      const items = (notifRes.notifications || []).filter((item: Notification) => !isInboxActivity(item));
+      setNotifications(items);
+      setUnreadCount(countRes.count || 0);
+      setActionNeededCount(countRes.actionNeededCount || 0);
+      setIsOffline(false);
+      saveCache(items);
+    } catch {
+      setIsOffline(true);
+      await loadCached();
+    } finally {
+      setLoading(false);
+    }
+  }, [activeFilter, loadCached, saveCache]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchData(activeFilter, true);
+    }, [activeFilter, fetchData])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData(true);
+    await fetchData(activeFilter, true);
     setRefreshing(false);
-  }, []);
+  }, [activeFilter, fetchData]);
+
+  const handleFilterChange = (tab: FilterTab) => {
+    setActiveFilter(tab);
+    fetchData(tab);
+  };
 
   const handlePress = async (notif: Notification) => {
+    if (notif.is_group) {
+      // Open group detail modal and mark child events read
+      setSelectedGroup(notif);
+      if (!notif.is_read) {
+        try {
+          await markNotificationRead(notif.id);
+        } catch {}
+        setNotifications(prev => prev.map(n => (n.id === notif.id ? { ...n, is_read: true } : n)));
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+      return;
+    }
+
     if (!notif.is_read) {
-      try { await markNotificationRead(notif.id); } catch { toast.error(t('feedback.notificationUpdateFailed'), t('feedback.connectionRetry')); }
-      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+      try {
+        await markNotificationRead(notif.id);
+      } catch {}
+      setNotifications(prev => prev.map(n => (n.id === notif.id ? { ...n, is_read: true } : n)));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    }
+
+    routeNotification(nav, notif.type, notif.data as Record<string, any>);
+  };
+
+  const handleCTA = (notif: Notification) => {
+    if (!notif.is_read) {
+      markNotificationRead(notif.id).catch(() => {});
+      setNotifications(prev => prev.map(n => (n.id === notif.id ? { ...n, is_read: true } : n)));
+      setUnreadCount(prev => Math.max(0, prev - 1));
     }
     routeNotification(nav, notif.type, notif.data as Record<string, any>);
   };
 
-  const handleMarkAllRead = async () => {
-    try { await markAllNotificationsRead(); } catch { toast.error(t('feedback.markNotificationsFailed'), t('common.tryAgain'), handleMarkAllRead); return; }
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+  const handleDismiss = async (notif: Notification) => {
+    const targetId = notif.id;
+    // Optimistically remove from visible list
+    setNotifications(prev => prev.filter(n => n.id !== targetId));
+
+    // Show Undo banner
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    setDismissedItem({ id: targetId, notif });
+    undoTimeoutRef.current = setTimeout(() => {
+      setDismissedItem(null);
+    }, 5000);
+
+    try {
+      await dismissNotification(targetId);
+      if (!notif.is_read) {
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+    } catch {
+      toast.error(t('feedback.notificationUpdateFailed'));
+    }
   };
 
-  const filteredNotifications = notifications.filter(n => !ORDER_NOTIF_TYPES.has(n.type) && !CHAT_NOTIF_TYPES.has(n.type) && !n.is_read);
-  const unreadCount = filteredNotifications.length;
-  const allOrders = [...buyOrders, ...sellOrders];
-  const activeOrders = allOrders.filter(o => ['pending', 'paid', 'processing', 'shipped', 'delivered'].includes(o.status));
-  const allHistoryOrders = allOrders.filter(o => ['completed', 'cancelled'].includes(o.status));
+  const handleUndoDismiss = async () => {
+    if (!dismissedItem) return;
+    const { id, notif } = dismissedItem;
+    setDismissedItem(null);
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
 
-  const markAllOrdersViewed = useCallback(async () => {
-    allOrders.forEach(o => viewedOrdersRef.current.add(o.id));
+    // Optimistically restore
+    setNotifications(prev => [notif, ...prev]);
+
     try {
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      await AsyncStorage.setItem(viewedKey, JSON.stringify([...viewedOrdersRef.current]));
-    } catch {}
-  }, [allOrders, viewedKey]);
-  const historyOrders = (() => {
-    let filtered = allOrders.filter(o => {
-      if (historyFilter === 'completed') return o.status === 'completed';
-      if (historyFilter === 'cancelled') return o.status === 'cancelled';
-      return ['completed', 'cancelled'].includes(o.status);
-    });
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'date_asc': return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        case 'date_desc': return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        case 'price_asc': return Number(a.total_amount) - Number(b.total_amount);
-        case 'price_desc': return Number(b.total_amount) - Number(a.total_amount);
-        case 'name_asc': return (a.first_product_name || '').localeCompare(b.first_product_name || '');
-        case 'name_desc': return (b.first_product_name || '').localeCompare(a.first_product_name || '');
-        default: return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      }
-    });
-    return filtered;
-  })();
-
-  const sections = groupByDay(filteredNotifications, t);
-  const sectionsFlat: { label: string; notif: Notification; isHeader: boolean }[] = [];
-  for (const section of sections) {
-    sectionsFlat.push({ label: section.label, notif: section.data[0], isHeader: true });
-    for (const n of section.data) {
-      sectionsFlat.push({ label: '', notif: n, isHeader: false });
+      await undoDismissNotification(id);
+      fetchData(activeFilter, true);
+    } catch {
+      toast.error(t('feedback.notificationUpdateFailed'));
     }
-  }
+  };
 
-  const renderNotifItem = ({ item }: { item: { label: string; notif: Notification; isHeader: boolean } }) => {
+  const handleClearRead = async () => {
+    setShowClearConfirm(false);
+    try {
+      await clearReadNotifications();
+      setNotifications(prev => prev.filter(n => !n.is_read || (n.action_required && !n.action_resolved)));
+      toast.show({ kind: 'success', title: t('notif.dismissed') });
+    } catch {
+      toast.error(t('feedback.notificationUpdateFailed'));
+    }
+  };
+
+  const handleToggleMuteSeller = async (sellerId: string) => {
+    const isMuted = mutedSellers.has(sellerId);
+    const nextMuted = !isMuted;
+    try {
+      await muteSellerUpdates(sellerId, nextMuted);
+      setMutedSellers(prev => {
+        const next = new Set(prev);
+        if (nextMuted) next.add(sellerId);
+        else next.delete(sellerId);
+        return next;
+      });
+      toast.show({
+        kind: 'info',
+        title: t(nextMuted ? 'notif.group.mutedToast' : 'notif.group.unmutedToast'),
+      });
+    } catch {
+      toast.error(t('feedback.notificationUpdateFailed'));
+    }
+  };
+
+  // Build section list (time grouping for normal tabs, active tasks list for action_needed)
+  const buildSectionData = (): SectionItem[] => {
+    if (activeFilter === 'action_needed') {
+      const result: SectionItem[] = [];
+      if (notifications.length > 0) {
+        result.push({ isHeader: true, sectionLabel: t('notif.section.activeTasks') });
+        for (const n of notifications) {
+          result.push({ isHeader: false, item: n });
+        }
+      }
+      return result;
+    }
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 86400000);
+
+    const todayItems: Notification[] = [];
+    const yesterdayItems: Notification[] = [];
+    const earlierItems: Notification[] = [];
+
+    for (const n of notifications) {
+      const d = new Date(n.created_at);
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      if (dayStart.getTime() === today.getTime()) {
+        todayItems.push(n);
+      } else if (dayStart.getTime() === yesterday.getTime()) {
+        yesterdayItems.push(n);
+      } else {
+        earlierItems.push(n);
+      }
+    }
+
+    const result: SectionItem[] = [];
+    if (todayItems.length > 0) {
+      result.push({ isHeader: true, sectionLabel: t('notif.section.today') });
+      todayItems.forEach(n => result.push({ isHeader: false, item: n }));
+    }
+    if (yesterdayItems.length > 0) {
+      result.push({ isHeader: true, sectionLabel: t('notif.section.yesterday') });
+      yesterdayItems.forEach(n => result.push({ isHeader: false, item: n }));
+    }
+    if (earlierItems.length > 0) {
+      result.push({ isHeader: true, sectionLabel: t('notif.section.earlier') });
+      earlierItems.forEach(n => result.push({ isHeader: false, item: n }));
+    }
+    return result;
+  };
+
+  const getCTAInfo = (notif: Notification): { label: string; icon: string } | null => {
+    if (!notif.action_required || notif.action_resolved) return null;
+    switch (notif.type) {
+      case 'fulfillment_proposed':
+      case 'meetup_proposed':
+        return { label: t('notif.action.confirm'), icon: 'check-circle-outline' };
+      case 'fulfillment_countered':
+        return { label: t('notif.action.respond'), icon: 'message-text-outline' };
+      case 'payment_failed':
+        return { label: t('notif.action.retryPayment'), icon: 'credit-card-refresh-outline' };
+      case 'dispute_opened':
+        return { label: t('notif.action.respond'), icon: 'alert-circle-outline' };
+      case 'low_stock':
+      case 'product_sold_out':
+        return { label: t('notif.action.editListing'), icon: 'pencil-outline' };
+      case 'subscription_expired':
+      case 'natcash_access_expiry':
+        return { label: t('notif.action.renewNow'), icon: 'crown-outline' };
+      case 'verification_rejected':
+        return { label: t('notif.action.resubmitId'), icon: 'shield-refresh-outline' };
+      default:
+        return { label: t('notif.action.respond'), icon: 'arrow-right' };
+    }
+  };
+
+  const renderItem = ({ item }: { item: SectionItem }) => {
     if (item.isHeader) {
       return (
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionHeaderText}>{item.label}</Text>
+          <Text style={styles.sectionHeaderText}>{item.sectionLabel}</Text>
         </View>
       );
     }
-    const notif = item.notif;
-    const config = getNotifConfig(notif.type);
-    const data = (notif.data || {}) as Record<string, any>;
 
-    // Extract price from body or data
-    const priceMatch = notif.body?.match(/G\s?([\d,]+)/);
-    const price = priceMatch ? priceMatch[1] : null;
-    const productName = data.productName || notif.body?.match(/"(.+?)"/)?.[1] || null;
-
-    // Action buttons based on type
-    const getActions = () => {
-      switch (notif.type) {
-        case 'new_order':
-          return [
-            { label: t('notif.action.shipNow'), color: COLORS.green, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
-        case 'payment_failed':
-          return [
-            { label: t('notif.action.retryPayment'), color: COLORS.coral, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
-        case 'dispute_opened':
-          return [
-            { label: t('notif.action.respond'), color: COLORS.coral, primary: true, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) },
-            { label: t('notif.action.viewOrder'), color: COLORS.text2, primary: false, onPress: () => data.orderId && nav.navigate('OrderDetail', { orderId: data.orderId }) }];
-        case 'meetup_proposed':
-          return [
-            { label: t('notif.action.confirm'), color: COLORS.blue, primary: true, onPress: () => data.orderId && nav.navigate('Meetup', { orderId: data.orderId }) },
-            { label: t('notif.action.proposeNewSpot'), color: COLORS.text2, primary: false, onPress: () => data.orderId && nav.navigate('Meetup', { orderId: data.orderId }) }];
-        case 'new_offer':
-        case 'counter_offer':
-          return [
-            { label: t('notif.action.accept'), color: COLORS.green, primary: true, onPress: () => data.conversationId && nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: data.senderName || 'Chat', otherUserId: data.senderId }) },
-            { label: t('notif.action.counter'), color: COLORS.text2, primary: false, onPress: () => data.conversationId && nav.navigate('Chat', { conversationId: data.conversationId, otherUserName: data.senderName || 'Chat', otherUserId: data.senderId }) }];
-        case 'offer_accepted':
-          return [
-            { label: t('notif.action.checkout'), color: COLORS.green, primary: true, onPress: () => nav.navigate('Cart') }];
-        case 'subscription_expired':
-          return [
-            { label: t('notif.action.renewNow'), color: COLORS.yellow, primary: true, onPress: () => nav.navigate('BusinessSubscription') }];
-        case 'verification_rejected':
-          return [
-            { label: t('notif.action.resubmitId'), color: COLORS.text2, primary: false, onPress: () => nav.navigate('Verification') }];
-        case 'low_stock':
-        case 'product_sold_out':
-          return [
-            { label: t('notif.action.editListing'), color: COLORS.coral, primary: true, onPress: () => data.productId && nav.navigate('EditListing', { productId: data.productId }) }];
-        default:
-          return [];
-      }
-    };
-
-    const actions = getActions();
+    const notif = item.item!;
     const isUnread = !notif.is_read;
+    const isActionNeeded = notif.action_required && !notif.action_resolved;
+    const config = getNotifConfig(notif.type);
+    const deadlineText = formatDeadline(notif.action_deadline, t);
+    const cta = getCTAInfo(notif);
+    const data = notif.data || {};
+
+    const avatarUrl = data.avatarUrl || data.image || (data.followerId ? null : null);
+    const productImageUrl = data.productId && data.productImage ? getImageUrl(data.productImage) : null;
 
     return (
-      <TouchableOpacity
-        style={[styles.notifCard, isUnread && styles.notifCardUnread]}
-        onPress={() => handlePress(notif)}
-        activeOpacity={0.7}
-        accessibilityLabel={notif.title}
-        accessibilityRole="button"
-      >
-        {/* Unread accent bar */}
-        {isUnread && <View style={[styles.notifAccent, { backgroundColor: config.accent }]} />}
-
-        {/* Icon */}
-        <View style={[styles.notifIcon, { backgroundColor: config.bg }]}>
-          <MaterialCommunityIcons name={config.icon as any} size={18} color={config.color} />
-        </View>
-
-        {/* Body */}
-        <View style={styles.notifBody}>
-          <View style={styles.notifRow1}>
-            <Text style={[styles.notifTitle, isUnread && styles.notifTitleUnread]} numberOfLines={1}>{notif.title}</Text>
-            <Text style={styles.notifTime}>{timeAgo(notif.created_at, t)}</Text>
-          </View>
-          {notif.body && <Text style={styles.notifDesc} numberOfLines={2}>{notif.body}</Text>}
-          {price && (
-            <View style={styles.notifPriceRow}>
-              <Text style={[styles.notifPrice, { color: config.color }]}>G {price}</Text>
-            </View>
+      <View style={styles.cardWrapper}>
+        <TouchableOpacity
+          style={[
+            styles.notifCard,
+            isUnread && styles.notifCardUnread,
+            isActionNeeded && styles.notifCardAction,
+          ]}
+          onPress={() => handlePress(notif)}
+          activeOpacity={0.7}
+          accessibilityLabel={notif.title}
+          accessibilityRole="button"
+        >
+          {/* Subtle unread accent bar */}
+          {isUnread && (
+            <View style={[styles.notifAccent, { backgroundColor: isActionNeeded ? COLORS.coral : config.accent }]} />
           )}
-          {notif.type === 'escrow_held' && (
-            <View style={styles.notifBarTrack}>
-              <View style={[styles.notifBarFill, { width: '33%', backgroundColor: config.color }]} />
-            </View>
-          )}
-          {actions.length > 0 && (
-            <View style={styles.notifBtnRow}>
-              {actions.map((a, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={[styles.notifBtn, a.primary ? { backgroundColor: a.color } : styles.notifBtnGhost]}
-                  onPress={a.onPress}
-                  accessibilityRole="button"
-                  accessibilityLabel={a.label}
-                >
-                  <Text style={[styles.notifBtnText, a.primary && { color: a.primary ? '#fff' : COLORS.text }]}>{a.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
 
-        {/* Unread dot */}
-        {isUnread && <View style={[styles.notifDot, { backgroundColor: config.accent }]} />}
-      </TouchableOpacity>
-    );
-  };
-
-  const renderOrderCard = (item: Order, role: 'buying' | 'selling') => {
-    const sc = STATUS_COLORS[item.status] || COLORS.text2;
-    const currentStep = STATUS_STEPS.indexOf(item.status);
-    const isCancelled = item.status === 'cancelled';
-    const isHistory = ['completed', 'cancelled'].includes(item.status);
-    const productImageUrl = item.product_image ? getImageUrl(item.product_image) : null;
-    const itemName = item.first_product_name || 'Order';
-    const itemCount = item.item_count || 1;
-    const isMeetup = item.delivery_method === 'meetup';
-    const otherName = role === 'buying'
-      ? (item as any).seller_name || 'Seller'
-      : (item as any).buyer_name || 'Buyer';
-    const isUnread = !viewedOrdersRef.current.has(item.id);
-
-    return (
-      <TouchableOpacity
-        key={item.id}
-        style={[styles.orderCard, isHistory && styles.orderCardHistory]}
-        onPress={() => { markOrderViewed(item.id); nav.navigate('OrderDetail', { orderId: item.id }); }}
-        accessibilityLabel={`order ${item.id.slice(0, 8)}`}
-        accessibilityRole="button"
-        activeOpacity={0.7}
-      >
-        <View style={styles.orderCardTop}>
-          <View>
-            {productImageUrl ? (
-              <ExpoImage source={{ uri: productImageUrl }} style={styles.orderImage} contentFit="cover" cachePolicy="memory-disk" />
+          {/* Visual: Avatar, product thumbnail, or clean restrained icon */}
+          <View style={styles.leadingContainer}>
+            {avatarUrl ? (
+              <ExpoImage source={{ uri: avatarUrl }} style={styles.avatar} contentFit="cover" />
+            ) : productImageUrl ? (
+              <ExpoImage source={{ uri: productImageUrl }} style={styles.productThumb} contentFit="cover" />
             ) : (
-              <View style={[styles.orderImage, styles.orderImagePlaceholder]}>
-                <MaterialCommunityIcons name="package-variant" size={24} color={COLORS.text2} />
+              <View style={[styles.notifIcon, { backgroundColor: config.bg }]}>
+                <MaterialCommunityIcons name={config.icon as any} size={20} color={config.color} />
               </View>
             )}
-            {isUnread && (
-              <View style={styles.orderDot} />
+
+            {/* If grouped, show count bubble */}
+            {notif.is_group && (notif.group_count || 1) > 1 && (
+              <View style={styles.groupBadge}>
+                <Text style={styles.groupBadgeText}>{notif.group_count}</Text>
+              </View>
             )}
           </View>
-          <View style={styles.orderDetails}>
-            <Text style={styles.orderProductName} numberOfLines={1}>{itemName}</Text>
-            {itemCount > 1 && (
-              <Text style={styles.orderItemCount}>{itemCount > 2 ? t('notif.moreItemsPlural', { count: itemCount - 1 }) : t('notif.moreItems', { count: itemCount - 1 })}</Text>
-            )}
-            <View style={styles.orderMeta}>
-              <MaterialCommunityIcons
-                name={isMeetup ? 'map-marker-outline' : 'truck-delivery-outline'}
-                size={13}
-                color={COLORS.text2}
-              />
-              <Text style={styles.orderMetaText}>{otherName}</Text>
+
+          {/* Content */}
+          <View style={styles.notifBody}>
+            <View style={styles.notifRow1}>
+              <Text
+                style={[
+                  styles.notifTitle,
+                  isUnread && styles.notifTitleUnread,
+                  isActionNeeded && styles.notifTitleAction,
+                ]}
+                numberOfLines={1}
+              >
+                {notif.title}
+              </Text>
+              <Text style={styles.notifTime}>{timeAgo(notif.created_at, t)}</Text>
             </View>
-          </View>
-          <View style={styles.orderPriceCol}>
-            <Text style={styles.orderAmount}>{formatPrice(Number(item.total_amount))} G</Text>
-            <Text style={styles.orderDate}>{timeAgo(item.created_at, t)}</Text>
-          </View>
-        </View>
-        <View style={styles.orderCardBottom}>
-          {isCancelled ? (
-            <View style={[styles.orderStatusPill, { backgroundColor: COLORS.coral + '18' }]}>
-              <MaterialCommunityIcons name="close-circle-outline" size={13} color={COLORS.coral} />
-              <Text style={[styles.orderStatusPillText, { color: COLORS.coral }]}>{t('notif.status.cancelled')}</Text>
-            </View>
-          ) : isHistory ? (
-            <View style={[styles.orderStatusPill, { backgroundColor: COLORS.green + '18' }]}>
-              <MaterialCommunityIcons name="check-circle-outline" size={13} color={COLORS.green} />
-              <Text style={[styles.orderStatusPillText, { color: COLORS.green }]}>{t('notif.status.completed')}</Text>
-            </View>
-          ) : (
-            <View style={styles.orderStepper}>
-              {STATUS_STEPS.map((step, i) => {
-                const isActive = i <= currentStep;
-                const isCurrent = i === currentStep;
-                return (
-                  <React.Fragment key={step}>
-                    <View style={[
-                      styles.stepDot,
-                      isActive && { backgroundColor: sc },
-                      isCurrent && styles.stepDotCurrent,
-                    ]} />
-                    {i < STATUS_STEPS.length - 1 && (
-                      <View style={[
-                        styles.stepLine,
-                        i < currentStep && { backgroundColor: sc },
-                      ]} />
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </View>
-          )}
-          <Text style={styles.orderId}>#{item.id.slice(0, 8)}</Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
 
-  const bottomTabs: { key: Tab; icon: string; label: string; badge: number }[] = [
-    { key: 'notifications', icon: 'bell-outline', label: t('notif.tab.notifications'), badge: unreadCount },
-    { key: 'buying', icon: 'shopping-outline', label: t('notif.tab.buying'), badge: activeOrders.filter(o => (o as any).my_role === 'buyer').length },
-    { key: 'selling', icon: 'store-outline', label: t('notif.tab.selling'), badge: activeOrders.filter(o => (o as any).my_role === 'seller').length },
-  ];
+            {notif.body ? (
+              <Text style={styles.notifDesc} numberOfLines={2}>
+                {notif.body}
+              </Text>
+            ) : null}
 
-  return (
-    <View style={styles.container}>
-      {/* Top bar */}
-      <ScreenHeader
-        title={activeTab === 'notifications' ? t('notif.tab.notifications') : activeTab === 'buying' ? t('notif.tab.buying') : t('notif.tab.selling')}
-        onBack={() => nav.goBack()}
-        right={
-          <TouchableOpacity onPress={() => setShowHistory(true)} style={styles.historyBtn} accessibilityLabel="order history" accessibilityRole="button">
-            <MaterialCommunityIcons name="clock-outline" size={26} color={COLORS.text} />
-          </TouchableOpacity>
-        }
-      />
-
-      {/* Mark all read row */}
-      {activeTab === 'notifications' && (
-        <View style={styles.markAllRow}>
-          <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
-            <MaterialCommunityIcons name="check-all" size={16} color={COLORS.white} />
-            <Text style={styles.markAllText}>{t('notif.markAllRead')}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      {(activeTab === 'buying' || activeTab === 'selling') && (
-        <View style={styles.markAllRow}>
-          <TouchableOpacity onPress={markAllOrdersViewed} style={styles.markAllBtn} accessibilityLabel="mark all read" accessibilityRole="button">
-            <MaterialCommunityIcons name="check-all" size={16} color={COLORS.white} />
-            <Text style={styles.markAllText}>{t('notif.markAllRead')}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Content */}
-      {activeTab === 'notifications' ? (
-        loading ? (
-          <RowListSkeleton count={7} thumbSize={40} />
-        ) : filteredNotifications.length === 0 ? (
-          <EmptyState icon="bell-outline" title={t('notif.emptyNotifications')} size={56} />
-        ) : (
-          <FlatList
-            data={sectionsFlat}
-            renderItem={renderNotifItem}
-            keyExtractor={(item, i) => item.isHeader ? `header-${item.label}` : item.notif.id || `${i}`}
-            contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
-          />
-        )
-      ) : (
-        <>
-          <FlatList
-            data={activeOrders.filter(o => activeTab === 'buying' ? (o as any).my_role === 'buyer' : (o as any).my_role === 'seller')}
-            keyExtractor={item => item.id}
-            contentContainerStyle={{ padding: SPACING.md, paddingBottom: insets.bottom + 80 }}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
-            renderItem={({ item }) => renderOrderCard(item, activeTab)}
-            ListEmptyComponent={
-              loading ? (
-                <RowListSkeleton count={4} thumbSize={48} />
-              ) : (
-                <EmptyState
-                  icon={activeTab === 'buying' ? 'shopping-outline' : 'store-outline'}
-                  title={activeTab === 'buying' ? t('notif.emptyBuyerOrders') : t('notif.emptySellerOrders')}
-                  size={44}
-                />
-              )
-            }
-          />
-        </>
-      )}
-
-      {/* Bottom nav */}
-      <View style={[styles.bottomNav, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 12 }]}>
-        {bottomTabs.map(tab => {
-          const isActive = activeTab === tab.key;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={styles.bottomNavItem}
-              onPress={() => setActiveTab(tab.key)}
-              accessibilityLabel={tab.label}
-              accessibilityRole="button"
-              activeOpacity={0.7}
-            >
-              <View style={styles.bottomNavIconWrap}>
-                <MaterialCommunityIcons name={tab.icon as any} size={24} color={isActive ? COLORS.coral : COLORS.text2} />
-                {tab.badge > 0 && (
-                  <View style={styles.bottomNavBadge}>
-                    <Text style={styles.bottomNavBadgeText}>{tab.badge > 9 ? '9+' : tab.badge}</Text>
+            {/* Badges row: Action Needed / Expired / Group */}
+            {(isActionNeeded || deadlineText || notif.is_group) && (
+              <View style={styles.badgeRow}>
+                {isActionNeeded && (
+                  <View style={styles.actionPill}>
+                    <MaterialCommunityIcons name="alert-decagram-outline" size={12} color={COLORS.coral} />
+                    <Text style={styles.actionPillText}>{t('notif.actionNeededBadge')}</Text>
+                  </View>
+                )}
+                {deadlineText && (
+                  <View style={styles.deadlinePill}>
+                    <MaterialCommunityIcons name="clock-outline" size={12} color={COLORS.text2} />
+                    <Text style={styles.deadlinePillText}>{deadlineText}</Text>
+                  </View>
+                )}
+                {notif.is_group && (
+                  <View style={styles.groupPill}>
+                    <MaterialCommunityIcons name="layers-outline" size={12} color={COLORS.text2} />
+                    <Text style={styles.groupPillText}>{t('notif.group.viewDetails')}</Text>
                   </View>
                 )}
               </View>
-              <Text style={[styles.bottomNavLabel, isActive && styles.bottomNavLabelActive]}>{tab.label}</Text>
+            )}
+
+            {/* Contextual CTA for Action Needed */}
+            {cta && (
+              <View style={styles.ctaRow}>
+                <TouchableOpacity
+                  style={styles.ctaButton}
+                  onPress={() => handleCTA(notif)}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={cta.label}
+                >
+                  <MaterialCommunityIcons name={cta.icon as any} size={15} color={COLORS.white} />
+                  <Text style={styles.ctaButtonText}>{cta.label}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Dismiss button affordance */}
+          <TouchableOpacity
+            style={styles.dismissBtn}
+            onPress={() => handleDismiss(notif)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Dismiss notification"
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons name="close" size={16} color={COLORS.text2} />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const sectionData = buildSectionData();
+  const hasReadItems = notifications.some(n => n.is_read && (!n.action_required || n.action_resolved));
+
+  return (
+    <View style={styles.container}>
+      {/* Top Header */}
+      <ScreenHeader
+        title={t('notif.tab.notifications')}
+        onBack={() => nav.goBack()}
+        right={
+          <View style={styles.headerActions}>
+            {hasReadItems && (
+              <TouchableOpacity
+                onPress={() => setShowClearConfirm(true)}
+                style={styles.headerBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Clear read notifications"
+              >
+                <MaterialCommunityIcons name="broom" size={20} color={COLORS.text2} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={() => nav.navigate('NotificationsSettings')}
+              style={styles.headerBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Notification settings"
+            >
+              <MaterialCommunityIcons name="cog-outline" size={22} color={COLORS.text} />
             </TouchableOpacity>
-          );
-        })}
+          </View>
+        }
+      />
+
+      {/* Offline banner */}
+      {isOffline && (
+        <View style={styles.offlineBanner}>
+          <MaterialCommunityIcons name="cloud-off-outline" size={14} color={COLORS.text2} />
+          <Text style={styles.offlineBannerText}>Showing cached activity · Pull to refresh</Text>
+        </View>
+      )}
+
+      {/* Filter Tabs Bar */}
+      <View style={styles.filterBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+          {/* All */}
+          <TouchableOpacity
+            style={[styles.filterPill, activeFilter === 'all' && styles.filterPillActive]}
+            onPress={() => handleFilterChange('all')}
+            accessibilityRole="button"
+            accessibilityLabel={t('notif.filter.all')}
+          >
+            <Text style={[styles.filterPillText, activeFilter === 'all' && styles.filterPillTextActive]}>
+              {t('notif.filter.all')}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Action Needed */}
+          <TouchableOpacity
+            style={[styles.filterPill, activeFilter === 'action_needed' && styles.filterPillActive]}
+            onPress={() => handleFilterChange('action_needed')}
+            accessibilityRole="button"
+            accessibilityLabel={t('notif.filter.actionNeeded')}
+          >
+            <Text
+              style={[
+                styles.filterPillText,
+                activeFilter === 'action_needed' && styles.filterPillTextActive,
+              ]}
+            >
+              {t('notif.filter.actionNeeded')}
+            </Text>
+            {actionNeededCount > 0 && (
+              <View style={styles.actionCountBadge}>
+                <Text style={styles.actionCountBadgeText}>{actionNeededCount > 9 ? '9+' : actionNeededCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Social */}
+          <TouchableOpacity
+            style={[styles.filterPill, activeFilter === 'social' && styles.filterPillActive]}
+            onPress={() => handleFilterChange('social')}
+            accessibilityRole="button"
+            accessibilityLabel={t('notif.filter.social')}
+          >
+            <Text style={[styles.filterPillText, activeFilter === 'social' && styles.filterPillTextActive]}>
+              {t('notif.filter.social')}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Marketplace */}
+          <TouchableOpacity
+            style={[styles.filterPill, activeFilter === 'marketplace' && styles.filterPillActive]}
+            onPress={() => handleFilterChange('marketplace')}
+            accessibilityRole="button"
+            accessibilityLabel={t('notif.filter.marketplace')}
+          >
+            <Text style={[styles.filterPillText, activeFilter === 'marketplace' && styles.filterPillTextActive]}>
+              {t('notif.filter.marketplace')}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
-      {/* History modal */}
-      <Modal visible={showHistory} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowHistory(false)}>
-        <View style={styles.container}>
+      {/* Main Activity Feed */}
+      {loading ? (
+        <RowListSkeleton count={7} thumbSize={42} />
+      ) : sectionData.length === 0 ? (
+        <EmptyState
+          icon={
+            activeFilter === 'action_needed'
+              ? 'check-circle-outline'
+              : activeFilter === 'social'
+              ? 'account-heart-outline'
+              : 'bell-outline'
+          }
+          title={
+            activeFilter === 'action_needed'
+              ? t('notif.emptyActionTitle')
+              : activeFilter === 'social'
+              ? t('notif.emptySocialTitle')
+              : activeFilter === 'marketplace'
+              ? t('notif.emptyMarketplaceTitle')
+              : t('notif.emptyCaughtUpTitle')
+          }
+          hint={
+            activeFilter === 'action_needed'
+              ? t('notif.emptyActionSubtitle')
+              : activeFilter === 'social'
+              ? t('notif.emptySocialSubtitle')
+              : activeFilter === 'marketplace'
+              ? t('notif.emptyMarketplaceSubtitle')
+              : t('notif.emptyCaughtUpSubtitle')
+          }
+          size={52}
+        />
+      ) : (
+        <FlatList
+          data={sectionData}
+          renderItem={renderItem}
+          keyExtractor={(item, index) =>
+            item.isHeader ? `header-${item.sectionLabel}-${index}` : item.item!.id || `${index}`
+          }
+          contentContainerStyle={{ paddingBottom: insets.bottom + 60 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />
+          }
+        />
+      )}
+
+      {/* Undo Dismiss Snackbar */}
+      {dismissedItem && (
+        <View style={[styles.undoBar, { bottom: insets.bottom + 16 }]}>
+          <Text style={styles.undoText}>{t('notif.dismissed')}</Text>
+          <TouchableOpacity onPress={handleUndoDismiss} style={styles.undoBtn} accessibilityRole="button">
+            <Text style={styles.undoBtnText}>{t('notif.undo')}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Group Details Sheet Modal */}
+      <Modal
+        visible={!!selectedGroup}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSelectedGroup(null)}
+      >
+        <View style={styles.sheetContainer}>
           <ScreenHeader
-            title={t('notif.orderHistory')}
-            onBack={() => setShowHistory(false)}
-            right={
-              <TouchableOpacity
-                onPress={() => setSortModal(true)}
-                style={styles.historyFilterBtn}
-                accessibilityLabel="sort and filter"
-                accessibilityRole="button"
-              >
-                <MaterialCommunityIcons name="tune-variant" size={30} color={COLORS.text} />
-              </TouchableOpacity>
-            }
+            title={selectedGroup?.title || t('notif.group.viewDetails')}
+            onBack={() => setSelectedGroup(null)}
           />
-          {historyOrders.length === 0 ? (
-            <EmptyState icon="clock-outline" title={t('notif.emptyOrderHistory')} size={56} />
-          ) : (
-            <FlatList
-              data={historyOrders}
-              keyExtractor={item => item.id}
-              contentContainerStyle={{ padding: SPACING.md, paddingBottom: insets.bottom + 40 }}
-              renderItem={({ item }) => renderOrderCard(item, (item as any).my_role === 'buyer' ? 'buying' : 'selling')}
-            />
-          )}
+          <ScrollView contentContainerStyle={styles.sheetScroll}>
+            {selectedGroup?.group_items && selectedGroup.group_items.length > 0 ? (
+              selectedGroup.group_items.map((item, idx) => {
+                const itemData = item.data || {};
+                const sellerId = itemData.sellerId;
+                const isSellerMuted = sellerId ? mutedSellers.has(String(sellerId)) : false;
+
+                return (
+                  <View key={item.id || idx} style={styles.groupDetailRow}>
+                    <View style={styles.groupRowAvatar}>
+                      <MaterialCommunityIcons name="account-outline" size={24} color={COLORS.text2} />
+                    </View>
+                    <View style={styles.groupRowContent}>
+                      <Text style={styles.groupRowTitle}>{item.title}</Text>
+                      {item.body ? <Text style={styles.groupRowBody}>{item.body}</Text> : null}
+                      <Text style={styles.groupRowTime}>{timeAgo(item.created_at, t)}</Text>
+                    </View>
+                    {sellerId && (
+                      <TouchableOpacity
+                        style={styles.muteBtn}
+                        onPress={() => handleToggleMuteSeller(String(sellerId))}
+                        accessibilityRole="button"
+                      >
+                        <MaterialCommunityIcons
+                          name={isSellerMuted ? 'bell-ring-outline' : 'bell-off-outline'}
+                          size={16}
+                          color={isSellerMuted ? COLORS.coral : COLORS.text2}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })
+            ) : (
+              <EmptyState icon="bell-outline" title={t('notif.emptyNotifications')} size={44} />
+            )}
+          </ScrollView>
         </View>
       </Modal>
 
-      {/* Sort / Filter modal */}
-      <Modal visible={sortModal} transparent animationType="fade" onRequestClose={() => setSortModal(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setSortModal(false)}>
-          <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('notif.sortBy')}</Text>
-              <TouchableOpacity onPress={() => setSortModal(false)} accessibilityRole="button" accessibilityLabel="close">
-                <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
+      {/* Confirmation Modal for Clear All Read */}
+      <Modal
+        visible={showClearConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowClearConfirm(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowClearConfirm(false)}>
+          <Pressable style={styles.modalBox} onPress={e => e.stopPropagation()}>
+            <Text style={styles.modalHeading}>{t('notif.clearConfirmTitle')}</Text>
+            <Text style={styles.modalBody}>{t('notif.clearConfirmMessage')}</Text>
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowClearConfirm(false)}
+                accessibilityRole="button"
+              >
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                onPress={handleClearRead}
+                accessibilityRole="button"
+              >
+                <Text style={styles.modalConfirmText}>{t('notif.clearConfirmBtn')}</Text>
               </TouchableOpacity>
             </View>
-            {getSortOptions(t).map(option => (
-              <TouchableOpacity
-                key={option.value}
-                style={[styles.modalItem, sortBy === option.value && styles.modalItemActive]}
-                onPress={() => { setSortBy(option.value); setSortModal(false); }}
-                accessibilityRole="button"
-              >
-                <MaterialCommunityIcons
-                  name={sortBy === option.value ? 'radiobox-marked' : 'radiobox-blank'}
-                  size={18}
-                  color={sortBy === option.value ? COLORS.coral : COLORS.text2}
-                />
-                <Text style={[styles.modalItemText, sortBy === option.value && styles.modalItemTextActive]}>
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            <View style={styles.modalDivider} />
-            <Text style={[styles.modalTitle, { marginBottom: 6 }]}>{t('notif.statusFilter')}</Text>
-            {(['all', 'completed', 'cancelled'] as const).map(f => (
-              <TouchableOpacity
-                key={f}
-                style={[styles.modalItem, historyFilter === f && styles.modalItemActive]}
-                onPress={() => { setHistoryFilter(f); setSortModal(false); }}
-                accessibilityRole="button"
-              >
-                <MaterialCommunityIcons
-                  name={historyFilter === f ? 'radiobox-marked' : 'radiobox-blank'}
-                  size={18}
-                  color={historyFilter === f ? COLORS.coral : COLORS.text2}
-                />
-                <Text style={[styles.modalItemText, historyFilter === f && styles.modalItemTextActive]}>
-                  {f === 'all' ? t('common.all') : f === 'completed' ? t('notif.status.completed') : t('notif.status.cancelled')}
-                </Text>
-              </TouchableOpacity>
-            ))}
           </Pressable>
         </Pressable>
       </Modal>
@@ -659,161 +805,354 @@ export default function NotificationScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  topBar: {
-    flexDirection: 'row', alignItems: 'center',
-    padding: SPACING.md, paddingBottom: SPACING.sm,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  title: { flex: 1, textAlign: 'center', fontSize: 18, color: COLORS.text, fontWeight: '700' },
-  markAllRow: {
-    flexDirection: 'row', justifyContent: 'flex-end',
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs,
-  },
-  markAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 14, borderRadius: 20, backgroundColor: COLORS.coral },
-  markAllText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
-  historyBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  historyFilterBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headerBtn: { width: TOUCH.min, height: TOUCH.min, alignItems: 'center', justifyContent: 'center' },
 
-  /* Sort modal (Explore style) */
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center', alignItems: 'center',
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    backgroundColor: COLORS.surface2,
   },
-  modalContent: {
-    width: 240, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 10, gap: 2, overflow: 'hidden',
-  },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, marginLeft: 4 },
-  modalTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
-  modalItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 8, paddingHorizontal: 8, borderRadius: 6,
-  },
-  modalItemActive: { backgroundColor: COLORS.surface2 },
-  modalItemText: { fontSize: 12, color: COLORS.text2, fontWeight: '500' },
-  modalItemTextActive: { color: COLORS.text, fontWeight: '700' },
-  modalDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 6 },
+  offlineBannerText: { fontSize: 12, color: COLORS.text2, fontWeight: '500' },
 
-  /* Bottom nav */
-  bottomNav: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
-    backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingTop: 8,
-    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 8,
+  /* Filter bar */
+  filterBar: {
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.bg,
   },
-  bottomNavItem: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 2 },
-  bottomNavIconWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
-  bottomNavBadge: {
-    position: 'absolute', top: -4, right: -10,
-    backgroundColor: COLORS.coral, borderRadius: 8,
-    minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center',
+  filterScroll: {
+    paddingHorizontal: SPACING.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  filterPillActive: {
+    backgroundColor: COLORS.coral,
+    borderColor: COLORS.coral,
+  },
+  filterPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text2,
+  },
+  filterPillTextActive: {
+    color: COLORS.white,
+  },
+  actionCountBadge: {
+    backgroundColor: COLORS.white,
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 4,
   },
-  bottomNavBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '700' },
-  bottomNavLabel: { fontSize: 10, color: COLORS.text2, marginTop: 2, fontWeight: '500' },
-  bottomNavLabelActive: { color: COLORS.coral, fontWeight: '700' },
+  actionCountBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.coral,
+  },
 
-  /* Notifications — redesigned cards */
-  sectionHeader: { paddingHorizontal: SPACING.md, paddingTop: SPACING.md, paddingBottom: SPACING.xs },
-  sectionHeaderText: { fontSize: 13, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  /* Section header */
+  sectionHeader: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.xs,
+  },
+  sectionHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.text2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+
+  /* Notification card */
+  cardWrapper: {
+    position: 'relative',
+    overflow: 'hidden',
+  },
   notifCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 11,
-    paddingVertical: 13, paddingLeft: 14, paddingRight: SPACING.md,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-    position: 'relative', overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 14,
+    paddingLeft: 16,
+    paddingRight: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    position: 'relative',
   },
-  notifCardUnread: { backgroundColor: COLORS.surface },
-  notifAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
-  notifIcon: {
-    width: 38, height: 38, borderRadius: 11,
-    alignItems: 'center', justifyContent: 'center', flex: 'none' as any,
+  notifCardUnread: {
+    backgroundColor: COLORS.surface,
   },
-  notifBody: { flex: 1, minWidth: 0 },
-  notifRow1: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
-  notifTitle: { fontSize: 13.5, fontWeight: '500', color: COLORS.text, flex: 1 },
-  notifTitleUnread: { fontWeight: '700' },
-  notifTime: { fontSize: 10.5, color: COLORS.text2, flex: 'none' as any, fontWeight: '500' },
-  notifDesc: { fontSize: 12.5, color: COLORS.text2, lineHeight: 18, margin: 0 },
-  notifPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 },
-  notifPrice: { fontFamily: 'Syne', fontWeight: '800', fontSize: 14 },
-  notifBarTrack: { height: 5, borderRadius: 3, backgroundColor: COLORS.surface2, overflow: 'hidden', marginTop: 6 },
-  notifBarFill: { height: '100%' as any, borderRadius: 3 },
-  notifBtnRow: { flexDirection: 'row', gap: 8, marginTop: 9 },
-  notifBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 9 },
-  notifBtnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.border },
-  notifBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.text2 },
-  notifDot: { width: 6, height: 6, borderRadius: 3, flex: 'none' as any, marginTop: 5 },
+  notifCardAction: {
+    backgroundColor: COLORS.coral + '08',
+  },
+  notifAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3.5,
+  },
 
-  /* Orders */
-  orderCard: {
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: RADIUS.card, padding: 14, marginBottom: 10,
+  leadingContainer: {
+    position: 'relative',
+    marginTop: 2,
   },
-  orderCardHistory: { opacity: 0.7 },
-  orderCardTop: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
+  notifIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  orderImage: {
-    width: 52, height: 52, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2,
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.surface2,
   },
-  orderImagePlaceholder: {
-    alignItems: 'center', justifyContent: 'center',
+  productThumb: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: COLORS.surface2,
   },
-  orderDot: {
-    position: 'absolute', top: -2, right: -2,
-    width: 10, height: 10, borderRadius: 5,
+  groupBadge: {
+    position: 'absolute',
+    bottom: -3,
+    right: -4,
     backgroundColor: COLORS.coral,
-    borderWidth: 2, borderColor: COLORS.surface,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: COLORS.surface,
   },
-  orderDetails: {
-    flex: 1, gap: 2,
+  groupBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: COLORS.white,
   },
-  orderProductName: {
-    fontSize: 15, fontWeight: '600', color: COLORS.text, lineHeight: 20,
+
+  notifBody: {
+    flex: 1,
+    minWidth: 0,
   },
-  orderItemCount: {
-    fontSize: 12, color: COLORS.text2,
+  notifRow1: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginBottom: 3,
   },
-  orderMeta: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2,
+  notifTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.text,
+    flex: 1,
   },
-  orderMetaText: {
-    fontSize: 12, color: COLORS.text2,
+  notifTitleUnread: {
+    fontWeight: '700',
   },
-  orderPriceCol: {
-    alignItems: 'flex-end', gap: 2,
+  notifTitleAction: {
+    fontWeight: '700',
+    color: COLORS.text,
   },
-  orderAmount: {
-    fontFamily: 'Syne', fontSize: 16, fontWeight: '700', color: COLORS.coral,
+  notifTime: {
+    fontSize: 11,
+    color: COLORS.text2,
+    fontWeight: '500',
   },
-  orderDate: {
-    fontSize: 11, color: COLORS.text2,
+  notifDesc: {
+    fontSize: 13,
+    color: COLORS.text2,
+    lineHeight: 18,
+    marginTop: 1,
   },
-  orderCardBottom: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border,
+
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
   },
-  orderStatusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.row,
+  actionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.coral + '18',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.row,
   },
-  orderStatusPillText: {
-    fontSize: 12, fontWeight: '600',
+  actionPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.coral,
   },
-  orderStepper: {
-    flexDirection: 'row', alignItems: 'center', flex: 1,
+  deadlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.surface2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.row,
   },
-  stepDot: {
-    width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.border,
+  deadlinePillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.text2,
   },
-  stepDotCurrent: {
-    width: 10, height: 10, borderRadius: 5,
-    borderWidth: 2, borderColor: COLORS.surface,
+  groupPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.surface2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.row,
   },
-  stepLine: {
-    flex: 1, height: 2, backgroundColor: COLORS.border, marginHorizontal: 2,
+  groupPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.text2,
   },
-  orderId: {
-    fontSize: 11, color: COLORS.text2, fontFamily: 'monospace',
+
+  ctaRow: {
+    marginTop: 10,
+    flexDirection: 'row',
   },
+  ctaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.coral,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  ctaButtonText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+
+  dismissBtn: {
+    padding: 6,
+    marginLeft: 4,
+  },
+
+  /* Undo Snackbar */
+  undoBar: {
+    position: 'absolute',
+    left: SPACING.lg,
+    right: SPACING.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.card,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  undoText: { fontSize: 13, color: COLORS.text, fontWeight: '500' },
+  undoBtn: { paddingVertical: 4, paddingHorizontal: 8 },
+  undoBtnText: { fontSize: 13, color: COLORS.coral, fontWeight: '700' },
+
+  /* Group Sheet */
+  sheetContainer: { flex: 1, backgroundColor: COLORS.bg },
+  sheetScroll: { padding: SPACING.lg },
+  groupDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  groupRowAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupRowContent: { flex: 1 },
+  groupRowTitle: { fontSize: 13.5, fontWeight: '600', color: COLORS.text },
+  groupRowBody: { fontSize: 12, color: COLORS.text2, marginTop: 1 },
+  groupRowTime: { fontSize: 10.5, color: COLORS.text2, marginTop: 2 },
+  muteBtn: { padding: 8 },
+
+  /* Clear confirmation modal */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  modalBox: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.card,
+    padding: SPACING.lg,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modalHeading: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  modalBody: { fontSize: 13, color: COLORS.text2, lineHeight: 18 },
+  modalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  modalCancelText: { fontSize: 13, fontWeight: '600', color: COLORS.text2 },
+  modalConfirmBtn: {
+    backgroundColor: COLORS.coral,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  modalConfirmText: { fontSize: 13, fontWeight: '700', color: COLORS.white },
 });

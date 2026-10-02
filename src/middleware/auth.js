@@ -88,16 +88,21 @@ function sellerRequired(req, res, next) {
   next();
 }
 
-// Verified seller required — casual sellers can buy but not list products
+// Identity verification required to sell — applies to EVERY seller tier.
+// Seller tier is a separate entitlement that only controls listing caps/benefits
+// (see src/utils/listingPolicy.js), never whether someone may sell at all.
 async function verifiedSellerRequired(req, res, next) {
   if (req.user.role !== 'seller') {
     return res.status(403).json({ error: 'Seller access required' });
   }
   try {
-    const result = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
+    const result = await pool.query('SELECT seller_tier, id_verified FROM users WHERE id = $1', [req.user.id]);
     if (result.rows.length === 0) return res.status(401).json({ error: 'User not found' });
-    const tier = result.rows[0].seller_tier;
-    if (tier === 'casual' || tier === 'none') {
+    const { seller_tier: tier, id_verified: idVerified } = result.rows[0];
+    if (tier === 'none') {
+      return res.status(403).json({ error: 'Seller access required' });
+    }
+    if (!idVerified) {
       return res.status(403).json({
         error: 'Verification required',
         code: 'VERIFICATION_REQUIRED',

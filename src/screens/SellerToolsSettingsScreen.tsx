@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Animated,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Animated, TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -16,11 +16,19 @@ import PrimaryButton from '../components/PrimaryButton';
 import SettingsLinkButton from '../components/SettingsLinkButton';
 import SettingsToggle from '../components/SettingsToggle';
 import { useFocusEffect } from '@react-navigation/native';
-import { getSellerFulfillmentProposals, decideFulfillmentProposal } from '../api';
+import { getSellerFulfillmentProposals, decideFulfillmentProposal, counterSellerFulfillment } from '../api';
+import LocationPicker from '../components/LocationPicker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SellerToolsSettings'>;
+
+const toLocalDateTimeInput = (value?: string) => {
+  const date = value ? new Date(value) : null;
+  if (!date || !Number.isFinite(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 export default function SellerToolsSettingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
@@ -30,6 +38,9 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [storeLogoUploading, setStoreLogoUploading] = useState(false);
   const [proposals, setProposals] = useState<any[]>([]);
+  const [counterProposalId, setCounterProposalId] = useState<string | null>(null);
+  const [counterLocation, setCounterLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const [counterAt, setCounterAt] = useState('');
 
   const anim = useRef({
     opacity: new Animated.Value(0),
@@ -60,6 +71,19 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
     } catch (err: unknown) {
       toast.error(t('settings.error'), err instanceof Error ? err.message : t('settings.failed'));
     } finally { setLoading(false); }
+  };
+
+  const sendCounter = async (proposal: any) => {
+    if (!counterLocation) { toast.error(t('meetupProposal.counterTitle'), t('meetupProposal.mapConfirm')); return; }
+    const at = new Date(counterAt);
+    if (!Number.isFinite(at.getTime()) || at.getTime() <= Date.now()) { toast.error(t('meetupProposal.dateLabel'), t('meetupProposal.futureTime')); return; }
+    setLoading(true);
+    try {
+      await counterSellerFulfillment(proposal.checkout_id, user!.id, counterLocation, at.toISOString());
+      setProposals(current => current.filter(item => item.id !== proposal.id));
+      setCounterProposalId(null); setCounterLocation(null);
+    } catch (err: unknown) { toast.error(t('settings.error'), err instanceof Error ? err.message : t('settings.failed')); }
+    finally { setLoading(false); }
   };
 
   const goEdit = (field: 'storeName', title: string) => {
@@ -179,6 +203,22 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
         )}
       </View>
 
+      {/* ── Listings ── */}
+      <Text style={styles.sectionHeader}>{t('myListings.title')}</Text>
+      <View style={styles.card}>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => navigation.navigate('MyListings')}
+          accessibilityRole="button"
+          accessibilityLabel={t('myListings.title')}
+        >
+          <MaterialCommunityIcons name="format-list-bulleted-square" size={18} color={COLORS.blue} />
+          <Text style={styles.rowLabel}>{t('myListings.title')}</Text>
+          <Text style={styles.rowValue}>{t('myListings.rowSummary')}</Text>
+          <Icon name="chevron-right" size={16} color={COLORS.text2} />
+        </TouchableOpacity>
+      </View>
+
       {/* ── Fulfillment policy ── */}
       <Text style={styles.sectionHeader}>{t('sellerTools.deliveryMeetup')}</Text>
       <View style={styles.card}>
@@ -203,8 +243,15 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
           const term = proposal.terms || {};
           return <View key={proposal.id} style={[styles.proposal, index < proposals.length - 1 && styles.reviewDivider]}>
             <Text style={styles.proposalTitle}>{t('sellerTools.requestsLine', { name: proposal.buyer_name || t('meetup.buyer'), type: term.method === 'meetup' ? t('sellerTools.meetupNoun') : t('sellerTools.deliveryNoun') })}</Text>
-            <Text style={styles.settingHint}>{term.location?.address || t('sellerTools.locationSelected')} · {term.distanceMeters ? `${Math.round(term.distanceMeters / 1000 * 10) / 10} km` : t('sellerTools.locationVerified')}{term.method === 'delivery' ? ` · G ${term.deliveryFee || 0}` : ''}</Text>
+            <Text style={styles.settingHint}>{term.location?.address || t('sellerTools.locationSelected')} · {term.distanceMeters ? `${Math.round(term.distanceMeters / 1000 * 10) / 10} km` : t('sellerTools.locationVerified')}{term.method === 'delivery' ? ` · G ${term.deliveryFee || 0}` : term.meetupAt ? ` · ${new Date(term.meetupAt).toLocaleString()}` : ''}</Text>
             <View style={styles.proposalActions}><SettingsLinkButton danger small onPress={() => decideProposal(proposal, 'reject')} disabled={loading} style={styles.rejectFlex}>{t('sellerTools.decline')}</SettingsLinkButton><PrimaryButton small onPress={() => decideProposal(proposal, 'accept')} disabled={loading} style={styles.acceptFlex}>{t('sellerTools.acceptTerms')}</PrimaryButton></View>
+            {term.method === 'meetup' && <TouchableOpacity style={styles.counterLink} onPress={() => { setCounterProposalId(counterProposalId === proposal.id ? null : proposal.id); setCounterAt(toLocalDateTimeInput(term.meetupAt)); setCounterLocation(null); }} accessibilityRole="button"><Text style={styles.counterLinkText}>{t('sellerTools.counterLink')}</Text></TouchableOpacity>}
+            {counterProposalId === proposal.id && <View style={styles.counterBox}>
+              <LocationPicker onLocationSelect={(lat, lng, address) => setCounterLocation({ lat, lng, address })} initialLat={term.location?.lat} initialLng={term.location?.lng} height={190}/>
+              {counterLocation && <Text style={styles.settingHint}>{counterLocation.address}</Text>}
+              <TextInput style={styles.counterInput} value={counterAt} onChangeText={setCounterAt} placeholder={t('meetupProposal.datePlaceholder')} placeholderTextColor={COLORS.text2} accessibilityLabel={t('meetupProposal.dateLabel')}/>
+              <PrimaryButton small onPress={() => void sendCounter(proposal)} disabled={loading}>{t('meetupProposal.sendCounter')}</PrimaryButton>
+            </View>}
           </View>;
         })}</View>
       </>}
@@ -309,6 +356,10 @@ const styles = StyleSheet.create({
   proposal: { padding: 14, gap: 8 },
   proposalTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text },
   proposalActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
+  counterLink: { minHeight: 40, justifyContent: 'center' },
+  counterLinkText: { color: COLORS.coral, fontWeight: '700', fontSize: 12 },
+  counterBox: { gap: 8, marginTop: 4 },
+  counterInput: { minHeight: 44, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, backgroundColor: COLORS.surface, color: COLORS.text, paddingHorizontal: 12 },
   rejectFlex: { flex: 1 },
   acceptFlex: { flex: 1 },
   reviewDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },

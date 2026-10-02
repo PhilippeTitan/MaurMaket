@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Share, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
@@ -13,188 +13,188 @@ import {
   getDisplayName, formatPrice, TIER_COLORS,
 } from '../theme';
 import { useTranslation } from '@/localization';
-import { useUser } from '../hooks';
+import { useUser, useReduceMotion } from '../hooks';
 import { store } from '../store';
 import {
-  getOrders, getSellerOrders, getSellerAnalytics, getWishlist,
-  getSellerProducts, getFollowerCount, getFollowing, getSellerReviews, updateSellerProfile,
+  getSellerOrders, getSellerAnalytics, getWishlist,
+  getSellerProducts, getFollowerCount, getFollowing, getSellerReviews,
+  updateSellerProfile, pinListing, updateProduct, getImageUrl,
 } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Order, Review } from '../types';
 import UserAvatar from '../components/UserAvatar';
-import { SkeletonBlock } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 import MasonryGrid from '../components/MasonryGrid';
+import { useToast } from '../components/Toast';
+import { network } from '../network';
+import {
+  ProfileActions, ProfileTrustRow, ProfileTabs, ProfileStickyBar, ProfileReviews,
+  ProfileSkeleton, FeaturedListingCard, CategoryFilterRow, StaleNotice,
+  useProfileCollapse, useProfileLayout,
+  PROFILE_GRID_GAP, PROFILE_PAD, PROFILE_STICKY_ROW,
+} from '../components/profile';
+import type { ProfileTabItem } from '../components/profile';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 60_000;
 let _persistedTab: Tab = 'listings';
 
-
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-
 type Tab = 'listings' | 'reviews' | 'saved';
 type SellerAnalyticsResponse = {
-  overview?: { avg_rating?: string | number; product_count?: string | number; review_count?: string | number; total_orders?: string | number; total_revenue?: string | number; follower_count?: string | number };
+  overview?: { avg_rating?: string | number; review_count?: string | number };
   avg_rating?: string | number;
-  product_count?: string | number;
   review_count?: string | number;
-  total_orders?: string | number;
-  total_revenue?: string | number;
-  follower_count?: string | number;
-  topProducts?: Array<{ id: string; name: string; price: number; stock: number; units_sold: number; revenue: number; image_url?: string }>;
-  sellerTier?: string;
 };
+type ReviewStats = { avg_rating?: number | string; review_count?: number | string; breakdown?: Record<string, number> };
+
+/** Category label for a product — the list endpoints return the name as a string. */
+function categoryOf(product: Product): string | null {
+  const raw = (product as any).category;
+  if (typeof raw === 'string' && raw) return raw;
+  if (raw && typeof raw === 'object' && typeof raw.name === 'string') return raw.name;
+  return null;
+}
 
 export default function MeScreen() {
   const { t } = useTranslation();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
-  const { user } = useUser();
+  const { user, refetch } = useUser();
+  const reduceMotion = useReduceMotion();
+  const { columns, containerWidth, gridWidth } = useProfileLayout();
+  const scrollRef = useRef<ScrollView>(null);
+
   const isSeller = user?.role === 'seller';
+  const tier = user?.seller_tier || 'casual';
 
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>(_persistedTab);
+  const [hasData, setHasData] = useState(false);
+  const [stale, setStale] = useState(false);
+  const [rawTab, setRawTab] = useState<Tab>(_persistedTab);
+  const [category, setCategory] = useState<string | null>(null);
+  const [tabBarY, setTabBarY] = useState(0);
 
-  const [followerCount, setFollowerCount] = useState(store.followerCount);
-  const [followingCount, setFollowingCount] = useState(store.followingCount);
-  const [orderCount, setOrderCount] = useState(0);
+  const [followerCount, setFollowerCount] = useState<number | null>(null);
+  const [followingCount, setFollowingCount] = useState<number | null>(null);
   const [sellingOrderCount, setSellingOrderCount] = useState(0);
-  const [productCount, setProductCount] = useState(0);
-  const [rating, setRating] = useState(0);
-  const [reviewCount, setReviewCount] = useState(0);
-
-  const [hasOrders, setHasOrders] = useState(false);
+  const [rating, setRating] = useState<number | null>(null);
+  const [reviewCount, setReviewCount] = useState<number | null>(null);
+  const [reviewStats, setReviewStats] = useState<ReviewStats | null>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [wishlist, setWishlist] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [analyticsData, setAnalyticsData] = useState<SellerAnalyticsResponse | null>(null);
-  const mountedRef = useRef(true);
+  const [showPausedSection, setShowPausedSection] = useState(false);
 
-  const tier = user?.seller_tier || 'casual';
-  const isBusinessMode = isSeller && user?.seller_tier === 'business' && user?.use_store_identity;
-  const displayName = isBusinessMode ? (user as any)?.store_name || getDisplayName(user) : getDisplayName(user);
-
+  const isBusinessMode = isSeller && user?.seller_tier === 'business' && !!user?.use_store_identity;
+  const username = user?.username || '';
+  const fullName = user?.full_name?.trim().replace(/\s+/g, ' ') || '';
+  const storeName = ((user as any)?.store_name || '').trim().replace(/\s+/g, ' ');
+  const profileName = isBusinessMode ? (storeName || fullName) : fullName;
+  const displayedName = profileName || fullName || username || t('profile.you');
+  const displayName = displayedName;
+  const isVerified = tier === 'verified' || tier === 'business';
+  const tierLabel =
+    tier === 'business' ? t('profile.tierBusiness')
+    : tier === 'verified' ? t('profile.tierVerified')
+    : t('profile.tierCasual');
   const memberSince = user?.created_at
-    ? `${t('me.since')} ${new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+    ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : '';
-
   const locationCity = (user as any)?.location_city || '';
+  const serviceArea = ((user as any)?.store_service_area || '') as string;
 
-  const scrollOffset = useRef(0);
-  const [headerBg, setHeaderBg] = useState(0);
+  const tabs = useMemo<ProfileTabItem[]>(() => {
+    if (!isSeller) return [{ key: 'saved', label: t('common.saved') }];
+    return [
+      { key: 'listings', label: t('profile.listings') },
+      { key: 'reviews', label: t('common.reviews') },
+      { key: 'saved', label: t('common.saved') },
+    ];
+  }, [isSeller, t]);
 
-  const onScroll = useCallback((e: any) => {
-    const y = e.nativeEvent.contentOffset.y;
-    scrollOffset.current = y;
-    const opacity = Math.min(1, Math.max(0, (y - 140) / 80));
-    setHeaderBg(opacity);
+  const activeTab = tabs.some((tab) => tab.key === rawTab) ? rawTab : (tabs[0].key as Tab);
+
+  const contentTopPad = insets.top + PROFILE_STICKY_ROW + SPACING.md;
+  const { onScroll, collapse, collapsed, chrome, scrolled } = useProfileCollapse(
+    tabBarY > 0 ? contentTopPad + tabBarY : 0,
+    insets.top + PROFILE_STICKY_ROW,
+  );
+
+  const applyData = useCallback((d: Record<string, any>) => {
+    setProducts(d.products || []);
+    setWishlist(d.wishlist || []);
+    setReviews(d.reviews || []);
+    setSellingOrderCount(d.sellingOrderCount || 0);
+    if (typeof d.rating === 'number') setRating(d.rating);
+    if (typeof d.reviewCount === 'number') setReviewCount(d.reviewCount);
+    if (d.reviewStats) setReviewStats(d.reviewStats);
+    if (typeof d.followerCount === 'number') setFollowerCount(d.followerCount);
+    if (typeof d.followingCount === 'number') setFollowingCount(d.followingCount);
+    setHasData(true);
   }, []);
 
-  const handleTabChange = useCallback((tab: Tab) => {
-    _persistedTab = tab;
-    setActiveTab(tab);
+  const handleTabChange = useCallback((key: string) => {
+    _persistedTab = key as Tab;
+    setRawTab(key as Tab);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, []);
 
   const fetchData = useCallback(async (force = false) => {
     const uid = user?.id || '';
     const cached = profileCache[uid];
     if (!force && cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      const d = cached.data;
-      setOrderCount(d.orderCount || 0); setSellingOrderCount(d.sellingOrderCount || 0);
-      setHasOrders(d.hasOrders || false); setProducts(d.products || []); setProductCount(d.productCount || 0);
-      setRating(d.rating || 0); setReviewCount(d.reviewCount || 0); setAnalyticsData(d.analyticsData || null);
-      setFollowerCount(d.followerCount || 0); setFollowingCount(d.followingCount || 0);
-      setWishlist(d.wishlist || []); setReviews(d.reviews || []);
+      applyData(cached.data);
+      setLoading(false);
       return;
     }
 
+    let usedSnapshot = false;
     if (!force && uid) {
       const snapshot = await readSnapshot<Record<string, any>>(cacheKeys.profile(uid));
       if (snapshot?.value) {
-        const d = snapshot.value;
-        setOrderCount(d.orderCount || 0); setSellingOrderCount(d.sellingOrderCount || 0);
-        setHasOrders(d.hasOrders || false); setProducts(d.products || []); setProductCount(d.productCount || 0);
-        setRating(d.rating || 0); setReviewCount(d.reviewCount || 0); setAnalyticsData(d.analyticsData || null);
-        setFollowerCount(d.followerCount || 0); setFollowingCount(d.followingCount || 0);
-        setWishlist(d.wishlist || []); setReviews(d.reviews || []);
-        setLoading(false);
+        usedSnapshot = true;
+        applyData(snapshot.value);
+        if (snapshot.isStale || !network.isOnline) setStale(true);
       }
     }
 
-    let cacheData: Record<string, any> = {};
+    const cacheData: Record<string, any> = {};
     try {
-      const [ordersRes, buyerOrdersRes] = await Promise.all([
-        isSeller
-          ? getSellerOrders().catch(() => ({ orders: [] })) as Promise<{ orders: Order[] }>
-          : Promise.resolve({ orders: [] }),
-        getOrders() as Promise<{ buyerOrders: Order[]; sellerOrders: Order[] }>,
-      ]);
-
-      const allBuyerOrders = buyerOrdersRes.buyerOrders || [];
-      const sellingOrders = (ordersRes as { orders?: Order[] }).orders || [];
-      const completedSellingOrders = sellingOrders.filter((o: Order) => o.status === 'completed');
-      cacheData.orderCount = allBuyerOrders.length;
-      cacheData.sellingOrderCount = completedSellingOrders.length;
-      setOrderCount(allBuyerOrders.length);
-      setSellingOrderCount(completedSellingOrders.length);
-
-      cacheData.hasOrders = allBuyerOrders.length > 0;
-      setHasOrders(allBuyerOrders.length > 0);
-
-      let products: Product[] = [];
-      let analyticsData: SellerAnalyticsResponse | null = null;
-      let rating = 0;
-      let reviewCount = 0;
-      cacheData.products = products; cacheData.productCount = 0;
       if (isSeller) {
-        let sellerProds: { products: Product[] } | null = null;
-        try { sellerProds = await getSellerProducts() as { products: Product[] }; } catch (e: any) { console.error('[MeScreen] seller products error:', e?.message); }
-        products = sellerProds?.products || [];
-        setProducts(products);
-        setProductCount(products.length || 0);
-        cacheData.products = products; cacheData.productCount = products.length;
+        const ordersRes = (await getSellerOrders().catch(() => ({ orders: [] }))) as { orders?: Order[] };
+        const completed = (ordersRes.orders || []).filter((o) => o.status === 'completed').length;
+        cacheData.sellingOrderCount = completed;
+        setSellingOrderCount(completed);
 
+        try {
+          const sellerProds = (await getSellerProducts()) as { products: Product[] };
+          const fetched = sellerProds?.products || [];
+          cacheData.products = fetched;
+          setProducts(fetched);
+        } catch { /* keep cached products */ }
+
+        // Rating: analytics is authoritative for verified/business sellers;
+        // everyone else falls back to their review stats.
+        let nextRating: number | null = null;
+        let nextReviewCount: number | null = null;
+        let nextStats: ReviewStats | null = null;
         if (user?.seller_tier !== 'casual') {
           try {
-            const analytics = await getSellerAnalytics() as SellerAnalyticsResponse;
+            const analytics = (await getSellerAnalytics()) as SellerAnalyticsResponse;
             const overview = analytics.overview || analytics;
-            rating = Number(overview.avg_rating || 0);
-            reviewCount = Number(overview.review_count || 0);
-            analyticsData = analytics;
-            setRating(rating); setReviewCount(reviewCount); setAnalyticsData(analytics);
-          } catch { /* ignore */ }
+            nextRating = Number(overview.avg_rating || 0);
+            nextReviewCount = Number(overview.review_count || 0);
+          } catch { /* hidden, retried next visit */ }
         }
-      }
-      cacheData.rating = rating; cacheData.reviewCount = reviewCount; cacheData.analyticsData = analyticsData;
 
-      let followerRes: { count: number } | null = null;
-      try { followerRes = await getFollowerCount(user?.id || '') as { count: number }; } catch { /* ignore */ }
-      const fc = followerRes?.count || 0;
-      cacheData.followerCount = fc;
-      setFollowerCount(fc);
-      store.setFollowerCount(fc);
-
-      let followingRes: { following?: unknown[] } | null = null;
-      try { followingRes = await getFollowing() as { following?: unknown[] }; } catch { /* ignore */ }
-      const fcing = followingRes?.following?.length || 0;
-      cacheData.followingCount = fcing;
-      setFollowingCount(fcing);
-      store.setFollowingCount(fcing);
-
-      let wishlistItems: Product[] = [];
-      try { const wr = await getWishlist() as { items: Product[] }; wishlistItems = wr?.items || []; } catch { /* ignore */ }
-      cacheData.wishlist = wishlistItems;
-      setWishlist(wishlistItems);
-
-      let reviewsList: Review[] = [];
-      if (isSeller && user?.id) {
         try {
-          const rr = await getSellerReviews(user.id) as { reviews: Review[] };
-          reviewsList = (rr?.reviews || []).map((r: any) => ({
+          const rr = (await getSellerReviews(user!.id)) as { reviews?: Review[]; stats?: ReviewStats };
+          const list = (rr?.reviews || []).map((r: any) => ({
             ...r,
             reviewer: r.reviewer || {
               full_name: r.reviewer_name,
@@ -202,517 +202,726 @@ export default function MeScreen() {
               username: r.reviewer_username,
             },
           }));
-        } catch { /* ignore */ }
+          cacheData.reviews = list;
+          setReviews(list);
+          if (rr?.stats) {
+            nextStats = rr.stats;
+            if (nextRating === null) nextRating = Number(rr.stats.avg_rating || 0);
+            if (nextReviewCount === null) nextReviewCount = Number(rr.stats.review_count || 0);
+          } else if (nextReviewCount === null) {
+            nextReviewCount = list.length;
+          }
+        } catch { /* keep cached reviews */ }
+
+        if (nextRating !== null) { cacheData.rating = nextRating; setRating(nextRating); }
+        if (nextReviewCount !== null) { cacheData.reviewCount = nextReviewCount; setReviewCount(nextReviewCount); }
+        if (nextStats) { cacheData.reviewStats = nextStats; setReviewStats(nextStats); }
       }
-      cacheData.reviews = reviewsList;
-      setReviews(reviewsList);
-    } catch (e: any) { console.error(`[MeScreen fetchData] ERROR:`, e?.message); }
+
+      try {
+        const followerRes = (await getFollowerCount(user?.id || '')) as { count: number };
+        cacheData.followerCount = followerRes?.count || 0;
+        setFollowerCount(followerRes?.count || 0);
+        store.setFollowerCount(followerRes?.count || 0);
+      } catch { /* hidden until it loads */ }
+
+      try {
+        const followingRes = (await getFollowing()) as { following?: unknown[] };
+        const count = followingRes?.following?.length || 0;
+        cacheData.followingCount = count;
+        setFollowingCount(count);
+        store.setFollowingCount(count);
+      } catch { /* hidden until it loads */ }
+
+      try {
+        const wishlistRes = (await getWishlist()) as { items: Product[] };
+        cacheData.wishlist = wishlistRes?.items || [];
+        setWishlist(wishlistRes?.items || []);
+      } catch { /* keep cached saved items */ }
+
+      setStale(false);
+      setHasData(true);
+    } catch (e: any) {
+      console.error('[MeScreen fetchData] ERROR:', e?.message);
+      setStale(usedSnapshot || !network.isOnline);
+    }
 
     if (uid) {
       profileCache[uid] = { timestamp: Date.now(), data: cacheData };
       void writeSnapshot(cacheKeys.profile(uid), cacheData);
     }
     setLoading(false);
-  }, [isSeller, user?.id]);
+  }, [isSeller, user?.id, user?.seller_tier, applyData]);
 
-  useFocusEffect(useCallback(() => {
-    fetchData(false);
-  }, [fetchData]));
+  useFocusEffect(useCallback(() => { fetchData(false); }, [fetchData]));
+
+  // Coming back online refreshes quietly — the cached profile stays usable meanwhile.
+  useEffect(() => {
+    const unsub = network.onChange((online) => { if (online) void fetchData(true); });
+    return unsub;
+  }, [fetchData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData(true);
+    await Promise.all([fetchData(true), refetch()]);
     setRefreshing(false);
-  }, [fetchData]);
+  }, [fetchData, refetch]);
 
   const handleProductPress = useCallback((item: Product) => {
     nav.navigate('ProductDetail', { productId: item.id });
   }, [nav]);
 
-  /* ── Tier badge ── */
-  const tierColor = tier ? TIER_COLORS[tier] ?? COLORS.text2 : COLORS.text2;
-  const tierLabel =
-    tier === 'business' ? 'Business'
-    : tier === 'verified' ? 'Verified'
-    : '';
+  const handleShareProfile = useCallback(async () => {
+    if (!user) return;
+    try {
+      await Share.share({ message: `${displayName} on MaurMaket — @${user.username}` });
+    } catch { /* dismissed */ }
+  }, [user, displayName]);
+
+  const handleTogglePin = useCallback(async (productToPin: Product) => {
+    const isCurrentlyPinned = user?.pinned_product_id === productToPin.id;
+    try {
+      await pinListing(isCurrentlyPinned ? null : productToPin.id);
+      toast.show({ kind: 'info', title: isCurrentlyPinned ? t('profile.unpinned') : t('profile.pinned') });
+      await refetch();
+      await fetchData(true);
+    } catch (e: any) {
+      toast.error(t('profile.pinFailed'), e?.message || t('feedback.connectionRetry'));
+    }
+  }, [user?.pinned_product_id, refetch, fetchData, toast, t]);
+
+  const handleResumeProduct = useCallback(async (prod: Product) => {
+    try {
+      await updateProduct(prod.id, { is_available: true } as any);
+      toast.show({ kind: 'success', title: t('profile.listingReactivated') });
+      await fetchData(true);
+    } catch (e: any) {
+      toast.error(t('profile.reactivateFailed'), e?.message || t('feedback.connectionRetry'));
+    }
+  }, [fetchData, toast, t]);
+
+  const handleIdentitySwitch = useCallback(async (useStore: boolean) => {
+    if (!user) return;
+    try {
+      await updateSellerProfile({ useStoreIdentity: useStore });
+      await store.setUser({ ...store.user!, use_store_identity: useStore } as any, store.token!);
+      toast.show({
+        kind: 'success',
+        title: useStore ? t('profile.switchedBusiness') : t('profile.switchedPersonal'),
+      });
+      await refetch();
+    } catch {
+      toast.error(t('profile.switchFailed'), t('feedback.connectionRetry'));
+    }
+  }, [user, refetch, toast, t]);
+
+  const pinnedProductId = user?.pinned_product_id || null;
+  const pinnedProduct = useMemo(
+    () => products.find((p) => p.id === pinnedProductId) || null,
+    [products, pinnedProductId],
+  );
+  const activeProducts = useMemo(
+    () => products.filter((p) => p.is_available !== false && p.id !== pinnedProductId),
+    [products, pinnedProductId],
+  );
+  const pausedProducts = useMemo(() => products.filter((p) => p.is_available === false), [products]);
+
+  const categoryNames = useMemo(() => {
+    const names = new Set<string>();
+    activeProducts.forEach((p) => {
+      const name = categoryOf(p);
+      if (name) names.add(name);
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [activeProducts]);
+  const showCategoryFilters = categoryNames.length >= 2 && activeProducts.length >= 8;
+
+  useEffect(() => {
+    if (category && !categoryNames.includes(category)) setCategory(null);
+  }, [category, categoryNames]);
+
+  const filteredProducts = useMemo(
+    () => (category ? activeProducts.filter((p) => categoryOf(p) === category) : activeProducts),
+    [activeProducts, category],
+  );
+
+  const pinnedImage = useMemo(() => {
+    if (!pinnedProduct) return null;
+    const images = pinnedProduct.images || [];
+    const primary = images.find((i) => i.is_primary) || images[0];
+    return getImageUrl(primary?.thumbnail_url || primary?.image_url) || null;
+  }, [pinnedProduct]);
+
+  const showSkeleton = loading && !hasData;
 
   return (
     <View style={styles.container}>
-      {/* Sticky header */}
-      <View style={[styles.stickyHeader, { paddingTop: insets.top + 6, paddingBottom: 8, backgroundColor: `rgba(13,17,23,${headerBg})` }]}>
-        <View style={styles.stickyHeaderInner}>
-          <TouchableOpacity
-            style={styles.headerBtn}
-            onPress={() => nav.navigate(store.isSeller ? 'AddListing' : 'SellerOnboarding')}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="add listing"
-          >
-            <MaterialCommunityIcons name="plus" size={32} color={COLORS.text} />
-          </TouchableOpacity>
-
-          <View style={styles.topBarNameCenter}>
-            <View style={styles.topBarNameWrap}>
-              <Text style={styles.topBarName} numberOfLines={1}>{user?.username || 'you'}</Text>
-              {(tier === 'verified' || tier === 'business') && (
-                <Icon name="verified" size={16} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
-              )}
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={styles.headerBtn}
-            onPress={() => nav.navigate('Settings')}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="settings"
-          >
-            <MaterialCommunityIcons name="cog-outline" size={30} color={COLORS.text} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <ProfileStickyBar
+        collapse={collapse}
+        collapsed={collapsed}
+        chrome={chrome}
+        scrolled={scrolled}
+        topInset={insets.top}
+        avatar={<UserAvatar seller={{ ...user, seller_tier: tier } as any} size={30} />}
+        name={username || t('profile.you')}
+        verified={isVerified}
+        identityLabel={username || t('profile.you')}
+        showChevron={true}
+        onIdentityPress={() => scrollRef.current?.scrollTo({ y: 0, animated: !reduceMotion })}
+        right={
+          <>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => nav.navigate(isSeller ? 'AddListing' : 'SellerOnboarding')}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={isSeller ? t('me.addListing') : t('me.becomeSeller')}
+            >
+              <MaterialCommunityIcons name="plus" size={24} color={COLORS.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => nav.navigate('Settings')}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('me.settings')}
+            >
+              <MaterialCommunityIcons name="cog-outline" size={22} color={COLORS.text} />
+            </TouchableOpacity>
+          </>
+        }
+        tabs={
+          <ProfileTabs variant="sticky" tabs={tabs} active={activeTab} onChange={handleTabChange} />
+        }
+      />
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + 44, paddingBottom: insets.bottom + 80 }]}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />
-        }
+        ref={scrollRef}
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: contentTopPad, paddingBottom: insets.bottom + 96 },
+        ]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         onScroll={onScroll}
         scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
       >
-      {/* ── Profile Hero ── */}
-      <View style={styles.hero}>
-        <View style={[styles.avatarRow, { paddingTop: SPACING.md }]}>
-          <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={72} animated={true} />
-          <View style={styles.statsRow}>
-            <View style={styles.stat}>
-              <Text style={styles.statNum}>{isSeller ? sellingOrderCount : orderCount}</Text>
-              <Text style={styles.statLabel}>{isSeller ? 'Sales' : t('me.totalOrders')}</Text>
-            </View>
-            <TouchableOpacity style={styles.stat} onPress={() => user && nav.navigate('FollowList', { userId: user.id, kind: 'followers', title: t('me.followers') })}>
-              <Text style={styles.statNum}>{followerCount}</Text>
-              <Text style={styles.statLabel}>{t('me.followers')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.stat} onPress={() => user && nav.navigate('FollowList', { userId: user.id, kind: 'following', title: t('me.following') })}>
-              <Text style={styles.statNum}>{followingCount}</Text>
-              <Text style={styles.statLabel}>{t('me.following')}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Identity Toggle — business-tier sellers only */}
-        {isSeller && user?.seller_tier === 'business' && (
-          <View style={styles.identityToggle}>
-            <TouchableOpacity
-              style={[styles.identityBtn, !user?.use_store_identity && styles.identityBtnActive]}
-              onPress={() => updateSellerProfile({ useStoreIdentity: false }).then(() => store.setUser({ ...store.user!, use_store_identity: false } as any, store.token!))}
-              accessibilityRole="button"
-              accessibilityLabel="personal mode"
-            >
-              <Text style={[styles.identityBtnText, !user?.use_store_identity && styles.identityBtnTextActive]}>Personal</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.identityBtn, user?.use_store_identity && styles.identityBtnActive]}
-              onPress={() => updateSellerProfile({ useStoreIdentity: true }).then(() => store.setUser({ ...store.user!, use_store_identity: true } as any, store.token!))}
-              accessibilityRole="button"
-              accessibilityLabel="business mode"
-            >
-              <Text style={[styles.identityBtnText, user?.use_store_identity && styles.identityBtnTextActive]}>Business</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Trust-preserving line for business mode */}
-        {isBusinessMode && user?.username && (
-          <View style={styles.trustLine}>
-            <Icon name="verified" size={12} color={COLORS.green} />
-            <Text style={styles.trustLineText}>Operated by <Text style={{ color: COLORS.text, fontWeight: FONT_WEIGHTS.bold }}>{user.username}</Text> · Verified identity on file</Text>
-          </View>
-        )}
-
-        {/* Name, bio, member since */}
-        <View style={styles.nameBioBlock}>
-          {user?.bio ? (
-            <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
-          ) : null}
-          {user?.show_real_name && user?.full_name && !isBusinessMode && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
-              <Icon name="verified" size={11} color={COLORS.green} />
-              <Text style={{ fontSize: FONT_SIZES.sm, color: COLORS.text }}>{user.full_name}</Text>
-            </View>
-          )}
-          <View style={styles.metaRow}>
-            {locationCity ? (
-              <View style={styles.metaItem}>
-                <MaterialCommunityIcons name="map-marker-outline" size={12} color={COLORS.text3} />
-                <Text style={styles.metaText}>{locationCity}</Text>
-              </View>
-            ) : null}
-            {memberSince ? (
-              <View style={styles.metaItem}>
-                <MaterialCommunityIcons name="calendar-outline" size={12} color={COLORS.text3} />
-                <Text style={styles.metaText}>{memberSince}</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => nav.navigate('EditProfile')}
-            accessibilityRole="button"
-            accessibilityLabel="edit profile"
-          >
-            <Icon name="edit" size={16} color={COLORS.text} />
-            <Text style={styles.actionBtnText}>{t('me.editProfile')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => {}}
-            accessibilityRole="button"
-            accessibilityLabel="share profile"
-          >
-            <MaterialCommunityIcons name="share-variant-outline" size={16} color={COLORS.text} />
-            <Text style={styles.actionBtnText}>{t('me.sharedProfile')}</Text>
-          </TouchableOpacity>
-          {isSeller && (
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => nav.navigate('Analytics')}
-              accessibilityRole="button"
-              accessibilityLabel="analytics"
-            >
-              <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.text} />
-              <Text style={styles.actionBtnText}>{t('me.analytics')}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Become a Seller CTA for buyers */}
-      {!isSeller && (
-        <TouchableOpacity
-          style={styles.sellBanner}
-          onPress={() => nav.navigate('SellerOnboarding')}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="become a seller"
-        >
-          <MaterialCommunityIcons name="store-plus-outline" size={20} color={COLORS.green} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.sellTitle}>{t('me.startSelling')}</Text>
-            <Text style={styles.sellHint}>List your first product in seconds</Text>
-          </View>
-          <Icon name="chevron-right" size={18} color={COLORS.green} />
-        </TouchableOpacity>
-      )}
-
-      {/* ── Tabs ── */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'listings' && styles.tabActive]}
-          onPress={() => handleTabChange('listings')}
-          accessibilityRole="button"
-          accessibilityLabel="listings"
-          accessibilityState={{ selected: activeTab === 'listings' }}
-        >
-          <MaterialCommunityIcons
-            name={isSeller ? 'view-grid-outline' : 'shopping-outline'}
-            size={22}
-            color={activeTab === 'listings' ? COLORS.coral : COLORS.text2}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'reviews' && styles.tabActive]}
-          onPress={() => handleTabChange('reviews')}
-          accessibilityRole="button"
-          accessibilityLabel="reviews"
-          accessibilityState={{ selected: activeTab === 'reviews' }}
-        >
-          <Icon name="rate-this" size={22} color={activeTab === 'reviews' ? COLORS.coral : COLORS.text2} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
-          onPress={() => handleTabChange('saved')}
-          accessibilityRole="button"
-          accessibilityLabel="saved"
-          accessibilityState={{ selected: activeTab === 'saved' }}
-        >
-          <MaterialCommunityIcons
-            name="heart-outline"
-            size={22}
-            color={activeTab === 'saved' ? COLORS.coral : COLORS.text2}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Tab Content ── */}
-      <View style={styles.tabContent}>
-        {activeTab === 'listings' && (
-          isSeller ? (
-            loading && products.length === 0 ? (
-              <View style={styles.masonryGrid}>
-                <View style={styles.masonryCol}>
-                  {[180, 140, 190].map((h, i) => (
-                    <SkeletonBlock key={i} width="100%" height={h} radius={RADIUS.media} />
-                  ))}
-                </View>
-                <View style={styles.masonryCol}>
-                  {[160, 200, 130].map((h, i) => (
-                    <SkeletonBlock key={i} width="100%" height={h} radius={RADIUS.media} />
-                  ))}
-                </View>
-              </View>
-            ) : products.length > 0 ? (
-              <MasonryGrid
-                products={products}
-                standalone={false}
-                columnGap={3}
-                sidePad={0}
-                onPress={handleProductPress}
-                renderCardOverlay={(item) => (
-                  isSeller && user?.id === item.seller_id ? (
-                    <TouchableOpacity
-                      style={styles.editPenBtn}
-                      onPress={() => nav.navigate('EditListing', { productId: item.id })}
-                      activeOpacity={0.7}
-                      accessibilityRole="button"
-                      accessibilityLabel="edit listing"
-                    >
-                      <MaterialCommunityIcons name="pencil" size={14} color={COLORS.white} />
-                    </TouchableOpacity>
-                  ) : null
-                )}
-              />
-            ) : (
-              <EmptyState
-                icon="storefront-outline"
-                title={t('me.noListings')}
-                hint={t('me.noListingsHint')}
-                actionLabel={t('me.addListing')}
-                onAction={() => nav.navigate('AddListing')}
-              />
-            )
+        <View style={[styles.column, { width: containerWidth }]}>
+          {showSkeleton ? (
+            <ProfileSkeleton />
           ) : (
-            <EmptyState
-              icon="shopping-outline"
-              title={t('me.noRecentOrders')}
-              hint={t('me.purchasesHint')}
-              size={56}
-            />
-          )
-        )}
+            <>
+              {/* ── Compact identity header ── */}
+              <View style={styles.identityRow}>
+                <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={76} animated />
+                <View style={styles.statsWrap}>
+                  <ProfileTrustRow
+                    rating={rating}
+                    reviewCount={reviewCount}
+                    salesCount={isSeller ? sellingOrderCount : null}
+                    followers={followerCount}
+                    following={followingCount}
+                    onFollowersPress={user ? () => nav.navigate('FollowList', { userId: user.id, kind: 'followers', title: t('me.followers') }) : undefined}
+                    onFollowingPress={user ? () => nav.navigate('FollowList', { userId: user.id, kind: 'following', title: t('me.following') }) : undefined}
+                  />
+                </View>
+              </View>
 
-        {activeTab === 'reviews' && (
-          reviews.length > 0 ? (
-            <View style={{ gap: 6 }}>
-              {reviews.map(rev => (
-                <View key={rev.id} style={styles.reviewCard}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <View style={{ flexDirection: 'row', gap: 2 }}>
-                      {[1,2,3,4,5].map(s => (
-                        <MaterialCommunityIcons
-                          key={s}
-                          name={s <= rev.rating ? 'star' : 'star-outline'}
-                          size={12}
-                          color={s <= rev.rating ? COLORS.yellow : COLORS.text2}
-                        />
-                      ))}
-                    </View>
-                    <Text style={{ fontSize: FONT_SIZES.xs, color: COLORS.text3 }}>{new Date(rev.created_at).toLocaleDateString()}</Text>
+              {/* ── Name, category, bio, trust info, metadata ── */}
+              <View style={styles.identityText}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.displayName} numberOfLines={1}>{displayedName}</Text>
+                  {isVerified ? (
+                    <Icon name="verified" size={16} color={tier === 'business' ? COLORS.coral : COLORS.blue} />
+                  ) : null}
+                </View>
+
+                {user?.bio ? <Text style={styles.bio}>{user.bio}</Text> : null}
+
+                {(locationCity || memberSince || (isBusinessMode && serviceArea)) ? (
+                  <View style={styles.metaRow}>
+                    {locationCity ? (
+                      <View style={styles.metaItem}>
+                        <MaterialCommunityIcons name="map-marker-outline" size={13} color={COLORS.text3} />
+                        <Text style={styles.metaText}>{locationCity}</Text>
+                      </View>
+                    ) : null}
+                    {isBusinessMode && serviceArea ? (
+                      <View style={styles.metaItem}>
+                        <MaterialCommunityIcons name="map-marker-radius-outline" size={13} color={COLORS.text3} />
+                        <Text style={styles.metaText}>{t('profile.serves', { area: serviceArea })}</Text>
+                      </View>
+                    ) : null}
+                    {memberSince ? (
+                      <View style={styles.metaItem}>
+                        <MaterialCommunityIcons name="calendar-outline" size={13} color={COLORS.text3} />
+                        <Text style={styles.metaText}>{t('me.since')} {memberSince}</Text>
+                      </View>
+                    ) : null}
                   </View>
-                  {rev.comment && <Text style={{ fontSize: FONT_SIZES.base, color: COLORS.text2 }}>{rev.comment}</Text>}
-                  {rev.seller_response && (
-                    <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border }}>
-                      <Text style={{ fontSize: FONT_SIZES.xs, color: COLORS.blue, fontWeight: FONT_WEIGHTS.semibold }}>Your reply:</Text>
-                      <Text style={{ fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 }}>{rev.seller_response}</Text>
+                ) : null}
+              </View>
+
+              {/* ── Business / Personal presentation (business sellers only) ── */}
+              {isSeller && tier === 'business' ? (
+                <IdentityModeControl
+                  business={!!user?.use_store_identity}
+                  onChange={handleIdentitySwitch}
+                  personalLabel={t('profile.personal')}
+                  businessLabel={t('profile.business')}
+                />
+              ) : null}
+
+              <View style={styles.actionsWrap}>
+                <ProfileActions
+                  variant="owner"
+                  editLabel={t('me.editProfile')}
+                  shareLabel={t('profile.shareProfile')}
+                  visitorLabel={t('profile.visitorView')}
+                  onEdit={() => nav.navigate('EditProfile')}
+                  onShare={handleShareProfile}
+                  onVisitorView={user ? () => nav.navigate('Storefront', { sellerId: user.id }) : undefined}
+                />
+              </View>
+
+              {isSeller ? (
+                <TouchableOpacity
+                  style={styles.sellerToolsRow}
+                  onPress={() => nav.navigate('SellerToolsSettings')}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('profile.sellerTools')}
+                >
+                  <View style={styles.sellerToolsIconWrap}>
+                    <MaterialCommunityIcons name="storefront-outline" size={18} color={COLORS.coral} />
+                  </View>
+                  <View style={styles.sellerToolsInfo}>
+                    <View style={styles.sellerToolsHeader}>
+                      <Text style={styles.sellerToolsTitle}>{t('profile.sellerTools')}</Text>
+                      <View style={[styles.tierTag, { backgroundColor: (TIER_COLORS[tier] || COLORS.blue) + '20' }]}>
+                        <Text style={[styles.tierTagText, { color: TIER_COLORS[tier] || COLORS.blue }]}>{tierLabel}</Text>
+                      </View>
                     </View>
-                  )}
-                </View>
-              ))}
-            </View>
-          ) : (
-            <EmptyState
-              icon="star-outline"
-              title={t('me.noReviews')}
-              hint={isSeller ? t('me.reviewsHintSeller') : t('me.reviewsHintBuyer')}
-              size={56}
-            />
-          )
-        )}
+                    <Text style={styles.sellerToolsSub}>
+                      {t('profile.listingsCount', { count: products.length })} · {t('profile.salesCount', { count: sellingOrderCount })}
+                    </Text>
+                  </View>
+                  <Icon name="chevron-right" size={18} color={COLORS.text2} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.sellBanner}
+                  onPress={() => nav.navigate('SellerOnboarding')}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('me.becomeSeller')}
+                >
+                  <MaterialCommunityIcons name="store-plus-outline" size={20} color={COLORS.green} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sellTitle}>{t('me.startSelling')}</Text>
+                    <Text style={styles.sellHint}>{t('profile.startSellingHint')}</Text>
+                  </View>
+                  <Icon name="chevron-right" size={18} color={COLORS.green} />
+                </TouchableOpacity>
+              )}
 
-        {activeTab === 'saved' && (
-          wishlist.length > 0 ? (
-            <MasonryGrid
-              products={wishlist}
-              standalone={false}
-              columnGap={3}
-              sidePad={0}
-              onPress={handleProductPress}
-            />
-          ) : (
-            <EmptyState
-              icon="heart-outline"
-              title={t('me.noSavedItems')}
-              hint={t('me.noSavedItemsHint')}
-              size={56}
-            />
-          )
-        )}
-      </View>
+              {stale ? <StaleNotice onRetry={() => fetchData(true)} /> : null}
 
-      {/* ── Bottom Spacer ── */}
-      <View style={{ height: 40 }} />
+              {/* ── Sticky tab bar ── */}
+              <View onLayout={(e) => setTabBarY(e.nativeEvent.layout.y)}>
+                <ProfileTabs tabs={tabs} active={activeTab} onChange={handleTabChange} />
+              </View>
+
+              {/* ── Tab content ── */}
+              <View style={styles.tabContent}>
+                {activeTab === 'listings' && isSeller ? (
+                  <>
+                    {showCategoryFilters ? (
+                      <CategoryFilterRow
+                        categories={categoryNames}
+                        active={category}
+                        onChange={setCategory}
+                        allLabel={t('common.all')}
+                      />
+                    ) : null}
+
+                    {pinnedProduct ? (
+                      <FeaturedListingCard
+                        product={{
+                          id: pinnedProduct.id,
+                          name: pinnedProduct.name,
+                          price: pinnedProduct.price,
+                          effective_price: pinnedProduct.effective_price,
+                          is_on_sale: pinnedProduct.is_on_sale,
+                          condition: (pinnedProduct as any).condition,
+                        }}
+                        imageUrl={pinnedImage}
+                        onPress={() => handleProductPress(pinnedProduct)}
+                        onEdit={() => nav.navigate('EditListing', { productId: pinnedProduct.id })}
+                        onUnpin={() => handleTogglePin(pinnedProduct)}
+                      />
+                    ) : null}
+
+                    {filteredProducts.length > 0 ? (
+                      <MasonryGrid
+                        products={filteredProducts}
+                        standalone={false}
+                        columns={columns}
+                        availableWidth={gridWidth}
+                        columnGap={PROFILE_GRID_GAP}
+                        sidePad={0}
+                        priceOverlay={false}
+                        detailsBelow="full"
+                        animateOnMount
+                        onPress={handleProductPress}
+                        renderCardOverlay={(item) => (
+                          <View style={styles.cardActionsOverlay}>
+                            <TouchableOpacity
+                              style={styles.cardIconBtn}
+                              onPress={() => nav.navigate('EditListing', { productId: item.id })}
+                              activeOpacity={0.7}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('profile.editListing')}
+                            >
+                              <MaterialCommunityIcons name="pencil" size={14} color={COLORS.white} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.cardIconBtn}
+                              onPress={() => handleTogglePin(item)}
+                              activeOpacity={0.7}
+                              accessibilityRole="button"
+                              accessibilityLabel={user?.pinned_product_id === item.id ? t('profile.unpin') : t('profile.pin')}
+                            >
+                              <MaterialCommunityIcons
+                                name={user?.pinned_product_id === item.id ? 'pin-off' : 'pin'}
+                                size={14}
+                                color={COLORS.white}
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      />
+                    ) : !pinnedProduct ? (
+                      <EmptyState
+                        icon="storefront-outline"
+                        title={t('me.noListings')}
+                        hint={t('me.noListingsHint')}
+                        actionLabel={t('me.addListing')}
+                        onAction={() => nav.navigate('AddListing')}
+                        size={56}
+                        topSpacing={SPACING.xl}
+                      />
+                    ) : null}
+
+                    {pausedProducts.length > 0 ? (
+                      <View style={styles.pausedSection}>
+                        <TouchableOpacity
+                          style={styles.pausedHeader}
+                          onPress={() => setShowPausedSection((prev) => !prev)}
+                          activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('profile.pausedCount', { count: pausedProducts.length })}
+                        >
+                          <View style={styles.pausedHeaderLeft}>
+                            <MaterialCommunityIcons name="pause-circle-outline" size={16} color={COLORS.yellow} />
+                            <Text style={styles.pausedTitle}>
+                              {t('profile.pausedCount', { count: pausedProducts.length })}
+                            </Text>
+                          </View>
+                          <MaterialCommunityIcons
+                            name={showPausedSection ? 'chevron-up' : 'chevron-down'}
+                            size={18}
+                            color={COLORS.text2}
+                          />
+                        </TouchableOpacity>
+
+                        {showPausedSection ? (
+                          <View style={styles.pausedList}>
+                            {pausedProducts.map((p) => (
+                              <View key={p.id} style={styles.pausedCard}>
+                                <View style={styles.pausedCardInfo}>
+                                  <Text style={styles.pausedCardName} numberOfLines={1}>{p.name}</Text>
+                                  <View style={styles.pausedReasonRow}>
+                                    <View style={[styles.pausedBadge, p.paused_reason === 'tier_cap' && { backgroundColor: COLORS.coralMuted }]}>
+                                      <Text style={[styles.pausedBadgeText, p.paused_reason === 'tier_cap' && { color: COLORS.coral }]}>
+                                        {p.paused_reason === 'tier_cap' ? t('profile.pausedByPlan') : t('profile.paused')}
+                                      </Text>
+                                    </View>
+                                    <Text style={styles.pausedPrice}>{formatPrice(p.price)}</Text>
+                                  </View>
+                                </View>
+                                <TouchableOpacity
+                                  style={styles.resumeBtn}
+                                  onPress={() => handleResumeProduct(p)}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={t('profile.resume')}
+                                >
+                                  <Text style={styles.resumeBtnText}>{t('profile.resume')}</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ))}
+                          </View>
+                        ) : null}
+                      </View>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {activeTab === 'reviews' ? (
+                  <ProfileReviews
+                    reviews={reviews}
+                    stats={reviewStats}
+                    isOwner
+                    ownerName={displayName}
+                    emptyHint={t('me.reviewsHintSeller')}
+                    onReplySaved={() => fetchData(true)}
+                  />
+                ) : null}
+
+                {activeTab === 'saved' ? (
+                  wishlist.length > 0 ? (
+                    <MasonryGrid
+                      products={wishlist}
+                      standalone={false}
+                      columns={columns}
+                      availableWidth={gridWidth}
+                      columnGap={PROFILE_GRID_GAP}
+                      sidePad={0}
+                      priceOverlay={false}
+                      detailsBelow="full"
+                      onPress={handleProductPress}
+                    />
+                  ) : (
+                    <EmptyState
+                      icon="heart-outline"
+                      title={t('me.noSavedItems')}
+                      hint={t('me.noSavedItemsHint')}
+                      size={56}
+                    />
+                  )
+                ) : null}
+              </View>
+            </>
+          )}
+        </View>
       </ScrollView>
+    </View>
+  );
+}
+
+/** Compact Business ⇄ Personal switch with a smooth, immediate active state. */
+function IdentityModeControl({
+  business,
+  onChange,
+  personalLabel,
+  businessLabel,
+}: {
+  business: boolean;
+  onChange: (value: boolean) => void;
+  personalLabel: string;
+  businessLabel: string;
+}) {
+  const progress = useRef(new Animated.Value(business ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: business ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [business, progress]);
+
+  const personalOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const businessOpacity = progress;
+
+  return (
+    <View style={styles.modeControl}>
+      <TouchableOpacity
+        style={styles.modeBtn}
+        onPress={() => !business || onChange(false)}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={personalLabel}
+        accessibilityState={{ selected: !business }}
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, styles.modeBtnActive, { opacity: personalOpacity }]} />
+        <Text style={[styles.modeBtnText, !business && styles.modeBtnTextActive]}>{personalLabel}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.modeBtn}
+        onPress={() => business || onChange(true)}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={businessLabel}
+        accessibilityState={{ selected: business }}
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, styles.modeBtnActive, { opacity: businessOpacity }]} />
+        <Text style={[styles.modeBtnText, business && styles.modeBtnTextActive]}>{businessLabel}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  content: { paddingBottom: 100 },
+  scroll: { flex: 1 },
+  content: { alignItems: 'center' },
+  column: { paddingHorizontal: PROFILE_PAD },
 
-  /* Sticky header */
-  stickyHeader: {
-    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
+  headerIconBtn: {
+    width: TOUCH.recommended,
+    height: TOUCH.recommended,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  stickyHeaderInner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-  },
-  headerBtn: {
-    width: TOUCH.recommended, height: TOUCH.recommended,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  topBarNameCenter: { flex: 1, alignItems: 'center' },
-  topBarNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  topBarName: { fontSize: FONT_SIZES.title, fontFamily: FONTS.heading, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text },
-  scrollView: { flex: 1 },
 
-  /* Hero */
-  hero: { backgroundColor: COLORS.surface, paddingBottom: SPACING.lg, position: 'relative' },
-  avatarRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: SPACING.lg, paddingTop: 60,
+  /* Identity header: avatar + stats, then name / bio / @username */
+  identityRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
+  statsWrap: { flex: 1 },
+  identityText: { marginTop: SPACING.md, gap: 2 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  displayName: {
+    flexShrink: 1,
+    fontSize: FONT_SIZES.md,
+    fontFamily: FONTS.heading,
+    fontWeight: FONT_WEIGHTS.bold,
+    color: COLORS.text,
   },
-  editPenBtn: {
-    position: 'absolute', top: 8, left: 8,
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
-  },
-  nameBioBlock: { paddingHorizontal: SPACING.lg, paddingTop: 12 },
-  bio: { fontSize: FONT_SIZES.base, color: COLORS.text2, lineHeight: 20, marginTop: 6 },
-  metaRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md,
-    marginTop: SPACING.sm,
-  },
-  metaItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-  },
-  metaText: { fontSize: FONT_SIZES.xs, color: COLORS.text3 },
+  bio: { fontSize: FONT_SIZES.md, color: COLORS.text, lineHeight: 19, marginTop: 2 },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md, marginTop: SPACING.sm },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: FONT_SIZES.sm, color: COLORS.text3 },
 
-  /* Identity Toggle */
-  identityToggle: {
-    flexDirection: 'row', marginHorizontal: SPACING.lg, marginTop: SPACING.md,
-    backgroundColor: COLORS.surface2, borderRadius: RADIUS.pill, padding: 3,
-  },
-  identityBtn: { flex: 1, paddingVertical: 7, borderRadius: RADIUS.pill, alignItems: 'center' },
-  identityBtnActive: { backgroundColor: COLORS.coral },
-  identityBtnText: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text2 },
-  identityBtnTextActive: { color: COLORS.white },
-
-  /* Trust Line */
-  trustLine: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: SPACING.lg, paddingTop: 8,
-  },
-  trustLineText: { fontSize: FONT_SIZES.sm, color: COLORS.text2 },
-
-  /* Stats */
-  statsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
-  stat: { alignItems: 'center' },
-  statNum: { fontSize: FONT_SIZES.title, fontFamily: FONTS.heading, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text, lineHeight: 22 },
-  statLabel: { fontSize: FONT_SIZES.xs, color: COLORS.text2, marginTop: 2 },
-
-  /* Action Buttons */
-  actionRow: {
-    flexDirection: 'row', gap: 8,
-    paddingHorizontal: SPACING.lg, paddingTop: 14,
-  },
-  actionBtn: {
-    flex: 1, minHeight: TOUCH.min, borderRadius: RADIUS.button,
-    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-  },
-  actionBtnText: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text },
-
-  /* Tabs */
-  tabBar: {
+  /* Presentation switch */
+  modeControl: {
     flexDirection: 'row',
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.surface2,
+    borderRadius: RADIUS.pill,
+    padding: 3,
+    marginTop: SPACING.lg,
+    alignSelf: 'flex-start',
+    minWidth: 200,
+  },
+  modeBtn: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: RADIUS.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.md,
+  },
+  modeBtnActive: { backgroundColor: COLORS.coral, borderRadius: RADIUS.pill },
+  modeBtnText: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text2 },
+  modeBtnTextActive: { color: COLORS.white },
+
+  actionsWrap: { marginTop: SPACING.lg },
+
+  /* Seller tools + buyer CTA */
+  sellerToolsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginTop: SPACING.md,
+    padding: SPACING.md,
     backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    minHeight: 56,
   },
-  tab: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 11, borderBottomWidth: 2, borderBottomColor: 'transparent',
-  },
-  tabActive: { borderBottomColor: COLORS.coral },
-
-  /* Tab Content */
-  tabContent: { paddingTop: SPACING.md },
-  masonryGrid: { flexDirection: 'row', gap: 3 },
-  masonryCol: { flex: 1, gap: 3 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
-  card: {
-    borderRadius: RADIUS.row, overflow: 'hidden',
+  sellerToolsIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.full,
     backgroundColor: COLORS.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  cardImgWrap: {
-    width: '100%', backgroundColor: COLORS.surface2, position: 'relative',
-  },
-  cardPlaceholder: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: COLORS.surface2,
-  },
-  cardPriceTop: {
-    position: 'absolute', top: 6, right: 6, zIndex: 6,
-    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: RADIUS.sm,
-    paddingHorizontal: 7, paddingVertical: 3,
-  },
-  cardStockBadge: {
-    position: 'absolute', bottom: 6, left: 6, zIndex: 6,
-  },
-  imgDots: {
-    position: 'absolute', bottom: 8, alignSelf: 'center', zIndex: 6,
-    flexDirection: 'row', gap: 4,
-  },
-  imgDot: {
-    width: 6, height: 6, borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-  },
-  imgDotActive: { backgroundColor: COLORS.white, width: 14 },
-  cardName: {
-    fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text,
-    paddingHorizontal: 6, paddingTop: 5, paddingBottom: 2,
-  },
+  sellerToolsInfo: { flex: 1, gap: 2 },
+  sellerToolsHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  sellerToolsTitle: { fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text },
+  tierTag: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: RADIUS.pill },
+  tierTagText: { fontSize: FONT_SIZES.xs, fontWeight: FONT_WEIGHTS.bold },
+  sellerToolsSub: { fontSize: FONT_SIZES.sm, color: COLORS.text2 },
 
-  /* Reviews */
-  reviewCard: {
-    marginHorizontal: SPACING.md, marginBottom: SPACING.sm, padding: 14,
-    borderRadius: RADIUS.card, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
-  },
-
-  /* Become a Seller Banner */
   sellBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginHorizontal: SPACING.lg, marginTop: SPACING.md, padding: 12,
-    backgroundColor: COLORS.greenMuted, borderRadius: RADIUS.card,
-    borderWidth: 1, borderColor: COLORS.green + '30',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: COLORS.greenMuted,
+    borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: COLORS.green + '30',
   },
-  sellTitle: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.bold, color: COLORS.green },
-  sellHint: { fontSize: FONT_SIZES.xs, color: COLORS.text2, marginTop: 1 },
+  sellTitle: { fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.bold, color: COLORS.green },
+  sellHint: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 1 },
 
+  /* Tab content */
+  tabContent: { paddingTop: SPACING.md },
+
+  /* Owner controls over a tile */
+  cardActionsOverlay: { position: 'absolute', top: 8, left: 8, flexDirection: 'row', gap: 6 },
+  cardIconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: RADIUS.full,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Paused (tier-capped) listings */
+  pausedSection: {
+    marginTop: SPACING.lg,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  pausedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    minHeight: 48,
+  },
+  pausedHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  pausedTitle: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text },
+  pausedList: { paddingHorizontal: SPACING.md, paddingBottom: 10, gap: SPACING.sm },
+  pausedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  pausedCardInfo: { flex: 1, gap: SPACING.xs },
+  pausedCardName: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.text },
+  pausedReasonRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  pausedBadge: {
+    backgroundColor: COLORS.surface2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.pill,
+  },
+  pausedBadgeText: { fontSize: FONT_SIZES.xs, color: COLORS.text2, fontWeight: FONT_WEIGHTS.semibold },
+  pausedPrice: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text2 },
+  resumeBtn: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.surface2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resumeBtnText: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold, color: COLORS.coral },
 });

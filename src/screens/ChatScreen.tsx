@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput,
+  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, PanResponder,
   KeyboardAvoidingView, Platform, Image, Pressable, AppState, AppStateStatus, Modal,
   Animated, Linking,
 } from 'react-native';
@@ -920,10 +920,37 @@ startPolling();
 
   // ───── Message Actions ─────
 
-  const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '🙏'];
+  const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉'];
+  const [reactionPreviewIndex, setReactionPreviewIndex] = useState<number | null>(null);
+  const reactionPickerMetrics = useRef({ x: 0, width: 0 });
+  const reactionPickerRef = useRef<View>(null);
+  const reactionPickerIndex = useRef(0);
+  const selectReactionAtX = useRef((pageX: number) => {});
+  const handleReactRef = useRef<(emoji: string) => void>(() => {});
+  selectReactionAtX.current = (pageX: number) => {
+    const { x, width } = reactionPickerMetrics.current;
+    if (!width) return;
+    const index = Math.max(0, Math.min(REACTION_EMOJIS.length - 1, Math.floor(((pageX - x) / width) * REACTION_EMOJIS.length)));
+    reactionPickerIndex.current = index;
+    setReactionPreviewIndex(index);
+  };
+  const reactionPickerPanResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 5 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+    onPanResponderGrant: (_event, gesture) => selectReactionAtX.current(gesture.x0),
+    onPanResponderMove: (_event, gesture) => selectReactionAtX.current(gesture.moveX),
+    onPanResponderRelease: (_event, gesture) => {
+      selectReactionAtX.current(gesture.moveX);
+      handleReactRef.current(REACTION_EMOJIS[reactionPickerIndex.current]);
+      setReactionPreviewIndex(null);
+    },
+    onPanResponderTerminate: () => setReactionPreviewIndex(null),
+    onPanResponderTerminationRequest: () => false,
+  })).current;
 
   const handleMessageLongPress = (msg: LocalMessage) => {
     if (msg.is_deleted || msg.pending) return;
+    setReactionPreviewIndex(null);
     setActionMenuMessage(msg);
     setActionMenuVisible(true);
   };
@@ -932,33 +959,27 @@ startPolling();
     if (!actionMenuMessage) return;
     setActionMenuVisible(false);
     const msgId = actionMenuMessage.id;
+    const before = messages.find(message => message.id === msgId)?.reactions || [];
+    const ownReaction = before.find(reaction => reaction.userId === store.user?.id);
     // Optimistic update
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId) return m;
       const existing = m.reactions || [];
-      const hasReaction = existing.find(r => r.emoji === emoji && r.userId === store.user?.id);
-      const newReactions = hasReaction
-        ? existing.filter(r => !(r.emoji === emoji && r.userId === store.user?.id))
-        : [...existing, { emoji, userId: store.user?.id || '', userName: 'You' }];
+      const newReactions = ownReaction?.emoji === emoji
+        ? existing.filter(r => r.userId !== store.user?.id)
+        : [...existing.filter(r => r.userId !== store.user?.id), { emoji, userId: store.user?.id || '', userName: 'You' }];
       return { ...m, reactions: newReactions };
     }));
     try {
       const { reactToMessage } = await import('../api');
-      await reactToMessage(msgId, emoji);
+      const result = await reactToMessage(msgId, emoji) as { reactions?: LocalMessage['reactions'] };
+      if (result?.reactions) setMessages(prev => prev.map(m => m.id === msgId ? { ...m, reactions: result.reactions } : m));
     } catch {
-      // revert on failure
-      setMessages(prev => prev.map(m => {
-        if (m.id !== msgId) return m;
-        const existing = m.reactions || [];
-        const hasReaction = existing.find(r => r.emoji === emoji && r.userId === store.user?.id);
-        const newReactions = hasReaction
-          ? existing.filter(r => !(r.emoji === emoji && r.userId === store.user?.id))
-          : [...existing, { emoji, userId: store.user?.id || '', userName: 'You' }];
-        return { ...m, reactions: newReactions };
-      }));
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, reactions: before } : m));
     }
     setActionMenuMessage(null);
   };
+  handleReactRef.current = emoji => { void handleReact(emoji); };
 
   const handleReply = () => {
     if (!actionMenuMessage) return;
@@ -1177,8 +1198,16 @@ startPolling();
       );
     }
 
+    const reactionGroups = [...new Set((item.reactions || []).map(reaction => reaction.emoji))].map(emoji => ({
+      emoji,
+      count: item.reactions!.filter(reaction => reaction.emoji === emoji).length,
+      mine: item.reactions!.some(reaction => reaction.emoji === emoji && reaction.userId === store.user?.id),
+    }));
+
     return (
       <SwipeReplyRow onReply={() => setReplyTo(item)}>
+      <View style={[styles.messageLine, isMe ? styles.messageLineMe : styles.messageLineThem, reactionGroups.length > 0 && styles.messageLineWithReactions]}>
+      <View style={styles.messageBubbleWrap}>
       <Pressable
         style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isImage && styles.bubbleImage]}
         onLongPress={() => handleMessageLongPress(item)}
@@ -1237,15 +1266,19 @@ startPolling();
             </Text>
           )}
         </View>
-        {/* Reactions */}
-        {item.reactions && item.reactions.length > 0 && (
-          <View style={[styles.reactionsRow, isMe ? styles.reactionsRowMe : styles.reactionsRowThem]}>
-            {item.reactions.map((r, i) => (
-              <Text key={i} style={styles.reactionEmoji}>{r.emoji}</Text>
-            ))}
-          </View>
-        )}
       </Pressable>
+      {reactionGroups.length > 0 && (
+        <View pointerEvents="none" style={[styles.reactionsOverlay, isMe ? styles.reactionsOverlayMe : styles.reactionsOverlayThem]}>
+          {reactionGroups.map(group => (
+            <View key={group.emoji} style={[styles.reactionBadge, group.mine && styles.reactionBadgeMine]}>
+              <Text style={styles.reactionEmoji}>{group.emoji}</Text>
+              {group.count > 1 && <Text style={styles.reactionCount}>{group.count}</Text>}
+            </View>
+          ))}
+        </View>
+      )}
+      </View>
+      </View>
       </SwipeReplyRow>
     );
   };
@@ -1264,7 +1297,7 @@ startPolling();
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <LinearGradient
-        colors={['#121820', '#0D1117', '#0A0E14']}
+        colors={['#0B1016', '#090D12', '#080B10']}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={styles.container}
@@ -1655,9 +1688,23 @@ startPolling();
           <Pressable style={styles.actionMenuOverlay} onPress={() => { setActionMenuVisible(false); setActionMenuMessage(null); }}>
             <Pressable style={styles.actionMenu} onPress={e => e.stopPropagation()}>
               {/* Reaction picker */}
-              <View style={styles.reactionPicker}>
+      <View
+                ref={reactionPickerRef}
+                style={styles.reactionPicker}
+                {...reactionPickerPanResponder.panHandlers}
+                onLayout={event => {
+                  reactionPickerMetrics.current.width = event.nativeEvent.layout.width;
+                  reactionPickerRef.current?.measureInWindow((x: number) => { reactionPickerMetrics.current.x = x; });
+                }}
+              >
                 {REACTION_EMOJIS.map(emoji => (
-                  <TouchableOpacity key={emoji} style={styles.reactionBtn} onPress={() => handleReact(emoji)} accessibilityLabel={`react with ${emoji}`} accessibilityRole="button">
+                  <TouchableOpacity
+                    key={emoji}
+                    style={[styles.reactionBtn, reactionPreviewIndex === REACTION_EMOJIS.indexOf(emoji) && styles.reactionBtnActive]}
+                    onPress={() => handleReact(emoji)}
+                    accessibilityLabel={`react with ${emoji}`}
+                    accessibilityRole="button"
+                  >
                     <Text style={styles.reactionBtnText}>{emoji}</Text>
                   </TouchableOpacity>
                 ))}
@@ -1731,8 +1778,13 @@ const styles = StyleSheet.create({
   offerReminderText: { flex: 1, fontSize: 12, color: COLORS.text, fontWeight: '600' },
   offerReminderAction: { fontSize: 12, color: COLORS.coral, fontWeight: '700' },
   messageList: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  messageLine: { width: '100%', overflow: 'visible' },
+  messageLineMe: { alignItems: 'flex-end' },
+  messageLineThem: { alignItems: 'flex-start' },
+  messageLineWithReactions: { paddingBottom: 9 },
+  messageBubbleWrap: { position: 'relative', maxWidth: '88%', overflow: 'visible' },
   bubble: {
-    maxWidth: '78%', paddingHorizontal: 16, paddingVertical: 10,
+    maxWidth: '100%', paddingHorizontal: 16, paddingVertical: 10,
     borderRadius: 20, marginBottom: 4,
   },
   bubbleMe: {
@@ -1740,8 +1792,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 4,
   },
   bubbleThem: {
-    alignSelf: 'flex-start', backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border + '50',
+    alignSelf: 'flex-start', backgroundColor: '#1B2632',
+    borderTopLeftRadius: 4, borderWidth: 1, borderColor: '#34414E',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 1,
   },
   tailMe: {
@@ -1750,7 +1802,7 @@ const styles = StyleSheet.create({
   },
   tailThem: {
     position: 'absolute', top: -4, left: -5, width: 11, height: 11,
-    backgroundColor: COLORS.surface, transform: [{ rotate: '45deg' }],
+    backgroundColor: '#1B2632', transform: [{ rotate: '45deg' }],
   },
   swipeReplyAction: {
     width: 44, justifyContent: 'center', alignItems: 'center',
@@ -1779,11 +1831,14 @@ const styles = StyleSheet.create({
   replySender: { fontSize: 10, fontWeight: '700', color: COLORS.coral, marginBottom: 1 },
   replyText: { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
 
-  /* Reactions */
-  reactionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginTop: 4 },
-  reactionsRowMe: { alignSelf: 'flex-end' },
-  reactionsRowThem: { alignSelf: 'flex-start' },
-  reactionEmoji: { fontSize: 16, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 10, paddingHorizontal: 5, paddingVertical: 1, overflow: 'hidden' },
+  /* Reactions float over the bubble edge and never affect bubble width. */
+  reactionsOverlay: { position: 'absolute', bottom: -8, flexDirection: 'row', gap: 3, zIndex: 2, elevation: 3 },
+  reactionsOverlayMe: { right: 8 },
+  reactionsOverlayThem: { left: 8 },
+  reactionBadge: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, paddingHorizontal: 6, borderRadius: RADIUS.pill, backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2 },
+  reactionBadgeMine: { borderColor: COLORS.coral + 'AA', backgroundColor: COLORS.coral + '22' },
+  reactionEmoji: { fontSize: 13 },
+  reactionCount: { color: COLORS.text, fontSize: 10, fontWeight: '700' },
 
   /* Reply-to bar */
   replyBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 8, paddingBottom: 4, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border + '40' },
@@ -1795,9 +1850,10 @@ const styles = StyleSheet.create({
 
   /* Action menu (long-press) */
   actionMenuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  actionMenu: { width: 220, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 },
-  reactionPicker: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 8, paddingHorizontal: 4 },
-  reactionBtn: { padding: 6, borderRadius: 20 },
+  actionMenu: { width: '92%', maxWidth: 360, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 },
+  reactionPicker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 7, paddingHorizontal: 2 },
+  reactionBtn: { flex: 1, minWidth: 30, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21 },
+  reactionBtnActive: { backgroundColor: COLORS.coral + '25', transform: [{ scale: 1.18 }] },
   reactionBtnText: { fontSize: 22 },
   actionMenuDivider: { height: 1, backgroundColor: COLORS.border + '40', marginVertical: 4 },
   actionMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border + '20' },

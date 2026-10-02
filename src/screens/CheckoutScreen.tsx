@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Linking,
-  KeyboardAvoidingView, Platform, Image, Alert,
+  KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,7 +15,7 @@ import { useTranslation } from '@/localization';
 import { validatePromo } from '../api';
 import ScreenHeader from '../components/ScreenHeader';
 import { store } from '../store';
-import { createPendingCheckout, getPendingSellerInfo, getAddresses, getImageUrl, getNatCashAvailability } from '../api';
+import { createPendingCheckout, getPendingSellerInfo, getAddresses, getImageUrl, getNatCashAvailability, getPopularMeetupSpots } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Address } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
@@ -29,6 +29,11 @@ type DeliveryMethod = 'delivery' | 'meetup';
 type Step = 1 | 2 | 3;
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
 import natcashLogo from '../../assets/MonNatCash/natcash.webp';
+
+const localDateTimeInput = (date: Date) => {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 function Stepper({current}:{current:Step}){const{t}=useTranslation();const l=[t("checkout.step1Title"),t("checkout.step2Title"),t("checkout.step3Title")];return(<View style={st.container}>{[1,2,3].map((s,i)=>(<React.Fragment key={s}>{i>0&&<View style={[st.line,s<=current&&st.lineActive]}/>}<View style={st.stepWrap}><View style={[st.circle,s<=current&&st.circleActive,s===current&&st.circleCurrent]}>{s<current?<MaterialCommunityIcons name="check" size={14} color={COLORS.white}/>:<Text style={[st.circleText,s<=current&&st.circleTextActive]}>{s}</Text>}</View><Text style={[st.label,s===current&&st.labelActive]} numberOfLines={1}>{l[i]}</Text></View></React.Fragment>))}</View>);}
 const st=StyleSheet.create({container:{flexDirection:"row",alignItems:"flex-start",justifyContent:"center",paddingHorizontal:SPACING.lg,paddingVertical:SPACING.md},stepWrap:{alignItems:"center",gap:6,minWidth:80},line:{flex:1,height:2,backgroundColor:COLORS.border,marginTop:13,marginHorizontal:-4},lineActive:{backgroundColor:COLORS.coral},circle:{width:28,height:28,borderRadius:14,borderWidth:2,borderColor:COLORS.border,alignItems:"center",justifyContent:"center",backgroundColor:COLORS.bg},circleActive:{borderColor:COLORS.coral,backgroundColor:COLORS.coral+"20"},circleCurrent:{borderColor:COLORS.coral,backgroundColor:COLORS.coral},circleText:{fontSize:12,fontWeight:"700",color:COLORS.text2},circleTextActive:{color:COLORS.white},label:{fontSize:10,color:COLORS.text2,textAlign:"center",fontWeight:"500"},labelActive:{color:COLORS.text,fontWeight:"700"}});
@@ -56,6 +61,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [meetupLng, setMeetupLng] = useState<number | null>(null);
   const [meetupAddress, setMeetupAddress] = useState<string | null>(null);
   const [meetupName, setMeetupName] = useState('');
+  const [meetupAt, setMeetupAt] = useState(() => localDateTimeInput(new Date(Date.now() + 24 * 60 * 60 * 1000)));
+  const [popularMeetupSpots, setPopularMeetupSpots] = useState<Array<{ id: string; name: string; lat: number; lng: number; label: string; communitySignal: string }>>([]);
   const [fulfillmentMethods, setFulfillmentMethods] = useState<Record<string, DeliveryMethod>>({});
 
   // ---- "Laser Conic Sweep" (bar-for-bar port of the HTML mockup) ----
@@ -183,6 +190,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const sellerCount = sellerGroups.length;
 
   const sellerIdKey = sellerGroups.map(seller => seller.sellerId).sort().join(',');
+  useEffect(() => {
+    let active = true;
+    if (!sellerIdKey) { setPopularMeetupSpots([]); return () => { active = false; }; }
+    getPopularMeetupSpots(sellerIdKey.split(',')).then((result: any) => {
+      if (active) setPopularMeetupSpots(result.spots || []);
+    }).catch(() => { if (active) setPopularMeetupSpots([]); });
+    return () => { active = false; };
+  }, [sellerIdKey]);
   useFocusEffect(useCallback(() => {
     let current = true;
     if (!sellerIdKey) { setNatCashAvailable(false); return () => { current = false; }; }
@@ -238,6 +253,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       toast.error(t('checkout.missingInfo'), t('checkout.selectMeetupLocation'));
       return;
     }
+    if (selectedMethods.includes('meetup') && (!Number.isFinite(new Date(meetupAt).getTime()) || new Date(meetupAt).getTime() <= Date.now())) {
+      toast.error(t('checkout.missingInfo'), 'Choose a future meetup date and time.');
+      return;
+    }
     const buyerLat = Number(store.user?.location_lat);
     const buyerLng = Number(store.user?.location_lng);
     if (selectedMethods.includes('delivery') && (!Number.isFinite(buyerLat) || !Number.isFinite(buyerLng))) {
@@ -262,7 +281,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           const sellerMethod = fulfillmentMethods[seller.sellerId] || method;
           return sellerMethod === 'delivery'
             ? { sellerId: seller.sellerId, method: 'delivery', location: { lat: buyerLat, lng: buyerLng, address, note } }
-            : { sellerId: seller.sellerId, method: 'meetup', location: { lat: meetupLat, lng: meetupLng, address: meetupAddress, note } };
+            : { sellerId: seller.sellerId, method: 'meetup', meetupAt: new Date(meetupAt).toISOString(), location: { lat: meetupLat, lng: meetupLng, address: meetupAddress, note } };
         }),
       };
       if (selectedMethods.includes('delivery')) {
@@ -273,14 +292,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       if (selectedMethods.includes('meetup')) {
         checkoutData.meetupLat = meetupLat; checkoutData.meetupLng = meetupLng;
         checkoutData.meetupAddress = meetupAddress; checkoutData.meetupName = meetupName;
+        checkoutData.meetupAt = new Date(meetupAt).toISOString();
         checkoutData.deliveryNote = note;
       }
       // Save pending checkout server-side (no order created yet)
       const res = await createPendingCheckout(checkoutData) as { paymentUrl?: string; pendingId: string; paymentMethod?: string; fulfillmentFee?: number };
       const payableTotal = finalTotal + Number(res.fulfillmentFee || 0);
       if ((res as any).agreementStatus === 'awaiting_seller_acceptance') {
-        Alert.alert('Proposal sent', 'Each seller must accept their delivery or meetup terms before payment becomes available. We’ll notify you when every agreement is ready.');
-        navigation.goBack();
+        navigation.replace('MeetupProposal', { pendingId: res.pendingId });
         return;
       }
       if (paymentMethod === 'moncash' && res.paymentUrl) {
@@ -336,7 +355,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     if (step === 1) {
       const methods = sellerGroups.map(seller => fulfillmentMethods[seller.sellerId] || method);
       const deliveryReady = !methods.includes('delivery') || !!(name && phone && address && city && Number.isFinite(Number(store.user?.location_lat)) && Number.isFinite(Number(store.user?.location_lng)));
-      const meetupReady = !methods.includes('meetup') || !!(meetupLat && meetupLng);
+      const meetupDate = new Date(meetupAt).getTime();
+      const meetupReady = !methods.includes('meetup') || (!!(meetupLat && meetupLng) && Number.isFinite(meetupDate) && meetupDate > Date.now());
       return deliveryReady && meetupReady;
     }
     return true;
@@ -364,8 +384,20 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <TextInput style={styles.input} placeholder={t("checkout.note")} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline/>
     </>}
     {sellerGroups.some(seller => (fulfillmentMethods[seller.sellerId] || method) === 'meetup') && <><Text style={styles.stepLabel}>{t("checkout.meetupLocation")}</Text>
+      {popularMeetupSpots.length > 0 && <View style={styles.popularMeetups}>
+        <Text style={styles.meetupDateLabel}>{t('meetupProposal.popularSpots')}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.popularSpotList}>
+          {popularMeetupSpots.map(spot => <TouchableOpacity key={spot.id} style={[styles.popularSpot, meetupLat === spot.lat && meetupLng === spot.lng && styles.popularSpotActive]} onPress={() => { setMeetupLat(spot.lat); setMeetupLng(spot.lng); setMeetupAddress(spot.name); }} accessibilityRole="button" accessibilityLabel={`${spot.name}, ${spot.communitySignal}`}>
+            <MaterialCommunityIcons name="map-marker-check-outline" size={18} color={COLORS.green}/>
+            <View style={{ flex: 1 }}><Text style={styles.popularSpotName} numberOfLines={1}>{spot.name}</Text><Text style={styles.popularSpotMeta}>{spot.communitySignal}</Text></View>
+          </TouchableOpacity>)}
+        </ScrollView>
+      </View>}
       <LocationPicker onLocationSelect={(la,lo,a)=>{setMeetupLat(la);setMeetupLng(lo);setMeetupAddress(a);}} initialLat={meetupLat} initialLng={meetupLng} height={220}/>
       {meetupAddress&&<View style={styles.meetupPreview}><MaterialCommunityIcons name="map-marker" size={14} color={COLORS.coral}/><Text style={styles.meetupPreviewText} numberOfLines={2}>{meetupAddress}</Text></View>}
+      <Text style={styles.meetupDateLabel}>{t('checkout.meetupDateLabel')}</Text>
+      <TextInput style={styles.input} placeholder={t('checkout.meetupDatePlaceholder')} placeholderTextColor={COLORS.text2} value={meetupAt} onChangeText={setMeetupAt} accessibilityLabel={t('checkout.meetupDateLabel')} />
+      <Text style={styles.meetupDateHint}>{t('checkout.meetupScheduleHint')}</Text>
       <TextInput style={styles.input} placeholder="Your name for pickup" placeholderTextColor={COLORS.text2} value={meetupName} onChangeText={setMeetupName}/>
       <TextInput style={styles.input} placeholder={t("checkout.meetupNote")} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline/>
     </>}
@@ -428,6 +460,14 @@ const styles = StyleSheet.create({
   addressChoiceText: { color: COLORS.text2, fontSize: 11, lineHeight: 16 },
   meetupPreview: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, paddingHorizontal: SPACING.lg },
   meetupPreviewText: { flex: 1, fontSize: 12, color: COLORS.text2 },
+  meetupDateLabel: { color: COLORS.text2, fontSize: 12, fontWeight: '600', marginHorizontal: SPACING.lg, marginTop: 12, marginBottom: 6 },
+  meetupDateHint: { color: COLORS.text2, fontSize: 12, lineHeight: 17, marginHorizontal: SPACING.lg, marginBottom: 8 },
+  popularMeetups: { marginBottom: 6 },
+  popularSpotList: { gap: 8, paddingHorizontal: SPACING.lg },
+  popularSpot: { width: 238, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, paddingHorizontal: 12, paddingVertical: 8 },
+  popularSpotActive: { borderColor: COLORS.green, backgroundColor: COLORS.green + '10' },
+  popularSpotName: { color: COLORS.text, fontWeight: '700', fontSize: 12 },
+  popularSpotMeta: { color: COLORS.text2, fontSize: 10, marginTop: 3 },
   fulfillmentCard: { marginHorizontal: SPACING.lg, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, overflow: 'hidden' },
   sellerFulfillmentRow: { padding: 12, gap: 10 },
   sellerFulfillmentCopy: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },

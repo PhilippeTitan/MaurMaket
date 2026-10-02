@@ -4,7 +4,7 @@ import * as AuthSession from 'expo-auth-session';
 import { createAuthClient } from 'better-auth/client';
 import { twoFactorClient } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
-import type { Conversation, Product } from './types';
+import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
 
@@ -798,7 +798,7 @@ export const resetPassword = async (email: string, code: string, newPassword: st
   return { updated: true };
 };
 
-export const updateProfile = (data: Record<string, string>) =>
+export const updateProfile = (data: Record<string, any>) =>
   request('/user/profile', { method: 'PUT', body: JSON.stringify(data) });
 
 export const exportAccountData = () => request('/user/export-data');
@@ -856,11 +856,22 @@ export const createPendingCheckout = (data: Record<string, unknown>) =>
   request('/checkout/pending', { method: 'POST', body: JSON.stringify(data) });
 export const getNatCashAvailability = (sellerIds: string[]) =>
   request(`/checkout/natcash-availability?sellerIds=${encodeURIComponent(sellerIds.join(','))}`);
+export const getPopularMeetupSpots = (sellerIds: string[]) =>
+  request(`/checkout/popular-meetup-spots?sellerIds=${encodeURIComponent(sellerIds.join(','))}`);
+export const confirmMeetupPlace = (orderId: string, sellerId: string) =>
+  request(`/orders/${orderId}/meetup/place-confirm`, { method: 'POST', body: JSON.stringify({ sellerId }) });
+export const reportMeetupPlace = (orderId: string, sellerId: string, reason: string, details?: string) =>
+  request(`/orders/${orderId}/meetup/place-report`, { method: 'POST', body: JSON.stringify({ sellerId, reason, details }) });
 
 export const checkPendingStatus = (pendingId: string) =>
   request(`/checkout/pending/${pendingId}/status`);
 
 export const getSellerFulfillmentProposals = () => request('/seller/fulfillment-proposals');
+export const getPendingAgreements = (pendingId: string) => request(`/checkout/pending/${pendingId}/agreements`);
+export const decideBuyerFulfillment = (pendingId: string, sellerId: string, decision: 'accept' | 'counter' | 'cancel', payload: Record<string, unknown> = {}) =>
+  request(`/checkout/pending/${pendingId}/agreements/${sellerId}/buyer-decision`, { method: 'PUT', body: JSON.stringify({ decision, ...payload }) });
+export const counterSellerFulfillment = (pendingId: string, sellerId: string, location: Record<string, unknown>, meetupAt: string) =>
+  request(`/checkout/pending/${pendingId}/agreements/${sellerId}/counter`, { method: 'POST', body: JSON.stringify({ location, meetupAt }) });
 export const getNatCashAccess = () => request('/natcash-access');
 export const createNatCashAccessPayment = () => request('/natcash-access/payment', { method: 'POST', body: JSON.stringify({}) });
 export const pauseNatCashAccess = () => request('/natcash-access/pause', { method: 'POST', body: JSON.stringify({}) });
@@ -1017,6 +1028,28 @@ export const requestPayout = (amount: number) =>
 export const getSellerAnalytics = () => request('/seller/analytics');
 export const getLowStockProducts = () => request('/seller/products/low-stock');
 
+// Listing management (Add Product experience)
+export const getSellerListings = () => request('/seller/listings');
+export const createListingDraft = (data: Record<string, unknown>) =>
+  request('/listings/drafts', { method: 'POST', body: JSON.stringify(data) });
+export const getListingDrafts = () => request('/listings/drafts');
+export const getListingDraft = (id: string) => request(`/listings/drafts/${id}`);
+export const updateListingDraft = (id: string, data: Record<string, unknown>) =>
+  request(`/listings/drafts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteListingDraft = (id: string) =>
+  request(`/listings/drafts/${id}`, { method: 'DELETE' });
+export const pauseListing = (id: string) =>
+  request(`/products/${id}/pause`, { method: 'POST' });
+export const resumeListing = (id: string) =>
+  request(`/products/${id}/resume`, { method: 'POST' });
+export const resubmitListing = (id: string, data: Record<string, unknown>) =>
+  request(`/products/${id}/resubmit`, { method: 'POST', body: JSON.stringify(data) });
+export const appealListing = (id: string, note: string) =>
+  request(`/products/${id}/appeal`, { method: 'POST', body: JSON.stringify({ note }) });
+export const duplicateListing = (id: string) =>
+  request(`/products/${id}/duplicate`, { method: 'POST' });
+export const getSellerListingStats = (id: string) => request(`/products/${id}/seller-stats`);
+
 // Payments
 export const createPayment = (orderId: string, returnUrl: string) =>
   request('/payments/create', { method: 'POST', body: JSON.stringify({ orderId, returnUrl }) });
@@ -1075,6 +1108,34 @@ export const getSellerReviews = (sellerId: string) =>
 export const getProductReviews = (productId: string) =>
   request(`/reviews/product/${productId}`);
 
+export const editReview = (reviewId: string, rating?: number, comment?: string) =>
+  request(`/reviews/${reviewId}`, { method: 'PUT', body: JSON.stringify({ rating, comment }) });
+
+export const replyToReview = (reviewId: string, reply: string) =>
+  request(`/reviews/${reviewId}/reply`, { method: 'POST', body: JSON.stringify({ reply }) });
+
+export const editReviewReply = (reviewId: string, reply: string) =>
+  request(`/reviews/${reviewId}/reply`, { method: 'PUT', body: JSON.stringify({ reply }) });
+
+export const reportReview = (reviewId: string, reason: string, details?: string, targetType: 'review' | 'reply' = 'review') =>
+  request(`/reviews/${reviewId}/report`, { method: 'POST', body: JSON.stringify({ reason, details, targetType }) });
+
+export const reportUser = (userId: string, reason: string, details?: string) =>
+  request(`/users/${userId}/report`, { method: 'POST', body: JSON.stringify({ reason, details }) });
+
+export const submitReport = (payload: UserReportPayload) =>
+  request('/reports', { method: 'POST', body: JSON.stringify(payload) });
+
+export const pinListing = (productId: string | null) =>
+  request('/seller/pin-listing', { method: 'POST', body: JSON.stringify({ productId }) });
+
+export const getBlockedUsers = () =>
+  request<{ blockedUsers: BlockedUser[] }>('/users/blocked');
+
+export const unblockUser = (userId: string) =>
+  request(`/api/users/${userId}/block`, { method: 'DELETE' });
+
+
 // Seller Storefront
 export const getSellerProfile = (sellerId: string) =>
   request(`/sellers/${sellerId}`);
@@ -1108,12 +1169,25 @@ export const toggleSellerVisibility = (isVisible: boolean) =>
   request('/seller/location', { method: 'PUT', body: JSON.stringify({ isVisible }) });
 
 // Notifications
-export const getNotifications = () => request('/notifications');
+export const getNotifications = (filter?: string) =>
+  request(`/notifications${filter ? `?filter=${encodeURIComponent(filter)}` : ''}`);
 export const getUnreadCount = () => request('/notifications/unread-count');
 export const markNotificationRead = (id: string) =>
-  request(`/notifications/${id}/read`, { method: 'PUT' });
+  request(`/notifications/${encodeURIComponent(id)}/read`, { method: 'PUT' });
 export const markAllNotificationsRead = () =>
   request('/notifications/read-all', { method: 'PUT' });
+export const dismissNotification = (id: string) =>
+  request(`/notifications/${encodeURIComponent(id)}/dismiss`, { method: 'PUT' });
+export const undoDismissNotification = (id: string) =>
+  request('/notifications/dismiss-undo', { method: 'POST', body: JSON.stringify({ id }) });
+export const clearReadNotifications = () =>
+  request('/notifications/read', { method: 'DELETE' });
+export const getNotificationPreferences = () =>
+  request('/notifications/preferences');
+export const updateNotificationPreferences = (preferences: any) =>
+  request('/notifications/preferences', { method: 'PUT', body: JSON.stringify(preferences) });
+export const muteSellerUpdates = (sellerId: string, muted: boolean) =>
+  request('/notifications/mute-seller', { method: 'POST', body: JSON.stringify({ sellerId, muted }) });
 
 // Messages
 export const getConversations = async () => {

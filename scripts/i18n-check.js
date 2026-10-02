@@ -9,42 +9,34 @@
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, extname } from 'path';
 
-const I18N_FILE = join(process.cwd(), 'src', 'i18n.ts');
+const MESSAGES_DIR = join(process.cwd(), 'messages');
 const SRC_DIR = join(process.cwd(), 'src');
 const VALID_EXTS = new Set(['.ts', '.tsx']);
 
-// --- Parse keys from i18n.ts ---
-function parseKeys(filePath) {
-  const content = readFileSync(filePath, 'utf-8');
+// --- Parse keys from messages/*.json ---
+function parseKeys() {
   const langBlocks = {};
-
-  // Find each language section by looking for "  en: {" etc.
   const langs = ['en', 'ht', 'fr'];
   for (const lang of langs) {
-    const startRegex = new RegExp(`^\\s+${lang}:\\s*\\{\\s*$`, 'm');
-    const startMatch = startRegex.exec(content);
-    if (!startMatch) continue;
-
-    const startIdx = startMatch.index;
-    // Find the matching closing "  };" by counting braces
-    let depth = 0;
-    let endIdx = startIdx;
-    for (let i = startIdx; i < content.length; i++) {
-      if (content[i] === '{') depth++;
-      if (content[i] === '}') {
-        depth--;
-        if (depth === 0) { endIdx = i; break; }
+    const file = join(MESSAGES_DIR, `${lang}.json`);
+    try {
+      const data = JSON.parse(readFileSync(file, 'utf-8'));
+      const keys = [];
+      function extract(obj, prefix = '') {
+        for (const k in obj) {
+          const full = prefix ? `${prefix}.${k}` : k;
+          if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
+            extract(obj[k], full);
+          } else {
+            keys.push(full);
+          }
+        }
       }
+      extract(data);
+      langBlocks[lang] = keys;
+    } catch {
+      langBlocks[lang] = [];
     }
-
-    const block = content.slice(startIdx, endIdx);
-    const keys = [];
-    const keyPattern = /'([a-z][a-zA-Z0-9_.]+)':\s*['"]/g;
-    let km;
-    while ((km = keyPattern.exec(block)) !== null) {
-      keys.push(km[1]);
-    }
-    langBlocks[lang] = keys;
   }
   return langBlocks;
 }
@@ -89,7 +81,7 @@ let exitCode = 0;
 console.log('Checking i18n sync...\n');
 
 // 1. Parse translation keys
-const langKeys = parseKeys(I18N_FILE);
+const langKeys = parseKeys();
 const languages = Object.keys(langKeys);
 
 if (languages.length < 3) {

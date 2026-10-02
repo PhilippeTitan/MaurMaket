@@ -1,8 +1,9 @@
 import cron from 'node-cron';
 import { pool } from '../config/database.js';
 import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, recordProductCooccurrences, processRefundPayout, cleanupOldNotifications } from '../utils/helpers.js';
-import { createNotification } from '../utils/notifications.js';
+import { createNotification, sendPushNotification } from '../utils/notifications.js';
 import { expireTemporaryStorageUploads } from '../utils/temporaryStorage.js';
+import { checkAndProcessExpiredSubscriptions } from '../utils/tierCap.js';
 
 export function startJobs() {
   // NatCash access reminders are informational; entitlement is still checked
@@ -354,11 +355,12 @@ export function startJobs() {
             createNotification(parties.rows[0].seller_id, 'order_cancelled', 'NatCash handoff expired', 'The unresolved transfer window ended. This seller portion was cancelled and the reserved item is available again.', { orderId: r.order_id, sellerId: r.seller_id });
           }
         }
-        await client.query(
+        const expiredCheckouts = await client.query(
           `UPDATE pending_checkouts pc SET status = 'expired'
            WHERE pc.status IN ('pending', 'agreement_locked')
-             AND pc.created_at < NOW() - INTERVAL '30 minutes'
-             AND NOT EXISTS (SELECT 1 FROM stock_reservations sr WHERE sr.checkout_id = pc.id AND sr.status = 'active')`
+             AND pc.expires_at <= NOW()
+             AND NOT EXISTS (SELECT 1 FROM stock_reservations sr WHERE sr.checkout_id = pc.id AND sr.status = 'active')
+           RETURNING pc.id, pc.user_id`
         );
         await client.query(
           `UPDATE message_offers mo SET accepted_checkout_id = NULL
@@ -373,6 +375,11 @@ export function startJobs() {
         );
         await client.query('COMMIT');
         if (expired.rows.length > 0) console.log(`[CRON] Released ${expired.rows.length} expired stock reservations`);
+        for (const checkout of expiredCheckouts.rows) {
+          createNotification(checkout.user_id, 'fulfillment_expired', 'Meetup proposal expired', 'No final meetup agreement was reached in 24 hours, so the reserved items were released.', { pendingId: checkout.id });
+          const sellers = await pool.query('SELECT seller_id FROM pending_fulfillment_agreements WHERE checkout_id = $1', [checkout.id]);
+          for (const seller of sellers.rows) createNotification(seller.seller_id, 'fulfillment_proposal_expired', 'Meetup proposal expired', 'The buyer’s checkout expired and its reserved items were released.', { pendingId: checkout.id });
+        }
       } catch (e) {
         await client.query('ROLLBACK');
         throw e;
@@ -443,5 +450,101 @@ export function startJobs() {
     }
   });
 
-  console.log('[JOBS] All cron jobs started: meetup timeout, refund retry, stale orders, offer expiry, notification cleanup, stock release, natcash session expiry');
+  // ───── Cron: Daily Summary notifications (hourly check) ─────
+  cron.schedule('0 * * * *', async () => {
+    try {
+      const now = new Date();
+      const currentH = String(now.getHours()).padStart(2, '0');
+      const currentSlot = `${currentH}:00`;
+
+      // Find users whose daily summary time or quiet hours end matches current hour
+      const usersRes = await pool.query(`
+        SELECT id, push_token, notification_preferences
+        FROM users
+        WHERE push_token IS NOT NULL
+          AND notification_preferences IS NOT NULL
+      `);
+
+      for (const u of usersRes.rows) {
+        const prefs = u.notification_preferences || {};
+        const qh = prefs.quiet_hours || {};
+        let summaryTime = prefs.daily_summary_time || '09:00';
+        if (qh.enabled && qh.end) {
+          summaryTime = qh.end;
+        }
+
+        const [sumH] = summaryTime.split(':');
+        if (String(sumH).padStart(2, '0') === currentH) {
+          // Check for unread, non-urgent notifications in past 24 hours that haven't been summarized
+          const notifsRes = await pool.query(`
+            SELECT id, title, type
+            FROM notifications
+            WHERE user_id = $1
+              AND is_read = false
+              AND action_required = false
+              AND created_at >= NOW() - INTERVAL '24 hours'
+              AND (data->>'summarized') IS NULL
+              AND type NOT IN ('new_message', 'new_offer', 'counter_offer', 'offer_accepted', 'offer_declined', 'offer_expired')
+          `, [u.id]);
+
+          const count = notifsRes.rows.length;
+          if (count > 0) {
+            // Push summary preview: short headline and count only (details stay in app)
+            const title = 'MaurMaket Summary';
+            const body = count === 1 ? 'You have 1 update to check.' : `You have ${count} updates to check.`;
+            await sendPushNotification(u.id, title, body, { type: 'daily_summary' }, 'daily_summary');
+
+            // Mark as summarized
+            const ids = notifsRes.rows.map(r => r.id);
+            await pool.query(`
+              UPDATE notifications
+              SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{summarized}', 'true')
+              WHERE id = ANY($1::uuid[])
+            `, [ids]);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[DAILY SUMMARY CRON] Error:', err.message);
+    }
+  });
+
+  // ───── Cron: Single reminder before time-limited action expires (every 15 min) ─────
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      // Find unresolved actions expiring within 2 hours that haven't had a reminder sent
+      const expiringRes = await pool.query(`
+        SELECT id, user_id, type, title, data, action_deadline
+        FROM notifications
+        WHERE action_required = true
+          AND action_resolved = false
+          AND is_read = false
+          AND action_deadline IS NOT NULL
+          AND action_deadline > NOW()
+          AND action_deadline <= NOW() + INTERVAL '2 hours'
+          AND (data->>'reminder_sent') IS NULL
+      `);
+
+      for (const row of expiringRes.rows) {
+        const title = 'Expiring Soon: Action Needed';
+        const body = `Your response is needed soon: ${row.title}`;
+        await sendPushNotification(row.user_id, title, body, { ...(row.data || {}), type: row.type }, row.type);
+
+        await pool.query(`
+          UPDATE notifications
+          SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{reminder_sent}', 'true')
+          WHERE id = $1
+        `, [row.id]);
+      }
+    } catch (err) {
+      console.error('[ACTION REMINDER CRON] Error:', err.message);
+    }
+  });
+
+  // ───── Cron: Expired business subscriptions & tier-cap enforcement (hourly) ─────
+  cron.schedule('0 * * * *', async () => {
+    await checkAndProcessExpiredSubscriptions();
+  });
+
+  console.log('[JOBS] All cron jobs started: meetup timeout, refund retry, stale orders, offer expiry, notification cleanup, stock release, natcash session expiry, daily summary, action reminders, tier cap check');
 }

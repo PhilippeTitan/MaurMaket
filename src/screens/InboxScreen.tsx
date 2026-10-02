@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import { COLORS, SPACING, RADIUS, formatPrice, LAYOUT, SHADOW } from '../theme';
 import { useTranslation } from '@/localization';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
@@ -178,7 +178,6 @@ export default function InboxScreen() {
       ? (item as any).other_party_store_name
       : ((item as any).other_party_username || (item as any).other_party_name || t('common.seller'));
     const hasUnread = (item.unread_count || 0) > 0;
-    const storeName = (item as any).other_party_store_name;
     const sellerTier = (item as any).other_party_seller_tier;
     const otherUserId = (item as any).other_party_id;
 
@@ -206,12 +205,6 @@ export default function InboxScreen() {
               )}
               <Text style={styles.convoTime}>{timeAgo(item.last_message_at || item.created_at)}</Text>
             </View>
-            {storeName ? (
-              <Text style={styles.convoStore} numberOfLines={1}>{storeName}</Text>
-            ) : sellerTier && sellerTier !== 'none' ? (
-              <Text style={styles.convoTier} numberOfLines={1}>{sellerTier} {t('common.seller')}</Text>
-            ) : null}
-            {(item as any).order_id && <Text style={styles.orderContext} numberOfLines={1}>{t('inbox.orderContext', { item: (item as any).order_product_name || t('inbox.order') })}</Text>}
             <View style={styles.convoMsgRow}>
               {(item as any).last_message_type === 'image' && <MaterialCommunityIcons name="image-outline" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
               {(item as any).last_message_type === 'audio' && <MaterialCommunityIcons name="microphone" size={14} color={COLORS.text2} style={{ marginRight: 4 }} />}
@@ -225,17 +218,6 @@ export default function InboxScreen() {
             </View>
           </View>
         </TouchableOpacity>
-        {otherUserId && sellerTier && sellerTier !== 'none' && (
-          <TouchableOpacity
-            style={styles.convoStoreBtn}
-            onPress={() => nav.navigate('Storefront', { sellerId: otherUserId, preloadedSeller: { username: (item as any).other_party_username, full_name: otherName, avatar_url: (item as any).other_party_avatar, seller_tier: sellerTier, store_name: storeName } })}
-            accessibilityLabel={`visit ${otherName}'s store`}
-            accessibilityRole="button"
-            activeOpacity={0.7}
-          >
-            <Icon name="storefront" size={18} color={COLORS.coral} />
-          </TouchableOpacity>
-        )}
       </View>
     );
   };
@@ -309,10 +291,6 @@ export default function InboxScreen() {
     >
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.xs }]}>
         <Text style={styles.title}>{t('inbox.title')}</Text>
-        <TouchableOpacity style={styles.newChatButton} onPress={() => setNewChatVisible(true)} accessibilityRole="button" accessibilityLabel={t('chat.newChat')}>
-          <MaterialCommunityIcons name="message-plus-outline" size={19} color={COLORS.coral} />
-          <Text style={styles.newChatButtonText}>{t('chat.newChat')}</Text>
-        </TouchableOpacity>
       </View>
 
       <Modal visible={newChatVisible} animationType="slide" onRequestClose={() => { setNewChatVisible(false); setSellerSearch(''); }}>
@@ -488,6 +466,20 @@ export default function InboxScreen() {
         />
       )}
 
+      <TouchableOpacity
+        style={[
+          styles.newChatFab,
+          { bottom: (insets.bottom > 0 ? insets.bottom + SPACING.xs : LAYOUT.tabBarMarginBottom) + LAYOUT.tabBarHeight + SPACING.sm },
+        ]}
+        onPress={() => setNewChatVisible(true)}
+        accessibilityRole="button"
+        accessibilityLabel={t('chat.newChat')}
+        activeOpacity={0.85}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <MaterialCommunityIcons name="message-plus-outline" size={24} color={COLORS.white} />
+      </TouchableOpacity>
+
       <Modal
         visible={searchOpen}
         animationType="slide"
@@ -583,6 +575,17 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, color: COLORS.text, fontWeight: '800', letterSpacing: -0.3, textAlign: 'left' },
   newChatButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 10, borderRadius: RADIUS.pill, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
   newChatButtonText: { color: COLORS.coral, fontSize: 12, fontWeight: '700' },
+  newChatFab: {
+    position: 'absolute',
+    right: SPACING.lg,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: COLORS.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOW.xl,
+  },
   newChatRoot: { flex: 1, backgroundColor: COLORS.bg, paddingHorizontal: SPACING.md },
   newChatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
   newChatTitle: { color: COLORS.text, fontSize: 22, fontWeight: '800' },
@@ -592,7 +595,6 @@ const styles = StyleSheet.create({
   newChatSellerName: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   newChatSellerHandle: { color: COLORS.text2, fontSize: 12, marginTop: 2 },
   newChatEmpty: { color: COLORS.text2, textAlign: 'center', marginTop: 34, fontSize: 14 },
-  orderContext: { color: COLORS.text2, fontSize: 11, marginTop: 2 },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -813,15 +815,12 @@ const styles = StyleSheet.create({
   convoNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   convoName: { fontSize: 15, color: COLORS.text, fontWeight: '500', flex: 1 },
   convoNameBold: { fontWeight: '700', color: COLORS.white },
-  convoStore: { fontSize: 12, color: COLORS.coral, fontWeight: '600' },
-  convoTier: { fontSize: 11, color: COLORS.text2, textTransform: 'capitalize' },
   convoMsgRow: { flexDirection: 'row', alignItems: 'center', marginTop: 1 },
   convoMsg: { fontSize: 13, color: COLORS.text2, flex: 1 },
   convoMsgUnread: { color: COLORS.text, fontWeight: '600' },
   convoTime: { fontSize: 11, color: COLORS.text2, marginLeft: 4 },
   offerBadge: { backgroundColor: COLORS.coral, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, marginLeft: 6 },
   offerBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
-  convoStoreBtn: { padding: 8, borderRadius: 20, backgroundColor: 'transparent' },
 
   /* Bubbles */
   bubblesSection: { paddingTop: SPACING.sm, paddingBottom: SPACING.xs },

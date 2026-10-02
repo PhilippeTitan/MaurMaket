@@ -58,6 +58,195 @@ Next.js author/reading platform for Victoria Christel Maurice (Philippe's sister
 5. Check the opencode DB for recent user messages to understand what was being worked on
 6. You are now caught up — proceed with the user's request
 
+## Product Discovery & Back-and-Forth
+- The user may want to shape any part of MaurMaket through an iterative question-and-answer conversation before implementation. Treat this as an intentional product-design workflow, not as a request to skip ahead to coding.
+- Ask one focused question at a time, explain the tradeoffs in plain language, and offer a recommendation when useful. Capture each answer as a decision, then continue to the next unresolved question. Do not repeat settled questions or implement a proposed direction before the user signals they are ready.
+- Connect decisions across the whole app. Before suggesting a design or behavior, review relevant existing flows, prior decisions, and constraints in other areas (for example, align map and delivery choices with checkout, seller tiers, safety, and the agreed marketplace values; align future Settings discussions with those same decisions).
+- Preserve continuity through compaction and session handoffs: record agreed decisions, open questions, deferred/back-pocket ideas, and the next question in the project context or session notes. Resume from that point instead of restarting the discussion or jumping to implementation.
+- When a Q&A is complete and the user moves forward, treat the recorded decisions as an implementation-ready handoff for the next AI agent. Do not restart discovery or ask the user to repeat settled choices; inspect the current code and cross-app constraints, turn the answers into a concrete checklist, and implement the included UI/backend scope as the prior agent would. Keep explicitly deferred ideas in the back pocket. During discovery, do not implement the feature before the user concludes the Q&A.
+
+### Notifications Discovery — Active (2026-10-01)
+
+- Keep messages and offers in Inbox, order activity in Buying/Selling, and use Notifications for other marketplace/account activity. Avoid duplicating the same event in multiple areas unless there is a clear user benefit.
+- Shape the notification experience during Q&A: Philippe wants an interactive activity feed with an Instagram-like standard. Do not copy Instagram blindly; adapt interactions to marketplace actions and keep the screen clear.
+- Continue one focused question at a time and record each answer here. No notification feature implementation until the Q&A is concluded. Once Philippe concludes and moves forward, this is an implementation-ready handoff for the next AI.
+- Current code findings: the general notification feed filters to unread only; notification settings toggles are not persisted; server push sends do not apply user preferences. Reconcile these with the decisions during implementation.
+- Decision: Keep read notifications in recent activity. Tapping a notification should mark it read automatically and open its relevant destination; retain it in history so users can revisit it.
+- Decision: Automatically group repeated low-priority social/product activity (such as multiple saves or follows) into a concise feed item or summary. Keep each actionable order, payment, security, and meetup event distinct.
+- Decision: Adapt low-priority push delivery to engagement: if someone rarely opens those alerts, gradually bundle them while retaining every event in the in-app feed. Never delay urgent or time-sensitive marketplace actions.
+- Decision: Offer simple per-category delivery choices (push now, daily summary, or in-app only), with sensible urgency-aware defaults.
+- Decision: Deliver the daily summary after the user's chosen quiet-time window ends. Urgent alerts remain immediate.
+- Research direction: Separate durable in-app activity history from push delivery. Let the system route taps to the relevant context, apply category preferences, and summarize or throttle low-priority activity while preserving urgent payment, security, meetup, and order-decision alerts. This is an adaptation of patterns seen in TikTok, YouTube, and Instagram, not a claim that they use one identical policy.
+- Decision: Always send immediate push alerts for security/account access; payment, payout, and refund status; order actions/status that need attention; meetup or fulfillment proposals, counters, confirmations, and expirations; and dispute updates. Follows and offers should also be immediate, per Philippe. No user summary/in-app-only preference should delay these agreed urgent categories.
+- Code inventory for notification policy: also includes low-stock/sold-out inventory, verification outcomes, review received, subscription changes, NatCash access renewal/expiry, seller debt payment, and routine product updates from followed sellers. Triage each during implementation so deadline/access/financial impact stays timely, while informational activity can be bundled.
+- Decision: Send immediate pushes for low-stock/sold-out alerts and subscription/NatCash expiry reminders when action is needed to prevent lost sales or access. Routine renewal confirmations can remain in-app or summary.
+- Decision: Keep non-urgent milestones (new reviews, verification approvals, routine renewals) in the activity feed and daily summaries without immediate push. Push verification rejection or other changes requiring action.
+- Decision: Retain read notification activity for 90 days before automatic cleanup. Keep unread/action-required items until acted on or their underlying item expires, subject to a sensible maximum retention policy.
+- Decision: Let users dismiss individual notifications and clear all read notifications, with confirmation for bulk clearing. Clearing the feed must never change the underlying order, payment, dispute, or other marketplace state.
+- Decision: Keep one unified activity feed with time-based sections (Today/Yesterday/Earlier) and subtle category cues; do not split into separate feeds for every event type.
+- Decision: Opening a grouped social/product summary should show the people/items involved and provide direct links to relevant profiles or listings in a compact, privacy-conscious detail view.
+- Decision: The general notification badge counts all unread notification activity. Use stronger visual emphasis for notifications that require action. Keep Inbox message/offer badges separate from the general notification badge.
+- Decision: Suppress a redundant push when the user is already viewing the relevant conversation/order/meetup and can see the update; still record the activity and update the open screen. Otherwise, deliver according to urgency and preferences.
+- Decision: For v1, push notification taps deep-link into the relevant app screen; no quick actions that mutate marketplace state directly from the notification. Revisit one-tap actions later only for low-risk, clear, reversible operations.
+- Decision: In-app notification records are the durable activity history. Push is best-effort; if delivery fails/offline, keep the event in-app and refresh unread state when connectivity returns.
+- Decision: Notification read/unread state and badge are account-wide and sync across devices, near real time where possible and on app resume as fallback.
+- Decision: Provide temporary pause/snooze for non-urgent pushes, with simple durations (e.g. 1 hour, tonight, until morning) and a catch-up summary when it ends. Urgent security, safety, and payment alerts continue through the pause.
+- Decision: Put a compact “Manage notifications” entry in the activity feed and keep detailed category, quiet-time, and pause controls in Settings.
+- Decision: Explain bundling in the summary itself; avoid noisy explanations for routine foreground push suppression; clearly show when a user-selected pause is active.
+- Decision: Group repeated low-priority activity for the same listing or seller within a rolling 24-hour window; start a new group after that window.
+- Decision: If a notification destination changed or expired, open its current state and briefly explain what changed instead of showing an error or stale action.
+- Decision: Quiet hours are off by default. Users can enable a schedule in Settings; daily summaries arrive when that quiet-time window ends.
+- Decision: Provide simple activity-feed filters: All, Social, Marketplace. All is the default and remains a unified feed.
+- Decision: Render grouped activity as one card with a count and a few names or listing thumbnails; tapping opens a detail view with the included events and links.
+- Decision: Show read/unread state with a subtle marker and emphasis that does not rely on color alone.
+- Decision: Dismissing a grouped card dismisses the group from the feed; its underlying events remain in group detail until normal retention cleanup.
+- Decision: Keep all notification records in the in-app feed. Let users control push delivery by category (push now, daily summary, or in-app only); do not provide a category switch that deletes or hides the in-app history.
+- Decision: Lock-screen previews hide sensitive details (payment amounts, dispute reasons, message text) by default; provide a separate message-preview preference.
+- Decision: Respect the phone's Do Not Disturb and silent settings even for urgent MaurMaket pushes. Keep every alert available in-app.
+- Decision: If push permission is denied, keep in-app notifications working, explain that push is off, offer a device Settings shortcut, and avoid repeated prompts.
+- Decision: Opening a push destination preserves a sensible return path so Back returns to where the user was.
+- Decision: Keep distinct urgent events in in-app history. Combine rapid same-order pushes only when they do not require separate responses; distinct decisions requiring action get separate pushes.
+- Decision: An action-required notification can be hidden from the main feed before resolution, but must remain accessible in an Action needed area and the underlying marketplace state remains visible until resolved.
+- Decision: Opening a grouped notification marks all included events read; retain their details in the group.
+- Decision: Use avatars/listing thumbnails where available for social/product notifications, with icon fallbacks. Keep money, security, and dispute alerts restrained and privacy-safe.
+- Decision: Use one contextual CTA when a notification requires a next step; otherwise the whole card opens the destination. CTAs open the relevant flow and do not mutate marketplace state directly.
+- Decision: Keep the feed newest-first and chronological; visibly mark action-required items and offer an Action needed filter rather than pinning them above newer activity.
+- Decision: Provide a brief Undo affordance after dismissing a notification/group; dismissed action-needed items remain accessible in Action needed.
+- Decision: Defer feed search for v1; time sections and All/Social/Marketplace filters should suffice initially. Revisit based on usage.
+- Decision: Make Action needed a filter within the unified feed, not a separate screen.
+- Decision: Localize notification and push text to the user's selected app language (Haitian Creole, French, or English).
+- Decision: Bundle rapid bursts of follows into one immediate push; show grouped follower details in-app.
+- Decision: Do not add a Follow back button to notification cards; let users visit profiles and choose there.
+- Decision: Updates from followed sellers (such as new listings) appear in the feed and daily summary by default; push is user-configurable and not immediate by default.
+- Decision: Send a daily summary only when there is activity to report.
+- Decision: If quiet hours are off, deliver the daily summary at 9:00 AM local time by default, with an editable time in Settings.
+- Decision: Deduplicate one underlying event delivered through push and realtime; show it once in the feed and unread badge.
+- Decision: For bursts of follows, send the first push promptly and bundle nearby follows into a follow-up summary within a short 2-minute window.
+- Decision: Preferences, quiet hours, and temporary pauses sync account-wide; device OS push permission remains device-specific.
+- Decision: Where possible, store structured notification event data and render historical items in the user's current app language.
+- Decision: When an underlying action is completed (for example, meetup confirmation), automatically clear the notification's Action needed state and retain it in history.
+- Decision: Daily summaries include only events assigned to Daily summary, not In-app only.
+- Decision: An unread grouped card counts as one badge item; show the number of underlying activities on the card.
+- Decision: During quiet hours, non-urgent push-now events wait until quiet hours end and join the summary; urgent categories still push immediately.
+- Decision: Support one predictable feed swipe gesture: swipe to dismiss. Tapping opens and marks read; provide visible accessible controls and Undo after dismiss.
+- Decision: Show a calm “you're all caught up” empty state, without a distracting illustration or push to change settings.
+- Decision: Animate new feed notifications with a subtle fade/short slide, without bouncing or interrupting scrolling; respect reduced-motion settings.
+- Decision: Open grouped notification details in a lightweight sheet over the feed; closing it restores the prior feed scroll position.
+- Decision: A daily summary push preview contains a short headline and total count only; names, listings, and full details stay in-app.
+- Decision: Quiet-hour schedules repeat daily by default and can optionally vary by weekday/weekend or day.
+- Decision: For a push tapped from a cold start, preserve its destination through app startup and session restoration/sign-in, then route there.
+- Decision: When a push is tapped offline, show cached information if available, clearly label it as potentially outdated, and retry on reconnect instead of showing a raw error.
+- Decision: Keep in-app activity and read state consistent across web and mobile; browser push is optional where supported and requires browser permission.
+- Decision: Show a separate unresolved-action count on the Action needed filter, even if the alert is read or dismissed from the main feed; keep it separate from the unread badge.
+- Decision: When the app is foregrounded and the user is outside the relevant screen, show an in-app banner for urgent/action-needed events and update feed/badge; routine social activity updates quietly. Tapping a banner opens the destination.
+- Decision: Foreground banners auto-dismiss after about 5 seconds; underlying action-needed tasks remain visible until resolved.
+- Decision: Show foreground banners one at a time; queue urgent alerts and combine routine activity into a concise summary.
+- Decision: Suppress the matching OS push while the app is foregrounded and displaying the in-app banner; still record the event and update unread/action state.
+- Decision: After resolving the underlying action, automatically clear Action needed and mark its notification read, retaining it in history.
+- Decision: When a newer event supersedes an earlier pending action (e.g. a counter replaces a meetup proposal), remove the old alert from Action needed and preserve it in history for context.
+- Decision: Dismissing an unresolved action alert from the main feed marks it read/removes it from the unread badge, but it remains visible and counted in Action needed until resolved or expired.
+- Decision: When a time-limited action expires without a response, remove it from Action needed and retain it in history with an Expired outcome, explanation, and any valid next route (e.g. reopen order/contact support).
+- Decision: Sort Action needed by nearest deadline first; items without deadlines are newest-first.
+- Decision: Show a calm remaining-time label on time-limited tasks (e.g. “Respond within 2 hours”); no alarming countdown animation.
+- Decision: Dismissing a push from the operating system notification shade only clears that device's push; it does not mark the in-app notification read.
+- Decision: Send one useful reminder before a time-limited action expires if it remains unresolved; no repeated reminders.
+- Decision: Group Action needed tasks by order where useful, while keeping each distinct decision and CTA separate.
+- Decision: Do not notify users about their own actions.
+- Decision: Let users mute new-listing updates from a specific seller without unfollowing them; offer this from that seller's notification details.
+- Decision: Promotional announcements require a separate opt-in, off by default and distinct from essential account/order alerts.
+- Next step: Ask Philippe whether the notifications discovery is complete or if he wants another gap-check round. After he concludes discovery, produce the implementation checklist and hand off all settled choices to the implementing AI; do not restart settled questions.
+- Deferred connected discovery: Philippe wants a separate Q&A and UX revamp for the Buying/Selling order-management area (`OrdersScreen`), which Notifications already treats as the home for order activity. It has not been covered by the Inbox, Map/Checkout, Notifications, or Profile/Settings discoveries yet. Current screen has Buying/Selling tabs, status chips, and basic order cards/actions; connect its future design to the agreed checkout, fulfillment/meetup, payment, dispute, and notification flows. Resume this after the active Profile/Settings discovery unless Philippe reprioritizes it.
+
+### Profile & Settings Discovery — Complete / Implementation Ready (2026-10-01)
+
+- Continue the product Q&A in groups of three questions per round. Check this section and prior decisions before asking; do not repeat resolved questions. Batch decision-memory updates after each nine answered questions.
+- No profile/settings redesign implementation until Philippe concludes discovery and asks to proceed. Once concluded, treat decisions here as an implementation-ready handoff and inspect current code/cross-app dependencies.
+- Current state: `MeScreen` combines the user's identity, seller summary, listings, reviews, and saved items; `StorefrontScreen` is visitor-facing; `SettingsScreen` links to profile editing and contains a real-name visibility toggle, while account/security/privacy controls live on separate screens. Read `design-principles.md` before any UI work.
+- Settled tier/profile direction from prior discussion: one account and one store in V1; Business sellers can present their public identity as personal or business; multiple stores are a back-pocket idea. Switching presentation does not split catalog or transaction-backed trust history.
+- Profile editing and public-identity privacy controls belong in a coherent Profile hub; login/security, payments, and app preferences stay in their respective Settings areas. Make visibility clear.
+- The user's own Me tab should be identity-first, with a clear Seller Tools entry and compact seller summary; full seller analytics remain in Seller Tools.
+- Visitor profiles should lead with compact identity/trust information and Follow/Message actions, then listings and reviews. Show broad city-level location only. Saved items remain private by default; a public wishlist can be considered later as a separate opt-in.
+- Profile structure: layered and modular, not a clone of Instagram's accumulating feature set. Proposed visitor layout: identity/trust header, Follow/Message actions, then Listings, Reviews, About sections.
+- Seller profiles may pin one listing for all tiers. Business profiles may show optional store description, category, and public service area; only render fields the seller has filled.
+- Research note: Meta/Instagram patterns suggest a clear profile foundation plus role-specific, optional surfaces: Meta has documented profile pinning (up to three posts), business action buttons, and newer optional enhanced business profile information. Adapt the hierarchy, not the feature pile. Sources: https://about.fb.com/ja/news/2022/06/grid_pinning_on_profile/ ; https://about.fb.com/ja/news/2018/05/instagram_businessmessaging_action/ ; https://about.fb.com/news/2026/09/introducing-meta-one-subscription-service-more-features-ai/ .
+- Next question: Which seller trust signals should be visible in the public profile header? Recommendation: verified badge (when earned), average rating with review count, and completed sales count; never expose revenue or private account details.
+- Decision: Public seller profile headers show verified badge when earned, average rating with review count, and completed sales count. Never expose revenue or private account details.
+- Decision: Business/personal identity switching takes effect immediately and reversibly, with a clear active-mode indicator and a smooth transition animation; provide a “View as visitor” preview.
+- Decision: Keep About as an expandable section; primary profile tabs focus on Listings and Reviews.
+- Decision: Saved profile edits update consistently across Me, visitor storefront, product cards, and chat headers using one profile source of truth.
+- Decision: Personal and Business presentations use one username and profile URL; the public display name/logo follows the selected mode.
+- Decision: If the seller has no active listings, keep Listings as the selected section and show a useful empty state; visitors can switch to Reviews/About if populated.
+- Decision: All accounts, including buyers, have a minimal public profile for trust and messaging; seller capabilities/sections appear only when relevant.
+- Decision: Do not show a buyer's individual purchases or meetup history publicly. Keep buyer profile minimal; any later buyer reputation signal must be aggregated and privacy-safe.
+- Decision: Visitors can open follower/following lists; provide a privacy control to hide lists for users who prefer that.
+- Next question: Should a user's real/legal name be public by default, or should the public profile use a chosen display name/username unless the user opts in to showing their real name? Recommendation: keep legal/KYC identity private by default; let the user explicitly show a public real name.
+- Decision: Keep legal/KYC identity private by default; use a chosen public display name/username unless the user explicitly opts in to showing their real name.
+- Decision: Public city-level location is opt-in. Keep personal city visibility separate from the optional, broad seller service area; never display a precise address on a profile.
+- Decision: Profile identity edits use an explicit Save action; simple toggles save immediately. Do not publish partial edits after a failed save; show clear success/error feedback.
+- Decision: Follower/following lists are public by default with privacy control to hide them. Counts remain visible unless the user separately chooses to hide counts.
+- Decision: A real-name display preference applies consistently across public-facing profiles, listings, reviews, and chat; legal/KYC identity remains private.
+- Decision: Buyer profiles are not broadly searchable in V1; access them from message/follow/review/order contexts or a shared profile link.
+- Decision: Add Report and Block actions to the overflow menu on visitor-facing profiles; keep them out of the primary action row.
+- Decision: Profile visibility and identity preferences are account-level settings persisted server-side and synced across devices.
+- Decision: A buyer can limit their profile's public details, but their minimal chosen identity remains viewable when reached through a conversation, order, review, or shared profile link; active seller storefronts remain public.
+- Decision: Blocking prevents new follows and non-order messages and hides the profile from normal browsing. Keep an active order's conversation available for fulfillment and support; preserve prior chat history as read-only.
+- Decision: Reporting is available from both visitor profiles and active orders. Order reports include transaction context and route payment, delivery, meetup, or dispute issues to the appropriate flow. A report enters review and does not trigger an automatic penalty; Block remains a separate action.
+- Decision: The Profile area in Settings includes a public-profile preview alongside editing and visibility controls.
+- Decision: Group public-profile privacy controls (profile visibility, follower-list visibility, public city) under Profile & Privacy; keep account login/security controls separate and place Block/Report under Safety.
+- Decision: Manage optional public city in Profile settings and private saved delivery addresses in a separate Delivery settings area.
+- Decision: Place Edit Profile and Share Profile near the user's profile header; keep View as visitor readily available alongside them.
+- Decision: Keep public profile content in a predictable order: Listings and Reviews as the primary sections, with optional About content; users do not rearrange sections.
+- Decision: Sync app language across devices; keep theme selection device-specific.
+- Decision: Show a seller's single pinned listing near the top of their public profile, before the full Listings section.
+- Decision: Show only available listings on public profiles; keep sold/unavailable inventory private and use the agreed aggregate completed-sales count as social proof.
+- Decision: For limited-visibility buyer profiles, show basic chosen identity and relevant shared context when opened from an order/conversation/link, while respecting hidden follower lists, location, and other privacy choices.
+- Decision: Show public seller reviews newest-first with a compact rating breakdown.
+- Decision: Let sellers post one concise public reply per review; do not create a reply thread.
+- Decision: Organize the Settings home as a clean grouped list: Profile & Privacy, Account & Security, Notifications, Payments & Delivery, Seller Tools, App Preferences, and Help; avoid long descriptions.
+- Decision: Require a completed purchase/handoff before a buyer can submit a review. A canceled order, failed meetup, or fully refunded order is not review-eligible.
+- Decision: Keep one editable review per completed order; a separate completed repeat purchase may receive a separate review.
+- Decision: Prompt for a review gently after completion, with at most one reminder; do not nag.
+- Decision: Notify the reviewer in-app when the seller replies, respecting the user's normal push preferences.
+- Decision: Sellers can report a review for support review but cannot delete it themselves; authors can edit their own review for that order.
+- Decision: Put a compact, tappable account/profile row at the top of Settings showing avatar, name, and current seller tier; avoid a large profile card.
+- Decision: Complex settings areas (Privacy, Security, Payments, Delivery) open dedicated pages; simple preferences stay inline.
+- Decision: Defer Settings search until the settings catalog grows enough to need it.
+- Decision: Offer System, Light, and Dark appearance options; default to System and keep the selected theme device-specific.
+- Decision: Profile and Settings layouts respect OS text scaling and remain usable at larger text sizes.
+- Decision: Use smooth profile/settings transitions by default and respect the OS Reduce Motion preference by reducing/removing motion when enabled.
+- Decision: If a seller switches to Business presentation before entering a store name/logo, allow the switch and use their existing public identity as a fallback; offer a non-blocking prompt to complete business details.
+- Decision: Switching back to Personal presentation hides but preserves business identity fields for later use.
+- Decision: If Business access expires and the seller is demoted, switch public presentation to Personal, preserve business details privately, and clearly notify the seller.
+- Decision: If Business access ends with more than Verified's 100-listing cap, disable/pause excess listings without deleting them; the seller chooses which 100 remain active.
+- Decision: A pinned listing counts toward the 100-listing cap and should remain active automatically during downgrade when possible.
+- Decision: Snapshot the seller's public name and logo on each order and receipt at creation time; profile links continue to resolve to the seller's current profile.
+- Decision: Keep cap-paused listings in a seller-only Paused section; exclude them from public profiles, browsing, and search.
+- Decision: If the seller has not selected listings by the time access is downgraded, keep the pinned listing and then the most recently active listings; allow the seller to change the selection.
+- Decision: Pausing a listing prevents new purchases but does not affect active orders or existing fulfillment commitments.
+- Decision: Send one clear in-app alert when downgrade pauses listings, showing the number paused and linking to listing management.
+- Decision: If a buyer opens a direct link to a tier-paused listing, keep the page reachable with a clear temporarily unavailable state, prevent checkout, and link to the seller's current profile/available listings.
+- Decision: Keep tier-paused listings in buyers' saved lists and label them unavailable; do not silently remove them.
+- Decision: When seller access returns, automatically reactivate paused listings that remain eligible and make them available through profile, search, saved lists, and existing links.
+- Decision: If a dispute closes without a full refund and the order remains completed, make the buyer eligible to review after dispute resolution; exclude fully refunded orders.
+- Decision: Allow 90 days to submit an eligible review, starting after completion or dispute resolution as applicable.
+- Decision: Require an overall star rating; written comments are optional.
+- Decision: Use one overall rating for v1 rather than separate seller/item/delivery scores.
+- Decision: Do not allow photo/video attachments to reviews in v1; use text and stars.
+- Decision: Keep private feedback to MaurMaket/Support separate from the public review form.
+- Decision: Publish a review immediately after submission; do not wait for a seller response.
+- Decision: Keep eligible reviews public indefinitely and show them newest-first, unless Support makes a final policy-based removal.
+- Decision: Once Support finally removes a review, exclude it from public rating averages and preserve the original plus moderation decision in private records.
+- Decision: If an already-published review's order is later fully refunded, preserve it in private order/audit history but remove it from public averages; if partially refunded and the buyer keeps the item, the review remains eligible.
+- Decision: Defer review eligibility and prompting while an order dispute is open; after it closes, apply the full/partial refund and completed-order rules above.
+- Decision: Sellers may edit their single public reply to a review, but replies do not become threads.
+- Decision: Buyers may report a seller's review reply; route it to Support with the review context.
+- Decision: Keep a reported review public while Support reviews it unless there is a clear safety or privacy concern.
+- Decision: Send at most one gentle review reminder a few days after an eligible order completes, only when no review has been submitted.
+- Decision: Let buyers edit reviews at any time; visibly mark edited reviews.
+- Decision: If a buyer edits a review after the seller has replied, notify the seller in-app.
+- Review implementation notes: Current API already requires `orders.status = 'completed'` and database uniqueness is `(order_id, reviewer_id)`. Reviews are stored as seller/order reviews without a `product_id`; `/reviews/product/:productId` joins through order items and currently displays an order review on every product in that order. For v1, keep the review seller/transaction-level, label it as a completed MaurMaket transaction, and only surface it on product pages for a product included in that reviewed order. Preserve the existing one-review-per-order behavior. Verify fully refunded orders cannot remain review-eligible in edge cases before implementation.
+- Discovery is complete and implementation-ready. The implementing AI should read this entire section and `design-principles.md`, inspect current profile/settings/review/tier/listing/order code, and implement the settled decisions without restarting discovery. Keep explicit back-pocket ideas out of v1 and preserve cross-surface consistency with Inbox, checkout, orders, notifications, and seller tiers.
+
 ## Safety Rules
 - **NEVER kill node.exe processes**: OpenCode runs on Node.js. Killing random `node.exe` processes can kill OpenCode itself. Never use `taskkill`, `kill`, or any command that terminates node processes unless explicitly told to kill a specific process you started.
 
@@ -2087,3 +2276,137 @@ This is a separate discovery track from MonCash. NatCash has no MaurMaket API in
 - Implement the NatCash access/settings experience, manual MonCash renewal and payment confirmation, 30-day access, reminders/grace, pause/reactivation behavior, and expiry copy.
 - Implement verified listing cap and UI; mutually confirmed meetup date/time; reservation inventory model; NatCash order/payment-report states; buyer-facing mixed-payment timeline and seller-scoped retry/cancel actions; seller analytics separation; support tooling; notifications; and end-to-end verification.
 - Do not enable NatCash until DB migrations, inventory/order money-state labels, and support operations are ready.
+
+## Map & Checkout Discovery — Agreed Decisions (2026-10-01)
+
+This product-discovery thread has moved into implementation. Preserve settled decisions; do not reopen them without new evidence. Carry forward the requested emotional-design direction: purposeful, reassuring motion that clarifies state, not decorative animation.
+
+### Checkout meetup and delivery maps
+
+- Keep public seller discovery separate from private order logistics. Exact meetup points are private to the order; buyer proposes a point and seller can accept or suggest another. Both must agree before the meetup is final. Existing seller acceptance of fulfillment terms before payment remains the governing checkout behavior.
+- Suggest optional named landmarks/place labels when available, without calling them safe or implying current security validation. Sparse map data falls back to a movable pin plus a written landmark/directions note. Both parties confirm the exact point and directions.
+- Do not infer safety from political/security data or stale POI data. Never label places safe/unsafe based on incomplete platform data. Community-derived labels are “Popular with MaurMaket meetups,” not safety guarantees.
+- A named place becomes eligible as a popular meetup suggestion only from at least 7 completed orders in a rolling 90-day window where buyer and seller mutually agreed to the place. Hide exact counts and individual activity. Cancellations, no-shows, and unresolved disputes do not count; a dispute can count only if resolved and the order is completed.
+- Popular meetup suggestions are local to the selected buyer area and seller/buyer radius constraints, optional, and visible only in the meetup-location flow (not public discovery pins). They are a starting point; both parties still confirm the exact order pin and directions. If none fit, use normal pin + directions selection.
+- Users may optionally confirm after the meetup whether they met at the agreed place; this is not required to complete an order. Reports for incorrect map details and time-sensitive safety concerns are separate. A single report flags for review; multiple independent reports temporarily pause the popularity suggestion pending review, without blocking a user from choosing the location.
+- Delivery map flow remains private address selection and seller-radius eligibility. Do not aggregate or publish delivery destinations as community map suggestions.
+
+### Seller discovery map
+
+- Discovery map is opt-in and OFF by default. Prompt for permission when the seller enables it; denial keeps the seller off the map. Opting out removes the seller and all listings from map results and map-derived counts, while keeping listings available in regular search/browse. Show a concise confirmation of this effect when opting out. Changes/opt-outs apply immediately.
+- Each seller chooses and saves a separate, stable public discovery area. Never derive it from home address, delivery address, or live device location. One seller-level setting controls all listings.
+- All tiers get an approximate discovery area. Approximate coordinates are generalized on the server before being sent to buyers and remain stable (no jitter). Seller previews how the location appears before publishing.
+- A precise pin is an explicit choice for an actual public-facing storefront, regardless of seller tier; show a clear visibility notice and require confirmation. Approximate area remains the default.
+- Map settings live in a dedicated “Map visibility” section, separate from private delivery/meetup address settings.
+- Show one pin per opted-in seller, only while the seller has at least one currently available listing. Opening a pin shows all currently available listings; no per-listing curation in v1.
+- Buyers can filter by category. Keep a seller pin when at least one available listing matches; show matching listings first and keep the seller’s other available items accessible. Price filters stay in seller preview for v1.
+- Panning/zooming stages a new area; a “Search this area” action applies it. Remember the buyer’s last map area, category filter, and selected seller preview. Empty results offer expand-area and clear-category actions. Exclude opted-out sellers from every map result and aggregate.
+- Use purposeful animation to preview a seller’s pin moving before publication, and clear motion/feedback for privacy setting changes. Keep current location unpublished until seller confirms; once published, future changes/opt-outs take effect immediately.
+
+## Checkout & Map Discovery — Q&A Clarifications (2026-10-01)
+
+These decisions complete the four-question checkout/map follow-up and clarify the existing map decisions above. Implementation is underway.
+
+- Meetup proposals and counters have a 24-hour response window. If no response arrives, cancel the order and release the reserved quantity. If a MonCash charge exists, start its refund; the agreed flow defers MonCash payment until meetup terms are accepted.
+- The buyer submits the first complete meetup proposal from checkout. The seller can accept or counter on the map. Keep one active proposal, preserve earlier proposals in order history, and notify the other party on each new proposal.
+- Any change to the accepted meetup location or time returns the complete plan to pending confirmation.
+- MonCash payment happens after the seller accepts or counters and the buyer confirms the plan. NatCash remains pay-at-meetup.
+- Reserve the selected quantity when the buyer submits the first meetup proposal. Show it to other buyers as reserved/unavailable without exposing a misleading zero-stock count. Keep the reservation through the 24-hour negotiation; cancellation or timeout releases it. After mutual confirmation, keep the reservation through the 15-minute MonCash payment window. Preserve the existing NatCash handoff reservation/accounting rules.
+- The map label is “Popular meetup spot.” A threshold-only explanation such as “7+ completed meetups in the past 90 days” is acceptable; never show exact counts or individual activity.
+
+### Implementation defaults chosen when Philippe said “implement” (2026-10-01)
+
+- A seller declining a proposed meetup point declines that point, not the entire purchase. Keep the reservation and let the buyer send a revised point; the 24-hour response deadline restarts on the new proposal. Buyer may cancel at any time.
+- Once all seller terms are accepted and the buyer has confirmed any seller counterproposal, start a 15-minute MonCash payment window. NatCash remains payable at the in-person handoff.
+
+### Add Product Discovery — Complete / Implementation Ready (2026-10-01)
+
+- Continue Q&A in groups of three questions, each with a clear recommendation. Record decision-memory updates after every nine answered questions. Check this section and connected product decisions before asking; avoid repeating settled questions.
+- Do not implement Add Product before Philippe concludes discovery. At conclusion, treat these decisions as implementation-ready: inspect existing create/edit flows, server listing rules, seller tiers/KYC, image storage, checkout, and the condition/disclosure policy; then implement as the prior AI would, including UI and backend consistency.
+- Existing flow is a long form in `src/screens/AddListingScreen.tsx`, with a separate edit flow in `src/screens/EditListingScreen.tsx` and create route in `src/routes/products.js`. Current form has gallery photos, name, description, price, stock, optional category, and sale fields. It lacks drafts, category-aware fields, cover reordering, preview, and item condition/flaw disclosure.
+- Cross-flow decision already settled: every seller tier must pass identity verification before selling; seller tier is a separate entitlement and keeps its listing cap (Casual 10, Verified 100, Business unlimited). Reconcile the current casual-seller block and backend gates during implementation rather than treating KYC as a tier feature.
+- Preserve the agreed listing-condition policy: structured condition (New, Like new, Good, Fair, For parts/not working) and written disclosure of known flaws. Do not add flaw-photo uploads in v1. Align condition fields with the checkout/NatCash inspection and dispute flows.
+- Decision: Use a short guided creation flow with steps for photos, product details, and price/stock; progress and Back navigation preserve entered data.
+- Decision: Ask for a category before details, use a shared core form with a small number of relevant optional category-specific fields, and allow changing category later.
+- Decision: Require at least one photo to publish, but allow incomplete drafts.
+- Decision: Autosave private drafts server-side as the seller progresses; drafts do not count toward tier listing caps.
+- Decision: Offer camera and photo library; request camera permission only when the seller chooses camera.
+- Decision: Let sellers reorder photos and select the cover; the first photo is the default cover.
+- Decision: Incomplete drafts may omit price and stock; require valid price and stock before publishing.
+- Decision: Provide a pre-publish preview of both the product card and detail page with a direct way back to edit.
+- Decision: Support simple product variants in v1 (such as size/color), with price and stock per option; keep variants optional and straightforward.
+- Decision: Drafts never publish automatically. Publishing is a deliberate action after validation and preview.
+- Decision: After publishing, show a brief success state with actions to view or manage the listing, while keeping other drafts easy to reach.
+- Decision: Support up to two simple variant dimensions (such as size and color), tracking price and stock for each option combination.
+- Decision: When stock reaches zero, mark the listing unavailable while preserving it in seller management; sellers can restock and reactivate it without recreating the listing.
+- Decision: Let sellers enable or disable offers per listing. Show the asking price clearly; when offers are enabled, negotiation happens in chat.
+- Decision: Allow safe edits while an order/reservation is active, but lock price, variant, and stock changes that could alter that commitment. Snapshot the agreed order terms so later listing edits never rewrite an existing order.
+- Decision: Sellers can pause listings to stop new purchases and remove them from public browsing while preserving them in seller management for later reactivation.
+- Decision: If a listing requires review before publication, show a clear Pending review state, explain what the seller can do while it is pending, and notify them when approved or when changes are needed.
+- Decision: A listing that passes review publishes automatically after the seller's explicit publish submission; notify the seller and link to listing management.
+- Decision: Material changes to a live listing that affect what is being sold or raise a safety/policy concern trigger review; pause the listing during that review. Routine edits do not interrupt sales.
+- Decision: Listings do not expire automatically in v1. Sellers manage availability by pausing or marking items unavailable; a later “still available?” check for stale listings is deferred.
+- Decision: Include the product-card appearance in the pre-publish preview so sellers can review the browse/search presentation (cover, title, price, condition).
+- Decision: Show approximate views and saves to the seller in Seller Tools only; do not expose those counts on public listings or frame them as sales guarantees.
+- Decision: The post-publish success screen includes Share alongside View listing and Manage listing.
+- Decision: Validate listing rules before publishing; explain the specific problem in plain language and preserve the draft so the seller can fix it.
+- Decision: Disabling offers stops new offers but does not cancel existing offers; existing offers can be accepted/countered or expire under their original terms.
+- Decision: Preserve a draft through connectivity or image-upload failures, identify failed uploads for retry, and prevent publishing until selected photos have uploaded successfully.
+- Decision: Default each listing to the seller's configured fulfillment options, but allow disabling a method per item; checkout offers only methods supported by both the seller and the listing.
+- Decision: Only active published listings count toward tier caps; validate the cap when a paused listing is reactivated.
+- Decision: Sellers may write listing content in any supported language and optionally label its language; translation is not required for publication.
+- Decision: Optional sale price must be below the regular price, and both prices are shown clearly. Do not imply a markdown from a prior price without reliable price history.
+- Decision: Allow an optional seller-only SKU/reference per listing or variant.
+- Decision: Allow duplicating a listing into a private draft; copy its product details/photos but reset stock and availability, then require review and deliberate publishing.
+- Decision: Show out-of-stock variants as unavailable and prevent selecting them, while leaving other in-stock variants selectable.
+- Decision: Provide low-stock alerts with a sensible default threshold and an adjustable per-listing setting in Seller Tools.
+- Decision: Keep drafts until sellers delete them. If future storage limits require cleanup, warn well in advance and provide an export/recovery window.
+- Decision: If variant prices differ, show the lowest price as “From [price]” in browse cards and the full range on the listing detail page.
+- Decision: Show price changes to users who saved a listing in their saved-list experience; price-drop push notifications are opt-in.
+- Decision: For a rejected listing, show the reason and let the seller edit and resubmit; provide a support appeal path when the seller believes the decision was mistaken.
+- Discovery is complete. The implementing AI should read this section and `design-principles.md`, inspect the current create/edit screens and backend, reconcile all agreed listing behavior with tier/KYC, storage, checkout/fulfillment, inventory, offers, moderation, and notifications, and implement the whole experience (UI and server/data changes) without reopening settled questions. Preserve deferred ideas and existing order snapshots/commitments. Do not treat this as a visual-only redesign.
+
+### Profile Visual Redesign — Complete / Implementation Ready (2026-10-01)
+
+- This is a visual and interaction-design continuation of the completed Profile & Settings discovery above. Continue Q&A in groups of three with a recommendation per question; record decisions after every nine answers. Do not re-open settled profile privacy, trust, navigation, or tier behavior. Do not implement until Philippe concludes discovery and asks to proceed.
+- Scope: redesign both the user's My Profile and visitor-facing profiles as one visual system, with owner controls on My Profile and visitor actions on the public profile.
+- Direction: combine Instagram's fast identity/action/content hierarchy with Pinterest's image-led discovery feel. Keep MaurMaket's visual identity and marketplace trust/shopping purpose; do not copy social features wholesale.
+- Research: Meta documents up to three pinned posts and business-profile action buttons as ways to shape a profile and help visitors act. Pinterest profiles organize Pins into boards, support public/private boards, and use visual search to move from images toward related ideas and products. V1 adapts hierarchy, masonry, and visual discovery rather than adding seller boards/collections. Sources: https://about.fb.com/ja/news/2022/06/grid_pinning_on_profile/ ; https://about.fb.com/ja/news/2018/05/instagram_businessmessaging_action/ ; https://help.pinterest.com/en/article/find-your-profile ; https://help.pinterest.com/en/article/boards ; https://newsroom.pinterest.com/en-gb/news/introducing-new-visual-search-features/ .
+- Current-code observation: `src/screens/MeScreen.tsx` puts stats, the Business/Personal switch, identity text, three actions, and Seller Tools before listings; visitor UI lives in `src/screens/StorefrontScreen.tsx`. Audit both together and reduce competing visual emphasis while preserving their separate roles.
+- Repository note: `AGENTS.md` references `design-principles.md`, but no such file was found in the repo during this discovery. Locate it if added later; otherwise use the existing theme/components and this documented direction as the visual baseline.
+- Decision: Both profile surfaces share a visual language; owner controls stay on My Profile, and visitor-facing profiles use Follow/Message actions.
+- Decision: Use Instagram-like hierarchy without cloning its look/features: profile identity, primary action, then browsable content in a MaurMaket-native style.
+- Decision: Use a clear two-column product grid with title, price, and condition legible below each photo; use Pinterest-style masonry image heights while retaining readable listing details.
+- Decision: Prefer a compact identity header with avatar, name, and trust signals; avoid a large cover image.
+- Decision: Keep Listings and Reviews navigation visible while scrolling with a subtle sticky tab bar.
+- Decision: Keep Business/Personal switching accessible on My Profile as a compact mode control, with a clear active state and the already-agreed smooth transition.
+- Decision: Show the pinned listing as a compact Featured card above the product grid; it should stand out without dominating the profile.
+- Decision: Do not add seller-custom profile colors or backgrounds in v1. Store name/logo express business identity within MaurMaket's shared visual system.
+- Decision: Do not add seller-curated boards/collections in v1; use the visual grid, categories, and one pinned listing for discovery.
+- Decision: Keep Saved private and simple in v1; do not add buyer-created saved-item collections.
+- Decision: Preserve product photo proportions within sensible height bounds instead of forcing square crops; tapping a tile opens the full listing.
+- Decision: Provide a compact Save/bookmark control on each listing tile; keep purchase and offer actions on the product detail page to prevent grid clutter.
+- Decision: Visually prioritize seller rating and completed sales over follower counts; never expose revenue publicly.
+- Decision: Animate the masonry grid on initial appearance with a subtle, brief fade and slight stagger; do not animate on every scroll, and respect Reduce Motion.
+- Decision: Keep Listings and Reviews as the public profile tabs. Give the owner a separate Saved entry that is not visible to visitors.
+- Decision: On the owner's empty profile, show a welcoming “start your shop” state with an Add Listing action. On a visitor profile, use a quiet no-listings state and keep Reviews/About available when populated.
+- Decision: Tapping Save gives immediate, subtle bookmark-fill/scale feedback; do not add a count or repetitive toast.
+- Decision: Opening a listing from the profile uses a quick, restrained transition that connects the tile with its detail page without slowing browsing.
+- Decision: Use subtle tonal layering between the profile canvas and cards, with restrained MaurMaket accents, so sections are distinct and product photos stand out.
+- Decision: On visitor profiles, Message is the primary action and Follow is secondary; shopping actions remain on listing detail pages.
+- Decision: Show compact category filters above a seller's masonry grid only when the catalog spans enough listings/categories to benefit; “All” is the default.
+- Decision: Order profile listings as pinned Featured item first, then newest available listings; defer extra sorting controls until catalog size justifies them.
+- Decision: On My Profile, use one prominent Edit Profile button and smaller secondary Share and Visitor View actions nearby.
+- Decision: Place the Add (+) action at the upper-left of the My Profile top bar, Instagram-style; keep Settings on the upper-right.
+- Decision: Keep the rating/review count in the trust area and full review content in the Reviews tab; do not add a repeated recent-review preview to the profile header.
+- Decision: Show optional Business service area as a small “Serves [area]” line under the bio. Show a person's public city only with explicit opt-in; never show a precise address.
+- Decision: For new sellers, do not show an empty/zero-star rating; show the verified badge if earned, and add rating/completed-sales signals once there is data.
+- Decision: As the profile scrolls, collapse the large identity area into a compact sticky bar with a small avatar and username, keeping Listings/Reviews navigation accessible.
+- Decision: If there are no reviews, show a calm “No reviews yet” state without empty stars or pressure; keep the rest of the profile usable.
+- Decision: Use layout-matched skeletons for profile header and product tiles; fade in loaded content without a sudden layout jump.
+- Decision: When offline, show cached profile content if available, label it potentially out of date, and refresh after connectivity returns.
+- Decision: Keep the profile usable if some metrics fail to load; hide unavailable metrics rather than showing misleading zeros and retry those metrics quietly.
+- Decision: On wider web layouts, center the profile in a comfortable max-width container and expand the masonry grid to three columns; retain two columns on mobile.
+- Decision: Follow updates immediately with a small smooth state change; if the request fails, restore the previous state and offer a clear retry.
+- Decision: Do not count up trust/follower numbers on profile open. Keep numbers steady; animate meaningful state changes such as following, saving, or switching identity.
+- Discovery is complete. When Philippe asks to proceed, read this section and the existing Profile & Settings decisions, inspect `src/screens/MeScreen.tsx`, `src/screens/StorefrontScreen.tsx`, shared profile/listing components, and theme/navigation behavior, then implement the visual redesign across owner and visitor profiles. Preserve existing privacy, account/KYC, seller-tier, order-snapshot, review-eligibility, and saved-item behavior. The implementation should use subtle emotional motion, honor Reduce Motion, support mobile and web layouts, and avoid reopening settled questions. No visual change is authorized by this discovery record alone.

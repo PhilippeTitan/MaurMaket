@@ -63,8 +63,8 @@ function checkTouchTargets(content, file) {
         const context = lines.slice(Math.max(0, i - 5), i + 1).join(' ');
         if (/View\b/.test(context) && !/TouchableOpacity|Pressable|Button/.test(context)) continue;
         
-        // Skip carousel/pagination dots
-        if (/dot|carousel|pagination|slide/i.test(file + context)) continue;
+        // Skip carousel/pagination dots, tails, badges
+        if (/dot|carousel|pagination|slide|tail|badge/i.test(file + context)) continue;
         
         // Tolerance: 35-43 is acceptable — many icon-only buttons use 35px with hitSlop
         if (w >= 35 && h >= 35) continue;

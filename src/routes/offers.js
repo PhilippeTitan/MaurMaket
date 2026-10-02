@@ -32,8 +32,9 @@ router.post('/api/conversations/:id/offer', authRequired, msgLimiter, async (req
     if (req.user.id !== buyerId) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Only the buyer can send offers' }); }
     const blocked = await client.query('SELECT 1 FROM blocked_users WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) LIMIT 1', [buyerId, sellerId]);
     if (blocked.rows.length) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Offers are unavailable because one participant blocked the other', code: 'USER_BLOCKED' }); }
-    const product = await client.query('SELECT id, price, sale_price, sale_starts_at, sale_ends_at, stock, seller_id, name FROM products WHERE id = $1 AND is_available = true FOR UPDATE', [productId]);
+    const product = await client.query('SELECT id, price, sale_price, sale_starts_at, sale_ends_at, stock, seller_id, name, offers_enabled, has_variants FROM products WHERE id = $1 AND is_available = true FOR UPDATE', [productId]);
     if (product.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Product not found or unavailable' }); }
+    if (product.rows[0].offers_enabled === false) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'The seller is not accepting offers on this listing', code: 'OFFERS_DISABLED' }); }
     if (product.rows[0].seller_id !== sellerId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Product does not belong to this seller' }); }
     if (product.rows[0].stock < quantity) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Not enough stock for that quantity' }); }
     const existingOffer = await client.query("SELECT id FROM message_offers WHERE product_id = $1 AND buyer_id = $2 AND conversation_id = $3 AND status IN ('pending', 'countered') AND expires_at > NOW()", [productId, buyerId, req.params.id]);

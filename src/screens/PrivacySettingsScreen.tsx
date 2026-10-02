@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
 import { ONBOARDING_COLORS } from './onboarding/theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
@@ -18,34 +18,19 @@ import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PrivacySettings'>;
 
-/**
- * Privacy Dashboard
- *
- * Architecture: PROFILE VISIBILITY → DISCOVERABILITY → DATA & CONTROL
- *
- * ┌─────────────────────────────────────┐
- * │ PROFILE VISIBILITY                  │
- * │  Public / Private profile           │
- * ├─────────────────────────────────────┤
- * │ DISCOVERABILITY                     │
- * │  Search visibility                  │
- * │  Location sharing                   │
- * ├─────────────────────────────────────┤
- * │ DATA & CONTROL                      │
- * │  Show activity status               │
- * │  Blocked users                      │
- * │  Account data                       │
- * └─────────────────────────────────────┘
- */
 export default function PrivacySettingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { user } = useUser();
   const toast = useToast();
+
   const [loading, setLoading] = useState(false);
-  const [profilePublic, setProfilePublic] = useState(user?.show_real_name ?? true);
+  const [showRealName, setShowRealName] = useState(user?.show_real_name ?? false);
+  const [showPublicCity, setShowPublicCity] = useState(user?.show_public_city ?? false);
+  const [hideFollowerLists, setHideFollowerLists] = useState(user?.hide_follower_lists ?? false);
+  const [hideFollowerCounts, setHideFollowerCounts] = useState(user?.hide_follower_counts ?? false);
+
   const [presenceVisibility, setPresenceVisibilityState] = useState<'everyone' | 'chatted_with' | 'nobody'>('chatted_with');
   const [presenceSaving, setPresenceSaving] = useState(false);
-  const [locationSharing, setLocationSharing] = useState(Boolean(user?.location_lat));
 
   const sections = useRef(
     Array.from({ length: 4 }, () => ({
@@ -74,19 +59,68 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
     transform: [{ translateY: sections[i].translateY }],
   });
 
-  const handleToggleProfile = async () => {
-    const newVal = !profilePublic;
-    setProfilePublic(newVal);
-    setLoading(true);
+  const handleToggleRealName = async () => {
+    const next = !showRealName;
+    setShowRealName(next);
     try {
-      await updateProfile({ showRealName: String(newVal) });
-      await store.setUser({ ...store.user!, show_real_name: newVal } as any, store.token!);
-      toast.show({ kind: 'success', title: newVal ? t('privacy.profileNowPublic') : t('privacy.profileNowPrivate') });
+      await updateProfile({ showRealName: next });
+      await store.setUser({ ...store.user!, show_real_name: next } as any, store.token!);
+      toast.success(
+        next ? 'Real Name Visible' : 'Display Name Only',
+        next ? 'Your real name is now visible on public profile and reviews.' : 'Your legal identity is private. Chosen username is displayed.'
+      );
     } catch {
-      setProfilePublic(!newVal);
-      toast.show({ kind: 'error', title: t('privacy.profileVisibilityFailed') });
+      setShowRealName(!next);
+      toast.error('Update Failed', 'Could not update name visibility. Rolled back.');
     }
-    setLoading(false);
+  };
+
+  const handleTogglePublicCity = async () => {
+    const next = !showPublicCity;
+    setShowPublicCity(next);
+    try {
+      await updateProfile({ showPublicCity: next });
+      await store.setUser({ ...store.user!, show_public_city: next } as any, store.token!);
+      toast.success(
+        next ? 'City Visible' : 'City Hidden',
+        next ? 'Broad city is now visible on your public profile.' : 'City hidden from public profile.'
+      );
+    } catch {
+      setShowPublicCity(!next);
+      toast.error('Update Failed', 'Could not update city visibility. Rolled back.');
+    }
+  };
+
+  const handleToggleFollowerLists = async () => {
+    const next = !hideFollowerLists;
+    setHideFollowerLists(next);
+    try {
+      await updateProfile({ hideFollowerLists: next });
+      await store.setUser({ ...store.user!, hide_follower_lists: next } as any, store.token!);
+      toast.success(
+        next ? 'Follower Lists Hidden' : 'Follower Lists Public',
+        next ? 'Visitors cannot browse your follower or following lists.' : 'Visitors can view your follower lists.'
+      );
+    } catch {
+      setHideFollowerLists(!next);
+      toast.error('Update Failed', 'Could not update follower list privacy. Rolled back.');
+    }
+  };
+
+  const handleToggleFollowerCounts = async () => {
+    const next = !hideFollowerCounts;
+    setHideFollowerCounts(next);
+    try {
+      await updateProfile({ hideFollowerCounts: next });
+      await store.setUser({ ...store.user!, hide_follower_counts: next } as any, store.token!);
+      toast.success(
+        next ? 'Counts Hidden' : 'Counts Visible',
+        next ? 'Follower counts are hidden on your public profile.' : 'Follower counts are visible.'
+      );
+    } catch {
+      setHideFollowerCounts(!next);
+      toast.error('Update Failed', 'Could not update follower count privacy. Rolled back.');
+    }
   };
 
   const handlePresenceVisibility = async (next: 'everyone' | 'chatted_with' | 'nobody') => {
@@ -99,13 +133,8 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
       if (store.user) await store.setUser({ ...store.user, presence_visibility: next } as any, store.token!);
     } catch {
       setPresenceVisibilityState(previous);
-      toast.show({ kind: 'error', title: t('privacy.presenceUpdateFailed') });
+      toast.error('Update Failed', t('privacy.presenceUpdateFailed'));
     } finally { setPresenceSaving(false); }
-  };
-
-  const handleToggleLocation = () => {
-    setLocationSharing(!locationSharing);
-    toast.show({ kind: 'success', title: locationSharing ? t('privacy.locationDisabledToast') : t('privacy.locationEnabledToast') });
   };
 
   return (
@@ -114,78 +143,129 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* ── Profile Visibility ── */}
+        {/* ── Public Identity & Privacy ── */}
         <Animated.View style={animStyle(0)}>
           <SettingsGroup
-            header={t('settings.profileVisibility')}
-            description={t('privacy.profileVisibilityDesc')}
+            header="Identity & Profile Visibility"
+            description="Manage how your identity is presented across profiles, listings, reviews, and messaging. Legal KYC documents remain completely private."
           >
             <View style={styles.toggleRow}>
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="eye-outline" size={20} color={COLORS.white} />
+                <MaterialCommunityIcons name="account-badge-outline" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>{t('privacy.publicProfile')}</Text>
+                <Text style={styles.toggleLabel}>Show Real Name</Text>
+                <Text style={styles.rowValue}>
+                  {showRealName ? 'Displaying legal name publicly' : 'Chosen username displayed (KYC private)'}
+                </Text>
               </View>
               <SettingsToggle
-                value={profilePublic}
-                onValueChange={handleToggleProfile}
-                disabled={loading}
-                accent={ONBOARDING_COLORS.violet}
-                accessibilityLabel={t('privacy.publicProfile')}
+                value={showRealName}
+                onValueChange={handleToggleRealName}
+                accent={COLORS.coral}
+                accessibilityLabel="Show Real Name"
               />
             </View>
-          </SettingsGroup>
-        </Animated.View>
 
-        {/* ── Discoverability ── */}
-        <Animated.View style={animStyle(1)}>
-          <SettingsGroup
-            header={t('privacy.discoverability')}
-            description={t('privacy.discoverabilityDesc')}
-          >
+            <View style={styles.divider} />
+
             <View style={styles.toggleRow}>
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="map-marker-radius-outline" size={20} color={COLORS.white} />
+                <MaterialCommunityIcons name="city-variant-outline" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>{t('privacy.locationSharing')}</Text>
+                <Text style={styles.toggleLabel}>Public City</Text>
+                <Text style={styles.rowValue}>
+                  {showPublicCity ? (user?.location_city || 'City visible on profile') : 'Hidden (exact address is never displayed)'}
+                </Text>
               </View>
               <SettingsToggle
-                value={locationSharing}
-                onValueChange={handleToggleLocation}
+                value={showPublicCity}
+                onValueChange={handleTogglePublicCity}
                 accent={COLORS.blue}
-                accessibilityLabel={t('privacy.locationSharing')}
+                accessibilityLabel="Public City"
               />
             </View>
+
             <View style={styles.divider} />
+
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.6}
-              onPress={() => navigation.navigate('LocationSettings')}
+              onPress={() => {
+                if (user?.id) {
+                  navigation.navigate('Storefront', { sellerId: user.id });
+                }
+              }}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="map-marker-outline" size={20} color={COLORS.white} />
+                <MaterialCommunityIcons name="eye-outline" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>{t('settings.deliveryLocation')}</Text>
-                <Text style={styles.rowValue}>{user?.location_city || t('account.setLocation')}</Text>
+                <Text style={styles.toggleLabel}>View Profile as Visitor</Text>
+                <Text style={styles.rowValue}>Preview your profile with active privacy settings</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
           </SettingsGroup>
         </Animated.View>
 
-        {/* ── Data & Control ── */}
+        {/* ── Social Privacy ── */}
+        <Animated.View style={animStyle(1)}>
+          <SettingsGroup
+            header="Followers & Activity"
+            description="Control who can see your network and followers."
+          >
+            <View style={styles.toggleRow}>
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons name="account-group-outline" size={20} color={COLORS.text2} />
+              </View>
+              <View style={styles.toggleText}>
+                <Text style={styles.toggleLabel}>Hide Follower Lists</Text>
+                <Text style={styles.rowValue}>
+                  {hideFollowerLists ? 'Lists are private to you' : 'Visitors can view who you follow'}
+                </Text>
+              </View>
+              <SettingsToggle
+                value={hideFollowerLists}
+                onValueChange={handleToggleFollowerLists}
+                accent={COLORS.coral}
+                accessibilityLabel="Hide Follower Lists"
+              />
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.toggleRow}>
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons name="counter" size={20} color={COLORS.text2} />
+              </View>
+              <View style={styles.toggleText}>
+                <Text style={styles.toggleLabel}>Hide Follower Counts</Text>
+                <Text style={styles.rowValue}>
+                  {hideFollowerCounts ? 'Counts hidden on profile' : 'Counts visible'}
+                </Text>
+              </View>
+              <SettingsToggle
+                value={hideFollowerCounts}
+                onValueChange={handleToggleFollowerCounts}
+                accent={COLORS.coral}
+                accessibilityLabel="Hide Follower Counts"
+              />
+            </View>
+          </SettingsGroup>
+        </Animated.View>
+
+        {/* ── Online Status & Safety ── */}
         <Animated.View style={animStyle(2)}>
           <SettingsGroup
-            header={t('privacy.dataControl')}
-            description={t('privacy.dataControlDesc')}
+            header="Presence & Safety"
+            description="Manage your online activity status and blocked accounts."
           >
             <View style={styles.presenceRow}>
               <View style={styles.presenceTitleRow}>
                 <View style={styles.iconContainer}>
-                  <MaterialCommunityIcons name="clock-outline" size={20} color={COLORS.white} />
+                  <MaterialCommunityIcons name="clock-outline" size={20} color={COLORS.text2} />
                 </View>
                 <View style={styles.toggleText}>
                   <Text style={styles.toggleLabel}>{t('privacy.presenceVisibility')}</Text>
@@ -207,31 +287,20 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
                 ))}
               </View>
             </View>
+
             <View style={styles.divider} />
+
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.6}
-              onPress={() => toast.show({ kind: 'info', title: t('privacy.blockedUsersSoon') })}
+              onPress={() => (navigation as any).navigate('BlockedUsers')}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="account-cancel-outline" size={20} color={COLORS.white} />
+                <MaterialCommunityIcons name="account-cancel-outline" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.toggleText}>
                 <Text style={styles.toggleLabel}>{t('privacy.blockedUsers')}</Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
-            </TouchableOpacity>
-            <View style={styles.divider} />
-            <TouchableOpacity
-              style={styles.row}
-              activeOpacity={0.6}
-              onPress={() => toast.show({ kind: 'info', title: t('privacy.dataExportSoon') })}
-            >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="database-outline" size={20} color={COLORS.white} />
-              </View>
-              <View style={styles.toggleText}>
-                <Text style={styles.toggleLabel}>{t('privacy.yourData')}</Text>
+                <Text style={styles.rowValue}>Manage accounts blocked from contacting or following you</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
@@ -244,13 +313,10 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
   );
 }
 
-/* ── Styles ──────────────────────────────────────────────── */
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingBottom: SPACING.page },
 
-  // Toggle rows (used in groups)
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -262,7 +328,6 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 28,
     height: 32,
-    borderRadius: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -277,7 +342,6 @@ const styles = StyleSheet.create({
   toggleLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: COLORS.text },
   rowValue: { fontSize: FONT_SIZES.sm, color: COLORS.text2, marginTop: 2 },
 
-  // Plain row for navigation items
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -287,7 +351,6 @@ const styles = StyleSheet.create({
     minHeight: 54,
   },
 
-  // Divider
   divider: {
     height: 1,
     backgroundColor: COLORS.border,

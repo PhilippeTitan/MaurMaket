@@ -23,8 +23,6 @@ import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
-/* ── Component ──────────────────────────────────────────── */
-
 export default function SettingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { user, refetch } = useUser();
@@ -79,12 +77,20 @@ export default function SettingsScreen({ navigation }: Props) {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-        {/* ── Profile Hero ── */}
+        {/* ── Profile Hero Card ── */}
         <ProfileCard compact user={user} onPress={() => navigation.navigate('EditProfile')} />
 
-        {/* ── Account ── */}
+        {/* ── 1. Account & Identity ── */}
         <View>
-          <SettingsGroup header={t('settings.sectionAccount')} appearance="minimal">
+          <SettingsGroup header="Account & Identity" appearance="minimal">
+            <SettingsRow
+              icon="account-edit-outline"
+              label={t('me.editProfile')}
+              chevron
+              appearance="minimal"
+              divider
+              onPress={() => navigation.navigate('EditProfile')}
+            />
             <SettingsRow
               icon="account-cog-outline"
               label={t('settings.accountSettings')}
@@ -95,43 +101,31 @@ export default function SettingsScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('AccountDashboard')}
             />
             <SettingsRow
-              icon="cash"
-              label={t('settings.paymentMethods')}
-              chevron
+              icon="account-eye-outline"
+              label={t('settings.showNameOnProfile')}
               appearance="minimal"
-              divider
-              onPress={() => navigation.navigate('Payments')}
-            />
-            {isSeller ? (
-              <SettingsRow
-                icon="bank-transfer-out"
-                label={t('settings.payouts')}
-                chevron
-                appearance="minimal"
-                divider
-                onPress={() => navigation.navigate('Payments')}
-              />
-            ) : null}
-            <SettingsRow
-              icon="shield-lock-outline"
-              label={t('settings.passwordAuth')}
-              chevron
-              appearance="minimal"
-              onPress={() => navigation.navigate('SecuritySettings')}
+              rightElement={(
+                <SettingsToggle
+                  value={showName}
+                  onValueChange={handleToggleName}
+                  disabled={savingName}
+                  accessibilityLabel={t('settings.showNameOnProfile')}
+                />
+              )}
             />
           </SettingsGroup>
         </View>
 
-        {/* ── Preferences ── */}
+        {/* ── 2. Preferences ── */}
         <View>
           <SettingsGroup header={t('settings.preferences')} appearance="minimal">
             <SettingsRow
-              icon="bell-outline"
-              label={t('settings.notificationPrefs')}
+              icon="translate"
+              label={t('language.title')}
               chevron
               appearance="minimal"
               divider
-              onPress={() => navigation.navigate('NotificationsSettings')}
+              onPress={() => navigation.navigate('LanguageSettings')}
             />
             <SettingsRow
               icon="palette-outline"
@@ -142,48 +136,88 @@ export default function SettingsScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('AppearanceSettings')}
             />
             <SettingsRow
-              icon="account-eye-outline"
-              label={t('settings.showNameOnProfile')}
+              icon="bell-outline"
+              label={t('settings.notificationPrefs')}
+              chevron
+              appearance="minimal"
+              onPress={() => navigation.navigate('NotificationsSettings')}
+            />
+          </SettingsGroup>
+        </View>
+
+        {/* ── 3. Payments & Selling ── */}
+        <View>
+          <SettingsGroup header="Payments & Selling" appearance="minimal">
+            <SettingsRow
+              icon="cash"
+              label={t('settings.paymentMethods')}
+              chevron
               appearance="minimal"
               divider
-              rightElement={(
-                <SettingsToggle
-                  value={showName}
-                  onValueChange={handleToggleName}
-                  disabled={savingName}
-                  accessibilityLabel={t('settings.showNameOnProfile')}
-                />
-              )}
+              onPress={() => navigation.navigate('Payments')}
             />
+            {isSeller ? (
+              <>
+                <SettingsRow
+                  icon="bank-transfer-out"
+                  label={t('settings.payouts')}
+                  chevron
+                  appearance="minimal"
+                  divider
+                  onPress={() => navigation.navigate('Payments')}
+                />
+                <SettingsRow
+                  icon="storefront-outline"
+                  label={t('settings.sellerTools')}
+                  value={tierLabel}
+                  valueColor={tierColor || COLORS.coral}
+                  chevron
+                  appearance="minimal"
+                  onPress={() => navigation.navigate('SellerToolsSettings')}
+                />
+              </>
+            ) : (
+              <SettingsRow
+                icon="store-plus-outline"
+                label={t('me.becomeSeller')}
+                chevron
+                appearance="minimal"
+                onPress={() => navigation.navigate('SellerOnboarding')}
+              />
+            )}
+          </SettingsGroup>
+        </View>
+
+        {/* ── 4. Safety & Privacy ── */}
+        <View>
+          <SettingsGroup header="Safety & Privacy" appearance="minimal">
             <SettingsRow
-              icon="eye-outline"
+              icon="shield-account-outline"
               label={t('settings.privacySettings')}
               chevron
               appearance="minimal"
+              divider
               onPress={() => navigation.navigate('PrivacySettings')}
             />
-          </SettingsGroup>
-        </View>
-
-        {/* ── Selling ── */}
-        <View>
-          <SettingsGroup
-            header={t('settings.sectionSelling')}
-            appearance="minimal"
-          >
             <SettingsRow
-              icon={isSeller ? 'storefront-outline' : 'store-plus-outline'}
-              label={isSeller ? t('settings.sellerTools') : t('me.becomeSeller')}
-              value={isSeller ? tierLabel : undefined}
-              valueColor={isSeller ? (tierColor || COLORS.green) : undefined}
+              icon="account-cancel-outline"
+              label="Blocked Accounts"
               chevron
               appearance="minimal"
-              onPress={() => navigation.navigate(isSeller ? 'SellerToolsSettings' : 'SellerOnboarding')}
+              divider
+              onPress={() => navigation.navigate('BlockedUsers')}
+            />
+            <SettingsRow
+              icon="shield-lock-outline"
+              label={t('settings.passwordAuth')}
+              chevron
+              appearance="minimal"
+              onPress={() => navigation.navigate('SecuritySettings')}
             />
           </SettingsGroup>
         </View>
 
-        {/* ── Help & about ── */}
+        {/* ── 5. Support & About ── */}
         <View>
           {String((user as any)?.role) === 'admin' ? (
             <SettingsGroup header={t('settings.adminTools')} appearance="minimal">
@@ -222,9 +256,11 @@ export default function SettingsScreen({ navigation }: Props) {
             style={styles.logoutButtonWrap}
             activeOpacity={0.7}
             onPress={handleLogout}
+            accessibilityRole="button"
+            accessibilityLabel={t('settings.logout')}
           >
             <View style={styles.logoutButton}>
-              <MaterialCommunityIcons name="logout" size={20} color={ONBOARDING_COLORS.white} />
+              <MaterialCommunityIcons name="logout" size={20} color={COLORS.coral} />
               <Text style={styles.logoutText}>{t('settings.logout')}</Text>
             </View>
           </TouchableOpacity>
@@ -251,8 +287,6 @@ export default function SettingsScreen({ navigation }: Props) {
   );
 }
 
-/* ── Styles ──────────────────────────────────────────────── */
-
 const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: SPACING.page,
@@ -272,6 +306,8 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: RADIUS.card,
     backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   logoutText: {
     fontSize: FONT_SIZES.lg,

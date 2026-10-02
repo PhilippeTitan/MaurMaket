@@ -14,7 +14,7 @@ if (Platform.OS !== 'web') {
   ExpoLocation = require('expo-location');
 }
 import { store } from '../store';
-import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow, extendMeetup, createDispute } from '../api';
+import { getOrder, meetupCheckin, meetupScan, getMeetupStatus, releaseEscrow, refundEscrow, extendMeetup, createDispute, confirmMeetupPlace, reportMeetupPlace } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '@/localization';
 import { SkeletonBlock } from '../components/Skeleton';
@@ -50,6 +50,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
   const [receiptModalVisible, setReceiptModalVisible] = useState(false);
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [refunding, setRefunding] = useState(false);
+  const [placeActionLoading, setPlaceActionLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState(MEETUP_TIMEOUT_MS);
   const [meetupStartedAt, setMeetupStartedAt] = useState<string | null>(null);
   const [meetupExpiresAt, setMeetupExpiresAt] = useState<string | null>(null);
@@ -272,6 +273,32 @@ export default function MeetupScreen({ route, navigation }: Props) {
     }
   };
 
+  const handleConfirmPlace = async (sellerId: string) => {
+    setPlaceActionLoading(true);
+    try {
+      const result = await confirmMeetupPlace(orderId, sellerId) as { bothConfirmed?: boolean };
+      Alert.alert(t('meetup.placeThanksTitle'), result.bothConfirmed ? t('meetup.placeBothConfirmed') : t('meetup.placeWaitingForOther'));
+    } catch (err: any) { Alert.alert(t('common.error'), err.message || t('meetup.placeConfirmFailed')); }
+    finally { setPlaceActionLoading(false); }
+  };
+
+  const handleReportPlace = (sellerId: string) => {
+    Alert.alert(t('meetup.placeReportTitle'), t('meetup.placeReportPrompt'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      ...(['wrong_details','not_a_meetup_place','other'] as const).map(reason => ({
+        text: t(`meetup.placeReport.${reason}`),
+        onPress: async () => {
+          setPlaceActionLoading(true);
+          try {
+            const result = await reportMeetupPlace(orderId, sellerId, reason) as { suggestionPaused?: boolean };
+            Alert.alert(t('meetup.placeReportReceived'), result.suggestionPaused ? t('meetup.placeSuggestionPaused') : t('meetup.placeReportThanks'));
+          } catch (err: any) { Alert.alert(t('common.error'), err.message || t('meetup.placeReportFailed')); }
+          finally { setPlaceActionLoading(false); }
+        },
+      })),
+    ]);
+  };
+
   const formatTime = (ms: number) => {
     const m = Math.floor(ms / 60000);
     const s = Math.floor((ms % 60000) / 1000);
@@ -338,6 +365,30 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
       <ScrollView style={styles.bottomSheet} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
         <View style={styles.handle} />
+
+        {order.meetup_scheduled_at && (
+          <View style={styles.meetupPlanCard}>
+            <View style={styles.meetupPlanRow}>
+              <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
+              <Text style={styles.meetupPlanText}>{order.meetup_address || t('meetup.locationFallback')}</Text>
+            </View>
+            <View style={styles.meetupPlanRow}>
+              <MaterialCommunityIcons name="calendar-clock-outline" size={18} color={COLORS.coral} />
+              <Text style={styles.meetupPlanText}>{new Date(order.meetup_scheduled_at).toLocaleString()}</Text>
+            </View>
+          </View>
+        )}
+
+        {order.status === 'completed' && (order as any).seller_fulfillments?.filter((item: any) => item.fulfillment_method === 'meetup' && item.fulfillment_status === 'completed').map((item: any) => (
+          <View key={`place-${item.seller_id}`} style={styles.communityPlaceCard}>
+            <View style={styles.communityPlaceHeading}><MaterialCommunityIcons name="map-marker-check-outline" size={18} color={COLORS.green}/><Text style={styles.communityPlaceTitle}>{t('meetup.placeCommunityTitle')}</Text></View>
+            <Text style={styles.communityPlaceHint}>{t('meetup.placeCommunityHint')}</Text>
+            <View style={styles.communityPlaceActions}>
+              <TouchableOpacity style={styles.communityPlaceButton} onPress={() => void handleConfirmPlace(item.seller_id)} disabled={placeActionLoading} accessibilityRole="button"><Text style={styles.communityPlaceActionText}>{t('meetup.placeConfirmButton')}</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.communityPlaceReport} onPress={() => handleReportPlace(item.seller_id)} disabled={placeActionLoading} accessibilityRole="button"><Text style={styles.communityPlaceReportText}>{t('meetup.placeReportButton')}</Text></TouchableOpacity>
+            </View>
+          </View>
+        ))}
 
         {/* Timer */}
         {meetupStartedAt ? (
@@ -604,6 +655,18 @@ const styles = StyleSheet.create({
   loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
   meetupSkeletonHeader: { height: 62, paddingHorizontal: SPACING.lg, flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: COLORS.surface },
   meetupSkeleton: { padding: SPACING.lg, gap: SPACING.lg },
+  communityPlaceCard: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 14, marginBottom: SPACING.md, gap: 8 },
+  meetupPlanCard: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 14, marginBottom: SPACING.md, gap: 12 },
+  meetupPlanRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  meetupPlanText: { color: COLORS.text, fontSize: 14, fontWeight: '600', flex: 1 },
+  communityPlaceHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  communityPlaceTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700', flex: 1 },
+  communityPlaceHint: { color: COLORS.text2, fontSize: 12, lineHeight: 17 },
+  communityPlaceActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
+  communityPlaceButton: { flex: 1, minHeight: 42, borderRadius: RADIUS.row, backgroundColor: COLORS.green, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  communityPlaceActionText: { color: COLORS.white, fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  communityPlaceReport: { minHeight: 42, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, justifyContent: 'center', paddingHorizontal: 10 },
+  communityPlaceReportText: { color: COLORS.text2, fontSize: 11, fontWeight: '600', textAlign: 'center' },
 
   mapContainer: { height: 260, marginHorizontal: SPACING.lg, borderRadius: RADIUS.media, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
   map: { flex: 1 },

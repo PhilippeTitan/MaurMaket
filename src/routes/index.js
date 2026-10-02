@@ -7,6 +7,7 @@ import migrationRouter from './migration.js';
 import authRouter from './auth.js';
 import socialRouter from './social.js';
 import productsRouter from './products.js';
+import listingsRouter from './listings.js';
 import ordersRouter from './orders.js';
 import sellerDashboardRouter from './seller-dashboard.js';
 import promosRouter from './promos.js';
@@ -30,6 +31,7 @@ export function registerRoutes(app) {
   app.use(healthRouter);
   app.use(adminRouter);
   app.use(sellerRouter);
+  app.use(listingsRouter);
   app.use(migrationRouter);
   app.use(sellerDashboardRouter);
   app.use(promosRouter);

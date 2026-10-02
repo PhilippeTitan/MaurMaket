@@ -13,6 +13,8 @@ interface Props {
   size?: number;
   /** Action button background color. Defaults to COLORS.coral. */
   actionColor?: string;
+  /** Top spacing for contexts where the empty state should sit closer to content. */
+  topSpacing?: number;
 }
 
 /**
@@ -29,9 +31,10 @@ export default function EmptyState({
   onAction,
   size = ICON_SIZES.illustration,
   actionColor = COLORS.coral,
+  topSpacing,
 }: Props) {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, topSpacing !== undefined && { paddingTop: topSpacing }]}>
       <View
         style={[
           styles.iconCircle,

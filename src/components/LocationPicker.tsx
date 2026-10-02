@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchAreasHybrid, type HaitiArea } from '../data/haiti-areas';
 import { getFastLocation } from '../fast-location';
 import NativeMap, { MAP_STYLE_LIGHT, type NativeMapRef } from './NativeMap';
+import { useTranslation } from '@/localization';
 
 interface LocationPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
@@ -15,6 +16,7 @@ interface LocationPickerProps {
 }
 
 export default function LocationPicker({ onLocationSelect, initialLat, initialLng, height = 260 }: LocationPickerProps) {
+  const { t } = useTranslation();
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -139,9 +141,25 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
   if (Platform.OS === 'web') {
     return (
       <View style={[styles.container, { height }]}>
-        <View style={styles.webFallback}>
-          <MaterialCommunityIcons name="map-marker-outline" size={32} color={COLORS.coral} />
-          <Text style={styles.webFallbackText}>Map picker available on mobile</Text>
+        <View style={styles.webSearch}>
+          <View style={styles.webSearchInputRow}>
+            <MaterialCommunityIcons name="magnify" size={19} color={COLORS.coral} />
+            <TextInput value={searchQuery} onChangeText={setSearchQuery} placeholder={t('locationPicker.webSearchPlaceholder')} placeholderTextColor={COLORS.text2} style={styles.webSearchInput} accessibilityLabel={t('locationPicker.webSearchPlaceholder')} />
+          </View>
+          {searching && <ActivityIndicator size="small" color={COLORS.coral} />}
+          <FlatList
+            data={searchResults}
+            keyExtractor={item => item.id}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.webSearchResult} onPress={() => { setSelectedAddress(item.name); setSearchQuery(item.name); setSearchResults([]); onLocationSelect(item.lat, item.lng, item.name); }} accessibilityRole="button" accessibilityLabel={`select ${item.name}`}>
+                <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
+                <View style={{ flex: 1 }}><Text style={styles.webResultName}>{item.name}</Text><Text style={styles.webResultCity}>{item.city}</Text></View>
+              </TouchableOpacity>
+            )}
+          />
+          {selectedAddress && <Text style={styles.webSelected} numberOfLines={2}>{t('locationPicker.webSelected')} · {selectedAddress}</Text>}
+          {!selectedAddress && searchQuery.length === 0 && <Text style={styles.webFallbackText}>{t('locationPicker.webSearchHint')}</Text>}
         </View>
       </View>
     );
@@ -315,6 +333,13 @@ const styles = StyleSheet.create({
   previewMap: { flex: 1 },
   webFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.surface, padding: 20 },
   webFallbackText: { color: COLORS.text2, fontSize: 14, marginTop: 8, textAlign: 'center' },
+  webSearch: { flex: 1, padding: 12, gap: 8, backgroundColor: COLORS.surface },
+  webSearchInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, paddingHorizontal: 10, minHeight: 42 },
+  webSearchInput: { flex: 1, color: COLORS.text },
+  webSearchResult: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 42, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border, paddingVertical: 6 },
+  webResultName: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
+  webResultCity: { color: COLORS.text2, fontSize: 11, marginTop: 2 },
+  webSelected: { color: COLORS.text2, fontSize: 11, marginTop: 6 },
   expandHint: { position: 'absolute', top: 8, right: 8, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   expandHintText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   addressBar: { position: 'absolute', bottom: 8, left: 8, right: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, gap: 6 },

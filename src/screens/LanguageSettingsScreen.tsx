@@ -8,6 +8,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import { i18n, useTranslation, type Language } from '@/localization';
 import { store } from '../store';
+import { updateProfile } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -25,7 +26,10 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
   const handleSelect = async (code: Language) => {
     if (code === language) return;
     await i18n.setLanguage(code);
-    await store.setUser({ ...store.user! } as any, store.token!);
+    if (store.user) {
+      await store.setUser({ ...store.user, language: code } as any, store.token!);
+      updateProfile({ language: code }).catch(() => {});
+    }
   };
 
   return (
