@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
-import { ONBOARDING_COLORS } from '../screens/onboarding/theme';
 
 interface Props {
   /** Section header title — renders as a bold label above the group */
@@ -52,7 +51,12 @@ export default function SettingsGroup({
     <View style={[styles.container, appearance === 'minimal' && styles.minimalContainer, style]}>
       {header ? (
         <View style={styles.headerRow}>
-          <Text style={[styles.header, appearance === 'minimal' && styles.minimalHeader]}>{header}</Text>
+          <Text
+            accessibilityRole="header"
+            style={[styles.header, appearance === 'minimal' && styles.minimalHeader]}
+          >
+            {header}
+          </Text>
         </View>
       ) : null}
       {description && appearance !== 'minimal' ? (
@@ -83,7 +87,7 @@ const styles = StyleSheet.create({
   header: {
     fontSize: FONT_SIZES.sm,
     fontWeight: FONT_WEIGHTS.bold,
-    color: ONBOARDING_COLORS.sub,
+    color: COLORS.text2,
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
@@ -95,16 +99,16 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: FONT_SIZES.xs,
-    color: ONBOARDING_COLORS.faint,
+    color: COLORS.text3,
     marginHorizontal: SPACING.lg,
     marginBottom: SPACING.sm,
     lineHeight: 16,
   },
   card: {
     marginHorizontal: SPACING.lg,
-    backgroundColor: ONBOARDING_COLORS.surface,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: ONBOARDING_COLORS.border,
+    borderColor: COLORS.border,
     borderRadius: RADIUS.card,
     overflow: 'hidden',
   },
@@ -115,7 +119,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     fontSize: FONT_SIZES.xs,
-    color: ONBOARDING_COLORS.faint,
+    color: COLORS.text3,
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.sm,
     lineHeight: 16,

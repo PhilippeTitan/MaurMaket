@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   Platform, ScrollView, Alert, TextInput, KeyboardAvoidingView,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
   cardSeller: { fontSize: 14, color: COLORS.text, fontWeight: '600' },
 
   // Multi-seller rows
-  sellerRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' },
+  sellerRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   sellerRowActive: { backgroundColor: COLORS.coral + '08', marginHorizontal: -SPACING.lg, paddingHorizontal: SPACING.lg, borderRadius: 8 },
   sellerStatus: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg },
   sellerStatusDone: { backgroundColor: COLORS.green, borderColor: COLORS.green },

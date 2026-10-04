@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, FlatList, Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 
 const DISCOUNT_OPTIONS = [10, 15, 20, 25];

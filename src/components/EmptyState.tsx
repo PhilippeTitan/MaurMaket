@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, RADIUS, SPACING, FONT_SIZES, FONT_WEIGHTS, ICON_SIZES, TOUCH } from '../theme';
 
 interface Props {

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, G as SvgG } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
@@ -15,21 +15,22 @@ import { store } from '../../store';
 import OnboardingBackground from './components/OnboardingBackground';
 import type { User } from '../../types';
 import { useViewport, CONTENT_MAX_WIDTH, SCREEN_GUTTER } from '@/hooks';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 const C = {
-  bg0: '#0A0812',
-  bg1: '#120E1F',
-  surface: 'rgba(255,255,255,0.045)',
-  surfaceHi: 'rgba(255,255,255,0.08)',
-  border: 'rgba(255,255,255,0.10)',
-  borderHi: 'rgba(255,255,255,0.20)',
-  text: '#F4F1FB',
-  sub: '#9791AF',
-  faint: '#615C79',
-  violet: '#8B5CF6',
-  pink: '#EC4899',
-  amber: '#FB923C',
-  mint: '#2FE6B8',
+  bg0: COLORS.bg,
+  bg1: COLORS.bg,
+  surface: COLORS.surface,
+  surfaceHi: COLORS.surface2,
+  border: COLORS.border,
+  borderHi: COLORS.borderLight,
+  text: COLORS.text,
+  sub: COLORS.text2,
+  faint: COLORS.text3,
+  violet: COLORS.coral,
+  pink: COLORS.coralLight,
+  amber: COLORS.warning,
+  mint: COLORS.green,
 };
 
 /* ── SVG Illustrations ────────────────────────────────────── */
@@ -136,13 +137,9 @@ function GhostField({ icon, label, value, onChangeText, placeholder, secureTextE
 function PrimaryButton({ children, onPress, disabled }: { children: React.ReactNode; onPress: () => void; disabled?: boolean }) {
   return (
     <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={[s.primaryTouch, disabled ? { opacity: 0.7 } : null]}>
-      <LinearGradient
-        colors={disabled ? ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.08)'] : [C.violet, C.pink, C.amber]}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        style={[s.primaryBtn, disabled && s.primaryBtnDisabled]}
-      >
+      <View style={[s.primaryBtn, disabled && s.primaryBtnDisabled]}>
         <Text style={[s.primaryBtnText, disabled && { color: C.faint }]}>{children}</Text>
-      </LinearGradient>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -156,6 +153,7 @@ interface Props {
 }
 
 export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onAccountMissing }: Props) {
+  const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
   const vp = useViewport();
   const { t } = useTranslation();
@@ -188,9 +186,16 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
   const welcomeTranslateY = useRef(new Animated.Value(24)).current;
 
   useEffect(() => {
+    if (reduceMotion) {
+      fadeIn.setValue(1);
+      spin.setValue(0);
+      return;
+    }
     Animated.timing(fadeIn, { toValue: 1, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    Animated.loop(Animated.timing(spin, { toValue: 1, duration: 4000, easing: Easing.linear, useNativeDriver: true })).start();
-  }, []);
+    const spinLoop = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 4000, easing: Easing.linear, useNativeDriver: true }));
+    spinLoop.start();
+    return () => spinLoop.stop();
+  }, [fadeIn, reduceMotion, spin]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -346,7 +351,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
-      <View style={{ flex: 1, backgroundColor: '#120E1F' }}>
+      <View style={{ flex: 1, backgroundColor: C.bg0 }}>
         <OnboardingBackground />
 
         {/* The column scrolls rather than squashing: it centres itself while the window can
@@ -627,8 +632,8 @@ const s = StyleSheet.create({
     borderRadius: 22,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    backgroundColor: 'rgba(18, 14, 31, 0.85)',
+    borderColor: C.border,
+    backgroundColor: C.surface,
     shadowColor: C.pink,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.4,
@@ -639,19 +644,19 @@ const s = StyleSheet.create({
   welcomeHeaderImg: { width: '100%', height: '100%' },
 
   errorBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: 'rgba(3, 2, 8, 0.76)' },
-  errorCard: { width: '100%', maxWidth: 360, alignItems: 'center', padding: 24, borderRadius: 24, backgroundColor: 'rgba(18, 14, 31, 0.98)', borderWidth: 1, borderColor: 'rgba(236, 72, 153, 0.42)', shadowColor: C.pink, shadowOpacity: 0.25, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 12 },
-  errorIconRing: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(236, 72, 153, 0.14)', borderWidth: 1, borderColor: 'rgba(236, 72, 153, 0.34)', marginBottom: 16 },
-  errorTitle: { color: C.text, fontFamily: FONTS.heading, fontSize: 21, fontWeight: '800', textAlign: 'center' },
+  errorCard: { width: '100%', maxWidth: 360, alignItems: 'center', padding: 24, borderRadius: 24, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, shadowColor: C.pink, shadowOpacity: 0.25, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 12 },
+  errorIconRing: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.coralMuted, borderWidth: 1, borderColor: COLORS.coral, marginBottom: 16 },
+  errorTitle: { color: C.text, fontSize: 20, fontWeight: '800', textAlign: 'center' },
   errorMessage: { color: C.sub, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 8 },
   errorButton: { width: '100%', marginTop: 22 },
   errorButtonGradient: { height: 48, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  errorButtonText: { color: '#1A0B12', fontSize: 15, fontWeight: '800' },
+  errorButtonText: { color: COLORS.black, fontSize: 15, fontWeight: '800' },
 
-  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: 'rgba(13, 10, 27, 0.9)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)', paddingHorizontal: 16, alignSelf: 'stretch' },
+  field: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 58, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, alignSelf: 'stretch' },
   // Negative margin cancels the parent's padding so the tap target is the whole box,
   // not just the icon + input. The eye toggle renders after this and stays on top.
   fieldTap: { flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, marginHorizontal: -16 },
-  fieldFocused: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)' },
+  fieldFocused: { borderColor: C.violet, backgroundColor: C.surfaceHi },
   fieldLabel: { fontSize: 11, fontWeight: '600', color: C.sub },
   fieldInput: { backgroundColor: 'transparent', borderWidth: 0, color: C.text, fontSize: 14, fontWeight: '500' as const, padding: 0 },
   keyboardGhostOverlay: { ...StyleSheet.absoluteFill, zIndex: 15, backgroundColor: 'rgba(10,8,18,0.52)' },
@@ -659,7 +664,7 @@ const s = StyleSheet.create({
   keyboardGhostContainer: { position: 'absolute', left: 0, right: 0, bottom: 56, alignItems: 'center' },
   keyboardGhostColumn: { width: '100%', maxWidth: CONTENT_MAX_WIDTH, paddingHorizontal: SCREEN_GUTTER },
   keyboardGhostStack: { gap: 12, marginBottom: 15 },
-  keyboardGhostSignIn: { height: 52, borderRadius: 999, backgroundColor: 'rgba(139,92,246,0.32)', borderWidth: 1, borderColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  keyboardGhostSignIn: { height: 52, borderRadius: 999, backgroundColor: COLORS.coralMuted, borderWidth: 1, borderColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   keyboardGhostButton: { flex: 1, alignSelf: 'stretch', width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   keyboardGhostSignInText: { color: C.sub, fontSize: 15, fontWeight: '800' },
   keyboardGhostDisabledText: { color: C.faint },
@@ -667,10 +672,10 @@ const s = StyleSheet.create({
   primaryTouch: { width: '100%', alignSelf: 'stretch' },
   // Text links get real geometry, not just hitSlop — mouse/trackpad clicks ignore hitSlop.
   textLink: { paddingVertical: 13, paddingHorizontal: 10, minHeight: 44, justifyContent: 'center' },
-  primaryBtn: { height: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch' },
-  primaryBtnDisabled: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
+  primaryBtn: { height: 52, borderRadius: 999, backgroundColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch' },
+  primaryBtnDisabled: { borderWidth: 1, borderColor: C.border, backgroundColor: C.surfaceHi },
   separatorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 16 },
-  separatorLine: { flex: 1, height: 1, backgroundColor: 'rgba(221,232,255,0.24)' },
+  separatorLine: { flex: 1, height: 1, backgroundColor: C.border },
   separatorText: { color: C.sub, fontSize: 12, fontWeight: '700', textAlign: 'center' },
   providerRow: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 3 },
   providerCard: { alignItems: 'center', justifyContent: 'center', paddingVertical: 4, minWidth: 76, minHeight: 88 },
@@ -678,8 +683,8 @@ const s = StyleSheet.create({
   providerIconWrap: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center' },
   providerIconRing: { width: 68, height: 68, borderRadius: 34, position: 'absolute' },
   providerIconRingFill: { width: 68, height: 68, borderRadius: 34 },
-  providerIconInner: { width: 62, height: 62, borderRadius: 31, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1040' },
-  primaryBtnText: { fontSize: 15, fontWeight: '700', color: '#1A0B12' },
+  providerIconInner: { width: 62, height: 62, borderRadius: 31, alignItems: 'center', justifyContent: 'center', backgroundColor: C.surfaceHi },
+  primaryBtnText: { fontSize: 15, fontWeight: '700', color: COLORS.black },
 
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: C.border },

@@ -42,10 +42,11 @@ export default function OrdersScreen({ navigation }: Props) {
   const [sellOrders, setSellOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [actionOrderId, setActionOrderId] = useState<string | null>(null);
 
   const STATUS_FILTERS = ['all', 'pending', 'paid', 'processing', 'shipped', 'delivered', 'completed', 'cancelled'];
 
-  const fetchOrders = useCallback(async (force = false) => {
+  const fetchOrders = useCallback(async (force = false, quiet = false) => {
     if (!force && _ordersCache && Date.now() - _ordersCache.timestamp < ORDERS_CACHE_TTL) {
       const d = _ordersCache.data;
       setBuyOrders(d.buyOrders);
@@ -53,7 +54,7 @@ export default function OrdersScreen({ navigation }: Props) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!quiet) setLoading(true);
     try {
       const [buyRes, sellRes] = await Promise.all([
         getOrders() as Promise<{ buyerOrders: Order[] }>,
@@ -82,22 +83,32 @@ export default function OrdersScreen({ navigation }: Props) {
   const orders = statusFilter === 'all' ? allOrders : allOrders.filter(o => o.status === statusFilter);
 
   const getStatusColor = (s: string) => STATUS_COLORS[s] || COLORS.text2;
+  const getStatusLabel = (s: string) => t(`notif.status.${s}`);
 
   const handleCancel = async (orderId: string) => {
     Alert.alert(t('orderDetail.cancelOrder'), t('orderDetail.cancelConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
-      { text: 'Yes', style: 'destructive', onPress: async () => {
-        try { await cancelOrder(orderId); fetchOrders(); } catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
+      { text: t('common.confirm'), style: 'destructive', onPress: async () => {
+        if (actionOrderId) return;
+        setActionOrderId(orderId);
+        try { await cancelOrder(orderId); await fetchOrders(true, true); } catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
+        finally { setActionOrderId(null); }
       }},
     ]);
   };
 
   const handleComplete = async (orderId: string) => {
-    try { await completeOrder(orderId); fetchOrders(); } catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
+    if (actionOrderId) return;
+    setActionOrderId(orderId);
+    try { await completeOrder(orderId); await fetchOrders(true, true); } catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
+    finally { setActionOrderId(null); }
   };
 
   const handleStatusUpdate = async (orderId: string, status: string) => {
-    try { await updateOrderStatus(orderId, status); fetchOrders(); } catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
+    if (actionOrderId) return;
+    setActionOrderId(orderId);
+    try { await updateOrderStatus(orderId, status); await fetchOrders(true, true); } catch (err: unknown) { Alert.alert(t('common.error'), errorMessage(err)); }
+    finally { setActionOrderId(null); }
   };
 
   const renderItem = ({ item }: { item: Order }) => (
@@ -105,7 +116,7 @@ export default function OrdersScreen({ navigation }: Props) {
       <View style={styles.cardHeader}>
         <Text style={styles.orderId}>#{item.id.slice(0, 8)}</Text>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '1A' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{getStatusLabel(item.status)}</Text>
         </View>
       </View>
       <Text style={styles.amount}>{formatPrice(Number(item.total_amount))} G</Text>
@@ -113,31 +124,31 @@ export default function OrdersScreen({ navigation }: Props) {
 
       <View style={styles.actions}>
         {tab === 'buying' && item.status === 'pending' && (
-          <TouchableOpacity style={styles.actionBtn} onPress={() => handleCancel(item.id)} accessibilityLabel="cancel order" accessibilityRole="button">
+          <TouchableOpacity style={styles.actionBtn} onPress={() => handleCancel(item.id)} disabled={!!actionOrderId} accessibilityLabel={t('orders.cancelOrderA11y')} accessibilityRole="button" accessibilityState={{ disabled: !!actionOrderId, busy: actionOrderId === item.id }}>
             <Text style={styles.actionBtnText}>{t('orderDetail.cancel')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'buying' && item.status === 'delivered' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleComplete(item.id)} accessibilityLabel="confirm received" accessibilityRole="button">
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleComplete(item.id)} disabled={!!actionOrderId} accessibilityLabel={t('orders.confirmReceivedA11y')} accessibilityRole="button" accessibilityState={{ disabled: !!actionOrderId, busy: actionOrderId === item.id }}>
             <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.completed')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'selling' && item.status === 'paid' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'processing')} accessibilityLabel="mark processing" accessibilityRole="button">
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'processing')} disabled={!!actionOrderId} accessibilityLabel={t('orders.markProcessingA11y')} accessibilityRole="button" accessibilityState={{ disabled: !!actionOrderId, busy: actionOrderId === item.id }}>
             <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.processing')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'selling' && item.status === 'processing' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'shipped')} accessibilityLabel="mark shipped" accessibilityRole="button">
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.blue }]} onPress={() => handleStatusUpdate(item.id, 'shipped')} disabled={!!actionOrderId} accessibilityLabel={t('orders.markShippedA11y')} accessibilityRole="button" accessibilityState={{ disabled: !!actionOrderId, busy: actionOrderId === item.id }}>
             <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.shipped')}</Text>
           </TouchableOpacity>
         )}
         {tab === 'selling' && item.status === 'shipped' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleStatusUpdate(item.id, 'delivered')} accessibilityLabel="mark delivered" accessibilityRole="button">
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.green }]} onPress={() => handleStatusUpdate(item.id, 'delivered')} disabled={!!actionOrderId} accessibilityLabel={t('orders.markDeliveredA11y')} accessibilityRole="button" accessibilityState={{ disabled: !!actionOrderId, busy: actionOrderId === item.id }}>
             <Text style={[styles.actionBtnText, { color: COLORS.white }]}>{t('orderDetail.delivered')}</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={styles.detailBtn} onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })} accessibilityLabel="view order details" accessibilityRole="button">
+        <TouchableOpacity style={styles.detailBtn} onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })} accessibilityLabel={t('orders.viewDetailsA11y')} accessibilityRole="button">
           <Text style={styles.detailBtnText}>{t('orderDetail.title')}</Text>
         </TouchableOpacity>
       </View>
@@ -160,12 +171,12 @@ export default function OrdersScreen({ navigation }: Props) {
             <TouchableOpacity
               style={[styles.filterChip, statusFilter === s && styles.filterChipActive]}
               onPress={() => setStatusFilter(s)}
-              accessibilityRole="button"
-              accessibilityLabel={`filter ${s}`}
+              accessibilityRole="tab"
+              accessibilityLabel={t('orders.filterA11y', { status: s === 'all' ? t('common.all') : getStatusLabel(s) })}
               accessibilityState={{ selected: statusFilter === s }}
             >
               <Text style={[styles.filterChipText, statusFilter === s && styles.filterChipTextActive]}>
-                {s === 'all' ? t('common.all') : s.charAt(0).toUpperCase() + s.slice(1)}
+                {s === 'all' ? t('common.all') : getStatusLabel(s)}
               </Text>
             </TouchableOpacity>
           )}
@@ -177,16 +188,18 @@ export default function OrdersScreen({ navigation }: Props) {
           <TouchableOpacity
             style={[styles.tab, tab === 'buying' && styles.tabActive]}
             onPress={() => setTab('buying')}
-            accessibilityLabel="show buying orders"
-            accessibilityRole="button"
+            accessibilityLabel={t('orders.buying')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === 'buying' }}
           >
             <Text style={[styles.tabText, tab === 'buying' && styles.tabTextActive]}>{t('orders.buying')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, tab === 'selling' && styles.tabActive]}
             onPress={() => setTab('selling')}
-            accessibilityLabel="show selling orders"
-            accessibilityRole="button"
+            accessibilityLabel={t('orders.selling')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === 'selling' }}
           >
             <Text style={[styles.tabText, tab === 'selling' && styles.tabTextActive]}>{t('orders.selling')}</Text>
           </TouchableOpacity>
@@ -219,7 +232,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   filterRow: { marginBottom: SPACING.sm },
   filterChip: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.row,
+    minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.row,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   filterChipActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
@@ -229,7 +242,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', marginHorizontal: SPACING.lg, marginBottom: SPACING.sm,
     backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
   },
-  tab: { flex: 1, padding: 10, alignItems: 'center' },
+  tab: { flex: 1, minHeight: 44, padding: 10, alignItems: 'center', justifyContent: 'center' },
   tabActive: { backgroundColor: COLORS.coral },
   tabText: { color: COLORS.text2, fontSize: 14, fontWeight: '500' },
   tabTextActive: { color: COLORS.white },
@@ -239,19 +252,19 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.media, padding: 14, marginBottom: 8,
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  orderId: { fontSize: 12, color: COLORS.text2, fontFamily: 'monospace' },
+  orderId: { fontSize: 12, color: COLORS.text2,  },
   statusBadge: { borderRadius: RADIUS.row, paddingHorizontal: 8, paddingVertical: 2 },
   statusText: { fontSize: 12, fontWeight: '600' },
-  amount: { fontFamily: 'Syne', fontSize: 16, fontWeight: '700', color: COLORS.coral },
+  amount: { fontSize: 16, fontWeight: '700', color: COLORS.coral },
   date: { fontSize: 11, color: COLORS.text2, marginTop: 2 },
   actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   actionBtn: {
-    paddingHorizontal: 14, paddingVertical: 12, borderRadius: RADIUS.row,
+    minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 12, borderRadius: RADIUS.row,
     backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
   },
   actionBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.text },
   detailBtn: {
-    paddingHorizontal: 14, paddingVertical: 12, borderRadius: RADIUS.row,
+    minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 12, borderRadius: RADIUS.row,
     borderWidth: 1, borderColor: COLORS.blue,
   },
   detailBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.blue },

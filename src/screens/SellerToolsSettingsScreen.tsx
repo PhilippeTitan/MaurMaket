@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Animated, TextInput,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
@@ -222,6 +222,13 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
       {/* ── Fulfillment policy ── */}
       <Text style={styles.sectionHeader}>{t('sellerTools.deliveryMeetup')}</Text>
       <View style={styles.card}>
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SellerMapVisibility')} accessibilityRole="button" accessibilityLabel={t('sellerMapVisibility.title')}>
+          <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={COLORS.green} />
+          <Text style={styles.rowLabel}>{t('sellerMapVisibility.title')}</Text>
+          <Text style={styles.rowValue}>{t('sellerMapVisibility.manageSummary')}</Text>
+          <Icon name="chevron-right" size={16} color={COLORS.text2} />
+        </TouchableOpacity>
+        <View style={styles.divider} />
         <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SellerFulfillmentSettings')} accessibilityRole="button" accessibilityLabel={t('sellerTools.deliveryMeetup')}>
           <MaterialCommunityIcons name="truck-delivery-outline" size={18} color={COLORS.blue} />
           <Text style={styles.rowLabel}>{t('fulfillmentSettings.manage')}</Text>

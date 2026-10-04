@@ -78,6 +78,7 @@ export type RootStackParamList = {
   LocationSettings: undefined;
   SellerToolsSettings: undefined;
   SellerFulfillmentSettings: undefined;
+  SellerMapVisibility: undefined;
   NatCashAccess: undefined;
   PrivacySettings: undefined;
   BlockedUsers: undefined;

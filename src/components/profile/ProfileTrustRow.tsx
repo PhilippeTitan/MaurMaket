@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Icon } from '../icons/Icon';
-import { COLORS, FONT_SIZES, FONT_WEIGHTS } from '../../theme';
+import { COLORS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../../theme';
 import { useTranslation } from '@/localization';
 
 interface Props {
@@ -57,7 +57,7 @@ export default function ProfileTrustRow({
       key: 'rating',
       value: rating.toFixed(1),
       label: t('profile.reviewsCount', { count: reviewCount }),
-      accessibilityLabel: t('profile.ratingA11y', { rating: rating.toFixed(1) }),
+      accessibilityLabel: `${t('profile.ratingA11y', { rating: rating.toFixed(1) })}, ${t('profile.reviewsCount', { count: reviewCount })}`,
       star: true,
       onPress: onRatingPress,
     });
@@ -78,7 +78,7 @@ export default function ProfileTrustRow({
       key: 'followers',
       value: String(followers),
       label: t('storefront.followers'),
-      accessibilityLabel: t('storefront.followers'),
+      accessibilityLabel: t('profile.followersCountA11y', { count: followers }),
       onPress: onFollowersPress,
     });
   }
@@ -88,7 +88,7 @@ export default function ProfileTrustRow({
       key: 'following',
       value: String(following),
       label: t('storefront.following'),
-      accessibilityLabel: t('storefront.following'),
+      accessibilityLabel: t('profile.followingCountA11y', { count: following }),
       onPress: onFollowingPress,
     });
   }
@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 54,
-    minHeight: 40,
+    minHeight: TOUCH.min,
     paddingHorizontal: 2,
   },
   valueRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },

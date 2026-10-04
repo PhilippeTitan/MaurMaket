@@ -4,7 +4,7 @@ import {
   Alert, Modal, Pressable,
 } from 'react-native';
 import { Icon } from '../components/icons/Icon';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH, FONTS, getDisplayName, getSellerAvatar } from '../theme';
 import {
   getSellerProfile, getSellerReviews, toggleFollow, getFollowerCount,
@@ -711,7 +711,7 @@ const styles = StyleSheet.create({
   displayName: {
     flexShrink: 1,
     fontSize: FONT_SIZES.md,
-    fontFamily: FONTS.heading,
+    
     fontWeight: FONT_WEIGHTS.bold,
     color: COLORS.text,
   },

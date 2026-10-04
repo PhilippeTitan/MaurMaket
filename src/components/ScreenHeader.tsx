@@ -25,7 +25,7 @@ interface Props {
   subtitle?: string;
   /** Optional left element that replaces the back button area */
   left?: React.ReactNode;
-  /** Override the default title font size (default: FONT_SIZES.xl = 16) */
+  /** Override the default title font size (default: FONT_SIZES.headline = 20) */
   titleSize?: number;
   /** Override the default back arrow icon size (default: 20) */
   backSize?: number;
@@ -68,6 +68,7 @@ export default function ScreenHeader({
         <Text
           style={variant === 'branded' ? styles.titleBranded : [styles.title, titleSize ? { fontSize: titleSize } : undefined]}
           numberOfLines={1}
+          accessibilityRole="header"
         >
           {title}
         </Text>
@@ -116,13 +117,12 @@ const styles = StyleSheet.create({
   },
   title: {
     textAlign: 'center',
-    fontSize: 20,
+    fontSize: FONT_SIZES.headline,
     fontWeight: FONT_WEIGHTS.bold,
     color: COLORS.text,
   },
   titleBranded: {
     textAlign: 'center',
-    fontFamily: FONTS.heading,
     fontSize: FONT_SIZES.title,
     fontWeight: FONT_WEIGHTS.extrabold,
     color: COLORS.text,

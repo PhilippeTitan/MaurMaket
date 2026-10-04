@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { useLike, useWishlist } from '../hooks/useEngagement';
 import { COLORS } from '../theme';
 import { useTranslation } from '@/localization';

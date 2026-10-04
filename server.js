@@ -351,15 +351,21 @@ async function runMigrations(targetPool) {
       CREATE TABLE IF NOT EXISTS disputes (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         order_id UUID REFERENCES orders(id) NOT NULL,
+        seller_id UUID REFERENCES users(id),
         raised_by UUID REFERENCES users(id) NOT NULL,
         reason VARCHAR(50) NOT NULL,
         description TEXT,
         status VARCHAR(20) DEFAULT 'open',
         resolution TEXT,
+        response_deadline TIMESTAMPTZ,
+        reminder_sent_at TIMESTAMPTZ,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `));
+    await step('disputes seller scope', () => c.query(`ALTER TABLE disputes ADD COLUMN IF NOT EXISTS seller_id UUID REFERENCES users(id)`));
+    await step('disputes cancellation response fields', () => c.query(`ALTER TABLE disputes ADD COLUMN IF NOT EXISTS response_deadline TIMESTAMPTZ; ALTER TABLE disputes ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ`));
+    await step('disputes cancellation lookup index', () => c.query(`CREATE INDEX IF NOT EXISTS idx_disputes_cancellation_lookup ON disputes(order_id, seller_id, status) WHERE reason = 'cancellation_request'`));
 
     // 17. Platform revenue table
     await step('platform_revenue table', () => c.query(`
@@ -617,6 +623,14 @@ async function runMigrations(targetPool) {
 
     // 24. seller_locations is_visible (already in CREATE above, kept for idempotency)
     await step('seller_locations is_visible', () => c.query(`ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;`));
+    // Public map points are separately consented, generalized coordinates; private coordinates
+    // remain available to fulfillment calculations and are never returned by seller discovery.
+    await step('seller public map area consent', () => c.query(`
+      ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_lat DECIMAL(10,3);
+      ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_lng DECIMAL(10,3);
+      ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_area_confirmed BOOLEAN NOT NULL DEFAULT false;
+      UPDATE seller_locations SET is_visible = false WHERE public_area_confirmed = false AND is_visible = true;
+    `));
 
     // 25. Sale price columns
     await step('Sale price columns', () => c.query(`
@@ -876,6 +890,10 @@ async function runMigrations(targetPool) {
       ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS reason TEXT;
       ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS cause VARCHAR(20);
       ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS responsible_seller_id UUID REFERENCES users(id);
+      ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS refunded_seller_id UUID REFERENCES users(id);
+      ALTER TABLE refund_payouts DROP CONSTRAINT IF EXISTS refund_payouts_order_id_key;
+      CREATE INDEX IF NOT EXISTS idx_refund_payouts_order_seller_status
+        ON refund_payouts(order_id, refunded_seller_id, status);
       ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS commission_reversed DECIMAL(10,2) NOT NULL DEFAULT 0;
       ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS collection_fee_kept DECIMAL(10,2) NOT NULL DEFAULT 0;
       ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS seller_fee_share DECIMAL(10,2) NOT NULL DEFAULT 0;

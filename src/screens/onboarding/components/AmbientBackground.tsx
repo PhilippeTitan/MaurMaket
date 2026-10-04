@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Animated, Easing, StyleSheet } from 'react-native';
 import { COLORS } from '../../../theme';
 import { useViewport } from '@/hooks';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 export default function AmbientBackground() {
   // Blob geometry is a fraction of the live window width, so the glow keeps its
@@ -13,8 +14,13 @@ export default function AmbientBackground() {
   const blobA = { width: blobASize, height: blobASize, top: -vp.width * 0.35, right: -vp.width * 0.3 };
   const blobB = { width: blobBSize, height: blobBSize, bottom: -vp.width * 0.25, left: -vp.width * 0.28 };
   const drift = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
+    if (reduceMotion) {
+      drift.setValue(0);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(drift, { toValue: 1, duration: 9000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
@@ -23,7 +29,7 @@ export default function AmbientBackground() {
     );
     loop.start();
     return () => loop.stop();
-  }, []);
+  }, [drift, reduceMotion]);
 
   const blobATranslateY = drift.interpolate({ inputRange: [0, 1], outputRange: [0, 26] });
   const blobBTranslateY = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -20] });

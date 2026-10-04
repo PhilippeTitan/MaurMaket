@@ -3,7 +3,7 @@ import {
   ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import { COLORS, RADIUS, SPACING, FONT_SIZES, FONT_WEIGHTS } from '../theme';

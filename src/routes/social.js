@@ -828,15 +828,16 @@ router.get('/sellers/nearby', async (req, res) => {
     const result = await pool.query(
       `SELECT u.id, u.full_name, u.avatar_url, u.store_name, u.store_logo_url,
               u.seller_tier, u.id_verified, u.use_store_identity, u.username,
-              sl.lat, sl.lng,
+              sl.public_lat AS lat, sl.public_lng AS lng,
               (6371 * acos(LEAST(1, GREATEST(-1,
-                cos(radians($1)) * cos(radians(sl.lat)) *
-                cos(radians(sl.lng) - radians($2)) +
-                sin(radians($1)) * sin(radians(sl.lat))
+                cos(radians($1)) * cos(radians(sl.public_lat)) *
+                cos(radians(sl.public_lng) - radians($2)) +
+                sin(radians($1)) * sin(radians(sl.public_lat))
               )))) AS distance_km
        FROM seller_locations sl
        JOIN users u ON u.id = sl.seller_id
-       WHERE u.role = 'seller' AND sl.is_visible = true
+       WHERE u.role = 'seller' AND sl.is_visible = true AND sl.public_area_confirmed = true
+         AND sl.public_lat IS NOT NULL AND sl.public_lng IS NOT NULL
        ORDER BY distance_km ASC`,
       [latNum, lngNum]
     );
@@ -873,7 +874,7 @@ router.get('/sellers/nearby', async (req, res) => {
     res.json({ sellers: filtered.map(r => ({
       ...r,
       lat: parseFloat(r.lat), lng: parseFloat(r.lng),
-      distance_km: parseFloat(parseFloat(r.distance_km).toFixed(2)),
+      distance_km: Math.round(parseFloat(r.distance_km) * 2) / 2,
       product_count: r.product_count || 0,
       avg_rating: r.avg_rating || 0,
       review_count: r.review_count || 0,
@@ -1039,11 +1040,24 @@ router.post('/reports', authRequired, async (req, res) => {
     if (!targetType || !targetId || !reason) {
       return res.status(400).json({ error: 'targetType, targetId, and reason are required' });
     }
+    const validTargetTypes = new Set(['profile', 'review', 'reply', 'order', 'listing']);
+    if (!validTargetTypes.has(targetType)) {
+      return res.status(400).json({ error: 'Invalid report target type' });
+    }
+    let resolvedReportedUserId = reportedUserId || null;
+    if (targetType === 'listing') {
+      const listing = await pool.query('SELECT seller_id FROM products WHERE id = $1', [targetId]);
+      if (!listing.rows[0]) return res.status(404).json({ error: 'Listing not found' });
+      resolvedReportedUserId = listing.rows[0].seller_id;
+      if (resolvedReportedUserId === req.user.id) {
+        return res.status(403).json({ error: 'You cannot report your own listing' });
+      }
+    }
     const result = await pool.query(
       `INSERT INTO user_reports (reporter_id, reported_user_id, target_type, target_id, reason, details, order_context)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.user.id, reportedUserId || null, targetType, targetId, reason, details || null, orderContext ? JSON.stringify(orderContext) : null]
+      [req.user.id, resolvedReportedUserId, targetType, targetId, reason, details || null, orderContext ? JSON.stringify(orderContext) : null]
     );
     res.status(201).json({ report: result.rows[0], success: true });
   } catch (err) {

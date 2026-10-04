@@ -1,36 +1,37 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { network } from '../network';
 import { COLORS, SPACING } from '../theme';
 import { useTranslation } from '@/localization';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 export default function OfflineBanner() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [online, setOnline] = useState(network.isOnline);
-  const opacity = new Animated.Value(online ? 0 : 1);
-  const translateY = new Animated.Value(online ? -40 : 0);
+  const reduceMotion = useReduceMotion();
+  const opacity = useRef(new Animated.Value(online ? 0 : 1)).current;
+  const translateY = useRef(new Animated.Value(online ? -40 : 0)).current;
 
   useEffect(() => {
-    const unsub = network.onChange((nowOnline) => {
-      setOnline(nowOnline);
-      Animated.parallel([
-        Animated.timing(opacity, {
-          toValue: nowOnline ? 0 : 1,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateY, {
-          toValue: nowOnline ? -40 : 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    });
-    return unsub;
+    return network.onChange(setOnline);
   }, []);
+
+  useEffect(() => {
+    const toValue = online ? 0 : 1;
+    const translateTo = online ? -40 : 0;
+    if (reduceMotion) {
+      opacity.setValue(toValue);
+      translateY.setValue(translateTo);
+      return;
+    }
+    Animated.parallel([
+      Animated.timing(opacity, { toValue, duration: 250, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: translateTo, duration: 250, useNativeDriver: true }),
+    ]).start();
+  }, [online, opacity, reduceMotion, translateY]);
 
   if (online) return null;
 

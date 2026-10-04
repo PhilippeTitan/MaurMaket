@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { sendOffer, getImageUrl } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

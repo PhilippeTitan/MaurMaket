@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Share, Animated,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,11 +29,12 @@ import MasonryGrid from '../components/MasonryGrid';
 import { useToast } from '../components/Toast';
 import { network } from '../network';
 import {
-  ProfileActions, ProfileTrustRow, ProfileTabs, ProfileStickyBar, ProfileReviews,
+  ProfileActions, ProfileTabs, ProfileStickyBar, ProfileReviews,
   ProfileSkeleton, FeaturedListingCard, CategoryFilterRow, StaleNotice,
   useProfileCollapse, useProfileLayout,
   PROFILE_GRID_GAP, PROFILE_PAD, PROFILE_STICKY_ROW,
 } from '../components/profile';
+import ProfileSocialStats from '../components/profile/ProfileSocialStats';
 import type { ProfileTabItem } from '../components/profile';
 
 const profileCache: Record<string, { data: any; timestamp: number }> = {};
@@ -412,18 +413,33 @@ export default function MeScreen() {
             <ProfileSkeleton />
           ) : (
             <>
-              {/* ── Compact identity header ── */}
+              {/* ── Instagram-style avatar + profile metrics ── */}
               <View style={styles.identityRow}>
                 <UserAvatar seller={{ ...user, seller_tier: tier } as any} size={76} animated />
                 <View style={styles.statsWrap}>
-                  <ProfileTrustRow
-                    rating={rating}
-                    reviewCount={reviewCount}
-                    salesCount={isSeller ? sellingOrderCount : null}
-                    followers={followerCount}
-                    following={followingCount}
-                    onFollowersPress={user ? () => nav.navigate('FollowList', { userId: user.id, kind: 'followers', title: t('me.followers') }) : undefined}
-                    onFollowingPress={user ? () => nav.navigate('FollowList', { userId: user.id, kind: 'following', title: t('me.following') }) : undefined}
+                  <ProfileSocialStats
+                    stats={[
+                      {
+                        key: 'listings',
+                        value: activeProducts.length + (pinnedProduct ? 1 : 0),
+                        label: t('profile.listings'),
+                        accessibilityLabel: t('profile.listingsCount', { count: activeProducts.length + (pinnedProduct ? 1 : 0) }),
+                      },
+                      ...(followerCount !== null ? [{
+                        key: 'followers',
+                        value: followerCount,
+                        label: t('storefront.followers'),
+                        accessibilityLabel: t('profile.followersCountA11y', { count: followerCount }),
+                        onPress: user ? () => nav.navigate('FollowList', { userId: user.id, kind: 'followers', title: t('me.followers') }) : undefined,
+                      }] : []),
+                      ...(followingCount !== null ? [{
+                        key: 'following',
+                        value: followingCount,
+                        label: t('storefront.following'),
+                        accessibilityLabel: t('profile.followingCountA11y', { count: followingCount }),
+                        onPress: user ? () => nav.navigate('FollowList', { userId: user.id, kind: 'following', title: t('me.following') }) : undefined,
+                      }] : []),
+                    ]}
                   />
                 </View>
               </View>
@@ -438,6 +454,18 @@ export default function MeScreen() {
                 </View>
 
                 {user?.bio ? <Text style={styles.bio}>{user.bio}</Text> : null}
+                {isBusinessMode && username ? (
+                  <View style={styles.trustLine}>
+                    <Icon name="verified" size={11} color={COLORS.green} />
+                    <Text style={styles.trustLineText} numberOfLines={1}>{t('profile.operatedBy', { name: username })}</Text>
+                  </View>
+                ) : null}
+                {user?.show_real_name && user?.full_name && !isBusinessMode ? (
+                  <View style={styles.trustLine}>
+                    <Icon name="verified" size={11} color={COLORS.green} />
+                    <Text style={styles.trustLineText} numberOfLines={1}>{user.full_name}</Text>
+                  </View>
+                ) : null}
 
                 {(locationCity || memberSince || (isBusinessMode && serviceArea)) ? (
                   <View style={styles.metaRow}>
@@ -462,6 +490,23 @@ export default function MeScreen() {
                   </View>
                 ) : null}
               </View>
+
+              {isSeller && (rating !== null && rating > 0 || sellingOrderCount > 0) ? (
+                <View style={styles.sellerProofRow}>
+                  {rating !== null && rating > 0 && reviewCount ? (
+                    <View style={styles.sellerProofItem}>
+                      <Icon name="rate-this" size={14} color={COLORS.yellow} />
+                      <Text style={styles.sellerProofText}>{rating.toFixed(1)} · {t('profile.reviewsCount', { count: reviewCount })}</Text>
+                    </View>
+                  ) : null}
+                  {sellingOrderCount > 0 ? (
+                    <View style={styles.sellerProofItem}>
+                      <MaterialCommunityIcons name="check-decagram-outline" size={14} color={COLORS.green} />
+                      <Text style={styles.sellerProofText}>{sellingOrderCount} {t('profile.salesLabel')}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
 
               {/* ── Business / Personal presentation (business sellers only) ── */}
               {isSeller && tier === 'business' ? (
@@ -780,11 +825,15 @@ const styles = StyleSheet.create({
   identityRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   statsWrap: { flex: 1 },
   identityText: { marginTop: SPACING.md, gap: 2 },
+  trustLine: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  trustLineText: { flexShrink: 1, fontSize: FONT_SIZES.sm, color: COLORS.text2 },
+  sellerProofRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: SPACING.md, marginTop: SPACING.sm },
+  sellerProofItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  sellerProofText: { fontSize: FONT_SIZES.sm, color: COLORS.text2 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   displayName: {
     flexShrink: 1,
     fontSize: FONT_SIZES.md,
-    fontFamily: FONTS.heading,
     fontWeight: FONT_WEIGHTS.bold,
     color: COLORS.text,
   },

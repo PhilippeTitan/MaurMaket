@@ -10,14 +10,15 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, RADIUS, SPACING, FONT_SIZES, FONT_WEIGHTS, SHADOW, TOUCH } from '../theme';
 import { submitReport } from '../api';
+import { useTranslation } from '@/localization';
 import { useToast } from './Toast';
 
 export interface ReportModalProps {
   visible: boolean;
-  targetType: 'profile' | 'review' | 'reply' | 'order';
+  targetType: 'profile' | 'review' | 'reply' | 'order' | 'listing';
   targetId: string;
   targetName?: string;
   reportedUserId?: string;
@@ -69,16 +70,20 @@ export default function ReportModal({
   onClose,
   onSubmitSuccess,
 }: ReportModalProps) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [details, setDetails] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
-  const reasons = REASONS_MAP[targetType] || REASONS_MAP.profile;
+  const isListingReport = targetType === 'listing';
+  const reasons = isListingReport
+    ? [t('feed.reportSpam'), t('feed.reportInappropriate'), t('feed.reportWrongCategory'), t('feed.reportMisleading'), t('feed.reportOther')]
+    : REASONS_MAP[targetType] || REASONS_MAP.profile;
 
   const handleSubmit = async () => {
     if (!selectedReason) {
-      toast.error('Select a reason', 'Please select why you are reporting this');
+      toast.error(t('common.error'), isListingReport ? t('feed.reportSelectReason') : 'Please select why you are reporting this');
       return;
     }
 
@@ -93,14 +98,17 @@ export default function ReportModal({
         orderContext,
       });
 
-      toast.success('Report submitted', 'Our moderation team will review this promptly.');
+      toast.success(
+        isListingReport ? t('feed.reportThanks') : 'Report submitted',
+        isListingReport ? t('feed.reportThankMsg') : 'Our moderation team will review this promptly.',
+      );
       setSelectedReason('');
       setDetails('');
       onClose();
       onSubmitSuccess?.();
     } catch (err: any) {
       const msg = err?.message || 'Failed to submit report. Please try again.';
-      toast.error('Report error', msg);
+      toast.error(t('common.error'), msg);
     } finally {
       setLoading(false);
     }
@@ -121,6 +129,7 @@ export default function ReportModal({
       : targetType === 'reply'
       ? 'Reply'
       : 'Order';
+  const title = isListingReport ? t('feed.reportTitle') : `Report ${titleType}`;
 
   return (
     <Modal
@@ -133,7 +142,7 @@ export default function ReportModal({
         <Pressable style={styles.modal} onPress={(e) => e.stopPropagation()}>
           <View style={styles.header}>
             <MaterialCommunityIcons name="flag-outline" size={24} color={COLORS.coral} />
-            <Text style={styles.title}>Report {titleType}</Text>
+            <Text style={styles.title}>{title}</Text>
           </View>
 
           {!!targetName && (
@@ -143,7 +152,7 @@ export default function ReportModal({
           )}
 
           <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-            <Text style={styles.sectionLabel}>Why are you reporting this?</Text>
+            <Text style={styles.sectionLabel}>{isListingReport ? t('feed.reportMessage') : 'Why are you reporting this?'}</Text>
             <View style={styles.reasonsList}>
               {reasons.map((r) => {
                 const isSelected = selectedReason === r;
@@ -174,12 +183,12 @@ export default function ReportModal({
               })}
             </View>
 
-            <Text style={[styles.sectionLabel, { marginTop: SPACING.md }]}>
-              Additional details (optional)
+            <Text style={[styles.sectionLabel, { marginTop: SPACING.md }]}> 
+              {isListingReport ? t('feed.reportDetailsLabel') : 'Additional details (optional)'}
             </Text>
             <TextInput
               style={styles.input}
-              placeholder="Provide any context that helps our team review this..."
+              placeholder={isListingReport ? t('feed.reportDetailsPlaceholder') : 'Provide any context that helps our team review this...'}
               placeholderTextColor={COLORS.text3}
               value={details}
               onChangeText={setDetails}
@@ -196,7 +205,7 @@ export default function ReportModal({
               disabled={loading}
               accessibilityRole="button"
             >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
+              <Text style={styles.cancelBtnText}>{isListingReport ? t('common.cancel') : 'Cancel'}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -208,7 +217,7 @@ export default function ReportModal({
               {loading ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={styles.submitBtnText}>Submit Report</Text>
+                <Text style={styles.submitBtnText}>{isListingReport ? t('feed.submitReport') : 'Submit Report'}</Text>
               )}
             </TouchableOpacity>
           </View>

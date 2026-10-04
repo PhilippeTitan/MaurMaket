@@ -1,22 +1,25 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform, ActivityIndicator, Modal, TouchableOpacity, TextInput, FlatList } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchAreasHybrid, type HaitiArea } from '../data/haiti-areas';
 import { getFastLocation } from '../fast-location';
 import NativeMap, { MAP_STYLE_LIGHT, type NativeMapRef } from './NativeMap';
 import { useTranslation } from '@/localization';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 interface LocationPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
   initialLat?: number | null;
   initialLng?: number | null;
   height?: number;
+  allowCurrentLocation?: boolean;
 }
 
-export default function LocationPicker({ onLocationSelect, initialLat, initialLng, height = 260 }: LocationPickerProps) {
+export default function LocationPicker({ onLocationSelect, initialLat, initialLng, height = 260, allowCurrentLocation = true }: LocationPickerProps) {
   const { t } = useTranslation();
+  const reduceMotion = useReduceMotion();
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -39,6 +42,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
 
   // Get user location on mount
   useEffect(() => {
+    if (!allowCurrentLocation) return;
     getFastLocation()
       .then(pos => {
         const loc = { lat: pos.lat, lng: pos.lng };
@@ -50,7 +54,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
         }
       })
       .catch(() => {});
-  }, []);
+  }, [allowCurrentLocation]);
 
   // Center map when it becomes ready and user location is available
   useEffect(() => {
@@ -92,6 +96,8 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
     setSelectedLng(lng);
     setExpandedLoading(true);
     setPendingCoords({ lat, lng });
+    setSearchFocused(false);
+    searchInputRef.current?.blur();
     fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, { headers: { 'Accept-Language': 'en' } })
       .then(r => r.json())
       .then(d => setExpandedAddress(d.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`))
@@ -152,7 +158,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
             keyExtractor={item => item.id}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.webSearchResult} onPress={() => { setSelectedAddress(item.name); setSearchQuery(item.name); setSearchResults([]); onLocationSelect(item.lat, item.lng, item.name); }} accessibilityRole="button" accessibilityLabel={`select ${item.name}`}>
+              <TouchableOpacity style={styles.webSearchResult} onPress={() => { setSelectedAddress(item.name); setSearchQuery(item.name); setSearchResults([]); onLocationSelect(item.lat, item.lng, item.name); }} accessibilityRole="button" accessibilityLabel={t('locationSettings.selectAreaA11y', { name: item.name })}>
                 <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
                 <View style={{ flex: 1 }}><Text style={styles.webResultName}>{item.name}</Text><Text style={styles.webResultCity}>{item.city}</Text></View>
               </TouchableOpacity>
@@ -172,7 +178,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
         style={[styles.container, { height }]}
         onPress={() => setExpanded(true)}
         activeOpacity={0.9}
-        accessibilityLabel="expand map"
+        accessibilityLabel={t('locationSettings.expandMapA11y')}
         accessibilityRole="button"
       >
         <NativeMap
@@ -185,7 +191,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
         />
         <View style={styles.expandHint}>
           <MaterialCommunityIcons name="fullscreen" size={14} color={COLORS.white} />
-          <Text style={styles.expandHintText}>Full screen</Text>
+          <Text style={styles.expandHintText}>{t('locationSettings.expandMapHint')}</Text>
         </View>
         {selectedAddress && (
           <View style={styles.addressBar}>
@@ -196,14 +202,14 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
       </TouchableOpacity>
 
       {/* ── Full-screen map modal ── */}
-      <Modal visible={expanded} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setExpanded(false)}>
+      <Modal visible={expanded} animationType={reduceMotion ? 'none' : 'slide'} presentationStyle="fullScreen" onRequestClose={() => setExpanded(false)}>
         <View style={styles.expandedContainer}>
           <NativeMap
             ref={expandedMapRef}
             style={styles.expandedMap}
             center={initialLat && initialLng ? [initialLng, initialLat] : undefined}
             zoom={15}
-            showUserLocation={true}
+            showUserLocation={allowCurrentLocation}
             selectedLat={selectedLat}
             selectedLng={selectedLng}
             onPress={handleMapPress}
@@ -222,7 +228,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
               setSelectedArea(null);
               setSelectedLat(null);
               setSelectedLng(null);
-            }} accessibilityLabel="close map" accessibilityRole="button">
+            }} accessibilityLabel={t('locationSettings.closeMapA11y')} accessibilityRole="button">
               <MaterialCommunityIcons name="close" size={22} color={COLORS.text} />
             </TouchableOpacity>
           </View>
@@ -237,16 +243,16 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
                   <TextInput
                     ref={searchInputRef}
                     style={styles.searchInput}
-                    placeholder="Search area... (e.g. Delmas 33)"
+                    placeholder={t('locationSettings.searchPlaceholder')}
                     placeholderTextColor={COLORS.text2}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     returnKeyType="search"
                     autoFocus
-                    accessibilityLabel="search meetup area"
+                    accessibilityLabel={t('locationSettings.searchA11y')}
                   />
                   {searchQuery.length > 0 && (
-                    <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }} accessibilityLabel="clear search" accessibilityRole="button">
+                    <TouchableOpacity style={styles.clearSearchBtn} onPress={() => { setSearchQuery(''); setSearchResults([]); }} accessibilityLabel={t('locationSettings.clearSearchA11y')} accessibilityRole="button">
                       <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.text2} />
                     </TouchableOpacity>
                   )}
@@ -256,7 +262,7 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
                 {searching && searchResults.length === 0 && (
                   <View style={styles.searchLoading}>
                     <ActivityIndicator size="small" color={COLORS.coral} />
-                    <Text style={styles.searchLoadingText}>Searching...</Text>
+                    <Text style={styles.searchLoadingText}>{t('locationSettings.searching')}</Text>
                   </View>
                 )}
 
@@ -270,8 +276,9 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
                       <TouchableOpacity
                         style={[styles.resultItem, selectedArea?.id === item.id && styles.resultActive]}
                         onPress={() => selectArea(item)}
-                        accessibilityLabel={`select ${item.name}`}
+                        accessibilityLabel={t('locationSettings.selectAreaA11y', { name: item.name })}
                         accessibilityRole="button"
+                        accessibilityState={{ selected: selectedArea?.id === item.id }}
                       >
                         <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.coral} />
                         <View style={{ flex: 1 }}>
@@ -292,33 +299,33 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
                   </View>
                 )}
               </View>
-            ) : selectedArea ? (
+            ) : pendingCoords && expandedAddress ? (
               /* ── Selected mode — area name + confirm ── */
               <View style={styles.selectedPill}>
                 <MaterialCommunityIcons name="map-marker" size={18} color={COLORS.coral} />
-                <Text style={styles.selectedText} numberOfLines={1}>{selectedArea.name}</Text>
-                <TouchableOpacity style={styles.clearBtn} onPress={clearSelection} accessibilityLabel="clear selection" accessibilityRole="button">
+                <Text style={styles.selectedText} numberOfLines={1}>{expandedAddress}</Text>
+                <TouchableOpacity style={styles.clearBtn} onPress={clearSelection} accessibilityLabel={t('locationSettings.clearSelectionA11y')} accessibilityRole="button">
                   <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.confirmBtn, expandedLoading && { opacity: 0.5 }]}
                   onPress={confirmExpanded}
                   disabled={expandedLoading}
-                  accessibilityLabel="confirm location"
+                  accessibilityLabel={t('locationSettings.confirmA11y')}
                   accessibilityRole="button"
                 >
                   {expandedLoading ? (
                     <ActivityIndicator size="small" color={COLORS.white} />
                   ) : (
-                    <Text style={styles.confirmText}>Confirm</Text>
+                    <Text style={styles.confirmText}>{t('locationSettings.confirm')}</Text>
                   )}
                 </TouchableOpacity>
               </View>
             ) : (
               /* ── Default mode — search prompt ── */
-              <TouchableOpacity style={styles.searchPrompt} onPress={() => setSearchFocused(true)} accessibilityLabel="search for area" accessibilityRole="button">
+              <TouchableOpacity style={styles.searchPrompt} onPress={() => setSearchFocused(true)} accessibilityLabel={t('locationSettings.searchA11y')} accessibilityRole="button">
                 <MaterialCommunityIcons name="magnify" size={20} color={COLORS.coral} />
-                <Text style={styles.searchPromptText}>Search for an area...</Text>
+                <Text style={styles.searchPromptText}>{t('locationSettings.searchPlaceholder')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -336,7 +343,7 @@ const styles = StyleSheet.create({
   webSearch: { flex: 1, padding: 12, gap: 8, backgroundColor: COLORS.surface },
   webSearchInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, paddingHorizontal: 10, minHeight: 42 },
   webSearchInput: { flex: 1, color: COLORS.text },
-  webSearchResult: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 42, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border, paddingVertical: 6 },
+  webSearchResult: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border, paddingVertical: 6 },
   webResultName: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
   webResultCity: { color: COLORS.text2, fontSize: 11, marginTop: 2 },
   webSelected: { color: COLORS.text2, fontSize: 11, marginTop: 6 },
@@ -351,7 +358,7 @@ const styles = StyleSheet.create({
 
   /* Close button — top right */
   closeBtnRow: { position: 'absolute', flexDirection: 'row', alignItems: 'center' },
-  closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', elevation: 4 },
+  closeBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', elevation: 4 },
 
   /* Bottom pill container */
   bottomPillContainer: { position: 'absolute', left: 16, right: 16, zIndex: 15 },
@@ -372,7 +379,8 @@ const styles = StyleSheet.create({
     elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
     maxHeight: 360,
   },
-  searchInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  searchInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8, minHeight: 44 },
+  clearSearchBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   searchInput: { flex: 1, color: COLORS.text, fontSize: 16, padding: 0 },
   searchLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 },
   searchLoadingText: { fontSize: 13, color: COLORS.text2 },
@@ -393,7 +401,7 @@ const styles = StyleSheet.create({
     elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
   },
   selectedText: { flex: 1, fontSize: 15, color: COLORS.text, fontWeight: '600' },
-  clearBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  confirmBtn: { backgroundColor: COLORS.coral, borderRadius: 22, paddingHorizontal: 20, paddingVertical: 10, marginLeft: 4 },
+  clearBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  confirmBtn: { minHeight: 44, backgroundColor: COLORS.coral, borderRadius: 22, paddingHorizontal: 20, paddingVertical: 10, marginLeft: 4, justifyContent: 'center' },
   confirmText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
 });

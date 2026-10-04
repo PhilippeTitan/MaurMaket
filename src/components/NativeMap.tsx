@@ -1,5 +1,6 @@
 import React, { forwardRef, useImperativeHandle, useRef, useCallback, useEffect, useState, type ReactElement } from 'react';
 import { View, StyleSheet, Platform, Text, type ViewStyle } from 'react-native';
+import { COLORS } from '../theme';
 import type { MapRef, CameraRef } from '@maplibre/maplibre-react-native';
 
 let Map: any = null;
@@ -179,15 +180,15 @@ const styles = StyleSheet.create({
   map: { flex: 1 },
   webFallback: {
     flex: 1,
-    backgroundColor: '#0D1117',
+    backgroundColor: COLORS.bg,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: COLORS.border,
     borderRadius: 16,
   },
   webFallbackText: {
-    color: '#D1D5DB',
+    color: COLORS.text2,
     fontSize: 12,
     letterSpacing: 0.3,
     textAlign: 'center',

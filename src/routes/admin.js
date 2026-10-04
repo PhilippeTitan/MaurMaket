@@ -76,9 +76,10 @@ router.get('/api/admin/moncash/refunds', authRequired, adminRequired, async (req
   if (!allowed.has(status)) return res.status(400).json({ error: 'Invalid refund status' });
   try {
     const result = await pool.query(
-      `SELECT r.*, u.full_name AS buyer_name, o.status AS order_status
+      `SELECT r.*, u.full_name AS buyer_name, seller.full_name AS refunded_seller_name, o.status AS order_status
        FROM refund_payouts r
        JOIN users u ON u.id = r.buyer_id
+       LEFT JOIN users seller ON seller.id = r.refunded_seller_id
        JOIN orders o ON o.id = r.order_id
        WHERE r.status = $1
        ORDER BY r.created_at ASC LIMIT 100`,
@@ -213,8 +214,9 @@ router.post('/api/admin/moncash/transfers/:kind/:id/reconcile', authRequired, ad
     } else if (req.params.kind === 'refund' && outcome === 'completed') {
       await client.query(
         `UPDATE disputes SET status = 'resolved', resolution = 'Support reconciled the MonCash refund as completed', updated_at = CURRENT_TIMESTAMP
-         WHERE order_id = $1 AND reason = 'refund_request' AND status IN ('open', 'under_review')`,
-        [transfer.order_id]
+         WHERE order_id = $1 AND reason = 'refund_request' AND status IN ('open', 'under_review')
+           AND ($2::uuid IS NULL OR seller_id = $2)`,
+        [transfer.order_id, transfer.refunded_seller_id || null]
       );
     }
     await client.query('COMMIT');

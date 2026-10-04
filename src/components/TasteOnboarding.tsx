@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { getCategories, saveFeedTaste, skipFeedTaste } from '../api';
 import { store } from '../store';
 import { COLORS, RADIUS, SPACING } from '../theme';

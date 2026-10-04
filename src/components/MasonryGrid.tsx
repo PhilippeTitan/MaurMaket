@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Platform, useWindowDimensions, RefreshControl } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import Reanimated, { LinearTransition } from 'react-native-reanimated';
 import { COLORS, RADIUS, formatPrice } from '../theme';
 import { useReduceMotion } from '../hooks';

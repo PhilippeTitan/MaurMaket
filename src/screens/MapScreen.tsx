@@ -8,7 +8,6 @@ let Map: any = null;
 let Camera: any = null;
 let Marker: any = null;
 let UserLocation: any = null;
-let OfflineManager: any = null;
 let hasMapLibre = false;
 
 try {
@@ -17,20 +16,18 @@ try {
   Camera = maplibre.Camera;
   Marker = maplibre.Marker;
   UserLocation = maplibre.UserLocation;
-  OfflineManager = maplibre.OfflineManager;
   hasMapLibre = true;
 } catch (error) {
   console.warn('MapLibre disabled in MapScreen for local UI editing.');
 }
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar, formatPrice, TIER_COLORS } from '../theme';
 import UserAvatar from '../components/UserAvatar';
 import { store } from '../store';
 import { useTranslation } from '@/localization';
 import {
-  getNearbySellers, setSellerLocation, getImageUrl,
+  getNearbySellers, getImageUrl,
   getProducts, toggleFollow, getFollowing, getFollowerCount,
-  getSellerLocation, toggleSellerVisibility,
 } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -38,6 +35,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product } from '../types';
 import * as Location from 'expo-location';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 /* ─── Map styles ─── */
 const LIGHT_STYLE = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
@@ -45,12 +43,7 @@ const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.
 
 /* ─── Haiti center ─── */
 const HAITI_CENTER: [number, number] = [-72.3074, 18.5944] as const;
-
-/* ─── Offline tile regions ─── */
-type LngLatBounds = [number, number, number, number];
-const HAITI_BOUNDS: LngLatBounds = [-74.5, 17.9, -71.6, 20.1]; // full country
-const CAP_HAITIEN_BOUNDS: LngLatBounds = [-72.35, 19.65, -72.15, 19.85]; // Cap-Haïtien metro
-const LES_CAYES_BOUNDS: LngLatBounds = [-73.85, 18.15, -73.65, 18.35]; // Les Cayes metro
+const LEGACY_CACHE_KEY_LOCATION = 'mm_map_last_location';
 
 interface NearbySeller {
   id: string;
@@ -70,12 +63,15 @@ interface NearbySeller {
   review_count: number;
 }
 
-const CACHE_KEY_LOCATION = 'mm_map_last_location';
-const CACHE_KEY_SELLERS = 'mm_map_last_sellers';
+// v2 cache contains generalized public map points only; do not reuse older
+// exact-coordinate seller results from the previous privacy model.
+const CACHE_KEY_SELLERS = 'mm_map_last_sellers_v2';
+const LEGACY_CACHE_KEY_SELLERS = 'mm_map_last_sellers';
 const CACHE_TTL = 5 * 60 * 1000;
 
 export default function MapScreen() {
   const { t } = useTranslation();
+  const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const mapRef = useRef<MapRef>(null);
@@ -91,12 +87,7 @@ export default function MapScreen() {
   const [latestItems, setLatestItems] = useState<Product[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [sellerVisible, setSellerVisible] = useState(true);
-  const [visibilityLoading, setVisibilityLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
-  const [offlineProgress, setOfflineProgress] = useState<Record<string, number>>({});
-  const [offlineComplete, setOfflineComplete] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
   const [, setStoreTick] = useState(0);
@@ -109,6 +100,15 @@ export default function MapScreen() {
       </View>
     );
   }
+
+  useEffect(() => {
+    import('@react-native-async-storage/async-storage').then(({ default: AsyncStorage }) =>
+      Promise.all([
+        AsyncStorage.removeItem(LEGACY_CACHE_KEY_LOCATION),
+        AsyncStorage.removeItem(LEGACY_CACHE_KEY_SELLERS),
+      ]).catch(() => {})
+    ).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const unsub = store.onChange(() => setStoreTick(t => t + 1));
@@ -129,7 +129,8 @@ export default function MapScreen() {
     setSheetExpanded(false);
     setLatestItems([]);
     setFollowerCount(null);
-    Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
+    if (reduceMotion) sheetAnim.setValue(1);
+    else Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
 
     const thisDetail = ++detailFetchIdRef.current;
     setLoadingDetail(true);
@@ -151,14 +152,16 @@ export default function MapScreen() {
         store.setFollowingList(ids);
       }).catch(() => {});
     }
-  }, [sheetAnim]);
+  }, [sheetAnim, reduceMotion]);
 
   const closeSheet = useCallback(() => {
-    Animated.spring(sheetAnim, { toValue: 0, useNativeDriver: false, tension: 80, friction: 12 }).start(() => {
+    const finish = () => {
       setSelectedSeller(null);
       setSheetExpanded(false);
-    });
-  }, [sheetAnim]);
+    };
+    if (reduceMotion) { sheetAnim.setValue(0); finish(); }
+    else Animated.spring(sheetAnim, { toValue: 0, useNativeDriver: false, tension: 80, friction: 12 }).start(finish);
+  }, [sheetAnim, reduceMotion]);
 
   const handleFollowToggle = useCallback(async () => {
     if (!selectedSeller || followBusy) return;
@@ -212,93 +215,14 @@ export default function MapScreen() {
   /* ─── Location init ─── */
   useEffect(() => {
     (async () => {
-      if (Platform.OS === 'web') {
-        fetchSellers(18.5944, -72.3074);
-        return;
-      }
       try {
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-
-        let cachedLoc: { lat: number; lng: number } | null = null;
-        try {
-          const raw = await AsyncStorage.getItem(CACHE_KEY_LOCATION);
-          if (raw) cachedLoc = JSON.parse(raw);
-        } catch {}
-
-        if (cachedLoc) {
-          setMyLocation(cachedLoc);
-          await loadCachedSellers();
-          setTimeout(() => centerOn(cachedLoc!.lat, cachedLoc!.lng, 11), 300);
-        }
-
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          if (!cachedLoc) fetchSellers(18.5944, -72.3074);
-          return;
-        }
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setMyLocation({ lat, lng });
-        setSellerLocation(lat, lng).catch(() => {});
-        AsyncStorage.setItem(CACHE_KEY_LOCATION, JSON.stringify({ lat, lng })).catch(() => {});
-        fetchSellers(lat, lng);
-        if (!cachedLoc) centerOn(lat, lng, 11);
+        await loadCachedSellers();
+        fetchSellers(HAITI_CENTER[1], HAITI_CENTER[0]);
       } catch {
-        fetchSellers(18.5944, -72.3074);
+        fetchSellers(HAITI_CENTER[1], HAITI_CENTER[0]);
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (!store.user || store.user.role !== 'seller') return;
-    (async () => {
-      try {
-        const res = await getSellerLocation() as { lat: number | null; lng: number | null; isVisible: boolean };
-        setSellerVisible(res.isVisible);
-      } catch {}
-    })();
-  }, []);
-
-
-  /* ─── Offline tile download ─── */
-  useEffect(() => {
-    if (!mapReady || offlineComplete) return;
-    const regions = [
-      { name: 'Haiti', bounds: HAITI_BOUNDS, minZoom: 5, maxZoom: 14 },
-      { name: 'Cap-Haitien', bounds: CAP_HAITIEN_BOUNDS, minZoom: 12, maxZoom: 18 },
-      { name: 'Les Cayes', bounds: LES_CAYES_BOUNDS, minZoom: 12, maxZoom: 18 },
-    ];
-
-    (async () => {
-      try {
-        for (const region of regions) {
-          const pack = await OfflineManager.createPack(
-            {
-              mapStyle: LIGHT_STYLE,
-              bounds: region.bounds,
-              minZoom: region.minZoom,
-              maxZoom: region.maxZoom,
-              metadata: { name: region.name },
-            },
-            (_pack: any, status: any) => {
-              setOfflineProgress((prev: any) => ({
-                ...prev,
-                [region.name]: status.percentage,
-              }));
-            },
-            (_pack: any, error: any) => {
-              console.warn('Offline tile error:', region.name, error.message);
-            }
-          );
-          await pack.resume();
-        }
-        setOfflineComplete(true);
-      } catch {
-        setOfflineComplete(true);
-      }
-    })();
-  }, [mapReady, offlineComplete]);
 
   /* ─── Seller search filter ─── */
   const filteredSellers = useMemo(() => {
@@ -315,42 +239,31 @@ export default function MapScreen() {
   const handleRefreshLocation = useCallback(async () => {
     if (refreshing) return;
     setRefreshing(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') { setRefreshing(false); return; }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      setMyLocation({ lat, lng });
-      setSellerLocation(lat, lng).catch(() => {});
-      fetchSellers(lat, lng);
-      centerOn(lat, lng);
-      try {
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        await AsyncStorage.setItem(CACHE_KEY_LOCATION, JSON.stringify({ lat, lng }));
-      } catch {}
-    } catch {}
+    const lat = myLocation?.lat ?? HAITI_CENTER[1];
+    const lng = myLocation?.lng ?? HAITI_CENTER[0];
+    await fetchSellers(lat, lng);
     setRefreshing(false);
-  }, [refreshing, fetchSellers, centerOn]);
+  }, [refreshing, fetchSellers, myLocation]);
 
-  const handleToggleVisibility = useCallback(async () => {
-    if (visibilityLoading) return;
-    setVisibilityLoading(true);
-    const newVisible = !sellerVisible;
-    try {
-      await toggleSellerVisibility(newVisible);
-      setSellerVisible(newVisible);
-    } catch {}
-    setVisibilityLoading(false);
-  }, [sellerVisible, visibilityLoading]);
+  const handleToggleVisibility = useCallback(() => {
+    navigation.navigate('SellerMapVisibility');
+  }, [navigation]);
 
   const handleToggleDarkMode = useCallback(() => {
     setDarkMode(prev => !prev);
   }, []);
 
-  const handleFindMe = useCallback(() => {
-    if (myLocation) centerOn(myLocation.lat, myLocation.lng, 14);
-  }, [myLocation, centerOn]);
+  const handleFindMe = useCallback(async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const nextLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      setMyLocation(nextLocation);
+      fetchSellers(nextLocation.lat, nextLocation.lng);
+      centerOn(nextLocation.lat, nextLocation.lng, 14);
+    } catch {}
+  }, [fetchSellers, centerOn]);
 
   /* ─── Marker helpers ─── */
   const getMarkerColor = (tier: string) => {
@@ -387,20 +300,20 @@ export default function MapScreen() {
     ];
     if (isSeller) {
       items.push({
-        icon: sellerVisible ? 'eye' : 'eye-off',
-        color: sellerVisible ? COLORS.green : COLORS.coral,
-        action: handleToggleVisibility,
-        label: 'Visibility',
+        icon: 'map-marker-radius-outline',
+        color: COLORS.blue,
+        action: async () => handleToggleVisibility(),
+        label: t('sellerMapVisibility.title'),
       });
     }
     items.push({
       icon: darkMode ? 'weather-sunny' : 'weather-night',
       color: COLORS.yellow,
-      action: handleToggleDarkMode,
+      action: async () => handleToggleDarkMode(),
       label: 'Theme',
     });
     return items;
-  }, [isSeller, refreshing, sellerVisible, darkMode, handleFindMe, handleRefreshLocation, handleToggleVisibility, handleToggleDarkMode]);
+  }, [isSeller, refreshing, darkMode, handleFindMe, handleRefreshLocation, handleToggleVisibility, handleToggleDarkMode, t]);
 
   const totalItems = menuItems.length;
 
@@ -413,20 +326,30 @@ export default function MapScreen() {
 
   const openFan = useCallback(() => {
     setFanOpen(true);
-    Animated.spring(fanProgress, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12 }).start();
-    iconScales.forEach((s, i) => {
-      Animated.spring(s, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12, delay: i * 40 }).start();
-    });
-  }, [fanProgress, iconScales]);
+    if (reduceMotion) {
+      fanProgress.setValue(1);
+      iconScales.forEach(s => s.setValue(1));
+    } else {
+      Animated.spring(fanProgress, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12 }).start();
+      iconScales.forEach((s, i) => {
+        Animated.spring(s, { toValue: 1, useNativeDriver: false, tension: 120, friction: 12, delay: i * 40 }).start();
+      });
+    }
+  }, [fanProgress, iconScales, reduceMotion]);
 
   const closeFan = useCallback(() => {
     setFanOpen(false);
     setHighlightedIdx(-1);
-    Animated.spring(fanProgress, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
-    iconScales.forEach(s => {
-      Animated.spring(s, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
-    });
-  }, [fanProgress, iconScales]);
+    if (reduceMotion) {
+      fanProgress.setValue(0);
+      iconScales.forEach(s => s.setValue(0));
+    } else {
+      Animated.spring(fanProgress, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
+      iconScales.forEach(s => {
+        Animated.spring(s, { toValue: 0, useNativeDriver: false, tension: 120, friction: 14 }).start();
+      });
+    }
+  }, [fanProgress, iconScales, reduceMotion]);
 
   const menuItemsRef = useRef(menuItems);
   menuItemsRef.current = menuItems;
@@ -530,7 +453,8 @@ export default function MapScreen() {
     } else {
       setSheetExpanded(true);
     }
-    Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
+    if (reduceMotion) sheetAnim.setValue(1);
+    else Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
   };
 
   const mapStyleUrl = darkMode ? DARK_STYLE : LIGHT_STYLE;
@@ -546,7 +470,6 @@ export default function MapScreen() {
         compass={false}
         scaleBar={false}
         style={styles.map}
-        onDidFinishLoadingMap={() => setMapReady(true)}
       >
         <Camera
           ref={cameraRef}
@@ -675,7 +598,7 @@ export default function MapScreen() {
                 activeOpacity={0.7}
                 onPress={() => { closeFan(); item.action(); }}
                 style={[styles.radialItemBtn, {
-                  backgroundColor: isHighlighted ? item.color + '44' : COLORS.surface + 'EE',
+                  backgroundColor: isHighlighted ? item.color + '44' : COLORS.surface,
                   borderColor: isHighlighted ? item.color : COLORS.border,
                 }]}
               >
@@ -813,7 +736,7 @@ const styles = StyleSheet.create({
     zIndex: 50,
   },
   fab: {
-    backgroundColor: COLORS.surface + 'EE', borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center',
     elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.35, shadowRadius: 6,
   },
@@ -875,7 +798,7 @@ const styles = StyleSheet.create({
   },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surface + 'EE', borderRadius: 12,
+    backgroundColor: COLORS.surface, borderRadius: 12,
     paddingHorizontal: 12, paddingVertical: 10,
     borderWidth: 1, borderColor: COLORS.border,
     elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },

@@ -1,11 +1,11 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Animated,
   Easing, ScrollView, FlatList, Platform, KeyboardAvoidingView, Image, Keyboard, ActivityIndicator, BackHandler,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinearGradient, Stop, Ellipse, G as SvgG } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -13,6 +13,7 @@ import LottieView from 'lottie-react-native';
 import { COLORS, SPACING, RADIUS, FONTS, TOUCH } from '../../theme';
 import { useTranslation } from '@/localization';
 import { useViewport } from '@/hooks';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { signup as apiSignup, retrySignupProfileBootstrap, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
 import { store } from '../../store';
 import AuthInput from '@/components/AuthInput';
@@ -23,19 +24,19 @@ import OnboardingBackground from './components/OnboardingBackground';
 import type { User } from '../../types';
 
 const C = {
-  bg0: '#0A0812',
-  bg1: '#120E1F',
-  surface: '#151326',
-  surfaceHi: '#211D38',
-  border: '#302B4B',
-  borderHi: '#514A73',
-  text: '#F4F1FB',
-  sub: '#C1BAD8',
-  faint: '#8F88AA',
-  violet: '#8B5CF6',
-  pink: '#EC4899',
-  amber: '#FB923C',
-  mint: '#2FE6B8',
+  bg0: COLORS.bg,
+  bg1: COLORS.bg,
+  surface: COLORS.surface,
+  surfaceHi: COLORS.surface2,
+  border: COLORS.border,
+  borderHi: COLORS.borderLight,
+  text: COLORS.text,
+  sub: COLORS.text2,
+  faint: COLORS.text3,
+  violet: COLORS.coral,
+  pink: COLORS.coralLight,
+  amber: COLORS.warning,
+  mint: COLORS.green,
 };
 
 function buildUsernameSuggestions(firstName: string, lastName: string, email: string): string[] {
@@ -317,7 +318,7 @@ function SuccessIllustration({ pulse }: { pulse: Animated.Value }) {
       {[0, 1, 2].map(i => (
         <View key={i} style={[StyleSheet.absoluteFill, { borderRadius: 999, borderWidth: 1.4, borderColor: C.mint, opacity: 0.3 }]} />
       ))}
-      <Animated.View style={{ width: 92, height: 92, borderRadius: 46, backgroundColor: '#123B31', alignItems: 'center', justifyContent: 'center', transform: [{ scale }], opacity }}>
+      <Animated.View style={{ width: 92, height: 92, borderRadius: 46, backgroundColor: COLORS.greenMuted, alignItems: 'center', justifyContent: 'center', transform: [{ scale }], opacity }}>
         <Svg width="46" height="46" viewBox="0 0 46 46" fill="none">
           <Path d="M11 24l8 8 16-18" stroke={C.mint} strokeWidth="4.4" strokeLinecap="round" strokeLinejoin="round" />
         </Svg>
@@ -329,13 +330,20 @@ function SuccessIllustration({ pulse }: { pulse: Animated.Value }) {
 function EmailConfirmationScreen({ name, email, onDone }: { name: string; email: string; onDone: () => void }) {
   const { t } = useTranslation();
   const pulse = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
   useEffect(() => {
-    Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })).start();
-  }, []);
+    if (reduceMotion) {
+      pulse.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [pulse, reduceMotion]);
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingHorizontal: 32 }}>
       <SuccessIllustration pulse={pulse} />
-      <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text, textAlign: 'center' }}>
+      <Text style={{ fontSize: 22, fontWeight: '700', color: C.text, textAlign: 'center' }}>
         {t('signup.allSet', { name: name ? `, ${name}` : '' })}
       </Text>
       <Text style={{ fontSize: 14, color: C.sub, textAlign: 'center', lineHeight: 20 }}>
@@ -357,21 +365,31 @@ function VerificationScreen({ name, onDone }: { name: string; onDone: () => void
   const [phase, setPhase] = useState<'loading' | 'tick'>('loading');
   const spinAnim = useRef(new Animated.Value(0)).current;
   const lottieRef = useRef<LottieView>(null);
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
+    if (reduceMotion) {
+      spinAnim.setValue(0);
+      const timer = setTimeout(() => setPhase('tick'), 2000);
+      return () => clearTimeout(timer);
+    }
     const spin = Animated.loop(
       Animated.timing(spinAnim, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true })
     );
     spin.start();
     const t = setTimeout(() => { spin.stop(); setPhase('tick'); }, 2000);
     return () => { spin.stop(); clearTimeout(t); };
-  }, []);
+  }, [reduceMotion, spinAnim]);
 
   useEffect(() => {
     if (phase === 'tick') {
+      if (reduceMotion) {
+        const timer = setTimeout(onDone, 400);
+        return () => clearTimeout(timer);
+      }
       lottieRef.current?.play();
     }
-  }, [phase]);
+  }, [onDone, phase, reduceMotion]);
 
   const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
@@ -381,20 +399,24 @@ function VerificationScreen({ name, onDone }: { name: string; onDone: () => void
         <View style={{ alignItems: 'center', gap: 24 }}>
           <Animated.View style={{ width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: C.border, borderTopColor: C.violet, transform: [{ rotate: spin }] }} />
           <View style={{ gap: 8, alignItems: 'center' }}>
-            <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text }}>{t('signup.verifyingAccount')}</Text>
+            <Text style={{ fontSize: 22, fontWeight: '700', color: C.text }}>{t('signup.verifyingAccount')}</Text>
             <Text style={{ fontSize: 14, color: C.sub }}>{t('signup.wontTakeLong')}</Text>
           </View>
         </View>
       ) : (
         <View style={{ alignItems: 'center', gap: 20 }}>
-          <LottieView
-            ref={lottieRef}
-            source={require('../../../assets/success-tick.json')}
-            style={{ width: 200, height: 200 }}
-            loop={false}
-            onAnimationFinish={() => setTimeout(onDone, 400)}
-          />
-          <Text style={{ fontFamily: FONTS.heading, fontSize: 22, fontWeight: '700', color: C.text }}>
+          {reduceMotion ? (
+            <MaterialCommunityIcons name="check-circle" size={96} color={C.mint} />
+          ) : (
+            <LottieView
+              ref={lottieRef}
+              source={require('../../../assets/success-tick.json')}
+              style={{ width: 200, height: 200 }}
+              loop={false}
+              onAnimationFinish={() => setTimeout(onDone, 400)}
+            />
+          )}
+          <Text style={{ fontSize: 22, fontWeight: '700', color: C.text }}>
             {t('signup.allSet', { name: name ? `, ${name}` : '' })}
           </Text>
         </View>
@@ -561,7 +583,7 @@ const DobWheelColumn = React.memo(function DobWheelColumn({
                   style={[
                     s.dobWheelItemText,
                     {
-                      color: isSelected ? '#FFFFFF' : C.sub,
+                      color: isSelected ? C.violet : C.sub,
                       fontWeight: isSelected ? '800' : '500',
                       fontSize: isSelected ? 18 : 15,
                       opacity: isSelected ? 1 : 0.5,
@@ -610,7 +632,7 @@ const DobSelectorBox = React.memo(function DobSelectorBox({
       )}
       <Text
         numberOfLines={1}
-        style={[s.dateSelectorText, !value && s.dateSelectorPlaceholder, active && { color: '#FFFFFF' }]}
+        style={[s.dateSelectorText, !value && s.dateSelectorPlaceholder, active && { color: C.text }]}
       >
         {value || placeholder}
       </Text>
@@ -622,15 +644,10 @@ const DobSelectorBox = React.memo(function DobSelectorBox({
 function PrimaryButton({ children, onPress, disabled }: { children: React.ReactNode; onPress: () => void; disabled?: boolean }) {
   return (
     <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={[s.primaryButtonTouch, disabled && s.primaryButtonDisabled]}>
-      <LinearGradient
-        pointerEvents="none"
-        colors={disabled ? ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.08)'] : [C.violet, C.pink, C.amber]}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        style={s.primaryBtn}
-      >
-        <Text pointerEvents="none" style={[s.primaryBtnText, disabled && { color: C.faint }]}>{children}</Text>
-        <MaterialCommunityIcons pointerEvents="none" name="arrow-right" size={17} color={disabled ? C.faint : '#1A0B12'} />
-      </LinearGradient>
+      <View pointerEvents="none" style={[s.primaryBtn, disabled && s.primaryBtnDisabled]}>
+        <Text style={[s.primaryBtnText, disabled && { color: C.faint }]}>{children}</Text>
+        <MaterialCommunityIcons name="arrow-right" size={17} color={disabled ? C.faint : COLORS.black} />
+      </View>
     </TouchableOpacity>
   );
 }
@@ -725,6 +742,7 @@ interface Props {
 export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0, initialGoogleInfo }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
+  const reduceMotion = useReduceMotion();
   const STEP_LABELS = getStepLabels(t);
   const PURPOSES = getPurposes(t);
   const [index, setIndex] = useState(initialIndex);
@@ -840,21 +858,31 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
   // Continuous animations
   useEffect(() => {
-    Animated.loop(Animated.timing(spin, { toValue: 1, duration: 22000, easing: Easing.linear, useNativeDriver: true })).start();
-    Animated.loop(Animated.sequence([
+    const animations: Animated.CompositeAnimation[] = [];
+    if (reduceMotion) {
+      spin.setValue(0);
+      float.setValue(0);
+      pulse.setValue(0);
+      holdRingA.setValue(0);
+      holdRingB.setValue(0);
+      holdRingC.setValue(0);
+      return;
+    }
+    animations.push(Animated.loop(Animated.timing(spin, { toValue: 1, duration: 22000, easing: Easing.linear, useNativeDriver: true })));
+    animations.push(Animated.loop(Animated.sequence([
       Animated.timing(float, { toValue: 1, duration: 2500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       Animated.timing(float, { toValue: 0, duration: 2500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-    ])).start();
-    Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 1800, easing: Easing.out(Easing.ease), useNativeDriver: true })).start();
+    ])));
+    animations.push(Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 1800, easing: Easing.out(Easing.ease), useNativeDriver: true })));
     const ringAnimation = (value: Animated.Value, delay: number) => Animated.loop(Animated.sequence([
       Animated.delay(delay),
       Animated.timing(value, { toValue: 1, duration: 1900, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.timing(value, { toValue: 0, duration: 0, useNativeDriver: true }),
-    ])).start();
-    ringAnimation(holdRingA, 0);
-    ringAnimation(holdRingB, 620);
-    ringAnimation(holdRingC, 1240);
-  }, []);
+    ]));
+    animations.push(ringAnimation(holdRingA, 0), ringAnimation(holdRingB, 620), ringAnimation(holdRingC, 1240));
+    animations.forEach((animation) => animation.start());
+    return () => animations.forEach((animation) => animation.stop());
+  }, [float, holdRingA, holdRingB, holdRingC, pulse, reduceMotion, spin]);
 
   // Splash auto-advance
   useEffect(() => {
@@ -1196,7 +1224,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               <View style={[s.welcomeScreen, screenMin]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingTop: 8, paddingBottom: 24 }}>
                   <Logomark size={34} />
-                  <Text style={{ fontFamily: FONTS.heading, fontSize: 17, fontWeight: '700', color: C.text }}>MaurMaket</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: C.text }}>MaurMaket</Text>
                 </View>
                 <WelcomeIllustration />
                 <Text style={[s.heroTitle, { textAlign: 'center' }]}>
@@ -1315,14 +1343,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                     return (
                       <TouchableOpacity key={p.id} onPress={() => set('purpose', p.id)} activeOpacity={0.85} style={[s.purposeCard, active && s.purposeCardActive]}>
                         <View style={[s.purposeIcon, active && s.purposeIconActive]}>
-                          <MaterialCommunityIcons name={p.icon} size={18} color={active ? '#1A0B12' : C.sub} />
+                          <MaterialCommunityIcons name={p.icon} size={18} color={active ? COLORS.black : C.sub} />
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={s.purposeTitle}>{p.title}</Text>
                           <Text style={s.purposeDesc}>{p.desc}</Text>
                         </View>
                         <View style={[s.radio, active && s.radioActive]}>
-                          {active && <MaterialCommunityIcons name="check" size={11} color="#1A0B12" />}
+                          {active && <MaterialCommunityIcons name="check" size={11} color={COLORS.black} />}
                         </View>
                       </TouchableOpacity>
                     );
@@ -1561,7 +1589,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                         {/* Horizontal Frosted Glass Center Lens */}
                         <View pointerEvents="none"                    style={[s.dobWheelGlassLens, { top: dobLensTop }]}>
                           <LinearGradient
-                            colors={['rgba(255,255,255,0.18)', 'rgba(139,92,246,0.12)', 'rgba(255,255,255,0.06)']}
+                            colors={['transparent', COLORS.coralMuted, 'transparent']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                             style={StyleSheet.absoluteFill}
@@ -1571,14 +1599,14 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                         {/* Top Gradient Fade Overlay */}
                         <LinearGradient
                           pointerEvents="none"
-                          colors={['rgba(21,19,38,0.95)', 'rgba(21,19,38,0.4)', 'transparent']}
+                          colors={[C.surface, 'transparent']}
                           style={s.dobWheelTopFade}
                         />
 
                         {/* Bottom Gradient Fade Overlay */}
                         <LinearGradient
                           pointerEvents="none"
-                          colors={['transparent', 'rgba(21,19,38,0.4)', 'rgba(21,19,38,0.95)']}
+                          colors={['transparent', C.surface]}
                           style={s.dobWheelBottomFade}
                         />
 
@@ -1827,10 +1855,10 @@ const s = StyleSheet.create({
     zIndex: 14,
   },
   // flexGrow comes per-box from DOB_SELECTOR_FLEX so the row's shares follow its content.
-  dateSelector: { flex: 1, minWidth: 0, alignSelf: 'stretch', borderRadius: 14, backgroundColor: 'rgba(13,23,52,0.72)', borderWidth: 1, borderColor: '#315BA8', paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', gap: 2 },
-  dateSelectorActive: { borderColor: C.violet, backgroundColor: 'rgba(38,29,60,0.92)', shadowColor: C.violet, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  dateSelector: { flex: 1, minWidth: 0, alignSelf: 'stretch', borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  dateSelectorActive: { borderColor: C.violet, backgroundColor: C.surfaceHi, shadowColor: C.violet, shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   dateSelectorText: { flex: 1, color: C.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
-  dateSelectorPlaceholder: { color: '#B9C7E8', fontWeight: '500' },
+  dateSelectorPlaceholder: { color: C.sub, fontWeight: '500' },
   // marginTop:'auto' keeps the CTA block on the floor of the column on the steps whose own
   // children are all absolutely positioned (email, purpose, birthday) — those have no flex
   // body to soak up the slack.
@@ -1856,30 +1884,30 @@ const s = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: C.surface,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
     paddingVertical: 14,
-    shadowColor: '#ffffff',
-    shadowOpacity: 0.35,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 12,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.9)',
+    shadowColor: COLORS.black,
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: C.border,
   },
   dobCardMiniLabel: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#8B5CF6',
+    color: C.violet,
     letterSpacing: 2,
     textTransform: 'uppercase',
     marginBottom: 6,
   },
   // fontSize comes per-render from dobDateFontSize so the date fits the card on any window.
   dobDateShowerText: {
-    color: '#0A0812',
+    color: C.text,
     fontWeight: '900',
     letterSpacing: 3,
     textAlign: 'center',
@@ -1895,19 +1923,19 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   dobAgeBadgeAdult: {
-    backgroundColor: 'rgba(5,150,105,0.12)',
-    color: '#059669',
+    backgroundColor: COLORS.greenMuted,
+    color: COLORS.green,
   },
   dobAgeBadgeMinor: {
-    backgroundColor: 'rgba(220,38,38,0.12)',
-    color: '#DC2626',
+    backgroundColor: COLORS.coralMuted,
+    color: COLORS.error,
   },
   dobWheelTray: {
     width: '100%',
     borderRadius: 24,
-    backgroundColor: 'rgba(18,14,31,0.95)',
+    backgroundColor: C.surface,
     borderWidth: 1.5,
-    borderColor: 'rgba(139,92,246,0.45)',
+    borderColor: C.border,
     overflow: 'hidden',
     paddingHorizontal: 10,
     paddingTop: 8,
@@ -1994,7 +2022,7 @@ const s = StyleSheet.create({
   topBackAction: { minHeight: TOUCH.min, paddingHorizontal: 4, paddingRight: 12, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   backActionText: { color: C.sub, fontSize: 14, fontWeight: '600' },
   // Splash
-  splashBrand: { fontFamily: FONTS.heading, fontSize: 26, fontWeight: '800', color: C.text, marginTop: 12 },
+  splashBrand: { fontSize: 28, fontWeight: '800', color: C.text, marginTop: 12 },
   splashSub: { fontSize: 14, color: C.sub, marginTop: 8, maxWidth: 220, textAlign: 'center' },
   dotsRow: { flexDirection: 'row', gap: 6, marginTop: 12 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.faint },
@@ -2008,12 +2036,12 @@ const s = StyleSheet.create({
   // Welcome
   badge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   badgeText: { fontSize: 12, fontWeight: '500', color: C.sub },
-  heroTitle: { fontFamily: FONTS.heading, fontSize: 30, fontWeight: '800', color: C.text, lineHeight: 36, marginTop: 12 },
+  heroTitle: { fontSize: 32, fontWeight: '800', color: C.text, lineHeight: 38, marginTop: 12 },
   heroAccent: { color: C.violet },
   heroSub: { fontSize: 14, color: C.sub, lineHeight: 21, marginTop: 10, maxWidth: 280 },
 
   // Steps
-  stepTitle: { fontFamily: FONTS.heading, fontSize: 24, fontWeight: '800', color: C.text, marginTop: 8, textAlign: 'center' },
+  stepTitle: { fontSize: 24, fontWeight: '800', color: C.text, marginTop: 8, textAlign: 'center' },
   stepSub: { fontSize: 14, color: C.sub, marginTop: 8, marginBottom: 24, lineHeight: 20, textAlign: 'center', alignSelf: 'center', maxWidth: 340 },
 
   // Fields
@@ -2072,7 +2100,7 @@ const s = StyleSheet.create({
   // Success
   successBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: C.mint + '12', borderWidth: 1, borderColor: C.mint + '40', marginTop: 8 },
   successBadgeText: { fontSize: 12, fontWeight: '600', color: C.mint },
-  successTitle: { fontFamily: FONTS.heading, fontSize: 27, fontWeight: '800', color: C.text, textAlign: 'center', lineHeight: 34, marginTop: 12 },
+  successTitle: { fontSize: 28, fontWeight: '800', color: C.text, textAlign: 'center', lineHeight: 34, marginTop: 12 },
   successSub: { fontSize: 14, color: C.sub, textAlign: 'center', lineHeight: 21, marginTop: 10, maxWidth: 260 },
   pillRow: { flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 20 },
   pill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
@@ -2081,6 +2109,7 @@ const s = StyleSheet.create({
   // Primary button
   primaryButtonTouch: { width: '100%', opacity: 1 },
   primaryButtonDisabled: { opacity: 0.7 },
-  primaryBtn: { width: '100%', height: STEP_CTA_HEIGHT, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  primaryBtnText: { fontSize: 15, fontWeight: '700', color: '#1A0B12' },
+  primaryBtn: { width: '100%', height: STEP_CTA_HEIGHT, borderRadius: 999, backgroundColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  primaryBtnDisabled: { borderWidth: 1, borderColor: C.border, backgroundColor: C.surfaceHi },
+  primaryBtnText: { fontSize: 15, fontWeight: '700', color: COLORS.black },
 });

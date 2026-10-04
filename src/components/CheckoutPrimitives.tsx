@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, RADIUS, SPACING } from '../theme';
 
 type SurfaceProps = {
@@ -14,7 +14,7 @@ export function CheckoutSurface({ children, style, tone = 'default' }: SurfacePr
   return <View style={[styles.surface, tone !== 'default' && styles[tone], style]}>{children}</View>;
 }
 
-export function CheckoutSection({ icon, title, detail }: { icon?: keyof typeof MaterialCommunityIcons.glyphMap; title: string; detail?: string }) {
+export function CheckoutSection({ icon, title, detail }: { icon?: string; title: string; detail?: string }) {
   return (
     <View style={styles.section}>
       {icon ? <MaterialCommunityIcons name={icon} size={16} color={COLORS.coral} /> : null}

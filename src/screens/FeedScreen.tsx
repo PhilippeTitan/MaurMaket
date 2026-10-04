@@ -1,24 +1,23 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  RefreshControl, ActivityIndicator, LayoutChangeEvent, Modal, Pressable, Platform, ScrollView, Share as RNShare, Alert,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Animated,
+  RefreshControl, ActivityIndicator, LayoutChangeEvent, Modal, Pressable, Platform, ScrollView, Share as RNShare,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ViewToken } from 'react-native';
-import { COLORS, SPACING, RADIUS, getDisplayName, getSellerAvatar } from '../theme';
+import { COLORS, SPACING, RADIUS, getDisplayName } from '../theme';
 import {
-  getProducts, createConversation,
-  getImageUrl, getUnreadCount, getProductReviews, getFollowing,
+  getProducts, getImageUrl, getUnreadCount, getFollowing,
   trackFeedEvent, getActiveOrderCount,
 } from '../api';
 import { store } from '../store';
-import type { Product, Review } from '../types';
+import type { Product } from '../types';
 import type { RootStackParamList } from '../navigation';
 import { useTranslation } from '@/localization';
 import SalePriceTag from '../components/SalePriceTag';
@@ -32,7 +31,9 @@ import { tapLight } from '../haptics';
 import FeedLikeButton from '../components/FeedLikeButton';
 import FeedSaveButton from '../components/FeedSaveButton';
 import { useToast } from '../components/Toast';
+import ReportModal from '../components/ReportModal';
 import { queryClient, useViewport } from '../hooks';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 import { network } from '../network';
 
@@ -49,6 +50,7 @@ export default function FeedScreen() {
   // a rotated phone or a resized window re-renders the pages at the new width, so the
   // paging offset and the page index stay in step instead of snapping to the old size.
   const vp = useViewport();
+  const reduceMotion = useReduceMotion();
   const [products, setProducts] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -58,17 +60,22 @@ export default function FeedScreen() {
   const [screenHeight, setScreenHeight] = useState(0);
   const [cartCount, setCartCount] = useState(store.cartCount);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [commentProduct, setCommentProduct] = useState<Product | null>(null);
-  const [comments, setComments] = useState<Review[]>([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
   const [moreProduct, setMoreProduct] = useState<Product | null>(null);
+  const [reportProduct, setReportProduct] = useState<Product | null>(null);
+  const [reasonProduct, setReasonProduct] = useState<Product | null>(null);
+  const [activeProductId, setActiveProductId] = useState<string | null>(null);
   const [feedTab, setFeedTab] = useState<'forYou' | 'new'>('new');
   const flatListRef = useRef<FlatList>(null);
+  const activeProductIdRef = useRef<string | null>(null);
+  const productsRef = useRef<Product[]>([]);
+  const transitionOpacity = useRef(new Animated.Value(1)).current;
   const viewStartTime = useRef<number>(Date.now());
   const currentProductId = useRef<string | null>(null);
   const scrollOffsetRef = useRef(0);
   const dragStartIndexRef = useRef(0);
   const viewedProductIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => { productsRef.current = products; }, [products]);
 
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     // Track dwell time for previous product
@@ -81,45 +88,87 @@ export default function FeedScreen() {
     // Start tracking new product
     const visible = viewableItems[0];
     if (visible?.item) {
-      currentProductId.current = visible.item.id;
+      const productId = visible.item.id;
+      currentProductId.current = productId;
       viewStartTime.current = Date.now();
       // Fire 'view' event once per product per session
-      if (!viewedProductIds.current.has(visible.item.id)) {
-        viewedProductIds.current.add(visible.item.id);
-        trackFeedEvent(visible.item.id, 'view').catch(() => {});
+      if (!viewedProductIds.current.has(productId)) {
+        viewedProductIds.current.add(productId);
+        if (viewedProductIds.current.size > 100) {
+          const oldestId = viewedProductIds.current.values().next().value;
+          if (oldestId) viewedProductIds.current.delete(oldestId);
+        }
+        trackFeedEvent(productId, 'view').catch(() => {});
+      }
+      if (activeProductIdRef.current !== productId) {
+        activeProductIdRef.current = productId;
+        setActiveProductId(productId);
+        if (!reduceMotion) {
+          transitionOpacity.setValue(0.88);
+          Animated.timing(transitionOpacity, { toValue: 1, duration: 140, useNativeDriver: true }).start();
+        }
+      }
+      const visibleIndex = visible.index ?? productsRef.current.findIndex((product) => product.id === productId);
+      const nextProduct = visibleIndex >= 0 ? productsRef.current[visibleIndex + 1] : undefined;
+      const nextImage = nextProduct?.images?.find((image) => image.is_primary) || nextProduct?.images?.[0];
+      const nextImageUrl = getImageUrl(nextImage?.thumbnail_url || nextImage?.image_url);
+      if (nextImageUrl) {
+        void ExpoImage.prefetch(nextImageUrl).catch(() => {});
       }
     }
-  }, []);
+  }, [reduceMotion, transitionOpacity]);
 
 const fetchProducts = useCallback(async (p = 1, replace = false) => {
     const cacheKey = cacheKeys.feed(feedTab, store.user?.id);
     if (p === 1 && replace) {
       const snapshot = await readSnapshot<{ products: Product[]; pages: number }>(cacheKey);
       if (snapshot?.value.products?.length) {
-        setProducts(snapshot.value.products);
+        const cachedProducts = snapshot.value.products.filter((product) =>
+          (!store.isLoggedIn || product.seller_id !== store.user?.id) &&
+          !viewedProductIds.current.has(product.id)
+        );
+        setProducts(cachedProducts);
         setHasMore(1 < snapshot.value.pages);
       }
     }
     try {
-      const params: Record<string, string> = { page: String(p), limit: '20' };
+      const loadedIds = productsRef.current.map((product) => product.id);
+      const excludedIds = Array.from(new Set([...viewedProductIds.current, ...loadedIds])).slice(-100);
+      const params: Record<string, string> = { page: String(excludedIds.length ? 1 : p), limit: '20' };
       if (feedTab === 'forYou') {
-        params.following = 'true';
-      } else {
         params.personalized = 'true';
+      } else {
+        params.sort = 'newest';
       }
-      const queryKey = ['feed-products', feedTab, p] as const;
+      if (store.isLoggedIn) params.excludeOwnListings = 'true';
+      if (excludedIds.length) params.excludeProductIds = excludedIds.join(',');
+      const queryKey = ['feed-products', feedTab, p, excludedIds.join(',')] as const;
       const res = await queryClient.fetchQuery({
         queryKey,
         queryFn: () => getProducts(params) as Promise<{ products: Product[]; total: number; pages: number }>,
         staleTime: 30_000,
       });
+      if (res.products.length === 0 && excludedIds.length > 0) {
+        viewedProductIds.current.clear();
+        setPage(1);
+        await fetchProducts(1, true);
+        return;
+      }
       if (replace) {
         setProducts(res.products);
         if (p === 1) void writeSnapshot(cacheKey, { products: res.products, pages: res.pages });
       } else {
-        setProducts(prev => [...prev, ...res.products]);
+        setProducts((prev) => {
+          const presentIds = new Set(prev.map((product) => product.id));
+          return [
+            ...prev,
+            ...res.products.filter((product) =>
+              !presentIds.has(product.id) && !viewedProductIds.current.has(product.id)
+            ),
+          ];
+        });
       }
-      setHasMore(p < res.pages);
+      setHasMore(excludedIds.length > 0 ? res.pages > 1 : p < res.pages);
       if (p === 1) setLoading(false);
     } catch {
       if (p === 1) setLoading(false);
@@ -258,42 +307,14 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
     }
   };
 
-  const handleOpenComments = async (product: Product) => {
-    setCommentProduct(product);
-    setComments([]);
-    setCommentsLoading(true);
-    try {
-      const res = await getProductReviews(product.id) as { reviews: Review[] };
-      setComments((res.reviews || []).map((r: any) => ({
-        ...r,
-        reviewer: r.reviewer || {
-          full_name: r.reviewer_name,
-          avatar_url: r.reviewer_avatar,
-          username: r.reviewer_username,
-        },
-      })));
-    } catch {
-      setComments([]);
+  const openListingReport = (product: Product) => {
+    setMoreProduct(null);
+    if (!store.isLoggedIn) {
+      toast.show({ kind: 'info', title: t('auth.signInToAccount') });
+      nav.navigate('Auth', { screen: 'Login' });
+      return;
     }
-    setCommentsLoading(false);
-  };
-
-  const handleChat = async (product: Product) => {
-    if (!product.seller) return;
-    try {
-      const res = await createConversation({
-        sellerId: product.seller_id,
-        productId: product.id,
-      }) as { conversationId: string };
-      nav.navigate('Chat', {
-        conversationId: res.conversationId,
-        otherUserName: getDisplayName(product.seller),
-        otherUserId: product.seller_id,
-        otherUserAvatar: product.seller.avatar_url,
-      });
-    } catch {
-      toast.error(t('feedback.messagesUnavailable'), t('feedback.connectionRetry'), () => handleChat(product));
-    }
+    setReportProduct(product);
   };
 
   const [feedImageIndices, setFeedImageIndices] = useState<Record<string, number>>({});
@@ -309,7 +330,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
     const isOwnProduct = store.user?.id === item.seller_id;
 
     return (
-      <View style={[styles.slide, { height: screenHeight }]}>
+      <Animated.View style={[styles.slide, { height: screenHeight, opacity: activeProductId === item.id ? transitionOpacity : 1 }]}>
         {/* Full-screen image / background — swipeable if multiple images */}
         <View style={styles.mediaContainer}>
           {allImages.length > 1 ? (
@@ -319,6 +340,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               nestedScrollEnabled
               showsHorizontalScrollIndicator={false}
               style={{ width: vp.width, height: '100%' }}
+              directionalLockEnabled
               onScroll={(e) => {
                 const idx = Math.round(e.nativeEvent.contentOffset.x / vp.width);
                 if (idx !== (feedImageIndices[item.id] ?? 0)) {
@@ -333,10 +355,9 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                   <Pressable
                     key={String(img.id || idx)}
                     style={{ width: vp.width, height: vp.height }}
-                    onLongPress={() => setMoreProduct(item)}
-                    delayLongPress={450}
+                    onPress={() => nav.navigate('ProductDetail', { productId: item.id })}
                     accessibilityRole="button"
-                    accessibilityLabel={t('feed.productImageA11y')}
+                    accessibilityLabel={`${t('accessibility.viewProduct')}: ${item.name}`}
                   >
                     {url ? (
                       <>
@@ -353,10 +374,9 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           ) : (
             <Pressable
               style={{ width: '100%', height: '100%' }}
-              onLongPress={() => setMoreProduct(item)}
-              delayLongPress={450}
+              onPress={() => nav.navigate('ProductDetail', { productId: item.id })}
               accessibilityRole="button"
-              accessibilityLabel={t('feed.productImageA11y')}
+              accessibilityLabel={`${t('accessibility.viewProduct')}: ${item.name}`}
             >
               {imgUrl ? (
                 <>
@@ -373,17 +393,6 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
         {/* Right-side action rail — absolute, thumb-reachable */}
         <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
           <FeedLikeButton productId={item.id} />
-          {!isOwnProduct && (
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => handleOpenComments(item)}
-              accessibilityRole="button"
-              accessibilityLabel={t('accessibility.viewReviews')}
-            >
-              <MaterialCommunityIcons name="comment-outline" size={35} color={COLORS.white} />
-              <Text style={styles.actionCount}>{item.review_count || 0}</Text>
-            </TouchableOpacity>
-          )}
           <FeedSaveButton productId={item.id} />
           <TouchableOpacity
             style={styles.actionBtn}
@@ -421,8 +430,8 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           </View>
 
 {/* Price */}
-          {feedTab === 'forYou' && item.recommendation_reason && item.recommendation_reason !== t('feed.recommendFollow') && (
-            <TouchableOpacity style={styles.reasonPill} onPress={() => setMoreProduct(item)} accessibilityRole="button" accessibilityLabel={`Why you are seeing this: ${item.recommendation_reason}`}>
+          {feedTab === 'forYou' && item.recommendation_reason && (
+            <TouchableOpacity style={styles.reasonPill} onPress={() => setReasonProduct(item)} accessibilityRole="button" accessibilityLabel={`Why you're seeing this: ${item.recommendation_reason}`}>
               <MaterialCommunityIcons name="star-four-points" size={13} color={COLORS.white} />
               <Text style={styles.reasonText}>{item.recommendation_reason}</Text>
             </TouchableOpacity>
@@ -438,7 +447,14 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           </View>
 
           {/* Product name + info */}
-          <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+          <TouchableOpacity
+            onPress={() => nav.navigate('ProductDetail', { productId: item.id })}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={t('accessibility.viewProduct')}
+          >
+            <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+          </TouchableOpacity>
           <View style={styles.productInfoRow}>
             <Text style={styles.productInfo}>{typeof item.category === 'string' ? item.category : item.category?.name || 'Port-au-Prince'}</Text>
             <StockBadge stock={item.stock} size="sm" />
@@ -454,7 +470,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           {/* Buy / Cart buttons */}
           <BuyRow product={item} navigation={nav} />
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
@@ -466,7 +482,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           <SkeletonBlock width="100%" height={screenHeight || 600} radius={0} style={{ opacity: 0.4 }} />
           {/* Action rail skeleton — right side */}
           <View style={{ position: 'absolute', right: 14, bottom: '30%', gap: 20, alignItems: 'center' }}>
-            {[44, 44, 44, 44].map((s, i) => (
+              {[44, 44, 44].map((s, i) => (
               <SkeletonBlock key={i} width={s} height={s} radius={22} />
             ))}
           </View>
@@ -577,94 +593,6 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           ) : null
         }
       />
-      <Modal
-        visible={Boolean(commentProduct)}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setCommentProduct(null)}
-      >
-        <View style={styles.commentScrim}>
-          <TouchableOpacity
-            style={styles.commentDismissArea}
-            activeOpacity={1}
-            onPress={() => setCommentProduct(null)}
-            accessibilityRole="button"
-            accessibilityLabel={t('accessibility.close')}
-          />
-          <View style={styles.commentSheet}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.commentHeader}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.commentTitle}>{t('productDetail.reviews')}</Text>
-                <Text style={styles.commentSubtitle} numberOfLines={1}>
-                  {commentProduct?.name}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.sheetIconBtn}
-                onPress={() => setCommentProduct(null)}
-                accessibilityRole="button"
-                accessibilityLabel={t('accessibility.close')}
-              >
-                <Icon name="close" size={20} color={COLORS.text2} />
-              </TouchableOpacity>
-            </View>
-
-            {commentsLoading ? (
-              <View style={styles.commentLoading}>
-                <ActivityIndicator color={COLORS.coral} />
-              </View>
-            ) : comments.length > 0 ? (
-              <FlatList
-                data={comments}
-                keyExtractor={item => item.id}
-                style={styles.commentList}
-                contentContainerStyle={{ paddingBottom: 12 }}
-                renderItem={({ item }) => (
-                  <View style={styles.commentItem}>
-                      <UserAvatar name={item.reviewer?.username ? `${item.reviewer.username}` : 'B'} />
-                    <View style={styles.commentBody}>
-                      <View style={styles.commentNameRow}>
-                        <Text style={styles.commentName}>{item.reviewer?.username ? `${item.reviewer.username}` : 'Buyer'}</Text>
-                        <View style={styles.commentStars}>
-                          <Icon name="rating" size={11} color={COLORS.yellow} />
-                          <Text style={styles.commentRating}>{item.rating}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.commentText}>{item.comment || 'No written comment.'}</Text>
-                    </View>
-                  </View>
-                )}
-              />
-            ) : (
-              <View style={styles.commentEmpty}>
-                <MaterialCommunityIcons name="comment-text-outline" size={34} color={COLORS.text2} />
-                <Text style={styles.commentEmptyTitle}>{t('productDetail.noReviews')}</Text>
-                <Text style={styles.commentEmptyText}>
-                  Reviews from completed orders will appear here. Message the seller if you have a question now.
-                </Text>
-              </View>
-            )}
-
-            {commentProduct && store.isLoggedIn && store.user?.id !== commentProduct.seller_id && (
-              <TouchableOpacity
-                style={styles.messageSellerBtn}
-                onPress={() => {
-                  const product = commentProduct;
-                  setCommentProduct(null);
-                  handleChat(product);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={t('accessibility.messageSeller')}
-              >
-                <Icon name="message" size={17} color={COLORS.white} />
-                <Text style={styles.messageSellerText}>{t('productDetail.messageSeller')}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </Modal>
-
       {/* More Menu */}
       <Modal
         visible={Boolean(moreProduct)}
@@ -708,12 +636,6 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
             ) : (
               /* Other seller options */
               <>
-                {moreProduct?.recommendation_reason && (
-                  <View style={styles.reasonExplain}>
-                    <MaterialCommunityIcons name="information-outline" size={17} color={COLORS.text2} />
-                    <Text style={styles.reasonExplainText}>{moreProduct.recommendation_reason}</Text>
-                  </View>
-                )}
                 <TouchableOpacity
                   style={styles.moreItem}
                   onPress={() => handleFeedback('relevant')}
@@ -756,21 +678,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                 <View style={styles.moreDivider} />
                 <TouchableOpacity
                   style={styles.moreItem}
-                  onPress={() => {
-                    const p = moreProduct;
-                    if (!p) return;
-                    setMoreProduct(null);
-                    Alert.alert(
-                      t('feed.reportTitle'),
-                      t('feed.reportMessage'),
-                      [
-                        { text: t('common.cancel'), style: 'cancel' },
-                        { text: t('feed.reportSpam'), onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
-                        { text: t('feed.reportInappropriate'), onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
-                        { text: t('feed.reportWrongCategory'), onPress: () => { trackFeedEvent(p.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
-                      ],
-                    );
-                  }}
+                  onPress={() => { if (moreProduct) openListingReport(moreProduct); }}
                   accessibilityRole="button"
                   accessibilityLabel={t('accessibility.report')}
                 >
@@ -782,6 +690,39 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
           </View>
         </View>
       </Modal>
+      <Modal
+        visible={Boolean(reasonProduct)}
+        transparent
+        animationType={reduceMotion ? 'none' : 'fade'}
+        onRequestClose={() => setReasonProduct(null)}
+      >
+        <Pressable style={styles.reasonOverlay} onPress={() => setReasonProduct(null)}>
+          <Pressable style={styles.reasonSheet} onPress={(event) => event.stopPropagation()}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.reasonHeader}>
+              <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={COLORS.coral} />
+              <Text style={styles.reasonTitle}>{t('feed.whySeeing')}</Text>
+            </View>
+            <Text style={styles.reasonProductName} numberOfLines={2}>{reasonProduct?.name}</Text>
+            <Text style={styles.reasonBody}>{reasonProduct?.recommendation_reason}</Text>
+            <TouchableOpacity
+              style={styles.reasonCloseBtn}
+              onPress={() => setReasonProduct(null)}
+              accessibilityRole="button"
+              accessibilityLabel={t('accessibility.close')}
+            >
+              <Text style={styles.reasonCloseText}>{t('common.done')}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+      <ReportModal
+        visible={Boolean(reportProduct)}
+        targetType="listing"
+        targetId={reportProduct?.id || ''}
+        targetName={reportProduct?.name}
+        onClose={() => setReportProduct(null)}
+      />
     </View>
   );
 }
@@ -803,7 +744,7 @@ const styles = StyleSheet.create({
   },
   brand: {
     color: COLORS.white,
-    fontFamily: 'Syne',
+    
     fontSize: 18,
     fontWeight: '800',
     textShadowColor: 'rgba(0,0,0,0.55)',
@@ -901,15 +842,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
-  actionCount: {
-    color: COLORS.white,
-    fontSize: 10,
-    fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-
   /* Bottom gradient overlay — real fade */
   bottomGradient: {
     position: 'absolute',
@@ -1026,18 +958,6 @@ const styles = StyleSheet.create({
   commentDismissArea: {
     flex: 1,
   },
-  commentSheet: {
-    maxHeight: '72%',
-    minHeight: 390,
-    paddingHorizontal: SPACING.md,
-    paddingTop: 10,
-    paddingBottom: SPACING.xxl + 16,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    backgroundColor: COLORS.bg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
   sheetHandle: {
     alignSelf: 'center',
     width: 42,
@@ -1046,74 +966,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.border,
     marginBottom: 12,
   },
-  commentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  commentTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
-  commentSubtitle: { color: COLORS.text2, fontSize: 12, marginTop: 2 },
-  sheetIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.surface,
-  },
-  commentLoading: { minHeight: 180, alignItems: 'center', justifyContent: 'center' },
-  commentList: { marginTop: 12 },
-  commentItem: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingVertical: 10,
-  },
-  commentAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.coral,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  commentAvatarText: { color: COLORS.white, fontSize: 13, fontWeight: '800' },
-  commentBody: { flex: 1, minWidth: 0 },
-  commentNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  commentName: { color: COLORS.text, fontSize: 13, fontWeight: '700', flexShrink: 1 },
-  commentStars: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surface,
-  },
-  commentRating: { color: COLORS.text2, fontSize: 10, fontWeight: '700' },
-  commentText: { color: COLORS.text2, fontSize: 13, lineHeight: 18, marginTop: 3 },
-  commentEmpty: {
-    minHeight: 210,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: SPACING.lg,
-  },
-  commentEmptyTitle: { color: COLORS.text, fontSize: 15, fontWeight: '800' },
-  commentEmptyText: { color: COLORS.text2, fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  messageSellerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: RADIUS.card,
-    backgroundColor: COLORS.blue,
-  },
-  messageSellerText: { color: COLORS.white, fontSize: 13, fontWeight: '800' },
-
   /* Feed Tabs */
   feedTabs: {
     flexDirection: 'row',
@@ -1148,8 +1000,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  reasonExplain: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingBottom: 10 },
-  reasonExplainText: { color: COLORS.text2, fontSize: 13, flex: 1 },
+  reasonOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.48)' },
+  reasonSheet: {
+    width: '100%', maxWidth: 460, alignSelf: 'center',
+    paddingHorizontal: SPACING.lg, paddingTop: 12, paddingBottom: SPACING.xxl + 12,
+    borderTopLeftRadius: 18, borderTopRightRadius: 18,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+  },
+  reasonHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 12 },
+  reasonTitle: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
+  reasonProductName: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginBottom: 6 },
+  reasonBody: { color: COLORS.text2, fontSize: 13, lineHeight: 19 },
+  reasonCloseBtn: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
+  reasonCloseText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   moreItem: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -4,7 +4,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Platform,
   Animated, Dimensions, ScrollView, Image, PanResponder,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import Svg, { Rect, Path, Circle as SvgCircle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';

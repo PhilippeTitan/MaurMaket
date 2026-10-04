@@ -8,10 +8,11 @@ import {
   PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
 import { onForegroundNotification, type ForegroundNotification } from '../notifications';
 import { routeNotification } from '../notificationRouting';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 const URGENT_TYPES = new Set([
   'fulfillment_proposed',
@@ -39,6 +40,7 @@ interface Props {
 
 export default function ForegroundNotificationBanner({ navigationRef }: Props) {
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReduceMotion();
   const [current, setCurrent] = useState<ForegroundNotification | null>(null);
   const queueRef = useRef<ForegroundNotification[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -57,10 +59,15 @@ export default function ForegroundNotificationBanner({ navigationRef }: Props) {
     translateY.setValue(-120);
     opacity.setValue(0);
 
-    Animated.parallel([
-      Animated.timing(translateY, { toValue: 0, duration: 250, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
-    ]).start();
+    if (reduceMotion) {
+      translateY.setValue(0);
+      opacity.setValue(1);
+    } else {
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: 0, duration: 250, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]).start();
+    }
 
     // 5-second auto-dismiss
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -71,12 +78,18 @@ export default function ForegroundNotificationBanner({ navigationRef }: Props) {
 
   const dismissCurrent = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    Animated.parallel([
-      Animated.timing(translateY, { toValue: -120, duration: 200, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start(() => {
+    if (reduceMotion) {
+      translateY.setValue(-120);
+      opacity.setValue(0);
       showNext();
-    });
+    } else {
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: -120, duration: 200, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      ]).start(() => {
+        showNext();
+      });
+    }
   };
 
   useEffect(() => {

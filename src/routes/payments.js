@@ -37,66 +37,79 @@ async function recordUnmatchedPayment({ reference, eventId, event, note }) {
 router.post('/api/payments/create', authRequired, async (req, res) => {
   const { orderId, returnUrl } = req.body;
   if (!orderId) return res.status(400).json({ error: 'orderId required' });
+  let order;
+  let referenceId;
+  let attemptId;
+  let expectedAmount;
+  const client = await pool.connect();
   try {
-    const orderResult = await pool.query('SELECT * FROM orders WHERE id = $1 AND buyer_id = $2', [orderId, req.user.id]);
-    if (orderResult.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    const order = orderResult.rows[0];
-    if (order.status !== 'pending') return res.status(400).json({ error: 'Order is not pending' });
-    const activeAttempt = await pool.query(
+    await client.query('BEGIN');
+    const orderResult = await client.query('SELECT * FROM orders WHERE id = $1 AND buyer_id = $2 FOR UPDATE', [orderId, req.user.id]);
+    if (orderResult.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
+    order = orderResult.rows[0];
+    if (order.status !== 'pending') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Order is not pending' }); }
+    const activeAttempt = await client.query(
       "SELECT reference_id, status FROM moncash_payment_attempts WHERE order_id = $1 AND status IN ('created', 'processing', 'unknown') ORDER BY created_at DESC LIMIT 1",
       [orderId]
     );
     if (activeAttempt.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(409).json({ error: 'payment_attempt_unresolved', status: activeAttempt.rows[0].status, reference: activeAttempt.rows[0].reference_id });
     }
-    const referenceId = `${orderId}_${Date.now()}`;
-    const expectedAmount = Math.round(Number(order.total_amount));
-    const attempt = await pool.query(
+    referenceId = `${orderId}_${Date.now()}`;
+    expectedAmount = Math.round(Number(order.total_amount));
+    const attempt = await client.query(
       `INSERT INTO moncash_payment_attempts (order_id, reference_id, expected_amount, status)
        VALUES ($1, $2, $3, 'created') RETURNING id`,
       [orderId, referenceId, expectedAmount]
     );
-    await pool.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [referenceId, orderId]);
-    try {
-      const moncashRes = await fetch(
-        process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create',
-        { method: 'POST', headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: expectedAmount, referenceId,
-            returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}` }),
-          signal: AbortSignal.timeout(15000) }
-      );
-      if (!moncashRes.ok) {
-        const errorText = await moncashRes.text();
-        const definitiveReject = moncashRes.status >= 400 && moncashRes.status < 500 && moncashRes.status !== 409;
-        await pool.query(
-          `UPDATE moncash_payment_attempts SET status = $1, error_message = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
-          [definitiveReject ? 'failed' : 'unknown', `MonCashConnect returned ${moncashRes.status}: ${errorText}`.slice(0, 1000), attempt.rows[0].id]
-        );
-        if (moncashRes.status === 409) return res.status(409).json({ error: 'payment_attempt_unresolved', reference: referenceId });
-        console.error(`MonCashConnect HTTP ${moncashRes.status}:`, errorText);
-        return res.status(502).json({ error: definitiveReject ? 'Payment provider rejected the request' : 'Payment status is being checked; do not retry yet' });
-      }
-      const data = await moncashRes.json();
-      if (!data.paymentUrl) {
-        await pool.query("UPDATE moncash_payment_attempts SET status = 'unknown', error_message = 'Provider accepted request without payment URL', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [attempt.rows[0].id]);
-        return res.status(202).json({ error: 'Payment request is unresolved; check its status before trying again' });
-      }
+    attemptId = attempt.rows[0].id;
+    await client.query('UPDATE orders SET moncash_reference = $1 WHERE id = $2', [referenceId, orderId]);
+    await client.query('COMMIT');
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (err.code === '23505') return res.status(409).json({ error: 'payment_attempt_unresolved', message: 'An existing MonCash attempt must be reconciled before retrying.' });
+    console.error('MonCash payment attempt setup error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+
+  try {
+    const moncashRes = await fetch(
+      process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create',
+      { method: 'POST', headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: expectedAmount, referenceId,
+          returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}` }),
+        signal: AbortSignal.timeout(15000) }
+    );
+    if (!moncashRes.ok) {
+      const errorText = await moncashRes.text();
+      const definitiveReject = moncashRes.status >= 400 && moncashRes.status < 500 && moncashRes.status !== 409;
       await pool.query(
-        `UPDATE moncash_payment_attempts SET status = 'processing', provider_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-        [data.reference || data.transactionId || null, attempt.rows[0].id]
+        `UPDATE moncash_payment_attempts SET status = $1, error_message = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+        [definitiveReject ? 'failed' : 'unknown', `MonCashConnect returned ${moncashRes.status}: ${errorText}`.slice(0, 1000), attemptId]
       );
-      return res.json({ paymentUrl: data.paymentUrl });
-    } catch (providerError) {
-      await pool.query(
-        `UPDATE moncash_payment_attempts SET status = 'unknown', error_message = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-        [`Request outcome is unknown: ${providerError.message}`.slice(0, 1000), attempt.rows[0].id]
-      );
+      if (moncashRes.status === 409) return res.status(409).json({ error: 'payment_attempt_unresolved', reference: referenceId });
+      console.error(`MonCashConnect HTTP ${moncashRes.status}:`, errorText);
+      return res.status(502).json({ error: definitiveReject ? 'Payment provider rejected the request' : 'Payment status is being checked; do not retry yet' });
+    }
+    const data = await moncashRes.json();
+    if (!data.paymentUrl) {
+      await pool.query("UPDATE moncash_payment_attempts SET status = 'unknown', error_message = 'Provider accepted request without payment URL', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [attemptId]);
       return res.status(202).json({ error: 'Payment request is unresolved; check its status before trying again' });
     }
+    await pool.query(
+      `UPDATE moncash_payment_attempts SET status = 'processing', provider_reference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [data.reference || data.transactionId || null, attemptId]
+    );
+    return res.json({ paymentUrl: data.paymentUrl });
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'payment_attempt_unresolved', message: 'An existing MonCash attempt must be reconciled before retrying.' });
-    console.error('Payment create error:', err);
-    res.status(500).json({ error: 'Server error' });
+    await pool.query(
+      `UPDATE moncash_payment_attempts SET status = 'unknown', error_message = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [`Request outcome is unknown: ${err.message}`.slice(0, 1000), attemptId]
+    );
+    return res.status(202).json({ error: 'Payment request is unresolved; check its status before trying again' });
   }
 });
 
@@ -463,8 +476,9 @@ router.post('/api/payments/webhook', async (req, res) => {
               );
               // Confirm the stock reservation (stock already decremented at checkout creation)
               await client2.query(
-                "UPDATE stock_reservations SET status = 'confirmed' WHERE checkout_id = $1 AND product_id = $2 AND status = 'active'",
-                [reference, productId]
+                `UPDATE stock_reservations SET status = 'confirmed', order_id = $3, checkout_id = NULL
+                 WHERE checkout_id = $1 AND product_id = $2 AND status = 'active'`,
+                [reference, productId, orderId]
               );
             }
           }
@@ -519,7 +533,7 @@ router.post('/api/payments/webhook', async (req, res) => {
           }
 
           await client2.query("INSERT INTO order_events (order_id, event_type, note) VALUES ($1, 'payment_received', 'Payment completed via MonCash')", [orderId]);
-          await client2.query("UPDATE pending_checkouts SET status = 'completed' WHERE id = $1", [reference]);
+          await client2.query("UPDATE pending_checkouts SET status = 'completed', order_id = $2 WHERE id = $1", [reference, orderId]);
           await client2.query(
             `UPDATE message_offers SET status = 'redeemed', accepted_checkout_id = NULL
              WHERE accepted_checkout_id = $1 AND status = 'accepted'`, [pc.id]
@@ -755,14 +769,15 @@ router.post('/api/payments/webhook', async (req, res) => {
         const refund = await client.query(
           `UPDATE refund_payouts SET status = 'completed', settlement_confirmed = true, error_message = NULL, updated_at = CURRENT_TIMESTAMP
            WHERE status = 'processing' AND (provider_reference = $1 OR moncash_reference = $1 OR id::text = $1)
-           RETURNING buyer_id, amount, order_id`,
+           RETURNING buyer_id, amount, order_id, refunded_seller_id`,
           [reference]
         );
         for (const row of refund.rows) {
           await client.query(
             `UPDATE disputes SET status = 'resolved', resolution = 'MonCash confirmed the refund transfer', updated_at = CURRENT_TIMESTAMP
-             WHERE order_id = $1 AND reason = 'refund_request' AND status IN ('open', 'under_review')`,
-            [row.order_id]
+             WHERE order_id = $1 AND reason = 'refund_request' AND status IN ('open', 'under_review')
+               AND ($2::uuid IS NULL OR seller_id = $2)`,
+            [row.order_id, row.refunded_seller_id]
           );
         }
         await client.query('COMMIT');

@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
   Alert, ActivityIndicator, Platform, Modal, KeyboardAvoidingView,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.card, padding: 14,
   },
   promoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  promoCode: { fontSize: 16, fontWeight: '800', color: COLORS.text, fontFamily: 'monospace' },
+  promoCode: { fontSize: 16, fontWeight: '800', color: COLORS.text,  },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   activeBadge: { backgroundColor: 'rgba(0,229,160,0.15)' },
   pausedBadge: { backgroundColor: 'rgba(239,159,39,0.15)' },
@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 11, fontWeight: '600' },
   activeText: { color: '#00E5A0' },
   pausedText: { color: '#EF9F27' },
-  expiredText: { color: '#8B949E' },
+  expiredText: { color: COLORS.text2 },
 
   promoDiscount: { fontSize: 13, color: COLORS.text, fontWeight: '600', marginBottom: 2 },
   promoMeta: { fontSize: 12, color: COLORS.text2, marginBottom: 8 },

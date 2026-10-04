@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { completeDob, skipDob } from '../api';
 import { store } from '../store';
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   title: {
-    fontFamily: 'Syne',
+    
     fontSize: 22,
     fontWeight: '800',
     color: COLORS.text,

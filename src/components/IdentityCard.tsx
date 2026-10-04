@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS } from '../theme';
 
 interface IdentityCardProps {
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
-    fontFamily: 'Syne',
+    
     fontSize: 22,
     fontWeight: '800',
     color: COLORS.text,
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   name: {
-    fontFamily: 'Syne',
+    
     fontSize: 16,
     fontWeight: '800',
     color: COLORS.text,

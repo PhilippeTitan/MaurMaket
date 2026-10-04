@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   trackOff: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: ONBOARDING_COLORS.surfaceHi,
     borderColor: ONBOARDING_COLORS.border,
   },
   knob: {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Animated,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS } from '../../theme';
 import { useTranslation } from '@/localization';
 import { signup as apiSignup, API_BASE } from '../../api';
@@ -417,9 +417,9 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
 
 const styles = StyleSheet.create({
   centeredHeader: { alignItems: 'center', marginBottom: 36, marginTop: SPACING.xl },
-  brand: { fontFamily: 'Syne', fontSize: 20, fontWeight: '800', color: COLORS.text },
+  brand: { fontSize: 20, fontWeight: '800', color: COLORS.text },
   brandAccent: { color: COLORS.coral },
-  title: { fontFamily: 'Syne', fontSize: 34, fontWeight: '800', color: COLORS.text, marginBottom: 8, textAlign: 'center', marginTop: 12 },
+  title: { fontSize: 32, fontWeight: '800', color: COLORS.text, marginBottom: 8, textAlign: 'center', marginTop: 12 },
   subtitle: { color: COLORS.text2, fontSize: 15, textAlign: 'center' },
 
   stepContent: { flex: 1, marginTop: 22 },

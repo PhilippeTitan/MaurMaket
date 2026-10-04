@@ -194,6 +194,7 @@ export interface Order {
   buyer_id: string;
   total_amount: number;
   status: string;
+  payment_method?: 'moncash' | 'natcash' | string;
   moncash_reference: string | null;
   delivery_method: string;
   delivery_name: string | null;
@@ -210,6 +211,7 @@ export interface Order {
   meetup_proposed_by: string | null;
   meetup_started_at: string | null;
   meetup_expires_at: string | null;
+  meetup_started?: boolean;
   created_at: string;
   updated_at: string;
   items?: OrderItem[];
@@ -221,13 +223,23 @@ export interface Order {
   product_image?: string | null;
   seller_snapshot_name?: string | null;
   seller_snapshot_logo_url?: string | null;
+  seller_count?: number;
+  other_sellers?: Array<{ id: string; full_name: string; phone?: string | null }>;
+  seller_fulfillments?: Array<{ seller_id: string; payment_status?: string; fulfillment_status: string; fulfillment_method?: string | null }>;
+  escrow?: Array<{ seller_id: string; escrow_status: string; gross_amount?: number }>;
+  cancellation_requests?: Array<{
+    id: string; seller_id: string; raised_by: string; description: string; status: string;
+    resolution: string | null; response_deadline: string | null; created_at: string;
+    seller_name?: string | null; requester_name?: string | null;
+  }>;
 }
 
 export interface OrderEvent {
   id: string;
   order_id: string;
   event_type: string;
-  actor_id: string;
+  actor_id: string | null;
+  actor_name?: string | null;
   old_value: string | null;
   new_value: string | null;
   note: string | null;
@@ -459,7 +471,7 @@ export interface BlockedUser {
 }
 
 export interface UserReportPayload {
-  targetType: 'profile' | 'review' | 'reply' | 'order';
+  targetType: 'profile' | 'review' | 'reply' | 'order' | 'listing';
   targetId: string;
   reportedUserId?: string;
   reason: string;

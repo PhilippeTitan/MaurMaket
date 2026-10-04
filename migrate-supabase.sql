@@ -178,6 +178,10 @@ CREATE TABLE IF NOT EXISTS refund_payouts (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE refund_payouts DROP CONSTRAINT IF EXISTS refund_payouts_order_id_key;
+ALTER TABLE refund_payouts ADD COLUMN IF NOT EXISTS refunded_seller_id UUID REFERENCES users(id);
+ALTER TABLE refund_payouts DROP CONSTRAINT IF EXISTS refund_payouts_order_id_key;
+CREATE INDEX IF NOT EXISTS idx_refund_payouts_order_seller_status
+  ON refund_payouts(order_id, refunded_seller_id, status);
 CREATE INDEX IF NOT EXISTS idx_refund_payouts_order_id ON refund_payouts(order_id, created_at);
 CREATE TABLE IF NOT EXISTS seller_debts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -332,14 +336,21 @@ CREATE TABLE IF NOT EXISTS promo_uses (
 CREATE TABLE IF NOT EXISTS disputes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id UUID REFERENCES orders(id) NOT NULL,
+  seller_id UUID REFERENCES users(id),
   raised_by UUID REFERENCES users(id) NOT NULL,
   reason VARCHAR(50) NOT NULL,
   description TEXT,
   status VARCHAR(20) DEFAULT 'open',
   resolution TEXT,
+  response_deadline TIMESTAMPTZ,
+  reminder_sent_at TIMESTAMPTZ,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE disputes ADD COLUMN IF NOT EXISTS seller_id UUID REFERENCES users(id);
+ALTER TABLE disputes ADD COLUMN IF NOT EXISTS response_deadline TIMESTAMPTZ;
+ALTER TABLE disputes ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_disputes_cancellation_lookup ON disputes(order_id, seller_id, status) WHERE reason = 'cancellation_request';
 
 CREATE TABLE IF NOT EXISTS platform_revenue (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -526,6 +537,13 @@ INSERT INTO categories (id, name, display_order) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Verified payments with no active checkout/order need manual reconciliation.
+-- Explicitly consented, generalized seller discovery coordinates. Legacy exact
+-- seller_locations lat/lng remain private for fulfillment and are not map output.
+ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_lat DECIMAL(10,3);
+ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_lng DECIMAL(10,3);
+ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_area_confirmed BOOLEAN NOT NULL DEFAULT false;
+UPDATE seller_locations SET is_visible = false WHERE public_area_confirmed = false AND is_visible = true;
+
 CREATE TABLE IF NOT EXISTS unmatched_payments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   reference TEXT NOT NULL,

@@ -5,8 +5,8 @@
  * All colors, spacing, typography, radii, shadows, and motion values
  * are defined here and should be imported from this file.
  *
- * Color Palette: Dark-first with warm coral accents
- * Typography: Syne (headings) + Inter (body)
+ * Color Palette: adaptive neutral surfaces with warm coral accents
+ * Typography: platform system font, shared across headings and body copy
  * Spacing: 4-point base scale
  */
 
@@ -15,23 +15,38 @@
 // ─────────────────────────────────────────────────────────────
 
 /** Core background and surface colors */
-export const COLORS: Record<string, string> = {
+import { DynamicColorIOS, Platform, PlatformColor } from 'react-native';
+
+type ThemeColorPair = { light: string; dark: string; android?: string };
+
+/**
+ * Native dynamic colors stay responsive even inside module-level StyleSheets.
+ * On web, CSS variables allow the same compiled styles to update in place.
+ */
+function adaptiveColor(name: string, pair: ThemeColorPair): any {
+  if (Platform.OS === 'ios') return DynamicColorIOS({ light: pair.light, dark: pair.dark });
+  if (Platform.OS === 'android' && pair.android) return PlatformColor(pair.android);
+  if (Platform.OS === 'web') return `var(--mm-${name}, ${pair.dark})`;
+  return pair.dark;
+}
+
+export const COLORS: Record<string, any> = {
   // Backgrounds
-  bg: '#0D1117',           // Main app background
-  surface: '#161B22',      // Cards, sheets, elevated surfaces
-  surface2: '#1C2235',     // Secondary elevated surfaces
-  surfaceHover: '#21262D', // Hover/pressed state for interactive surfaces
+  bg: adaptiveColor('bg', { light: '#F6F7F9', dark: '#0D1117', android: '?android:attr/colorBackground' }),
+  surface: adaptiveColor('surface', { light: '#FFFFFF', dark: '#161B22', android: '?android:attr/colorBackgroundFloating' }),
+  surface2: adaptiveColor('surface-2', { light: '#EEF0F3', dark: '#1C2235', android: '?android:attr/colorBackgroundFloating' }),
+  surfaceHover: adaptiveColor('surface-hover', { light: '#E8EBEF', dark: '#21262D', android: '?android:attr/colorBackgroundFloating' }),
 
   // Borders
-  border: '#21262D',       // Default border color
-  borderLight: '#30363D',  // Lighter border for emphasis
+  border: adaptiveColor('border', { light: '#E1E4E8', dark: '#21262D', android: '?android:attr/colorControlHighlight' }),
+  borderLight: adaptiveColor('border-light', { light: '#D2D7DE', dark: '#30363D', android: '?android:attr/colorControlHighlight' }),
   borderFocus: '#FF4D6A',  // Focus ring color
 
   // Text
-  text: '#E6EDF3',         // Primary text
-  text2: '#8B949E',        // Secondary text
-  text3: '#6E7681',        // Tertiary text (placeholders, hints)
-  textInverse: '#0D1117',  // Text on light backgrounds
+  text: adaptiveColor('text', { light: '#18202B', dark: '#E6EDF3', android: '?android:attr/textColorPrimary' }),
+  text2: adaptiveColor('text-2', { light: '#596575', dark: '#8B949E', android: '?android:attr/textColorSecondary' }),
+  text3: adaptiveColor('text-3', { light: '#778292', dark: '#6E7681', android: '?android:attr/textColorSecondary' }),
+  textInverse: adaptiveColor('text-inverse', { light: '#FFFFFF', dark: '#0D1117', android: '?android:attr/textColorPrimaryInverse' }),
 
   // Brand / Accent
   coral: '#FF4D6A',        // Primary accent (CTAs, active states)
@@ -163,11 +178,57 @@ export const RADIUS = {
 // TYPOGRAPHY
 // ─────────────────────────────────────────────────────────────
 
-/** Font families */
+/** Use the platform's native system family everywhere; no unbundled font names. */
 export const FONTS = {
-  heading: 'Syne',
-  body: 'Inter',
+  heading: undefined,
+  body: undefined,
 } as const;
+
+export type AppearanceMode = 'system' | 'light' | 'dark';
+
+const WEB_THEME_COLORS = {
+  bg: ['#F6F7F9', '#0D1117'],
+  surface: ['#FFFFFF', '#161B22'],
+  'surface-2': ['#EEF0F3', '#1C2235'],
+  'surface-hover': ['#E8EBEF', '#21262D'],
+  border: ['#E1E4E8', '#21262D'],
+  'border-light': ['#D2D7DE', '#30363D'],
+  text: ['#18202B', '#E6EDF3'],
+  'text-2': ['#596575', '#8B949E'],
+  'text-3': ['#778292', '#6E7681'],
+  'text-inverse': ['#FFFFFF', '#0D1117'],
+} as const;
+
+/** Apply app appearance to platform-native controls and the web document. */
+export function applyAppearanceMode(mode: AppearanceMode, systemScheme?: 'light' | 'dark' | null): void {
+  const appearance = mode === 'system' ? 'auto' : mode;
+  if (Platform.OS !== 'web') {
+    // React Native Appearance applies the override to the app only.
+    const { Appearance } = require('react-native');
+    Appearance.setColorScheme(appearance);
+    return;
+  }
+
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  const webSystemScheme = typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  const dark = mode === 'dark' || (mode === 'system' && (systemScheme ?? (root.dataset.systemColorScheme === 'dark' ? 'dark' : webSystemScheme)) === 'dark');
+  root.dataset.theme = dark ? 'dark' : 'light';
+  root.style.colorScheme = dark ? 'dark' : 'light';
+  root.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+  for (const [token, values] of Object.entries(WEB_THEME_COLORS)) {
+    root.style.setProperty(`--mm-${token}`, values[dark ? 1 : 0]);
+  }
+  document.body.style.backgroundColor = dark ? '#0D1117' : '#F6F7F9';
+  document.body.style.backgroundImage = 'none';
+  document.body.style.fontFamily = root.style.fontFamily;
+}
+
+// Set the first web paint's theme before React Native Web renders the app tree.
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const savedMode = window.localStorage?.getItem('mm_appearance_mode');
+  applyAppearanceMode(savedMode === 'light' || savedMode === 'dark' ? savedMode : 'system');
+}
 
 /** Typography scale — font sizes */
 export const FONT_SIZES = {
@@ -195,6 +256,8 @@ export const FONT_SIZES = {
   heroLg: 28,
   /** 32px — display text */
   display: 32,
+  /** 48px — high-visibility in-person verification code */
+  code: 48,
 } as const;
 
 /** Font weight scale */

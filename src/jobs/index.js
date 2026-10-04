@@ -512,6 +512,23 @@ export function startJobs() {
   // ───── Cron: Single reminder before time-limited action expires (every 15 min) ─────
   cron.schedule('*/15 * * * *', async () => {
     try {
+      const overdueCancellations = await pool.query(
+        `UPDATE disputes SET status = 'under_review', resolution = 'seller_response_overdue', updated_at = CURRENT_TIMESTAMP
+         WHERE reason = 'cancellation_request' AND status = 'open'
+           AND response_deadline IS NOT NULL AND response_deadline <= NOW()
+         RETURNING id, order_id, seller_id, raised_by`
+      );
+      for (const request of overdueCancellations.rows) {
+        await pool.query(
+          `UPDATE notifications SET action_resolved = true, is_read = true
+           WHERE (data->>'cancellationRequestId') = $1 AND type = 'cancellation_requested'`,
+          [String(request.id)]
+        );
+        const body = 'No response arrived before the response window ended. The order and payment remain unchanged. Contact the other person while MaurMaket support is unavailable in-app.';
+        createNotification(request.raised_by, 'cancellation_response', 'Cancellation request unresolved', body, { orderId: request.order_id, cancellationRequestId: request.id, cancellationOutcome: 'overdue' });
+        createNotification(request.seller_id, 'cancellation_response', 'Cancellation request unresolved', body, { orderId: request.order_id, cancellationRequestId: request.id, cancellationOutcome: 'overdue' });
+      }
+
       // Find unresolved actions expiring within 2 hours that haven't had a reminder sent
       const expiringRes = await pool.query(`
         SELECT id, user_id, type, title, data, action_deadline

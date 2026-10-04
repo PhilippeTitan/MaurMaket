@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, Image, ActivityIndicator, TextInput,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { getSellerItems, getImageUrl } from '../api';
 import StockBadge from './StockBadge';

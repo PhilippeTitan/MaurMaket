@@ -925,8 +925,16 @@ export const getActiveOrderCount = () => request('/orders/active-count');
 
 export const getOrder = (id: string) => request(`/orders/${id}`);
 
-export const cancelOrder = (orderId: string) =>
-  request(`/orders/${orderId}/cancel`, { method: 'PUT' });
+export const cancelOrder = (orderId: string, scope?: { scope: 'seller' | 'order'; sellerId?: string }) =>
+  request(`/orders/${orderId}/cancel`, { method: 'PUT', body: JSON.stringify(scope || {}) });
+export const sellerCancelOrder = (orderId: string, data: { reason: string; details?: string }) =>
+  request(`/orders/${orderId}/seller-cancel`, { method: 'PUT', body: JSON.stringify(data) });
+export const requestOrderCancellation = (orderId: string, data: { sellerId: string; reason: string; details?: string }) =>
+  request(`/orders/${orderId}/cancellation-requests`, { method: 'POST', body: JSON.stringify(data) });
+export const respondToCancellationRequest = (orderId: string, requestId: string, decision: 'accept' | 'decline') =>
+  request(`/orders/${orderId}/cancellation-requests/${requestId}/respond`, { method: 'PUT', body: JSON.stringify({ decision }) });
+export const withdrawCancellationRequest = (orderId: string, requestId: string) =>
+  request(`/orders/${orderId}/cancellation-requests/${requestId}/withdraw`, { method: 'PUT' });
 
 export const completeOrder = (orderId: string) =>
   request(`/orders/${orderId}/complete`, { method: 'PUT' });

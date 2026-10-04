@@ -4,9 +4,9 @@ import {
   KeyboardAvoidingView, ScrollView, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
-import { ONBOARDING_COLORS, ONBOARDING_GRADIENT } from './onboarding/theme';
+import { ONBOARDING_COLORS } from './onboarding/theme';
 import AuthInput from '../components/AuthInput';
 import PrimaryButton from '../components/PrimaryButton';
 import moncashLogo from '../../assets/MonNatCash/moncash.webp';
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     paddingHorizontal: SPACING.lg,
     minHeight: 52,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: COLORS.surface2,
   },
   input: {
     flex: 1,

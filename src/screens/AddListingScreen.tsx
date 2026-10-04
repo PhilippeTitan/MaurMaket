@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Image, KeyboardAvoidingView, Platform, Share, Modal,
   Pressable, useWindowDimensions,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -1674,7 +1674,7 @@ const styles = StyleSheet.create({
   netPreviewLabel: { fontSize: 12, color: COLORS.text2 },
   netPreviewValue: { fontSize: 12, fontWeight: '600', color: COLORS.text2 },
   netPreviewTotal: {
-    marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border + '60', marginBottom: 0,
+    marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border, marginBottom: 0,
   },
   netPreviewTotalLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text },
   netPreviewTotalValue: { fontSize: 13, fontWeight: '800', color: COLORS.green },

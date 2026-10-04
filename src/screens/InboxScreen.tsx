@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput, Modal, Keyboard,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
@@ -15,9 +15,9 @@ import { RowListSkeleton } from '../components/Skeleton';
 import { getConversations, getFollowing, createConversation, getConversationsWithOffers, markOfferSeen, searchSellersForChat } from '../api';
 import { useToast } from '../components/Toast';
 import { store } from '../store';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { Conversation } from '../types';
 import type { RootStackParamList } from '../navigation';
-import { LinearGradient } from 'expo-linear-gradient';
 import UserAvatar from '../components/UserAvatar';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 import { network } from '../network';
@@ -186,7 +186,7 @@ export default function InboxScreen() {
         <TouchableOpacity
           style={styles.convoMain}
           onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId, otherUserAvatar: (item as any).other_party_avatar, otherUserStoreLogoUrl: (item as any).other_party_store_logo_url, otherUserUseStoreIdentity: (item as any).other_party_use_store_identity, otherUserTier: sellerTier })}
-          accessibilityLabel={`conversation with ${otherName}`}
+          accessibilityLabel={t('inbox.conversationWith', { name: otherName })}
           accessibilityRole="button"
           activeOpacity={0.7}
         >
@@ -240,7 +240,8 @@ export default function InboxScreen() {
         onPress={() => setActiveTab('messages')}
         activeOpacity={0.7}
         accessibilityLabel={t('inbox.tabMessages')}
-        accessibilityRole="button"
+        accessibilityRole="tab"
+        accessibilityState={{ selected: activeTab === 'messages' }}
       >
         <Text style={[styles.topTabLabel, activeTab === 'messages' && styles.topTabLabelActive]}>
           {t('inbox.tabMessages')}
@@ -259,7 +260,8 @@ export default function InboxScreen() {
         onPress={() => setActiveTab('offers')}
         activeOpacity={0.7}
         accessibilityLabel={t('inbox.tabOffers')}
-        accessibilityRole="button"
+        accessibilityRole="tab"
+        accessibilityState={{ selected: activeTab === 'offers' }}
       >
         {activeTab !== 'offers' && offerConversations.some((o: any) => o.needs_action) && <View style={styles.topTabRedDot} />}
         <Text style={[styles.topTabLabel, activeTab === 'offers' && styles.topTabLabelActive]}>
@@ -283,12 +285,7 @@ export default function InboxScreen() {
   );
 
   return (
-    <LinearGradient
-      colors={['#121820', '#0D1117', '#0A0E14']}
-      start={{ x: 0.5, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.xs }]}>
         <Text style={styles.title}>{t('inbox.title')}</Text>
       </View>
@@ -331,7 +328,7 @@ export default function InboxScreen() {
         style={styles.searchBar}
         onPress={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 100); }}
         activeOpacity={0.7}
-        accessibilityLabel="search messages"
+        accessibilityLabel={t('inbox.searchTitle')}
         accessibilityRole="button"
       >
         <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
@@ -359,7 +356,7 @@ export default function InboxScreen() {
               <TouchableOpacity
                 style={[styles.offerCard, item.is_history && styles.offerCardHistory]}
                 onPress={() => { setOfferConversations(prev => prev.map(o => o.offer_message_id === item.offer_message_id ? { ...o, needs_action: false } : o)); markOfferSeen(item.offer_message_id).catch(() => {}); nav.navigate('OfferDetail', { messageId: item.offer_message_id, conversationId: item.id }); }}
-                accessibilityLabel={`offer with ${otherName}`}
+                accessibilityLabel={t('inbox.offerWith', { name: otherName })}
                 accessibilityRole="button"
                 activeOpacity={0.7}
               >
@@ -505,7 +502,7 @@ export default function InboxScreen() {
           <View style={[styles.searchModalFooter, { paddingBottom: insets.bottom > 0 ? insets.bottom + SPACING.sm : SPACING.md }]}>
             <TouchableOpacity
               onPress={() => { setSearchOpen(false); setSearch(''); Keyboard.dismiss(); }}
-              accessibilityLabel="close search"
+              accessibilityLabel={t('inbox.closeSearch')}
               accessibilityRole="button"
               style={styles.searchCloseBtn}
             >
@@ -522,10 +519,10 @@ export default function InboxScreen() {
                 onChangeText={setSearch}
                 autoFocus
                 returnKeyType="search"
-                accessibilityLabel="search messages"
+                accessibilityLabel={t('inbox.searchTitle')}
               />
               {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="clear" accessibilityRole="button">
+                <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel={t('inbox.clearSearch')} accessibilityRole="button">
                   <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text2} />
                 </TouchableOpacity>
               )}
@@ -533,7 +530,7 @@ export default function InboxScreen() {
             <TouchableOpacity
               style={styles.searchFilterBtn}
               onPress={() => setShowFilterDrop(!showFilterDrop)}
-              accessibilityLabel="filter"
+              accessibilityLabel={t('inbox.filterSearch')}
               accessibilityRole="button"
             >
               <MaterialCommunityIcons name="tune-variant" size={22} color={COLORS.text} />
@@ -553,6 +550,7 @@ export default function InboxScreen() {
                   onPress={() => { setSearchFilter(opt.key as any); setShowFilterDrop(false); }}
                   accessibilityLabel={opt.label}
                   accessibilityRole="button"
+                  accessibilityState={{ selected: searchFilter === opt.key }}
                 >
                   <Text style={[styles.filterDropText, searchFilter === opt.key && styles.filterDropTextActive]}>{opt.label}</Text>
                 </TouchableOpacity>
@@ -561,7 +559,7 @@ export default function InboxScreen() {
           )}
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -629,7 +627,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.pill,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.border + '60',
+    borderColor: COLORS.border,
   },
   topTabItemActive: {
     backgroundColor: COLORS.coral + '15',
@@ -690,7 +688,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.media,
     borderWidth: 1,
-    borderColor: COLORS.border + '40',
+    borderColor: COLORS.border,
     padding: 14,
     marginBottom: 10,
   },
@@ -799,7 +797,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
+    borderTopColor: COLORS.border,
   },
   offerExpiresText: {
     fontSize: 11,
@@ -808,7 +806,7 @@ const styles = StyleSheet.create({
   },
 
   /* Conversations */
-  convo: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border + '30', gap: 10 },
+  convo: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 10 },
   convoMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   convoUnreadBadge: { position: 'absolute', top: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: '#1A73E8', borderWidth: 2, borderColor: COLORS.bg },
   convoBody: { flex: 1, gap: 2 },

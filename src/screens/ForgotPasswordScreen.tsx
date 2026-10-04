@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '@/localization';
 import { forgotPassword, resetPassword } from '../api';
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center', marginBottom: 18,
   },
   title: {
-    fontFamily: 'Syne', fontSize: 22, fontWeight: '800', color: COLORS.text,
+    fontSize: 22, fontWeight: '800', color: COLORS.text,
     marginBottom: 6, textAlign: 'center',
   },
   subtitle: {

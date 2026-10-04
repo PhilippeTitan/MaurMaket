@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing } from 'react-native';
 import Svg, { Defs, RadialGradient, Stop, Circle, Path } from 'react-native-svg';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { COLORS } from '@/theme';
 
 const AnimatedRadialGradient = Animated.createAnimatedComponent(RadialGradient);
 
@@ -53,9 +55,14 @@ export default function AnimatedTierRing({ tier, size, ringWidth, animated = tru
   const config = TIER_CONFIG[tier];
   const rw = ringWidth ?? Math.max(3, Math.round(size * 0.06));
   const progress = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
+  const shouldAnimate = animated && !reduceMotion;
 
   useEffect(() => {
-    if (!animated) return;
+    if (!shouldAnimate) {
+      progress.setValue(0);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(progress, { toValue: 1, duration: config.duration, easing: Easing.inOut(Easing.sin), useNativeDriver: false }),
@@ -64,12 +71,12 @@ export default function AnimatedTierRing({ tier, size, ringWidth, animated = tru
     );
     loop.start();
     return () => loop.stop();
-  }, [animated, config.duration, progress]);
+  }, [shouldAnimate, config.duration, progress]);
 
-  const cx = animated
+  const cx = shouldAnimate
     ? progress.interpolate({ inputRange: [0, 1], outputRange: [`${config.driftFrom.cx}%`, `${config.driftTo.cx}%`] })
     : `${config.driftFrom.cx}%`;
-  const cy = animated
+  const cy = shouldAnimate
     ? progress.interpolate({ inputRange: [0, 1], outputRange: [`${config.driftFrom.cy}%`, `${config.driftTo.cy}%`] })
     : `${config.driftFrom.cy}%`;
 
@@ -96,7 +103,7 @@ export default function AnimatedTierRing({ tier, size, ringWidth, animated = tru
         />
       )}
 
-      <Circle cx="50" cy="50" r={innerR - 1.5} fill="#0D1117" />
+      <Circle cx="50" cy="50" r={innerR - 1.5} fill={COLORS.bg} />
     </Svg>
   );
 }

@@ -3,9 +3,9 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Linking,
   KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { cancelAnimation, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -23,6 +23,7 @@ import { notifySuccess, notifyError } from '../haptics';
 import { useToast } from '../components/Toast';
 import LocationPicker from '../components/LocationPicker';
 import { network } from '../network';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 type DeliveryMethod = 'delivery' | 'meetup';
@@ -41,6 +42,7 @@ const st=StyleSheet.create({container:{flexDirection:"row",alignItems:"flex-star
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReduceMotion();
   const toast = useToast();
   const cart = store.cart;
   const [method, setMethod] = useState<DeliveryMethod>('delivery');
@@ -74,12 +76,17 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   // has ONE shared laser-bg style applied to both buttons, not two.
   const laserRotation = useSharedValue(0);
   useEffect(() => {
+    if (reduceMotion) {
+      laserRotation.value = 0;
+      return;
+    }
     laserRotation.value = withRepeat(
       withTiming(360, { duration: 3000, easing: Easing.linear }),
       -1,
       false,
     );
-  }, []);
+    return () => cancelAnimation(laserRotation);
+  }, [laserRotation, reduceMotion]);
   const animatedLaserStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${laserRotation.value}deg` }],
   }));
@@ -89,12 +96,17 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   // holds at 160% (off-canvas) for the remaining 45%-100% before looping.
   const shimmerProgress = useSharedValue(0);
   useEffect(() => {
+    if (reduceMotion) {
+      shimmerProgress.value = 1;
+      return;
+    }
     shimmerProgress.value = withRepeat(
       withTiming(1, { duration: 3400, easing: Easing.inOut(Easing.quad) }),
       -1,
       false,
     );
-  }, []);
+    return () => cancelAnimation(shimmerProgress);
+  }, [reduceMotion, shimmerProgress]);
   const animatedShimmerStyle = useAnimatedStyle(() => {
     // Map the 0-1 driver onto the CSS keyframe: 0%->45% sweeps, 45%->100% holds.
     const t = shimmerProgress.value <= 0.45 ? shimmerProgress.value / 0.45 : 1;

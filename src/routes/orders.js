@@ -338,6 +338,22 @@ router.get('/orders/:id', authRequired, async (req, res) => {
       `SELECT * FROM seller_fulfillments WHERE order_id = $1`,
       [req.params.id]
     );
+    const meetupCheckinResult = order.delivery_method === 'meetup'
+      ? await pool.query('SELECT 1 FROM meetup_checkins WHERE order_id = $1 LIMIT 1', [req.params.id])
+      : { rowCount: 0 };
+
+    const cancellationRequests = await pool.query(
+      `SELECT d.id, d.seller_id, d.raised_by, d.description, d.status, d.resolution,
+              d.response_deadline, d.created_at, seller.full_name AS seller_name,
+              requester.full_name AS requester_name
+       FROM disputes d
+       LEFT JOIN users seller ON seller.id = d.seller_id
+       LEFT JOIN users requester ON requester.id = d.raised_by
+       WHERE d.order_id = $1 AND d.reason = 'cancellation_request'
+         AND ($2 = 'buyer' OR d.seller_id = $3)
+       ORDER BY d.created_at DESC`,
+      [req.params.id, myRole, req.user.id]
+    );
 
     res.json({
       order: {
@@ -349,6 +365,8 @@ router.get('/orders/:id', authRequired, async (req, res) => {
         seller_count: sellerIds.length,
         escrow: escrowResult.rows,
         seller_fulfillments: fulfillmentsResult.rows,
+        meetup_started: meetupCheckinResult.rowCount > 0,
+        cancellation_requests: cancellationRequests.rows,
       }
     });
   } catch (err) {
@@ -2019,7 +2037,192 @@ router.post('/orders', authRequired, dobRequired, async (req, res) => {
 
 // ── Cancel Order ──────────────────────────────────────────────────────────
 
+async function releaseCancelledOrderStock(client, orderId, fulfillments, sellerId = null) {
+  // Older MonCash checkouts kept confirmed inventory under the checkout id.
+  for (const fulfillment of fulfillments) {
+    const checkoutId = String(fulfillment.payment_reference || '');
+    if (/^[0-9a-f-]{36}$/i.test(checkoutId)) {
+      await client.query(
+        `UPDATE stock_reservations SET order_id = $1, checkout_id = NULL
+         WHERE checkout_id = $2 AND status IN ('active','confirmed') AND ($3::uuid IS NULL OR seller_id = $3)`, [orderId, checkoutId, sellerId]
+      );
+    }
+  }
+  const released = await client.query(
+    `UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP
+     WHERE order_id = $1 AND status IN ('active','confirmed') AND ($2::uuid IS NULL OR seller_id = $2)
+     RETURNING product_id, quantity, variant_id`, [orderId, sellerId]
+  );
+  for (const reservation of released.rows) {
+    await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [reservation.quantity, reservation.product_id]);
+    if (reservation.variant_id) {
+      await client.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [reservation.quantity, reservation.variant_id]);
+    }
+  }
+}
+
+router.post('/orders/:id/cancellation-requests', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const orderRes = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const order = orderRes.rows[0];
+    if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
+    if (order.buyer_id !== req.user.id) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Only the buyer can request cancellation' }); }
+    if (order.delivery_method === 'meetup') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Meetup exchanges must be paused and resolved through the meetup flow; cancellation requests are not available after the proximity exchange begins.' });
+    }
+
+    const sellerId = String(req.body?.sellerId || '');
+    const reason = String(req.body?.reason || '').trim();
+    const details = String(req.body?.details || '').trim().slice(0, 300);
+    const allowedReasons = new Set(['changed_mind', 'timing', 'seller_unavailable', 'item_issue', 'other']);
+    if (!sellerId || !allowedReasons.has(reason)) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Choose the seller and a cancellation reason' }); }
+
+    const fulfillmentRes = await client.query(
+      `SELECT sf.fulfillment_status FROM seller_fulfillments sf
+       WHERE sf.order_id = $1 AND sf.seller_id = $2
+         AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = sf.order_id AND oi.seller_id = sf.seller_id)
+       FOR UPDATE`,
+      [req.params.id, sellerId]
+    );
+    if (!fulfillmentRes.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Seller portion not found' }); }
+    const sellerCount = await client.query('SELECT COUNT(DISTINCT seller_id)::int AS count FROM order_items WHERE order_id = $1', [req.params.id]);
+    if (Number(sellerCount.rows[0]?.count || 0) !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Seller-scoped cancellation is not available for multi-seller orders yet because fulfillment and refund state are not independently represented.' });
+    }
+    if (!['processing', 'shipped', 'delivered'].includes(fulfillmentRes.rows[0].fulfillment_status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This seller has not started fulfillment. Use the order cancellation option while it is still available.' });
+    }
+
+    const existing = await client.query(
+      `SELECT id FROM disputes WHERE order_id = $1 AND seller_id = $2 AND raised_by = $3
+       AND reason = 'cancellation_request' AND status IN ('open','under_review') LIMIT 1`,
+      [req.params.id, sellerId, req.user.id]
+    );
+    if (existing.rows.length) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'A cancellation request is already active for this seller portion' }); }
+
+    const description = JSON.stringify({ reason, details });
+    const inserted = await client.query(
+      `INSERT INTO disputes (order_id, seller_id, raised_by, reason, description, status, response_deadline)
+       VALUES ($1, $2, $3, 'cancellation_request', $4, 'open', NOW() + INTERVAL '24 hours') RETURNING id, response_deadline, created_at`,
+      [req.params.id, sellerId, req.user.id, description]
+    );
+    await client.query(
+      `INSERT INTO order_events (order_id, event_type, actor_id, note)
+       VALUES ($1, 'cancellation_requested', $2, 'Buyer requested cancellation for one seller portion. Order and payment remain unchanged while the seller responds.')`,
+      [req.params.id, req.user.id]
+    );
+    await client.query('COMMIT');
+    const request = inserted.rows[0];
+    createNotification(sellerId, 'cancellation_requested', 'Cancellation request', 'A buyer requested cancellation for their seller portion. Open the order to respond.', { orderId: req.params.id, cancellationRequestId: request.id, cancellationOutcome: 'requested', expiresAt: request.response_deadline });
+    return res.status(202).json({ request: { ...request, seller_id: sellerId, status: 'open', description } });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Cancellation request error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
+});
+
+router.put('/orders/:id/cancellation-requests/:requestId/respond', authRequired, async (req, res) => {
+  const decision = String(req.body?.decision || '');
+  if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ error: 'Choose accept or decline' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `SELECT d.*, o.buyer_id FROM disputes d JOIN orders o ON o.id = d.order_id
+       WHERE d.id = $1 AND d.order_id = $2 AND d.reason = 'cancellation_request' FOR UPDATE`,
+      [req.params.requestId, req.params.id]
+    );
+    const request = result.rows[0];
+    if (!request) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Cancellation request not found' }); }
+    if (request.seller_id !== req.user.id) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Only the affected seller can respond' }); }
+    if (request.status !== 'open') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This cancellation request is no longer awaiting a response' }); }
+    if (request.response_deadline && new Date(request.response_deadline).getTime() <= Date.now()) {
+      await client.query(`UPDATE disputes SET status = 'under_review', resolution = 'seller_response_overdue', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [request.id]);
+      await client.query(`INSERT INTO order_events (order_id, event_type, actor_id, note) VALUES ($1, 'cancellation_response', NULL, 'Seller response window elapsed. The order and payment remain unchanged; no fault or refund was assigned.')`, [req.params.id]);
+      await client.query('COMMIT');
+      await client.query(`UPDATE notifications SET action_resolved = true, is_read = true WHERE user_id = $1 AND (data->>'cancellationRequestId') = $2 AND type = 'cancellation_requested'`, [request.seller_id, String(request.id)]);
+      const overdueBody = 'No response arrived before the response window ended. The order and payment remain unchanged. Contact the other person while MaurMaket support is unavailable in-app.';
+      createNotification(request.buyer_id, 'cancellation_response', 'Cancellation request unresolved', overdueBody, { orderId: req.params.id, cancellationRequestId: request.id, cancellationOutcome: 'overdue' });
+      createNotification(request.seller_id, 'cancellation_response', 'Cancellation request unresolved', overdueBody, { orderId: req.params.id, cancellationRequestId: request.id, cancellationOutcome: 'overdue' });
+      return res.status(409).json({ error: 'The response window ended. This request is now unresolved.' });
+    }
+
+    const resolution = decision === 'accept' ? 'seller_accepted_pending_settlement' : 'seller_declined';
+    await client.query(
+      `UPDATE disputes SET status = 'under_review', resolution = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [resolution, request.id]
+    );
+    await client.query(
+      `INSERT INTO order_events (order_id, event_type, actor_id, note)
+       VALUES ($1, 'cancellation_response', $2, $3)`,
+      [req.params.id, req.user.id, decision === 'accept'
+        ? 'Seller accepted the cancellation request. Order/payment settlement remains unchanged pending review.'
+        : 'Seller declined the cancellation request. The order/payment state remains unchanged; the request is unresolved.']
+    );
+    await client.query('COMMIT');
+    await client.query(`UPDATE notifications SET action_resolved = true, is_read = true WHERE user_id = $1 AND (data->>'cancellationRequestId') = $2 AND type = 'cancellation_requested'`, [request.seller_id, String(request.id)]);
+    createNotification(request.buyer_id, 'cancellation_response', 'Cancellation request updated', decision === 'accept'
+      ? 'The seller agreed to your request. The order and payment are not yet cancelled or refunded; settlement needs review.'
+      : 'The seller declined your request. Your order and payment remain unchanged while the request stays unresolved.',
+    { orderId: req.params.id, cancellationRequestId: request.id, cancellationOutcome: decision === 'accept' ? 'accepted' : 'declined' });
+    return res.json({ status: 'under_review', decision, orderChanged: false, paymentChanged: false });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Cancellation response error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
+});
+
+router.put('/orders/:id/cancellation-requests/:requestId/withdraw', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `SELECT d.* FROM disputes d JOIN orders o ON o.id = d.order_id
+       WHERE d.id = $1 AND d.order_id = $2 AND d.reason = 'cancellation_request'
+         AND o.buyer_id = $3 FOR UPDATE`,
+      [req.params.requestId, req.params.id, req.user.id]
+    );
+    const request = result.rows[0];
+    if (!request) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Cancellation request not found' }); }
+    if (request.status !== 'open') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Only a request awaiting seller response can be withdrawn' }); }
+    if (request.response_deadline && new Date(request.response_deadline).getTime() <= Date.now()) {
+      await client.query(`UPDATE disputes SET status = 'under_review', resolution = 'seller_response_overdue', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [request.id]);
+      await client.query(`INSERT INTO order_events (order_id, event_type, actor_id, note) VALUES ($1, 'cancellation_response', NULL, 'Seller response window elapsed. The order and payment remain unchanged; no fault or refund was assigned.')`, [req.params.id]);
+      await client.query('COMMIT');
+      const overdueBody = 'No response arrived before the response window ended. The order and payment remain unchanged. Contact the other person while MaurMaket support is unavailable in-app.';
+      createNotification(request.raised_by, 'cancellation_response', 'Cancellation request unresolved', overdueBody, { orderId: req.params.id, cancellationRequestId: request.id, cancellationOutcome: 'overdue' });
+      createNotification(request.seller_id, 'cancellation_response', 'Cancellation request unresolved', overdueBody, { orderId: req.params.id, cancellationRequestId: request.id, cancellationOutcome: 'overdue' });
+      return res.status(409).json({ error: 'The response window ended. This request is now unresolved.' });
+    }
+    await client.query(`UPDATE disputes SET status = 'resolved', resolution = 'buyer_withdrew', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [request.id]);
+    await client.query(
+      `INSERT INTO order_events (order_id, event_type, actor_id, note)
+       VALUES ($1, 'cancellation_response', $2, 'Buyer withdrew the pending cancellation request. Order and payment remain unchanged.')`,
+      [req.params.id, req.user.id]
+    );
+    await client.query('COMMIT');
+    createNotification(request.seller_id, 'cancellation_response', 'Request withdrawn', 'The buyer withdrew the cancellation request. The order remains active.', { orderId: req.params.id, cancellationRequestId: request.id, cancellationOutcome: 'withdrawn' });
+    return res.json({ status: 'resolved', withdrawn: true });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Cancellation withdrawal error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
+});
+
 router.put('/orders/:id/cancel', authRequired, async (req, res) => {
+  const cancelScope = req.body?.scope === 'seller' ? 'seller' : 'order';
+  const requestedSellerId = String(req.body?.sellerId || '');
+  if (cancelScope === 'seller' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedSellerId)) {
+    return res.status(400).json({ error: 'Choose a seller portion to cancel' });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -2033,51 +2236,242 @@ router.put('/orders/:id/cancel', authRequired, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Only the buyer can cancel this order' });
     }
-    if (order.rows[0].status !== 'pending' && order.rows[0].status !== 'paid') {
+    const currentOrder = order.rows[0];
+    if (!['pending', 'paid', 'active', 'processing', 'shipped', 'delivered'].includes(currentOrder.status)) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Only pending or paid orders can be cancelled' });
+      return res.status(400).json({ error: 'This order can no longer be cancelled from this step' });
     }
-    if (order.rows[0].status === 'paid') {
-      const hasCheckin = await client.query('SELECT 1 FROM meetup_checkins WHERE order_id = $1', [req.params.id]);
-      if (hasCheckin.rows.length > 0) {
+
+    const fulfillments = await client.query(
+      `SELECT seller_id, payment_status, fulfillment_status, fulfillment_method
+       FROM seller_fulfillments WHERE order_id = $1 FOR UPDATE`, [req.params.id]
+    );
+    const sellers = await client.query(
+      'SELECT COUNT(DISTINCT seller_id)::int AS count FROM order_items WHERE order_id = $1', [req.params.id]
+    );
+    const hasMeetupStarted = currentOrder.delivery_method === 'meetup'
+      ? await client.query('SELECT 1 FROM meetup_checkins WHERE order_id = $1 LIMIT 1', [req.params.id])
+      : { rowCount: 0 };
+    const stillPreFulfillment = fulfillments.rows.length === Number(sellers.rows[0]?.count || 0) && fulfillments.rows.length > 0 && fulfillments.rows.every(row =>
+      row.fulfillment_status === 'pending' && row.payment_status === 'pending'
+    );
+
+    const sellerIds = fulfillments.rows.map(row => row.seller_id);
+    const targetSellerIds = cancelScope === 'seller' ? [requestedSellerId] : sellerIds;
+    const targetFulfillments = fulfillments.rows.filter(row => targetSellerIds.includes(row.seller_id));
+    if (!targetFulfillments.length || targetFulfillments.length !== targetSellerIds.length ||
+        (cancelScope === 'order' && targetSellerIds.length !== Number(sellers.rows[0]?.count || 0))) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Seller portion not found' });
+    }
+    let refundRequested = false;
+    let affectedSellerIds = [];
+    if (currentOrder.status === 'pending') {
+      if (cancelScope === 'seller' && Number(sellers.rows[0]?.count || 0) > 1) {
         await client.query('ROLLBACK');
-        client.release();
-        return res.status(400).json({ error: 'Cannot cancel after check-in — use the meetup flow' });
+        return res.status(409).json({ error: 'A multi-seller unpaid checkout cannot be partially repriced safely yet. No order state changed.' });
+      }
+      const unresolvedPayment = await client.query(
+        `SELECT id FROM moncash_payment_attempts WHERE order_id = $1
+         AND status IN ('created','processing','unknown') ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [req.params.id]
+      );
+      if (unresolvedPayment.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'A MonCash payment is still being processed. Check its status before cancelling so a late payment is not lost.' });
+      }
+      if (!stillPreFulfillment || hasMeetupStarted.rowCount > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'This order has entered payment or fulfillment. Open Order Details to use the appropriate cancellation flow.' });
+      }
+    } else {
+      if (currentOrder.payment_method !== 'moncash' ||
+          targetFulfillments.some(row => row.fulfillment_method !== 'delivery' || row.fulfillment_status !== 'pending' || row.payment_status !== 'verified') ||
+          hasMeetupStarted.rowCount > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Paid cancellation is available only for verified, unstarted MonCash delivery portions. Use the order-specific flow for other payment or meetup states.' });
+      }
+      const escrow = await client.query(
+        "SELECT seller_id FROM order_escrow WHERE order_id = $1 AND seller_id = ANY($2::uuid[]) AND status = 'held' FOR UPDATE",
+        [req.params.id, targetSellerIds]
+      );
+      if (escrow.rows.length !== targetSellerIds.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Held MonCash funds could not be confirmed. The order was not changed; request a refund review instead.' });
       }
       const existingRequest = await client.query(
-        "SELECT id FROM disputes WHERE order_id = $1 AND raised_by = $2 AND status IN ('open', 'under_review') AND reason = 'refund_request' LIMIT 1",
-        [req.params.id, req.user.id]
+        "SELECT id FROM disputes WHERE order_id = $1 AND seller_id = ANY($2::uuid[]) AND status IN ('open', 'under_review') AND reason = 'refund_request' LIMIT 1",
+        [req.params.id, targetSellerIds]
       );
-      if (existingRequest.rows.length === 0) {
+      if (existingRequest.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'A refund review is already open for this order' });
+      }
+      for (const sellerId of targetSellerIds) {
         await client.query(
-          `INSERT INTO disputes (order_id, raised_by, reason, description, status)
-           VALUES ($1, $2, 'refund_request', 'Buyer requested cancellation and refund for this paid order', 'open')`,
-          [req.params.id, req.user.id]
+          `INSERT INTO disputes (order_id, seller_id, raised_by, reason, description, status)
+           VALUES ($1, $2, $3, 'refund_request', $4, 'open')`,
+          [req.params.id, sellerId, req.user.id, 'Buyer cancelled this seller portion before fulfillment. MonCash refund requires separate review and provider-confirmed settlement.']
         );
       }
-      await client.query('COMMIT');
-      client.release();
-      return res.status(202).json({ refundRequested: true, status: 'open' });
+      refundRequested = true;
+      affectedSellerIds = targetSellerIds;
     }
-    const oldStatus = order.rows[0].status;
 
-    await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [req.params.id]);
-    await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [req.params.id]);
+    const oldStatus = currentOrder.status;
+    const otherActive = await client.query(
+      `SELECT 1 FROM order_items oi LEFT JOIN seller_fulfillments sf
+         ON sf.order_id = oi.order_id AND sf.seller_id = oi.seller_id
+       WHERE oi.order_id = $1 AND NOT (oi.seller_id = ANY($2::uuid[]))
+         AND COALESCE(sf.fulfillment_status, 'pending') <> 'cancelled' LIMIT 1`, [req.params.id, targetSellerIds]
+    );
+    const cancelWholeOrder = cancelScope === 'order' || otherActive.rowCount === 0;
+    if (cancelWholeOrder) await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [req.params.id]);
+    await client.query(
+      `UPDATE seller_fulfillments SET fulfillment_status = 'cancelled', agreement_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+       WHERE order_id = $1 AND seller_id = ANY($2::uuid[]) AND fulfillment_status = 'pending'`, [req.params.id, targetSellerIds]
+    );
+    for (const sellerId of targetSellerIds) {
+      await releaseCancelledOrderStock(client, req.params.id, fulfillments.rows, sellerId);
+      await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND seller_id = $2 AND status = 'accepted'", [req.params.id, sellerId]);
+    }
+    await client.query(
+      `INSERT INTO order_events (order_id, event_type, actor_id, old_value, new_value, note)
+       VALUES ($1, 'status_change', $2, $3, $4, $5)`,
+      [req.params.id, req.user.id, oldStatus, cancelWholeOrder ? 'cancelled' : oldStatus, refundRequested
+        ? `Buyer cancelled ${cancelScope === 'seller' ? 'one seller portion' : 'the checkout'} before fulfillment. MonCash refund review is pending; no refund has been sent or confirmed.`
+        : 'Cancelled by buyer before payment or seller fulfillment began. Reserved stock was released.']
+    );
     await client.query('COMMIT');
     client.release();
-    logOrderEvent(req.params.id, 'status_change', req.user.id, oldStatus, 'cancelled', 'Cancelled by buyer');
-
-    const cancelledSellers = await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [req.params.id]);
-    for (const row of cancelledSellers.rows) {
-      createNotification(row.seller_id, 'order_cancelled', 'Order Cancelled', `A buyer cancelled their order.`, { orderId: req.params.id });
+    const cancelledSellers = affectedSellerIds.length
+      ? affectedSellerIds.map(seller_id => ({ seller_id }))
+      : (await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id = $1', [req.params.id])).rows;
+    for (const row of cancelledSellers) {
+      createNotification(row.seller_id, 'order_cancelled', 'Order Cancelled',
+        refundRequested ? 'The buyer cancelled before fulfillment. MonCash refund review is still pending.' : 'A buyer cancelled before payment or fulfillment began.',
+        { orderId: req.params.id, refundReviewPending: refundRequested });
     }
-    res.json({ cancelled: true });
+    res.json({ cancelled: true, partial: !cancelWholeOrder, refundRequested, refundStatus: refundRequested ? 'open' : null });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
     client.release();
     console.error('Order cancel error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+router.put('/orders/:id/seller-cancel', authRequired, async (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  const details = String(req.body?.details || '').trim().slice(0, 300);
+  const allowedReasons = new Set(['out_of_stock', 'seller_unavailable', 'delivery_issue', 'other']);
+  if (!allowedReasons.has(reason)) return res.status(400).json({ error: 'Choose a cancellation reason' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const orderResult = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const order = orderResult.rows[0];
+    if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
+    const belongs = await client.query('SELECT 1 FROM order_items WHERE order_id = $1 AND seller_id = $2 LIMIT 1', [req.params.id, req.user.id]);
+    if (!belongs.rows.length) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Only a seller on this order can cancel it' }); }
+    if (!['pending', 'paid', 'active', 'processing', 'shipped', 'delivered'].includes(order.status)) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This order has already moved beyond the seller cancellation step' }); }
+
+    const sellerCount = await client.query('SELECT COUNT(DISTINCT seller_id)::int AS count FROM order_items WHERE order_id = $1', [req.params.id]);
+    const multiSellerOrder = Number(sellerCount.rows[0]?.count || 0) > 1;
+    const fulfillments = await client.query(
+      'SELECT seller_id, payment_status, fulfillment_status, fulfillment_method, payment_reference FROM seller_fulfillments WHERE order_id = $1 FOR UPDATE',
+      [req.params.id]
+    );
+    const fulfillment = fulfillments.rows.find(row => row.seller_id === req.user.id);
+    if (!fulfillment || fulfillment.fulfillment_status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Seller cancellation is available only before fulfillment begins.' });
+    }
+    if (fulfillment.fulfillment_method === 'meetup' || order.delivery_method === 'meetup') {
+      const meetupStarted = await client.query('SELECT 1 FROM meetup_checkins WHERE order_id = $1 LIMIT 1', [req.params.id]);
+      if (meetupStarted.rowCount > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'The meetup exchange has started. Resolve this through the meetup flow instead of cancelling here.' });
+      }
+    }
+
+    let refundRequested = false;
+    if (order.status === 'pending') {
+      if (multiSellerOrder) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'A multi-seller order cannot be partially changed after checkout until the unpaid total can be safely recalculated. No order state changed.' });
+      }
+      if (fulfillment.payment_status !== 'pending') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Payment has already been claimed or confirmed; use the payment-specific cancellation review.' });
+      }
+      const unresolvedPayment = await client.query(
+        `SELECT id FROM moncash_payment_attempts WHERE order_id = $1
+         AND status IN ('created','processing','unknown') ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [req.params.id]
+      );
+      if (unresolvedPayment.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'A MonCash payment is still being processed. Check its status before cancelling.' });
+      }
+    } else {
+      if (order.payment_method !== 'moncash' || fulfillment.fulfillment_method !== 'delivery' || fulfillment.payment_status !== 'verified') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Paid seller cancellation is available only for a verified MonCash delivery portion before fulfillment.' });
+      }
+      const escrow = await client.query(
+        "SELECT id FROM order_escrow WHERE order_id = $1 AND seller_id = $2 AND status = 'held' FOR UPDATE",
+        [req.params.id, req.user.id]
+      );
+      if (!escrow.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Held MonCash funds could not be confirmed. The order was not changed.' });
+      }
+      const existingRefund = await client.query(
+        "SELECT id FROM disputes WHERE order_id = $1 AND seller_id = $2 AND status IN ('open','under_review') AND reason = 'refund_request' LIMIT 1",
+        [req.params.id, req.user.id]
+      );
+      if (existingRefund.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'A refund review is already open for this order.' });
+      }
+      const refundDescription = JSON.stringify({ type: 'seller_cancellation', reason, details, notice: 'Seller cancelled before fulfillment. MonCash refund review and provider-confirmed settlement remain separate.' });
+      await client.query(
+        `INSERT INTO disputes (order_id, seller_id, raised_by, reason, description, status)
+         VALUES ($1, $2, $3, 'refund_request', $4, 'open')`,
+        [req.params.id, req.user.id, req.user.id, refundDescription]
+      );
+      refundRequested = true;
+    }
+
+    const remainingPortion = await client.query(
+      `SELECT 1 FROM order_items oi LEFT JOIN seller_fulfillments sf
+         ON sf.order_id = oi.order_id AND sf.seller_id = oi.seller_id
+       WHERE oi.order_id = $1 AND oi.seller_id <> $2
+         AND COALESCE(sf.fulfillment_status, 'pending') <> 'cancelled' LIMIT 1`, [req.params.id, req.user.id]
+    );
+    const cancelWholeOrder = !multiSellerOrder || remainingPortion.rowCount === 0;
+    if (cancelWholeOrder) await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [req.params.id]);
+    await client.query(
+      `UPDATE seller_fulfillments SET fulfillment_status = 'cancelled', agreement_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+       WHERE order_id = $1 AND seller_id = $2 AND fulfillment_status = 'pending'`, [req.params.id, req.user.id]
+    );
+    await releaseCancelledOrderStock(client, req.params.id, fulfillments.rows, req.user.id);
+    await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND seller_id = $2 AND status = 'accepted'", [req.params.id, req.user.id]);
+    const eventNote = `Seller cancelled before fulfillment (reason: ${reason})${details ? ` — ${details}` : ''}.${refundRequested ? ' MonCash refund review remains pending; no refund is confirmed.' : ''}`;
+    await client.query(
+      `INSERT INTO order_events (order_id, event_type, actor_id, old_value, new_value, note)
+       VALUES ($1, 'status_change', $2, $3, $4, $5)`,
+      [req.params.id, req.user.id, order.status, cancelWholeOrder ? 'cancelled' : order.status, eventNote]
+    );
+    await client.query('COMMIT');
+    createNotification(order.buyer_id, 'order_cancelled', 'Order cancelled',
+      refundRequested ? 'This seller cannot fulfill their part of the order. MonCash refund review remains pending; other sellers’ portions stay active.' : 'This seller cannot fulfill their part. Other sellers’ portions stay active.',
+      { orderId: req.params.id, sellerId: req.user.id, refundReviewPending: refundRequested, cancellationOutcome: 'seller_cancelled' });
+    return res.json({ cancelled: true, partial: !cancelWholeOrder, refundRequested, refundStatus: refundRequested ? 'open' : null });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Seller order cancellation error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
 });
 
 // ── Reorder ───────────────────────────────────────────────────────────────
@@ -2520,6 +2914,16 @@ router.put('/orders/:id/complete', authRequired, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Only the buyer can complete this order' });
     }
+    const activeCancellation = await client.query(
+      `SELECT id FROM disputes WHERE order_id = $1 AND reason = 'cancellation_request'
+       AND status IN ('open', 'under_review') LIMIT 1`,
+      [req.params.id]
+    );
+    if (activeCancellation.rows.length) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(409).json({ error: 'An unresolved cancellation request must be reviewed before the buyer can complete this order or release its settlement.' });
+    }
     if (order.status === 'completed') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Order already completed' });
@@ -2587,7 +2991,11 @@ router.post('/orders/:id/escrow/release', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'The seller must verify the delivery code before escrow can be released' });
     }
 
-    const openDispute = await client.query("SELECT id FROM disputes WHERE order_id = $1 AND status = 'open'", [req.params.id]);
+    const openDispute = await client.query(
+      `SELECT id FROM disputes WHERE order_id = $1
+       AND (status = 'open' OR (reason = 'cancellation_request' AND status = 'under_review'))`,
+      [req.params.id]
+    );
     if (openDispute.rows.length > 0) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Escrow is frozen — an open dispute must be resolved first.' });
@@ -2794,13 +3202,20 @@ router.post('/orders/:id/escrow/refund', authRequired, async (req, res) => {
     const cause = String(req.body?.cause || 'maurmaket');
     const receiverPhone = String(req.body?.receiverPhone || '').trim();
     const responsibleSellerId = req.body?.responsibleSellerId || null;
-    if (reason.length < 5 || !['seller', 'maurmaket', 'shared'].includes(cause) || !receiverPhone || ((cause === 'seller' || cause === 'shared') && !responsibleSellerId)) {
+    const refundedSellerId = req.body?.sellerId || null;
+    const isUuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+    if (reason.length < 5 || !['seller', 'maurmaket', 'shared'].includes(cause) || !receiverPhone ||
+        (responsibleSellerId && !isUuid(responsibleSellerId)) || (refundedSellerId && !isUuid(refundedSellerId)) ||
+        ((cause === 'seller' || cause === 'shared') && !responsibleSellerId)) {
       await client.query('ROLLBACK');
       client.release();
       return res.status(400).json({ error: 'Support must provide a reason, fee responsibility, and verified MonCash destination' });
     }
 
-    const escrowResult = await client.query("SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE", [req.params.id]);
+    const escrowResult = await client.query(
+      `SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held'
+       AND ($2::uuid IS NULL OR seller_id = $2) FOR UPDATE`, [req.params.id, refundedSellerId]
+    );
     if (escrowResult.rows.length === 0) {
       await client.query('ROLLBACK');
       client.release();
@@ -2811,12 +3226,45 @@ router.post('/orders/:id/escrow/refund', authRequired, async (req, res) => {
       client.release();
       return res.status(400).json({ error: 'Fee-responsible seller must belong to this order' });
     }
+    if (refundedSellerId) {
+      const canceledPortion = await client.query(
+        `SELECT 1 FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2 AND fulfillment_status = 'cancelled'`,
+        [req.params.id, refundedSellerId]
+      );
+      if (!canceledPortion.rowCount || escrowResult.rows.length !== 1) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(409).json({ error: 'A seller-specific refund requires that seller’s cancelled order portion and held escrow.' });
+      }
+      const otherRefunds = await client.query(
+        `SELECT id FROM refund_payouts WHERE order_id = $1 AND status <> 'failed'
+         AND refunded_seller_id IS NULL LIMIT 1`, [req.params.id]
+      );
+      if (otherRefunds.rowCount) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(409).json({ error: 'This order has an existing order-wide refund; seller-specific refund allocation requires reconciliation first.' });
+      }
+    }
+
+    const inFlightRefund = await client.query(
+      `SELECT id FROM refund_payouts WHERE order_id = $1 AND status IN ('pending', 'processing')
+       AND ($2::uuid IS NULL OR refunded_seller_id = $2) LIMIT 1 FOR UPDATE`,
+      [req.params.id, refundedSellerId]
+    );
+    if (inFlightRefund.rowCount) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(409).json({ error: 'A MonCash refund transfer is still pending. Wait for its confirmed result before issuing another refund for this portion.' });
+    }
 
     const priorRefunds = await client.query(
-      "SELECT COALESCE(SUM(amount), 0) AS refunded FROM refund_payouts WHERE order_id = $1 AND status <> 'failed'",
-      [req.params.id]
+      `SELECT COALESCE(SUM(amount), 0) AS refunded FROM refund_payouts
+       WHERE order_id = $1 AND status <> 'failed' AND ($2::uuid IS NULL OR refunded_seller_id = $2)`,
+      [req.params.id, refundedSellerId]
     );
-    const amountRemaining = Math.max(0, Number(o.total_amount) - Number(priorRefunds.rows[0]?.refunded || 0));
+    const refundBasis = refundedSellerId ? Number(escrowResult.rows[0].gross_amount) : Number(o.total_amount);
+    const amountRemaining = Math.max(0, refundBasis - (refundedSellerId ? 0 : Number(priorRefunds.rows[0]?.refunded || 0)));
     const totalRefund = Math.round(Number(req.body?.amount ?? amountRemaining) * 100) / 100;
     if (!Number.isFinite(totalRefund) || totalRefund <= 0 || totalRefund > amountRemaining) {
       await client.query('ROLLBACK');
@@ -2887,11 +3335,14 @@ router.post('/orders/:id/escrow/refund', authRequired, async (req, res) => {
       );
     }
 
-    const fullyRefunded = totalRefund >= amountRemaining;
+    const fullyRefunded = !refundedSellerId && totalRefund >= amountRemaining;
     if (fullyRefunded) {
       await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [req.params.id]);
-      const items = await client.query('SELECT product_id, quantity, variant_id FROM order_items WHERE order_id = $1', [req.params.id]);
-      for (const item of items.rows) {
+      const reservations = await client.query(
+        `UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP
+         WHERE order_id = $1 AND status IN ('active','confirmed') RETURNING product_id, quantity, variant_id`, [req.params.id]
+      );
+      for (const item of reservations.rows) {
         await client.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
         await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
         if (item.variant_id) await client.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [item.quantity, item.variant_id]);
@@ -2901,10 +3352,10 @@ router.post('/orders/:id/escrow/refund', authRequired, async (req, res) => {
     const refundInsert = await client.query(
       `INSERT INTO refund_payouts
          (order_id, buyer_id, amount, fee_amount, receiver_phone, reason, cause, responsible_seller_id,
-          commission_reversed, collection_fee_kept, seller_fee_share,
+          refunded_seller_id, commission_reversed, collection_fee_kept, seller_fee_share,
           requested_by, approved_by, destination_verified)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, true) RETURNING id`,
-      [req.params.id, o.buyer_id, totalRefund, feeAmount, receiverPhone, reason, cause, responsibleSellerId, commissionReversed, collectionFeeKept, sellerFeeShare, req.user.id]
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, true) RETURNING id`,
+      [req.params.id, o.buyer_id, totalRefund, feeAmount, receiverPhone, reason, cause, responsibleSellerId, refundedSellerId, commissionReversed, collectionFeeKept, sellerFeeShare, req.user.id]
     );
     const refundId = refundInsert.rows[0].id;
     await client.query('UPDATE refund_payouts SET moncash_reference = $1 WHERE id = $2', [`refund_${refundId}`, refundId]);

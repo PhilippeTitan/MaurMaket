@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS } from '../../theme';
 import { useTranslation } from '@/localization';
 import { login as apiLogin, googleAuth } from '../../api';
@@ -146,9 +146,9 @@ export default function SigninForm({ switchMode, onForgotPassword }: SigninFormP
 
 const styles = StyleSheet.create({
   centeredHeader: { alignItems: 'center', marginBottom: 28, marginTop: SPACING.lg },
-  brand: { fontFamily: 'Syne', fontSize: 20, fontWeight: '800', color: COLORS.text },
+  brand: { fontSize: 20, fontWeight: '800', color: COLORS.text },
   brandAccent: { color: COLORS.coral },
-  title: { fontFamily: 'Syne', fontSize: 34, fontWeight: '800', color: COLORS.text, marginBottom: 8, textAlign: 'center', marginTop: 12 },
+  title: { fontSize: 32, fontWeight: '800', color: COLORS.text, marginBottom: 8, textAlign: 'center', marginTop: 12 },
   subtitle: { color: COLORS.text2, fontSize: 15, textAlign: 'center' },
 
   forgotBtn: { alignItems: 'flex-end', marginTop: -4, marginBottom: 8 },

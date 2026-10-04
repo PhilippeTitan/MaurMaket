@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../icons/Icon';
 import { COLORS, FONTS, FONT_SIZES, FONT_WEIGHTS, SPACING, TOUCH } from '../../theme';
 
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
   identityBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44, paddingRight: 6 },
   name: {
     fontSize: 22,
-    fontFamily: FONTS.heading,
+    
     fontWeight: '800',
     color: COLORS.text,
     maxWidth: 240,

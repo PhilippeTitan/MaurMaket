@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Platform, Animated } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, RADIUS, SPACING, FONT_SIZES, FONT_WEIGHTS } from '../theme';
 
 interface AuthMethodsCardProps {

@@ -134,8 +134,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   title: {
-    fontFamily: 'Syne',
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '800',
     color: COLORS.text,
     marginBottom: 6,

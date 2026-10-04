@@ -23,6 +23,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6, marginBottom: 6,
   },
   stepTitle: {
-    fontFamily: 'Syne', fontSize: 26, fontWeight: '800', color: COLORS.text, lineHeight: 30,
+    fontSize: 28, fontWeight: '800', color: COLORS.text, lineHeight: 32,
   },
 });

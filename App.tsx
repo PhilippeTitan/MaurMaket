@@ -1,15 +1,15 @@
 import React, { useEffect, useState, useRef, Component, Suspense, useCallback } from 'react';
-import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text, AppState, Modal, Pressable } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text, AppState, Modal, Pressable, useColorScheme } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { store } from './src/store';
-import { COLORS, SPACING, RADIUS, SHADOW, FONT_SIZES, FONT_WEIGHTS, FONTS, DURATION, ICON_SIZES, TOUCH, LAYOUT } from './src/theme';
+import { applyAppearanceMode, COLORS, SPACING, RADIUS, SHADOW, FONT_SIZES, FONT_WEIGHTS, FONTS, DURATION, ICON_SIZES, TOUCH, LAYOUT, type AppearanceMode } from './src/theme';
 import { i18n } from './src/localization';
 import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
@@ -21,6 +21,7 @@ import { PaperPlaneIcon } from './src/components/UserAvatar';
 import { getMe, getFollowerCount, getFollowing, getConversationUnreadCount } from './src/api';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, invalidateUser } from './src/hooks';
+import { useReduceMotion } from './src/hooks/useReduceMotion';
 import { ToastProvider } from './src/components/Toast';
 import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/notifications';
 import ForegroundNotificationBanner from './src/components/ForegroundNotificationBanner';
@@ -59,6 +60,7 @@ import EditProfileScreen from './src/screens/EditProfileScreen';
 import AccountDashboardScreen from './src/screens/AccountDashboardScreen';
 import SellerToolsSettingsScreen from './src/screens/SellerToolsSettingsScreen';
 import SellerFulfillmentSettingsScreen from './src/screens/SellerFulfillmentSettingsScreen';
+import SellerMapVisibilityScreen from './src/screens/SellerMapVisibilityScreen';
 import NatCashAccessScreen from './src/screens/NatCashAccessScreen';
 import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
 import BlockedUsersScreen from './src/screens/BlockedUsersScreen';
@@ -137,16 +139,18 @@ if (typeof document !== 'undefined') {
       width: 100% !important;
       height: 100% !important;
       overflow: hidden !important;
-      background: #0D1117 !important;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--mm-bg, #0D1117) !important;
+      background-image: none !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     }
   `;
   document.head.appendChild(style);
 }
 
 function AuthNavigator() {
+  const reduceMotion = useReduceMotion();
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: DURATION.screen, contentStyle: { backgroundColor: COLORS.bg } }}>
+    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: reduceMotion ? 'none' : 'fade', animationDuration: reduceMotion ? 0 : DURATION.screen, contentStyle: { backgroundColor: COLORS.bg } }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Signup" component={SignupScreen} />
       <AuthStack.Screen name="EmailVerification" component={EmailVerificationScreen} />
@@ -267,13 +271,17 @@ function MainTabs() {
 }
 
 export default function App() {
+  const reduceMotion = useReduceMotion();
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('system');
+  const systemColorScheme = useColorScheme();
   const [pendingDob, setPendingDob] = useState(false);
   const [paymentFailed, setPaymentFailed] = useState<{ title: string; message: string; onRetry: () => void } | null>(null);
 
   useEffect(() => {
     (async () => {
       await store.init();
+      setAppearanceMode(store.appearanceMode);
       await i18n.init();
       await network.init();
       await offlineQueue.init();
@@ -317,9 +325,14 @@ export default function App() {
     const unsub = store.onChange(() => {
       setIsLoggedIn(!!store.user);
       setPendingDob(!!store.user?.pending_dob);
+      setAppearanceMode(store.appearanceMode);
     });
     return unsub;
   }, []);
+
+  useEffect(() => {
+    applyAppearanceMode(appearanceMode, systemColorScheme === 'light' || systemColorScheme === 'dark' ? systemColorScheme : null);
+  }, [appearanceMode, systemColorScheme]);
 
   useEffect(() => {
     if (!isLoggedIn || !store.consumeUsernamePrompt()) return;
@@ -455,8 +468,8 @@ export default function App() {
         }
       }
     }}>
-      <StatusBar style="light" />
-      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right', animationDuration: DURATION.screen, contentStyle: { backgroundColor: COLORS.bg } }}>
+      <StatusBar style={systemColorScheme === 'light' && appearanceMode !== 'dark' || appearanceMode === 'light' ? 'dark' : 'light'} />
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: reduceMotion ? 'none' : 'slide_from_right', animationDuration: reduceMotion ? 0 : DURATION.screen, contentStyle: { backgroundColor: COLORS.bg } }}>
         {!isLoggedIn ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
         ) : (
@@ -489,6 +502,7 @@ export default function App() {
             <Stack.Screen name="LocationSettings" component={LocationSettingsScreen} />
             <Stack.Screen name="SellerToolsSettings" component={SellerToolsSettingsScreen} />
             <Stack.Screen name="SellerFulfillmentSettings" component={SellerFulfillmentSettingsScreen} />
+            <Stack.Screen name="SellerMapVisibility" component={SellerMapVisibilityScreen} />
             <Stack.Screen name="NatCashAccess" component={NatCashAccessScreen} />
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
             <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />

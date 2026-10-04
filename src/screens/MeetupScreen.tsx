@@ -3,9 +3,9 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform,
   ScrollView, Modal, TextInput,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
-import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import NativeMap from '../components/NativeMap';
 
@@ -21,6 +21,7 @@ import { SkeletonBlock } from '../components/Skeleton';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Order } from '../types';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Meetup'>;
 
@@ -32,6 +33,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
   const { orderId } = route.params;
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
+  const reduceMotion = useReduceMotion();
   const mapRef = useRef<any>(null);
 
   const [order, setOrder] = useState<Order | null>(null);
@@ -440,7 +442,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
         {/* QR section for buyer */}
         {isBuyer && myCheckedIn && otherCheckedIn && proximityConfirmed && meetupCode && (
-          <TouchableOpacity style={styles.qrButton} onPress={() => setCodeModalVisible(true)} accessibilityLabel="show delivery code" accessibilityRole="button">
+          <TouchableOpacity style={styles.qrButton} onPress={() => setCodeModalVisible(true)} accessibilityLabel={t('meetup.showDeliveryCode')} accessibilityRole="button">
             <MaterialCommunityIcons name="numeric" size={20} color={COLORS.white} />
             <Text style={styles.qrButtonText}>{t('meetup.showDeliveryCode')}</Text>
           </TouchableOpacity>
@@ -448,7 +450,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
 
         {/* Scan section for seller */}
         {isSeller && myCheckedIn && otherCheckedIn && proximityConfirmed && (
-          <TouchableOpacity style={styles.scanButton} onPress={() => setScanModalVisible(true)} accessibilityLabel="enter delivery code" accessibilityRole="button">
+          <TouchableOpacity style={styles.scanButton} onPress={() => setScanModalVisible(true)} accessibilityLabel={t('meetup.enterDeliveryCode')} accessibilityRole="button">
             <MaterialCommunityIcons name="form-textbox-password" size={20} color={COLORS.white} />
             <Text style={styles.scanButtonText}>{t('meetup.enterDeliveryCode')}</Text>
           </TouchableOpacity>
@@ -477,7 +479,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             style={[styles.checkinBtn, checkinLoading && { opacity: 0.5 }]}
             onPress={handleCheckin}
             disabled={checkinLoading}
-            accessibilityLabel="i'm here"
+            accessibilityLabel={t('meetup.imHere')}
             accessibilityRole="button"
           >
             {checkinLoading ? (
@@ -496,7 +498,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={styles.receiptBtn}
             onPress={() => setReceiptModalVisible(true)}
-            accessibilityLabel="confirm receipt"
+            accessibilityLabel={t('meetup.confirmReceipt')}
             accessibilityRole="button"
           >
             <Icon name="offer-coin" size={18} color={COLORS.white} />
@@ -507,11 +509,11 @@ export default function MeetupScreen({ route, navigation }: Props) {
         {/* Cancel / Emergency */}
         {order.status === 'paid' && (
           <View style={styles.emergencyRow}>
-            <TouchableOpacity style={[styles.emergencyBtn, { borderColor: COLORS.blue }]} onPress={handleExtend} accessibilityLabel="extend time 30 minutes" accessibilityRole="button">
+            <TouchableOpacity style={[styles.emergencyBtn, { borderColor: COLORS.blue }]} onPress={handleExtend} accessibilityLabel={t('meetup.extendPlus30m')} accessibilityRole="button">
               <MaterialCommunityIcons name="clock-plus" size={16} color={COLORS.blue} />
               <Text style={[styles.emergencyBtnText, { color: COLORS.blue }]}>{t('meetup.extendPlus30m')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.emergencyBtn} onPress={handleRefund} disabled={refunding} accessibilityLabel="cancel meetup" accessibilityRole="button">
+            <TouchableOpacity style={styles.emergencyBtn} onPress={handleRefund} disabled={refunding} accessibilityLabel={t('common.cancel')} accessibilityRole="button">
               {refunding ? (
                 <ActivityIndicator size="small" color={COLORS.coral} />
               ) : (
@@ -521,7 +523,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
                 </>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.emergencyBtn, { borderColor: '#FF2D2D' }]} onPress={handleEmergencyExit} accessibilityLabel="emergency exit" accessibilityRole="button">
+            <TouchableOpacity style={[styles.emergencyBtn, { borderColor: '#FF2D2D' }]} onPress={handleEmergencyExit} accessibilityLabel={t('meetup.emergency')} accessibilityRole="button">
               <MaterialCommunityIcons name="shield-alert" size={16} color="#FF2D2D" />
               <Text style={[styles.emergencyBtnText, { color: '#FF2D2D' }]}>{t('meetup.emergency')}</Text>
             </TouchableOpacity>
@@ -530,12 +532,12 @@ export default function MeetupScreen({ route, navigation }: Props) {
       </ScrollView>
 
       {/* Delivery code modal */}
-      <Modal visible={codeModalVisible} transparent animationType="slide">
+      <Modal visible={codeModalVisible} transparent animationType={reduceMotion ? 'none' : 'slide'}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('meetup.yourDeliveryCode')}</Text>
-                <TouchableOpacity onPress={() => setCodeModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
+                <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setCodeModalVisible(false)} accessibilityLabel={t('common.close')} accessibilityRole="button">
                 <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -548,12 +550,12 @@ export default function MeetupScreen({ route, navigation }: Props) {
       </Modal>
 
       {/* Scan Modal */}
-      <Modal visible={scanModalVisible} transparent animationType="slide">
+      <Modal visible={scanModalVisible} transparent animationType={reduceMotion ? 'none' : 'slide'}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('meetup.enterDeliveryCodeTitle')}</Text>
-              <TouchableOpacity onPress={() => setScanModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setScanModalVisible(false)} accessibilityLabel={t('common.close')} accessibilityRole="button">
                 <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -571,7 +573,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
                 autoCorrect={false}
                 keyboardType="number-pad"
                 maxLength={4}
-                accessibilityLabel="delivery code input"
+                accessibilityLabel={t('meetup.codePlaceholder')}
                
               />
             </View>
@@ -579,7 +581,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
               style={[styles.scanConfirmBtn, scanLoading && { opacity: 0.5 }]}
               onPress={handleScan}
               disabled={scanLoading}
-              accessibilityLabel="confirm exchange"
+              accessibilityLabel={t('meetup.confirmExchange')}
               accessibilityRole="button"
             >
               {scanLoading ? (
@@ -593,12 +595,12 @@ export default function MeetupScreen({ route, navigation }: Props) {
       </Modal>
 
       {/* Receipt Modal */}
-      <Modal visible={receiptModalVisible} transparent animationType="slide">
+      <Modal visible={receiptModalVisible} transparent animationType={reduceMotion ? 'none' : 'slide'}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('meetup.confirmReceiptTitle')}</Text>
-              <TouchableOpacity onPress={() => setReceiptModalVisible(false)} accessibilityLabel="close" accessibilityRole="button">
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setReceiptModalVisible(false)} accessibilityLabel={t('common.close')} accessibilityRole="button">
                 <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -615,7 +617,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
               style={[styles.receiptConfirmBtn, releaseLoading && { opacity: 0.5 }]}
               onPress={handleConfirmReceipt}
               disabled={releaseLoading}
-              accessibilityLabel="yes, i received it"
+              accessibilityLabel={t('meetup.yesReceivedIt')}
               accessibilityRole="button"
             >
               {releaseLoading ? (
@@ -630,7 +632,7 @@ export default function MeetupScreen({ route, navigation }: Props) {
             <TouchableOpacity
               style={styles.receiptDisputeBtn}
               onPress={handleDispute}
-              accessibilityLabel="open dispute"
+              accessibilityLabel={t('meetup.openDispute')}
               accessibilityRole="button"
             >
               <Text style={styles.receiptDisputeBtnText}>{t('meetup.openDispute')}</Text>
@@ -743,9 +745,10 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.lg,
   },
-  modalTitle: { fontFamily: 'Syne', fontSize: 18, fontWeight: '800', color: COLORS.text },
+  modalCloseBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
   qrContainer: { alignItems: 'center', paddingVertical: 24, backgroundColor: COLORS.bg, borderRadius: RADIUS.media, marginBottom: 14 },
-  meetupCodeText: { color: COLORS.text, fontSize: 48, fontWeight: '800', letterSpacing: 10 },
+  meetupCodeText: { color: COLORS.text, fontSize: FONT_SIZES.code, fontWeight: '800', letterSpacing: 10 },
   qrHint: { fontSize: 13, color: COLORS.text2, textAlign: 'center', marginBottom: 12 },
   copyTokenBtn: { alignItems: 'center', padding: 10 },
   copyTokenText: { fontSize: 13, color: COLORS.blue, fontWeight: '600' },
@@ -767,6 +770,6 @@ const styles = StyleSheet.create({
     padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.green, marginBottom: 10,
   },
   receiptConfirmBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
-  receiptDisputeBtn: { alignItems: 'center', padding: 10 },
+  receiptDisputeBtn: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 10 },
   receiptDisputeBtnText: { fontSize: 13, color: COLORS.coral, fontWeight: '600' },
 });

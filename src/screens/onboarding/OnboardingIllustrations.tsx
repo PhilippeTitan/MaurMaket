@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Animated, Easing } from 'react-native';
 import Svg, { Circle, Rect, Path, Defs, LinearGradient, Stop, Ellipse, G } from 'react-native-svg';
+import { COLORS } from '../../theme';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 const VIOLET = '#8B5CF6';
 const PINK = '#EC4899';
@@ -9,7 +11,7 @@ const MINT = '#00E5A0';
 const BG1 = '#120E1F';
 const SURFACE = 'rgba(255,255,255,0.06)';
 const BORDER_HI = 'rgba(255,255,255,0.18)';
-const TEXT = '#E6EDF3';
+const TEXT = COLORS.text;
 
 function GradientDefs() {
   return (
@@ -50,9 +52,16 @@ function LogoMark({ size = 40 }: { size?: number }) {
 
 function Splash({ size = 160 }: { size?: number }) {
   const spin = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
   useEffect(() => {
-    Animated.loop(Animated.timing(spin, { toValue: 1, duration: 22000, easing: Easing.linear, useNativeDriver: true })).start();
-  }, []);
+    if (reduceMotion) {
+      spin.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 22000, easing: Easing.linear, useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [reduceMotion, spin]);
   const rotation = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (

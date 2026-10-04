@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, View, Text, StyleSheet, Animated, Easing, Pressable } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { COLORS } from '../../theme';
 import { googleAuthInfo } from '../../api';
@@ -9,6 +9,7 @@ import { useTranslation } from '@/localization';
 import { useViewport } from '@/hooks';
 import OnboardingBackground from './components/OnboardingBackground';
 import GoogleButton from './components/GoogleButton';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 interface AnimatedOnboardingProps {
   onSwitchToSignin?: () => void;
@@ -23,6 +24,7 @@ function Loader({ autoExpand, onComplete, onPressChange }: {
   onComplete: () => void;
   onPressChange: (pressed: boolean) => void;
 }) {
+  const reduceMotion = useReduceMotion();
   // How far the rings expand to fill the screen when the hold completes: the window
   // diagonal over the innermost ring. Read live, so the reveal still covers the whole
   // screen after a resize, a rotation or on a window the app did not boot in.
@@ -51,6 +53,10 @@ function Loader({ autoExpand, onComplete, onPressChange }: {
 
   const startIdle = () => {
     stopIdle();
+    if (reduceMotion) {
+      rings.forEach((ring) => ring.setValue(1));
+      return;
+    }
     idleAnimations.current = rings.map((ring) =>
       Animated.loop(
         Animated.sequence([
@@ -77,7 +83,7 @@ function Loader({ autoExpand, onComplete, onPressChange }: {
   useEffect(() => {
     startIdle();
     return stopIdle;
-  }, [rings]);
+  }, [rings, reduceMotion]);
 
   const returnToRest = () => {
     onPressChange(false);

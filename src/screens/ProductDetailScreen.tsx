@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Share, FlatList, Animated, Modal, Pressable,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, getDisplayName, formatPrice } from '../theme';
@@ -915,10 +915,10 @@ const styles = StyleSheet.create({
 
   /* Trust bar */
   trustBarWrap: { paddingHorizontal: 14, paddingTop: 4, paddingBottom: 10 },
-  trustBarCompact: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.surface, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border + '40' },
+  trustBarCompact: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.surface, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border },
   trustBarCompactText: { flex: 1, fontSize: 11, color: COLORS.text2, fontWeight: '500' },
   trustBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  trustPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: COLORS.border + '40' },
+  trustPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: COLORS.border },
   trustPillText: { fontSize: 10, fontWeight: '600', color: COLORS.text2 },
 
   /* Product info */
@@ -933,7 +933,7 @@ const styles = StyleSheet.create({
   conditionCard: {
     marginTop: 10, gap: 8,
     backgroundColor: COLORS.surface, borderRadius: RADIUS.card,
-    borderWidth: 1, borderColor: COLORS.border + '40',
+    borderWidth: 1, borderColor: COLORS.border,
     paddingHorizontal: 10, paddingVertical: 8,
   },
   conditionRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

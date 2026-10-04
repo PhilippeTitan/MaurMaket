@@ -1,8 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
-import { ONBOARDING_COLORS } from '../screens/onboarding/theme';
 
 interface Props {
   /** Left icon name (MaterialCommunityIcons) */
@@ -50,12 +49,12 @@ interface Props {
  */
 export default function SettingsRow({
   icon,
-  iconColor = ONBOARDING_COLORS.white,
+  iconColor = COLORS.textInverse,
   iconBg,
   label,
   subtitle,
   value,
-  valueColor = ONBOARDING_COLORS.sub,
+  valueColor = COLORS.text2,
   chip,
   chevron = false,
   rightElement,
@@ -65,15 +64,15 @@ export default function SettingsRow({
   destructive = false,
   appearance = 'minimal',
 }: Props) {
-  const labelColor = destructive ? ONBOARDING_COLORS.coral : ONBOARDING_COLORS.text;
-  const finalIconColor = destructive ? ONBOARDING_COLORS.coral : appearance === 'minimal' ? COLORS.text2 : iconColor;
+  const labelColor = destructive ? COLORS.coral : COLORS.text;
+  const finalIconColor = destructive ? COLORS.coral : appearance === 'minimal' ? COLORS.text2 : iconColor;
 
   const content = (
     <View style={[styles.row, appearance === 'minimal' && styles.minimalRow, style]}>
       {icon ? (
         <View style={[
           styles.iconContainer,
-          appearance === 'minimal' ? styles.minimalIcon : { backgroundColor: iconBg || 'rgba(255,255,255,0.06)' },
+          appearance === 'minimal' ? styles.minimalIcon : { backgroundColor: iconBg || COLORS.surface2 },
         ]}>
           <MaterialCommunityIcons name={icon as any} size={22} color={finalIconColor} />
         </View>
@@ -92,13 +91,13 @@ export default function SettingsRow({
             <Text style={[styles.chipText, { color: chip.color }]}>{chip.label}</Text>
           </View>
         ) : value ? (
-          <Text style={[styles.value, { color: destructive ? ONBOARDING_COLORS.coral : valueColor }]} numberOfLines={1}>
+          <Text style={[styles.value, { color: destructive ? COLORS.coral : valueColor }]} numberOfLines={1}>
             {value}
           </Text>
         ) : null}
         {rightElement || null}
         {chevron && !rightElement ? (
-          <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} style={styles.chevron} />
+          <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} style={styles.chevron} />
         ) : null}
       </View>
     </View>
@@ -108,7 +107,12 @@ export default function SettingsRow({
     return (
       <View>
         {onPress ? (
-          <TouchableOpacity activeOpacity={0.6} onPress={onPress}>
+          <TouchableOpacity
+            activeOpacity={0.6}
+            onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={[label, subtitle, value].filter(Boolean).join(', ')}
+          >
             {content}
           </TouchableOpacity>
         ) : (
@@ -120,7 +124,12 @@ export default function SettingsRow({
   }
 
   return onPress ? (
-    <TouchableOpacity activeOpacity={0.6} onPress={onPress}>
+    <TouchableOpacity
+      activeOpacity={0.6}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={[label, subtitle, value].filter(Boolean).join(', ')}
+    >
       {content}
     </TouchableOpacity>
   ) : content;
@@ -134,7 +143,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     gap: SPACING.md,
-    backgroundColor: 'rgba(255,255,255,0.015)',
+    backgroundColor: COLORS.surface,
   },
   minimalRow: {
     minHeight: 54,
@@ -150,7 +159,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: ONBOARDING_COLORS.border,
+    borderColor: COLORS.border,
   },
   minimalIcon: {
     width: 28,
@@ -166,7 +175,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: FONT_SIZES.lg,
     fontWeight: FONT_WEIGHTS.medium,
-    color: ONBOARDING_COLORS.text,
+    color: COLORS.text,
   },
   minimalLabel: {
     fontSize: FONT_SIZES.base,
@@ -174,7 +183,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: FONT_SIZES.xs,
-    color: ONBOARDING_COLORS.sub,
+    color: COLORS.text2,
     lineHeight: 15,
   },
   right: {
@@ -184,7 +193,7 @@ const styles = StyleSheet.create({
   },
   value: {
     fontSize: FONT_SIZES.base,
-    color: ONBOARDING_COLORS.sub,
+    color: COLORS.text2,
   },
   chip: {
     paddingHorizontal: 10,
@@ -201,7 +210,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: ONBOARDING_COLORS.border,
+    backgroundColor: COLORS.border,
     marginLeft: SPACING.md + 36 + SPACING.md,
   },
   minimalDivider: {

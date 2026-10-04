@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS } from '../theme';
 
 interface WelcomeMomentProps {
@@ -77,8 +77,7 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   title: {
-    fontFamily: 'Syne',
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '800',
     color: COLORS.text,
     marginBottom: 8,

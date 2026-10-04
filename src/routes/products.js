@@ -74,22 +74,23 @@ async function notifyPriceDrop(productId, oldPrice, newPrice) {
 // DIVERSITY RERANKER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Hard cap on seller/category representation in the personalized feed.
-// Items that exceed caps are dropped — no re-appending. The feed may be slightly shorter
-// but never repetitive. FlatList's onEndReached loads more naturally.
-function diversifyFeed(products, { maxPerSeller = 3, maxPerCategory = 5 } = {}) {
+// Preserve relevance while avoiding adjacent repeats when alternatives are nearby.
+function diversifyFeed(products, { lookahead = 6 } = {}) {
   if (!products || products.length <= 1) return products;
-  const sellerCounts = {};
-  const categoryCounts = {};
+  const remaining = [...products];
   const result = [];
-  for (const p of products) {
-    const sid = p.seller_id;
-    const cid = p.category_id;
-    if (sid && (sellerCounts[sid] || 0) >= maxPerSeller) continue;
-    if (cid && (categoryCounts[cid] || 0) >= maxPerCategory) continue;
-    result.push(p);
-    if (sid) sellerCounts[sid] = (sellerCounts[sid] || 0) + 1;
-    if (cid) categoryCounts[cid] = (categoryCounts[cid] || 0) + 1;
+  while (remaining.length) {
+    const windowSize = Math.min(lookahead, remaining.length);
+    const candidates = remaining.slice(0, windowSize);
+    const previous = result[result.length - 1];
+    let selectedIndex = candidates.findIndex((product) =>
+      product.seller_id !== previous?.seller_id && product.category_id !== previous?.category_id
+    );
+    if (selectedIndex < 0) {
+      selectedIndex = candidates.findIndex((product) => product.seller_id !== previous?.seller_id);
+    }
+    if (selectedIndex < 0) selectedIndex = 0;
+    result.push(remaining.splice(selectedIndex, 1)[0]);
   }
   return result;
 }
@@ -99,8 +100,10 @@ function diversifyFeed(products, { maxPerSeller = 3, maxPerCategory = 5 } = {}) 
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.get('/products', optionalAuth, async (req, res) => {
-  const { category, search, seller, minPrice, maxPrice, sort, page = 1, limit = 20, personalized, following } = req.query;
-  const offset = (Math.max(1, page) - 1) * Math.min(limit, 50);
+  const { category, search, seller, minPrice, maxPrice, condition, excludeOwnListings, excludeProductIds, sort, page = 1, limit = 20, personalized, following } = req.query;
+  const offset = excludeProductIds
+    ? 0
+    : (Math.max(1, page) - 1) * Math.min(limit, 50);
 
   const params = [];
   const conditions = ['p.is_available = TRUE'];
@@ -111,7 +114,12 @@ router.get('/products', optionalAuth, async (req, res) => {
     params.push(category);
   }
   if (search) {
-    conditions.push(`(p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex})`);
+    conditions.push(`(
+      p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex} OR c.name ILIKE $${paramIndex}
+      OR u.username ILIKE $${paramIndex}
+      OR (u.use_store_identity = TRUE AND u.store_name ILIKE $${paramIndex})
+      OR (u.show_real_name = TRUE AND u.full_name ILIKE $${paramIndex})
+    )`);
     params.push(`%${search}%`);
     paramIndex++;
   }
@@ -127,12 +135,26 @@ router.get('/products', optionalAuth, async (req, res) => {
     conditions.push(`(CASE WHEN p.sale_price IS NOT NULL AND (p.sale_starts_at IS NULL OR p.sale_starts_at <= NOW()) AND (p.sale_ends_at IS NULL OR p.sale_ends_at >= NOW()) THEN p.sale_price ELSE p.price END) <= $${paramIndex++}`);
     params.push(maxPrice);
   }
+  if (condition) {
+    const validConditions = new Set(['new', 'like_new', 'good', 'fair', 'for_parts']);
+    if (!validConditions.has(condition)) return res.status(400).json({ error: 'Invalid condition filter' });
+    conditions.push(`p.condition = $${paramIndex++}`);
+    params.push(condition);
+  }
 
-  let usePersonalized = false;
-  let userId = null;
-  if (req.user && (personalized === 'true' || following === 'true')) {
-    userId = req.user.id;
-    usePersonalized = true;
+  const userId = req.user?.id || null;
+  const usePersonalized = !!userId && (personalized === 'true' || following === 'true');
+  if (excludeOwnListings === 'true' && userId) {
+    conditions.push(`p.seller_id <> $${paramIndex++}`);
+    params.push(userId);
+  }
+  if (excludeProductIds) {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const excludedIds = String(excludeProductIds).split(',').filter((id) => uuidPattern.test(id));
+    if (excludedIds.length) {
+      conditions.push(`NOT (p.id = ANY($${paramIndex++}::uuid[]))`);
+      params.push(excludedIds);
+    }
   }
 
   const engagementUserId = userId || null;
@@ -399,7 +421,7 @@ router.get('/products', optionalAuth, async (req, res) => {
 
     const total = result.rows.length > 0 ? Number(result.rows[0].total_count) : 0;
     let products = result.rows.map(({ total_count, ...product }) => product);
-    if (usePersonalized && products.length > 1) {
+    if (usePersonalizedRanking && products.length > 1) {
       products = diversifyFeed(products);
     }
     res.json({ products, total, page: +page, pages: Math.ceil(total / Math.min(limit, 50)) });

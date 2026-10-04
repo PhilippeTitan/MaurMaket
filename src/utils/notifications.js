@@ -15,6 +15,7 @@ const ACTION_REQUIRED_TYPES = new Set([
   'meetup_proposed',
   'payment_failed',
   'dispute_opened',
+  'cancellation_requested',
   'low_stock',
   'product_sold_out',
   'verification_rejected',
@@ -54,6 +55,8 @@ const URGENT_TYPES = new Set([
   'meetup_expired',
   // Disputes
   'dispute_opened',
+  'cancellation_requested',
+  'cancellation_response',
   'dispute_resolved',
   // Inventory
   'low_stock',
@@ -125,6 +128,10 @@ function sanitizeForLockScreen(type, title, body) {
       return { title: 'Payout Alert', body: 'A payout requires your attention. Open MaurMaket to review.' };
     case 'dispute_opened':
       return { title: 'Dispute Opened', body: 'A dispute was opened on your order. Please review and respond.' };
+    case 'cancellation_requested':
+      return { title: 'Cancellation request', body: 'A cancellation request needs your response. Open MaurMaket to review.' };
+    case 'cancellation_response':
+      return { title: 'Cancellation request update', body: 'There is an update about your order cancellation request.' };
     case 'dispute_resolved':
       return { title: 'Dispute Update', body: 'A dispute update has been recorded.' };
     case 'new_message':
@@ -168,7 +175,15 @@ async function createNotification(userId, type, title, body, data, db) {
 
   try {
     // 1. Resolve / supersede previous action notifications if applicable
-    if (type === 'meetup_confirmed' && data?.orderId) {
+    if (type === 'meetup_proposed' && data?.orderId) {
+      // A newer location proposal replaces the prior pending response for this order.
+      // Keep the old activity in history while removing it from Action needed.
+      await exec.query(
+        `UPDATE notifications SET action_resolved = true
+         WHERE user_id = $1 AND (data->>'orderId') = $2 AND type = 'meetup_proposed' AND action_resolved = false`,
+        [userId, String(data.orderId)]
+      );
+    } else if (type === 'meetup_confirmed' && data?.orderId) {
       await exec.query(
         `UPDATE notifications SET action_resolved = true, is_read = true
          WHERE user_id = $1 AND (data->>'orderId') = $2 AND type = 'meetup_proposed' AND action_resolved = false`,
@@ -179,6 +194,13 @@ async function createNotification(userId, type, title, body, data, db) {
         `UPDATE notifications SET action_resolved = true, is_read = true
          WHERE user_id = $1 AND (data->>'pendingId') = $2 AND type IN ('fulfillment_proposed', 'fulfillment_countered') AND action_resolved = false`,
         [userId, String(data.pendingId)]
+      );
+    } else if (type === 'cancellation_response' && data?.cancellationRequestId) {
+      await exec.query(
+        `UPDATE notifications SET action_resolved = true, is_read = true
+         WHERE user_id = $1 AND (data->>'cancellationRequestId') = $2
+           AND type = 'cancellation_requested' AND action_resolved = false`,
+        [userId, String(data.cancellationRequestId)]
       );
     } else if (type === 'fulfillment_countered' && data?.pendingId) {
       // Counter supersedes prior proposal

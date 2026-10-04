@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, RADIUS } from '../../theme';
 import { useReduceMotion } from '../../hooks';
 

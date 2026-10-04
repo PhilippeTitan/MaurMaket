@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
   KeyboardAvoidingView, Platform, Animated, Alert,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '@/localization';
 import { signup as apiSignup, login as apiLogin, googleAuth } from '../api';
@@ -527,7 +527,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: SPACING.sm,
   },
-  brand: { fontFamily: 'Syne', fontSize: 20, fontWeight: '800', color: COLORS.text },
+  brand: { fontSize: 20, fontWeight: '800', color: COLORS.text },
   brandAccent: { color: COLORS.coral },
   modeSwitch: {
     flexDirection: 'row', backgroundColor: COLORS.surface2, borderRadius: 999, padding: 3,
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6, marginBottom: 6,
   },
   stepTitle: {
-    fontFamily: 'Syne', fontSize: 26, fontWeight: '800', color: COLORS.text, lineHeight: 30,
+    fontSize: 28, fontWeight: '800', color: COLORS.text, lineHeight: 32,
   },
 
   // Inputs
@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
 
   // Sign in
   centeredHeader: { alignItems: 'center', marginBottom: 36, marginTop: SPACING.xl },
-  signInTitle: { fontFamily: 'Syne', fontSize: 34, fontWeight: '800', color: COLORS.text, marginBottom: 8, textAlign: 'center' },
+  signInTitle: { fontSize: 32, fontWeight: '800', color: COLORS.text, marginBottom: 8, textAlign: 'center' },
   signInSubtitle: { color: COLORS.text2, fontSize: 15, textAlign: 'center' },
   forgotBtn: { alignItems: 'flex-end', marginTop: -4, marginBottom: 8 },
   forgotText: { color: COLORS.coral, fontSize: 14, fontWeight: '500' },

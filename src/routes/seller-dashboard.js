@@ -106,10 +106,11 @@ router.put('/api/seller/fulfillment-profile', authRequired, sellerRequired, asyn
 // Seller location
 router.get('/api/seller/location', authRequired, sellerRequired, async (req, res) => {
   try {
-    const result = await pool.query('SELECT lat, lng, is_visible FROM seller_locations WHERE seller_id = $1', [req.user.id]);
+    const result = await pool.query('SELECT public_lat, public_lng, is_visible, public_area_confirmed FROM seller_locations WHERE seller_id = $1', [req.user.id]);
     if (result.rows.length === 0) return res.json({ lat: null, lng: null, isVisible: false });
     const row = result.rows[0];
-    res.json({ lat: row.lat, lng: row.lng, isVisible: row.is_visible });
+    const confirmed = Boolean(row.public_area_confirmed && row.public_lat != null && row.public_lng != null);
+    res.json({ lat: confirmed ? row.public_lat : null, lng: confirmed ? row.public_lng : null, isVisible: confirmed && Boolean(row.is_visible), areaConfirmed: confirmed });
   } catch (err) {
     console.error('Seller location fetch error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -120,8 +121,12 @@ router.put('/api/seller/location', authRequired, sellerRequired, async (req, res
   const { lat, lng, isVisible } = req.body;
   if (isVisible !== undefined && lat == null && lng == null) {
     try {
-      const existing = await pool.query('SELECT seller_id FROM seller_locations WHERE seller_id = $1', [req.user.id]);
+      const existing = await pool.query('SELECT seller_id, public_area_confirmed, public_lat, public_lng FROM seller_locations WHERE seller_id = $1', [req.user.id]);
       if (existing.rows.length === 0) return res.status(400).json({ error: 'No location set. Enable location first.' });
+      const row = existing.rows[0];
+      if (Boolean(isVisible) && (!row.public_area_confirmed || row.public_lat == null || row.public_lng == null)) {
+        return res.status(400).json({ error: 'Choose and save a public map area before enabling seller map visibility.' });
+      }
       await pool.query('UPDATE seller_locations SET is_visible = $1, updated_at = CURRENT_TIMESTAMP WHERE seller_id = $2', [Boolean(isVisible), req.user.id]);
       return res.json({ ok: true, isVisible: Boolean(isVisible) });
     } catch (err) {
@@ -135,13 +140,18 @@ router.put('/api/seller/location', authRequired, sellerRequired, async (req, res
   if (isNaN(latNum) || isNaN(lngNum)) return res.status(400).json({ error: 'Invalid coordinates' });
   if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) return res.status(400).json({ error: 'Coordinates out of range' });
   try {
-    const visible = isVisible !== undefined ? Boolean(isVisible) : true;
-    await pool.query(
-      `INSERT INTO seller_locations (seller_id, lat, lng, is_visible, updated_at) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-       ON CONFLICT (seller_id) DO UPDATE SET lat = $2, lng = $3, is_visible = $4, updated_at = CURRENT_TIMESTAMP`,
-      [req.user.id, latNum, lngNum, visible]
+  const visible = isVisible !== undefined ? Boolean(isVisible) : false;
+  // Round before persistence. Public discovery never uses a device GPS fix or
+  // exposes the private fulfillment point; roughly 100m grid cells are shown.
+  const publicLat = Math.round(latNum * 1000) / 1000;
+  const publicLng = Math.round(lngNum * 1000) / 1000;
+  await pool.query(
+      `INSERT INTO seller_locations (seller_id, public_lat, public_lng, public_area_confirmed, is_visible, updated_at)
+       VALUES ($1, $2, $3, true, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (seller_id) DO UPDATE SET public_lat = $2, public_lng = $3, public_area_confirmed = true, is_visible = $4, updated_at = CURRENT_TIMESTAMP`,
+      [req.user.id, publicLat, publicLng, visible]
     );
-    res.json({ ok: true, lat: latNum, lng: lngNum, isVisible: visible });
+    res.json({ ok: true, lat: publicLat, lng: publicLng, isVisible: visible, areaConfirmed: true });
   } catch (err) {
     console.error('Seller location update error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -206,6 +216,25 @@ router.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async 
       if (check.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
       const current = check.rows[0].status;
       const deliveryMethod = check.rows[0].delivery_method;
+      const acceptedCancellation = await client.query(
+        `SELECT id FROM disputes WHERE order_id = $1 AND seller_id = $2
+         AND reason = 'cancellation_request' AND status = 'under_review'
+         AND resolution = 'seller_accepted_pending_settlement' LIMIT 1`,
+        [req.params.id, req.user.id]
+      );
+      if (acceptedCancellation.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'You accepted a cancellation request for this seller portion. Pause fulfillment until its settlement is reviewed.' });
+      }
+      const unansweredCancellation = await client.query(
+        `SELECT id FROM disputes WHERE order_id = $1 AND seller_id = $2
+         AND reason = 'cancellation_request' AND status = 'open' LIMIT 1`,
+        [req.params.id, req.user.id]
+      );
+      if (unansweredCancellation.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Respond to the buyer’s cancellation request before advancing this seller portion.' });
+      }
       if (deliveryMethod === 'meetup' && (status === 'shipped' || status === 'delivered')) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'Meetup orders are completed via the QR exchange flow, not status updates' });
@@ -216,6 +245,13 @@ router.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async 
         return res.status(400).json({ error: `Cannot transition from ${current} to ${status}` });
       }
       await client.query('UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, req.params.id]);
+      if (['processing', 'shipped', 'delivered'].includes(status)) {
+        await client.query(
+          `UPDATE seller_fulfillments SET fulfillment_status = $1, updated_at = CURRENT_TIMESTAMP
+           WHERE order_id = $2 AND seller_id = $3 AND fulfillment_status <> 'cancelled'`,
+          [status, req.params.id, req.user.id]
+        );
+      }
       await logOrderEvent(req.params.id, 'status_change', req.user.id, current, status, 'Seller updated status', client);
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }

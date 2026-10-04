@@ -102,6 +102,7 @@ export default function MonCashSupportScreen({ navigation }: Props) {
           <Text style={styles.status}>{refund.status}</Text>
         </View>
         <Text style={styles.meta}>{refund.buyer_name} · {t('moncashSupport.order')} {String(refund.order_id).slice(0, 8)}</Text>
+        {refund.refunded_seller_name ? <Text style={styles.meta}>{t('moncashSupport.refundForSeller', { seller: refund.refunded_seller_name })}</Text> : null}
         <Text style={styles.meta}>{t('moncashSupport.withdrawalFee')}: G {Number(refund.fee_amount || 0).toFixed(2)} · {t('moncashSupport.destination')}: {refund.destination_verified ? refund.receiver_phone : t('moncashSupport.unverified')}</Text>
         {refund.reason ? <Text style={styles.reason}>{refund.reason}</Text> : null}
         {refund.status === 'completed' ? (

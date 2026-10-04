@@ -14,7 +14,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -77,7 +77,7 @@ function getNotifConfig(type: string): { icon: string; color: string; accent: st
       return { icon: 'close-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
     case 'order_note':
     case 'note_from_seller':
-      return { icon: 'note-text-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
+      return { icon: 'note-text-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.surface2 };
     case 'dispute_opened':
       return { icon: 'alert-circle-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
     // ── Meetup & Fulfillment ──
@@ -92,7 +92,7 @@ function getNotifConfig(type: string): { icon: string; color: string; accent: st
     case 'fulfillment_expired':
     case 'fulfillment_proposal_expired':
     case 'meetup_expired':
-      return { icon: 'clock-alert-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
+      return { icon: 'clock-alert-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.surface2 };
     // ── Reviews ──
     case 'review_received':
       return { icon: 'star-outline', color: COLORS.yellow, accent: COLORS.yellow, bg: COLORS.yellow + '18' };
@@ -121,7 +121,21 @@ function getNotifConfig(type: string): { icon: string; color: string; accent: st
     case 'verification_rejected':
       return { icon: 'shield-remove-outline', color: COLORS.coral, accent: COLORS.coral, bg: COLORS.coral + '18' };
     default:
-      return { icon: 'bell-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.text2 + '18' };
+      return { icon: 'bell-outline', color: COLORS.text2, accent: COLORS.text2, bg: COLORS.surface2 };
+  }
+}
+
+function getLocalizedNotifCopy(notif: Notification, t: (key: string) => string) {
+  if (notif.type !== 'cancellation_requested' && notif.type !== 'cancellation_response') {
+    return { title: notif.title, body: notif.body };
+  }
+  const outcome = notif.data?.cancellationOutcome || (notif.type === 'cancellation_requested' ? 'requested' : 'overdue');
+  switch (outcome) {
+    case 'requested': return { title: t('notif.cancellation.requestedTitle'), body: t('notif.cancellation.requestedBody') };
+    case 'accepted': return { title: t('notif.cancellation.acceptedTitle'), body: t('notif.cancellation.acceptedBody') };
+    case 'declined': return { title: t('notif.cancellation.declinedTitle'), body: t('notif.cancellation.declinedBody') };
+    case 'withdrawn': return { title: t('notif.cancellation.withdrawnTitle'), body: t('notif.cancellation.withdrawnBody') };
+    default: return { title: t('notif.cancellation.overdueTitle'), body: t('notif.cancellation.overdueBody') };
   }
 }
 
@@ -434,6 +448,7 @@ export default function NotificationScreen() {
     const isUnread = !notif.is_read;
     const isActionNeeded = notif.action_required && !notif.action_resolved;
     const config = getNotifConfig(notif.type);
+    const notifCopy = getLocalizedNotifCopy(notif, t);
     const deadlineText = formatDeadline(notif.action_deadline, t);
     const cta = getCTAInfo(notif);
     const data = notif.data || {};
@@ -451,7 +466,7 @@ export default function NotificationScreen() {
           ]}
           onPress={() => handlePress(notif)}
           activeOpacity={0.7}
-          accessibilityLabel={notif.title}
+          accessibilityLabel={`${notifCopy.title}. ${notifCopy.body || ''}`}
           accessibilityRole="button"
         >
           {/* Subtle unread accent bar */}
@@ -490,14 +505,14 @@ export default function NotificationScreen() {
                 ]}
                 numberOfLines={1}
               >
-                {notif.title}
+                {notifCopy.title}
               </Text>
               <Text style={styles.notifTime}>{timeAgo(notif.created_at, t)}</Text>
             </View>
 
-            {notif.body ? (
+            {notifCopy.body ? (
               <Text style={styles.notifDesc} numberOfLines={2}>
-                {notif.body}
+                {notifCopy.body}
               </Text>
             ) : null}
 

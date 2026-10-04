@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Modal, Pressable, FlatList, RefreshControl,
+  ActivityIndicator, Modal, Pressable, FlatList, RefreshControl, ScrollView,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '../components/icons/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, RADIUS, getDisplayName } from '../theme';
+import { useFocusEffect } from '@react-navigation/native';
+import { COLORS, RADIUS } from '../theme';
 import { getProducts, getCategories, trackFeedEvent } from '../api';
 import { store } from '../store';
 import { useQuery } from '@tanstack/react-query';
@@ -21,6 +22,8 @@ import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
 import MasonryGrid from '../components/MasonryGrid';
+import SaveChip from '../components/profile/SaveChip';
+import { useSavedListings } from '../hooks/useSavedListings';
 
 type Props = NativeStackScreenProps<RootStackParamList>;
 type CategoryFilter = Pick<Category, 'id' | 'name'>;
@@ -35,6 +38,14 @@ const SORT_OPTIONS: SortOption[] = [
 ];
 
 const DEFAULT_SORT = 'foryou';
+const CONDITION_OPTIONS = ['new', 'like_new', 'good', 'fair', 'for_parts'] as const;
+const CONDITION_LABEL_KEYS: Record<(typeof CONDITION_OPTIONS)[number], string> = {
+  new: 'addListing.cond.new',
+  like_new: 'addListing.cond.likeNew',
+  good: 'addListing.cond.good',
+  fair: 'addListing.cond.fair',
+  for_parts: 'addListing.cond.forParts',
+};
 
 const CAT_ICONS: Record<string, string> = {
   electronics: 'cellphone',
@@ -64,21 +75,30 @@ export default function ExploreScreen({ navigation }: Props) {
   const [sortModal, setSortModal] = useState(false);
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
+  const [condition, setCondition] = useState('');
   // Staging state — only committed on Apply
   const [pendingSortBy, setPendingSortBy] = useState(DEFAULT_SORT);
   const [pendingMinPrice, setPendingMinPrice] = useState('');
   const [pendingMaxPrice, setPendingMaxPrice] = useState('');
+  const [pendingCondition, setPendingCondition] = useState('');
   const filtersRestored = useRef(false);
-  const [showPriceFilter, setShowPriceFilter] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [quickProduct, setQuickProduct] = useState<Product | null>(null);
   const [quickDismissable, setQuickDismissable] = useState(false);
+  const [, setStoreRevision] = useState(0);
 
   useEffect(() => {
     if (!quickProduct) { setQuickDismissable(false); return; }
     const timer = setTimeout(() => setQuickDismissable(true), 180);
     return () => clearTimeout(timer);
   }, [quickProduct]);
+
+  useEffect(() => store.onChange(() => setStoreRevision((revision) => revision + 1)), []);
+
+  useFocusEffect(useCallback(() => () => {
+    setSearch('');
+    setDebouncedSearch('');
+  }, []));
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
@@ -110,6 +130,7 @@ export default function ExploreScreen({ navigation }: Props) {
           if (saved.selectedCat) setSelectedCat(saved.selectedCat);
           if (saved.minPrice) setMinPrice(saved.minPrice);
           if (saved.maxPrice) setMaxPrice(saved.maxPrice);
+          if (saved.condition) setCondition(saved.condition);
         }
       } catch { /* ignore */ }
     })();
@@ -121,10 +142,10 @@ export default function ExploreScreen({ navigation }: Props) {
     (async () => {
       try {
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        await AsyncStorage.setItem('mm_explore_filters', JSON.stringify({ sortBy, selectedCat, minPrice, maxPrice }));
+        await AsyncStorage.setItem('mm_explore_filters', JSON.stringify({ sortBy, selectedCat, minPrice, maxPrice, condition }));
       } catch { /* ignore */ }
     })();
-  }, [sortBy, selectedCat, minPrice, maxPrice]);
+  }, [sortBy, selectedCat, minPrice, maxPrice, condition]);
 
   const productParams = useMemo(() => {
     const params: Record<string, string> = { limit: '50' };
@@ -134,8 +155,9 @@ export default function ExploreScreen({ navigation }: Props) {
     if (sortBy && sortBy !== DEFAULT_SORT) params.sort = sortBy;
     if (minPrice.trim()) params.minPrice = minPrice.trim();
     if (maxPrice.trim()) params.maxPrice = maxPrice.trim();
+    if (condition) params.condition = condition;
     return params;
-  }, [selectedCat, debouncedSearch, sortBy, minPrice, maxPrice]);
+  }, [selectedCat, debouncedSearch, sortBy, minPrice, maxPrice, condition]);
 
   const { data: products = [], isLoading: loading, refetch } = useQuery<Product[]>({
     queryKey: ['explore-products', productParams],
@@ -144,6 +166,15 @@ export default function ExploreScreen({ navigation }: Props) {
   });
 
   const productCacheKey = cacheKeys.explore(productParams, store.user?.id);
+  const productIds = useMemo(() => products.map((product) => product.id), [products]);
+  const savedListings = useSavedListings(store.isLoggedIn ? productIds : []);
+  const handleSave = useCallback((productId: string) => {
+    if (!store.isLoggedIn) {
+      navigation.navigate('Auth', { screen: 'Login' });
+      return;
+    }
+    void savedListings.toggle(productId);
+  }, [navigation, savedListings.toggle]);
   useEffect(() => {
     let active = true;
     void readSnapshot<Product[]>(productCacheKey).then(snapshot => {
@@ -195,6 +226,43 @@ export default function ExploreScreen({ navigation }: Props) {
     </TouchableOpacity>
   ), [navigation, t]);
 
+  const renderExploreCardOverlay = useCallback((item: Product) => (
+    <SaveChip
+      saved={savedListings.isSaved(item.id)}
+      onPress={() => handleSave(item.id)}
+      label={t(savedListings.isSaved(item.id) ? 'profile.unsaveListing' : 'profile.saveListing')}
+    />
+  ), [handleSave, savedListings.isSaved, t]);
+
+  const hasAppliedFilters = sortBy !== DEFAULT_SORT || !!selectedCat || !!minPrice || !!maxPrice || !!condition;
+  const hasAnySearchOrFilter = hasAppliedFilters || !!search.trim();
+  const clearAllFilters = useCallback(() => {
+    setSearch('');
+    setDebouncedSearch('');
+    setSelectedCat('');
+    setSortBy(DEFAULT_SORT);
+    setMinPrice('');
+    setMaxPrice('');
+    setCondition('');
+    setPendingSortBy(DEFAULT_SORT);
+    setPendingMinPrice('');
+    setPendingMaxPrice('');
+    setPendingCondition('');
+  }, []);
+
+  const activeFilters = [
+    selectedCat ? { key: 'category', label: selectedCat, clear: () => setSelectedCat('') } : null,
+    sortBy !== DEFAULT_SORT ? { key: 'sort', label: t(SORT_OPTIONS.find((option) => option.value === sortBy)?.label || 'explore.sortForYou'), clear: () => setSortBy(DEFAULT_SORT) } : null,
+    minPrice || maxPrice ? { key: 'price', label: `${minPrice || '0'}–${maxPrice || '∞'} G`, clear: () => { setMinPrice(''); setMaxPrice(''); } } : null,
+    condition ? { key: 'condition', label: t(CONDITION_LABEL_KEYS[condition as (typeof CONDITION_OPTIONS)[number]]), clear: () => setCondition('') } : null,
+  ].filter((filter): filter is { key: string; label: string; clear: () => void } => filter !== null);
+
+  const broadenSearch = useCallback(() => {
+    setSearch('');
+    setDebouncedSearch('');
+    setSelectedCat('');
+  }, []);
+
   return (
     <View style={styles.container}>
       <View style={styles.fixedHeader}>
@@ -207,7 +275,7 @@ export default function ExploreScreen({ navigation }: Props) {
             <Icon name="search" size={22} color={COLORS.text2} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search..."
+              placeholder={t('explore.search')}
               placeholderTextColor={COLORS.text2}
               value={search}
               onChangeText={setSearch}
@@ -225,26 +293,39 @@ export default function ExploreScreen({ navigation }: Props) {
               </TouchableOpacity>
             )}
           </View>
-          {(sortBy !== DEFAULT_SORT || minPrice || maxPrice) && (
-            <TouchableOpacity
-              style={styles.clearFilterBtn}
-              onPress={() => { setSortBy(DEFAULT_SORT); setMinPrice(''); setMaxPrice(''); setPendingSortBy(DEFAULT_SORT); setPendingMinPrice(''); setPendingMaxPrice(''); }}
-              accessibilityRole="button"
-              accessibilityLabel={t('accessibility.clearFilters')}
-            >
-              <Icon name="close" size={25} color={COLORS.text} />
-            </TouchableOpacity>
-          )}
           <TouchableOpacity
             style={styles.filterBtn}
-            onPress={() => { setPendingSortBy(sortBy); setPendingMinPrice(minPrice); setPendingMaxPrice(maxPrice); setSortModal(true); }}
+            onPress={() => { setPendingSortBy(sortBy); setPendingMinPrice(minPrice); setPendingMaxPrice(maxPrice); setPendingCondition(condition); setSortModal(true); }}
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.sortFilter')}
           >
-            <MaterialCommunityIcons name="tune-variant" size={30} color={(sortBy !== DEFAULT_SORT || minPrice || maxPrice) ? COLORS.coral : COLORS.text} />
+            <MaterialCommunityIcons name="tune-variant" size={28} color={hasAppliedFilters ? COLORS.coral : COLORS.text} />
           </TouchableOpacity>
         </View>
       </View>
+
+      {hasAnySearchOrFilter ? (
+        <View style={styles.activeFiltersRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeFiltersContent}>
+            {search.trim() ? <View style={styles.activeFilterChip}><Text style={styles.activeFilterText} numberOfLines={1}>{t('explore.searchActive', { query: search.trim() })}</Text></View> : null}
+            {activeFilters.map((filter) => (
+              <TouchableOpacity
+                key={filter.key}
+                style={styles.activeFilterChip}
+                onPress={filter.clear}
+                accessibilityRole="button"
+                accessibilityLabel={t('explore.removeFilter', { filter: filter.label })}
+              >
+                <Text style={styles.activeFilterText} numberOfLines={1}>{filter.label}</Text>
+                <Icon name="close" size={14} color={COLORS.text} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <TouchableOpacity onPress={clearAllFilters} style={styles.clearAllBtn} accessibilityRole="button" accessibilityLabel={t('accessibility.clearFilters')}>
+            <Text style={styles.clearAllText}>{t('explore.clearAll')}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <View style={styles.chipsWrapper}>
           <View style={styles.chipFadeLeftWrap} pointerEvents="none">
@@ -296,18 +377,34 @@ export default function ExploreScreen({ navigation }: Props) {
           <ProductGridSkeleton count={6} />
         </View>
       ) : products.length === 0 ? (
-        <EmptyState
-          icon="magnify-close"
-          title={t('explore.noProducts')}
-          hint={t('explore.tryAdjust')}
-          size={64}
-        />
+        <View style={styles.emptyResults}>
+          <EmptyState
+            icon="magnify-close"
+            title={t('explore.noProducts')}
+            hint={t('explore.tryAdjust')}
+            size={64}
+          />
+          {hasAnySearchOrFilter ? (
+            <View style={styles.emptyActions}>
+              <TouchableOpacity style={styles.emptyActionPrimary} onPress={clearAllFilters} accessibilityRole="button">
+                <Text style={styles.emptyActionPrimaryText}>{t('explore.clearAll')}</Text>
+              </TouchableOpacity>
+              {search.trim() || selectedCat ? (
+                <TouchableOpacity style={styles.emptyActionSecondary} onPress={broadenSearch} accessibilityRole="button">
+                  <Text style={styles.emptyActionSecondaryText}>{t('explore.broadenSearch')}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
       ) : (
         <MasonryGrid
           products={products}
           columnGap={COL_GAP}
           sidePad={SIDE_PAD}
+          animateLayoutChanges
           renderCardBottom={renderExploreCardBottom}
+          renderCardOverlay={renderExploreCardOverlay}
           onPress={(item) => navigation.navigate('ProductDetail', { productId: item.id })}
           onLongPress={(item) => setQuickProduct(item)}
           contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
@@ -384,7 +481,7 @@ export default function ExploreScreen({ navigation }: Props) {
           <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
             {/* Header */}
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Filters</Text>
+              <Text style={styles.sheetTitle}>{t('explore.filters')}</Text>
               <TouchableOpacity
                 onPress={() => setSortModal(false)}
                 accessibilityRole="button"
@@ -436,6 +533,30 @@ export default function ExploreScreen({ navigation }: Props) {
               />
             </View>
 
+            <Text style={styles.sheetSectionTitle}>{t('explore.condition')}</Text>
+            <View style={styles.sortGrid}>
+              <TouchableOpacity
+                style={[styles.sortPill, !pendingCondition && styles.sortPillActive]}
+                onPress={() => setPendingCondition('')}
+                accessibilityRole="button"
+                accessibilityLabel={t('explore.allConditions')}
+              >
+                <Text style={[styles.sortPillText, !pendingCondition && styles.sortPillTextActive]}>{t('explore.allConditions')}</Text>
+              </TouchableOpacity>
+              {CONDITION_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.sortPill, pendingCondition === option && styles.sortPillActive]}
+                  onPress={() => setPendingCondition(pendingCondition === option ? '' : option)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(CONDITION_LABEL_KEYS[option])}
+                  accessibilityState={{ selected: pendingCondition === option }}
+                >
+                  <Text style={[styles.sortPillText, pendingCondition === option && styles.sortPillTextActive]}>{t(CONDITION_LABEL_KEYS[option])}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {/* Apply */}
             <TouchableOpacity
               style={styles.modalApplyBtn}
@@ -443,13 +564,14 @@ export default function ExploreScreen({ navigation }: Props) {
                 setSortBy(pendingSortBy);
                 setMinPrice(pendingMinPrice);
                 setMaxPrice(pendingMaxPrice);
+                setCondition(pendingCondition);
                 setSortModal(false);
                 refetch();
               }}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.apply')}
             >
-              <Text style={styles.modalApplyText}>Apply</Text>
+              <Text style={styles.modalApplyText}>{t('explore.apply')}</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -487,6 +609,21 @@ const styles = StyleSheet.create({
   },
 
   chipsWrapper: { position: 'relative', backgroundColor: COLORS.bg },
+  activeFiltersRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  activeFiltersContent: { alignItems: 'center', gap: 6, paddingRight: 4 },
+  activeFilterChip: {
+    maxWidth: 180, minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 9, borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+  },
+  activeFilterText: { color: COLORS.text, fontSize: 11, fontWeight: '600', flexShrink: 1 },
+  clearAllBtn: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 4 },
+  clearAllText: { color: COLORS.coral, fontSize: 12, fontWeight: '700' },
   chipsRow: { paddingHorizontal: 12, gap: 8, paddingVertical: 8 },
   chipFadeLeftWrap: {
     position: 'absolute', left: 0, top: 0, bottom: 0, width: 28, zIndex: 3,
@@ -585,6 +722,12 @@ const styles = StyleSheet.create({
   },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
+  emptyResults: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
+  emptyActions: { alignItems: 'center', gap: 10, marginTop: 12 },
+  emptyActionPrimary: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 18, borderRadius: RADIUS.pill, backgroundColor: COLORS.coral },
+  emptyActionPrimaryText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
+  emptyActionSecondary: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14 },
+  emptyActionSecondaryText: { color: COLORS.text2, fontSize: 13, fontWeight: '600' },
   emptyIcon: {
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
@@ -606,7 +749,7 @@ const styles = StyleSheet.create({
   quickLabel: { color: COLORS.text, fontSize: 10, fontWeight: '700', textAlign: 'center' },
   quickHint: { color: 'rgba(255,255,255,0.76)', fontSize: 12, marginTop: 12, textAlign: 'center' },
   modalSheet: {
-    width: 280, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 14, gap: 0, overflow: 'hidden',
+    width: '92%', maxWidth: 420, maxHeight: '88%', backgroundColor: COLORS.surface, borderRadius: RADIUS.card, padding: 14, gap: 0, overflow: 'hidden',
   },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   sheetTitle: { fontSize: 15, fontWeight: '800', color: COLORS.text },

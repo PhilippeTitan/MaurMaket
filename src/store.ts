@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import type { User, CartItem } from './types';
 import { setCachedToken, clearSessionToken } from './api';
 import { clearUserSnapshots } from './offlineCache';
+import { applyAppearanceMode, type AppearanceMode } from './theme';
 
 type Listener = () => void;
 
@@ -16,6 +17,7 @@ interface StoreState {
   followedSellerIds: Set<string>;
   followerCount: number;
   followingCount: number;
+  appearanceMode: AppearanceMode;
   listeners: Listener[];
 }
 
@@ -46,6 +48,7 @@ const state: StoreState = {
   followedSellerIds: new Set(),
   followerCount: 0,
   followingCount: 0,
+  appearanceMode: 'system',
   listeners: [],
 };
 
@@ -71,14 +74,18 @@ export const store = {
   get followedSellerIds() { return state.followedSellerIds; },
   get followerCount() { return state.followerCount; },
   get followingCount() { return state.followingCount; },
+  get appearanceMode() { return state.appearanceMode; },
   isFollowing(sellerId: string) { return state.followedSellerIds.has(sellerId); },
 
   async init() {
-    const [tokenStr, userStr, cartStr] = await Promise.all([
+    const [tokenStr, userStr, cartStr, appearanceStr] = await Promise.all([
       storage.getItem('ba_session_token'),
       storage.getItem('mm_user'),
       storage.getItem('mm_cart'),
+      storage.getItem('mm_appearance_mode'),
     ]);
+    state.appearanceMode = appearanceStr === 'light' || appearanceStr === 'dark' ? appearanceStr : 'system';
+    applyAppearanceMode(state.appearanceMode);
     if (tokenStr) {
       state.token = tokenStr;
       setCachedToken(tokenStr);
@@ -89,6 +96,13 @@ export const store = {
     if (userStr) {
       try { state.user = JSON.parse(userStr); } catch { /* ignore */ }
     }
+  },
+
+  async setAppearanceMode(mode: AppearanceMode) {
+    state.appearanceMode = mode;
+    applyAppearanceMode(mode);
+    await storage.setItem('mm_appearance_mode', mode);
+    notify();
   },
 
   async setUser(user: User | null, token: string | null) {

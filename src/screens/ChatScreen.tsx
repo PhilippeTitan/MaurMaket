@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform, Image, Pressable, AppState, AppStateStatus, Modal,
   Animated, Linking,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,15 +32,17 @@ import { Swipeable, Gesture, GestureDetector } from 'react-native-gesture-handle
 import * as Haptics from 'expo-haptics';
 import AnimatedRe, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 import { useAudioRecorder, useAudioRecorderState, RecordingPresets, setAudioModeAsync, requestRecordingPermissionsAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string; reactions?: { emoji: string; userId: string; userName: string }[]; delivery_status?: 'sent' | 'delivered' | 'read'; reply_to?: Message['reply_to']; client_id?: string };
 // WhatsApp-style swipe-right-to-reply on a message bubble.
 function SwipeReplyRow({ children, onReply }: { children: React.ReactNode; onReply: () => void }) {
+  const { t } = useTranslation();
   return (
     <Swipeable
       renderLeftActions={() => (
-        <View style={styles.swipeReplyAction} accessibilityLabel="reply" accessibilityRole="button">
+        <View style={styles.swipeReplyAction} accessibilityLabel={t('chat.reply')} accessibilityRole="button">
           <MaterialCommunityIcons name="reply" size={22} color={COLORS.coral} />
         </View>
       )}
@@ -65,6 +67,7 @@ let activeVoicePlayer: { pause: () => void } | null = null;
 
 const VOICE_BARS = 22;
 function VoiceNotePlayer({ uri, isMe, duration }: { uri: string; isMe: boolean; duration: number }) {
+  const { t } = useTranslation();
   const player = useAudioPlayer(uri, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
   const total = status.duration && isFinite(status.duration) && status.duration > 0
@@ -90,8 +93,8 @@ function VoiceNotePlayer({ uri, isMe, duration }: { uri: string; isMe: boolean; 
   const fillColor = isMe ? COLORS.white : COLORS.coral;
   const trackColor = isMe ? 'rgba(255,255,255,0.3)' : COLORS.border;
   return (
-    <View style={styles.voiceRow} accessibilityLabel="voice message">
-      <TouchableOpacity onPress={toggle} style={[styles.voicePlay, isMe && styles.voicePlayMe]} accessibilityRole="button" accessibilityLabel={status.playing ? 'pause voice message' : 'play voice message'}>
+    <View style={styles.voiceRow} accessibilityLabel={t('chat.voiceMessage')}>
+      <TouchableOpacity onPress={toggle} style={[styles.voicePlay, isMe && styles.voicePlayMe]} accessibilityRole="button" accessibilityLabel={t('chat.voicePlayback')}>
         <MaterialCommunityIcons name={status.playing ? 'pause' : 'play'} size={16} color={isMe ? COLORS.coral : COLORS.white} />
       </TouchableOpacity>
       <View style={styles.voiceBars}>
@@ -223,6 +226,7 @@ const writeOutbox = async (all: OutboxEntry[]) => {
 export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
+  const reduceMotion = useReduceMotion();
   const toast = useToast();
   const { conversationId, otherUserName, otherUserId, otherUserAvatar, otherUserStoreLogoUrl, otherUserUseStoreIdentity, otherUserTier, draftOffer } = route.params;
   const [messages, setMessages] = useState<LocalMessage[]>([]);
@@ -608,12 +612,16 @@ export default function ChatScreen({ route, navigation }: Props) {
 startPolling();
 
     // Start pending pulse animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pendingPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-        Animated.timing(pendingPulse, { toValue: 0, duration: 800, useNativeDriver: true }),
-      ])
-    ).start();
+    if (reduceMotion) {
+      pendingPulse.setValue(0);
+    } else {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pendingPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.timing(pendingPulse, { toValue: 0, duration: 800, useNativeDriver: true }),
+        ])
+      ).start();
+    }
       }
       appState.current = next;
     };
@@ -669,11 +677,12 @@ startPolling();
 
     return () => {
       stopPolling();
+      pendingPulse.stopAnimation();
       sub.remove();
       unsubRealtime();
       if (typingExpire.timer) clearTimeout(typingExpire.timer);
     };
-  }, [conversationId]);
+  }, [conversationId, pendingPulse, reduceMotion]);
 
   // Rehydrate queued messages from previous sessions and flush them (WhatsApp:
   // "your message wasn't lost — it sends as soon as you're back")
@@ -1180,7 +1189,7 @@ startPolling();
               <TouchableOpacity
                 style={styles.offerCheckoutBtn}
                 onPress={handleCheckoutOffer}
-                accessibilityLabel="checkout now"
+                accessibilityLabel={t('checkout.confirmPay')}
                 accessibilityRole="button"
                 activeOpacity={0.8}
               >
@@ -1226,7 +1235,7 @@ startPolling();
           </View>
         )}
         {isImage ? (
-          <TouchableOpacity onPress={() => setPreview({ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url!, sender: isMe ? (store.user?.full_name || 'You') : (otherUserName || 'Message'), time: new Date(item.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })} accessibilityRole="imagebutton" accessibilityLabel="open photo">
+          <TouchableOpacity onPress={() => setPreview({ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url!, sender: isMe ? (store.user?.full_name || 'You') : (otherUserName || 'Message'), time: new Date(item.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })} accessibilityRole="imagebutton" accessibilityLabel={t('chat.openPhoto')}>
             <View>
               <Image source={{ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" />
               {item.pending && (
@@ -1308,7 +1317,7 @@ startPolling();
             style={styles.headerProfile}
             onPress={viewPeerProfile}
             activeOpacity={0.7}
-            accessibilityLabel="view profile"
+          accessibilityLabel={t('chat.viewProfile')}
             accessibilityRole="button"
           >
             <UserAvatar
@@ -1409,7 +1418,7 @@ startPolling();
               <View style={styles.recordingDot} />
               <Text style={styles.recordingTime}>{fmtMs(recorderState.durationMillis)}</Text>
               <Text style={styles.recordingHint}>{t('chat.recording')}</Text>
-              <TouchableOpacity onPress={() => stopRecording(true)} style={styles.recordingSend} accessibilityLabel="send voice message" accessibilityRole="button">
+              <TouchableOpacity onPress={() => stopRecording(true)} style={styles.recordingSend} accessibilityLabel={t('chat.sendVoiceMessage')} accessibilityRole="button">
                 <MaterialCommunityIcons name="send" size={20} color={COLORS.white} />
               </TouchableOpacity>
             </View>
@@ -1433,10 +1442,10 @@ startPolling();
               placeholderTextColor={COLORS.text2}
               multiline
               editable={!blockedByMe && !blockedByOther}
-              accessibilityLabel="message input"
+              accessibilityLabel={t('chat.messageInput')}
             />
             {text.trim() ? (
-              <TouchableOpacity style={{ opacity: sending || blockedByMe || blockedByOther ? 0.4 : 1 }} onPress={handleSend} disabled={sending || blockedByMe || blockedByOther} accessibilityLabel="send message" accessibilityRole="button">
+              <TouchableOpacity style={{ opacity: sending || blockedByMe || blockedByOther ? 0.4 : 1 }} onPress={handleSend} disabled={sending || blockedByMe || blockedByOther} accessibilityLabel={t('chat.sendMessage')} accessibilityRole="button">
                 <LinearGradient
                   colors={['#FF6B81', '#FF4D6A', '#E8365A']}
                   start={{ x: 0, y: 0 }}
@@ -1447,7 +1456,7 @@ startPolling();
                 </LinearGradient>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity onPress={startRecording} disabled={blockedByMe || blockedByOther} accessibilityLabel="record voice message" accessibilityRole="button">
+              <TouchableOpacity onPress={startRecording} disabled={blockedByMe || blockedByOther} accessibilityLabel={t('chat.recordVoiceMessage')} accessibilityRole="button">
                 <LinearGradient
                   colors={['#FF6B81', '#FF4D6A', '#E8365A']}
                   start={{ x: 0, y: 0 }}
@@ -1473,10 +1482,10 @@ startPolling();
               <View style={styles.mediaHeaderBtn} />
             </View>
             <View style={styles.mediaTabs}>
-              <Pressable style={[styles.mediaTabBtn, mediaTab === 'images' && styles.mediaTabBtnActive]} onPress={() => setMediaTab('images')} accessibilityRole="tab">
+              <Pressable style={[styles.mediaTabBtn, mediaTab === 'images' && styles.mediaTabBtnActive]} onPress={() => setMediaTab('images')} accessibilityRole="tab" accessibilityState={{ selected: mediaTab === 'images' }}>
                 <Text style={[styles.mediaTabText, mediaTab === 'images' && styles.mediaTabTextActive]}>{t('chat.mediaImages')}</Text>
               </Pressable>
-              <Pressable style={[styles.mediaTabBtn, mediaTab === 'links' && styles.mediaTabBtnActive]} onPress={() => setMediaTab('links')} accessibilityRole="tab">
+              <Pressable style={[styles.mediaTabBtn, mediaTab === 'links' && styles.mediaTabBtnActive]} onPress={() => setMediaTab('links')} accessibilityRole="tab" accessibilityState={{ selected: mediaTab === 'links' }}>
                 <Text style={[styles.mediaTabText, mediaTab === 'links' && styles.mediaTabTextActive]}>{t('chat.mediaLinks')}</Text>
               </Pressable>
             </View>
@@ -1507,7 +1516,7 @@ startPolling();
                         });
                       }}
                       accessibilityRole="imagebutton"
-                      accessibilityLabel="open photo"
+                      accessibilityLabel={t('chat.openPhoto')}
                     >
                       <Image source={{ uri: getImageUrl(item.image_url) || item.image_url }} style={styles.mediaCellImg} resizeMode="cover" />
                     </TouchableOpacity>
@@ -1543,7 +1552,7 @@ startPolling();
           <View style={styles.viewerRoot}>
             {preview && viewerChrome && (
               <View style={[styles.viewerHeader, { paddingTop: insets.top + SPACING.xs }]}>
-                <TouchableOpacity onPress={() => setPreview(null)} style={styles.viewerHeaderBtn} accessibilityLabel="close photo" accessibilityRole="button">
+                <TouchableOpacity onPress={() => setPreview(null)} style={styles.viewerHeaderBtn} accessibilityLabel={t('chat.closePhoto')} accessibilityRole="button">
                   <MaterialCommunityIcons name="close" size={26} color={COLORS.white} />
                 </TouchableOpacity>
                 <View style={{ flex: 1 }}>
@@ -1745,7 +1754,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: SPACING.md, paddingBottom: SPACING.sm,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border + '40', backgroundColor: COLORS.bg,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.bg,
   },
   headerProfile: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerName: { fontSize: 16, fontWeight: '700', color: COLORS.text, letterSpacing: -0.2 },
@@ -1841,7 +1850,7 @@ const styles = StyleSheet.create({
   reactionCount: { color: COLORS.text, fontSize: 10, fontWeight: '700' },
 
   /* Reply-to bar */
-  replyBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 8, paddingBottom: 4, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border + '40' },
+  replyBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 8, paddingBottom: 4, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border },
   replyBarAccent: { width: 3, borderRadius: 2, backgroundColor: COLORS.coral, marginRight: 8, alignSelf: 'stretch' },
   replyBarContent: { flex: 1 },
   replyBarSender: { fontSize: 11, fontWeight: '700', color: COLORS.coral },
@@ -1855,8 +1864,8 @@ const styles = StyleSheet.create({
   reactionBtn: { flex: 1, minWidth: 30, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21 },
   reactionBtnActive: { backgroundColor: COLORS.coral + '25', transform: [{ scale: 1.18 }] },
   reactionBtnText: { fontSize: 22 },
-  actionMenuDivider: { height: 1, backgroundColor: COLORS.border + '40', marginVertical: 4 },
-  actionMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border + '20' },
+  actionMenuDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 4 },
+  actionMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   actionMenuText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.58)', justifyContent: 'flex-end' },
   chatSheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: RADIUS.media, borderTopRightRadius: RADIUS.media, paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg, paddingBottom: SPACING.xl, borderWidth: 1, borderColor: COLORS.border, gap: 3 },
@@ -1900,7 +1909,7 @@ const styles = StyleSheet.create({
   offerMsgCard: {
     backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.border + '50',
+    borderColor: COLORS.border,
     borderRadius: RADIUS.media,
     padding: 14,
     shadowColor: '#000',
@@ -2180,7 +2189,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.media,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.border + '40',
+    borderColor: COLORS.border,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 3,
   },
   offerIcon: {
@@ -2211,7 +2220,7 @@ const styles = StyleSheet.create({
   },
   typingText: { fontSize: 12, color: COLORS.text2, fontStyle: 'italic' },
   inputArea: {
-    borderTopWidth: 1, borderTopColor: COLORS.border + '30',
+    borderTopWidth: 1, borderTopColor: COLORS.border,
     backgroundColor: COLORS.bg,
   },
   inputRow: {
@@ -2220,7 +2229,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   input: {
-    flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border + '60',
+    flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: 24, paddingHorizontal: 16, paddingVertical: 10, color: COLORS.text,
     fontSize: 15, maxHeight: 100, lineHeight: 20,
   },

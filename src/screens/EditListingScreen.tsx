@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
   ActivityIndicator, Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS } from '../theme';
@@ -1090,7 +1090,7 @@ const styles = StyleSheet.create({
   netPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   netPreviewLabel: { fontSize: 12, color: COLORS.text2 },
   netPreviewValue: { fontSize: 12, fontWeight: '600', color: COLORS.text2 },
-  netPreviewTotal: { marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border + '60', marginBottom: 0 },
+  netPreviewTotal: { marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: COLORS.border, marginBottom: 0 },
   netPreviewTotalLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text },
   netPreviewTotalValue: { fontSize: 13, fontWeight: '800', color: COLORS.green },
   netPreviewTip: { fontSize: 11, color: COLORS.coral, marginTop: 6, fontStyle: 'italic' },

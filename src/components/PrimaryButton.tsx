@@ -1,7 +1,6 @@
 import React from 'react';
-import { TouchableOpacity, Text, ActivityIndicator, StyleSheet, type ViewStyle } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { ONBOARDING_COLORS, ONBOARDING_GRADIENT } from '../screens/onboarding/theme';
+import { TouchableOpacity, Text, ActivityIndicator, StyleSheet, View, type ViewStyle } from 'react-native';
+import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADIUS } from '../theme';
 
 interface PrimaryButtonProps {
   onPress: () => void;
@@ -16,9 +15,7 @@ interface PrimaryButtonProps {
 }
 
 /**
- * The onboarding primary CTA — 52px gradient pill (violet → pink → amber)
- * with dark text. The signature button of the app's auth experience, now
- * shared across settings screens.
+ * Shared primary CTA with the app's coral accent and adaptive disabled state.
  */
 export default function PrimaryButton({
   onPress,
@@ -39,20 +36,15 @@ export default function PrimaryButton({
       accessibilityLabel={accessibilityLabel}
       style={[small && styles.smallWrap, style, inactive && { opacity: 0.7 }]}
     >
-      <LinearGradient
-        colors={inactive ? ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.08)'] : [...ONBOARDING_GRADIENT]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={[styles.pill, small && styles.pillSmall, inactive && styles.pillDisabled]}
-      >
+      <View style={[styles.pill, small && styles.pillSmall, inactive && styles.pillDisabled]}>
         {loading ? (
-          <ActivityIndicator color={ONBOARDING_COLORS.text} size="small" />
+          <ActivityIndicator color={COLORS.black} size="small" />
         ) : (
-          <Text style={[styles.text, small && styles.textSmall, inactive && { color: ONBOARDING_COLORS.faint }]}>
+          <Text style={[styles.text, small && styles.textSmall, inactive && { color: COLORS.text2 }]}>
             {children}
           </Text>
         )}
-      </LinearGradient>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -60,7 +52,8 @@ export default function PrimaryButton({
 const styles = StyleSheet.create({
   pill: {
     height: 52,
-    borderRadius: 999,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.coral,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -68,21 +61,22 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   pillSmall: {
-    height: 36,
+    height: 44,
     paddingHorizontal: 16,
     alignSelf: 'auto',
   },
   pillDisabled: {
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface2,
   },
   text: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1A0B12',
+    fontSize: FONT_SIZES.lg,
+    fontWeight: FONT_WEIGHTS.bold,
+    color: COLORS.black,
   },
   textSmall: {
-    fontSize: 13,
+    fontSize: FONT_SIZES.base,
   },
   smallWrap: {
     alignSelf: 'flex-start',

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Platform, TouchableOpacity } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '../theme';
 import { ONBOARDING_COLORS } from './onboarding/theme';
 import { store } from '../store';
@@ -82,7 +82,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
         {/* ── 1. Account & Identity ── */}
         <View>
-          <SettingsGroup header="Account & Identity" appearance="minimal">
+          <SettingsGroup header={t('settings.sectionAccountIdentity')} appearance="minimal">
             <SettingsRow
               icon="account-edit-outline"
               label={t('me.editProfile')}
@@ -147,7 +147,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
         {/* ── 3. Payments & Selling ── */}
         <View>
-          <SettingsGroup header="Payments & Selling" appearance="minimal">
+          <SettingsGroup header={t('settings.sectionPaymentsSelling')} appearance="minimal">
             <SettingsRow
               icon="cash"
               label={t('settings.paymentMethods')}
@@ -190,7 +190,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
         {/* ── 4. Safety & Privacy ── */}
         <View>
-          <SettingsGroup header="Safety & Privacy" appearance="minimal">
+          <SettingsGroup header={t('settings.sectionSafetyPrivacy')} appearance="minimal">
             <SettingsRow
               icon="shield-account-outline"
               label={t('settings.privacySettings')}

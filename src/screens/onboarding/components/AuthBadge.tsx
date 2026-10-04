@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Animated, Easing, StyleSheet } from 'react-native';
 import Svg, { Circle, Path, G } from 'react-native-svg';
 import { COLORS } from '../../../theme';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 
 export type AuthGlyph =
   | 'name' | 'email' | 'password' | 'phone' | 'dob' | 'review' | 'success' | 'signin';
@@ -83,12 +84,21 @@ interface AuthBadgeProps {
 }
 
 export default function AuthBadge({ variant, celebrate }: AuthBadgeProps) {
+  const reduceMotion = useReduceMotion();
   const mount = useRef(new Animated.Value(0)).current;
   const float = useRef(new Animated.Value(0)).current;
   const spin = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (reduceMotion) {
+      mount.setValue(1);
+      float.setValue(0);
+      spin.setValue(0);
+      pulse.setValue(0);
+      return;
+    }
+
     mount.setValue(0);
     Animated.spring(mount, { toValue: 1, friction: 6, tension: 60, useNativeDriver: true }).start();
 
@@ -115,7 +125,7 @@ export default function AuthBadge({ variant, celebrate }: AuthBadgeProps) {
 
     return () => { floatLoop.stop(); spinLoop.stop(); pulseLoop?.stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant, celebrate]);
+  }, [variant, celebrate, reduceMotion]);
 
   const translateY = float.interpolate({ inputRange: [0, 1], outputRange: [0, -6] });
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
@@ -124,7 +134,7 @@ export default function AuthBadge({ variant, celebrate }: AuthBadgeProps) {
 
   return (
     <View style={styles.wrap}>
-      {celebrate && (
+      {celebrate && !reduceMotion && (
         <Animated.View style={[styles.ring, { transform: [{ scale: pulseScale }], opacity: pulseOpacity }]} />
       )}
       <Animated.View style={[styles.orbit, { transform: [{ rotate }] }]}>
