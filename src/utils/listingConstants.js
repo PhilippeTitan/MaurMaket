@@ -8,6 +8,17 @@
 
 export const TIER_CAPS = { none: 0, casual: 10, verified: 100, business: Infinity };
 export const CONDITIONS = ['new', 'like_new', 'good', 'fair', 'for_parts'];
+
+/** Maps a stored condition value to its i18n message key (shared by UI surfaces). */
+/** @type {Record<string, string>} */
+export const CONDITION_I18N_KEYS = {
+  new: 'addListing.cond.new',
+  like_new: 'addListing.cond.likeNew',
+  good: 'addListing.cond.good',
+  fair: 'addListing.cond.fair',
+  for_parts: 'addListing.cond.forParts',
+};
+
 export const FLAW_REQUIRED_CONDITIONS = ['like_new', 'good', 'fair', 'for_parts'];
 export const MAX_PHOTOS = 8;
 export const MIN_PRICE = 100;

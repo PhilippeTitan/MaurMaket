@@ -3,11 +3,11 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from './icons/Icon';
 import { COLORS, RADIUS, getDisplayName } from '../theme';
-import { store } from '../store';
+import { store, cartLineKey } from '../store';
 import { createConversation } from '../api';
 import { useTranslation } from '@/localization';
 import { useToast } from './Toast';
-import type { Product } from '../types';
+import type { Product, ProductVariant } from '../types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import { tapLight, tapMedium } from '../haptics';
@@ -15,23 +15,27 @@ import { tapLight, tapMedium } from '../haptics';
 interface BuyRowProps {
   product: Product;
   navigation: NativeStackNavigationProp<RootStackParamList>;
+  variant?: ProductVariant | null;
 }
 
-export default function BuyRow({ product, navigation }: BuyRowProps) {
+export default function BuyRow({ product, navigation, variant }: BuyRowProps) {
   const { t } = useTranslation();
   const toast = useToast();
-  const [cartQty, setCartQty] = useState(store.cart.find(c => c.id === product.id)?.quantity || 0);
+  const variantStock = variant ? Math.max(0, Number(variant.stock) || 0) : null;
+  const lineKey = variant ? cartLineKey({ id: product.id, variantId: variant.id }) : product.id;
+  const stockLimit = variantStock ?? Math.max(0, Number(product.stock) || 0);
+  const [cartQty, setCartQty] = useState(store.cart.find(c => cartLineKey(c) === lineKey)?.quantity || 0);
   const [cartCount, setCartCount] = useState(store.cartCount);
   const isOwnProduct = store.user?.id === product.seller_id;
-  const isSoldOut = product.stock <= 0;
+  const isSoldOut = stockLimit <= 0;
 
   useEffect(() => {
     const unsub = store.onChange(() => {
-      setCartQty(store.cart.find(c => c.id === product.id)?.quantity || 0);
+      setCartQty(store.cart.find(c => cartLineKey(c) === lineKey)?.quantity || 0);
       setCartCount(store.cartCount);
     });
     return unsub;
-  }, [product.id]);
+  }, [lineKey]);
 
   const handleMakeOffer = async () => {
     tapLight();
@@ -52,7 +56,7 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
         draftOffer: {
           productId: product.id,
           productName: product.name,
-          listPrice: product.effective_price ?? product.price,
+          listPrice: variant ? Number(variant.price) : (product.effective_price ?? product.price),
         },
       });
     } catch {
@@ -64,16 +68,19 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
     const result = await store.addToCart({
       id: product.id,
       name: product.name,
-      price: product.effective_price ?? product.price,
-      effective_price: product.effective_price,
-      is_on_sale: product.is_on_sale,
-      discount_pct: product.discount_pct,
+      price: variant ? Number(variant.price) : (product.effective_price ?? product.price),
+      effective_price: variant ? undefined : product.effective_price,
+      is_on_sale: variant ? false : product.is_on_sale,
+      discount_pct: variant ? 0 : product.discount_pct,
       quantity: 1,
       images: product.images,
       seller_id: product.seller_id,
       seller_name: getDisplayName(product.seller) || null,
       store_name: product.seller?.store_name || null,
-      stock: product.stock,
+      stock: variantStock ?? product.stock,
+      variantId: variant?.id ?? null,
+      variantLabel: variant?.option_label ?? null,
+      variantOptions: variant?.options ?? null,
     });
     return result;
   };
@@ -104,20 +111,20 @@ export default function BuyRow({ product, navigation }: BuyRowProps) {
       return;
     }
     tapLight();
-    if (cartQty >= product.stock) {
-      toast.warning(t('cart.stockLimit'), t('cart.onlyAvailable', { count: product.stock }));
+    if (cartQty >= stockLimit) {
+      toast.warning(t('cart.stockLimit'), t('cart.onlyAvailable', { count: stockLimit }));
       return;
     }
-    await store.updateQuantity(product.id, cartQty + 1);
+    await store.updateQuantity(lineKey, cartQty + 1);
   };
 
   const handleDecrementCart = async () => {
     tapLight();
     if (cartQty <= 1) {
-      await store.removeFromCart(product.id);
+      await store.removeFromCart(lineKey);
       return;
     }
-    await store.updateQuantity(product.id, cartQty - 1);
+    await store.updateQuantity(lineKey, cartQty - 1);
   };
 
   if (product.paused_reason === 'tier_cap' || (!product.is_available && !isOwnProduct)) {

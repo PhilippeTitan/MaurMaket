@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADIUS, SPACING, formatPrice } from '../../theme';
 import { useTranslation } from '@/localization';
+import { CONDITION_I18N_KEYS } from '../../utils/listingConstants';
 
 export interface FeaturedProduct {
   id: string;
@@ -92,7 +93,7 @@ export default function FeaturedListingCard({ product, imageUrl, onPress, onUnpi
             {onSale ? <Text style={styles.priceStrike}>{formatPrice(product.price)}</Text> : null}
             <Text style={styles.price}>{formatPrice(price)}</Text>
             {product.condition ? (
-              <Text style={styles.condition} numberOfLines={1}>· {product.condition}</Text>
+              <Text style={styles.condition} numberOfLines={1}>· {t(CONDITION_I18N_KEYS[product.condition] ?? product.condition)}</Text>
             ) : null}
           </View>
         </View>

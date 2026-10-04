@@ -10,6 +10,8 @@ interface SalePriceTagProps {
   isOnSale: boolean;
   discountPct: number;
   size?: Size;
+  /** Small label shown before the price (e.g. "From" for variant products). */
+  prefix?: string;
 }
 
 const SIZES = {
@@ -18,12 +20,14 @@ const SIZES = {
   lg: { saleFontSize: 22, origFontSize: 14, badgeFontSize: 11, badgePadH: 7, badgePadV: 2, badgeRadius: 8, gap: 8 },
 };
 
-export default function SalePriceTag({ price, effectivePrice, isOnSale, discountPct, size = 'md' }: SalePriceTagProps) {
+export default function SalePriceTag({ price, effectivePrice, isOnSale, discountPct, size = 'md', prefix }: SalePriceTagProps) {
   const s = SIZES[size];
+  const prefixNode = prefix ? <Text style={[styles.prefix, { fontSize: s.origFontSize }]}>{prefix}</Text> : null;
 
   if (!isOnSale) {
     return (
       <View style={styles.row}>
+        {prefixNode}
         <Text style={[styles.salePrice, { fontSize: s.saleFontSize }]} accessibilityLabel={`Price: ${formatPrice(price)} G`}>
           {formatPrice(price)} G
         </Text>
@@ -33,6 +37,7 @@ export default function SalePriceTag({ price, effectivePrice, isOnSale, discount
 
   return (
     <View style={styles.row}>
+      {prefixNode}
       <Text style={[styles.salePrice, { fontSize: s.saleFontSize }]} accessibilityLabel={`Sale price: ${formatPrice(effectivePrice)} G`}>
         {formatPrice(effectivePrice)} G
       </Text>
@@ -61,6 +66,11 @@ const styles = StyleSheet.create({
   originalPrice: {
     color: 'rgba(255,255,255,0.45)',
     textDecorationLine: 'line-through',
+  },
+  prefix: {
+    color: COLORS.coral,
+    fontWeight: '600',
+    opacity: 0.85,
   },
   badge: {
     backgroundColor: 'rgba(0,229,160,0.18)',

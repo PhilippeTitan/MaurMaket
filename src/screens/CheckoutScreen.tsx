@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '@/localization';
 import { validatePromo } from '../api';
 import ScreenHeader from '../components/ScreenHeader';
-import { store } from '../store';
+import { store, cartLineKey } from '../store';
 import { createPendingCheckout, getPendingSellerInfo, getAddresses, getImageUrl, getNatCashAvailability, getPopularMeetupSpots } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Address } from '../types';
@@ -237,7 +237,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     const ownItems = cart.filter(item => item.seller_id && item.seller_id === store.user?.id);
     if (ownItems.length > 0) {
       for (const item of ownItems) {
-        await store.removeFromCart(item.id);
+        await store.removeFromCart(cartLineKey(item));
       }
       toast.error(t('checkout.ownItems'), t('checkout.ownItemsRemoved', { count: ownItems.length }));
       if (cart.length - ownItems.length === 0) return;
@@ -270,6 +270,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       const cartData = cart.map(item => ({
         id: item.id, productId: item.id, quantity: item.quantity,
         name: item.name, price: item.effective_price ?? item.price,
+        variantId: item.variantId ?? undefined,
         acceptedOfferMessageId: item.acceptedOfferMessageId,
         seller_id: item.seller_id, store_name: item.store_name,
         seller_name: item.seller_name, images: item.images
@@ -415,7 +416,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   </ScrollView>);
   const renderStep3 = () => (<ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
     <Text style={styles.stepLabel}>{t("checkout.orderSummary")}</Text>
-    <View style={styles.reviewCard}>{cart.map((item,idx)=>{const img=item.images?.find(i=>i.is_primary)||item.images?.[0];const url=getImageUrl(img?.image_url);return(<View key={item.id} style={[styles.reviewItem,idx<cart.length-1&&styles.reviewItemBorder]}><View style={styles.reviewThumb}>{url?<Image source={{uri:url}} style={styles.reviewThumbImg} resizeMode="cover"/>:<Icon name="image-unavailable" size={16} color={COLORS.text2}/>}</View><View style={styles.reviewItemInfo}><Text style={styles.reviewItemName} numberOfLines={1}>{item.name}</Text><Text style={styles.reviewItemQty}>x{item.quantity}</Text></View><Text style={styles.reviewItemPrice}>{formatPrice((item.effective_price??item.price)*item.quantity)} G</Text></View>);})}</View>
+    <View style={styles.reviewCard}>{cart.map((item,idx)=>{const img=item.images?.find(i=>i.is_primary)||item.images?.[0];const url=getImageUrl(img?.image_url);return(<View key={cartLineKey(item)} style={[styles.reviewItem,idx<cart.length-1&&styles.reviewItemBorder]}><View style={styles.reviewThumb}>{url?<Image source={{uri:url}} style={styles.reviewThumbImg} resizeMode="cover"/>:<Icon name="image-unavailable" size={16} color={COLORS.text2}/>}</View><View style={styles.reviewItemInfo}><Text style={styles.reviewItemName} numberOfLines={1}>{item.name}</Text><Text style={styles.reviewItemQty}>{item.variantLabel ? `${item.variantLabel} · ` : ''}x{item.quantity}</Text></View><Text style={styles.reviewItemPrice}>{formatPrice((item.effective_price??item.price)*item.quantity)} G</Text></View>);})}</View>
     <View style={styles.totalsCard}>
       <View style={styles.totalLine}><Text style={styles.totalLabel}>{t("checkout.items")} ({itemCount})</Text><Text style={styles.totalValue}>{formatPrice(subtotal)} G</Text></View>
       {discount>0&&<View style={styles.totalLine}><Text style={[styles.totalLabel,{color:COLORS.green}]}>{t("checkout.promoDiscount")} ({promoCode})</Text><Text style={[styles.totalValue,{color:COLORS.green}]}>-{formatPrice(discount)} G</Text></View>}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
   ActivityIndicator, Image, KeyboardAvoidingView, Platform,
@@ -6,11 +6,14 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
-import { getProduct, updateProduct, deleteProduct, getCategories, uploadImage, getImageUrl } from '../api';
+import {
+  getProduct, updateProduct, deleteProduct, getCategories, uploadImage, getImageUrl,
+  getSellerListingStats, resubmitListing,
+} from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Category, ProductImage } from '../types';
@@ -19,11 +22,88 @@ import ScreenHeader from '../components/ScreenHeader';
 import SaleSection from '../components/SaleSection';
 import { SkeletonBlock } from '../components/Skeleton';
 import { network } from '../network';
+import {
+  CONDITIONS, MIN_PRICE, MAX_PRICE, MAX_VARIANTS, LISTING_LANGUAGES,
+  DEFAULT_LOW_STOCK_THRESHOLD, allowedAttrsForCategory, flawNotesRequired,
+  generateVariantCombos, variantComboLabel, dimsFromVariants,
+} from '../utils/listingConstants';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditListing'>;
 
 const MAX_IMAGES = 8;
 const THUMB_SIZE = 80;
+
+const CONDITION_LABEL_KEYS: Record<string, string> = {
+  new: 'addListing.cond.new',
+  like_new: 'addListing.cond.likeNew',
+  good: 'addListing.cond.good',
+  fair: 'addListing.cond.fair',
+  for_parts: 'addListing.cond.forParts',
+};
+
+const LANGUAGE_LABEL_KEYS: Record<string, string> = {
+  en: 'addListing.langEn',
+  fr: 'addListing.langFr',
+  ht: 'addListing.langHt',
+};
+
+type DimDraft = { name: string; values: string[] };
+type VariantDraft = { options: Record<string, string>; price: string; stock: string; sku: string };
+
+const EMPTY_DIMS: DimDraft[] = [
+  { name: '', values: [] },
+  { name: '', values: [] },
+];
+
+const comboValueKey = (options: Record<string, string>) =>
+  Object.values(options).join('\u0001');
+
+interface EditValidationIssue {
+  key: string;
+  params?: Record<string, string | number>;
+}
+
+function validateEdit(f: {
+  name: string; condition: string; flawNotes: string; sku: string;
+  hasVariants: boolean; variants: VariantDraft[];
+  price: string; stock: string;
+  lowStockThreshold: string;
+}): EditValidationIssue | null {
+  if (!f.name.trim()) return { key: 'addListing.errName' };
+  if (f.name.trim().length > 200) return { key: 'addListing.errNameLong' };
+  if (!f.condition) return { key: 'addListing.errCondition' };
+  if (flawNotesRequired(f.condition) && !f.flawNotes.trim()) return { key: 'addListing.errFlaws' };
+  if (f.flawNotes.length > 2000) return { key: 'addListing.errFlawsLong' };
+  if (f.sku.length > 60) return { key: 'addListing.errSkuLong' };
+  if (f.hasVariants) {
+    if (f.variants.length === 0) return { key: 'addListing.errVariantsEmpty' };
+    if (f.variants.length > MAX_VARIANTS) {
+      return { key: 'addListing.errVariantLimit', params: { max: MAX_VARIANTS } };
+    }
+    for (const v of f.variants) {
+      const p = parseFloat(v.price);
+      if (isNaN(p) || p < MIN_PRICE || p > MAX_PRICE) {
+        return { key: 'addListing.errVariantPrice', params: { min: MIN_PRICE, max: MAX_PRICE } };
+      }
+      if (v.stock === '') return { key: 'addListing.errVariantStockMissing' };
+      const s = parseInt(v.stock, 10);
+      if (isNaN(s) || s < 0) return { key: 'addListing.errVariantStock' };
+    }
+  } else {
+    const p = parseFloat(f.price);
+    if (isNaN(p) || p < MIN_PRICE || p > MAX_PRICE) {
+      return { key: 'addListing.errPrice', params: { min: MIN_PRICE, max: MAX_PRICE } };
+    }
+    if (f.stock === '') return { key: 'addListing.errStock' };
+    const s = parseInt(f.stock, 10);
+    if (isNaN(s) || s < 0) return { key: 'addListing.errStock' };
+  }
+  if (f.lowStockThreshold !== '') {
+    const n = parseInt(f.lowStockThreshold, 10);
+    if (isNaN(n) || n < 1 || n > 20) return { key: 'addListing.errThreshold' };
+  }
+  return null;
+}
 
 export default function EditListingScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
@@ -47,7 +127,28 @@ export default function EditListingScreen({ route, navigation }: Props) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [salePrice, setSalePrice] = useState('');
   const [saleEndDate, setSaleEndDate] = useState('');
-  const [currentlyOnSale, setCurrentlyOnSale] = useState(false);
+
+  const [condition, setCondition] = useState('');
+  const [flawNotes, setFlawNotes] = useState('');
+  const [sku, setSku] = useState('');
+  const [offersEnabled, setOffersEnabled] = useState(true);
+  const [languageLabel, setLanguageLabel] = useState('');
+  const [attrs, setAttrs] = useState<Record<string, string>>({});
+  const [meetupEnabled, setMeetupEnabled] = useState<boolean | null>(null);
+  const [deliveryEnabled, setDeliveryEnabled] = useState<boolean | null>(null);
+  const [lowStockThreshold, setLowStockThreshold] = useState('');
+  const [hasVariants, setHasVariants] = useState(false);
+  const [variantDims, setVariantDims] = useState<DimDraft[]>(EMPTY_DIMS.map((d) => ({ ...d, values: [] })));
+  const [variants, setVariants] = useState<VariantDraft[]>([]);
+  const [dimInputs, setDimInputs] = useState<string[]>(['', '']);
+  const [variantsDirty, setVariantsDirty] = useState(false);
+
+  const [locked, setLocked] = useState(false);
+  const [listingStatus, setListingStatus] = useState<string>('active');
+  const [moderationReason, setModerationReason] = useState<string | null>(null);
+  const [resubmitting, setResubmitting] = useState(false);
+
+  const needsVerification = !store.user?.id_verified;
 
   useEffect(() => {
     (async () => {
@@ -65,14 +166,43 @@ export default function EditListingScreen({ route, navigation }: Props) {
         setIsAvailable(p.is_available !== false);
         setExistingImages(p.images || []);
         setCategories(catRes.categories || []);
+        setCondition(p.condition || '');
+        setFlawNotes(p.flaw_notes || '');
+        setSku(p.sku || '');
+        setOffersEnabled(p.offers_enabled !== false);
+        setLanguageLabel(p.language_label || '');
+        setAttrs(p.attrs && typeof p.attrs === 'object' && !Array.isArray(p.attrs) ? p.attrs : {});
+        setMeetupEnabled(p.meetup_enabled === undefined ? null : p.meetup_enabled);
+        setDeliveryEnabled(p.delivery_enabled === undefined ? null : p.delivery_enabled);
+        setLowStockThreshold(
+          p.low_stock_threshold === undefined || p.low_stock_threshold === null
+            ? ''
+            : String(p.low_stock_threshold)
+        );
+        const vs: VariantDraft[] = Array.isArray(p.variants)
+          ? p.variants.map((v: Record<string, any>) => ({
+              options: v?.options && typeof v.options === 'object' ? v.options : {},
+              price: v?.price === undefined || v?.price === null ? '' : String(v.price),
+              stock: v?.stock === undefined || v?.stock === null ? '' : String(v.stock),
+              sku: v?.sku ? String(v.sku) : '',
+            }))
+          : [];
+        const effectiveHasVariants = !!p.has_variants && vs.length > 0;
+        setHasVariants(effectiveHasVariants);
+        setVariants(vs);
+        setVariantDims(vs.length > 0 ? dimsFromVariants(vs) : EMPTY_DIMS.map((d) => ({ ...d, values: [] })));
+        setListingStatus(p.listing_status || 'active');
+        setModerationReason(p.moderation_reason || null);
         if (p.sale_price) {
           setShowSale(true);
           setSalePrice(String(p.sale_price));
-          setCurrentlyOnSale(p.is_on_sale || false);
         }
         if (p.sale_ends_at) {
           setSaleEndDate(p.sale_ends_at.split('T')[0]);
         }
+        getSellerListingStats(productId)
+          .then((s: any) => setLocked(!!s?.locked))
+          .catch(() => {});
       } catch {
         toast.error(t('common.error'), t('editListing.loadError'));
         navigation.goBack();
@@ -83,6 +213,9 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
   const totalImages = existingImages.filter(i => !removedExistingImageIds.includes(i.id)).length + newImageUris.length;
 
+  const selectedCategory = categories.find(c => c.id === categoryId);
+  const attrKeys = selectedCategory ? allowedAttrsForCategory(selectedCategory.name) : [];
+
   const pickImages = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -91,7 +224,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
     }
     const remaining = MAX_IMAGES - totalImages;
     if (remaining <= 0) {
-      toast.warning('Max images', `Maximum ${MAX_IMAGES} images allowed`);
+      toast.warning(t('editListing.permission'), t('addListing.photosLimit', { max: MAX_IMAGES }));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -111,34 +244,105 @@ export default function EditListingScreen({ route, navigation }: Props) {
   };
 
   const removeExistingImage = (id: string) => {
+    if (!id) return;
     setRemovedExistingImageIds(prev => [...prev, id]);
   };
 
-  const handleSave = async () => {
+  // ── Variants helpers (mirror of the wizard) ──
+  const applyDims = (dims: DimDraft[]) => {
+    const combos = generateVariantCombos(dims);
+    if (combos.length > MAX_VARIANTS) {
+      toast.warning(t('addListing.comboLimitTitle'), t('addListing.comboLimit', { max: MAX_VARIANTS }));
+    }
+    const limited = combos.slice(0, MAX_VARIANTS);
+    const byKey = new Map(variants.map((v) => [comboValueKey(v.options), v] as const));
+    const merged: VariantDraft[] = limited.map((c) => {
+      const prev = byKey.get(comboValueKey(c.options));
+      return prev ? { ...prev, options: c.options } : { options: c.options, price: '', stock: '', sku: '' };
+    });
+    setVariantsDirty(true);
+    setVariantDims(dims);
+    setVariants(merged);
+  };
+
+  const setDimName = (i: number, dimName: string) => {
+    applyDims(variantDims.map((d, idx) => (idx === i ? { ...d, name: dimName } : d)));
+  };
+
+  const addDimValue = (i: number) => {
+    const raw = (dimInputs[i] || '').trim();
+    if (!raw) return;
+    const dims = variantDims.map((d, idx) =>
+      idx === i && !d.values.includes(raw) ? { ...d, values: [...d.values, raw] } : d
+    );
+    setDimInputs((prev) => {
+      const n = [...prev];
+      n[i] = '';
+      return n;
+    });
+    applyDims(dims);
+  };
+
+  const removeDimValue = (i: number, value: string) => {
+    applyDims(
+      variantDims.map((d, idx) =>
+        idx === i ? { ...d, values: d.values.filter((v) => v !== value) } : d
+      )
+    );
+  };
+
+  const updateVariantField = (index: number, key: 'price' | 'stock' | 'sku', value: string) => {
+    setVariantsDirty(true);
+    setVariants(prev => prev.map((v, i) => (i === index ? { ...v, [key]: value } : v)));
+  };
+
+  const toggleVariants = () => {
+    if (locked) return;
+    const next = !hasVariants;
+    setVariantsDirty(true);
+    setHasVariants(next);
+    if (next) {
+      const combos = generateVariantCombos(variantDims);
+      const byKey = new Map(variants.map((v) => [comboValueKey(v.options), v] as const));
+      setVariants(combos.slice(0, MAX_VARIANTS).map((c) => {
+        const prev = byKey.get(comboValueKey(c.options));
+        return prev ? { ...prev, options: c.options } : { options: c.options, price: '', stock: '', sku: '' };
+      }));
+    }
+  };
+
+  const handleSave = async (alsoResubmit = false) => {
     if (network.isOffline) {
-      toast.error(t('network.offline'), 'Saving listing changes requires an internet connection.');
+      toast.error(t('network.offline'), t('editListing.offlineHint'));
       return;
     }
-    if (!name || !price) {
-      toast.error(t('editListing.missingInfo'), t('editListing.fillFields'));
+    const issue = validateEdit({
+      name, condition, flawNotes, sku, hasVariants, variants,
+      price, stock, lowStockThreshold,
+    });
+    if (issue) {
+      toast.warning(t('addListing.missingInfo'), t(issue.key, issue.params));
       return;
     }
-    if (parseInt(stock, 10) < 1) {
-      toast.error(t('editListing.missingInfo'), 'Stock must be at least 1');
-      return;
-    }
-    const priceNum = parseFloat(price);
-    if (isNaN(priceNum) || priceNum < 100) {
-      toast.error(t('editListing.missingInfo'), 'Minimum price is 100 G');
-      return;
-    }
-    if (priceNum > 99999) {
-      toast.error(t('editListing.missingInfo'), 'Maximum price is 99,999 G');
+    if (alsoResubmit && !categoryId) {
+      toast.warning(t('addListing.missingInfo'), t('addListing.errCategory'));
       return;
     }
     if (totalImages === 0) {
-      toast.error(t('editListing.missingInfo'), 'At least 1 image is required.');
+      toast.warning(t('addListing.missingInfo'), t('addListing.errNoPhotos'));
       return;
+    }
+    if (!hasVariants && showSale && salePrice && saleEndDate) {
+      const origP = parseFloat(price);
+      const saleP = parseFloat(salePrice);
+      if (saleP >= origP) {
+        toast.error(t('common.error'), t('addListing.errSaleLower'));
+        return;
+      }
+      if (Math.round((1 - saleP / origP) * 100) > 25) {
+        toast.error(t('common.error'), t('addListing.errSaleDiscount'));
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -150,7 +354,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
             const r = await uploadImage(newImageUris[i]);
             if (r.url) uploadedImages.push({ url: r.url, width: r.width, height: r.height });
           } catch (e: any) {
-            toast.error(t('common.error'), `Image ${i + 1} failed: ${e.message}`);
+            toast.error(t('common.error'), e.message);
             setSaving(false);
             setUploading(false);
             return;
@@ -165,36 +369,63 @@ export default function EditListingScreen({ route, navigation }: Props) {
       const data: Record<string, unknown> = {
         name,
         description,
-        price: parseFloat(price),
-        stock: parseInt(stock, 10) || 1,
         isAvailable,
+        condition,
+        flawNotes,
+        sku,
+        offersEnabled,
+        languageLabel,
+        attrs,
+        meetupEnabled,
+        deliveryEnabled,
       };
-      if (categoryId) data.categoryId = categoryId;
+      if (!hasVariants) {
+        data.price = parseFloat(price);
+        data.stock = parseInt(stock, 10) || 0;
+      }
+      data.categoryId = categoryId;
       if (allImages.length > 0) data.images = allImages;
-
-      if (showSale && salePrice && saleEndDate) {
-        const origP = parseFloat(price);
-        const saleP = parseFloat(salePrice);
-        if (saleP >= origP) {
-          toast.error(t('common.error'), 'Sale price must be lower than the original price');
-          setSaving(false); setUploading(false); return;
-        }
-        const discountPct = Math.round((1 - saleP / origP) * 100);
-        if (discountPct > 25) {
-          toast.error(t('common.error'), 'Maximum discount is 25%');
-          setSaving(false); setUploading(false); return;
-        }
-        data.sale_price = saleP;
+      if (lowStockThreshold !== '') data.lowStockThreshold = lowStockThreshold;
+      if (variantsDirty) {
+        data.variants = hasVariants
+          ? variants.map(v => ({ options: v.options, price: v.price, stock: v.stock, sku: v.sku || null }))
+          : [];
+      }
+      if (!hasVariants && showSale && salePrice && saleEndDate) {
+        data.sale_price = parseFloat(salePrice);
         data.sale_ends_at = new Date(saleEndDate).toISOString();
       } else {
         data.clearSale = true;
       }
 
-      await updateProduct(productId, data);
-      toast.success(t('editListing.saved'), t('editListing.productUpdated'));
+      const resp = (await updateProduct(productId, data)) as { product?: { listing_status?: string } } | undefined;
+      if (alsoResubmit) {
+        try {
+          await resubmitListing(productId, {});
+        } catch (e: any) {
+          toast.error(t('common.error'), e.message);
+          setSaving(false);
+          return;
+        }
+        toast.success(t('editListing.resubmit'), t('editListing.resubmitted'));
+        navigation.goBack();
+        return;
+      }
+      if (resp?.product?.listing_status === 'pending_review') {
+        toast.warning(t('editListing.saved'), t('editListing.reviewNotice'));
+      } else {
+        toast.success(t('editListing.saved'), t('editListing.productUpdated'));
+      }
       navigation.goBack();
     } catch (e: any) {
-            toast.error(t('common.error'), e.message);
+      if (e?.code === 'PRICE_STOCK_LOCKED') {
+        setLocked(true);
+        toast.warning(t('editListing.lockedTitle'), t('editListing.bannerLocked'));
+      } else if (e?.code === 'LISTING_REJECTED' || e?.code === 'LISTING_PENDING') {
+        toast.warning(t('common.error'), e.message);
+      } else {
+        toast.error(t('common.error'), e.message);
+      }
     }
     setSaving(false);
   };
@@ -213,7 +444,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
   const handleDelete = () => {
     if (network.isOffline) {
-      toast.error(t('network.offline'), 'Deleting a listing requires an internet connection.');
+      toast.error(t('network.offline'), t('editListing.offlineHint'));
       return;
     }
     if (Platform.OS === 'web') {
@@ -239,37 +470,71 @@ export default function EditListingScreen({ route, navigation }: Props) {
     );
   }
 
-  if (store.user?.seller_tier === 'casual') {
+  if (needsVerification) {
     return (
       <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
         <ScreenHeader title={t('editListing.title')} onBack={() => navigation.goBack()} />
-        <View style={styles.limitBlock}>
-          <View style={styles.limitIcon}>
+        <ScrollView contentContainerStyle={styles.wallWrap}>
+          <View style={styles.wallIcon}>
             <MaterialCommunityIcons name="shield-lock-outline" size={40} color={COLORS.coral} />
           </View>
-          <Text style={styles.limitTitle}>Verification Required</Text>
-          <Text style={styles.limitHint}>
-            You need to verify your identity before editing products on MaurMaket. This helps keep our marketplace safe and trustworthy.
-          </Text>
+          <Text style={styles.wallTitle}>{t('addListing.verifyTitle')}</Text>
+          <Text style={styles.wallBody}>{t('addListing.verifyBody')}</Text>
           <TouchableOpacity
-            style={styles.upgradeBtn}
-            onPress={() => { navigation.navigate('Settings'); }}
+            style={styles.wallPrimaryBtn}
+            onPress={() => navigation.navigate('Verification')}
             accessibilityRole="button"
-            accessibilityLabel="go to verification settings"
+            accessibilityLabel={t('addListing.verifyCta')}
           >
             <MaterialCommunityIcons name="shield-check-outline" size={18} color={COLORS.white} />
-            <Text style={styles.upgradeBtnText}>Go to Settings</Text>
+            <Text style={styles.wallPrimaryText}>{t('addListing.verifyCta')}</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
     );
   }
+
+  const statusBlocked = listingStatus !== 'active';
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
     <ScreenHeader title={t('editListing.title')} onBack={() => navigation.goBack()} />
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+
+      {listingStatus === 'pending_review' && (
+        <View style={[styles.banner, styles.bannerPending]}>
+          <MaterialCommunityIcons name="shield-search" size={16} color={COLORS.yellow} />
+          <Text style={[styles.bannerText, { color: COLORS.yellow }]}>{t('editListing.bannerPending')}</Text>
+        </View>
+      )}
+
+      {listingStatus === 'rejected' && (
+        <View style={[styles.banner, styles.bannerRejected]}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={16} color={COLORS.coral} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.bannerText, { color: COLORS.coral }]}>{t('editListing.bannerRejected')}</Text>
+            {!!moderationReason && (
+              <Text style={styles.bannerSub}>{t('editListing.rejectedReason', { reason: moderationReason })}</Text>
+            )}
+          </View>
+        </View>
+      )}
+
+      {listingStatus === 'active' && !isAvailable && (
+        <View style={[styles.banner, styles.bannerPaused]}>
+          <MaterialCommunityIcons name="pause-circle-outline" size={16} color={COLORS.text2} />
+          <Text style={styles.bannerText}>{t('editListing.bannerPaused')}</Text>
+        </View>
+      )}
+
+      {locked && (
+        <View style={[styles.banner, styles.bannerLocked]}>
+          <MaterialCommunityIcons name="lock-outline" size={16} color={COLORS.text2} />
+          <Text style={styles.bannerText}>{t('editListing.bannerLocked')}</Text>
+        </View>
+      )}
+
       <Text style={styles.imageLabel}>{t('addListing.photos')} ({totalImages}/{MAX_IMAGES})</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageRow}>
         {existingImages
@@ -297,65 +562,395 @@ export default function EditListingScreen({ route, navigation }: Props) {
         )}
       </ScrollView>
 
-      <TextInput style={styles.input} placeholder={t('editListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} accessibilityLabel="product name" />
-      <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} accessibilityLabel="description" />
-      <TextInput style={styles.input} placeholder={`${t('editListing.price')} (100-99,999 G)`} placeholderTextColor={COLORS.text2} value={price} onChangeText={(v) => { const num = v.replace(/[^0-9]/g, ''); if (!num || Number(num) <= 99999) setPrice(num); }} keyboardType="numeric" accessibilityLabel="price" maxLength={5} />
+      <TextInput style={styles.input} placeholder={t('editListing.productName')} placeholderTextColor={COLORS.text2} value={name} onChangeText={setName} maxLength={200} accessibilityLabel="product name" />
+      <TextInput style={[styles.input, styles.textArea]} placeholder={t('editListing.description')} placeholderTextColor={COLORS.text2} value={description} onChangeText={setDescription} multiline numberOfLines={3} maxLength={5000} accessibilityLabel="description" />
 
-      {price && Number(price) >= 100 && (() => {
-        const tier = store.user?.seller_tier || 'casual';
-        const rate = tier === 'business' ? 0.03 : tier === 'verified' ? 0.05 : 0.08;
-        const moncash = 0.079;
-        const net = Math.round(Number(price) * (1 - rate) * (1 - moncash));
-        return (
-          <View style={styles.netPreview}>
-            <View style={styles.netPreviewRow}>
-              <Text style={styles.netPreviewLabel}>MaurMaket fee ({Math.round(rate * 100)}%)</Text>
-              <Text style={styles.netPreviewValue}>-{Math.round(Number(price) * rate)} G</Text>
-            </View>
-            <View style={styles.netPreviewRow}>
-              <Text style={styles.netPreviewLabel}>MonCash fee (~7.9%)</Text>
-              <Text style={styles.netPreviewValue}>~-{Math.round(Number(price) * moncash)} G</Text>
-            </View>
-            <View style={[styles.netPreviewRow, styles.netPreviewTotal]}>
-              <Text style={styles.netPreviewTotalLabel}>You receive</Text>
-              <Text style={styles.netPreviewTotalValue}>{net} G</Text>
-            </View>
-            <Text style={styles.netPreviewTip}>Tip: price ~{Math.round((rate + moncash) * 100)}% above your target to cover fees</Text>
-          </View>
-        );
-      })()}
+      <Text style={styles.fieldLabel}>{t('addListing.condition')}</Text>
+      <View style={styles.chipWrap}>
+        {CONDITIONS.map((c) => {
+          const on = condition === c;
+          return (
+            <TouchableOpacity
+              key={c}
+              style={[styles.chip, on && styles.chipOn]}
+              onPress={() => setCondition(on ? '' : c)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+            >
+              <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                {t(CONDITION_LABEL_KEYS[c])}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
-      <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
-        <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
-        <Icon name="sale-tag" size={16} color={showSale ? COLORS.coral : COLORS.text2} />
-        <Text style={styles.saleToggleText}> Run a sale</Text>
-      </TouchableOpacity>
-
-      {showSale && (
-        <SaleSection
-          originalPrice={price}
-          salePrice={salePrice}
-          saleEndDate={saleEndDate}
-          onSalePriceChange={setSalePrice}
-          onSaleEndDateChange={setSaleEndDate}
-        />
+      {!!condition && (
+        <View>
+          <Text style={styles.fieldLabel}>
+            {t('addListing.flawsLabel')}
+            {!flawNotesRequired(condition) ? (
+              <Text style={styles.labelMuted}> {t('addListing.flawsOptional')}</Text>
+            ) : null}
+          </Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder={t('addListing.flawsPlaceholder')}
+            placeholderTextColor={COLORS.text2}
+            value={flawNotes}
+            onChangeText={setFlawNotes}
+            multiline
+            numberOfLines={3}
+            maxLength={2000}
+            accessibilityLabel={t('addListing.flawsLabel')}
+          />
+        </View>
       )}
 
-      <TextInput style={styles.input} placeholder={t('editListing.quantity')} placeholderTextColor={COLORS.text2} value={stock} onChangeText={setStock} keyboardType="numeric" accessibilityLabel="quantity" />
+      <Text style={styles.fieldLabel}>{t('addListing.languageLabel')}</Text>
+      <View style={styles.chipWrap}>
+        {LISTING_LANGUAGES.map((l) => {
+          const on = languageLabel === l;
+          return (
+            <TouchableOpacity
+              key={l}
+              style={[styles.chip, styles.chipSmall, on && styles.chipOn]}
+              onPress={() => setLanguageLabel(on ? '' : l)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+            >
+              <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                {t(LANGUAGE_LABEL_KEYS[l] || l)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {attrKeys.length > 0 && (
+        <View>
+          <Text style={styles.fieldLabel}>{t('addListing.attrTitle')}</Text>
+          {attrKeys.map((k) => (
+            <TextInput
+              key={k}
+              style={styles.input}
+              placeholder={t(`addListing.attr.${k}`)}
+              placeholderTextColor={COLORS.text2}
+              value={attrs[k] || ''}
+              onChangeText={(v) => setAttrs(prev => ({ ...prev, [k]: v.slice(0, 100) }))}
+              maxLength={100}
+              accessibilityLabel={t(`addListing.attr.${k}`)}
+            />
+          ))}
+        </View>
+      )}
+
+      {!hasVariants && (
+        <>
+          <Text style={styles.fieldLabel}>{t('editListing.price')}</Text>
+          <TextInput
+            style={styles.input}
+            placeholder={`${t('editListing.price')} (${MIN_PRICE}-${MAX_PRICE} G)`}
+            placeholderTextColor={COLORS.text2}
+            value={price}
+            onChangeText={(v) => { const num = v.replace(/[^0-9]/g, ''); if (!num || Number(num) <= MAX_PRICE) setPrice(num); }}
+            keyboardType="numeric"
+            maxLength={5}
+            editable={!locked}
+            accessibilityLabel="price"
+          />
+          {locked && <Text style={styles.hint}>{t('editListing.bannerLocked')}</Text>}
+
+          {price && Number(price) >= MIN_PRICE && (() => {
+            const tier = store.user?.seller_tier || 'casual';
+            const rate = tier === 'business' ? 0.03 : tier === 'verified' ? 0.05 : 0.08;
+            const moncash = 0.079;
+            const net = Math.round(Number(price) * (1 - rate) * (1 - moncash));
+            return (
+              <View style={styles.netPreview}>
+                <View style={styles.netPreviewRow}>
+                  <Text style={styles.netPreviewLabel}>MaurMaket fee ({Math.round(rate * 100)}%)</Text>
+                  <Text style={styles.netPreviewValue}>-{Math.round(Number(price) * rate)} G</Text>
+                </View>
+                <View style={styles.netPreviewRow}>
+                  <Text style={styles.netPreviewLabel}>MonCash fee (~7.9%)</Text>
+                  <Text style={styles.netPreviewValue}>~-{Math.round(Number(price) * moncash)} G</Text>
+                </View>
+                <View style={[styles.netPreviewRow, styles.netPreviewTotal]}>
+                  <Text style={styles.netPreviewTotalLabel}>{t('addListing.youReceive')}</Text>
+                  <Text style={styles.netPreviewTotalValue}>{net} G</Text>
+                </View>
+                <Text style={styles.netPreviewTip}>Tip: price ~{Math.round((rate + moncash) * 100)}% above your target to cover fees</Text>
+              </View>
+            );
+          })()}
+
+          <TouchableOpacity style={styles.saleToggle} onPress={() => setShowSale(!showSale)} accessibilityRole="button" accessibilityLabel="run a sale" accessibilityState={{ checked: showSale }}>
+            <MaterialCommunityIcons name={showSale ? 'checkbox-marked' : 'checkbox-blank-outline'} size={20} color={showSale ? COLORS.coral : COLORS.text2} />
+            <Icon name="sale-tag" size={16} color={showSale ? COLORS.coral : COLORS.text2} />
+            <Text style={styles.saleToggleText}> Run a sale</Text>
+          </TouchableOpacity>
+
+          {showSale && (
+            <SaleSection
+              originalPrice={price}
+              salePrice={salePrice}
+              saleEndDate={saleEndDate}
+              onSalePriceChange={setSalePrice}
+              onSaleEndDateChange={setSaleEndDate}
+            />
+          )}
+
+          <Text style={styles.fieldLabel}>{t('editListing.quantity')}</Text>
+          <TextInput
+            style={styles.input}
+            placeholder={t('editListing.quantity')}
+            placeholderTextColor={COLORS.text2}
+            value={stock}
+            onChangeText={(v) => setStock(v.replace(/[^0-9]/g, ''))}
+            keyboardType="numeric"
+            editable={!locked}
+            accessibilityLabel="quantity"
+          />
+          <Text style={styles.hint}>{t('editListing.stockHint')}</Text>
+        </>
+      )}
+
+      {/* Variants */}
+      <TouchableOpacity
+        style={styles.toggleRow}
+        onPress={toggleVariants}
+        disabled={locked}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: hasVariants, disabled: locked }}
+      >
+        <MaterialCommunityIcons
+          name={hasVariants ? 'checkbox-marked' : 'checkbox-blank-outline'}
+          size={20}
+          color={hasVariants ? COLORS.coral : COLORS.text2}
+        />
+        <Text style={[styles.toggleText, locked && { color: COLORS.text2 }]}>{t('addListing.variantsLabel')}</Text>
+      </TouchableOpacity>
+
+      {hasVariants && (
+        <View>
+          <Text style={styles.hint}>{t('addListing.variantsHint')}</Text>
+          {variantDims.map((dim, i) => (
+            <View key={`dim-${i}`} style={styles.dimCard}>
+              <TextInput
+                style={styles.inputFlat}
+                placeholder={t('addListing.dimName')}
+                placeholderTextColor={COLORS.text2}
+                value={dim.name}
+                onChangeText={(v) => setDimName(i, v.slice(0, 30))}
+                maxLength={30}
+                editable={!locked}
+              />
+              <View style={styles.chipWrap}>
+                {dim.values.map((val) => (
+                  <TouchableOpacity
+                    key={val}
+                    style={[styles.chip, styles.chipOn]}
+                    onPress={() => removeDimValue(i, val)}
+                    disabled={locked}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t('addListing.dimRemove')} ${val}`}
+                  >
+                    <Text style={[styles.chipText, styles.chipTextOn]}>{val}</Text>
+                    <MaterialCommunityIcons name="close" size={12} color={COLORS.white} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.dimInputRow}>
+                <TextInput
+                  style={[styles.inputFlat, { flex: 1 }]}
+                  placeholder={t('addListing.dimValue')}
+                  placeholderTextColor={COLORS.text2}
+                  value={dimInputs[i] || ''}
+                  onChangeText={(v) =>
+                    setDimInputs((prev) => {
+                      const n = [...prev];
+                      n[i] = v.slice(0, 30);
+                      return n;
+                    })
+                  }
+                  maxLength={30}
+                  editable={!locked}
+                  onSubmitEditing={() => addDimValue(i)}
+                />
+                <TouchableOpacity
+                  style={[styles.dimAddBtn, locked && { opacity: 0.4 }]}
+                  onPress={() => addDimValue(i)}
+                  disabled={locked}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.dimAddText}>{t('addListing.dimAdd')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+
+          {variants.length > 0 && (
+            <Text style={styles.variantCount}>
+              {t('addListing.comboCount', { count: variants.length })}
+            </Text>
+          )}
+          {variants.map((v, i) => (
+            <View key={`var-${i}`} style={styles.variantCard}>
+              <Text style={styles.variantLabel}>
+                {Object.values(v.options).join(' · ') || variantComboLabel(v.options)}
+              </Text>
+              <View style={styles.variantInputsRow}>
+                <View style={styles.variantField}>
+                  <Text style={styles.variantFieldLabel}>{t('addListing.vPrice')}</Text>
+                  <TextInput
+                    style={styles.inputFlat}
+                    placeholder={String(MIN_PRICE)}
+                    placeholderTextColor={COLORS.text2}
+                    value={v.price}
+                    onChangeText={(val) => updateVariantField(i, 'price', val.replace(/[^0-9]/g, ''))}
+                    keyboardType="numeric"
+                    maxLength={5}
+                    editable={!locked}
+                  />
+                </View>
+                <View style={styles.variantField}>
+                  <Text style={styles.variantFieldLabel}>{t('addListing.vStock')}</Text>
+                  <TextInput
+                    style={styles.inputFlat}
+                    placeholder="0"
+                    placeholderTextColor={COLORS.text2}
+                    value={v.stock}
+                    onChangeText={(val) => updateVariantField(i, 'stock', val.replace(/[^0-9]/g, ''))}
+                    keyboardType="numeric"
+                    maxLength={5}
+                    editable={!locked}
+                  />
+                </View>
+                <View style={[styles.variantField, { flex: 1.2 }]}>
+                  <Text style={styles.variantFieldLabel}>{t('addListing.vSku')}</Text>
+                  <TextInput
+                    style={styles.inputFlat}
+                    placeholder={t('addListing.optional')}
+                    placeholderTextColor={COLORS.text2}
+                    value={v.sku}
+                    onChangeText={(val) => updateVariantField(i, 'sku', val.slice(0, 60))}
+                    maxLength={60}
+                    editable={!locked}
+                  />
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {!hasVariants && (
+        <View>
+          <Text style={styles.fieldLabel}>{t('addListing.skuLabel')}</Text>
+          <TextInput
+            style={styles.input}
+            placeholder={t('addListing.skuHint')}
+            placeholderTextColor={COLORS.text2}
+            value={sku}
+            onChangeText={(v) => setSku(v.slice(0, 60))}
+            maxLength={60}
+            autoCapitalize="characters"
+            accessibilityLabel={t('addListing.skuLabel')}
+          />
+        </View>
+      )}
 
       <TouchableOpacity
         style={styles.toggleRow}
-        onPress={() => setIsAvailable(!isAvailable)}
+        onPress={() => setOffersEnabled(!offersEnabled)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: offersEnabled }}
+      >
+        <MaterialCommunityIcons
+          name={offersEnabled ? 'checkbox-marked' : 'checkbox-blank-outline'}
+          size={20}
+          color={offersEnabled ? COLORS.coral : COLORS.text2}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.toggleText}>{t('addListing.offersLabel')}</Text>
+          <Text style={styles.hint}>{t('addListing.offersHint')}</Text>
+        </View>
+      </TouchableOpacity>
+
+      <Text style={styles.fieldLabel}>{t('addListing.fulfillTitle')}</Text>
+      <TouchableOpacity
+        style={styles.toggleRow}
+        onPress={() => setMeetupEnabled(meetupEnabled === false ? true : false)}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: meetupEnabled !== false }}
+      >
+        <MaterialCommunityIcons
+          name={meetupEnabled !== false ? 'checkbox-marked' : 'checkbox-blank-outline'}
+          size={20}
+          color={meetupEnabled !== false ? COLORS.coral : COLORS.text2}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.toggleText}>{t('addListing.fulfillMeetup')}</Text>
+          <Text style={styles.hint}>
+            {meetupEnabled === null
+              ? t('addListing.fulfillInherit')
+              : meetupEnabled
+              ? t('addListing.fulfillOn')
+              : t('addListing.fulfillOff')}
+          </Text>
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.toggleRow}
+        onPress={() => setDeliveryEnabled(deliveryEnabled === false ? true : false)}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: deliveryEnabled !== false }}
+      >
+        <MaterialCommunityIcons
+          name={deliveryEnabled !== false ? 'checkbox-marked' : 'checkbox-blank-outline'}
+          size={20}
+          color={deliveryEnabled !== false ? COLORS.coral : COLORS.text2}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.toggleText}>{t('addListing.fulfillDelivery')}</Text>
+          <Text style={styles.hint}>
+            {deliveryEnabled === null
+              ? t('addListing.fulfillInherit')
+              : deliveryEnabled
+              ? t('addListing.fulfillOn')
+              : t('addListing.fulfillOff')}
+          </Text>
+        </View>
+      </TouchableOpacity>
+
+      <Text style={styles.fieldLabel}>{t('addListing.thresholdLabel')}</Text>
+      <TextInput
+        style={styles.input}
+        placeholder={t('addListing.thresholdHint', { def: DEFAULT_LOW_STOCK_THRESHOLD })}
+        placeholderTextColor={COLORS.text2}
+        value={lowStockThreshold}
+        onChangeText={(v) => setLowStockThreshold(v.replace(/[^0-9]/g, '').slice(0, 2))}
+        keyboardType="numeric"
+        maxLength={2}
+        accessibilityLabel={t('addListing.thresholdLabel')}
+      />
+      <Text style={styles.hint}>{t('addListing.thresholdDesc')}</Text>
+
+      <TouchableOpacity
+        style={styles.toggleRow}
+        onPress={() => statusBlocked ? undefined : setIsAvailable(!isAvailable)}
+        disabled={statusBlocked}
         accessibilityRole="button"
         accessibilityLabel="available"
-        accessibilityState={{ checked: isAvailable }}
+        accessibilityState={{ checked: isAvailable, disabled: statusBlocked }}
       >
         <MaterialCommunityIcons
           name={isAvailable ? 'checkbox-marked' : 'checkbox-blank-outline'}
           size={20}
-          color={isAvailable ? COLORS.green : COLORS.text2}
+          color={statusBlocked ? COLORS.text2 : isAvailable ? COLORS.green : COLORS.text2}
         />
-        <Text style={styles.toggleText}>{t('editListing.available')}</Text>
+        <Text style={[styles.toggleText, statusBlocked && { color: COLORS.text2 }]}>{t('editListing.available')}</Text>
       </TouchableOpacity>
 
       <Text style={styles.sectionLabel}>{t('editListing.category')}</Text>
@@ -378,13 +973,15 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
       <TouchableOpacity
         style={[styles.saveBtn, saving && { opacity: 0.5 }]}
-        onPress={handleSave}
-        disabled={saving}
+        onPress={() => handleSave(listingStatus === 'rejected')}
+        disabled={saving || resubmitting}
         accessibilityRole="button"
-        accessibilityLabel="save changes"
+        accessibilityLabel={listingStatus === 'rejected' ? t('editListing.saveResubmit') : t('editListing.saveChanges')}
       >
-        {saving ? <ActivityIndicator color={COLORS.white} /> : (
-          <Text style={styles.saveBtnText}>{t('editListing.saveChanges')}</Text>
+        {saving || resubmitting ? <ActivityIndicator color={COLORS.white} /> : (
+          <Text style={styles.saveBtnText}>
+            {listingStatus === 'rejected' ? t('editListing.saveResubmit') : t('editListing.saveChanges')}
+          </Text>
         )}
       </TouchableOpacity>
 
@@ -424,7 +1021,32 @@ const styles = StyleSheet.create({
   editSkeleton: { padding: SPACING.lg, gap: SPACING.md },
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingBottom: 60 },
-  loading: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
+
+  wallWrap: { alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24, gap: 10 },
+  wallIcon: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.surface,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
+  },
+  wallTitle: { fontSize: 17, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
+  wallBody: { fontSize: 13, color: COLORS.text2, textAlign: 'center', lineHeight: 19 },
+  wallPrimaryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14,
+    paddingHorizontal: 24, paddingVertical: 13, backgroundColor: COLORS.coral,
+    borderRadius: RADIUS.button, minWidth: 200, justifyContent: 'center',
+  },
+  wallPrimaryText: { fontSize: 14, fontWeight: '700', color: COLORS.white },
+
+  banner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 10,
+    marginHorizontal: SPACING.md, marginTop: 10, borderRadius: RADIUS.row,
+    borderWidth: 1,
+  },
+  bannerPending: { backgroundColor: COLORS.yellow + '10', borderColor: COLORS.yellow + '40' },
+  bannerRejected: { backgroundColor: COLORS.coral + '10', borderColor: COLORS.coral + '40' },
+  bannerPaused: { backgroundColor: COLORS.surface, borderColor: COLORS.border },
+  bannerLocked: { backgroundColor: COLORS.surface, borderColor: COLORS.border },
+  bannerText: { flex: 1, fontSize: 12.5, color: COLORS.text, fontWeight: '600', lineHeight: 17 },
+  bannerSub: { fontSize: 11.5, color: COLORS.text2, marginTop: 3, lineHeight: 16 },
 
   imageLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 12, marginBottom: 6 },
   imageRow: { paddingHorizontal: SPACING.md, marginBottom: 8, paddingTop: 6 },
@@ -441,6 +1063,29 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8,
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
+  inputFlat: {
+    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.sm, padding: 10, color: COLORS.text, fontSize: 13,
+  },
+
+  fieldLabel: {
+    fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase',
+    letterSpacing: 0.5, marginTop: 14, marginBottom: 7, paddingHorizontal: SPACING.md,
+  },
+  labelMuted: { color: COLORS.text2, fontWeight: '500', textTransform: 'none', letterSpacing: 0 },
+  hint: { fontSize: 12, color: COLORS.text2, lineHeight: 17, marginBottom: 6, paddingHorizontal: SPACING.md },
+
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4, paddingHorizontal: SPACING.md },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+  },
+  chipSmall: { paddingHorizontal: 12, paddingVertical: 6 },
+  chipOn: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
+  chipText: { fontSize: 12.5, color: COLORS.text2, fontWeight: '600' },
+  chipTextOn: { color: COLORS.white, fontWeight: '700' },
+
   netPreview: { marginHorizontal: SPACING.md, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12, marginBottom: 8 },
   netPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   netPreviewLabel: { fontSize: 12, color: COLORS.text2 },
@@ -449,17 +1094,46 @@ const styles = StyleSheet.create({
   netPreviewTotalLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text },
   netPreviewTotalValue: { fontSize: 13, fontWeight: '800', color: COLORS.green },
   netPreviewTip: { fontSize: 11, color: COLORS.coral, marginTop: 6, fontStyle: 'italic' },
+
   toggleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: SPACING.md, marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11,
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.row, paddingHorizontal: 12, marginBottom: 8,
+    marginHorizontal: SPACING.md,
   },
-  toggleText: { fontSize: 13, color: COLORS.text },
+  toggleText: { fontSize: 13.5, color: COLORS.text, fontWeight: '600' },
   sectionLabel: { fontSize: 11, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: SPACING.md, marginTop: 8, marginBottom: 6 },
   catScroll: { paddingHorizontal: SPACING.md, marginBottom: 12 },
   catPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.media, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, marginRight: 8 },
   catPillActive: { backgroundColor: COLORS.coral, borderColor: COLORS.coral },
   catPillText: { fontSize: 12, color: COLORS.text2 },
   catPillTextActive: { color: COLORS.white, fontWeight: '700' },
+
+  dimCard: {
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.row, padding: 10, marginBottom: 8, gap: 8,
+    marginHorizontal: SPACING.md,
+  },
+  dimInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  dimAddBtn: {
+    paddingHorizontal: 14, paddingVertical: 10, backgroundColor: COLORS.coral,
+    borderRadius: RADIUS.sm, minHeight: 40, justifyContent: 'center',
+  },
+  dimAddText: { fontSize: 12.5, color: COLORS.white, fontWeight: '700' },
+  variantCount: { fontSize: 11.5, color: COLORS.text2, fontWeight: '700', marginBottom: 6, paddingHorizontal: SPACING.md },
+  variantCard: {
+    backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.row, padding: 10, marginBottom: 8, gap: 8,
+    marginHorizontal: SPACING.md,
+  },
+  variantLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  variantInputsRow: { flexDirection: 'row', gap: 8 },
+  variantField: { flex: 1 },
+  variantFieldLabel: {
+    fontSize: 9.5, color: COLORS.text2, fontWeight: '700', textTransform: 'uppercase',
+    letterSpacing: 0.4, marginBottom: 4,
+  },
+
   saveBtn: {
     marginHorizontal: SPACING.md, backgroundColor: COLORS.coral, borderRadius: RADIUS.button,
     padding: 14, alignItems: 'center', marginTop: 8,
@@ -476,16 +1150,4 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row,
   },
   saleToggleText: { fontSize: 13, color: COLORS.text, fontWeight: '600' },
-  saleSection: { marginHorizontal: SPACING.md, marginBottom: 8, gap: 4 },
-  saleHint: { fontSize: 12, color: '#00E5A0', fontWeight: '600', paddingHorizontal: 4 },
-  limitBlock: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, gap: 8 },
-  limitIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  limitTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
-  limitHint: { fontSize: 13, color: COLORS.text2, textAlign: 'center', lineHeight: 18 },
-  upgradeBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginTop: 12, paddingHorizontal: 20, paddingVertical: 12,
-    backgroundColor: COLORS.green, borderRadius: RADIUS.button,
-  },
-  upgradeBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.white },
 });

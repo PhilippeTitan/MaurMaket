@@ -80,6 +80,10 @@ export default function WishlistScreen() {
       <TouchableOpacity
         style={styles.cartBtn}
         onPress={async () => {
+          if (item.has_variants) {
+            nav.navigate('ProductDetail', { productId: item.id });
+            return;
+          }
           const result = await store.addToCart({
             id: item.id,
             name: item.name,

@@ -2,12 +2,15 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Platform, useWindowDimensions, RefreshControl } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import Reanimated, { LinearTransition } from 'react-native-reanimated';
 import { COLORS, RADIUS, formatPrice } from '../theme';
 import { useReduceMotion } from '../hooks';
 import { getImageUrl } from '../api';
 import { getCardHeight as computeCardHeight, getCachedSize, preloadProductDimensions } from '../utils/imageDimensionCache';
 import SalePriceTag from './SalePriceTag';
 import StockBadge from './StockBadge';
+import { useTranslation } from '@/localization';
+import { CONDITION_I18N_KEYS } from '../utils/listingConstants';
 import type { Product } from '../types';
 import type { StyleProp, ViewStyle, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 
@@ -44,6 +47,8 @@ interface MasonryGridProps {
   columns?: number;
   /** Fade + slight stagger the tiles in on first appearance (skips Reduce Motion). */
   animateOnMount?: boolean;
+  /** Animate absolute tile positions when sorting/filtering changes the masonry layout. */
+  animateLayoutChanges?: boolean;
   /**
    * What sits under each photo. `full` adds price and condition beside the
    * title — the profile catalog treatment — while keeping a fixed tile height.
@@ -73,11 +78,14 @@ export default function MasonryGrid({
   availableWidth,
   columns,
   animateOnMount = false,
+  animateLayoutChanges = false,
   detailsBelow = 'name',
   priceOverlay = true,
 }: MasonryGridProps) {
+  const { t } = useTranslation();
   const { width: windowWidth, height: SCREEN_H } = useWindowDimensions();
   const SCREEN_W = availableWidth ?? windowWidth;
+  const reduceMotion = useReduceMotion();
 
   // ── Pinterest algorithm: dynamic column count from available width ──
   const COLUMN_COUNT = columns ?? (SCREEN_W < 600 ? 2 : SCREEN_W < 900 ? 3 : 4);
@@ -240,7 +248,7 @@ export default function MasonryGrid({
               )}
               {priceOverlay && (
                 <View style={styles.cardPriceTop} pointerEvents="none">
-                  <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" />
+                  <SalePriceTag price={item.price} effectivePrice={item.effective_price ?? item.price} isOnSale={item.is_on_sale || false} discountPct={item.discount_pct || 0} size="sm" prefix={item.has_variants ? t('productDetail.fromPriceLabel') : undefined} />
                 </View>
               )}
               <View style={styles.cardStockBadge} pointerEvents="none">
@@ -270,10 +278,13 @@ export default function MasonryGrid({
       <View style={styles.detailsBlock}>
         <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
         <View style={styles.detailsMetaRow}>
+          {item.has_variants && (
+            <Text style={styles.detailsCondition} numberOfLines={1}>{t('productDetail.fromPriceLabel')}</Text>
+          )}
           {onSale ? <Text style={styles.detailsStrike}>{formatPrice(item.price)}</Text> : null}
           <Text style={styles.detailsPrice}>{formatPrice(item.effective_price ?? item.price)}</Text>
           {condition ? (
-            <Text style={styles.detailsCondition} numberOfLines={1}>· {condition}</Text>
+            <Text style={styles.detailsCondition} numberOfLines={1}>· {t(CONDITION_I18N_KEYS[condition] ?? condition)}</Text>
           ) : null}
         </View>
       </View>
@@ -287,14 +298,15 @@ export default function MasonryGrid({
   const gridContent = (
     <View style={[styles.absoluteGrid, { height: layoutItems.totalHeight, paddingLeft: sidePad, paddingRight: sidePad }]}>
       {layoutItems.items.map(({ item, x, y, w, h }, index) => (
-        <FadeInTile
+        <Reanimated.View
           key={item.id}
-          enabled={animateOnMount}
-          delay={Math.min(index, 8) * 40}
+          layout={animateLayoutChanges && !reduceMotion ? LinearTransition.duration(200) : undefined}
           style={{ position: 'absolute', left: x, top: y, width: w }}
         >
-          {renderDefaultCard(item, w, h)}
-        </FadeInTile>
+          <FadeInTile enabled={animateOnMount} delay={Math.min(index, 8) * 40} style={{ width: '100%' }}>
+            {renderDefaultCard(item, w, h)}
+          </FadeInTile>
+        </Reanimated.View>
       ))}
     </View>
   );

@@ -5,6 +5,10 @@ import { clearUserSnapshots } from './offlineCache';
 
 type Listener = () => void;
 
+/** Identity of a cart line: product id, or product+variant when options differ. */
+export const cartLineKey = (c: Pick<CartItem, 'id' | 'variantId'>) =>
+  c.variantId ? `${c.id}::${c.variantId}` : c.id;
+
 interface StoreState {
   user: User | null;
   token: string | null;
@@ -133,7 +137,7 @@ export const store = {
     }
     const stock = Math.max(0, Number(product.stock) || 0);
     if (stock <= 0) return { added: false, reason: 'out-of-stock' as const, quantity: 0, stock };
-    const existing = state.cart.find(c => c.id === product.id);
+    const existing = state.cart.find(c => cartLineKey(c) === cartLineKey(product));
     if (existing) {
       if (existing.quantity >= stock) {
         existing.quantity = stock;
@@ -148,7 +152,7 @@ export const store = {
     }
     await storage.setItem('mm_cart', JSON.stringify(state.cart));
     notify();
-    const quantity = state.cart.find(c => c.id === product.id)?.quantity || 0;
+    const quantity = state.cart.find(c => cartLineKey(c) === cartLineKey(product))?.quantity || 0;
     return { added: true, quantity, stock };
   },
 
@@ -159,7 +163,7 @@ export const store = {
     const stock = Math.max(0, Number(product.stock) || 0);
     const quantity = Math.floor(Number(product.quantity) || 0);
     if (stock < quantity || quantity < 1) return { added: false, reason: 'out-of-stock' as const };
-    const existing = state.cart.find(item => item.id === product.id);
+    const existing = state.cart.find(item => cartLineKey(item) === cartLineKey(product));
     const acceptedItem: CartItem = {
       ...existing,
       ...product,
@@ -177,21 +181,21 @@ export const store = {
     return { added: true, quantity, stock };
   },
 
-  async removeFromCart(productId: string) {
-    state.cart = state.cart.filter(c => c.id !== productId);
+  async removeFromCart(lineKey: string) {
+    state.cart = state.cart.filter(c => cartLineKey(c) !== lineKey);
     await storage.setItem('mm_cart', JSON.stringify(state.cart));
     notify();
   },
 
-  async updateQuantity(productId: string, qty: number) {
-    const item = state.cart.find(c => c.id === productId);
+  async updateQuantity(lineKey: string, qty: number) {
+    const item = state.cart.find(c => cartLineKey(c) === lineKey);
     if (item) {
       if (qty <= 0) {
-        state.cart = state.cart.filter(c => c.id !== productId);
+        state.cart = state.cart.filter(c => cartLineKey(c) !== lineKey);
       } else {
         const stock = Math.max(0, Number(item.stock) || 0);
         if (stock <= 0) {
-          state.cart = state.cart.filter(c => c.id !== productId);
+          state.cart = state.cart.filter(c => cartLineKey(c) !== lineKey);
         } else {
           item.quantity = Math.min(qty, stock);
         }

@@ -488,7 +488,7 @@ router.get('/products/:id', optionalAuth, async (req, res) => {
               COALESCE(wishlist_counts.wishlist_count, 0) AS wishlist_count,
               CASE WHEN $2::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM feed_events fe WHERE fe.product_id = p.id AND fe.user_id = $2 AND fe.event_type = 'like') THEN true ELSE false END AS is_liked,
               CASE WHEN $2::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM wishlists w WHERE w.product_id = p.id AND w.user_id = $2) THEN true ELSE false END AS is_wishlisted,
-              (SELECT json_agg(json_build_object('image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary, 'image_width', pi.image_width, 'image_height', pi.image_height) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images,
+              (SELECT json_agg(json_build_object('id', pi.id, 'image_url', pi.image_url, 'thumbnail_url', pi.thumbnail_url, 'is_primary', pi.is_primary, 'image_width', pi.image_width, 'image_height', pi.image_height) ORDER BY pi.is_primary DESC, pi.display_order ASC) FROM product_images pi WHERE pi.product_id = p.id) AS images,
               (SELECT json_agg(json_build_object('id', pv.id, 'options', pv.options, 'option_label', pv.option_label, 'price', pv.price, 'stock', pv.stock, 'sku', pv.sku, 'display_order', pv.display_order, 'is_active', pv.is_active) ORDER BY pv.display_order ASC) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = TRUE) AS variants
        FROM products p
        JOIN users u ON p.seller_id = u.id

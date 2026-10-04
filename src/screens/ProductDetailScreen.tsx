@@ -12,7 +12,8 @@ import { getProduct, getProducts, getSellerReviews, getProductReviews, getImageU
 import { store } from '../store';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
-import type { Product, Review } from '../types';
+import type { Product, Review, ProductVariant } from '../types';
+import { CONDITION_I18N_KEYS } from '../utils/listingConstants';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import SalePriceTag from '../components/SalePriceTag';
@@ -25,6 +26,7 @@ import StockBadge from '../components/StockBadge';
 import { queryClient, useLike, useWishlist, useViewport } from '../hooks';
 import ProductActionBar from '../components/ProductActionBar';
 import MasonryGrid from '../components/MasonryGrid';
+import ReportModal from '../components/ReportModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -59,6 +61,48 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [heroHeight, setHeroHeight] = useState(HERO_DEFAULT_H);
   const [storeTick, setStoreTick] = useState(0);
+
+  // ── Variant selection ──
+  const variants: ProductVariant[] = React.useMemo(() => {
+    if (!product?.has_variants) return [];
+    return (product.variants || []).filter(v => v.is_active !== false);
+  }, [product]);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const activeVariant = variants.find(v => v.id === selectedVariantId) ?? null;
+
+  useEffect(() => {
+    if (variants.length === 0) { setSelectedVariantId(null); return; }
+    const inStock = variants.find(v => (Number(v.stock) || 0) > 0);
+    setSelectedVariantId((inStock || variants[0]).id);
+  }, [variants]);
+
+  const variantDims = React.useMemo(() => {
+    const dims: { name: string; values: string[] }[] = [];
+    for (const v of variants) {
+      for (const [k, val] of Object.entries(v.options || {})) {
+        let d = dims.find(x => x.name === k);
+        if (!d) { d = { name: k, values: [] }; dims.push(d); }
+        if (val && !d.values.includes(val)) d.values.push(val);
+      }
+    }
+    return dims;
+  }, [variants]);
+
+  const selectDimValue = (dim: string, value: string) => {
+    const base = activeVariant?.options ?? variants[0]?.options ?? {};
+    const next = { ...base, [dim]: value };
+    const match = variants.find(v => Object.entries(next).every(([k, val]) => (v.options || {})[k] === val));
+    if (match) setSelectedVariantId(match.id);
+  };
+
+  const dimValueEnabled = (dim: string, value: string) => {
+    const base = activeVariant?.options ?? variants[0]?.options ?? {};
+    const probe = { ...base, [dim]: value };
+    return variants.some(v =>
+      (Number(v.stock) || 0) > 0 &&
+      Object.entries(probe).every(([k, val]) => (v.options || {})[k] === val)
+    );
+  };
   const mountedRef = useRef(true);
   const flatListRef = useRef<FlatList>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -66,6 +110,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
 
   // ── More menu (fanning animation) ──
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
   const fanProgress = useRef(new Animated.Value(0)).current;
   const iconScales = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
 
@@ -109,16 +154,11 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
   const handleReport = () => {
     if (!product) return;
     closeMenu();
-    Alert.alert(
-      t('feed.reportTitle'),
-      t('feed.reportMessage'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        { text: t('feed.reportSpam'), onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
-        { text: t('feed.reportInappropriate'), onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
-        { text: t('feed.reportWrongCategory'), onPress: () => { trackFeedEvent(product.id, 'not_relevant').catch(() => {}); Alert.alert(t('feed.reportThanks'), t('feed.reportThankMsg')); } },
-      ],
-    );
+    if (!store.isLoggedIn) {
+      navigation.navigate('Auth', { screen: 'Login' });
+      return;
+    }
+    setReportVisible(true);
   };
 
   useEffect(() => {
@@ -401,10 +441,14 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             </View>
           )}
           <View style={styles.stockOverlay}>
-            <StockBadge stock={product.stock} />
+            <StockBadge stock={activeVariant ? Number(activeVariant.stock) : product.stock} />
           </View>
           <View style={styles.priceOverlay}>
-            <SalePriceTag price={product.price} effectivePrice={product.effective_price ?? product.price} isOnSale={product.is_on_sale || false} discountPct={product.discount_pct || 0} size="lg" />
+            {product.has_variants && activeVariant ? (
+              <Text style={styles.variantHeroPrice}>{formatPrice(Number(activeVariant.price))}</Text>
+            ) : (
+              <SalePriceTag price={product.price} effectivePrice={product.effective_price ?? product.price} isOnSale={product.is_on_sale || false} discountPct={product.discount_pct || 0} size="lg" />
+            )}
           </View>
         </View>
 
@@ -572,7 +616,63 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
             {product.description ? (
               <Text style={styles.description}>{product.description}</Text>
             ) : null}
+            {(product.condition || product.flaw_notes) ? (
+              <View style={styles.conditionCard}>
+                {product.condition ? (
+                  <View style={styles.conditionRow}>
+                    <MaterialCommunityIcons name="shield-check-outline" size={14} color={COLORS.green} />
+                    <Text style={styles.conditionLabel}>{t('productDetail.conditionLabel')}</Text>
+                    <Text style={styles.conditionValue}>{t(CONDITION_I18N_KEYS[product.condition] ?? product.condition)}</Text>
+                  </View>
+                ) : null}
+                {product.flaw_notes ? (
+                  <View style={{ gap: 2 }}>
+                    <Text style={styles.conditionLabel}>{t('addListing.flawsLabel')}</Text>
+                    <Text style={styles.flawsText}>{product.flaw_notes}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </View>
+
+          {/* ── Variant options ── */}
+          {variantDims.length > 0 && (
+            <View style={styles.sectionBorder}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>{t('productDetail.options')}</Text>
+                {activeVariant && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={styles.variantMetaPrice}>{formatPrice(Number(activeVariant.price))}</Text>
+                    <StockBadge stock={Number(activeVariant.stock)} />
+                  </View>
+                )}
+              </View>
+              {variantDims.map(dim => (
+                <View key={dim.name} style={styles.dimBlock}>
+                  <Text style={styles.dimName}>{dim.name}</Text>
+                  <View style={styles.chipRow}>
+                    {dim.values.map(value => {
+                      const isSel = (activeVariant?.options || {})[dim.name] === value;
+                      const enabled = dimValueEnabled(dim.name, value);
+                      return (
+                        <TouchableOpacity
+                          key={value}
+                          style={[styles.chip, isSel && styles.chipActive, !enabled && styles.chipDisabled]}
+                          onPress={() => selectDimValue(dim.name, value)}
+                          disabled={!enabled}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isSel, disabled: !enabled }}
+                          accessibilityLabel={`${dim.name}: ${value}`}
+                        >
+                          <Text style={[styles.chipText, isSel && styles.chipTextActive]}>{value}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* ── Reviews section ── */}
           {productReviews.length > 0 && (
@@ -681,7 +781,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
 
       {/* ── Sticky bottom CTA ── */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>
-        <BuyRow product={product} navigation={navigation} />
+        <BuyRow product={product} navigation={navigation} variant={activeVariant} />
       </View>
 
       {/* ── More menu (fanning animation) ── */}
@@ -708,6 +808,13 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
           </Pressable>
         </Pressable>
       </Modal>
+      <ReportModal
+        visible={reportVisible}
+        targetType="listing"
+        targetId={product.id}
+        targetName={product.name}
+        onClose={() => setReportVisible(false)}
+      />
     </View>
   );
 }
@@ -821,6 +928,35 @@ const styles = StyleSheet.create({
   },
   productName: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 6, lineHeight: 24 },
   description: { fontSize: 14, color: COLORS.text2, lineHeight: 20 },
+
+  /* Condition + flaw disclosure */
+  conditionCard: {
+    marginTop: 10, gap: 8,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.card,
+    borderWidth: 1, borderColor: COLORS.border + '40',
+    paddingHorizontal: 10, paddingVertical: 8,
+  },
+  conditionRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  conditionLabel: { fontSize: 11, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', letterSpacing: 0.4 },
+  conditionValue: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  flawsText: { fontSize: 13, color: COLORS.text2, lineHeight: 18 },
+
+  /* Variant options */
+  variantHeroPrice: { fontSize: 18, fontWeight: '800', color: COLORS.white },
+  variantMetaPrice: { fontSize: 14, fontWeight: '800', color: COLORS.text },
+  dimBlock: { paddingHorizontal: 12, paddingBottom: 10 },
+  dimName: { fontSize: 12, fontWeight: '600', color: COLORS.text2, marginBottom: 6, textTransform: 'capitalize' },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    minWidth: 44, minHeight: 44, justifyContent: 'center',
+    paddingHorizontal: 14, borderRadius: RADIUS.pill,
+    borderWidth: 1.5, borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  chipActive: { borderColor: COLORS.coral, backgroundColor: COLORS.coral + '15' },
+  chipDisabled: { opacity: 0.4 },
+  chipText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  chipTextActive: { color: COLORS.coral },
 
   /* Reviews */
   ratingBadge: {

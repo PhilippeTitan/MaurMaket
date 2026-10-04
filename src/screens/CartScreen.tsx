@@ -9,7 +9,7 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
 import ConfirmModal from '../components/ConfirmModal';
-import { store } from '../store';
+import { store, cartLineKey } from '../store';
 import { validatePromo, getImageUrl } from '../api';
 import { useTranslation } from '@/localization';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,10 +42,10 @@ export default function CartScreen({ navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    const ownIds = cart.filter(item => item.seller_id && item.seller_id === store.user?.id).map(item => item.id);
-    if (ownIds.length > 0) {
-      for (const id of ownIds) store.removeFromCart(id);
-      toast.info('Items removed', `${ownIds.length} item${ownIds.length > 1 ? 's' : ''} from your own store were removed from the cart.`);
+    const ownKeys = cart.filter(item => item.seller_id && item.seller_id === store.user?.id).map(item => cartLineKey(item));
+    if (ownKeys.length > 0) {
+      for (const key of ownKeys) store.removeFromCart(key);
+      toast.info('Items removed', `${ownKeys.length} item${ownKeys.length > 1 ? 's' : ''} from your own store were removed from the cart.`);
     }
   }, []);
 
@@ -77,7 +77,7 @@ export default function CartScreen({ navigation }: Props) {
       const items = grouped.get(group.sellerId) || [];
       result.push({ type: 'sellerHeader', ...group, key: `header-${group.sellerId}` });
       for (const item of items) {
-        result.push({ type: 'item', item, key: item.id });
+        result.push({ type: 'item', item, key: cartLineKey(item) });
       }
     }
     return result;
@@ -87,14 +87,14 @@ export default function CartScreen({ navigation }: Props) {
     if (discount > 0) setDiscount(0);
   }, [total]);
 
-  const handleQuantity = async (id: string, delta: number) => {
-    const item = cart.find(c => c.id === id);
+  const handleQuantity = async (key: string, delta: number) => {
+    const item = cart.find(c => cartLineKey(c) === key);
     if (item) {
       const newQty = item.quantity + delta;
       if (newQty <= 0) {
-        await store.removeFromCart(id);
+        await store.removeFromCart(key);
       } else {
-        await store.updateQuantity(id, newQty);
+        await store.updateQuantity(key, newQty);
         const stock = Math.max(0, Number(item.stock) || 0);
         if (stock > 0 && newQty > stock) {
           toast.info(t('cart.stockLimit'), t('cart.onlyAvailable', { count: String(stock) }));
@@ -103,8 +103,8 @@ export default function CartScreen({ navigation }: Props) {
     }
   };
 
-  const handleRemove = async (id: string) => {
-    await store.removeFromCart(id);
+  const handleRemove = async (key: string) => {
+    await store.removeFromCart(key);
   };
 
   const handleApplyPromo = async () => {
@@ -153,11 +153,12 @@ export default function CartScreen({ navigation }: Props) {
         </View>
         <View style={styles.info}>
           <Text style={styles.itemName} numberOfLines={1}>{cartItem.name}</Text>
+          {cartItem.variantLabel ? <Text style={styles.variantLabel}>{cartItem.variantLabel}</Text> : null}
           <SalePriceTag price={cartItem.price} effectivePrice={cartItem.effective_price ?? cartItem.price} isOnSale={cartItem.is_on_sale || false} discountPct={cartItem.discount_pct || 0} size="md" />
           <View style={styles.qtyRow}>
             <TouchableOpacity
               style={[styles.qtyBtn, !!cartItem.acceptedOfferMessageId && styles.qtyBtnDisabled]}
-              onPress={() => handleQuantity(cartItem.id, -1)}
+              onPress={() => handleQuantity(cartLineKey(cartItem), -1)}
               disabled={!!cartItem.acceptedOfferMessageId}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.decreaseQuantity')}
@@ -167,7 +168,7 @@ export default function CartScreen({ navigation }: Props) {
             <Text style={styles.qtyVal}>{cartItem.quantity}</Text>
             <TouchableOpacity
               style={[styles.qtyBtn, atStockLimit && styles.qtyBtnDisabled]}
-              onPress={() => handleQuantity(cartItem.id, 1)}
+              onPress={() => handleQuantity(cartLineKey(cartItem), 1)}
               disabled={atStockLimit || !!cartItem.acceptedOfferMessageId}
               accessibilityRole="button"
               accessibilityLabel={t('accessibility.increaseQuantity')}
@@ -180,7 +181,7 @@ export default function CartScreen({ navigation }: Props) {
         </View>
         <TouchableOpacity
           style={styles.removeBtn}
-          onPress={() => handleRemove(cartItem.id)}
+          onPress={() => handleRemove(cartLineKey(cartItem))}
           accessibilityRole="button"
           accessibilityLabel={t('accessibility.removeItem')}
         >
@@ -272,7 +273,7 @@ export default function CartScreen({ navigation }: Props) {
         kind="danger"
         onConfirm={() => {
           setShowClearCartModal(false);
-          for (const item of cart) store.removeFromCart(item.id);
+          for (const item of cart) store.removeFromCart(cartLineKey(item));
         }}
         onCancel={() => setShowClearCartModal(false)}
       />
@@ -298,6 +299,7 @@ const styles = StyleSheet.create({
   thumbImg: { width: '100%', height: '100%' },
   info: { flex: 1 },
   itemName: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  variantLabel: { fontSize: 11, fontWeight: '600', color: COLORS.text2, marginTop: 2 },
   itemPrice: { fontSize: 12, color: COLORS.coral, fontWeight: '700', marginTop: 2 },
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   qtyBtn: {
