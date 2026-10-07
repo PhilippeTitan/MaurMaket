@@ -1822,10 +1822,14 @@ await step('NatCash phone separation', () => c.query(`
     await step('Seed baseline policy versions', async () => {
       for (const doc of BASELINE_POLICY_VERSIONS) {
         if (!POLICY_KINDS.includes(doc.kind)) continue;
+        // Explicit casts keep all uses of $1 as the same type. Without them
+        // Postgres deduces $1 as text from the SELECT list and varchar from the
+        // `kind = $1` comparison, which fails with
+        // "inconsistent types deduced for parameter $1".
         await c.query(
           `INSERT INTO policy_versions (kind, version, is_material, summaries)
-           SELECT $1, $2, $3, $4::jsonb
-           WHERE NOT EXISTS (SELECT 1 FROM policy_versions WHERE kind = $1)`,
+           SELECT $1::varchar(16), $2::varchar(32), $3::boolean, $4::jsonb
+           WHERE NOT EXISTS (SELECT 1 FROM policy_versions WHERE kind = $1::varchar(16))`,
           [doc.kind, doc.version, Boolean(doc.isMaterial), JSON.stringify(doc.summaries || {})]
         );
       }
