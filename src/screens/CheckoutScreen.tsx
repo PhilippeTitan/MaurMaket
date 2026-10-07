@@ -23,6 +23,9 @@ import { notifySuccess, notifyError } from '../haptics';
 import { useToast } from '../components/Toast';
 import LocationPicker from '../components/LocationPicker';
 import { network } from '../network';
+// Shared with the sign-out sweep (APP-Q403): an unfinished payment reference must
+// not outlive the account that started it.
+import { PENDING_PAYMENT_KEY } from '../utils/signOutPolicy';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
@@ -319,7 +322,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         // Store pending ID so we can detect abandonment when user returns
         try {
           const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-          await AsyncStorage.setItem('mm_pending_payment', JSON.stringify({ pendingId: res.pendingId, createdAt: Date.now() }));
+          await AsyncStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify({ pendingId: res.pendingId, createdAt: Date.now() }));
         } catch {}
         // Redirect to MonCash — cart stays intact until payment confirmed
         await Linking.openURL(res.paymentUrl);

@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import type { User, CartItem } from './types';
 import { setCachedToken, clearSessionToken } from './api';
-import { clearUserSnapshots } from './offlineCache';
+import { clearAccountDeviceData } from './signOutCleanup';
 import { applyAppearanceMode, type AppearanceMode } from './theme';
 
 type Listener = () => void;
@@ -134,8 +134,7 @@ export const store = {
     } catch { /* token expired or network error — keep current state */ }
   },
 
-  async logout() {
-    const previousUserId = state.user?.id;
+  async logout(options?: { removeDrafts?: boolean }) {
     // Sign out from Better Auth (fire-and-forget, don't block on errors)
     try {
       const { API_BASE } = require('./api');
@@ -145,7 +144,10 @@ export const store = {
     state.token = null;
     await clearSessionToken();
     await storage.deleteItem('mm_user');
-    await clearUserSnapshots(previousUserId);
+    // APP-Q403: authenticated caches and credentials leave the device. Unsent
+    // drafts, the local cart, and device preferences stay unless the user chose
+    // to remove their drafts in the sign-out dialog.
+    await clearAccountDeviceData({ removeDrafts: options?.removeDrafts });
     notify();
   },
 

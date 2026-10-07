@@ -1614,6 +1614,8 @@
   "settings.logout": "Dekonekte",
   "settings.logoutBtn": "Dekonekte",
   "settings.logoutConfirm": "Ou soti nan kont ou?",
+  "settings.logoutClears": "Done kont ki sere nan kachèt sou aparèy sa a — kopi san entènèt, notifikasyon, aksyon ki nan keu, ak nenpòt peman ki poko fini — pral efase.",
+  "settings.logoutRemoveDrafts": "Efase tou bouyon mesaj mwen ki poko voye yo sou aparèy sa a",
   "settings.manageEarnings": "Jere gain ou yo",
   "settings.moncashNatcash": "MonCash ak NatCash",
   "settings.moncashSupport": "Sipò MonCash",

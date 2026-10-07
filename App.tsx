@@ -13,6 +13,7 @@ import { applyAppearanceMode, COLORS, SPACING, RADIUS, SHADOW, FONT_SIZES, FONT_
 import { i18n } from './src/localization';
 import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
+import { PENDING_PAYMENT_KEY } from './src/utils/signOutPolicy';
 // Web-only: strips the browser's own focus ring and autofill fill off our text fields.
 import './src/webInputReset';
 import { getPasswordResetTokenFromUrl } from './src/authDeepLinks';
@@ -408,12 +409,12 @@ export default function App() {
         // Check for abandoned payment — user returned to app without completing MonCash
         try {
           const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-          const raw = await AsyncStorage.getItem('mm_pending_payment');
+          const raw = await AsyncStorage.getItem(PENDING_PAYMENT_KEY);
           if (!raw) return;
           const { pendingId, orderId: pendingOrderId, createdAt } = JSON.parse(raw);
           // Skip if less than 5s ago (user just left, still might be paying)
           if (Date.now() - createdAt < 5000) return;
-          await AsyncStorage.removeItem('mm_pending_payment');
+          await AsyncStorage.removeItem(PENDING_PAYMENT_KEY);
           const nav = navigationRef.current;
           if (!nav) return;
           if (pendingId) {

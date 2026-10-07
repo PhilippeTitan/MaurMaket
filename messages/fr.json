@@ -1614,6 +1614,8 @@
   "settings.logout": "Déconnexion",
   "settings.logoutBtn": "Déconnexion",
   "settings.logoutConfirm": "Êtes-vous sûr de vouloir vous déconnecter?",
+  "settings.logoutClears": "Les données de compte mises en cache sur cet appareil — copies hors ligne, notifications, actions en attente et tout paiement inachevé — seront supprimées.",
+  "settings.logoutRemoveDrafts": "Supprimer aussi mes brouillons de messages non envoyés de cet appareil",
   "settings.manageEarnings": "Gérez vos gains",
   "settings.moncashNatcash": "MonCash et NatCash",
   "settings.moncashSupport": "Support MonCash",

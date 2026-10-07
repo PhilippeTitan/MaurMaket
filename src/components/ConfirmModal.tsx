@@ -12,6 +12,8 @@ type ConfirmModalProps = {
   kind?: 'warning' | 'danger' | 'info';
   onConfirm: () => void;
   onCancel: () => void;
+  /** Optional extra control shown between the message and the actions. */
+  children?: React.ReactNode;
 };
 
 export default function ConfirmModal({
@@ -23,6 +25,7 @@ export default function ConfirmModal({
   kind = 'warning',
   onConfirm,
   onCancel,
+  children,
 }: ConfirmModalProps) {
   const accent =
     kind === 'danger'
@@ -50,6 +53,7 @@ export default function ConfirmModal({
           <MaterialCommunityIcons name={icon} size={40} color={accent} />
           <Text style={styles.title}>{title}</Text>
           {!!message && <Text style={styles.message}>{message}</Text>}
+          {children}
           <View style={styles.actions}>
             <Pressable
               style={[styles.button, styles.cancelButton]}

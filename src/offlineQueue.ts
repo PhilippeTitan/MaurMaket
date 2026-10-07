@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { network } from './network';
+// The sign-out sweep (APP-Q403) removes this queue by key; the key lives there so
+// the two can never drift apart.
+import { OFFLINE_QUEUE_KEY } from './utils/signOutPolicy';
 
 export type QueuedAction =
   | { id: string; type: 'wishlist_toggle'; productId: string; timestamp: number }
@@ -13,7 +16,7 @@ export type QueuedActionInput =
   | { type: 'feed_event'; productId: string; eventType: string; dwellTimeMs?: number }
   | { type: 'notification_read'; notificationId: string };
 
-const STORAGE_KEY = 'mm_offline_queue';
+const STORAGE_KEY = OFFLINE_QUEUE_KEY;
 const MAX_QUEUE_SIZE = 200;
 
 let _queue: QueuedAction[] = [];
@@ -80,6 +83,21 @@ export const offlineQueue = {
 
   get count(): number {
     return _queue.length;
+  },
+
+  /**
+   * Drop every queued action, in memory and on disk. Called at sign-out
+   * (APP-Q403): a rooted queue belongs to the account that created it, and
+   * leaving it in memory would let a later flush re-post those actions — and
+   * re-persist them — under whoever signs in next.
+   */
+  async reset(): Promise<void> {
+    _queue = [];
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Silent fail on storage write; the in-memory queue is already empty.
+    }
   },
 
   async flush(): Promise<{ synced: number; failed: number }> {

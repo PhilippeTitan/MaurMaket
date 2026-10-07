@@ -14,6 +14,9 @@ import { subscribeToUserEvents } from '../realtime';
 import type { RootStackParamList } from '../navigation';
 import { store } from '../store';
 import { CheckoutSection, CheckoutSurface } from '../components/CheckoutPrimitives';
+// Shared with the sign-out sweep (APP-Q403): an unfinished payment reference must
+// not outlive the account that started it.
+import { PENDING_PAYMENT_KEY } from '../utils/signOutPolicy';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -64,7 +67,7 @@ export default function PaymentReturnScreen() {
             setStatus('confirmed');
             if (pollRef.current) clearInterval(pollRef.current);
             if (elapsedRef.current) clearInterval(elapsedRef.current);
-            try { const A = (await import('@react-native-async-storage/async-storage')).default; await A.removeItem('mm_pending_payment'); } catch {}
+            try { const A = (await import('@react-native-async-storage/async-storage')).default; await A.removeItem(PENDING_PAYMENT_KEY); } catch {}
             // Cart was NOT cleared during checkout — clear it now that payment is confirmed
             try { await store.clearCart(); } catch { /* best effort */ }
             setTimeout(() => {
@@ -75,7 +78,7 @@ export default function PaymentReturnScreen() {
             setStatus('timeout');
             if (pollRef.current) clearInterval(pollRef.current);
             if (elapsedRef.current) clearInterval(elapsedRef.current);
-            try { const A = (await import('@react-native-async-storage/async-storage')).default; await A.removeItem('mm_pending_payment'); } catch {}
+            try { const A = (await import('@react-native-async-storage/async-storage')).default; await A.removeItem(PENDING_PAYMENT_KEY); } catch {}
           }
         } else {
           // Legacy flow — poll order status directly
@@ -93,7 +96,7 @@ export default function PaymentReturnScreen() {
             setStatus(res.status === 'failed' ? 'failed' : 'timeout');
             if (pollRef.current) clearInterval(pollRef.current);
             if (elapsedRef.current) clearInterval(elapsedRef.current);
-            try { const A = (await import('@react-native-async-storage/async-storage')).default; await A.removeItem('mm_pending_payment'); } catch {}
+            try { const A = (await import('@react-native-async-storage/async-storage')).default; await A.removeItem(PENDING_PAYMENT_KEY); } catch {}
           }
         }
       } catch { /* keep polling */ }
@@ -114,7 +117,7 @@ export default function PaymentReturnScreen() {
       setStatus('timeout');
       if (pollRef.current) clearInterval(pollRef.current);
       if (elapsedRef.current) clearInterval(elapsedRef.current);
-      (async () => { try { const A = (await import('@react-native-async-storage/async-storage')).default; await A.removeItem('mm_pending_payment'); } catch {} })();
+      (async () => { try { const A = (await import('@react-native-async-storage/async-storage')).default; await A.removeItem(PENDING_PAYMENT_KEY); } catch {} })();
     }, 90000);
 
     return () => {

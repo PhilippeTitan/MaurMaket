@@ -36,6 +36,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Product } from '../types';
 import * as Location from 'expo-location';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { MAP_SELLERS_CACHE_KEY, LEGACY_MAP_SELLERS_CACHE_KEY } from '../utils/signOutPolicy';
 import { useLowDataMode } from '../hooks/useLowDataMode';
 
 /* ─── Map styles ─── */
@@ -65,9 +66,10 @@ interface NearbySeller {
 }
 
 // v2 cache contains generalized public map points only; do not reuse older
-// exact-coordinate seller results from the previous privacy model.
-const CACHE_KEY_SELLERS = 'mm_map_last_sellers_v2';
-const LEGACY_CACHE_KEY_SELLERS = 'mm_map_last_sellers';
+// exact-coordinate seller results from the previous privacy model. Both keys
+// come from the shared sign-out policy (APP-Q403) so neither survives logout.
+const CACHE_KEY_SELLERS = MAP_SELLERS_CACHE_KEY;
+const LEGACY_CACHE_KEY_SELLERS = LEGACY_MAP_SELLERS_CACHE_KEY;
 const CACHE_TTL = 5 * 60 * 1000;
 
 export default function MapScreen() {

@@ -18,6 +18,9 @@ import { useToast } from '../components/Toast';
 import { SkeletonBlock } from '../components/Skeleton';
 import LocationPicker from '../components/LocationPicker';
 import { useUser } from '../hooks';
+// Shared with the sign-out sweep (APP-Q403): an unfinished payment reference must
+// not outlive the account that started it.
+import { PENDING_PAYMENT_KEY } from '../utils/signOutPolicy';
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -242,7 +245,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         // Store pending order ID so we can detect abandonment when user returns
         try {
           const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-          await AsyncStorage.setItem('mm_pending_payment', JSON.stringify({ orderId, createdAt: Date.now() }));
+          await AsyncStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify({ orderId, createdAt: Date.now() }));
         } catch {}
         await Linking.openURL(res.paymentUrl);
       }

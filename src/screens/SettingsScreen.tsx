@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '../theme';
 import { ONBOARDING_COLORS } from './onboarding/theme';
@@ -30,6 +30,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const lowDataMode = useLowDataMode();
   const toast = useToast();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [logoutRemoveDrafts, setLogoutRemoveDrafts] = useState(false);
   const [showName, setShowName] = useState(user?.show_real_name ?? true);
   const [savingName, setSavingName] = useState(false);
 
@@ -46,13 +47,12 @@ export default function SettingsScreen({ navigation }: Props) {
     : '';
   const tierColor = user?.seller_tier ? TIER_COLORS[user.seller_tier] ?? COLORS.text2 : undefined;
 
+  // APP-Q403: signing out clears this account's cached device data. The
+  // confirmation says so plainly and offers the one local-retention choice —
+  // unsent drafts stay on the device unless the user asks to remove them.
+  // The dialog is used on every platform so web gets the same choice.
   const handleLogout = () => {
-    if (Platform.OS === 'web') {
-      if (window.confirm(t('settings.logoutConfirm'))) {
-        store.logout();
-      }
-      return;
-    }
+    setLogoutRemoveDrafts(false);
     setShowLogoutModal(true);
   };
 
@@ -296,16 +296,32 @@ export default function SettingsScreen({ navigation }: Props) {
       <ConfirmModal
         visible={showLogoutModal}
         title={t('settings.logout')}
-        message={t('settings.logoutConfirm')}
+        message={`${t('settings.logoutConfirm')} ${t('settings.logoutClears')}`}
         confirmLabel={t('settings.logout')}
         cancelLabel={t('common.cancel')}
         kind="warning"
         onConfirm={() => {
           setShowLogoutModal(false);
-          store.logout();
+          store.logout({ removeDrafts: logoutRemoveDrafts });
         }}
         onCancel={() => setShowLogoutModal(false)}
-      />
+      >
+        <TouchableOpacity
+          style={styles.logoutChoiceRow}
+          onPress={() => setLogoutRemoveDrafts(value => !value)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: logoutRemoveDrafts }}
+          accessibilityLabel={t('settings.logoutRemoveDrafts')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons
+            name={logoutRemoveDrafts ? 'checkbox-marked' : 'checkbox-blank-outline'}
+            size={22}
+            color={logoutRemoveDrafts ? COLORS.coral : COLORS.text3}
+          />
+          <Text style={styles.logoutChoiceText}>{t('settings.logoutRemoveDrafts')}</Text>
+        </TouchableOpacity>
+      </ConfirmModal>
     </ScreenContainer>
   );
 }
@@ -316,6 +332,20 @@ const styles = StyleSheet.create({
   },
   logoutSpacer: {
     height: SPACING.xxxl,
+  },
+  logoutChoiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    width: '100%',
+    minHeight: 44,
+    paddingVertical: SPACING.xs,
+  },
+  logoutChoiceText: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    lineHeight: FONT_SIZES.sm * 1.4,
+    color: COLORS.text2,
   },
   logoutButtonWrap: {
     marginHorizontal: SPACING.lg,

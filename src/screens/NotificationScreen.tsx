@@ -20,6 +20,9 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
+// Shared with the sign-out sweep (APP-Q403): the notification feed snapshot is
+// account-scoped and must not survive on a shared device.
+import { notificationCacheKey } from '../utils/signOutPolicy';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
@@ -199,7 +202,7 @@ export default function NotificationScreen() {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
   }, []);
 
-  const cacheKey = `cached_notifs_${store.user?.id || 'anon'}`;
+  const cacheKey = notificationCacheKey(store.user?.id);
 
   const saveCache = useCallback(async (data: Notification[]) => {
     try {

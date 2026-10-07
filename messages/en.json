@@ -1614,6 +1614,8 @@
   "settings.logout": "Logout",
   "settings.logoutBtn": "Log out",
   "settings.logoutConfirm": "Are you sure you want to log out?",
+  "settings.logoutClears": "Cached account data on this device — offline copies, notifications, queued actions, and any unfinished payment — will be removed.",
+  "settings.logoutRemoveDrafts": "Also remove my unsent message drafts from this device",
   "settings.manageEarnings": "Manage your earnings",
   "settings.moncashNatcash": "MonCash & NatCash",
   "settings.moncashSupport": "MonCash support",

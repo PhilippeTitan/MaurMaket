@@ -13,6 +13,9 @@ import type { LinkPreviewData, ConversationMediaItem } from '../api';
 import { onRealtime } from '../realtime';
 import { network } from '../network';
 import { cacheKeys, readSnapshot, writeSnapshot, pruneMessageSnapshots } from '../offlineCache';
+// Unsent drafts are protected across sign-out (APP-Q189/Q351/Q403); the shared
+// policy module owns the key so the sign-out sweep can never miss it.
+import { UNSENT_DRAFTS_KEY } from '../utils/signOutPolicy';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from '@/localization';
@@ -144,7 +147,7 @@ type OutboxEntry = {
   attempts: number;
   createdAt: string;
 };
-const OUTBOX_KEY = 'mm_outbox';
+const OUTBOX_KEY = UNSENT_DRAFTS_KEY;
 
 const genClientId = () =>
   'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {

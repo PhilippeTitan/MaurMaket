@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { network } from './network';
+// The prefix is shared with the sign-out sweep (APP-Q403) so the writer and the
+// sweep use one literal: a snapshot written here can always be found there.
+import { SNAPSHOT_CACHE_PREFIX } from './utils/signOutPolicy';
 
 type CacheRecord<T> = {
   value: T;
@@ -11,7 +14,7 @@ export type SnapshotResult<T> = {
   isStale: boolean;
 };
 
-const CACHE_PREFIX = 'mm_snapshot:';
+const CACHE_PREFIX = SNAPSHOT_CACHE_PREFIX;
 
 const DEFAULT_TTL: Record<string, number> = {
   feed: 60 * 60 * 1000,       // 1 hour
@@ -53,18 +56,6 @@ export async function writeSnapshot<T>(key: string, value: T): Promise<void> {
     await AsyncStorage.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify({ value, updatedAt: Date.now() }));
   } catch {
     // Caching is an enhancement. A full disk or malformed legacy cache must not block the app.
-  }
-}
-
-export async function clearUserSnapshots(userId: string | null | undefined): Promise<void> {
-  if (!userId) return;
-  try {
-    const keys = await AsyncStorage.getAllKeys();
-    const userPrefix = `${CACHE_PREFIX}user:${userId}:`;
-    const scopedKeys = keys.filter(key => key.startsWith(userPrefix));
-    if (scopedKeys.length) await AsyncStorage.multiRemove(scopedKeys);
-  } catch {
-    // Best effort only; the next signed-in user receives a distinct cache namespace regardless.
   }
 }
 

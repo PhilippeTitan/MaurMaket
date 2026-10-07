@@ -15,7 +15,8 @@
     "test:design": "node scripts/design-guardrails.js",
     "test:i18n": "node scripts/i18n-check.js",
     "test:icons": "node scripts/icon-check.js",
-    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js && node scripts/icon-check.js",
+    "test:signout": "node scripts/signout-policy-check.js",
+    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js && node scripts/icon-check.js && node scripts/signout-policy-check.js",
     "test:realtime": "node scripts/realtime-check.js"
   },
   "dependencies": {
