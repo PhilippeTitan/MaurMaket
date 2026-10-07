@@ -10,8 +10,13 @@
  * This script closes that hole: it collects every icon name the app asks for and
  * fails if any of them is missing from the alias table.
  *
+ * It also holds the ledger's icon-family order (APP-Q553: "use one consistent
+ * SVG icon family with shared sizing/stroke rules"). Because the alias table is
+ * a compatibility shim, importing an icon package directly still works and
+ * quietly puts a second family on screen — so that is a failure here too.
+ *
  * Usage: node scripts/icon-check.js
- * Exit code 1 when an unmapped icon name is found.
+ * Exit code 1 when an unmapped icon name is found or a second family is imported.
  */
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, relative } from 'path';
@@ -63,6 +68,19 @@ for (const extra of ['App.tsx']) {
 // only read inside the two icon components; `icon` and `iconName` are only ever
 // icon names in this codebase.
 const ICON_COMPONENTS = ['MaterialCommunityIcons', 'Icon', 'LucideIcon'];
+
+// Icon families the app must not pull in directly (APP-Q553). Every one of them
+// is reachable through the alias table, so a direct import is never necessary.
+const ICON_PACKAGES = [
+  'lucide-react-native',
+  '@expo/vector-icons',
+  'react-native-vector-icons',
+  '@react-native-vector-icons',
+  'react-native-eva-icons',
+  'react-native-heroicons',
+  'react-native-feather',
+];
+const ICON_MODULE_DIR = 'src/components/icons/';
 const STRING_LITERAL = /'([^'\\]*)'|"([^"\\]*)"/g;
 
 function literalsIn(expression) {
@@ -155,7 +173,30 @@ for (const file of FILES) {
   }
 }
 
-// ── 3. Report ────────────────────────────────────────────────────────────────
+// ── 3. Ledger APP-Q553: one SVG icon family ──────────────────────────────────
+const escapeRe = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const familyViolations = [];
+
+for (const file of FILES) {
+  const rel = relative(ROOT, file).replace(/\\/g, '/');
+  // The alias table itself is the only place a family may be imported.
+  if (rel.startsWith(ICON_MODULE_DIR)) continue;
+  const source = readFileSync(file, 'utf8');
+  for (const pkg of ICON_PACKAGES) {
+    const specifier = `${escapeRe(pkg)}(?:/[^'"]*)?`;
+    const re = new RegExp(`(?:\\bfrom\\s*['\"]${specifier}['\"]|\\brequire\\(\\s*['\"]${specifier}['\"]\\s*\\))`);
+    const hit = re.exec(source);
+    if (!hit) continue;
+    familyViolations.push({
+      file: rel,
+      line: source.slice(0, hit.index).split('\n').length,
+      package: pkg,
+    });
+    break;
+  }
+}
+
+// ── 4. Report ────────────────────────────────────────────────────────────────
 const unmapped = [...used.entries()]
   .filter(([name]) => !allowed.has(name))
   .sort((a, b) => b[1].length - a[1].length);
@@ -175,5 +216,17 @@ if (unmapped.length > 0) {
   process.exit(1);
 }
 
+if (familyViolations.length > 0) {
+  console.error(`\nERROR: ${familyViolations.length} file(s) import a second icon family directly:\n`);
+  for (const site of familyViolations) {
+    console.error(`  ${site.file}:${site.line}  imports '${site.package}'`);
+  }
+  console.error('\nAPP-Q553 orders one consistent SVG icon family. Import the component from');
+  console.error("@/components/icons/UnifiedIcon (or '@/components/icons/Icon') and add any missing");
+  console.error('name to the ICONS alias table instead of importing a package in a screen.');
+  process.exit(1);
+}
+
 console.log(`OK: every icon name resolves.${unused.length ? ` (${unused.length} defined aliases are unused)` : ''}`);
+console.log('OK: one SVG icon family — no direct icon-package imports outside src/components/icons.');
 if (unused.length) console.log(`  unused: ${unused.join(', ')}`);

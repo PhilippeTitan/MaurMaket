@@ -100,8 +100,10 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               activeOpacity={0.6}
               onPress={() => navigation.navigate('SettingsEdit', { field: 'name', title: t('field.name') })}
             >
+              {/* Row icons use the app's neutral list-icon colour, the same one
+                  SettingsRow paints in its minimal appearance. */}
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="account-outline" size={20} color={ONBOARDING_COLORS.coral} />
+                <MaterialCommunityIcons name="account-outline" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>{t('account.fullName')}</Text>
@@ -116,7 +118,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('SettingsEdit', { field: 'bio', title: t('field.bio') })}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="text-box-outline" size={20} color={ONBOARDING_COLORS.purple} />
+                <MaterialCommunityIcons name="text-box-outline" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>{t('field.bio')}</Text>
@@ -141,7 +143,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('SettingsEdit', { field: 'email', title: t('settings.email') })}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="email-outline" size={20} color={ONBOARDING_COLORS.blue} />
+                <MaterialCommunityIcons name="email-outline" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>{t('field.email')}</Text>
@@ -162,7 +164,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('SettingsEdit', { field: 'phone', title: t('field.phone') })}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="phone-outline" size={20} color={ONBOARDING_COLORS.green} />
+                <MaterialCommunityIcons name="phone-outline" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>{t('field.phone')}</Text>
@@ -194,7 +196,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('UsernameSettings')}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="at" size={20} color={ONBOARDING_COLORS.yellow} />
+                <MaterialCommunityIcons name="at" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>{t('field.username')}</Text>
@@ -209,7 +211,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('LanguageSettings')}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="translate" size={20} color={ONBOARDING_COLORS.purple} />
+                <MaterialCommunityIcons name="translate" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>{t('account.language')}</Text>
@@ -224,7 +226,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('LocationSettings')}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="map-marker-outline" size={20} color={ONBOARDING_COLORS.green} />
+                <MaterialCommunityIcons name="map-marker-outline" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>{t('settings.location')}</Text>

@@ -170,7 +170,7 @@ export default function DevicePermissionsScreen({ navigation }: Props) {
               accessibilityState={{ disabled: Platform.OS === 'web' }}
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="open-in-new" size={20} color={COLORS.coral} />
+                <MaterialCommunityIcons name="open-in-new" size={20} color={COLORS.text2} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.actionTitle}>{t('permissions.openSettings')}</Text>

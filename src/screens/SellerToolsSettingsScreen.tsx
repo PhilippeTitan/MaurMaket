@@ -131,7 +131,7 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
             style={styles.row}
             onPress={() => navigation.navigate('SellerOnboarding')}
           >
-            <MaterialCommunityIcons name="store-plus-outline" size={18} color={COLORS.green} />
+            <MaterialCommunityIcons name="store-plus-outline" size={18} color={COLORS.text2} />
             <Text style={styles.rowLabel}>{t('me.becomeSeller')}</Text>
             <Icon name="chevron-right" size={16} color={COLORS.text2} />
           </TouchableOpacity>
@@ -155,7 +155,7 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
           style={styles.row}
           onPress={() => navigation.navigate('Storefront', { sellerId: user!.id })}
         >
-          <MaterialCommunityIcons name="storefront-outline" size={18} color={COLORS.blue} />
+          <MaterialCommunityIcons name="storefront-outline" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>
             {user?.seller_tier === 'business' && user?.use_store_identity ? t('storefront.store') : t('settings.profile')}
           </Text>
@@ -212,7 +212,7 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
           accessibilityRole="button"
           accessibilityLabel={t('myListings.title')}
         >
-          <MaterialCommunityIcons name="format-list-bulleted-square" size={18} color={COLORS.blue} />
+          <MaterialCommunityIcons name="format-list-bulleted-square" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('myListings.title')}</Text>
           <Text style={styles.rowValue}>{t('myListings.rowSummary')}</Text>
           <Icon name="chevron-right" size={16} color={COLORS.text2} />
@@ -223,21 +223,21 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
       <Text style={styles.sectionHeader}>{t('sellerTools.deliveryMeetup')}</Text>
       <View style={styles.card}>
         <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SellerMapVisibility')} accessibilityRole="button" accessibilityLabel={t('sellerMapVisibility.title')}>
-          <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={COLORS.green} />
+          <MaterialCommunityIcons name="map-marker-radius-outline" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('sellerMapVisibility.title')}</Text>
           <Text style={styles.rowValue}>{t('sellerMapVisibility.manageSummary')}</Text>
           <Icon name="chevron-right" size={16} color={COLORS.text2} />
         </TouchableOpacity>
         <View style={styles.divider} />
         <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SellerFulfillmentSettings')} accessibilityRole="button" accessibilityLabel={t('sellerTools.deliveryMeetup')}>
-          <MaterialCommunityIcons name="truck-delivery-outline" size={18} color={COLORS.blue} />
+          <MaterialCommunityIcons name="truck-delivery-outline" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('fulfillmentSettings.manage')}</Text>
           <Text style={styles.rowValue}>{t('fulfillmentSettings.manageSummary')}</Text>
           <Icon name="chevron-right" size={16} color={COLORS.text2} />
         </TouchableOpacity>
         <View style={styles.divider} />
         <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('NatCashAccess')} accessibilityRole="button" accessibilityLabel={t('natcashAccess.manage')}>
-          <MaterialCommunityIcons name="cash-multiple" size={18} color={COLORS.purple} />
+          <MaterialCommunityIcons name="cash-multiple" size={18} color={COLORS.text2} />
           <Text style={styles.rowLabel}>{t('natcashAccess.manage')}</Text>
           <Text style={styles.rowValue}>{t('natcashAccess.manageSummary')}</Text>
           <Icon name="chevron-right" size={16} color={COLORS.text2} />
@@ -321,13 +321,13 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
           <Text style={styles.sectionHeader}>{t('sellerTools.subscription')}</Text>
           <View style={styles.card}>
             <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('BusinessSubscription')}>
-              <MaterialCommunityIcons name="calendar-clock-outline" size={18} color={COLORS.green} />
+              <MaterialCommunityIcons name="calendar-clock-outline" size={18} color={COLORS.text2} />
               <Text style={styles.rowLabel}>{t('settings.businessSubscription')}</Text>
               <Icon name="chevron-right" size={16} color={COLORS.text2} />
             </TouchableOpacity>
             <View style={styles.divider} />
             <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('PromoManagement')}>
-              <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.coral} />
+              <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.text2} />
               <Text style={styles.rowLabel}>{t('me.promotions')}</Text>
               <Icon name="chevron-right" size={16} color={COLORS.text2} />
             </TouchableOpacity>

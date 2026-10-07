@@ -210,13 +210,13 @@ export default function SellerFulfillmentSettingsScreen({ navigation }: Props) {
             <Text style={styles.section}>{t('fulfillmentSettings.availability')}</Text>
             <View style={styles.group}>
               <View style={styles.toggleRow}>
-                <View style={[styles.rowIcon, { backgroundColor: `${COLORS.blue}18` }]}><MaterialCommunityIcons name="truck-delivery-outline" size={19} color={COLORS.blue} /></View>
+                <View style={styles.rowIcon}><MaterialCommunityIcons name="truck-delivery-outline" size={19} color={COLORS.text2} /></View>
                 <Text style={styles.rowLabel}>{t('sellerTools.offerDelivery')}</Text>
                 <SettingsToggle value={profile.deliveryEnabled} onValueChange={value => setProfile(current => ({ ...current, deliveryEnabled: value }))} disabled={saving} accessibilityLabel={t('sellerTools.offerDelivery')} />
               </View>
               <View style={styles.divider} />
               <View style={styles.toggleRow}>
-                <View style={[styles.rowIcon, { backgroundColor: `${COLORS.coral}18` }]}><MaterialCommunityIcons name="map-marker-outline" size={19} color={COLORS.coral} /></View>
+                <View style={styles.rowIcon}><MaterialCommunityIcons name="map-marker-outline" size={19} color={COLORS.text2} /></View>
                 <Text style={styles.rowLabel}>{t('sellerTools.offerMeetups')}</Text>
                 <SettingsToggle value={profile.meetupEnabled} onValueChange={value => setProfile(current => ({ ...current, meetupEnabled: value }))} disabled={saving} accessibilityLabel={t('sellerTools.offerMeetups')} />
               </View>
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   section: { fontSize: 11, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text3, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: SPACING.lg, marginBottom: SPACING.xs },
   group: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, paddingHorizontal: SPACING.md },
   toggleRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
-  rowIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  rowIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface2 },
   rowLabel: { flex: 1, color: COLORS.text, fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.medium },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: 48 },
   fieldRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACING.md },
