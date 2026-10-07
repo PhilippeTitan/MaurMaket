@@ -1698,6 +1698,7 @@
   "signin.signInBtn": "Sign in →",
   "signin.signInBtnKeyboard": "Sign in",
   "signin.signInToContinue": "Sign in to continue",
+  "signin.tooManyAttempts": "Too many sign-in attempts. Wait a few minutes, then try again — or reset your password.",
   "signin.tryAgain": "Try again",
   "signin.twoFactorBody": "Enter a code from your authenticator app.",
   "signin.twoFactorTitle": "Two-step verification",

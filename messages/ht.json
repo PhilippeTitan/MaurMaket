@@ -1698,6 +1698,7 @@
   "signin.signInBtn": "Konekte →",
   "signin.signInBtnKeyboard": "Konekte",
   "signin.signInToContinue": "Konekte pou kontinye",
+  "signin.tooManyAttempts": "Twòp tantativ koneksyon. Tann kèk minit, epi eseye ankò — oswa reyinisyalize modpas ou.",
   "signin.tryAgain": "Eseye ankò",
   "signin.twoFactorBody": "Antre yon kòd aplikasyon otantifikasyon an.",
   "signin.twoFactorTitle": "Verifikasyon an de etap",

@@ -588,7 +588,11 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
             </View>
             <Text style={s.errorTitle}>{t('signin.couldNotSignIn')}</Text>
             <Text style={s.errorMessage}>
-              {errorMessage === 'Invalid email or password' ? t('signin.incorrectCredentials') : errorMessage}
+              {errorMessage === 'Invalid email or password'
+                ? t('signin.incorrectCredentials')
+                : errorMessage === 'Too many sign-in attempts'
+                  ? t('signin.tooManyAttempts')
+                  : errorMessage}
             </Text>
             <TouchableOpacity style={s.errorButton} onPress={() => setErrorMessage(null)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={t('signin.tryAgain')}>
               <LinearGradient colors={[C.violet, C.pink, C.amber]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.errorButtonGradient}>

@@ -12,7 +12,7 @@ import morgan from 'morgan';
 import { pool, isTestMode, neonBackupDatabaseUrl, setDbController } from './src/config/database.js';
 import { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_KYC_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand } from './src/config/storage.js';
 import { JWT_SECRET, BCRYPT_ROUNDS, PRODUCTION_URL } from './src/config/security.js';
-import { generalLimiter, authLimiter, paymentLimiter, uploadLimiter, msgLimiter, convLimiter, verifyLimiter } from './src/middleware/rateLimit.js';
+import { generalLimiter, signinLimiter, paymentLimiter, uploadLimiter, msgLimiter, convLimiter, verifyLimiter } from './src/middleware/rateLimit.js';
 import { initRealtime, closeRealtime } from './src/realtime.js';
 import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from './src/middleware/auth.js';
 import { createNotification, sendPushNotification } from './src/utils/notifications.js';
@@ -1943,6 +1943,16 @@ app.use(express.json({
 // ───── Better Auth (lazy: initialized after DB Controller) ─────
 // Handler is mounted now but getAuth() is called per-request.
 // createAuth(adapter) must run before the first request arrives.
+//
+// APP-Q380: credential-guessing surfaces are throttled BEFORE the catch-all
+// auth handler below. Middleware registered after `app.all('/api/auth/*', …)`
+// never runs, because that handler ends the response — which is why the old
+// `app.use('/api/auth', authLimiter)` was inert. Only password and 2FA-code
+// checks are limited; session reads, OAuth, and passkey are deliberately not.
+app.use(
+  ['/api/auth/sign-in/email', '/api/auth/two-factor/verify-totp', '/api/auth/two-factor/verify-backup-code'],
+  signinLimiter
+);
 app.all('/api/auth/*', (req, res) => {
   try {
     const handler = toNodeHandler(getAuth());
@@ -1956,7 +1966,6 @@ app.all('/api/auth/*', (req, res) => {
 
 // ───── Better Auth Studio (mounted after DB Controller init) ─────
 
-app.use('/api/auth', authLimiter);
 app.use('/api/payments', paymentLimiter);
 app.use('/api/upload', uploadLimiter);
 

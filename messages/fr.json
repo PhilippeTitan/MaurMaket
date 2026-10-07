@@ -1698,6 +1698,7 @@
   "signin.signInBtn": "Se connecter →",
   "signin.signInBtnKeyboard": "Se connecter",
   "signin.signInToContinue": "Connectez-vous pour continuer",
+  "signin.tooManyAttempts": "Trop de tentatives de connexion. Patientez quelques minutes, puis réessayez — ou réinitialisez votre mot de passe.",
   "signin.tryAgain": "Réessayer",
   "signin.twoFactorBody": "Saisissez un code de votre application d’authentification.",
   "signin.twoFactorTitle": "Vérification en deux étapes",

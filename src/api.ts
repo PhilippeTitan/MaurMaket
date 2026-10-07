@@ -415,7 +415,21 @@ export const login = async (email: string, password: string) => {
     return { requiresTwoFactor: true, twoFactorMethods: body.twoFactorMethods || ['totp'] };
   }
   if (!res.ok) {
-    throw new Error(body?.message || body?.error || 'Invalid email or password');
+    // APP-Q380: repeated failures are throttled and the wording never reveals
+    // whether the account exists or which factor was wrong. Only the genuine
+    // "too many attempts" state is surfaced distinctly, so the UI can explain
+    // the wait and point at safe recovery (password reset) instead of
+    // implying the account or password is definitely wrong.
+    const errorText = [body?.message, body?.error].filter(Boolean).join(' ');
+    if (res.status === 429 || /too many/i.test(errorText)) {
+      const rateLimited = new Error('Too many sign-in attempts') as Error & { code?: string; status?: number };
+      rateLimited.code = 'TOO_MANY_ATTEMPTS';
+      rateLimited.status = 429;
+      throw rateLimited;
+    }
+    const invalid = new Error('Invalid email or password') as Error & { code?: string };
+    invalid.code = 'INVALID_CREDENTIALS';
+    throw invalid;
   }
 
   const token = extractSessionToken(res, body);
