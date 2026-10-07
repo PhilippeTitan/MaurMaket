@@ -17,6 +17,16 @@ import {
   Store, Sun, SunMoon, Tag, ThumbsDown, ThumbsUp, Timer, Trash2, Truck, UserRound,
   UserRoundPlus, UserRoundX, UsersRound, Wallet, WifiOff, X, Zap,
 } from 'lucide-react-native';
+// Names added after scripts/icon-check.js found 55 aliases that were silently
+// resolving to the question-mark fallback. Kept as a separate import so the
+// original list cannot be accidentally trimmed.
+import {
+  AlignLeft, ArrowLeftRight, Banknote, Bookmark, Briefcase, CircleDot,
+  CloudDownload, Crown, DollarSign, DoorClosed, EyeOff, FilePen, Handshake,
+  House, Landmark, LifeBuoy, Lock, MessageSquareText, Monitor, NotebookText,
+  Palette, Pause, Percent, SearchX, ShieldX, Signal, Square, SquareCheck,
+  UserCog, UserPen,
+} from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import { COLORS } from '@/theme';
@@ -80,9 +90,37 @@ const ICONS: Record<string, LucideIcon> = {
   'close-circle-outline': CircleX, 'image-unavailable': ImageOff, back: ArrowLeft,
   rating: Star, 'rate-this': Star, 'offer-coin': CircleDollarSign, 'qr-code': QrCode,
   'my-location': Navigation, 'add-photo': Image, 'cart-outline': ShoppingCart,
+
+  // ── Filled in by the icon audit (scripts/icon-check.js) ──
+  // Every name below was previously unmapped and rendered as a "?" circle.
+  'account-cog-outline': UserCog, 'account-edit-outline': UserPen,
+  'account-eye-outline': Eye, 'account-heart-outline': Heart,
+  'account-plus-outline': UserRoundPlus, 'bank-outline': Landmark,
+  'bank-transfer-out': ArrowLeftRight, bookmark: Bookmark, 'bookmark-outline': Bookmark,
+  business: Briefcase, cash: Banknote, 'cash-sync': RefreshCw,
+  'checkbox-blank-outline': Square, 'checkbox-marked': SquareCheck,
+  'circle-outline': Circle, 'clipboard-alert-outline': ClipboardList,
+  'cloud-download-outline': CloudDownload, 'comment-text-outline': MessageSquareText,
+  'credit-card-outline': CreditCard, 'credit-card-refresh-outline': CreditCard,
+  'crown-outline': Crown, 'currency-usd': DollarSign, 'door-closed': DoorClosed,
+  'eye-off-outline': EyeOff, 'file-document-edit-outline': FilePen,
+  'heart-outline': Heart, 'help-circle-outline': CircleHelp,
+  'home-map-marker': MapPin, 'home-modern': House, lifebuoy: LifeBuoy, lock: Lock,
+  'lock-check-outline': LockKeyhole, 'magnify-close': SearchX, meetup: Handshake,
+  'message-outline': MessageSquare, 'message-text-outline': MessageSquareText,
+  monitor: Monitor, 'note-text-outline': NotebookText,
+  'package-variant-closed': Package, 'palette-outline': Palette, pause: Pause,
+  percent: Percent, 'pin-off': PinOff, 'pin-outline': Pin, play: Play,
+  'radiobox-blank': Circle, 'radiobox-marked': CircleDot,
+  'shield-account-outline': ShieldCheck, 'shield-key-outline': KeyRound,
+  'shield-refresh-outline': ShieldCheck, 'shield-remove-outline': ShieldX,
+  'signal-cellular-outline': Signal, social: Share2, 'store-outline': Store,
+  'text-short': AlignLeft,
 };
 
-const FILLED = new Set(['heart', 'star', 'fire', 'check', 'plus', 'minus']);
+// `bookmark` is the saved state and `bookmark-outline` the unsaved one; they
+// share a glyph, so the filled set is what makes the state visible.
+const FILLED = new Set(['heart', 'star', 'fire', 'check', 'plus', 'minus', 'bookmark']);
 
 export function MaterialCommunityIcons({
   name, size = 24, color = COLORS.text, style, accessibilityLabel, ...props
