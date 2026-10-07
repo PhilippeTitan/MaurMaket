@@ -30,6 +30,14 @@ import { CART_ACCOUNT_KEY, CART_GUEST_KEY } from './cartSync.js';
 /** Unsent chat drafts. Protected unless the user opts in to removing them. */
 export const UNSENT_DRAFTS_KEY = 'mm_outbox';
 
+/**
+ * This device's own push registration, so sign-out can unregister precisely
+ * (Batch 75): the server compare-and-clears against this value, so a device that
+ * signs out cannot unregister another device that registered later. It is the
+ * device's identifier, not the account's data, so it is kept across sign-out.
+ */
+export const PUSH_TOKEN_KEY = 'mm_push_token';
+
 /** Reference to an in-flight MonCash/NatCash payment (financial, account-scoped). */
 export const PENDING_PAYMENT_KEY = 'mm_pending_payment';
 
@@ -79,6 +87,7 @@ export const ACCOUNT_KEY_PREFIXES = [NOTIFICATION_CACHE_PREFIX, USER_SNAPSHOT_PR
 export const DEVICE_LOCAL_KEYS = [
   UNSENT_DRAFTS_KEY,
   CART_GUEST_KEY,
+  PUSH_TOKEN_KEY,
   // Batch 75 / APP-Q116 — an app lock belongs to whoever holds the phone, not to
   // the account that happened to sign in last, so signing out keeps it. The
   // 'last active' stamp is kept for the same reason and is cleared by the lock's

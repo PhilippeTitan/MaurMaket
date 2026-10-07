@@ -198,6 +198,14 @@ export const store = {
   },
 
   async logout(options?: { removeDrafts?: boolean }) {
+    // Batch 75 — unregister this device's push token FIRST, while the session that
+    // owns the registration is still valid: otherwise the account keeps pushing to
+    // a phone nobody is signed into. Best-effort, and never a reason to fail a
+    // sign-out the user asked for.
+    try {
+      const { unregisterPushToken } = require('./notifications');
+      await unregisterPushToken();
+    } catch { /* offline or unsupported: the sign-out proceeds */ }
     // Sign out from Better Auth (fire-and-forget, don't block on errors)
     try {
       const { API_BASE } = require('./api');

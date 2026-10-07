@@ -333,8 +333,32 @@ router.put('/user/username', authRequired, async (req, res) => {
   }
 });
 
+// Batch 75 (sign-out) — register this device for push, or unregister it.
+//
+// Registration was already here; unregistration is the half that was missing, and
+// without it a signed-out device keeps receiving the account's notifications. The
+// client sends the token it is removing and the update is a compare-and-clear
+// (`AND push_token = $2`), so signing out on one device can never silently
+// unregister a different device that registered later.
 router.post('/users/push-token', authRequired, async (req, res) => {
-  const { pushToken } = req.body;
+  const { pushToken, clear } = req.body || {};
+  if (clear === true) {
+    const value = typeof pushToken === 'string' && pushToken.trim() ? pushToken.trim() : null;
+    if (!value) return res.status(400).json({ error: 'Push token required' });
+    try {
+      const result = await pool.query(
+        'UPDATE users SET push_token = NULL WHERE id = $1 AND push_token = $2',
+        [req.user.id, value]
+      );
+      // rowCount 0 is a real answer, not an error: another device registered
+      // after this one, so this device was no longer the account's registration.
+      res.json({ ok: true, cleared: result.rowCount > 0 });
+    } catch (err) {
+      console.error('Push token clear error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+    return;
+  }
   if (!pushToken) return res.status(400).json({ error: 'Push token required' });
   try {
     await pool.query('UPDATE users SET push_token = $1 WHERE id = $2', [pushToken, req.user.id]);

@@ -670,6 +670,16 @@ export const getMe = () => request('/user/me');
 export const savePushToken = (pushToken: string) =>
   request('/users/push-token', { method: 'POST', body: JSON.stringify({ pushToken }) });
 
+// Batch 75 — the other half of registration: this device stops receiving the
+// account's notifications once nobody is signed in here. The token is sent so the
+// server can compare-and-clear, because one account has a single push token and
+// signing out on this device must not unregister a device that registered later.
+export const clearPushToken = (pushToken: string) =>
+  request<{ ok: boolean; cleared: boolean }>(
+    '/users/push-token',
+    { method: 'POST', body: JSON.stringify({ pushToken, clear: true }) }
+  );
+
 // Google Sign-In via Better Auth social provider
 export const googleAuth = async () => {
   // Native: use expo-auth-session to redirect to Better Auth's Google OAuth endpoint

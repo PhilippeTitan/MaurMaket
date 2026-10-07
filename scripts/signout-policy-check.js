@@ -26,6 +26,7 @@ import {
   LEGACY_MAP_SELLERS_CACHE_KEY,
   NOTIFICATION_CACHE_PREFIX,
   USER_SNAPSHOT_PREFIX,
+  PUSH_TOKEN_KEY,
   DEVICE_LOCAL_KEYS,
   ACCOUNT_EXACT_KEYS,
   ACCOUNT_KEY_PREFIXES,
@@ -66,6 +67,7 @@ const ALL_KEYS = [
   'mm_low_data_mode',
   'mm_lang',
   'mm_explore_filters',
+  PUSH_TOKEN_KEY,
   APP_LOCK_ENABLED_KEY,
   APP_LOCK_DELAY_KEY,
   APP_LOCK_LAST_ACTIVE_KEY,
@@ -105,6 +107,7 @@ check(
   'survivors are exactly drafts, local state, preferences and public caches',
   JSON.stringify(survivors) === JSON.stringify([
     UNSENT_DRAFTS_KEY, 'mm_cart', 'mm_appearance_mode', 'mm_low_data_mode', 'mm_lang', 'mm_explore_filters',
+    PUSH_TOKEN_KEY,
     APP_LOCK_ENABLED_KEY, APP_LOCK_DELAY_KEY, APP_LOCK_LAST_ACTIVE_KEY,
     'mm_snapshot:public:feed:forYou:v1', 'mm_snapshot:public:seller:seller-1:v1', 'expo-push-token',
   ]),
@@ -139,6 +142,23 @@ check('snapshot writes share the swept prefix', offlineCache.includes('const CAC
 check('the queue key comes from the policy', offlineQueue.includes('const STORAGE_KEY = OFFLINE_QUEUE_KEY;'));
 check('the drafts key comes from the policy', read('src/screens/ChatScreen.tsx').includes('const OUTBOX_KEY = UNSENT_DRAFTS_KEY;'));
 check('the notification cache key comes from the policy', read('src/screens/NotificationScreen.tsx').includes('const cacheKey = notificationCacheKey(store.user?.id);'));
+
+// ── 7. The push registration leaves with the session (Batch 75) ──
+// Without this, a signed-out phone keeps receiving the account's notifications.
+const authRoutes = read('src/routes/auth.js');
+const notifications = read('src/notifications.ts');
+const api = read('src/api.ts');
+check('the device remembers the token it registered', notifications.includes('writeStoredPushToken(token.data)'));
+check('sign-out unregisters this device', store.includes('await unregisterPushToken()'));
+check('the unregistration happens while the session is still valid',
+  store.indexOf('await unregisterPushToken()') < store.indexOf('state.token = null'));
+check('a failed unregistration never blocks the sign-out', /catch \{ \/\* offline or unsupported: the sign-out proceeds \*\/ \}/.test(store));
+check('the client sends the token it is removing', notifications.includes('await clearPushToken(token)') && api.includes('clear: true'));
+check('the server compare-and-clears instead of wiping any registration',
+  authRoutes.includes('SET push_token = NULL WHERE id = $1 AND push_token = $2'));
+check('registration is unchanged for existing clients', authRoutes.includes('UPDATE users SET push_token = $1 WHERE id = $2'));
+check('the registration key is device-local, not an authenticated cache',
+  DEVICE_LOCAL_KEYS.includes(PUSH_TOKEN_KEY) && !ACCOUNT_EXACT_KEYS.includes(PUSH_TOKEN_KEY));
 
 if (failures > 0) {
   console.log(`\nFAIL: ${failures} sign-out policy violation(s).`);
