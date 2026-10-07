@@ -1981,6 +1981,17 @@ await step('NatCash phone separation', () => c.query(`
         ADD COLUMN IF NOT EXISTS accepted_offer_message_id UUID REFERENCES messages(id) ON DELETE SET NULL;
     `));
 
+    // 93. Read receipts preference (Inbox/Messaging decisions: "quiet sent /
+    // delivered / read states with configurable read receipts for ordinary
+    // chats"). One account-wide switch, default ON so nothing changes for anyone
+    // who never touches it. When it is off the account still tracks its OWN
+    // unread state — the switch only stops telling the other participant what
+    // has been read, which is exactly the thing a receipt is.
+    await step('Read receipts preference', () => c.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS read_receipts_enabled BOOLEAN NOT NULL DEFAULT true;
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

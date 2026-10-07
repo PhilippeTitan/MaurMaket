@@ -37,6 +37,8 @@ export interface User {
   // APP-Q431: keep the person out of in-app search/suggestions while direct
   // links, listings, orders, and messages keep working. Defaults to true.
   search_discoverable?: boolean;
+  /** Inbox/Messaging decision: configurable read receipts, default on. */
+  read_receipts_enabled?: boolean;
   language?: string;
   pinned_product_id?: string | null;
   pinned_product?: {

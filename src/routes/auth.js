@@ -172,7 +172,7 @@ router.get('/user/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed,
-              store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, language, pinned_product_id
+              store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, read_receipts_enabled, language, pinned_product_id
        FROM users WHERE id = $1`,
       [req.user.id]
     );
@@ -189,7 +189,7 @@ router.put('/user/profile', authRequired, async (req, res) => {
     fullName, email, phone, natcashPhone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng,
     showRealName, useStoreIdentity, acceptedPaymentMethods,
     storeName, storeLogoUrl, storeDescription, storeServiceArea, storeCategory,
-    showPublicCity, hideFollowerLists, hideFollowerCounts, searchDiscoverable, language, pinnedProductId
+    showPublicCity, hideFollowerLists, hideFollowerCounts, searchDiscoverable, readReceiptsEnabled, language, pinnedProductId
   } = req.body;
   email = undefined;
   if (phone) phone = phone.replace(/^\+?509/, '').replace(/^\+/, '');
@@ -224,6 +224,7 @@ router.put('/user/profile', authRequired, async (req, res) => {
         hide_follower_lists = COALESCE($21, hide_follower_lists),
         hide_follower_counts = COALESCE($22, hide_follower_counts),
         search_discoverable = COALESCE($25, search_discoverable),
+        read_receipts_enabled = COALESCE($26, read_receipts_enabled),
         language = COALESCE($23, language),
         pinned_product_id = CASE WHEN $24::text = 'clear' THEN NULL WHEN $24 IS NOT NULL THEN $24::uuid ELSE pinned_product_id END,
         email_verified = email_verified,
@@ -231,7 +232,7 @@ router.put('/user/profile', authRequired, async (req, res) => {
        WHERE id = $6
        RETURNING id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,
                  location_address, location_city, location_lat, location_lng, username, show_real_name,
-                 store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, language, pinned_product_id`,
+                 store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, read_receipts_enabled, language, pinned_product_id`,
       [
         fullName, email || null, phone, bio, avatarUrl, req.user.id, locationAddress || null, locationCity || null, locationLat || null, locationLng || null,
         showRealName !== undefined ? showRealName : null, useStoreIdentity !== undefined ? useStoreIdentity : null,
@@ -241,10 +242,25 @@ router.put('/user/profile', authRequired, async (req, res) => {
         showPublicCity !== undefined ? showPublicCity : null, hideFollowerLists !== undefined ? hideFollowerLists : null,
         hideFollowerCounts !== undefined ? hideFollowerCounts : null, language || null,
         pinnedProductId !== undefined ? pinnedProductId : null,
-        searchDiscoverable !== undefined ? searchDiscoverable : null
+        searchDiscoverable !== undefined ? searchDiscoverable : null,
+        readReceiptsEnabled !== undefined ? readReceiptsEnabled : null
       ]
     );
-    res.json({ user: result.rows[0] });
+    // Turning read receipts off takes effect now, not from the next message:
+    // the receipts this account already sent are withdrawn (the receipt is the
+    // account's own information about itself). Only message_deliveries is
+    // touched — `messages.is_read` also drives the *other* person's unread
+    // badges, and clearing it would quietly resurrect messages they have read.
+    let withdrawn = 0;
+    if (readReceiptsEnabled === false) {
+      const cleared = await pool.query(
+        `UPDATE message_deliveries SET status = 'delivered', read_at = NULL
+          WHERE recipient_id = $1 AND status = 'read'`,
+        [req.user.id]
+      );
+      withdrawn = cleared.rowCount || 0;
+    }
+    res.json({ user: result.rows[0], receiptsWithdrawn: withdrawn });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Email already in use' });
     console.error('Profile update error:', err);

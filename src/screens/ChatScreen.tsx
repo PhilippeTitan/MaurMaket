@@ -266,6 +266,11 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [reportDetails, setReportDetails] = useState('');
   const [conversationRole, setConversationRole] = useState<'buyer' | 'seller'>('buyer');
   const [conversationPinned, setConversationPinned] = useState(false);
+  // Set from the conversation context: true when the other participant reads
+  // without sending receipts. Kept in a ref as well for the realtime handler.
+  const [readReceiptsOff, setReadReceiptsOff] = useState(false);
+  const readReceiptsOffRef = useRef(false);
+  useEffect(() => { readReceiptsOffRef.current = readReceiptsOff; }, [readReceiptsOff]);
   const [conversationIsMuted, setConversationIsMuted] = useState(false);
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [blockedByOther, setBlockedByOther] = useState(false);
@@ -511,6 +516,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         setConversationIsMuted(!!res.context.isMuted);
         setBlockedByMe(!!res.context.blockedByMe);
         setBlockedByOther(!!res.context.blockedByOther);
+        // They may have read receipts off: ticks stop at "delivered" and the
+        // chat says so quietly rather than pretending a read happened.
+        if (typeof res.context.readReceiptsOff === 'boolean') setReadReceiptsOff(res.context.readReceiptsOff);
       }
       const myId = store.user?.id;
       const hasIncoming = msgs.some(m => m.sender_id !== myId);
@@ -690,7 +698,12 @@ startPolling();
         if (typingExpire.timer) clearTimeout(typingExpire.timer);
         typingExpire.timer = setTimeout(() => setOtherTyping(false), 5500);
       } else if (e.type === 'messages_read' && e.conversationId === conversationId && e.readerId !== store.user?.id) {
-        setMessages(prev => prev.map(m => (m.sender_id === store.user?.id ? { ...m, delivery_status: 'read' as const } : m)));
+        // The reader may have read receipts off, in which case no such event is
+        // emitted at all — this guard is belt-and-braces for a race where the
+        // preference changed between the event and its arrival.
+        if (!readReceiptsOffRef.current) {
+          setMessages(prev => prev.map(m => (m.sender_id === store.user?.id ? { ...m, delivery_status: 'read' as const } : m)));
+        }
       } else if (e.type === 'offer_updated' && e.conversationId === conversationId) {
         lastMessageCursor.current = null;
         fetchMessages(0, false, true);
@@ -1408,6 +1421,15 @@ startPolling();
 
 {/* Offer Reminder Banner - removed, View button is now on the offer card itself */}
 
+        {/* Quiet, one line, no colour: the ticks look like "delivered" because
+            that is genuinely all this chat can know. */}
+        {readReceiptsOff && (
+          <View style={styles.receiptsNote}>
+            <MaterialCommunityIcons name="information-outline" size={13} color={COLORS.text3} />
+            <Text style={styles.receiptsNoteText}>{t('chat.readReceiptsOff')}</Text>
+          </View>
+        )}
+
         {offline && (
           <View style={styles.offlineBanner} accessibilityRole="alert">
             <MaterialCommunityIcons name="cloud-off-outline" size={14} color="#F5A623" />
@@ -1839,6 +1861,8 @@ const styles = StyleSheet.create({
   blockedBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.md, paddingVertical: 10, backgroundColor: COLORS.surface2, borderTopWidth: 1, borderColor: COLORS.border },
   blockedBannerText: { flex: 1, color: COLORS.text2, fontSize: 12 },
   unblockText: { color: COLORS.coral, fontWeight: '700', marginLeft: 12 },
+  receiptsNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: SPACING.md, paddingVertical: 6 },
+  receiptsNoteText: { color: COLORS.text3, fontSize: 11 },
   headerMore: { padding: 8, borderRadius: 20, backgroundColor: COLORS.surface2 },
   offerReminderBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

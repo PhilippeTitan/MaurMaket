@@ -299,9 +299,24 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
       pool.query('SELECT blocker_id, blocked_id FROM blocked_users WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)', [req.user.id, conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id]),
     ]);
     const otherId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
+    // Read receipts (Inbox/Messaging decisions): the other participant may have
+    // turned them off. Then nothing in this response may reveal that they read
+    // these messages — the ticks stay at "delivered" and the `is_read` flag on my
+    // own outgoing rows is not theirs to see either. This is the mask that also
+    // covers receipts sent before they switched the preference off.
+    const otherPrefs = await pool.query('SELECT read_receipts_enabled FROM users WHERE id = $1', [otherId]);
+    const otherReceiptsOff = otherPrefs.rows[0]?.read_receipts_enabled === false;
+    if (otherReceiptsOff) {
+      for (const msg of messages) {
+        if (msg.sender_id !== req.user.id) continue;
+        if (msg.delivery_status === 'read') msg.delivery_status = 'delivered';
+        msg.is_read = false;
+      }
+    }
     res.json({ messages, context: {
       product,
       order: conv.rows[0].order_id ? { id: conv.rows[0].order_id } : null,
+      readReceiptsOff: otherReceiptsOff,
       isPinned: !!mySettings.rows[0]?.is_pinned,
       isMuted: !!mySettings.rows[0]?.is_muted && (!mySettings.rows[0]?.muted_until || new Date(mySettings.rows[0].muted_until) > new Date()),
       mutedUntil: mySettings.rows[0]?.muted_until || null,
@@ -651,6 +666,15 @@ router.get('/api/conversations/:id/delivery-status', authRequired, async (req, r
     return res.status(404).json({ error: 'Conversation not found' });
   }
   try {
+    // The recipient's read receipts may be off, in which case a stored 'read' is
+    // never reported: the sender sees the message delivered and no more. Checked
+    // here as well as at write time, so a receipt left over from before the
+    // preference changed cannot leak through this poll.
+    const conv = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    const otherId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
+    const prefs = await pool.query('SELECT read_receipts_enabled FROM users WHERE id = $1', [otherId]);
+    const readReceiptsOff = prefs.rows[0]?.read_receipts_enabled === false;
     const result = await pool.query(
       `SELECT m.id, COALESCE(md.status, 'sent') AS status
        FROM messages m
@@ -660,7 +684,10 @@ router.get('/api/conversations/:id/delivery-status', authRequired, async (req, r
        LIMIT 100`,
       [req.params.id, req.user.id]
     );
-    res.json({ statuses: result.rows });
+    const statuses = readReceiptsOff
+      ? result.rows.map((row) => ({ ...row, status: row.status === 'read' ? 'delivered' : row.status }))
+      : result.rows;
+    res.json({ statuses, readReceiptsOff });
   } catch (err) {
     console.error('Delivery status error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -903,15 +930,22 @@ router.put('/api/conversations/:id/read', authRequired, async (req, res) => {
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
     touchPresence(req.user.id);
     markConversationActive(req.user.id, req.params.id);
+    // Read receipts off: this account still marks its own messages read, because
+    // its unread badges are its own business — but nothing is sent to the other
+    // participant. No delivery receipt, no realtime 'messages_read' tick.
+    const mine = await pool.query('SELECT read_receipts_enabled FROM users WHERE id = $1', [req.user.id]);
+    const receiptsOff = mine.rows[0]?.read_receipts_enabled === false;
     // Update delivery states first — must NOT depend on messages.is_read (GET may have
     // already flipped it; keying off that would leave message_deliveries stuck on 'delivered').
-    const deliveries = await pool.query(
-      `UPDATE message_deliveries md SET status = 'read', read_at = CURRENT_TIMESTAMP
-       WHERE md.recipient_id = $1 AND md.status <> 'read'
-         AND md.message_id IN (SELECT id FROM messages WHERE conversation_id = $2 AND sender_id <> $1)
-       RETURNING md.message_id`,
-      [req.user.id, req.params.id]
-    );
+    const deliveries = receiptsOff
+      ? { rows: [] }
+      : await pool.query(
+        `UPDATE message_deliveries md SET status = 'read', read_at = CURRENT_TIMESTAMP
+         WHERE md.recipient_id = $1 AND md.status <> 'read'
+           AND md.message_id IN (SELECT id FROM messages WHERE conversation_id = $2 AND sender_id <> $1)
+         RETURNING md.message_id`,
+        [req.user.id, req.params.id]
+      );
     // Mark all unread incoming messages as read (conversation badges)
     const result = await pool.query(
       `UPDATE messages SET is_read = true
@@ -919,11 +953,13 @@ router.put('/api/conversations/:id/read', authRequired, async (req, res) => {
        RETURNING id`,
       [req.params.id, req.user.id]
     );
-    try {
-      const other = req.user.id === conv.rows[0].buyer_id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
-      emitToUsers([other], { type: 'messages_read', conversationId: req.params.id, readerId: req.user.id });
-    } catch { /* best-effort */ }
-    res.json({ marked: Math.max(result.rows.length, deliveries.rows.length) });
+    if (!receiptsOff) {
+      try {
+        const other = req.user.id === conv.rows[0].buyer_id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
+        emitToUsers([other], { type: 'messages_read', conversationId: req.params.id, readerId: req.user.id });
+      } catch { /* best-effort */ }
+    }
+    res.json({ marked: Math.max(result.rows.length, deliveries.rows.length), readReceiptsOff: receiptsOff });
   } catch (err) {
     console.error('Mark read error:', err);
     res.status(500).json({ error: 'Server error' });

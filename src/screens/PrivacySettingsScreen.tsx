@@ -30,6 +30,7 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
   const [hideFollowerCounts, setHideFollowerCounts] = useState(user?.hide_follower_counts ?? false);
   // APP-Q431: separate in-app search discoverability from link access.
   const [searchDiscoverable, setSearchDiscoverable] = useState(user?.search_discoverable ?? true);
+  const [readReceipts, setReadReceipts] = useState(user?.read_receipts_enabled !== false);
 
   const [presenceVisibility, setPresenceVisibilityState] = useState<'everyone' | 'chatted_with' | 'nobody'>('chatted_with');
   const [presenceSaving, setPresenceSaving] = useState(false);
@@ -106,6 +107,28 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
     } catch {
       setSearchDiscoverable(!next);
       toast.error('Update Failed', t('privacy.searchDiscoverableFailed'));
+    }
+  };
+
+  // Inbox/Messaging decision: read receipts are configurable, and the change is
+  // honest in both directions — switching off withdraws the receipts already
+  // sent, which the server does in the same request.
+  const handleToggleReadReceipts = async () => {
+    const next = !readReceipts;
+    setReadReceipts(next);
+    try {
+      const res = await updateProfile({ readReceiptsEnabled: next }) as { receiptsWithdrawn?: number } | undefined;
+      await store.setUser({ ...store.user!, read_receipts_enabled: next } as any, store.token!);
+      const withdrawn = Number(res?.receiptsWithdrawn) || 0;
+      toast.success(
+        next ? t('privacy.readReceiptsToastOn') : t('privacy.readReceiptsToastOff'),
+        next
+          ? t('privacy.readReceiptsOnDesc')
+          : (withdrawn > 0 ? t('privacy.readReceiptsWithdrawn', { count: String(withdrawn) }) : t('privacy.readReceiptsOffDesc'))
+      );
+    } catch {
+      setReadReceipts(!next);
+      toast.error(t('common.error'), t('privacy.readReceiptsFailed'));
     }
   };
 
@@ -255,6 +278,30 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
             <View style={styles.noteRow}>
               <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.text3} />
               <Text style={styles.noteText}>{t('privacy.searchDiscoverableNote')}</Text>
+            </View>
+
+            {/* Read receipts — Inbox/Messaging decision */}
+            <View style={styles.toggleRow}>
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons name="check" size={20} color={COLORS.text2} />
+              </View>
+              <View style={styles.toggleText}>
+                <Text style={styles.toggleLabel}>{t('privacy.readReceipts')}</Text>
+                <Text style={styles.rowValue}>
+                  {readReceipts ? t('privacy.readReceiptsOn') : t('privacy.readReceiptsOff')}
+                </Text>
+              </View>
+              <SettingsToggle
+                value={readReceipts}
+                onValueChange={handleToggleReadReceipts}
+                accent={COLORS.blue}
+                accessibilityLabel={t('privacy.readReceipts')}
+              />
+            </View>
+
+            <View style={styles.noteRow}>
+              <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.text3} />
+              <Text style={styles.noteText}>{t('privacy.readReceiptsNote')}</Text>
             </View>
           </SettingsGroup>
         </Animated.View>
