@@ -9,6 +9,7 @@ import { emitToUsers } from '../realtime.js';
 import { touchPresence, markConversationActive, isConversationOpen, isOnline, lastSeen } from '../utils/chatActivity.js';
 import { staysInInbox, normalizeMarkUnread, inboxUnreadTotal } from '../utils/conversationListPolicy.js';
 import { normalizeSearchQuery, MESSAGE_SEARCH_LIMIT } from '../utils/messageSearchPolicy.js';
+import { bookmarkableMessage, bookmarkExcerpt, bookmarkPageSize } from '../utils/messageBookmarkPolicy.js';
 
 const router = Router();
 
@@ -230,15 +231,18 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
        -- Reply context
        rm.id AS reply_to_msg_id, rm.content AS reply_to_content, rm.sender_id AS reply_to_sender_id,
        rm.message_type AS reply_to_type,
-       ru.full_name AS reply_to_sender_name
+       ru.full_name AS reply_to_sender_name,
+       (mb.message_id IS NOT NULL) AS bookmarked
        FROM messages m JOIN users u ON m.sender_id = u.id
+       LEFT JOIN message_bookmarks mb ON mb.message_id = m.id AND mb.user_id = $2
        LEFT JOIN message_offers mo ON mo.message_id = m.id
        LEFT JOIN products p ON p.id = mo.product_id
        LEFT JOIN messages rm ON rm.id = m.reply_to_id
        LEFT JOIN users ru ON ru.id = rm.sender_id
        LEFT JOIN LATERAL (SELECT is_available AND stock > 0 AS available, stock FROM products WHERE id = (m.product_data->>'productId')::uuid) live_product ON m.message_type = 'product'
        WHERE m.conversation_id = $1`;
-    const params = [req.params.id];
+    // $2 is the caller, used only for their own private bookmark flag.
+    const params = [req.params.id, req.user.id];
     if (since) {
       params.push(since);
       if (sinceId) { params.push(sinceId); query += ` AND (m.created_at > $${params.length - 1} OR (m.created_at = $${params.length - 1} AND m.id > $${params.length}))`; }
@@ -246,7 +250,7 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
       query += ` ORDER BY m.created_at ASC, m.id ASC LIMIT $${params.length + 1}`;
       params.push(limit);
     } else {
-      query = `SELECT * FROM (${query} ORDER BY m.created_at DESC, m.id DESC LIMIT $2 OFFSET $3) recent ORDER BY created_at ASC, id ASC`;
+      query = `SELECT * FROM (${query} ORDER BY m.created_at DESC, m.id DESC LIMIT $3 OFFSET $4) recent ORDER BY created_at ASC, id ASC`;
       params.push(limit, offset);
     }
     const result = await pool.query(query, params);
@@ -358,15 +362,17 @@ router.get('/api/conversations/:id/messages/search', authRequired, async (req, r
     // One row beyond the limit tells us whether more matches exist, so the client
     // can say "showing the first N" honestly instead of implying it found them all.
     const rows = await pool.query(
-      `SELECT m.id, m.content, m.created_at, m.sender_id, m.message_type, u.full_name AS sender_name
+      `SELECT m.id, m.content, m.created_at, m.sender_id, m.message_type, u.full_name AS sender_name,
+              (mb.message_id IS NOT NULL) AS bookmarked
        FROM messages m JOIN users u ON u.id = m.sender_id
+       LEFT JOIN message_bookmarks mb ON mb.message_id = m.id AND mb.user_id = $4
        WHERE m.conversation_id = $1
          AND m.is_deleted = false
          AND m.content IS NOT NULL
          AND strpos(lower(m.content), lower($2)) > 0
        ORDER BY m.created_at DESC, m.id DESC
        LIMIT $3`,
-      [req.params.id, term, limit + 1]
+      [req.params.id, term, limit + 1, req.user.id]
     );
     const truncated = rows.rows.length > limit;
     const results = rows.rows.slice(0, limit).map(row => ({
@@ -378,6 +384,7 @@ router.get('/api/conversations/:id/messages/search', authRequired, async (req, r
       message_type: row.message_type,
       created_at: row.created_at,
       is_own: row.sender_id === req.user.id,
+      bookmarked: !!row.bookmarked,
     }));
     res.json({ query: term, results, truncated, limit });
   } catch (err) {
@@ -923,6 +930,94 @@ router.delete('/api/messages/:id', authRequired, async (req, res) => {
 });
 
 // ───── Conversation Pin / Mute / Block ─────
+
+// ── Private message bookmarks (Inbox/Messaging decisions) ──
+// A bookmark is one person's own note to themselves. Every statement below is
+// scoped to the caller, and none of them writes a message row, a read receipt, a
+// delivery state, or anything an order later reads as its terms. Keeping a line
+// someone wrote is not a change to the deal.
+
+router.get('/api/messages/bookmarks', authRequired, async (req, res) => {
+  try {
+    const limit = bookmarkPageSize(req.query.limit);
+    // One row past the limit so "more saved messages" is honest.
+    const rows = await pool.query(
+      `SELECT mb.message_id, mb.created_at AS bookmarked_at,
+              m.content, m.is_deleted, m.message_type, m.created_at AS message_created_at,
+              m.conversation_id, m.sender_id,
+              peer.full_name AS peer_name, peer.store_name AS peer_store_name,
+              peer.use_store_identity AS peer_use_store, c.order_id
+       FROM message_bookmarks mb
+       JOIN messages m ON m.id = mb.message_id
+       JOIN conversations c ON c.id = m.conversation_id
+       JOIN users peer ON peer.id = CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END
+       WHERE mb.user_id = $1 AND (c.buyer_id = $1 OR c.seller_id = $1)
+       ORDER BY mb.created_at DESC, mb.message_id DESC
+       LIMIT $2`,
+      [req.user.id, limit + 1]
+    );
+    const truncated = rows.rows.length > limit;
+    const bookmarks = rows.rows.slice(0, limit).map(row => ({
+      messageId: row.message_id,
+      conversationId: row.conversation_id,
+      senderId: row.sender_id,
+      messageType: row.message_type,
+      isDeleted: !!row.is_deleted,
+      excerpt: bookmarkExcerpt(row.content, { isDeleted: row.is_deleted }),
+      messageCreatedAt: row.message_created_at,
+      bookmarkedAt: row.bookmarked_at,
+      peerName: row.peer_use_store && row.peer_store_name ? row.peer_store_name : row.peer_name,
+      orderId: row.order_id || null,
+    }));
+    res.json({ bookmarks, truncated, limit });
+  } catch (err) {
+    console.error('Message bookmarks list error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Idempotent: saving a message twice is still just saved.
+router.put('/api/messages/:id/bookmark', authRequired, async (req, res) => {
+  try {
+    const target = await pool.query(
+      `SELECT m.is_deleted FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.id = $1 AND (c.buyer_id = $2 OR c.seller_id = $2)`,
+      [req.params.id, req.user.id]
+    );
+    const { bookmarkable, reason } = bookmarkableMessage({
+      exists: target.rows.length > 0,
+      isDeleted: !!target.rows[0]?.is_deleted,
+    });
+    if (!bookmarkable) {
+      return res.status(reason === 'missing' ? 404 : 409).json({
+        error: reason === 'missing' ? 'Message not found' : 'A deleted message cannot be saved',
+        code: reason === 'missing' ? 'BOOKMARK_MESSAGE_MISSING' : 'BOOKMARK_MESSAGE_DELETED',
+      });
+    }
+    await pool.query(
+      `INSERT INTO message_bookmarks (user_id, message_id) VALUES ($1, $2)
+       ON CONFLICT (user_id, message_id) DO NOTHING`,
+      [req.user.id, req.params.id]
+    );
+    res.json({ bookmarked: true, messageId: req.params.id });
+  } catch (err) {
+    console.error('Message bookmark error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Removing is idempotent and cannot reach anyone else's bookmark: the statement
+// is scoped by user_id, so a valid message id alone changes nothing.
+router.delete('/api/messages/:id/bookmark', authRequired, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM message_bookmarks WHERE user_id = $1 AND message_id = $2', [req.user.id, req.params.id]);
+    res.json({ bookmarked: false, messageId: req.params.id });
+  } catch (err) {
+    console.error('Message unbookmark error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 router.put('/api/conversations/:id/pin', authRequired, async (req, res) => {
   try {

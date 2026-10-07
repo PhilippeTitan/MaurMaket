@@ -2005,6 +2005,23 @@ await step('NatCash phone separation', () => c.query(`
         ON conversation_user_settings(user_id, is_archived, updated_at DESC);
     `));
 
+    // 95. Private message bookmarks (Inbox/Messaging decisions: "Keep message
+    //    bookmarks private to the user and separate from canonical order terms").
+    //    The primary key is (user_id, message_id), so a bookmark is a fact about
+    //    one person and one message and has nowhere to store a second person's
+    //    view. Nothing here is joined into order events, evidence, or accepted
+    //    offer terms: saving a line someone wrote is not a change to the deal.
+    await step('Private message bookmarks', () => c.query(`
+      CREATE TABLE IF NOT EXISTS message_bookmarks (
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        message_id UUID REFERENCES messages(id) ON DELETE CASCADE NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, message_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_message_bookmarks_user_created
+        ON message_bookmarks(user_id, created_at DESC);
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

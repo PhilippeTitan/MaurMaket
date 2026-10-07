@@ -330,6 +330,21 @@ export default function InboxScreen() {
   const messagesListHeader = (
     <>
       {conversationsListHeader}
+      {/* Saved messages are the user's own private bookmarks, so the entry is always
+          offered rather than appearing only once something is saved. */}
+      {!showArchived && (
+        <TouchableOpacity
+          style={styles.archivedRow}
+          onPress={() => nav.navigate('SavedMessages')}
+          accessibilityRole="button"
+          accessibilityLabel={t('inbox.savedMessages')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="bookmark-outline" size={20} color={COLORS.text2} />
+          <Text style={styles.archivedRowText}>{t('inbox.savedMessages')}</Text>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />
+        </TouchableOpacity>
+      )}
       {showArchived ? (
         <TouchableOpacity
           style={styles.archivedHeaderRow}

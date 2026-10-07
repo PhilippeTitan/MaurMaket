@@ -1454,6 +1454,26 @@ export const sendMessageWithReply = (conversationId: string, content: string, re
   request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: audioUrl ? 'audio' : imageUrl ? 'image' : 'text', replyToId, clientId, audioUrl, audioDuration }) });
 export const markConversationRead = (conversationId: string) =>
   request(`/conversations/${conversationId}/read`, { method: 'PUT' });
+
+// Private message bookmarks — one person's own saved lines, never a shared term.
+export interface MessageBookmark {
+  messageId: string;
+  conversationId: string;
+  senderId: string;
+  messageType?: string;
+  isDeleted: boolean;
+  excerpt: string;
+  messageCreatedAt: string;
+  bookmarkedAt: string;
+  peerName?: string | null;
+  orderId?: string | null;
+}
+export const getMessageBookmarks = () =>
+  request('/messages/bookmarks') as Promise<{ bookmarks: MessageBookmark[]; truncated: boolean; limit: number }>;
+export const bookmarkMessage = (messageId: string) =>
+  request(`/messages/${messageId}/bookmark`, { method: 'PUT', body: JSON.stringify({}) });
+export const unbookmarkMessage = (messageId: string) =>
+  request(`/messages/${messageId}/bookmark`, { method: 'DELETE' });
 export const pinConversation = (conversationId: string) =>
   request(`/conversations/${conversationId}/pin`, { method: 'PUT' });
 export const muteConversation = (conversationId: string, durationHours: number | null, enabled = true) =>

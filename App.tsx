@@ -49,6 +49,7 @@ import StorefrontScreen from './src/screens/StorefrontScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import OrdersScreen from './src/screens/OrdersScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import SavedMessagesScreen from './src/screens/SavedMessagesScreen';
 // VerificationScreen lazy-loaded to avoid expo-camera/ML Kit native modules crashing in Expo Go
 import BusinessSubscriptionScreen from './src/screens/BusinessSubscriptionScreen';
 import WishlistScreen from './src/screens/WishlistScreen';
@@ -577,6 +578,7 @@ export default function App() {
             <Stack.Screen name="Orders" component={OrdersScreen} />
             <Stack.Screen name="Inbox" component={InboxScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="SavedMessages" component={SavedMessagesScreen} />
             <Stack.Screen name="Verification" component={LazyVerificationScreenWrapper} />
             <Stack.Screen name="BusinessSubscription" component={BusinessSubscriptionScreen} />
             <Stack.Screen name="OrderDetail" component={LazyOrderDetailScreenWrapper} />

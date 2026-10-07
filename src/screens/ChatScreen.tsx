@@ -1120,6 +1120,27 @@ startPolling();
     setActionMenuVisible(false);
   };
 
+  // A bookmark is private to this user: nothing about it reaches the other
+  // participant, so an optimistic flip is safe to show immediately and safe to
+  // roll back quietly if the server disagrees.
+  const handleToggleBookmark = async () => {
+    if (!actionMenuMessage) return;
+    const msgId = actionMenuMessage.id;
+    const wasBookmarked = !!actionMenuMessage.bookmarked;
+    setActionMenuVisible(false);
+    const apply = (value: boolean) => setMessages(prev => prev.map(m => m.id === msgId ? { ...m, bookmarked: value } : m));
+    apply(!wasBookmarked);
+    try {
+      const { bookmarkMessage, unbookmarkMessage } = await import('../api');
+      if (wasBookmarked) await unbookmarkMessage(msgId); else await bookmarkMessage(msgId);
+      toast.success(t(wasBookmarked ? 'chat.bookmarkRemoved' : 'chat.bookmarkSaved'));
+    } catch {
+      apply(wasBookmarked);
+      toast.error(t('chat.bookmarkFailed'));
+    }
+    setActionMenuMessage(null);
+  };
+
   const handleCopy = () => {
     if (!actionMenuMessage?.content) { setActionMenuVisible(false); return; }
     // Use Clipboard API — works on web + native
@@ -1929,6 +1950,10 @@ startPolling();
               <TouchableOpacity style={styles.actionMenuItem} onPress={handleCopy} accessibilityRole="button">
                 <MaterialCommunityIcons name="content-copy" size={18} color={COLORS.text} />
                 <Text style={styles.actionMenuText}>{t('chat.copy')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionMenuItem} onPress={handleToggleBookmark} accessibilityRole="button">
+                <MaterialCommunityIcons name={actionMenuMessage?.bookmarked ? 'bookmark' : 'bookmark-outline'} size={18} color={COLORS.text} />
+                <Text style={styles.actionMenuText}>{t(actionMenuMessage?.bookmarked ? 'chat.removeBookmark' : 'chat.saveBookmark')}</Text>
               </TouchableOpacity>
               {actionMenuMessage?.sender_id === store.user?.id && actionMenuMessage?.message_type === 'text' && (
                 <TouchableOpacity style={styles.actionMenuItem} onPress={handleEdit} accessibilityRole="button">

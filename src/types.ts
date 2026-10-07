@@ -373,6 +373,8 @@ export interface Message {
   sender_id: string;
   content: string | null;
   message_type?: string;
+  /** True when the signed-in user has saved this message for themselves alone. */
+  bookmarked?: boolean;
   image_url?: string;
   audio_url?: string;
   audio_duration?: number;
