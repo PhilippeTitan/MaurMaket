@@ -14,9 +14,10 @@ import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import {
   addAccountPasskey, deleteAccountPasskey, disableAuthenticator, enableAuthenticator,
-  freezeAccount, getAccountFreeze, getSecurityEvents, getSecuritySnapshot, getTrustedDevices,
+  freezeAccount, getAccountFreeze, getDeviceLabels, getSecurityEvents, getSecuritySnapshot,
+  getTrustedDevices,
   linkGoogleAccount, revokeAllTrustedDevices, revokeAuthSession, revokeTrustedDevice,
-  unfreezeAccount, verifyAuthenticator,
+  saveDeviceLabel, unfreezeAccount, verifyAuthenticator,
   type BetterAuthSecuritySession,
 } from '../api';
 import { TRUSTED_DEVICE_DAYS } from '../utils/trustedDevices';
@@ -82,6 +83,11 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   const [trustedDevicesLoading, setTrustedDevicesLoading] = useState(true);
   const [revokeTrustedTarget, setRevokeTrustedTarget] = useState<TrustedDevice | null>(null);
   const [revokeAllTrustedVisible, setRevokeAllTrustedVisible] = useState(false);
+  // Batch 75 / APP-Q395 — private, owner-only names for signed-in devices.
+  const [deviceLabels, setDeviceLabels] = useState<Record<string, string>>({});
+  const [deviceLabelMax, setDeviceLabelMax] = useState(40);
+  const [labelTarget, setLabelTarget] = useState<BetterAuthSecuritySession | null>(null);
+  const [labelDraft, setLabelDraft] = useState('');
   // Batch 73/74/75 — fast account freeze for suspected compromise (APP-Q371).
   const [freezeState, setFreezeState] = useState<AccountFreezeState | null>(null);
   const [freezeBusy, setFreezeBusy] = useState(false);
@@ -167,6 +173,21 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   }, []);
 
   useFocusEffect(useCallback(() => { void loadTrustedDevices(); }, [loadTrustedDevices]));
+
+  const loadDeviceLabels = useCallback(async () => {
+    try {
+      const response = await getDeviceLabels();
+      const next: Record<string, string> = {};
+      for (const entry of response.labels || []) next[entry.session_id] = entry.label;
+      setDeviceLabels(next);
+      // The server owns the cap; only the pre-fetch fallback is local.
+      if (Number.isFinite(response.max_length)) setDeviceLabelMax(response.max_length);
+    } catch {
+      // Supplemental: keep whatever was last shown.
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { void loadDeviceLabels(); }, [loadDeviceLabels]));
 
   const closeSetup = () => {
     setSetupVisible(false);
@@ -314,6 +335,24 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
       await loadSecurityEvents();
     } catch (error: any) {
       toast.show({ kind: 'error', title: error?.message || t('security.trustedDeviceRevokeFailed') });
+    } finally { setBusy(false); }
+  };
+
+  // Naming a device changes nothing about the account's security, so this
+  // records no security event and sends no alert — unlike the trusted-device and
+  // second-factor actions above. An empty name clears it and restores the
+  // system device label.
+  const handleSaveDeviceLabel = async (clear = false) => {
+    if (!labelTarget) return;
+    setBusy(true);
+    try {
+      await saveDeviceLabel(labelTarget.id, clear ? '' : labelDraft);
+      setLabelTarget(null);
+      setLabelDraft('');
+      toast.show({ kind: 'success', title: clear ? t('security.deviceLabelRemoved') : t('security.deviceLabelSaved') });
+      await loadDeviceLabels();
+    } catch (error: any) {
+      toast.show({ kind: 'error', title: error?.message || t('security.deviceLabelFailed') });
     } finally { setBusy(false); }
   };
 
@@ -501,9 +540,23 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
                   <View style={styles.row}>
                     <View style={styles.rowIcon}><MaterialCommunityIcons name={/android|iphone|ipad/i.test(session.userAgent || '') ? 'cellphone' : 'monitor'} size={19} color={C.text} /></View>
                     <View style={styles.sessionCopy}>
-                      <Text style={styles.rowTitle}>{deviceName(session.userAgent)}{isCurrent ? ` · ${t('security.current')}` : ''}</Text>
-                      <Text style={styles.sessionDate}>{new Date(session.createdAt).toLocaleDateString()}</Text>
+                      <Text style={styles.rowTitle}>{deviceLabels[session.id] || deviceName(session.userAgent)}{isCurrent ? ` · ${t('security.current')}` : ''}</Text>
+                      {/* The recorded device fact is always shown and is never
+                          replaced by the private name above it. */}
+                      <Text style={styles.sessionDate}>
+                        {[deviceLabels[session.id] ? deviceName(session.userAgent) : null, new Date(session.createdAt).toLocaleDateString()]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Text>
                     </View>
+                    <TouchableOpacity
+                      style={styles.smallAction}
+                      onPress={() => { setLabelDraft(deviceLabels[session.id] || ''); setLabelTarget(session); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t('security.deviceLabelEdit')} ${deviceLabels[session.id] || deviceName(session.userAgent)}`}
+                    >
+                      <Text style={styles.labelActionText}>{t('security.deviceLabelEdit')}</Text>
+                    </TouchableOpacity>
                     {!isCurrent && <TouchableOpacity style={styles.smallAction} onPress={() => setRevokeTarget(session)} accessibilityRole="button">
                       <Text style={styles.removeText}>{t('security.revoke')}</Text>
                     </TouchableOpacity>}
@@ -728,6 +781,37 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         </View>
       </Modal>
 
+      <Modal visible={!!labelTarget} transparent animationType="fade" onRequestClose={() => setLabelTarget(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('security.deviceLabelTitle')}</Text>
+              <TouchableOpacity onPress={() => setLabelTarget(null)} style={styles.closeButton} accessibilityRole="button" accessibilityLabel={t('common.close')}>
+                <MaterialCommunityIcons name="close" size={20} color={C.sub} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalCopy}>{t('security.deviceLabelBody')}</Text>
+            {labelTarget && <Text style={styles.fieldLabel}>{deviceName(labelTarget.userAgent)}</Text>}
+            <TextInput
+              value={labelDraft}
+              onChangeText={setLabelDraft}
+              placeholder={t('security.deviceLabelPlaceholder')}
+              placeholderTextColor={C.faint}
+              style={styles.input}
+              maxLength={deviceLabelMax}
+              accessibilityLabel={t('security.deviceLabelTitle')}
+            />
+            <TouchableOpacity style={styles.primaryButton} onPress={() => { void handleSaveDeviceLabel(); }} disabled={busy} accessibilityRole="button">
+              {busy ? <ActivityIndicator color={C.white} /> : <Text style={styles.primaryButtonText}>{t('security.deviceLabelSave')}</Text>}
+            </TouchableOpacity>
+            {labelTarget && deviceLabels[labelTarget.id] && (
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => { void handleSaveDeviceLabel(true); }} disabled={busy} accessibilityRole="button">
+                <Text style={styles.secondaryButtonText}>{t('security.deviceLabelClear')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
       <Modal visible={!!revokeTrustedTarget} transparent animationType="fade" onRequestClose={() => setRevokeTrustedTarget(null)}>
         <ConfirmDialog title={t('security.revokeTrustedDeviceTitle')} message={t('security.revokeTrustedDeviceCopy')} cancelLabel={t('common.cancel')} confirmLabel={t('security.revoke')} busy={busy} onCancel={() => setRevokeTrustedTarget(null)} onConfirm={() => { void handleRevokeTrustedDevice(); }} />
       </Modal>
@@ -826,6 +910,7 @@ const styles = StyleSheet.create({
   sessionDate: { color: C.sub, fontSize: FONT_SIZES.xs, marginTop: 3 },
   smallAction: { minHeight: 44, minWidth: 50, justifyContent: 'center', alignItems: 'flex-end', paddingHorizontal: 4 },
   removeText: { color: C.coral, fontSize: FONT_SIZES.xs, fontWeight: FONT_WEIGHTS.semibold },
+  labelActionText: { color: C.mint, fontSize: FONT_SIZES.xs, fontWeight: FONT_WEIGHTS.semibold },
   emptyCard: { minHeight: 54, justifyContent: 'center', paddingHorizontal: SPACING.sm, borderRadius: 0, backgroundColor: 'transparent', borderWidth: 0 },
   emptyText: { color: C.sub, fontSize: FONT_SIZES.sm },
   bottomSpacer: { height: SPACING.xl },

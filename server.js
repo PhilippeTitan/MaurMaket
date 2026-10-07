@@ -1894,6 +1894,24 @@ await step('NatCash phone separation', () => c.query(`
       CREATE INDEX IF NOT EXISTS idx_export_jobs_pending ON export_jobs (status) WHERE status = 'pending';
     `));
 
+    // 89. Private device labels (Batch 75, APP-Q395). The user's own friendly
+    // name for a signed-in device. It is keyed to the session, so revoking a
+    // session removes its label automatically, and it lives in its own table
+    // rather than on `sessions` so a cosmetic user string can never be mistaken
+    // for a system security fact. Nothing reads a label for an authentication or
+    // trust decision — it is display-only, private to its owner.
+    await step('Private device labels', () => c.query(`
+      CREATE TABLE IF NOT EXISTS device_labels (
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        label VARCHAR(40) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, session_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_device_labels_session ON device_labels (session_id);
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

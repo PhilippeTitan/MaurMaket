@@ -575,6 +575,21 @@ export const revokeTrustedDevice = (id: string) =>
 export const revokeAllTrustedDevices = () =>
   request<{ revoked: number }>('/security/trusted-devices', { method: 'DELETE' });
 
+// Batch 75 / APP-Q395 — private names for the caller's own signed-in devices.
+// Display-only and owner-private: a label never verifies a device, never
+// replaces the system device/date facts shown beside it, and never affects what
+// the account trusts. Saving one is not a security event, so it records nothing
+// and alerts no one.
+export const getDeviceLabels = () =>
+  request<{ labels: { session_id: string; label: string }[]; max_length: number }>('/security/device-labels');
+
+/** An empty label clears the private name and restores the system device name. */
+export const saveDeviceLabel = (sessionId: string, label: string) =>
+  request<{ session_id: string; label: string | null; cleared: boolean }>(
+    `/security/device-labels/${encodeURIComponent(sessionId)}`,
+    { method: 'PUT', body: JSON.stringify({ label }) }
+  );
+
 // Batch 73/74/75 — fast account freeze for suspected compromise (APP-Q371).
 export const getAccountFreeze = () =>
   request<AccountFreezeState>('/account/freeze');

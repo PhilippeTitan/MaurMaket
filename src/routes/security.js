@@ -183,4 +183,96 @@ router.delete('/api/security/trusted-devices', authRequired, async (req, res) =>
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRIVATE DEVICE LABELS (Batch 75, APP-Q395)
+//
+// Let the owner name their own signed-in devices so an unfamiliar row is easier
+// to recognise. Three rules from the settled decision shape everything here:
+//   1. Private — a label is only ever returned to the account that wrote it.
+//   2. Distinct from system facts — the device string, dates, and session state
+//      come from the session itself and are always shown alongside the label, so
+//      a label can never stand in for them.
+//   3. Never trust — no authentication, verification, KYC, payout, or
+//      trusted-device decision reads a label. It is display-only. That is also
+//      why saving one records no security event and sends no alert: it changes
+//      nothing about the account's security.
+//
+// Labels are keyed to the session with ON DELETE CASCADE, so revoking a device
+// takes its label with it and a later session can never inherit an old name.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const DEVICE_LABEL_MAX = 40;
+
+/**
+ * Reduce arbitrary input to a plain label: strip control characters, collapse
+ * whitespace runs, trim, and cap the length. Returns null for a non-string so
+ * the caller can distinguish "no label supplied" from "clear the label".
+ */
+export function normalizeDeviceLabel(raw) {
+  if (typeof raw !== 'string') return null;
+  const collapsed = raw
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!collapsed) return '';
+  return collapsed.slice(0, DEVICE_LABEL_MAX);
+}
+
+router.get('/api/security/device-labels', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT session_id, label FROM device_labels WHERE user_id = $1',
+      [req.user.id]
+    );
+    res.json({
+      labels: result.rows.map((row) => ({ session_id: row.session_id, label: row.label })),
+      max_length: DEVICE_LABEL_MAX,
+    });
+  } catch (err) {
+    console.error('Device labels list error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/api/security/device-labels/:sessionId', authRequired, async (req, res) => {
+  try {
+    const sessionId = String(req.params.sessionId || '').trim();
+    if (!sessionId) return res.status(400).json({ error: 'A session id is required.' });
+
+    // Ownership first: a label may only ever be attached to the caller's own
+    // session, so one account can never name or probe another's device.
+    const { rows } = await pool.query(
+      'SELECT id FROM sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, req.user.id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'That signed-in device was not found on your account.' });
+    }
+
+    const label = normalizeDeviceLabel(req.body?.label);
+    if (label === null) return res.status(400).json({ error: 'A label is required.' });
+
+    if (label === '') {
+      await pool.query(
+        'DELETE FROM device_labels WHERE user_id = $1 AND session_id = $2',
+        [req.user.id, sessionId]
+      );
+      return res.json({ session_id: sessionId, label: null, cleared: true });
+    }
+
+    const saved = await pool.query(
+      `INSERT INTO device_labels (user_id, session_id, label)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, session_id)
+       DO UPDATE SET label = EXCLUDED.label, updated_at = CURRENT_TIMESTAMP
+       RETURNING session_id, label`,
+      [req.user.id, sessionId, label]
+    );
+    res.json({ session_id: saved.rows[0].session_id, label: saved.rows[0].label, cleared: false });
+  } catch (err) {
+    console.error('Device label save error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
