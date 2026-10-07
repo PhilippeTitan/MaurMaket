@@ -1992,6 +1992,19 @@ await step('NatCash phone separation', () => c.query(`
         ADD COLUMN IF NOT EXISTS read_receipts_enabled BOOLEAN NOT NULL DEFAULT true;
     `));
 
+    // 94. Inbox organization (Inbox/Messaging decisions): per-conversation archive
+    //    and a personal mark-unread reminder. Both live on
+    //    conversation_user_settings, so they are private to the user who set them —
+    //    filing a chat away or flagging it unread never changes the other
+    //    participant's view, and mark-unread in particular never touches
+    //    messages.is_read or message_deliveries, which is what a read receipt is.
+    await step('Conversation archive and mark-unread', () => c.query(`
+      ALTER TABLE conversation_user_settings ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE conversation_user_settings ADD COLUMN IF NOT EXISTS marked_unread BOOLEAN NOT NULL DEFAULT false;
+      CREATE INDEX IF NOT EXISTS idx_conversation_user_settings_archived
+        ON conversation_user_settings(user_id, is_archived, updated_at DESC);
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

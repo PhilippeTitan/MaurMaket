@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput, Modal, Keyboard,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput, Modal, Keyboard, Pressable,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
@@ -12,8 +12,9 @@ import { COLORS, SPACING, RADIUS, formatPrice, LAYOUT, SHADOW } from '../theme';
 import { useTranslation } from '@/localization';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
-import { getConversations, getFollowing, createConversation, getConversationsWithOffers, markOfferSeen, searchSellersForChat } from '../api';
+import { getConversations, getFollowing, createConversation, getConversationsWithOffers, markOfferSeen, searchSellersForChat, archiveConversation, markConversationUnread } from '../api';
 import { useToast } from '../components/Toast';
+import { staysInInbox, unreadState } from '../utils/conversationListPolicy.js';
 import { store } from '../store';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { Conversation } from '../types';
@@ -57,6 +58,9 @@ export default function InboxScreen() {
   const [search, setSearch] = useState('');
   const [searchFilter, setSearchFilter] = useState<'all' | 'today' | 'week' | 'unread'>('all');
   const [showFilterDrop, setShowFilterDrop] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [actionTarget, setActionTarget] = useState<Conversation | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
   const [newChatVisible, setNewChatVisible] = useState(false);
   const [sellerSearch, setSellerSearch] = useState('');
   const [sellerResults, setSellerResults] = useState<any[]>([]);
@@ -148,16 +152,16 @@ export default function InboxScreen() {
       return tb - ta;
     });
 
-  // Split into sections for the inbox
-  const pinnedConversations = sortedConversations.filter(c => (c as any).is_pinned && !((c as any).has_active_offer));
-  const offerConversationsList = sortedConversations.filter(c => (c as any).has_active_offer);
-  const regularConversations = sortedConversations.filter(c => !(c as any).is_pinned && !((c as any).has_active_offer));
+  // Split into sections for the inbox. An archived chat is filed away from the
+  // Inbox — but never at the cost of a live offer, which is time-sensitive.
+  // That single rule lives in conversationListPolicy.staysInInbox, shared with
+  // the server's own partition so the two cannot disagree.
+  const isFiledAway = (c: Conversation) => !staysInInbox({ isArchived: (c as any).is_archived, hasActiveOffer: (c as any).has_active_offer });
+  const inboxConversations = sortedConversations.filter(c => !isFiledAway(c));
+  const archivedConversations = sortedConversations.filter(isFiledAway);
+  const visibleConversations = showArchived ? archivedConversations : inboxConversations;
 
-  const filteredConversations = sortedConversations
-    .filter(c => {
-      if (activeTab !== 'messages') return true; // offers/notifications have their own data
-      return true;
-    })
+  const filteredConversations = visibleConversations
     .filter(c => {
       if (!search.trim() && searchFilter === 'all') return true;
       const q = search.toLowerCase();
@@ -169,7 +173,9 @@ export default function InboxScreen() {
       const msgTime = new Date(c.last_message_at || c.created_at || 0).getTime();
       if (searchFilter === 'today') return matchesSearch && (now - msgTime) < 86400000;
       if (searchFilter === 'week') return matchesSearch && (now - msgTime) < 7 * 86400000;
-      if (searchFilter === 'unread') return matchesSearch && (c.unread_count || 0) > 0;
+      // "Unread" includes a chat the user flagged as a reminder, which has no
+      // unread messages of its own.
+      if (searchFilter === 'unread') return matchesSearch && unreadState({ unreadCount: c.unread_count, markedUnread: (c as any).marked_unread }) !== 'read';
       return matchesSearch;
     });
 
@@ -177,7 +183,9 @@ export default function InboxScreen() {
     const otherName = (item as any).other_party_use_store_identity && (item as any).other_party_store_name
       ? (item as any).other_party_store_name
       : ((item as any).other_party_username || (item as any).other_party_name || t('common.seller'));
-    const hasUnread = (item.unread_count || 0) > 0;
+    const attention = unreadState({ unreadCount: item.unread_count, markedUnread: (item as any).marked_unread });
+    const hasUnread = attention === 'unread';
+    const isMarkedUnread = attention === 'marked';
     const sellerTier = (item as any).other_party_seller_tier;
     const otherUserId = (item as any).other_party_id;
 
@@ -188,11 +196,13 @@ export default function InboxScreen() {
           onPress={() => nav.navigate('Chat', { conversationId: item.id, otherUserName: otherName, otherUserId, otherUserAvatar: (item as any).other_party_avatar, otherUserStoreLogoUrl: (item as any).other_party_store_logo_url, otherUserUseStoreIdentity: (item as any).other_party_use_store_identity, otherUserTier: sellerTier })}
           accessibilityLabel={t('inbox.conversationWith', { name: otherName })}
           accessibilityRole="button"
+          onLongPress={() => setActionTarget(item)}
+          delayLongPress={300}
           activeOpacity={0.7}
         >
           <View style={{ position: 'relative' }}>
              <UserAvatar seller={{ avatar_url: (item as any).other_party_avatar, store_logo_url: (item as any).other_party_store_logo_url, use_store_identity: (item as any).other_party_use_store_identity, full_name: otherName, username: (item as any).other_party_username, seller_tier: sellerTier } as any} size={48} animated={false} />
-            {hasUnread && <View style={styles.convoUnreadBadge} />}
+            {(hasUnread || isMarkedUnread) && <View style={[styles.convoUnreadBadge, isMarkedUnread && styles.convoMarkedBadge]} />}
           </View>
           <View style={styles.convoBody}>
             <View style={styles.convoNameRow}>
@@ -220,6 +230,37 @@ export default function InboxScreen() {
         </TouchableOpacity>
       </View>
     );
+  };
+
+  // Both actions are private to the caller: archive only files the chat away for
+  // this user, and the unread reminder is a flag of their own, so the other
+  // participant's view — and their read receipt — is never touched.
+  const applyMarkUnread = async (unread: boolean) => {
+    const target = actionTarget;
+    setActionTarget(null);
+    if (!target || actionBusy) return;
+    setActionBusy(true);
+    try {
+      await markConversationUnread(target.id, unread);
+      setConversations(prev => prev.map(c => (c.id === target.id ? ({ ...c, marked_unread: unread } as Conversation) : c)));
+      _inboxCache = null;
+      if (unread) toast.success(t('inbox.markedUnread'));
+    } catch { toast.error(t('chat.actionFailed')); }
+    finally { setActionBusy(false); }
+  };
+
+  const applyArchive = async (archived: boolean) => {
+    const target = actionTarget;
+    setActionTarget(null);
+    if (!target || actionBusy) return;
+    setActionBusy(true);
+    try {
+      await archiveConversation(target.id, archived);
+      setConversations(prev => prev.map(c => (c.id === target.id ? ({ ...c, is_archived: archived } as Conversation) : c)));
+      _inboxCache = null;
+      toast.success(archived ? t('inbox.archived') : t('inbox.unarchived'));
+    } catch { toast.error(t('chat.actionFailed')); }
+    finally { setActionBusy(false); }
   };
 
   const startChatWith = async (seller: any) => {
@@ -283,6 +324,44 @@ export default function InboxScreen() {
       {topSegmentedTabs}
     </>
   );
+
+  // The messages list adds the Archived entry — or the way back out of it — on top
+  // of the tabs. Only shown when there is actually something filed away.
+  const messagesListHeader = (
+    <>
+      {conversationsListHeader}
+      {showArchived ? (
+        <TouchableOpacity
+          style={styles.archivedHeaderRow}
+          onPress={() => setShowArchived(false)}
+          accessibilityRole="button"
+          accessibilityLabel={t('inbox.backToInbox')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={18} color={COLORS.coral} />
+          <Text style={styles.archivedHeaderText}>{t('inbox.backToInbox')}</Text>
+        </TouchableOpacity>
+      ) : archivedConversations.length > 0 ? (
+        <TouchableOpacity
+          style={styles.archivedRow}
+          onPress={() => setShowArchived(true)}
+          accessibilityRole="button"
+          accessibilityLabel={t('inbox.archivedCount', { count: archivedConversations.length })}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="archive-outline" size={20} color={COLORS.text2} />
+          <Text style={styles.archivedRowText}>{t('inbox.archivedCount', { count: archivedConversations.length })}</Text>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />
+        </TouchableOpacity>
+      ) : null}
+    </>
+  );
+
+  const actionTargetName = actionTarget
+    ? ((actionTarget as any).other_party_use_store_identity && (actionTarget as any).other_party_store_name
+      ? (actionTarget as any).other_party_store_name
+      : ((actionTarget as any).other_party_username || (actionTarget as any).other_party_name || t('common.seller')))
+    : '';
 
   return (
     <View style={styles.container}>
@@ -446,7 +525,8 @@ export default function InboxScreen() {
           data={filteredConversations as any}
           renderItem={renderConversation as any}
           keyExtractor={(item: any) => item.id}
-          ListHeaderComponent={conversationsListHeader}
+          ListHeaderComponent={messagesListHeader}
+          extraData={showArchived}
           contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
           ListEmptyComponent={
@@ -454,8 +534,8 @@ export default function InboxScreen() {
               <RowListSkeleton count={6} thumbSize={48} />
             ) : (
               <EmptyState
-                icon="message-outline"
-                title={t('inbox.noMessages')}
+                icon={showArchived ? 'archive-outline' : 'message-outline'}
+                title={showArchived ? t('inbox.noArchived') : t('inbox.noMessages')}
                 size={56}
               />
             )
@@ -558,6 +638,32 @@ export default function InboxScreen() {
             </View>
           )}
         </View>
+      </Modal>
+
+      <Modal visible={!!actionTarget} transparent animationType="fade" onRequestClose={() => setActionTarget(null)}>
+        <Pressable style={styles.modalShade} onPress={() => setActionTarget(null)}>
+          <Pressable style={styles.actionSheet} onPress={e => e.stopPropagation()}>
+            <Text style={styles.actionSheetTitle} numberOfLines={1}>{actionTargetName}</Text>
+            <TouchableOpacity
+              style={styles.menuRow}
+              onPress={() => applyMarkUnread(!(actionTarget as any)?.marked_unread)}
+              disabled={actionBusy}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="email-outline" size={20} color={COLORS.text2} />
+              <Text style={styles.menuRowText}>{(actionTarget as any)?.marked_unread ? t('inbox.markRead') : t('inbox.markUnread')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuRow}
+              onPress={() => applyArchive(!(actionTarget as any)?.is_archived)}
+              disabled={actionBusy}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name={(actionTarget as any)?.is_archived ? 'archive-arrow-up-outline' : 'archive-outline'} size={20} color={COLORS.text2} />
+              <Text style={styles.menuRowText}>{(actionTarget as any)?.is_archived ? t('inbox.unarchive') : t('inbox.archive')}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );
@@ -817,6 +923,28 @@ const styles = StyleSheet.create({
   convoMsg: { fontSize: 13, color: COLORS.text2, flex: 1 },
   convoMsgUnread: { color: COLORS.text, fontWeight: '600' },
   convoTime: { fontSize: 11, color: COLORS.text2, marginLeft: 4 },
+  convoMarkedBadge: { backgroundColor: COLORS.coral },
+
+  /* Archived entry + conversation action sheet */
+  archivedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: SPACING.md, marginBottom: SPACING.sm,
+    paddingVertical: 12, paddingHorizontal: 14,
+    borderRadius: RADIUS.card, backgroundColor: COLORS.surface,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  archivedRowText: { flex: 1, color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  archivedHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: SPACING.md, marginBottom: SPACING.sm, paddingVertical: 10 },
+  archivedHeaderText: { color: COLORS.coral, fontSize: 14, fontWeight: '700' },
+  modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  actionSheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: RADIUS.card, borderTopRightRadius: RADIUS.card,
+    paddingTop: SPACING.sm, paddingBottom: SPACING.lg,
+  },
+  actionSheetTitle: { color: COLORS.text2, fontSize: 13, fontWeight: '700', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: SPACING.md },
+  menuRowText: { color: COLORS.text, fontSize: 15 },
   offerBadge: { backgroundColor: COLORS.coral, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, marginLeft: 6 },
   offerBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
 

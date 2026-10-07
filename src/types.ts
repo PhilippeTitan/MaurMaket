@@ -357,6 +357,8 @@ export interface Conversation {
   unread_count?: number;
   is_pinned?: boolean;
   is_muted?: boolean;
+  is_archived?: boolean;
+  marked_unread?: boolean;
   order_status?: string | null;
   order_product_name?: string | null;
   other_party_id?: string;

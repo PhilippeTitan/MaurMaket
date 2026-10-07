@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence, getConversationMedia, getLinkPreview, sendProductCard, pinConversation, muteConversation, blockUser, reportConversationUser } from '../api';
+import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence, getConversationMedia, getLinkPreview, sendProductCard, pinConversation, muteConversation, archiveConversation, blockUser, reportConversationUser } from '../api';
 import type { LinkPreviewData, ConversationMediaItem } from '../api';
 import { onRealtime } from '../realtime';
 import { network } from '../network';
@@ -266,6 +266,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [reportDetails, setReportDetails] = useState('');
   const [conversationRole, setConversationRole] = useState<'buyer' | 'seller'>('buyer');
   const [conversationPinned, setConversationPinned] = useState(false);
+  const [conversationArchived, setConversationArchived] = useState(false);
   // Set from the conversation context: true when the other participant reads
   // without sending receipts. Kept in a ref as well for the realtime handler.
   const [readReceiptsOff, setReadReceiptsOff] = useState(false);
@@ -513,6 +514,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       if (res.context) {
         setConversationRole(res.context.myRole || 'buyer');
         setConversationPinned(!!res.context.isPinned);
+        setConversationArchived(!!res.context.isArchived);
         setConversationIsMuted(!!res.context.isMuted);
         setBlockedByMe(!!res.context.blockedByMe);
         setBlockedByOther(!!res.context.blockedByOther);
@@ -918,6 +920,21 @@ startPolling();
       const result = await pinConversation(conversationId) as { pinned: boolean };
       setConversationPinned(result.pinned);
       setProfileMenuVisible(false);
+    } catch { toast.error(t('chat.actionFailed')); }
+    finally { setActionBusy(false); }
+  };
+
+  // Archive files the chat away from the Inbox for this user only — pin/mute/archive
+  // are all private conversation settings, so the other participant is unaffected.
+  // A live offer is exempt from the archive (it stays in front of the user).
+  const toggleArchive = async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      const result = await archiveConversation(conversationId, !conversationArchived) as { archived: boolean };
+      setConversationArchived(result.archived);
+      setProfileMenuVisible(false);
+      toast.success(result.archived ? t('inbox.archived') : t('inbox.unarchived'));
     } catch { toast.error(t('chat.actionFailed')); }
     finally { setActionBusy(false); }
   };
@@ -1687,6 +1704,9 @@ startPolling();
               <Text style={styles.chatSheetTitle}>{otherUserName}</Text>
               <TouchableOpacity style={styles.menuRow} onPress={togglePin} disabled={actionBusy} accessibilityRole="button">
                 <MaterialCommunityIcons name={conversationPinned ? 'pin-off-outline' : 'pin-outline'} size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{conversationPinned ? t('chat.unpinChat') : t('chat.pinChat')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuRow} onPress={toggleArchive} disabled={actionBusy} accessibilityRole="button">
+                <MaterialCommunityIcons name={conversationArchived ? 'archive-arrow-up-outline' : 'archive-outline'} size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{conversationArchived ? t('chat.unarchiveChat') : t('chat.archiveChat')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuRow} onPress={() => { setProfileMenuVisible(false); setMutePickerVisible(true); }} accessibilityRole="button">
                 <MaterialCommunityIcons name={conversationIsMuted ? 'bell-outline' : 'bell-off-outline'} size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{conversationIsMuted ? t('chat.changeMute') : t('chat.muteChat')}</Text>

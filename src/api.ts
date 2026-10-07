@@ -1444,6 +1444,10 @@ export const pinConversation = (conversationId: string) =>
   request(`/conversations/${conversationId}/pin`, { method: 'PUT' });
 export const muteConversation = (conversationId: string, durationHours: number | null, enabled = true) =>
   request(`/conversations/${conversationId}/mute`, { method: 'PUT', body: JSON.stringify({ durationHours, enabled }) });
+export const archiveConversation = (conversationId: string, archived = true) =>
+  request(`/conversations/${conversationId}/archive`, { method: 'PUT', body: JSON.stringify({ archived }) });
+export const markConversationUnread = (conversationId: string, unread = true) =>
+  request(`/conversations/${conversationId}/mark-unread`, { method: 'PUT', body: JSON.stringify({ unread }) });
 export const blockUser = (userId: string) =>
   request(`/users/${userId}/block`, { method: 'POST' });
 export const reportConversationUser = (conversationId: string, reason: string, details?: string) =>

@@ -21,7 +21,7 @@ import {
 // resolving to the question-mark fallback. Kept as a separate import so the
 // original list cannot be accidentally trimmed.
 import {
-  AlignLeft, ArrowLeftRight, Banknote, Bookmark, Briefcase, CircleDot,
+  AlignLeft, Archive, ArchiveRestore, ArrowLeftRight, Banknote, Bookmark, Briefcase, CircleDot,
   CloudDownload, Crown, DollarSign, DoorClosed, EyeOff, FilePen, Handshake,
   House, Landmark, LifeBuoy, Lock, MessageSquareText, Monitor, NotebookText,
   Palette, Pause, Percent, SearchX, ShieldX, Signal, Square, SquareCheck,
@@ -36,7 +36,8 @@ const ICONS: Record<string, LucideIcon> = {
   account: UserRound, 'account-outline': UserRound, 'account-badge-outline': BadgeCheck,
   'account-cancel-outline': UserRoundX, 'account-group-outline': UsersRound,
   'alert-circle': CircleAlert, 'alert-circle-outline': CircleAlert, 'alert-decagram-outline': BadgeAlert,
-  apps: Grid2X2, 'arrow-left': ArrowLeft, 'arrow-right': ArrowRight, 'arrow-top-right': ArrowUpRight,
+  apps: Grid2X2, 'archive-arrow-up-outline': ArchiveRestore, 'archive-outline': Archive,
+  'arrow-left': ArrowLeft, 'arrow-right': ArrowRight, 'arrow-top-right': ArrowUpRight,
   'arrow-up': ArrowUp, at: AtSign, 'bell-cancel-outline': BellOff, 'bell-off-outline': BellOff,
   'bell-outline': Bell, 'bell-ring-outline': BellRing, 'block-helper': ShieldAlert, broom: Brush,
   'bug-outline': Activity, 'bullhorn-outline': BellRing, 'calendar-clock': CalendarClock,

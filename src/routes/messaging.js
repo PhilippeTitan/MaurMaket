@@ -7,6 +7,7 @@ import { dobRequired } from '../middleware/auth.js';
 import { sendPushNotification } from '../utils/notifications.js';
 import { emitToUsers } from '../realtime.js';
 import { touchPresence, markConversationActive, isConversationOpen, isOnline, lastSeen } from '../utils/chatActivity.js';
+import { staysInInbox, normalizeMarkUnread, inboxUnreadTotal } from '../utils/conversationListPolicy.js';
 
 const router = Router();
 
@@ -73,6 +74,8 @@ router.get('/api/conversations', authRequired, async (req, res) => {
               ) AS has_active_offer,
               (COALESCE(cus.is_muted, false) AND (cus.muted_until IS NULL OR cus.muted_until > NOW())) AS is_muted,
               COALESCE(cus.is_pinned, false) AS is_pinned,
+              COALESCE(cus.is_archived, false) AS is_archived,
+              COALESCE(cus.marked_unread, false) AS marked_unread,
               o.status AS order_status,
               oi.product_name AS order_product_name
        FROM conversations c
@@ -87,20 +90,24 @@ router.get('/api/conversations', authRequired, async (req, res) => {
        LEFT JOIN orders o ON o.id = c.order_id
        LEFT JOIN LATERAL (SELECT p.name AS product_name FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = c.order_id ORDER BY oi.id LIMIT 1) oi ON true
        WHERE (c.buyer_id = $1 OR c.seller_id = $1)
-       GROUP BY c.id, u.id, latest.last_message, latest.last_message_type, cus.is_pinned, cus.is_muted, cus.muted_until, o.status, oi.product_name
+       GROUP BY c.id, u.id, latest.last_message, latest.last_message_type, cus.is_pinned, cus.is_muted, cus.muted_until, cus.is_archived, cus.marked_unread, o.status, oi.product_name
        ORDER BY COALESCE(cus.is_pinned, false) DESC, c.last_message_at DESC`,
       [req.user.id]
     );
-    // Split into sections
+    // Split into sections. An archived chat leaves the Inbox, but a live offer is
+    // time-sensitive and is never filed away with it — that is the single rule in
+    // conversationListPolicy.staysInInbox, shared with the client filter.
     const pinned = [];
     const active = [];
     const offers = [];
+    const archived = [];
     for (const conv of result.rows) {
-      if (conv.has_active_offer) offers.push(conv);
+      if (!staysInInbox({ isArchived: conv.is_archived, hasActiveOffer: conv.has_active_offer })) archived.push(conv);
+      else if (conv.has_active_offer) offers.push(conv);
       else if (conv.is_pinned) pinned.push(conv);
       else active.push(conv);
     }
-    res.json({ conversations: result.rows, pinned, active, offers });
+    res.json({ conversations: result.rows, pinned, active, offers, archived });
   } catch (err) {
     console.error('Conversations fetch error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -295,7 +302,7 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
       product = productResult.rows[0] || null;
     }
     const [mySettings, blocks] = await Promise.all([
-      pool.query('SELECT is_pinned, is_muted, muted_until FROM conversation_user_settings WHERE conversation_id = $1 AND user_id = $2', [req.params.id, req.user.id]),
+      pool.query('SELECT is_pinned, is_muted, muted_until, is_archived FROM conversation_user_settings WHERE conversation_id = $1 AND user_id = $2', [req.params.id, req.user.id]),
       pool.query('SELECT blocker_id, blocked_id FROM blocked_users WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)', [req.user.id, conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id]),
     ]);
     const otherId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
@@ -318,6 +325,7 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
       order: conv.rows[0].order_id ? { id: conv.rows[0].order_id } : null,
       readReceiptsOff: otherReceiptsOff,
       isPinned: !!mySettings.rows[0]?.is_pinned,
+      isArchived: !!mySettings.rows[0]?.is_archived,
       isMuted: !!mySettings.rows[0]?.is_muted && (!mySettings.rows[0]?.muted_until || new Date(mySettings.rows[0].muted_until) > new Date()),
       mutedUntil: mySettings.rows[0]?.muted_until || null,
       blockedByMe: blocks.rows.some(b => b.blocker_id === req.user.id),
@@ -510,6 +518,14 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
       `INSERT INTO message_deliveries (message_id, recipient_id, status) VALUES ($1, $2, 'sent') ON CONFLICT DO NOTHING`,
       [result.rows[0].id, recipientId]
     );
+    // A new message must never sit buried: lift the recipient's archive and their
+    // own mark-unread reminder. Only the recipient's row is touched, and only when
+    // there is actually something to clear.
+    await pool.query(
+      `UPDATE conversation_user_settings SET is_archived = false, marked_unread = false, updated_at = CURRENT_TIMESTAMP
+       WHERE conversation_id = $1 AND user_id = $2 AND (is_archived OR marked_unread)`,
+      [req.params.id, recipientId]
+    );
     await pool.query('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
     const senderInfo = (await pool.query('SELECT full_name, avatar_url FROM users WHERE id = $1', [req.user.id])).rows[0];
     const senderName = senderInfo?.full_name || 'Someone';
@@ -599,12 +615,24 @@ router.post('/api/conversations/:id/products', authRequired, msgLimiter, dobRequ
 // Unread count
 router.get('/api/conversations/unread-count', authRequired, async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT COUNT(*) AS count FROM messages m JOIN conversations c ON m.conversation_id = c.id
-       WHERE (c.buyer_id = $1 OR c.seller_id = $1) AND m.sender_id != $1 AND m.is_read = false`,
-      [req.user.id]
-    );
-    res.json({ count: parseInt(result.rows[0].count) });
+    // Real unread messages plus the chats this user flagged as reminders — one
+    // number, so the tab badge and the list it opens can never disagree.
+    const [unreadMessages, markedConversations] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) AS count FROM messages m JOIN conversations c ON m.conversation_id = c.id
+         WHERE (c.buyer_id = $1 OR c.seller_id = $1) AND m.sender_id != $1 AND m.is_read = false`,
+        [req.user.id]
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM conversation_user_settings cus JOIN conversations c ON c.id = cus.conversation_id
+         WHERE cus.user_id = $1 AND cus.marked_unread = true AND (c.buyer_id = $1 OR c.seller_id = $1)`,
+        [req.user.id]
+      ),
+    ]);
+    res.json({ count: inboxUnreadTotal({
+      unreadMessages: parseInt(unreadMessages.rows[0].count),
+      markedConversations: parseInt(markedConversations.rows[0].count),
+    }) });
   } catch (err) {
     console.error('Unread count error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -887,6 +915,43 @@ router.put('/api/conversations/:id/mute', authRequired, async (req, res) => {
   }
 });
 
+// Archive files a chat away from the Inbox. Private to the caller: the flag lives
+// on conversation_user_settings, so one participant filing a chat away changes
+// nothing for the other. A live offer is exempt (it stays in front of the user),
+// and the underlying order stays reachable from the Buying/Selling screens.
+router.put('/api/conversations/:id/archive', authRequired, async (req, res) => {
+  try {
+    const conv = await pool.query('SELECT id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    const archived = req.body?.archived === undefined ? true : req.body.archived === true;
+    await pool.query(`INSERT INTO conversation_user_settings (conversation_id, user_id, is_archived)
+      VALUES ($1, $2, $3) ON CONFLICT (conversation_id, user_id) DO UPDATE SET is_archived = EXCLUDED.is_archived, updated_at = CURRENT_TIMESTAMP`,
+      [req.params.id, req.user.id, archived]);
+    res.json({ archived });
+  } catch (err) {
+    console.error('Archive error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// A reminder the user leaves for themselves. It is a separate flag, so neither the
+// other participant's read receipt (message_deliveries) nor the messages.is_read
+// bookkeeping is touched — nothing about this is visible to them.
+router.put('/api/conversations/:id/mark-unread', authRequired, async (req, res) => {
+  try {
+    const conv = await pool.query('SELECT id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    const markedUnread = normalizeMarkUnread(req.body?.unread === undefined ? true : req.body.unread);
+    await pool.query(`INSERT INTO conversation_user_settings (conversation_id, user_id, marked_unread)
+      VALUES ($1, $2, $3) ON CONFLICT (conversation_id, user_id) DO UPDATE SET marked_unread = EXCLUDED.marked_unread, updated_at = CURRENT_TIMESTAMP`,
+      [req.params.id, req.user.id, markedUnread]);
+    res.json({ markedUnread });
+  } catch (err) {
+    console.error('Mark-unread error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.post('/api/users/:id/block', authRequired, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot block yourself' });
   try {
@@ -951,6 +1016,12 @@ router.put('/api/conversations/:id/read', authRequired, async (req, res) => {
       `UPDATE messages SET is_read = true
        WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false
        RETURNING id`,
+      [req.params.id, req.user.id]
+    );
+    // Reading the chat satisfies the user's own unread reminder.
+    await pool.query(
+      `UPDATE conversation_user_settings SET marked_unread = false, updated_at = CURRENT_TIMESTAMP
+       WHERE conversation_id = $1 AND user_id = $2 AND marked_unread`,
       [req.params.id, req.user.id]
     );
     if (!receiptsOff) {
