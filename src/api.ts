@@ -1394,6 +1394,20 @@ export const getConversationUnreadCount = () => request('/conversations/unread-c
 export type ConversationMediaItem = { id: string; sender_id: string; image_url: string; created_at: string };
 export const getConversationMedia = (conversationId: string) =>
   request(`/conversations/${conversationId}/media`) as Promise<{ media: ConversationMediaItem[] }>;
+// Search inside one conversation. The server matches a literal substring and
+// bounds the result count, so the query is passed through verbatim.
+export type MessageSearchHit = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  sender_name?: string;
+  content: string;
+  message_type?: string;
+  created_at: string;
+  is_own: boolean;
+};
+export const searchConversationMessages = (conversationId: string, query: string) =>
+  request(`/conversations/${conversationId}/messages/search?q=${encodeURIComponent(query)}`) as Promise<{ query: string; results: MessageSearchHit[]; truncated: boolean; limit: number }>;
 export type LinkPreviewData = { url: string; title?: string | null; description?: string | null; image?: string | null; siteName?: string | null };
 export const getLinkPreview = (url: string) =>
   request(`/link-preview?url=${encodeURIComponent(url)}`) as Promise<{ preview: LinkPreviewData | null }>;

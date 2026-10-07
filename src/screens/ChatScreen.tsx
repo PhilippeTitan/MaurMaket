@@ -8,9 +8,10 @@ import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence, getConversationMedia, getLinkPreview, sendProductCard, pinConversation, muteConversation, archiveConversation, blockUser, reportConversationUser } from '../api';
+import { getMessages, sendMessage as apiSendMessage, sendMessageWithReply, getImageUrl, uploadImage, uploadAudio, sendTyping, getTypingStatus, markConversationRead, getDeliveryStatuses, getPresence, getConversationMedia, searchConversationMessages, getLinkPreview, sendProductCard, pinConversation, muteConversation, archiveConversation, blockUser, reportConversationUser } from '../api';
 import type { LinkPreviewData, ConversationMediaItem } from '../api';
 import { onRealtime } from '../realtime';
+import { normalizeSearchQuery } from '../utils/messageSearchPolicy.js';
 import { network } from '../network';
 import { cacheKeys, readSnapshot, writeSnapshot, pruneMessageSnapshots } from '../offlineCache';
 // Unsent drafts are protected across sign-out (APP-Q189/Q351/Q403); the shared
@@ -251,6 +252,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   const toast = useToast();
   const { conversationId, otherUserName, otherUserId, otherUserAvatar, otherUserStoreLogoUrl, otherUserUseStoreIdentity, otherUserTier, draftOffer } = route.params;
   const [messages, setMessages] = useState<LocalMessage[]>([]);
+  // In-conversation search: a separate result set shown in place of the thread, so
+  // searching never disturbs the pagination cursor or the live refresh below.
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false);
+  const [messageSearchTerm, setMessageSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<LocalMessage[]>([]);
+  const [searchTruncated, setSearchTruncated] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -913,6 +921,27 @@ startPolling();
     } catch (err: any) { toast.error(err?.message || t('chat.sendFailed')); }
   };
 
+  // "Is this even a search yet?" — the same rule the server applies, so the banner
+  // can say "keep typing" instead of "no messages match" for a one-letter term.
+  const searchTermValid = normalizeSearchQuery(messageSearchTerm).valid;
+
+  const openMessageSearch = () => {
+    stickToLatest.current = false;
+    setMessageSearchTerm('');
+    setSearchResults([]);
+    setSearchTruncated(false);
+    setMessageSearchOpen(true);
+  };
+
+  const closeMessageSearch = () => {
+    setMessageSearchOpen(false);
+    setMessageSearchTerm('');
+    setSearchResults([]);
+    setSearchTruncated(false);
+    setSearching(false);
+    stickToLatest.current = true;
+  };
+
   const togglePin = async () => {
     if (actionBusy) return;
     setActionBusy(true);
@@ -938,6 +967,35 @@ startPolling();
     } catch { toast.error(t('chat.actionFailed')); }
     finally { setActionBusy(false); }
   };
+
+  // Debounced in-conversation search. The "is this even a search yet?" guard is the
+  // same policy helper the server uses, so a half-typed term never hits the network
+  // and never falls back to matching the whole thread.
+  useEffect(() => {
+    if (!messageSearchOpen) return;
+    const { term, valid } = normalizeSearchQuery(messageSearchTerm);
+    if (!valid) {
+      setSearchResults([]);
+      setSearchTruncated(false);
+      setSearching(false);
+      return;
+    }
+    let active = true;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await searchConversationMessages(conversationId, term);
+        if (!active) return;
+        setSearchResults((res.results || []) as unknown as LocalMessage[]);
+        setSearchTruncated(!!res.truncated);
+      } catch {
+        if (active) { setSearchResults([]); setSearchTruncated(false); }
+      } finally {
+        if (active) setSearching(false);
+      }
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [messageSearchOpen, messageSearchTerm, conversationId]);
 
   const applyMute = async (durationHours: number | null, enabled = true) => {
     if (actionBusy) return;
@@ -1428,6 +1486,9 @@ startPolling();
               )}
             </View>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.headerMore} onPress={openMessageSearch} accessibilityLabel={t('chat.searchMessages')} accessibilityRole="button">
+            <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.headerMore} onPress={openMedia} accessibilityLabel={t('chat.sharedMedia')} accessibilityRole="button">
             <MaterialCommunityIcons name="image-multiple-outline" size={18} color={COLORS.text2} />
           </TouchableOpacity>
@@ -1435,6 +1496,38 @@ startPolling();
             <MaterialCommunityIcons name="dots-vertical" size={18} color={COLORS.text2} />
           </TouchableOpacity>
         </View>
+
+        {messageSearchOpen && (
+          <View style={styles.searchBar}>
+            <MaterialCommunityIcons name="magnify" size={18} color={COLORS.text2} />
+            <TextInput
+              style={styles.searchInput}
+              value={messageSearchTerm}
+              onChangeText={setMessageSearchTerm}
+              placeholder={t('chat.searchMessagesPlaceholder')}
+              placeholderTextColor={COLORS.text2}
+              autoFocus
+              returnKeyType="search"
+              accessibilityLabel={t('chat.searchMessages')}
+            />
+            {searching && <ActivityIndicator size="small" color={COLORS.coral} />}
+            <TouchableOpacity onPress={closeMessageSearch} accessibilityLabel={t('chat.exitSearch')} accessibilityRole="button" style={styles.searchClose}>
+              <MaterialCommunityIcons name="close" size={18} color={COLORS.text2} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {messageSearchOpen && (
+          <View style={styles.searchBanner} accessibilityLiveRegion="polite">
+            <Text style={styles.searchBannerText}>
+              {!searchTermValid
+                ? t('chat.searchHint')
+                : searchResults.length === 0
+                  ? t('chat.searchNoResults')
+                  : `${t('chat.searchResultsCount', { count: searchResults.length })}${searchTruncated ? '+' : ''}`}
+            </Text>
+          </View>
+        )}
 
 {/* Offer Reminder Banner - removed, View button is now on the offer card itself */}
 
@@ -1455,7 +1548,7 @@ startPolling();
         )}
 
         <FlatList
-            data={messages}
+            data={messageSearchOpen ? searchResults : messages}
             renderItem={renderMessage}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.messageList}
@@ -1464,7 +1557,8 @@ startPolling();
             onScroll={({ nativeEvent }) => {
               const distanceFromBottom = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y;
               stickToLatest.current = distanceFromBottom < 96;
-              if (nativeEvent.contentOffset.y < 72 && hasMore && !loadingOlder) {
+              // Paging in older history is meaningless while a result set is on screen.
+              if (!messageSearchOpen && nativeEvent.contentOffset.y < 72 && hasMore && !loadingOlder) {
                 const nextPage = page + 1;
                 setPage(nextPage);
                 fetchMessages(nextPage, true);
@@ -1472,7 +1566,7 @@ startPolling();
             }}
             scrollEventThrottle={16}
             onContentSizeChange={() => {
-              if (listRef.current && stickToLatest.current && messages.length > 0) {
+              if (!messageSearchOpen && listRef.current && stickToLatest.current && messages.length > 0) {
                 setTimeout(() => {
                   listRef.current?.scrollToEnd({ animated: false });
                 }, 100);
@@ -1884,6 +1978,16 @@ const styles = StyleSheet.create({
   receiptsNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: SPACING.md, paddingVertical: 6 },
   receiptsNoteText: { color: COLORS.text3, fontSize: 11 },
   headerMore: { padding: 8, borderRadius: 20, backgroundColor: COLORS.surface2 },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: SPACING.md, marginBottom: SPACING.sm,
+    paddingHorizontal: 12, height: 40,
+    borderRadius: RADIUS.pill, backgroundColor: COLORS.surface2,
+  },
+  searchInput: { flex: 1, color: COLORS.text, fontSize: 14, paddingVertical: 0 },
+  searchClose: { padding: 4 },
+  searchBanner: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.xs },
+  searchBannerText: { color: COLORS.text2, fontSize: 12 },
   offerReminderBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: 'rgba(216,90,48,0.15)', borderWidth: 1, borderColor: COLORS.coral,

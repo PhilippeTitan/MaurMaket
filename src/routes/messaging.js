@@ -8,6 +8,7 @@ import { sendPushNotification } from '../utils/notifications.js';
 import { emitToUsers } from '../realtime.js';
 import { touchPresence, markConversationActive, isConversationOpen, isOnline, lastSeen } from '../utils/chatActivity.js';
 import { staysInInbox, normalizeMarkUnread, inboxUnreadTotal } from '../utils/conversationListPolicy.js';
+import { normalizeSearchQuery, MESSAGE_SEARCH_LIMIT } from '../utils/messageSearchPolicy.js';
 
 const router = Router();
 
@@ -334,6 +335,53 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
     } });
   } catch (err) {
     console.error('Messages fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Search inside one conversation. Scoped to a participant, and matched as a plain
+// substring — never a LIKE pattern — so a query of "%" searches for a literal "%"
+// instead of dumping the whole thread. See src/utils/messageSearchPolicy.js.
+router.get('/api/conversations/:id/messages/search', authRequired, async (req, res) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
+  const { term, valid } = normalizeSearchQuery(req.query.q);
+  try {
+    const conv = await pool.query('SELECT id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    // A query that is still being typed is not an error and must never fall back
+    // to "match everything" — it simply has no matches yet.
+    if (!valid) return res.json({ query: term, results: [], truncated: false, limit: MESSAGE_SEARCH_LIMIT });
+    const requested = parseInt(req.query.limit);
+    const limit = Math.min(Math.max(Number.isFinite(requested) ? requested : MESSAGE_SEARCH_LIMIT, 1), MESSAGE_SEARCH_LIMIT);
+    // One row beyond the limit tells us whether more matches exist, so the client
+    // can say "showing the first N" honestly instead of implying it found them all.
+    const rows = await pool.query(
+      `SELECT m.id, m.content, m.created_at, m.sender_id, m.message_type, u.full_name AS sender_name
+       FROM messages m JOIN users u ON u.id = m.sender_id
+       WHERE m.conversation_id = $1
+         AND m.is_deleted = false
+         AND m.content IS NOT NULL
+         AND strpos(lower(m.content), lower($2)) > 0
+       ORDER BY m.created_at DESC, m.id DESC
+       LIMIT $3`,
+      [req.params.id, term, limit + 1]
+    );
+    const truncated = rows.rows.length > limit;
+    const results = rows.rows.slice(0, limit).map(row => ({
+      id: row.id,
+      conversation_id: req.params.id,
+      sender_id: row.sender_id,
+      sender_name: row.sender_name,
+      content: row.content,
+      message_type: row.message_type,
+      created_at: row.created_at,
+      is_own: row.sender_id === req.user.id,
+    }));
+    res.json({ query: term, results, truncated, limit });
+  } catch (err) {
+    console.error('Message search error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
