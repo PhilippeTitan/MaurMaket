@@ -18,9 +18,13 @@
 // default and removed only when the user explicitly chooses to remove it at
 // sign-out. It is listed in DEVICE_LOCAL_KEYS too so the protection is asserted.
 //
-// This module has no imports, so Node scripts and Metro/TypeScript (`allowJs`)
-// can both load the identical key list — the device has exactly one definition
-// of what "authenticated cache" means.
+// Apart from the app-lock keys (which this file imports from appLockPolicy so the
+// literal exists once), this module has no imports: Node scripts and
+// Metro/TypeScript (`allowJs`) can both load the identical key list — the device
+// has exactly one definition of what "authenticated cache" means.
+// The extension is explicit: Node's ESM resolver (used by the guardrail scripts)
+// will not guess it, while Metro and TypeScript both accept it.
+import { APP_LOCK_ENABLED_KEY, APP_LOCK_DELAY_KEY, APP_LOCK_LAST_ACTIVE_KEY } from './appLockPolicy.js';
 
 /** Unsent chat drafts. Protected unless the user opts in to removing them. */
 export const UNSENT_DRAFTS_KEY = 'mm_outbox';
@@ -70,6 +74,13 @@ export const ACCOUNT_KEY_PREFIXES = [NOTIFICATION_CACHE_PREFIX, USER_SNAPSHOT_PR
 export const DEVICE_LOCAL_KEYS = [
   UNSENT_DRAFTS_KEY,
   'mm_cart',
+  // Batch 75 / APP-Q116 — an app lock belongs to whoever holds the phone, not to
+  // the account that happened to sign in last, so signing out keeps it. The
+  // 'last active' stamp is kept for the same reason and is cleared by the lock's
+  // own sign-out path, which starts the clock over for the next sign-in.
+  APP_LOCK_ENABLED_KEY,
+  APP_LOCK_DELAY_KEY,
+  APP_LOCK_LAST_ACTIVE_KEY,
   'mm_appearance_mode',
   'mm_low_data_mode',
   'mm_lang',

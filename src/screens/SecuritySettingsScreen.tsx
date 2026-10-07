@@ -10,6 +10,7 @@ import { COLORS, RADIUS, SPACING, FONT_SIZES, FONT_WEIGHTS } from '../theme';
 import { ONBOARDING_COLORS as C } from './onboarding/theme';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
+import SettingsToggle from '../components/SettingsToggle';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import {
@@ -21,6 +22,14 @@ import {
   type BetterAuthSecuritySession,
 } from '../api';
 import { TRUSTED_DEVICE_DAYS } from '../utils/trustedDevices';
+import {
+  getDeviceAuthAvailability, loadAppLockSettings, recordAppLockActivity,
+  saveAppLockDelay, saveAppLockEnabled, type DeviceAuthAvailability,
+} from '../appLock';
+import {
+  APP_LOCK_DELAYS, APP_LOCK_IMMEDIATE, APP_LOCK_ONE_MINUTE, APP_LOCK_FIVE_MINUTES,
+  DEFAULT_APP_LOCK_DELAY,
+} from '../utils/appLockPolicy';
 import type { AccountFreezeState, KycEvidenceAccessEntry, SecurityEvent, TrustedDevice } from '../types';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -88,6 +97,11 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   const [evidenceAccess, setEvidenceAccess] = useState<KycEvidenceAccessEntry[]>([]);
   const [evidenceRetentionDays, setEvidenceRetentionDays] = useState(365);
   const [evidenceAccessLoading, setEvidenceAccessLoading] = useState(true);
+  // Batch 75 / APP-Q116 — optional device-authenticated app lock. Device-local,
+  // not account-level: it belongs to whoever is holding this phone.
+  const [appLockEnabled, setAppLockEnabled] = useState(false);
+  const [appLockDelay, setAppLockDelay] = useState<number>(DEFAULT_APP_LOCK_DELAY);
+  const [deviceAuth, setDeviceAuth] = useState<DeviceAuthAvailability | null>(null);
   // Batch 75 / APP-Q395 — private, owner-only names for signed-in devices.
   const [deviceLabels, setDeviceLabels] = useState<Record<string, string>>({});
   const [deviceLabelMax, setDeviceLabelMax] = useState(40);
@@ -194,6 +208,43 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   }, []);
 
   useFocusEffect(useCallback(() => { void loadEvidenceAccess(); }, [loadEvidenceAccess]));
+
+  // The lock setting and the device's own capability, read together: the toggle is
+  // only meaningful when the device can actually ask for its own unlock.
+  const loadAppLock = useCallback(async () => {
+    const settings = await loadAppLockSettings();
+    setAppLockEnabled(settings.enabled);
+    setAppLockDelay(settings.delayMs);
+    setDeviceAuth(await getDeviceAuthAvailability());
+  }, []);
+
+  useFocusEffect(useCallback(() => { void loadAppLock(); }, [loadAppLock]));
+
+  const handleAppLockToggle = async (next: boolean) => {
+    if (next && !deviceAuth?.available) return;
+    setAppLockEnabled(next);
+    try {
+      await saveAppLockEnabled(next);
+      // Enabling must not lock the user out of the screen they are standing on:
+      // the clock starts now, so the lock only becomes possible after leaving.
+      await recordAppLockActivity();
+      toast.show({ kind: 'success', title: t(next ? 'appLock.enabledToast' : 'appLock.disabledToast') });
+    } catch {
+      setAppLockEnabled(!next);
+    }
+  };
+
+  const handleAppLockDelay = async (ms: number) => {
+    if (ms === appLockDelay) return;
+    const previous = appLockDelay;
+    setAppLockDelay(ms);
+    try {
+      await saveAppLockDelay(ms);
+      await recordAppLockActivity();
+    } catch {
+      setAppLockDelay(previous);
+    }
+  };
 
   const loadDeviceLabels = useCallback(async () => {
     try {
@@ -651,6 +702,60 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('appLock.title')}</Text>
+          <Text style={styles.sectionHint}>{t('appLock.desc')}</Text>
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <View style={styles.rowIcon}><MaterialCommunityIcons name="shield-lock-outline" size={19} color={C.sub} /></View>
+              <View style={styles.sessionCopy}>
+                <Text style={styles.rowTitle}>{t('appLock.toggle')}</Text>
+                <Text style={styles.sessionDate}>
+                  {deviceAuth === null ? t('common.loading') : deviceAuth.available ? t('appLock.toggleHint') : t('appLock.unavailable')}
+                </Text>
+              </View>
+              <SettingsToggle
+                value={appLockEnabled}
+                onValueChange={(next) => void handleAppLockToggle(next)}
+                disabled={!deviceAuth?.available}
+                accent={C.mint}
+                accessibilityLabel={t('appLock.toggle')}
+              />
+            </View>
+            {appLockEnabled && deviceAuth?.available && (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.optionList}>
+                  <Text style={styles.optionLabel}>{t('appLock.delayLabel')}</Text>
+                  {APP_LOCK_DELAYS.map((ms) => {
+                    const selected = appLockDelay === ms;
+                    const label = ms === APP_LOCK_IMMEDIATE
+                      ? t('appLock.delayImmediately')
+                      : ms === APP_LOCK_ONE_MINUTE
+                        ? t('appLock.delayOneMinute')
+                        : t('appLock.delayFiveMinutes');
+                    return (
+                      <TouchableOpacity
+                        key={ms}
+                        style={styles.optionRow}
+                        activeOpacity={0.72}
+                        onPress={() => void handleAppLockDelay(ms)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected }}
+                        accessibilityLabel={label}
+                      >
+                        <Text style={[styles.optionText, selected && styles.optionTextActive]}>{label}</Text>
+                        {selected && <MaterialCommunityIcons name="check" size={18} color={C.mint} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+          </View>
+          <Text style={styles.sectionHint}>{t('appLock.footer')}</Text>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('security.evidenceAccessTitle')}</Text>
           <Text style={styles.sectionHint}>{t('security.evidenceAccessDesc')}</Text>
           {evidenceAccess.length === 0 && !evidenceAccessLoading ? (
@@ -981,6 +1086,11 @@ const styles = StyleSheet.create({
   labelActionText: { color: C.mint, fontSize: FONT_SIZES.xs, fontWeight: FONT_WEIGHTS.semibold },
   emptyCard: { minHeight: 54, justifyContent: 'center', paddingHorizontal: SPACING.sm, borderRadius: 0, backgroundColor: 'transparent', borderWidth: 0 },
   emptyText: { color: C.sub, fontSize: FONT_SIZES.sm },
+  optionList: { paddingLeft: SPACING.sm + 28 + SPACING.md, paddingRight: SPACING.sm, paddingBottom: SPACING.xs },
+  optionLabel: { color: C.faint, fontSize: FONT_SIZES.xs, fontWeight: FONT_WEIGHTS.semibold, letterSpacing: 0.6, textTransform: 'uppercase', marginTop: SPACING.xs, marginBottom: 2 },
+  optionRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  optionText: { color: C.sub, fontSize: FONT_SIZES.sm },
+  optionTextActive: { color: C.text, fontWeight: FONT_WEIGHTS.semibold },
   bottomSpacer: { height: SPACING.xl },
   modalBackdrop: { flex: 1, justifyContent: 'center', padding: SPACING.lg, backgroundColor: 'rgba(0,0,0,0.76)' },
   // C.surface is intentionally translucent for in-page cards; dialogs need an

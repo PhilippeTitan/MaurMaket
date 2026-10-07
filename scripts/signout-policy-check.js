@@ -30,6 +30,11 @@ import {
   ACCOUNT_EXACT_KEYS,
   ACCOUNT_KEY_PREFIXES,
 } from '../src/utils/signOutPolicy.js';
+import {
+  APP_LOCK_ENABLED_KEY,
+  APP_LOCK_DELAY_KEY,
+  APP_LOCK_LAST_ACTIVE_KEY,
+} from '../src/utils/appLockPolicy.js';
 
 const read = (rel) => readFileSync(join(process.cwd(), rel), 'utf8');
 
@@ -59,6 +64,9 @@ const ALL_KEYS = [
   'mm_low_data_mode',
   'mm_lang',
   'mm_explore_filters',
+  APP_LOCK_ENABLED_KEY,
+  APP_LOCK_DELAY_KEY,
+  APP_LOCK_LAST_ACTIVE_KEY,
   'mm_snapshot:public:feed:forYou:v1',
   'mm_snapshot:public:seller:seller-1:v1',
   'cached_notifs_',
@@ -82,6 +90,7 @@ check('the policy owns the notification cache prefix', ACCOUNT_KEY_PREFIXES.incl
 check('unsent drafts are protected by default', !swept.includes(UNSENT_DRAFTS_KEY));
 check('the local cart is kept', !swept.includes('mm_cart'));
 check('device preferences are kept', !['mm_appearance_mode', 'mm_low_data_mode', 'mm_lang', 'mm_explore_filters'].some(k => swept.includes(k)));
+check('the app-lock setting is kept at sign-out', !swept.includes(APP_LOCK_ENABLED_KEY) && !swept.includes(APP_LOCK_DELAY_KEY) && !swept.includes(APP_LOCK_LAST_ACTIVE_KEY));
 check('public snapshots are kept', !swept.some(k => k.startsWith('mm_snapshot:public:')));
 check('unrelated keys are kept', !swept.includes('expo-push-token'));
 check('the default sweep never returns a device-local key', !swept.some(k => DEVICE_LOCAL_KEYS.includes(k)));
@@ -93,6 +102,7 @@ check(
   'survivors are exactly drafts, local state, preferences and public caches',
   JSON.stringify(survivors) === JSON.stringify([
     UNSENT_DRAFTS_KEY, 'mm_cart', 'mm_appearance_mode', 'mm_low_data_mode', 'mm_lang', 'mm_explore_filters',
+    APP_LOCK_ENABLED_KEY, APP_LOCK_DELAY_KEY, APP_LOCK_LAST_ACTIVE_KEY,
     'mm_snapshot:public:feed:forYou:v1', 'mm_snapshot:public:seller:seller-1:v1', 'expo-push-token',
   ]),
   survivors.join(', ')

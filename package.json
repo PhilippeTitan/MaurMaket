@@ -16,7 +16,8 @@
     "test:i18n": "node scripts/i18n-check.js",
     "test:icons": "node scripts/icon-check.js",
     "test:signout": "node scripts/signout-policy-check.js",
-    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js && node scripts/icon-check.js && node scripts/signout-policy-check.js",
+    "test:applock": "node scripts/app-lock-check.js",
+    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js && node scripts/icon-check.js && node scripts/signout-policy-check.js && node scripts/app-lock-check.js",
     "test:realtime": "node scripts/realtime-check.js"
   },
   "dependencies": {
@@ -56,6 +57,7 @@
     "expo-image-manipulator": "~57.0.17",
     "expo-image-picker": "~57.0.17",
     "expo-linear-gradient": "~57.0.2",
+    "expo-local-authentication": "~57.0.3",
     "expo-location": "~57.0.17",
     "expo-notifications": "~57.0.18",
     "expo-secure-store": "~57.0.4",

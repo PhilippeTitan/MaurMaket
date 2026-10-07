@@ -14,6 +14,9 @@ import { i18n } from './src/localization';
 import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
 import { PENDING_PAYMENT_KEY } from './src/utils/signOutPolicy';
+import { shouldLockNow } from './src/utils/appLockPolicy';
+import { clearAppLockActivity, getAppLockLastActive, getDeviceAuthAvailability, loadAppLockSettings, recordAppLockActivity } from './src/appLock';
+import AppLockGate from './src/components/AppLockGate';
 // Web-only: strips the browser's own focus ring and autofill fill off our text fields.
 import './src/webInputReset';
 import { getPasswordResetTokenFromUrl } from './src/authDeepLinks';
@@ -281,6 +284,53 @@ export default function App() {
   const systemColorScheme = useColorScheme();
   const [pendingDob, setPendingDob] = useState(false);
   const [paymentFailed, setPaymentFailed] = useState<{ title: string; message: string; onRetry: () => void } | null>(null);
+  // Batch 75 / APP-Q116 — optional device-authenticated app lock. This is a
+  // convenience for the person holding the device: it re-asks for the device's
+  // own unlock before a session that already exists is shown again. It never
+  // replaces sign-in, never reaches the server, and is skipped entirely when the
+  // device cannot actually ask for its own unlock (web, no enrolled method) — a
+  // lock with no way out would be a lockout.
+  const [appLocked, setAppLocked] = useState(false);
+  const appLockedRef = useRef(false);
+  const justUnlockedRef = useRef(false);
+  useEffect(() => { appLockedRef.current = appLocked; }, [appLocked]);
+
+  // One place decides whether this device should lock right now. The rules live
+  // in src/utils/appLockPolicy.js; this gathers the four inputs they need.
+  const shouldLockThisDevice = useCallback(async () => {
+    if (!store.isLoggedIn) return false;
+    const settings = await loadAppLockSettings();
+    if (!settings.enabled) return false;
+    const availability = await getDeviceAuthAvailability();
+    if (!availability.available) return false;
+    const lastActive = await getAppLockLastActive();
+    return shouldLockNow({
+      hasSession: true,
+      enabled: true,
+      delayMs: settings.delayMs,
+      lastActiveAt: lastActive,
+      now: Date.now(),
+    });
+  }, []);
+
+  // Deliberately set before the gate closes: the device-authentication prompt
+  // dismisses into an 'active' event, and that event must not be mistaken for the
+  // user returning to the app.
+  const handleAppUnlocked = useCallback(() => {
+    justUnlockedRef.current = true;
+    setAppLocked(false);
+    void recordAppLockActivity();
+    invalidateUser();
+  }, []);
+
+  const handleAppLockSignOut = useCallback(() => {
+    void (async () => {
+      await store.logout();
+      // The next sign-in is a fresh authentication, so the clock starts over.
+      await clearAppLockActivity();
+      setAppLocked(false);
+    })();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -289,6 +339,16 @@ export default function App() {
       await i18n.init();
       await network.init();
       await offlineQueue.init();
+      // Batch 75 — decide the app lock before the session is revealed. Loading the
+      // setting is a device preference, but the decision refuses to lock without
+      // a session, so a signed-out app is never gated.
+      if (store.token && await shouldLockThisDevice()) {
+        setAppLocked(true);
+      } else {
+        // Signing in, or a first launch on this device, counts as authenticating:
+        // start the clock rather than locking someone who just proved who they are.
+        void recordAppLockActivity();
+      }
       if (store.token) {
         const hydrateSession = async () => {
           try {
@@ -330,6 +390,8 @@ export default function App() {
       setIsLoggedIn(!!store.user);
       setPendingDob(!!store.user?.pending_dob);
       setAppearanceMode(store.appearanceMode);
+      // A session that ends anywhere in the app takes the lock with it.
+      if (!store.user) setAppLocked(false);
     });
     return unsub;
   }, []);
@@ -404,7 +466,25 @@ export default function App() {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', async (status) => {
-      if (status === 'active' && store.isLoggedIn) {
+      // Batch 75 — the lock is measured from the moment the user left, so the
+      // timestamp is recorded on the way out and read on the way back. 'inactive'
+      // alone (notification shade, app switcher, a system prompt) is not leaving;
+      // arming on 'background' keeps the lock from firing while someone is still
+      // looking at the app.
+      if (status !== 'active') {
+        if (status === 'background') void recordAppLockActivity();
+        return;
+      }
+      if (justUnlockedRef.current) {
+        justUnlockedRef.current = false;
+        return;
+      }
+      if (appLockedRef.current) return;
+      if (await shouldLockThisDevice()) {
+        setAppLocked(true);
+        return;
+      }
+      if (store.isLoggedIn) {
         invalidateUser();
         // Check for abandoned payment — user returned to app without completing MonCash
         try {
@@ -534,7 +614,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <GestureHandlerRootView style={{ flex: 1 }}><QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner /><ForegroundNotificationBanner navigationRef={navigationRef} />{appContent}<DobConfirmModal visible={pendingDob} allowSkip onCompleted={() => setPendingDob(false)} />{isLoggedIn && !pendingDob && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}<Modal visible={!!paymentFailed} transparent animationType="fade"><Pressable style={pmStyles.overlay} onPress={() => setPaymentFailed(null)}><Pressable style={pmStyles.card} onPress={() => {}}><View style={pmStyles.iconWrap}><MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} /></View><Text style={pmStyles.title}>{paymentFailed?.title}</Text><Text style={pmStyles.message}>{paymentFailed?.message}</Text><TouchableOpacity style={pmStyles.retryBtn} onPress={() => { paymentFailed?.onRetry(); setPaymentFailed(null); }}><Text style={pmStyles.retryText}>Retry Payment</Text></TouchableOpacity><TouchableOpacity style={pmStyles.cancelBtn} onPress={() => setPaymentFailed(null)}><Text style={pmStyles.cancelText}>Cancel</Text></TouchableOpacity></Pressable></Pressable></Modal></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider></GestureHandlerRootView>;
+  return <GestureHandlerRootView style={{ flex: 1 }}><QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner /><ForegroundNotificationBanner navigationRef={navigationRef} />{appContent}<DobConfirmModal visible={pendingDob} allowSkip onCompleted={() => setPendingDob(false)} />{isLoggedIn && !pendingDob && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}<Modal visible={!!paymentFailed} transparent animationType="fade"><Pressable style={pmStyles.overlay} onPress={() => setPaymentFailed(null)}><Pressable style={pmStyles.card} onPress={() => {}}><View style={pmStyles.iconWrap}><MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} /></View><Text style={pmStyles.title}>{paymentFailed?.title}</Text><Text style={pmStyles.message}>{paymentFailed?.message}</Text><TouchableOpacity style={pmStyles.retryBtn} onPress={() => { paymentFailed?.onRetry(); setPaymentFailed(null); }}><Text style={pmStyles.retryText}>Retry Payment</Text></TouchableOpacity><TouchableOpacity style={pmStyles.cancelBtn} onPress={() => setPaymentFailed(null)}><Text style={pmStyles.cancelText}>Cancel</Text></TouchableOpacity></Pressable></Pressable></Modal><AppLockGate visible={appLocked} onUnlocked={handleAppUnlocked} onSignOut={handleAppLockSignOut} /></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider></GestureHandlerRootView>;
 }
 
 const styles = StyleSheet.create({
