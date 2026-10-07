@@ -118,22 +118,66 @@ export async function recordKycEvidenceAccess({
   }
 }
 
+/** Postgres "undefined_table" — the audit table exists only once step 90 has run. */
+const MISSING_TABLE = '42P01';
+
 /**
- * The subject's own case-linked history. Returns display-safe rows only — the
- * actor's id is deliberately not selected, so it cannot leak through a route
- * that forgets to strip it.
+ * Display-safe rows, newest first. The actor's id is deliberately not selected,
+ * so it cannot leak through a route that forgets to strip it.
+ *
+ * `tolerateMissingTable` exists for the data export: a user's copy of everything
+ * else must never fail because an optional audit log is absent on a database
+ * that has not run the migration yet. A read that fails for any other reason
+ * still throws — an export should fail loudly rather than quietly omit rows.
  */
+async function selectAccessRows(subjectUserId, limit, { tolerateMissingTable = false } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 500);
+  try {
+    const result = await pool.query(
+      `SELECT id, attempt_id, actor_label, purpose, scope, case_reference, accessed_at
+         FROM kyc_evidence_access
+        WHERE subject_user_id = $1
+        ORDER BY accessed_at DESC
+        LIMIT $2`,
+      [subjectUserId, safeLimit]
+    );
+    return result.rows;
+  } catch (err) {
+    if (tolerateMissingTable && err?.code === MISSING_TABLE) return [];
+    throw err;
+  }
+}
+
+/** The subject's own case-linked history, as shown in the app. */
 export async function listKycEvidenceAccess(subjectUserId, limit = 50) {
-  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 100);
-  const result = await pool.query(
-    `SELECT id, attempt_id, actor_label, purpose, scope, case_reference, accessed_at
-       FROM kyc_evidence_access
-      WHERE subject_user_id = $1
-      ORDER BY accessed_at DESC
-      LIMIT $2`,
-    [subjectUserId, safeLimit]
-  );
-  return result.rows;
+  return selectAccessRows(subjectUserId, limit);
+}
+
+/** The same rows, shaped for a data export (no internal attempt id). */
+export async function exportKycEvidenceAccess(subjectUserId) {
+  const rows = await selectAccessRows(subjectUserId, 500, { tolerateMissingTable: true });
+  return rows.map((row) => ({
+    id: row.id,
+    purpose: row.purpose,
+    scope: row.scope,
+    actor_label: row.actor_label,
+    case_reference: row.case_reference,
+    accessed_at: row.accessed_at,
+  }));
+}
+
+/** Count-only, for the data summary. Tolerates the pre-migration database too. */
+export async function countKycEvidenceAccess(subjectUserId) {
+  try {
+    const result = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM kyc_evidence_access WHERE subject_user_id = $1',
+      [subjectUserId]
+    );
+    return result.rows[0]?.count || 0;
+  } catch (err) {
+    if (err?.code === MISSING_TABLE) return 0;
+    throw err;
+  }
 }
 
 /** Daily cleanup; returns the number of rows removed. */

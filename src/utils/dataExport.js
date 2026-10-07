@@ -1,5 +1,6 @@
 import { pool } from '../config/database.js';
 import { SECURITY_EVENT_RETENTION_DAYS, SECURITY_EVENT_TYPES } from './securityEvents.js';
+import { countKycEvidenceAccess, exportKycEvidenceAccess, KYC_ACCESS_RETENTION_DAYS } from './kycEvidenceAccess.js';
 
 // Batch 74/75 — data export lifecycle (APP-Q379–APP-Q391).
 //
@@ -34,9 +35,15 @@ const OPEN_STATUSES = ['pending', 'ready'];
  * retention window (Batch 75: "include retained security history in exports").
  * Security events are stored as structured codes; keep them structured here too
  * so the file stays machine-readable in any language.
+ *
+ * Also includes the staff-access log for the account's identity evidence
+ * (Batch 75: "log staff access to sensitive KYC evidence"). Purpose and scope
+ * travel as structured codes for the same reason; the staff label is the only
+ * human string, and it is the neutral team label the subject sees in the app —
+ * never a staff name, email, or id.
  */
 export async function buildExportPayload(userId) {
-  const [profile, orders, messages, notifications, reviews, securityEvents] = await Promise.all([
+  const [profile, orders, messages, notifications, reviews, securityEvents, kycAccess] = await Promise.all([
     pool.query(
       `SELECT id, full_name, username, email, phone, bio, role, seller_tier, language, created_at
          FROM users WHERE id = $1`,
@@ -60,6 +67,7 @@ export async function buildExportPayload(userId) {
         ORDER BY created_at DESC`,
       [userId, SECURITY_EVENT_RETENTION_DAYS]
     ),
+    exportKycEvidenceAccess(userId),
   ]);
 
   return {
@@ -80,6 +88,8 @@ export async function buildExportPayload(userId) {
         created_at: row.created_at,
       })),
     security_events_retention_days: SECURITY_EVENT_RETENTION_DAYS,
+    kyc_evidence_access: kycAccess,
+    kyc_evidence_access_retention_days: KYC_ACCESS_RETENTION_DAYS,
   };
 }
 
@@ -89,7 +99,7 @@ export async function buildExportPayload(userId) {
  * real export requires).
  */
 export async function getExportSummary(userId) {
-  const [orders, messages, reviews, notifications, securityEvents] = await Promise.all([
+  const [orders, messages, reviews, notifications, securityEvents, kycAccess] = await Promise.all([
     pool.query('SELECT COUNT(*)::int AS count FROM orders WHERE buyer_id = $1', [userId]),
     pool.query(
       `SELECT COUNT(*)::int AS count FROM messages m
@@ -104,6 +114,7 @@ export async function getExportSummary(userId) {
         WHERE user_id = $1 AND created_at >= NOW() - ($2 || ' days')::interval`,
       [userId, SECURITY_EVENT_RETENTION_DAYS]
     ),
+    countKycEvidenceAccess(userId),
   ]);
   return {
     orders: orders.rows[0]?.count || 0,
@@ -111,6 +122,7 @@ export async function getExportSummary(userId) {
     reviews: reviews.rows[0]?.count || 0,
     notifications: notifications.rows[0]?.count || 0,
     security_events: securityEvents.rows[0]?.count || 0,
+    kyc_evidence_access: kycAccess,
     retention_days: SECURITY_EVENT_RETENTION_DAYS,
   };
 }

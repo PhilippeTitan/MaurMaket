@@ -601,5 +601,7 @@ export interface DataExportSummary {
   reviews: number;
   notifications: number;
   security_events: number;
+  /** Staff opens of this account's identity evidence (Batch 75 audit log). */
+  kyc_evidence_access: number;
   retention_days: number;
 }

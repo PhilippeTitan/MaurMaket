@@ -18,7 +18,8 @@
     "test:signout": "node scripts/signout-policy-check.js",
     "test:applock": "node scripts/app-lock-check.js",
     "test:cart": "node scripts/cart-sync-check.js",
-    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js && node scripts/icon-check.js && node scripts/signout-policy-check.js && node scripts/app-lock-check.js && node scripts/cart-sync-check.js",
+    "test:kycaccess": "node scripts/kyc-access-check.js",
+    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js && node scripts/icon-check.js && node scripts/signout-policy-check.js && node scripts/app-lock-check.js && node scripts/cart-sync-check.js && node scripts/kyc-access-check.js",
     "test:realtime": "node scripts/realtime-check.js"
   },
   "dependencies": {

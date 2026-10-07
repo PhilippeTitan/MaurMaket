@@ -393,6 +393,7 @@ export default function DataPrivacyScreen({ navigation }: Props) {
                     <Count label={t('dataPrivacy.summaryReviews')} value={summary.reviews} />
                     <Count label={t('dataPrivacy.summaryNotifications')} value={summary.notifications} />
                     <Count label={t('dataPrivacy.summarySecurity')} value={summary.security_events} />
+                    <Count label={t('security.evidenceAccessTitle')} value={summary.kyc_evidence_access} />
                   </View>
                 ) : (
                   <TouchableOpacity
