@@ -10,7 +10,7 @@ import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import ConfirmModal from '../components/ConfirmModal';
 import NativeMap from '../components/NativeMap';
-import { getOrder, getOrderTimeline, cancelOrder, sellerCancelOrder, requestOrderCancellation, respondToCancellationRequest, withdrawCancellationRequest, completeOrder, retryPayment, reorder, createReview, createDispute, updateOrderStatus, confirmMeetup, proposeMeetup, getImageUrl, confirmNatCashSeller, confirmNatCashReceived, reportNatCashNotReceived } from '../api';
+import { getOrder, getOrderTimeline, cancelOrder, sellerCancelOrder, requestOrderCancellation, respondToCancellationRequest, withdrawCancellationRequest, completeOrder, retryPayment, reorder, createReview, editReview, deleteReview, createDispute, updateOrderStatus, confirmMeetup, proposeMeetup, getImageUrl, confirmNatCashSeller, confirmNatCashReceived, reportNatCashNotReceived } from '../api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { store } from '../store';
 import { useTranslation } from '@/localization';
@@ -108,6 +108,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewEditId, setReviewEditId] = useState<string | null>(null);
+  const [showDeleteReviewModal, setShowDeleteReviewModal] = useState(false);
   const [disputeModalVisible, setDisputeModalVisible] = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeDescription, setDisputeDescription] = useState('');
@@ -286,23 +288,60 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
     setActionLoading(false);
   };
 
+  const openReviewEditor = (review: Order['my_review']) => {
+    if (review) {
+      setReviewEditId(review.id);
+      setReviewRating(review.rating || 0);
+      setReviewComment(review.comment || '');
+    } else {
+      setReviewEditId(null);
+      setReviewRating(0);
+      setReviewComment('');
+    }
+    setReviewModalVisible(true);
+  };
+
+  const closeReviewModal = () => {
+    setReviewModalVisible(false);
+    setReviewEditId(null);
+    setReviewRating(0);
+    setReviewComment('');
+  };
+
   const handleSubmitReview = async () => {
     if (reviewRating === 0) {
       toast.warning(t('orderDetail.rating'), 'Please select a star rating.');
       return;
     }
+    const editing = !!reviewEditId;
     setReviewSubmitting(true);
     try {
-      await createReview(orderId, reviewRating, reviewComment.trim());
-      setReviewModalVisible(false);
-      setReviewRating(0);
-      setReviewComment('');
-      toast.success(t('orderDetail.thanks'), t('orderDetail.reviewSubmitted'));
+      if (reviewEditId) {
+        await editReview(reviewEditId, reviewRating, reviewComment.trim());
+      } else {
+        await createReview(orderId, reviewRating, reviewComment.trim());
+      }
+      closeReviewModal();
+      toast.success(t('orderDetail.thanks'), editing ? t('orderDetail.reviewUpdated') : t('orderDetail.reviewSubmitted'));
       fetchData();
     } catch (err: unknown) {
       toast.error(t('common.error'), errorMessage(err, 'Could not submit review'));
     }
     setReviewSubmitting(false);
+  };
+
+  const handleDeleteReview = async () => {
+    if (!order?.my_review) return;
+    setShowDeleteReviewModal(false);
+    setActionLoading(true);
+    try {
+      await deleteReview(order.my_review.id);
+      toast.success(t('orderDetail.reviewDeletedTitle'), t('orderDetail.reviewDeletedBody'));
+      fetchData();
+    } catch (err: unknown) {
+      toast.error(t('common.error'), errorMessage(err, 'Could not delete review'));
+    }
+    setActionLoading(false);
   };
 
   const handleSubmitDispute = async () => {
@@ -402,7 +441,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       (order.status === 'pending' && order.seller_count === 1 && ownSellerFulfillment.payment_status === 'pending') ||
       (['paid', 'active', 'processing', 'shipped', 'delivered'].includes(order.status) && order.payment_method === 'moncash' && ownSellerFulfillment.fulfillment_method === 'delivery' && ownSellerFulfillment.payment_status === 'verified')
     );
-  const sellerCancellationPaused = order.cancellation_requests?.some((r) => r.seller_id === store.user?.id && r.status === 'under_review' && r.resolution === 'seller_accepted_pending_settlement') || false;
+  const sellerCancellationPaused = order.cancellation_requests?.some((r) => r.seller_id === store.user?.id && r.status === 'under_review') || false;
 
   const paidCancellationStatuses = ['paid', 'active', 'processing', 'shipped', 'delivered'];
   const cancellablePaidSellerIds = sellerFulfillments
@@ -762,6 +801,9 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             const accepted = request.resolution === 'seller_accepted_pending_settlement';
             const overdue = request.resolution === 'seller_response_overdue';
             const declined = request.resolution === 'seller_declined';
+            const orderResumed = request.resolution === 'admin_reviewed_order_resumes';
+            const portionCancelledRefundPending = request.resolution === 'admin_cancelled_before_shipment_refund_review';
+            const requestUnderReview = request.status === 'under_review';
             let requestReason = '';
             let requestDetails = '';
             try {
@@ -772,9 +814,9 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
             return (
               <View key={request.id} style={styles.cancellationRequest}>
                 <Text style={styles.cancellationRequestTitle}>
-                  {request.seller_name || t('orderDetail.seller')} · {waiting ? t('orderDetail.cancellationWaiting') : accepted ? t('orderDetail.cancellationAccepted') : overdue ? t('orderDetail.cancellationUnresolved') : declined ? t('orderDetail.cancellationDeclined') : t('orderDetail.cancellationClosed')}
+                  {request.seller_name || t('orderDetail.seller')} · {waiting ? t('orderDetail.cancellationWaiting') : orderResumed ? t('orderDetail.cancellationOrderResumed') : portionCancelledRefundPending ? t('orderDetail.cancellationPortionCancelled') : accepted ? t('orderDetail.cancellationAccepted') : overdue ? t('orderDetail.cancellationUnresolved') : declined ? t('orderDetail.cancellationDeclined') : t('orderDetail.cancellationClosed')}
                 </Text>
-                <Text style={styles.cancellationRequestCopy}>{waiting ? t('orderDetail.cancellationAwaitingResponse') : t('orderDetail.cancellationSettlementNotice')}</Text>
+                <Text style={styles.cancellationRequestCopy}>{waiting ? t('orderDetail.cancellationAwaitingResponse') : orderResumed ? t('orderDetail.cancellationOrderResumedBody') : portionCancelledRefundPending ? t('orderDetail.cancellationRefundReviewPending') : t('orderDetail.cancellationSettlementNotice')}</Text>
                 {!!requestReason && <Text style={styles.cancellationRequestCopy}>{getCancellationReasonLabel(requestReason, t)}{requestDetails ? ` · ${requestDetails}` : ''}</Text>}
                 {waiting && request.response_deadline && <Text style={styles.cancellationRequestCopy}>{t('orderDetail.cancellationDeadline', { date: new Date(request.response_deadline).toLocaleString() })}</Text>}
                 {isSellerOfOrder && request.seller_id === user?.id && waiting && (
@@ -792,7 +834,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                     <Text style={styles.cancellationDeclineText}>{t('orderDetail.cancellationWithdraw')}</Text>
                   </TouchableOpacity>
                 )}
-                {isBuyerOfOrder && (accepted || overdue || declined) && <Text style={styles.cancellationUnavailable}>{t('orderDetail.supportNotConnected')}</Text>}
+                {isBuyerOfOrder && requestUnderReview && (accepted || overdue || declined) && <Text style={styles.cancellationUnavailable}>{t('orderDetail.supportNotConnected')}</Text>}
+                {isSellerOfOrder && request.seller_id === user?.id && requestUnderReview && <Text style={styles.cancellationUnavailable}>{t('orderDetail.cancellationSellerReviewPending')}</Text>}
               </View>
             );
           })}
@@ -931,17 +974,59 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {/* Buyer: completed → review/reorder */}
+        {/* Buyer: completed → own review (edit/delete) or review prompt, plus reorder */}
         {order.status === 'completed' && isBuyerOfOrder && (
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.reviewBtnFlex} onPress={() => setReviewModalVisible(true)} accessibilityRole="button">
-              <MaterialCommunityIcons name="star-outline" size={16} color={COLORS.yellow} />
-              <Text style={styles.reviewBtnText}>{t('orderDetail.reviewOrder')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.reorderBtnFlex} onPress={handleReorder} disabled={actionLoading} accessibilityRole="button" accessibilityState={{ disabled: actionLoading, busy: actionLoading }}>
-              <MaterialCommunityIcons name="replay" size={14} color={COLORS.coral} />
-              <Text style={styles.reorderBtnText}>{t('orderDetail.reorder')}</Text>
-            </TouchableOpacity>
+          <View>
+            {order.my_review?.deleted_at ? (
+              // One review per order: a deleted review keeps its slot, so no new
+              // prompt is shown (submitting again would fail).
+              <Text style={styles.myReviewMeta}>{t('orderDetail.reviewDeletedBody')}</Text>
+            ) : order.my_review ? (
+              <View style={styles.myReviewCard}>
+                <View style={styles.myReviewHeader}>
+                  <Text style={styles.myReviewTitle}>{t('orderDetail.yourReview')}</Text>
+                  <View style={styles.myReviewStars}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <MaterialCommunityIcons
+                        key={star}
+                        name={star <= (order.my_review?.rating || 0) ? 'star' : 'star-outline'}
+                        size={14}
+                        color={COLORS.yellow}
+                      />
+                    ))}
+                  </View>
+                </View>
+                {!!order.my_review.comment && (
+                  <Text style={styles.myReviewComment}>{order.my_review.comment}</Text>
+                )}
+                {order.my_review.is_edited && (
+                  <Text style={styles.myReviewMeta}>{t('orderDetail.reviewEdited')}</Text>
+                )}
+                <View style={styles.actionRow}>
+                  <TouchableOpacity style={styles.reviewBtnFlex} onPress={() => openReviewEditor(order.my_review)} accessibilityRole="button" accessibilityLabel={t('orderDetail.editReview')}>
+                    <MaterialCommunityIcons name="pencil" size={16} color={COLORS.yellow} />
+                    <Text style={styles.reviewBtnText}>{t('orderDetail.editReview')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.disputeBtnFlex} onPress={() => setShowDeleteReviewModal(true)} accessibilityRole="button" accessibilityLabel={t('orderDetail.deleteReview')}>
+                    <MaterialCommunityIcons name="trash-can-outline" size={14} color={COLORS.text2} />
+                    <Text style={styles.disputeBtnText}>{t('orderDetail.deleteReview')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={styles.reviewBtnFlex} onPress={() => openReviewEditor(null)} accessibilityRole="button">
+                  <MaterialCommunityIcons name="star-outline" size={16} color={COLORS.yellow} />
+                  <Text style={styles.reviewBtnText}>{t('orderDetail.reviewOrder')}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <View style={[styles.actionRow, styles.reorderRowSpaced]}>
+              <TouchableOpacity style={styles.reorderBtnFlex} onPress={handleReorder} disabled={actionLoading} accessibilityRole="button" accessibilityState={{ disabled: actionLoading, busy: actionLoading }}>
+                <MaterialCommunityIcons name="replay" size={14} color={COLORS.coral} />
+                <Text style={styles.reorderBtnText}>{t('orderDetail.reorder')}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </View>
@@ -954,8 +1039,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle} accessibilityRole="header">{t('orderDetail.reviewOrder')}</Text>
-              <TouchableOpacity style={styles.modalClose} onPress={() => setReviewModalVisible(false)} accessibilityLabel={t('accessibility.close')} accessibilityRole="button">
+              <Text style={styles.modalTitle} accessibilityRole="header">{reviewEditId ? t('orderDetail.editReview') : t('orderDetail.reviewOrder')}</Text>
+              <TouchableOpacity style={styles.modalClose} onPress={closeReviewModal} accessibilityLabel={t('accessibility.close')} accessibilityRole="button">
                 <Icon name="close" size={20} color={COLORS.text2} />
               </TouchableOpacity>
             </View>
@@ -983,6 +1068,22 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               textAlignVertical="top"
               accessibilityLabel={t('orderDetail.reviewCommentA11y')}
             />
+
+            {/* Private feedback stays separate from the public review (Profile &
+                Settings handoff): concerns for MaurMaket go through Help & Support. */}
+            <Text style={styles.reviewPrivateNote}>{t('orderDetail.privateFeedbackNote')}</Text>
+            <TouchableOpacity
+              style={styles.reviewPrivateLink}
+              onPress={() => {
+                closeReviewModal();
+                navigation.navigate('HelpSupport');
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('orderDetail.privateFeedbackAction')}
+            >
+              <MaterialCommunityIcons name="lifebuoy" size={14} color={COLORS.coral} />
+              <Text style={styles.reviewPrivateLinkText}>{t('orderDetail.privateFeedbackAction')}</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.submitBtn, { backgroundColor: COLORS.yellow }, reviewSubmitting && { opacity: 0.5 }]}
@@ -1071,6 +1172,17 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <ConfirmModal
+        visible={showDeleteReviewModal}
+        title={t('orderDetail.deleteReviewConfirmTitle')}
+        message={t('orderDetail.deleteReviewConfirmBody')}
+        confirmLabel={t('orderDetail.deleteReview')}
+        cancelLabel={t('common.cancel')}
+        kind="danger"
+        onCancel={() => setShowDeleteReviewModal(false)}
+        onConfirm={handleDeleteReview}
+      />
 
       <ConfirmModal
         visible={showCancelModal}
@@ -1403,6 +1515,13 @@ const styles = StyleSheet.create({
   },
   meetupCtaBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   actionRow: { flexDirection: 'row', gap: 8 },
+  reorderRowSpaced: { marginTop: 8 },
+  myReviewCard: { backgroundColor: COLORS.surface2, borderRadius: RADIUS.row, padding: 12, marginBottom: 8 },
+  myReviewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  myReviewTitle: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  myReviewStars: { flexDirection: 'row', gap: 2 },
+  myReviewComment: { fontSize: 14, color: COLORS.text2, lineHeight: 20, marginTop: 4, marginBottom: 8 },
+  myReviewMeta: { fontSize: 12, color: COLORS.text3, marginBottom: 8 },
   primaryBtnFlex: {
     flex: 1, padding: 14, borderRadius: RADIUS.pill, backgroundColor: COLORS.green,
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6,
@@ -1452,6 +1571,9 @@ const styles = StyleSheet.create({
   },
   ratingTarget: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   modalClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  reviewPrivateNote: { fontSize: 12, color: COLORS.text3, marginTop: 10, lineHeight: 16 },
+  reviewPrivateLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, minHeight: 44 },
+  reviewPrivateLinkText: { fontSize: 13, color: COLORS.coral, fontWeight: '600' },
   reviewInput: {
     backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.card, padding: 12, fontSize: 14, color: COLORS.text,

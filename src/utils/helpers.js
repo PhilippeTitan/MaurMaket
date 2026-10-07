@@ -1,5 +1,7 @@
 import { pool } from '../config/database.js';
 import { createNotification } from './notifications.js';
+import { cleanupOldSecurityEvents as purgeOldSecurityEvents } from './securityEvents.js';
+import { cleanupOldExportJobs as purgeOldExportJobs } from './dataExport.js';
 
 async function logOrderEvent(orderId, eventType, actorId, oldValue, newValue, note, db) {
   const exec = db || pool;
@@ -294,6 +296,36 @@ async function cleanupOldNotifications() {
   }
 }
 
+// Batch 73 / APP-Q369: security activity is disclosed as retained for one year,
+// so the daily cleanup enforces exactly that rather than leaving the claim
+// unbacked. See src/utils/securityEvents.js for the shared retention constant.
+async function cleanupOldSecurityEvents() {
+  try {
+    const removed = await purgeOldSecurityEvents();
+    if (removed > 0) console.log(`[CRON] Cleaned up ${removed} old security events`);
+    return removed;
+  } catch (err) {
+    console.error('[CRON] Security event cleanup error:', err.message);
+    return 0;
+  }
+}
+
+// Batch 74/75 / APP-Q391: a completed export is disclosed as available for a
+// limited window, so the daily cleanup clears expired payloads and purges old
+// job records instead of letting archives accumulate indefinitely.
+async function cleanupOldExportJobs() {
+  try {
+    const { expired, removed } = await purgeOldExportJobs();
+    if (expired > 0 || removed > 0) {
+      console.log(`[CRON] Export cleanup: ${expired} expired, ${removed} purged`);
+    }
+    return { expired, removed };
+  } catch (err) {
+    console.error('[CRON] Export cleanup error:', err.message);
+    return { expired: 0, removed: 0 };
+  }
+}
+
 async function recordProductCooccurrences(orderId, client) {
   const { rows } = await client.query(
     'SELECT DISTINCT product_id FROM order_items WHERE order_id = $1 ORDER BY product_id',
@@ -376,4 +408,4 @@ async function populateSellerOrderSnapshot(client, orderId) {
   }
 }
 
-export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, settleSellerDebtPayment, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences, canAccessOrder, parseNatCashSms, populateSellerOrderSnapshot };
+export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, settleSellerDebtPayment, checkSubscriptionStatus, cleanupOldNotifications, cleanupOldSecurityEvents, cleanupOldExportJobs, recordProductCooccurrences, canAccessOrder, parseNatCashSms, populateSellerOrderSnapshot };

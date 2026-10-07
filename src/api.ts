@@ -4,7 +4,7 @@ import * as AuthSession from 'expo-auth-session';
 import { createAuthClient } from 'better-auth/client';
 import { twoFactorClient } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
-import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats } from './types';
+import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats, NotificationPreferences, PolicyState, SecurityEvent, AccountFreezeState, ExportJob, DataExportSummary } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
 
@@ -522,6 +522,28 @@ export const revokeAuthSession = async (token: string) => {
   return result.data;
 };
 
+// Batch 73 / APP-Q369 — the caller's own private security activity history.
+// Structured events so the screen renders them in the active app language.
+export const getSecurityEvents = () =>
+  request<{ events: SecurityEvent[]; retention_days: number; max_events: number }>('/security/events');
+
+// Batch 73/74/75 — fast account freeze for suspected compromise (APP-Q371).
+export const getAccountFreeze = () =>
+  request<AccountFreezeState>('/account/freeze');
+
+export const freezeAccount = (reason?: string) =>
+  request<AccountFreezeState>('/account/freeze', {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason || undefined }),
+  });
+
+// Restoring re-confirms the password when the account has one.
+export const unfreezeAccount = (password?: string) =>
+  request<AccountFreezeState>('/account/unfreeze', {
+    method: 'POST',
+    body: JSON.stringify({ password: password || undefined }),
+  });
+
 export const addAccountPasskey = async (name: string) => {
   const client = await ensureAuthTokenLoaded();
   const result = await client.passkey.addPasskey({ name, authenticatorAttachment: 'platform' });
@@ -801,7 +823,53 @@ export const resetPassword = async (email: string, code: string, newPassword: st
 export const updateProfile = (data: Record<string, any>) =>
   request('/user/profile', { method: 'PUT', body: JSON.stringify(data) });
 
-export const exportAccountData = () => request('/user/export-data');
+// Batch 74/75 — data export lifecycle (APP-Q379–APP-Q391). The old synchronous
+// `exportAccountData()` was replaced by these: a count-only summary, a
+// deliberate identity-confirmed export job, private status/expiry, cancellation
+// while generating, and a safe retry that starts a fresh job.
+export const getDataExportSummary = () => request<DataExportSummary>('/user/export/summary');
+
+export const getDataExportJobs = () =>
+  request<{ jobs: ExportJob[]; has_password: boolean; ttl_days: number }>('/user/export/jobs');
+
+export const getDataExportJob = (id: string) =>
+  request<{ job: ExportJob }>(`/user/export/${encodeURIComponent(id)}`);
+
+export const startDataExport = (password?: string) =>
+  request<{ job: ExportJob; has_password: boolean; ttl_days: number }>('/user/export', {
+    method: 'POST',
+    body: JSON.stringify({ password: password || undefined }),
+  });
+
+export const downloadDataExport = (id: string) =>
+  request<{ job: ExportJob; data: Record<string, unknown> }>(
+    `/user/export/${encodeURIComponent(id)}/download`
+  );
+
+export const cancelDataExport = (id: string) =>
+  request<{ job: ExportJob }>(`/user/export/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+
+export const retryDataExport = (id: string, password?: string) =>
+  request<{ job: ExportJob; has_password: boolean; ttl_days: number; retried_from: string }>(
+    `/user/export/${encodeURIComponent(id)}/retry`,
+    { method: 'POST', body: JSON.stringify({ password: password || undefined }) }
+  );
+
+// Policy transparency & consent (Batch 72, APP-Q356–APP-Q365).
+export const getPolicies = (locale?: string) =>
+  request<PolicyState>(`/policies${locale ? `?locale=${encodeURIComponent(locale)}` : ''}`);
+
+export const acceptPolicy = (kind: string, version: string) =>
+  request<{ kind: string; version: string; accepted_at: string | null }>(
+    `/policies/${encodeURIComponent(kind)}/accept`,
+    { method: 'POST', body: JSON.stringify({ version }) }
+  );
+
+export const dismissPolicyNotice = (kind: string, version: string) =>
+  request<{ kind: string; version: string; dismissed_at: string | null }>(
+    `/policies/${encodeURIComponent(kind)}/dismiss`,
+    { method: 'POST', body: JSON.stringify({ version }) }
+  );
 
 export const changePassword = async (currentPassword: string, newPassword: string) => {
   // Better Auth change password — session validates identity
@@ -868,6 +936,8 @@ export const checkPendingStatus = (pendingId: string) =>
 
 export const getSellerFulfillmentProposals = () => request('/seller/fulfillment-proposals');
 export const getPendingAgreements = (pendingId: string) => request(`/checkout/pending/${pendingId}/agreements`);
+export const removePendingCheckoutSeller = (pendingId: string, sellerId: string) =>
+  request(`/checkout/pending/${pendingId}/sellers/${sellerId}`, { method: 'DELETE' });
 export const decideBuyerFulfillment = (pendingId: string, sellerId: string, decision: 'accept' | 'counter' | 'cancel', payload: Record<string, unknown> = {}) =>
   request(`/checkout/pending/${pendingId}/agreements/${sellerId}/buyer-decision`, { method: 'PUT', body: JSON.stringify({ decision, ...payload }) });
 export const counterSellerFulfillment = (pendingId: string, sellerId: string, location: Record<string, unknown>, meetupAt: string) =>
@@ -1119,6 +1189,9 @@ export const getProductReviews = (productId: string) =>
 export const editReview = (reviewId: string, rating?: number, comment?: string) =>
   request(`/reviews/${reviewId}`, { method: 'PUT', body: JSON.stringify({ rating, comment }) });
 
+export const deleteReview = (reviewId: string) =>
+  request(`/reviews/${reviewId}`, { method: 'DELETE' });
+
 export const replyToReview = (reviewId: string, reply: string) =>
   request(`/reviews/${reviewId}/reply`, { method: 'POST', body: JSON.stringify({ reply }) });
 
@@ -1127,6 +1200,15 @@ export const editReviewReply = (reviewId: string, reply: string) =>
 
 export const reportReview = (reviewId: string, reason: string, details?: string, targetType: 'review' | 'reply' = 'review') =>
   request(`/reviews/${reviewId}/report`, { method: 'POST', body: JSON.stringify({ reason, details, targetType }) });
+
+// On-demand content translation (reviews). The client hides the translate
+// affordance while the server reports no provider is configured, so users never
+// see a button that cannot work.
+export const getTranslationStatus = () =>
+  request('/translate/status') as Promise<{ available: boolean; target_languages: string[] }>;
+
+export const translateText = (text: string, targetLang: string) =>
+  request('/translate', { method: 'POST', body: JSON.stringify({ text, targetLang }) }) as Promise<{ translated_text: string; target_lang: string }>;
 
 export const reportUser = (userId: string, reason: string, details?: string) =>
   request(`/users/${userId}/report`, { method: 'POST', body: JSON.stringify({ reason, details }) });
@@ -1192,7 +1274,7 @@ export const clearReadNotifications = () =>
   request('/notifications/read', { method: 'DELETE' });
 export const getNotificationPreferences = () =>
   request('/notifications/preferences');
-export const updateNotificationPreferences = (preferences: any) =>
+export const updateNotificationPreferences = (preferences: Partial<NotificationPreferences>) =>
   request('/notifications/preferences', { method: 'PUT', body: JSON.stringify(preferences) });
 export const muteSellerUpdates = (sellerId: string, muted: boolean) =>
   request('/notifications/mute-seller', { method: 'POST', body: JSON.stringify({ sellerId, muted }) });

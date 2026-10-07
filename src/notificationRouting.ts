@@ -15,12 +15,22 @@ export function routeNotification(nav: Nav, type: string, data: Record<string, a
   }
 
   switch (type) {
+    // ── Security ──
+    case 'new_sign_in':
+    case 'account_security':
+    case 'password_changed':
+    case 'account_frozen':
+    case 'account_unfrozen':
+      nav.navigate('SecuritySettings');
+      break;
+
     // ── Order / Payment ──
     case 'order_status':
     case 'payment_confirmed':
     case 'payment_failed':
     case 'order_cancelled':
     case 'review_received':
+    case 'review_reminder':
     case 'order_note':
     case 'dispute_opened':
     case 'dispute_resolved':
@@ -86,6 +96,18 @@ export function routeNotification(nav: Nav, type: string, data: Record<string, a
     case 'low_stock':
     case 'product_sold_out':
       if (data?.productId) nav.navigate('EditListing', { productId: data.productId });
+      break;
+
+    // ── Listing moderation / content review ──
+    case 'listing_approved':
+    case 'listing_rejected':
+    case 'listing_in_review':
+    case 'listing_under_review':
+    case 'listing_content_confirmed':
+      nav.navigate('MyListings');
+      break;
+    case 'content_review_buyer_notice':
+      nav.navigate('HelpSupport');
       break;
 
     // ── Account / Subscription ──

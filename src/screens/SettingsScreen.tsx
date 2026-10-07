@@ -5,6 +5,7 @@ import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '
 import { ONBOARDING_COLORS } from './onboarding/theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
+import { useLowDataMode } from '../hooks/useLowDataMode';
 
 import ScreenContainer from '../components/ScreenContainer';
 import ScreenHeader from '../components/ScreenHeader';
@@ -26,6 +27,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 export default function SettingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { user, refetch } = useUser();
+  const lowDataMode = useLowDataMode();
   const toast = useToast();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showName, setShowName] = useState(user?.show_real_name ?? true);
@@ -136,6 +138,19 @@ export default function SettingsScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('AppearanceSettings')}
             />
             <SettingsRow
+              icon="signal-cellular-outline"
+              label={t('settings.lowDataMode')}
+              appearance="minimal"
+              divider
+              rightElement={(
+                <SettingsToggle
+                  value={lowDataMode}
+                  onValueChange={(enabled) => { void store.setLowDataMode(enabled).catch(() => {}); }}
+                  accessibilityLabel={t('settings.lowDataMode')}
+                />
+              )}
+            />
+            <SettingsRow
               icon="bell-outline"
               label={t('settings.notificationPrefs')}
               chevron
@@ -232,6 +247,14 @@ export default function SettingsScreen({ navigation }: Props) {
             </SettingsGroup>
           ) : null}
           <SettingsGroup header={t('settings.helpSupport')} appearance="minimal">
+            <SettingsRow
+              icon="file-document-outline"
+              label={t('legal.title')}
+              chevron
+              appearance="minimal"
+              divider
+              onPress={() => navigation.navigate('LegalPrivacy')}
+            />
             <SettingsRow
               icon="help-circle-outline"
               label={t('settings.helpSupport')}

@@ -307,8 +307,14 @@ router.post('/api/payments/webhook', async (req, res) => {
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
+          // Lock checkout first, matching checkout-edit/payment-start routes.
+          // This prevents a late provider callback from racing seller removal.
+          const checkoutRes = await client.query('SELECT * FROM pending_checkouts WHERE id = $1 FOR UPDATE', [sessionResult.rows[0].checkout_id]);
+          const pc = checkoutRes.rows[0];
+          if (!pc) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Checkout not found' }); }
           const sessionLock = await client.query('SELECT * FROM fulfillment_payment_sessions WHERE id = $1 FOR UPDATE', [sessionResult.rows[0].id]);
           const session = sessionLock.rows[0];
+          if (!session || session.checkout_id !== pc.id) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Payment session not found' }); }
           if (session.status === 'completed') { await client.query('ROLLBACK'); return res.json({ received: true, idempotent: true, orderId: session.order_id }); }
           const webhookAmount = Number(req.body.amount ?? req.body.totalAmount ?? req.body.paidAmount);
           if (Number.isFinite(webhookAmount) && Math.round(webhookAmount * 100) !== Math.round(Number(session.amount) * 100)) {
@@ -316,9 +322,6 @@ router.post('/api/payments/webhook', async (req, res) => {
             await recordUnmatchedPayment({ reference: eventReference, eventId, event, note: `payment amount ${webhookAmount} did not match expected session amount ${session.amount}` });
             return res.status(202).json({ received: true, reconciliationRequired: true });
           }
-          const checkoutRes = await client.query('SELECT * FROM pending_checkouts WHERE id = $1 FOR UPDATE', [session.checkout_id]);
-          const pc = checkoutRes.rows[0];
-          if (!pc) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Checkout not found' }); }
           let orderId = session.order_id;
           if (!orderId) {
             const prior = await client.query('SELECT order_id FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND order_id IS NOT NULL LIMIT 1', [pc.id]);

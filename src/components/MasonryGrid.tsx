@@ -5,8 +5,9 @@ import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import Reanimated, { LinearTransition } from 'react-native-reanimated';
 import { COLORS, RADIUS, formatPrice } from '../theme';
 import { useReduceMotion } from '../hooks';
+import { useLowDataMode } from '../hooks/useLowDataMode';
 import { getImageUrl } from '../api';
-import { getCardHeight as computeCardHeight, getCachedSize, preloadProductDimensions } from '../utils/imageDimensionCache';
+import { cacheSize, getCardHeight as computeCardHeight, getCachedSize } from '../utils/imageDimensionCache';
 import SalePriceTag from './SalePriceTag';
 import StockBadge from './StockBadge';
 import { useTranslation } from '@/localization';
@@ -86,6 +87,7 @@ export default function MasonryGrid({
   const { width: windowWidth, height: SCREEN_H } = useWindowDimensions();
   const SCREEN_W = availableWidth ?? windowWidth;
   const reduceMotion = useReduceMotion();
+  const lowDataMode = useLowDataMode();
 
   // ── Pinterest algorithm: dynamic column count from available width ──
   const COLUMN_COUNT = columns ?? (SCREEN_W < 600 ? 2 : SCREEN_W < 900 ? 3 : 4);
@@ -99,20 +101,19 @@ export default function MasonryGrid({
 
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [imageIndices, setImageIndices] = useState<Record<string, number>>({});
+  const measuredDimensions = useRef(new Set<string>());
 
-  // ── Dim tick: forces re-render when async dimensions arrive ──
+  // ── Dim tick: update masonry after a loaded primary image reveals its size ──
   const [dimTick, setDimTick] = useState(0);
-  useEffect(() => {
-    if (products.length === 0) return;
-    preloadProductDimensions(products);
-    let tick = 0;
-    const interval = setInterval(() => {
-      tick++;
-      setDimTick(t => t + 1);
-      if (tick >= 10) clearInterval(interval);
-    }, 200);
-    return () => clearInterval(interval);
-  }, [products]);
+  const handlePrimaryImageLoad = (item: Product, width?: number, height?: number) => {
+    if (!width || !height || measuredDimensions.current.has(item.id)) return;
+    const primary = item.images?.find(image => image.is_primary) || item.images?.[0];
+    if (primary?.image_width && primary.image_height) return;
+    if (getCachedSize(item.id)) return;
+    measuredDimensions.current.add(item.id);
+    cacheSize(item.id, width, height);
+    setDimTick(tick => tick + 1);
+  };
 
   const getCardHeight = (p: Product, overrideW?: number) => {
     const w = overrideW ?? CARD_W;
@@ -190,7 +191,10 @@ export default function MasonryGrid({
       ? item.images
       : [{ id: 'empty', image_url: '', thumbnail_url: null, is_primary: true, display_order: 0 }];
     const hasMore = images.length > 1;
-    const primaryUrl = getImageUrl(images.find(i => i.is_primary)?.thumbnail_url || images.find(i => i.is_primary)?.image_url || images[0]?.thumbnail_url || images[0]?.image_url);
+    const primaryImage = images.find(i => i.is_primary) || images[0];
+    const primaryUrl = getImageUrl(lowDataMode
+      ? primaryImage?.thumbnail_url
+      : primaryImage?.thumbnail_url || primaryImage?.image_url || images[0]?.thumbnail_url || images[0]?.image_url);
 
     // Flexible mode: contain + blurred background always
     const useBlurredBg = presentation === 'flexible' || contentFit === 'cover';
@@ -216,12 +220,13 @@ export default function MasonryGrid({
         >
           <View style={styles.card}>
             <View style={[styles.cardImgWrap, { height: cardH, width: cardW }]}>
-              {hasMore && !imgFailed ? (
+              {hasMore && !lowDataMode && !imgFailed ? (
                 <FlatListCarousel
                   images={images}
                   cardWidth={cardW}
                   cardHeight={cardH}
                   contentFit={imageFit}
+                  onPrimaryImageLoad={(width, height) => handlePrimaryImageLoad(item, width, height)}
                   onIndexChange={(idx) => setImageIndices(prev => ({ ...prev, [item.id]: idx }))}
                   currentIndex={imageIndices[item.id] ?? 0}
                   onImageError={() => setFailedImages(prev => new Set(prev).add(item.id))}
@@ -232,14 +237,14 @@ export default function MasonryGrid({
                   {useBlurredBg && (
                     <ExpoImage source={{ uri: primaryUrl }} style={styles.cardImg} contentFit="cover" blurRadius={20} onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
                   )}
-                  <ExpoImage source={{ uri: primaryUrl }} style={StyleSheet.absoluteFill} contentFit={imageFit} onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
+                  <ExpoImage source={{ uri: primaryUrl }} style={StyleSheet.absoluteFill} contentFit={imageFit} onLoad={event => handlePrimaryImageLoad(item, event.source.width, event.source.height)} onError={() => setFailedImages(prev => new Set(prev).add(item.id))} cachePolicy="memory-disk" />
                 </>
               ) : (
                 <View style={styles.cardPlaceholder}>
                   <MaterialCommunityIcons name="image-off-outline" size={24} color={COLORS.text2} />
                 </View>
               )}
-              {hasMore && (
+              {hasMore && !lowDataMode && (
                 <View style={styles.imgDots} pointerEvents="none">
                   {images.map((_, index) => (
                     <View key={index} style={[styles.imgDot, index === (imageIndices[item.id] || 0) && styles.imgDotActive]} />
@@ -383,6 +388,7 @@ function FlatListCarousel({
   cardWidth,
   cardHeight,
   contentFit,
+  onPrimaryImageLoad,
   onIndexChange,
   currentIndex,
   onImageError,
@@ -392,6 +398,7 @@ function FlatListCarousel({
   cardWidth: number;
   cardHeight: number;
   contentFit: string;
+  onPrimaryImageLoad: (width?: number, height?: number) => void;
   onIndexChange: (idx: number) => void;
   currentIndex: number;
   onImageError: () => void;
@@ -420,7 +427,7 @@ function FlatListCarousel({
                 {contentFit === 'cover' && (
                   <ExpoImage source={{ uri: url }} style={styles.cardImg} contentFit="cover" blurRadius={20} onError={onImageError} cachePolicy="memory-disk" />
                 )}
-                <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit={contentFit as any} onError={onImageError} cachePolicy="memory-disk" />
+                <ExpoImage source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit={contentFit as any} onLoad={idx === 0 ? event => onPrimaryImageLoad(event.source.width, event.source.height) : undefined} onError={onImageError} cachePolicy="memory-disk" />
               </>
             ) : (
               <View style={styles.cardPlaceholder}>

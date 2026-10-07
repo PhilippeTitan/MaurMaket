@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../config/database.js';
-import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from '../middleware/auth.js';
+import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired, accountActive } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { checkSubscriptionStatus } from '../utils/helpers.js';
 import {
@@ -114,11 +114,16 @@ router.get('/products', optionalAuth, async (req, res) => {
     params.push(category);
   }
   if (search) {
+    // APP-Q431: a person who is not discoverable is not findable by their own
+    // name/username/store name, but their listings stay searchable by item
+    // name, description, and category.
     conditions.push(`(
       p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex} OR c.name ILIKE $${paramIndex}
-      OR u.username ILIKE $${paramIndex}
-      OR (u.use_store_identity = TRUE AND u.store_name ILIKE $${paramIndex})
-      OR (u.show_real_name = TRUE AND u.full_name ILIKE $${paramIndex})
+      OR (u.search_discoverable = TRUE AND (
+        u.username ILIKE $${paramIndex}
+        OR (u.use_store_identity = TRUE AND u.store_name ILIKE $${paramIndex})
+        OR (u.show_real_name = TRUE AND u.full_name ILIKE $${paramIndex})
+      ))
     )`);
     params.push(`%${search}%`);
     paramIndex++;
@@ -144,6 +149,16 @@ router.get('/products', optionalAuth, async (req, res) => {
 
   const userId = req.user?.id || null;
   const usePersonalized = !!userId && (personalized === 'true' || following === 'true');
+  // Blocking is a discovery boundary: blocked sellers' listings should not
+  // leak through search, category browse, Feed, or Explore for signed-in users.
+  if (userId) {
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM blocked_users bu
+      WHERE bu.blocker_id = $${paramIndex} AND bu.blocked_id = p.seller_id
+    )`);
+    params.push(userId);
+    paramIndex++;
+  }
   if (excludeOwnListings === 'true' && userId) {
     conditions.push(`p.seller_id <> $${paramIndex++}`);
     params.push(userId);
@@ -279,21 +294,21 @@ router.get('/products', optionalAuth, async (req, res) => {
         p2.id AS product_id,
         CASE
           WHEN EXISTS (SELECT 1 FROM collaborative_products cp WHERE cp.product_id = p2.id AND cp.recommender_count >= 3)
-            THEN 'People like you also liked this'
+            THEN 'similar_people'
           WHEN EXISTS (SELECT 1 FROM product_similar ps WHERE ps.product_id = p2.id)
-            THEN 'Similar to what you''ve browsed'
+            THEN 'similar_items'
           WHEN EXISTS (SELECT 1 FROM user_session_intent si WHERE si.category_id = p2.category_id AND si.recent_views >= 2)
             AND EXISTS (SELECT 1 FROM user_category_affinities a WHERE a.category_id = p2.category_id AND a.score > 0)
-            THEN 'Browsing ' || COALESCE(c2.name, 'this category') || ' — more like this'
+            THEN 'category_browsing'
           WHEN EXISTS (SELECT 1 FROM trending_products tp WHERE tp.product_id = p2.id)
-            THEN 'Trending right now'
+            THEN 'trending'
           WHEN EXISTS (SELECT 1 FROM user_category_affinities a WHERE a.category_id = p2.category_id AND a.score > 0)
-            THEN 'Because you like ' || COALESCE(c2.name, 'this category')
+            THEN 'category_interest'
           WHEN EXISTS (SELECT 1 FROM user_follows WHERE seller_id = p2.seller_id)
-            THEN 'From a seller you follow'
+            THEN 'followed_seller'
           WHEN EXISTS (SELECT 1 FROM user_purchases WHERE category_id = p2.category_id)
-            THEN 'Based on your purchases'
-          ELSE 'Picked for you'
+            THEN 'purchase_history'
+          ELSE 'picked_for_you'
         END AS recommendation_reason,
         (
           COALESCE((SELECT 3.0 FROM user_follows WHERE seller_id = p2.seller_id LIMIT 1), 0)
@@ -435,10 +450,11 @@ router.get('/products', optionalAuth, async (req, res) => {
 // CO-PURCHASE RECOMMENDATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get('/products/:id/co-purchases', async (req, res) => {
+router.get('/products/:id/co-purchases', optionalAuth, async (req, res) => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(req.params.id)) return res.status(404).json({ error: 'Product not found' });
   try {
+    const userId = req.user?.id || null;
     const result = await pool.query(
       `SELECT p.id, p.seller_id, p.category_id, p.name, p.description, p.price, p.stock, p.is_available, p.created_at,
               p.sale_price, p.sale_starts_at, p.sale_ends_at,
@@ -455,6 +471,9 @@ router.get('/products/:id/co-purchases', async (req, res) => {
          ORDER BY purchase_count DESC, last_purchased_at DESC LIMIT 12
        ) rel
        JOIN products p ON p.id = rel.product_id AND p.is_available = TRUE
+       AND ($2::uuid IS NULL OR NOT EXISTS (
+         SELECT 1 FROM blocked_users bu WHERE bu.blocker_id = $2 AND bu.blocked_id = p.seller_id
+       ))
        JOIN users u ON u.id = p.seller_id
        LEFT JOIN categories c ON c.id = p.category_id
        LEFT JOIN LATERAL (
@@ -473,7 +492,7 @@ router.get('/products/:id/co-purchases', async (req, res) => {
          GROUP BY product_id
        ) wishlist_counts ON wishlist_counts.product_id = p.id
        ORDER BY rel.purchase_count DESC, p.created_at DESC`,
-      [req.params.id]
+      [req.params.id, userId]
     );
     res.json({ products: result.rows });
   } catch (err) {
@@ -545,7 +564,7 @@ router.get('/products/:id', optionalAuth, async (req, res) => {
 // PRODUCT CREATE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.post('/products', authRequired, verifiedSellerRequired, dobRequired, async (req, res) => {
+router.post('/products', authRequired, verifiedSellerRequired, dobRequired, accountActive, async (req, res) => {
   if (!req.user?.email_verified) {
     return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to start selling.' });
   }
@@ -554,6 +573,15 @@ router.post('/products', authRequired, verifiedSellerRequired, dobRequired, asyn
     condition, flawNotes, sku, offersEnabled, languageLabel, attrs,
     meetupEnabled, deliveryEnabled, lowStockThreshold, variants, draftId,
   } = req.body;
+
+  // APP-Q541: publishing requires the seller to confirm they may use the
+  // listing's photos, text, and logos, and that the content is not misleading.
+  if (req.body.rightsConfirmed !== true) {
+    return res.status(400).json({
+      error: 'Please confirm you have the rights to the photos and text in this listing.',
+      code: 'LISTING_RIGHTS_REQUIRED',
+    });
+  }
 
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
   const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';
@@ -712,9 +740,22 @@ router.delete('/products/:id', authRequired, sellerRequired, async (req, res) =>
     if (check.rows[0].seller_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not your product' });
     }
+    // APP-Q550: a listing with order history can still be removed from public
+    // discovery, but order_items keep the minimal receipt/terms snapshot (name,
+    // image, price, quantity, variant) needed for receipts, disputes, and
+    // required records. Instead of deleting the row (which would break those
+    // records), archive it; listings without any orders are deleted outright.
     const orderCheck = await pool.query('SELECT 1 FROM order_items WHERE product_id = $1 LIMIT 1', [req.params.id]);
     if (orderCheck.rows.length > 0) {
-      return res.status(400).json({ error: 'Cannot delete product with existing orders' });
+      await pool.query(
+        `UPDATE products
+            SET is_available = false,
+                paused_reason = CASE WHEN listing_status = 'active' THEN 'seller_removed' ELSE paused_reason END,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1`,
+        [req.params.id]
+      );
+      return res.json({ removed: true, archived: true });
     }
     await pool.query('DELETE FROM product_images WHERE product_id = $1', [req.params.id]);
     await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]);
@@ -869,9 +910,6 @@ router.put('/products/:id', authRequired, verifiedSellerRequired, async (req, re
           code: before.listing_status === 'rejected' ? 'LISTING_REJECTED' : 'LISTING_PENDING',
         });
       }
-      if (before.paused_reason === 'tier_cap') {
-        return res.status(403).json({ error: 'Upgrade your plan or pause another listing to free up space.', code: 'TIER_CAP' });
-      }
       const tierR = await client.query('SELECT seller_tier FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
       const tier = tierR.rows[0]?.seller_tier || 'none';
       const cap = await checkTierCap(req.user.id, tier, 1, client);
@@ -977,11 +1015,13 @@ router.put('/products/:id', authRequired, verifiedSellerRequired, async (req, re
     const product = result.rows[0];
 
     if (flaggedChange) {
+      // APP-Q549: automated checks are private review signals only. They never
+      // restrict or reject on their own; a person reviews the flag and decides.
       createNotification(
         req.user.id,
         'listing_in_review',
         'Listing sent for review',
-        `Your changes to "${product.name}" need a quick review before the listing goes live again.`,
+        `An automated check flagged changes to "${product.name}" for human review. A person will review them before the listing goes live again.`,
         { screen: 'MyListings', productId: product.id }
       ).catch(() => {});
     }

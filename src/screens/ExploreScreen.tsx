@@ -18,6 +18,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 import type { Product, Category } from '../types';
 import { useTranslation } from '@/localization';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 import EmptyState from '../components/EmptyState';
 import { ProductGridSkeleton } from '../components/Skeleton';
 import { useToast } from '../components/Toast';
@@ -65,6 +66,7 @@ const SIDE_PAD = 8;
 
 export default function ExploreScreen({ navigation }: Props) {
   const { t } = useTranslation();
+  const reduceMotion = useReduceMotion();
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const [selectedCat, setSelectedCat] = useState<string>('');
@@ -205,9 +207,10 @@ export default function ExploreScreen({ navigation }: Props) {
     try {
       await trackFeedEvent(product.id, eventType);
       await queryClient.invalidateQueries({ queryKey: ['explore-products'] });
+      await queryClient.invalidateQueries({ queryKey: ['feed-products', 'forYou'] });
       await refetch();
     } catch {
-      toast.error(t('common.error'), 'Your feed preference could not be saved.');
+      toast.error(t('common.error'), t('feedback.feedPreferenceSaveFailed'));
     }
   };
 
@@ -412,22 +415,22 @@ export default function ExploreScreen({ navigation }: Props) {
         />
       )}
 
-      <Modal visible={Boolean(quickProduct)} transparent animationType="fade" onRequestClose={() => setQuickProduct(null)}>
+      <Modal visible={Boolean(quickProduct)} transparent animationType={reduceMotion ? 'none' : 'fade'} onRequestClose={() => setQuickProduct(null)}>
         <Pressable style={styles.quickOverlay} onPress={() => { if (quickDismissable) setQuickProduct(null); }}>
           <Pressable style={styles.quickFan} onPress={e => e.stopPropagation()}>
             <Text style={styles.quickTitle} numberOfLines={1}>{quickProduct?.name}</Text>
             <View style={styles.quickActions}>
-              <TouchableOpacity style={[styles.quickAction, styles.quickActionLeft]} onPress={() => { if (quickProduct) navigation.navigate('ProductDetail', { productId: quickProduct.id }); setQuickProduct(null); }} accessibilityRole="button" accessibilityLabel="View product">
-                <MaterialCommunityIcons name="eye-outline" size={22} color={COLORS.text} /><Text style={styles.quickLabel}>View</Text>
+              <TouchableOpacity style={[styles.quickAction, styles.quickActionLeft]} onPress={() => { if (quickProduct) navigation.navigate('ProductDetail', { productId: quickProduct.id }); setQuickProduct(null); }} accessibilityRole="button" accessibilityLabel={t('accessibility.viewProduct')}>
+                <MaterialCommunityIcons name="eye-outline" size={22} color={COLORS.text} /><Text style={styles.quickLabel}>{t('accessibility.viewProduct')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.quickAction, styles.quickActionTop]} onPress={() => applyQuickFeedback('relevant')} accessibilityRole="button" accessibilityLabel="Show more like this">
-                <MaterialCommunityIcons name="thumb-up-outline" size={22} color={COLORS.coral} /><Text style={styles.quickLabel}>More like this</Text>
+              <TouchableOpacity style={[styles.quickAction, styles.quickActionTop]} onPress={() => applyQuickFeedback('relevant')} accessibilityRole="button" accessibilityLabel={t('feed.showMoreLike')}>
+                <MaterialCommunityIcons name="thumb-up-outline" size={22} color={COLORS.coral} /><Text style={styles.quickLabel}>{t('feed.showMoreLike')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.quickAction, styles.quickActionRight]} onPress={() => applyQuickFeedback('not_relevant')} accessibilityRole="button" accessibilityLabel="Not interested">
-                <MaterialCommunityIcons name="thumb-down-outline" size={22} color={COLORS.coral} /><Text style={styles.quickLabel}>Not interested</Text>
+              <TouchableOpacity style={[styles.quickAction, styles.quickActionRight]} onPress={() => applyQuickFeedback('not_relevant')} accessibilityRole="button" accessibilityLabel={t('feed.notInterested')}>
+                <MaterialCommunityIcons name="thumb-down-outline" size={22} color={COLORS.coral} /><Text style={styles.quickLabel}>{t('feed.notInterested')}</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.quickHint}>Long-press any listing to tune your recommendations.</Text>
+            <Text style={styles.quickHint}>{t('explore.quickFeedbackHint')}</Text>
           </Pressable>
         </Pressable>
       </Modal>
@@ -510,26 +513,26 @@ export default function ExploreScreen({ navigation }: Props) {
             </View>
 
             {/* Price section */}
-            <Text style={styles.sheetSectionTitle}>Price range</Text>
+            <Text style={styles.sheetSectionTitle}>{t('explore.priceRange')}</Text>
             <View style={styles.priceRow}>
               <TextInput
                 style={styles.priceInputModal}
-                placeholder="Min"
+                placeholder={t('explore.priceMin')}
                 placeholderTextColor={COLORS.text2}
                 value={pendingMinPrice}
                 onChangeText={setPendingMinPrice}
                 keyboardType="numeric"
-                accessibilityLabel="minimum price"
+                accessibilityLabel={t('explore.priceMin')}
               />
               <Text style={styles.priceDashModal}>–</Text>
               <TextInput
                 style={styles.priceInputModal}
-                placeholder="Max"
+                placeholder={t('explore.priceMax')}
                 placeholderTextColor={COLORS.text2}
                 value={pendingMaxPrice}
                 onChangeText={setPendingMaxPrice}
                 keyboardType="numeric"
-                accessibilityLabel="maximum price"
+                accessibilityLabel={t('explore.priceMax')}
               />
             </View>
 

@@ -34,12 +34,23 @@ import { useToast } from '../components/Toast';
 import ReportModal from '../components/ReportModal';
 import { queryClient, useViewport } from '../hooks';
 import { useReduceMotion } from '../hooks/useReduceMotion';
+import { useLowDataMode } from '../hooks/useLowDataMode';
 import { cacheKeys, readSnapshot, writeSnapshot } from '../offlineCache';
 import { network } from '../network';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 const FEED_VIEWABILITY_CONFIG = { viewAreaCoveragePercentThreshold: 80 };
+const RECOMMENDATION_REASON_KEYS: Record<string, string> = {
+  similar_people: 'feed.reasonSimilarPeople',
+  similar_items: 'feed.reasonSimilarItems',
+  category_browsing: 'feed.reasonCategoryBrowsing',
+  trending: 'feed.reasonTrending',
+  category_interest: 'feed.reasonCategoryInterest',
+  followed_seller: 'feed.reasonFollowedSeller',
+  purchase_history: 'feed.reasonPurchaseHistory',
+  picked_for_you: 'feed.reasonPickedForYou',
+};
 
 export default function FeedScreen() {
   const { t } = useTranslation();
@@ -51,6 +62,7 @@ export default function FeedScreen() {
   // paging offset and the page index stay in step instead of snapping to the old size.
   const vp = useViewport();
   const reduceMotion = useReduceMotion();
+  const lowDataMode = useLowDataMode();
   const [products, setProducts] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -74,6 +86,20 @@ export default function FeedScreen() {
   const scrollOffsetRef = useRef(0);
   const dragStartIndexRef = useRef(0);
   const viewedProductIds = useRef<Set<string>>(new Set());
+
+  const recommendationReasonText = useCallback((reason?: string) => {
+    if (!reason) return '';
+    let key = RECOMMENDATION_REASON_KEYS[reason];
+    // Cached feed snapshots may still contain the previous prose values.
+    if (!key && reason.startsWith('Browsing ')) key = 'feed.reasonCategoryBrowsing';
+    if (!key && reason.startsWith('Because you like ')) key = 'feed.reasonCategoryInterest';
+    if (!key && reason === 'People like you also liked this') key = 'feed.reasonSimilarPeople';
+    if (!key && reason === "Similar to what you've browsed") key = 'feed.reasonSimilarItems';
+    if (!key && reason === 'Trending right now') key = 'feed.reasonTrending';
+    if (!key && reason === 'From a seller you follow') key = 'feed.reasonFollowedSeller';
+    if (!key && reason === 'Based on your purchases') key = 'feed.reasonPurchaseHistory';
+    return t(key || 'feed.reasonPickedForYou');
+  }, [t]);
 
   useEffect(() => { productsRef.current = products; }, [products]);
 
@@ -112,11 +138,11 @@ export default function FeedScreen() {
       const nextProduct = visibleIndex >= 0 ? productsRef.current[visibleIndex + 1] : undefined;
       const nextImage = nextProduct?.images?.find((image) => image.is_primary) || nextProduct?.images?.[0];
       const nextImageUrl = getImageUrl(nextImage?.thumbnail_url || nextImage?.image_url);
-      if (nextImageUrl) {
+      if (nextImageUrl && !lowDataMode) {
         void ExpoImage.prefetch(nextImageUrl).catch(() => {});
       }
     }
-  }, [reduceMotion, transitionOpacity]);
+  }, [lowDataMode, reduceMotion, transitionOpacity]);
 
 const fetchProducts = useCallback(async (p = 1, replace = false) => {
     const cacheKey = cacheKeys.feed(feedTab, store.user?.id);
@@ -284,26 +310,44 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
   const handleFeedback = async (eventType: 'relevant' | 'not_relevant') => {
     const product = moreProduct;
     if (!product) return;
+    const originalIndex = productsRef.current.findIndex(item => item.id === product.id);
     setMoreProduct(null);
     if (eventType === 'not_relevant') {
       setProducts(prev => prev.filter(item => item.id !== product.id));
-      toast.show({
-        kind: 'info',
-        title: t('feed.removed'),
-        message: t('feed.removedMsg'),
-        actionLabel: t('feed.undo'),
-        onAction: () => {
-          setProducts(prev => [product, ...prev]);
-          trackFeedEvent(product.id, 'relevant').catch(() => {});
-        },
-      });
     }
     try {
       await trackFeedEvent(product.id, eventType);
       await queryClient.invalidateQueries({ queryKey: ['feed-products', 'forYou'] });
+      await queryClient.invalidateQueries({ queryKey: ['explore-products'] });
       if (feedTab === 'forYou') await fetchProducts(1, true);
+      if (eventType === 'not_relevant') {
+        toast.show({
+          kind: 'info',
+          title: t('feed.removed'),
+          message: t('feed.removedMsg'),
+          actionLabel: t('feed.undo'),
+          onAction: async () => {
+            try {
+              await trackFeedEvent(product.id, 'undo_not_relevant');
+              setProducts(prev => {
+                if (prev.some(item => item.id === product.id)) return prev;
+                const restored = [...prev];
+                restored.splice(Math.min(Math.max(originalIndex, 0), restored.length), 0, product);
+                return restored;
+              });
+              await queryClient.invalidateQueries({ queryKey: ['feed-products', 'forYou'] });
+              await queryClient.invalidateQueries({ queryKey: ['explore-products'] });
+            } catch {
+              toast.error(t('common.error'), t('feedback.feedPreferenceSaveFailed'));
+            }
+          },
+        });
+      }
     } catch {
-      toast.error(t('common.error'), 'Your feed preference could not be saved.');
+      if (eventType === 'not_relevant') {
+        setProducts(prev => prev.some(item => item.id === product.id) ? prev : [product, ...prev]);
+      }
+      toast.error(t('common.error'), t('feedback.feedPreferenceSaveFailed'));
     }
   };
 
@@ -431,9 +475,9 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
 
 {/* Price */}
           {feedTab === 'forYou' && item.recommendation_reason && (
-            <TouchableOpacity style={styles.reasonPill} onPress={() => setReasonProduct(item)} accessibilityRole="button" accessibilityLabel={`Why you're seeing this: ${item.recommendation_reason}`}>
+            <TouchableOpacity style={styles.reasonPill} onPress={() => setReasonProduct(item)} accessibilityRole="button" accessibilityLabel={`${t('feed.whySeeing')}: ${recommendationReasonText(item.recommendation_reason)}`}>
               <MaterialCommunityIcons name="star-four-points" size={13} color={COLORS.white} />
-              <Text style={styles.reasonText}>{item.recommendation_reason}</Text>
+              <Text style={styles.reasonText}>{recommendationReasonText(item.recommendation_reason)}</Text>
             </TouchableOpacity>
           )}
           <View style={styles.priceTag}>
@@ -531,7 +575,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
             activeOpacity={0.82}
             onPress={() => nav.navigate('Notification')}
             accessibilityRole="button"
-            accessibilityLabel="notifications"
+            accessibilityLabel={t('accessibility.openNotifications')}
           >
             <MaterialCommunityIcons name="bell-outline" size={35} color={COLORS.white} />
             {unreadCount > 0 && (
@@ -617,10 +661,10 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                   style={styles.moreItem}
                   onPress={() => { const p = moreProduct; setMoreProduct(null); nav.navigate('EditListing', { productId: p.id }); }}
                   accessibilityRole="button"
-                  accessibilityLabel={t('notif.action.editListing')}
+                  accessibilityLabel={t('editListing.title')}
                 >
                   <MaterialCommunityIcons name="pencil-outline" size={18} color={COLORS.text} />
-                  <Text style={styles.moreItemText}>Edit listing</Text>
+                  <Text style={styles.moreItemText}>{t('editListing.title')}</Text>
                 </TouchableOpacity>
                 <View style={styles.moreDivider} />
                 <TouchableOpacity
@@ -630,7 +674,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                   accessibilityLabel={t('accessibility.viewProduct')}
                 >
                   <MaterialCommunityIcons name="eye-outline" size={18} color={COLORS.text} />
-                  <Text style={styles.moreItemText}>View product</Text>
+                  <Text style={styles.moreItemText}>{t('accessibility.viewProduct')}</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -643,7 +687,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                   accessibilityLabel={t('accessibility.markRelevant')}
                 >
                   <MaterialCommunityIcons name="thumb-up-outline" size={18} color={COLORS.text} />
-                  <Text style={styles.moreItemText}>Show more like this</Text>
+                  <Text style={styles.moreItemText}>{t('feed.showMoreLike')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.moreItem}
@@ -652,7 +696,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
                   accessibilityLabel={t('accessibility.markNotRelevant')}
                 >
                   <MaterialCommunityIcons name="thumb-down-outline" size={18} color={COLORS.text} />
-                  <Text style={styles.moreItemText}>Not interested</Text>
+                  <Text style={styles.moreItemText}>{t('feed.notInterested')}</Text>
                 </TouchableOpacity>
                 <View style={styles.moreDivider} />
                 <TouchableOpacity
@@ -704,7 +748,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               <Text style={styles.reasonTitle}>{t('feed.whySeeing')}</Text>
             </View>
             <Text style={styles.reasonProductName} numberOfLines={2}>{reasonProduct?.name}</Text>
-            <Text style={styles.reasonBody}>{reasonProduct?.recommendation_reason}</Text>
+            <Text style={styles.reasonBody}>{recommendationReasonText(reasonProduct?.recommendation_reason)}</Text>
             <TouchableOpacity
               style={styles.reasonCloseBtn}
               onPress={() => setReasonProduct(null)}

@@ -456,6 +456,37 @@ export function createAuth(adapter) {
       },
     },
 
+    // Batch 73 / APP-Q369 — every new session (any sign-in path: password,
+    // OTP, Google, passkey) is recorded in the account's private security
+    // activity history and alerts the owner through the always-immediate
+    // security notification path. Loaded dynamically and fully guarded so a
+    // failure here can never break authentication itself.
+    databaseHooks: {
+      session: {
+        create: {
+          after: async (session) => {
+            try {
+              const userId = session?.userId;
+              if (!userId) return;
+              const userAgent = typeof session?.userAgent === 'string' ? session.userAgent : '';
+              const { recordSecurityEvent } = await import('../utils/securityEvents.js');
+              await recordSecurityEvent(userId, 'sign_in', { userAgent });
+              const { createNotification } = await import('../utils/notifications.js');
+              await createNotification(
+                userId,
+                'new_sign_in',
+                'New sign-in to your account',
+                'A new device just signed in. If this was not you, secure your account now.',
+                { screen: 'SecuritySettings' }
+              );
+            } catch (err) {
+              console.error('[auth] Sign-in security hook failed:', err?.message || err);
+            }
+          },
+        },
+      },
+    },
+
     account: {
       modelName: 'accounts',
       fields: {

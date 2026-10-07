@@ -216,22 +216,16 @@ router.put('/api/seller/orders/:id/status', authRequired, sellerRequired, async 
       if (check.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
       const current = check.rows[0].status;
       const deliveryMethod = check.rows[0].delivery_method;
-      const acceptedCancellation = await client.query(
-        `SELECT id FROM disputes WHERE order_id = $1 AND seller_id = $2
-         AND reason = 'cancellation_request' AND status = 'under_review'
-         AND resolution = 'seller_accepted_pending_settlement' LIMIT 1`,
+      const unresolvedCancellation = await client.query(
+        `SELECT id, status FROM disputes WHERE order_id = $1 AND seller_id = $2
+         AND reason = 'cancellation_request' AND status IN ('open', 'under_review') LIMIT 1`,
         [req.params.id, req.user.id]
       );
-      if (acceptedCancellation.rows.length) {
+      if (unresolvedCancellation.rows[0]?.status === 'under_review') {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'You accepted a cancellation request for this seller portion. Pause fulfillment until its settlement is reviewed.' });
+        return res.status(409).json({ error: 'A cancellation request for this seller portion remains unresolved. Pause fulfillment until an authorized reviewer resolves it.' });
       }
-      const unansweredCancellation = await client.query(
-        `SELECT id FROM disputes WHERE order_id = $1 AND seller_id = $2
-         AND reason = 'cancellation_request' AND status = 'open' LIMIT 1`,
-        [req.params.id, req.user.id]
-      );
-      if (unansweredCancellation.rows.length) {
+      if (unresolvedCancellation.rows.length) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: 'Respond to the buyer’s cancellation request before advancing this seller portion.' });
       }

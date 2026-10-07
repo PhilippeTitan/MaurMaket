@@ -9,6 +9,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
+import NetInfo, { NetInfoStateType } from '@react-native-community/netinfo';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
@@ -20,6 +21,7 @@ import { store } from '../store';
 import type { Category } from '../types';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
+import ConfirmModal from '../components/ConfirmModal';
 import SaleSection from '../components/SaleSection';
 import {
   CONDITIONS, MAX_PHOTOS, MIN_PRICE, MAX_PRICE, MAX_VARIANTS,
@@ -82,6 +84,9 @@ interface FormState {
   hasVariants: boolean;
   variantDims: DimDraft[];
   variants: VariantDraft[];
+  // APP-Q541: required content-rights confirmation. Deliberately not persisted
+  // in drafts, so publishing always needs a fresh explicit confirmation.
+  rightsConfirmed: boolean;
 }
 
 const EMPTY_DIMS: DimDraft[] = [
@@ -110,6 +115,7 @@ const EMPTY_FORM: FormState = {
   hasVariants: false,
   variantDims: EMPTY_DIMS,
   variants: [],
+  rightsConfirmed: false,
 };
 
 interface ValidationIssue {
@@ -236,6 +242,7 @@ function hydrateForm(raw: unknown): FormState {
     hasVariants: d.hasVariants === true || (d.hasVariants === undefined && variants.length > 0),
     variantDims: dims,
     variants,
+    rightsConfirmed: false,
   };
 }
 
@@ -272,6 +279,36 @@ function buildDraftData(f: FormState): Record<string, unknown> {
 const comboValueKey = (options: Record<string, string>) =>
   Object.values(options || {}).join('\u0001');
 
+const LARGE_MOBILE_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+function formatUploadSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
+}
+
+async function estimateSelectedPhotoBytes(uris: string[]) {
+  const localUris = uris.filter(uri => !/^https?:\/\//i.test(uri));
+  let bytes = 0;
+  let unknown = 0;
+  if (!localUris.length) return { bytes, unknown };
+
+  try {
+    const FileSystem = require('expo-file-system/legacy');
+    for (const uri of localUris) {
+      try {
+        const info = await FileSystem.getInfoAsync(uri, { size: true });
+        if (info?.exists && Number.isFinite(info.size) && info.size > 0) bytes += info.size;
+        else unknown += 1;
+      } catch {
+        unknown += 1;
+      }
+    }
+  } catch {
+    unknown = localUris.length;
+  }
+  return { bytes, unknown };
+}
+
 export default function AddListingScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
@@ -288,6 +325,7 @@ export default function AddListingScreen() {
   const [publishing, setPublishing] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showPickerSheet, setShowPickerSheet] = useState(false);
+  const [uploadReview, setUploadReview] = useState<{ bytes: number; unknown: number } | null>(null);
   const [dimInputs, setDimInputs] = useState<string[]>(['', '']);
   const [published, setPublished] = useState<
     { id: string; moderated: string; name: string; price: number } | null
@@ -563,7 +601,7 @@ export default function AddListingScreen() {
   };
 
   // ───── Publish ─────
-  const handlePublish = async () => {
+  const handlePublish = async (mobileUploadConfirmed = false) => {
     const f = formRef.current;
     const issue = validateAll(f);
     if (issue) {
@@ -577,6 +615,25 @@ export default function AddListingScreen() {
         t('addListing.capReached', { active: activeCount ?? 0, cap: activeCap ?? 0 })
       );
       return;
+    }
+    if (!f.rightsConfirmed) {
+      setStep(3);
+      toast.warning(t('addListing.rightsTitle'), t('addListing.rightsRequired'));
+      return;
+    }
+    if (!mobileUploadConfirmed && Platform.OS !== 'web') {
+      try {
+        const connection = await NetInfo.fetch();
+        if (connection.type === NetInfoStateType.cellular) {
+          const estimate = await estimateSelectedPhotoBytes(f.images);
+          if (estimate.bytes >= LARGE_MOBILE_UPLOAD_BYTES || estimate.unknown > 0) {
+            setUploadReview(estimate);
+            return;
+          }
+        }
+      } catch {
+        // If the connection type or file size cannot be checked, keep publishing available.
+      }
     }
     setPublishing(true);
     try {
@@ -611,6 +668,7 @@ export default function AddListingScreen() {
         condition: f.condition,
         flawNotes: f.flawNotes.trim(),
         offersEnabled: f.offersEnabled,
+        rightsConfirmed: true,
       };
       if (f.categoryId) payload.categoryId = f.categoryId;
       if (f.sku.trim()) payload.sku = f.sku.trim();
@@ -663,6 +721,9 @@ export default function AddListingScreen() {
       const code = e?.code;
       if (code === 'TIER_CAP' || code === 'VERIFIED_LISTING_LIMIT') {
         toast.warning(t('addListing.listingLimit'), e.message);
+      } else if (code === 'LISTING_RIGHTS_REQUIRED') {
+        setStep(3);
+        toast.warning(t('addListing.rightsTitle'), t('addListing.rightsRequired'));
       } else {
         toast.error(t('common.error'), e?.message || t('common.tryAgain'));
       }
@@ -827,6 +888,9 @@ export default function AddListingScreen() {
                   </Text>
                   <TouchableOpacity onPress={() => nav.navigate('MyListings')} accessibilityRole="button">
                     <Text style={styles.capBannerLink}>{t('addListing.manageListings')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => nav.navigate('SellerToolsSettings')} accessibilityRole="button">
+                    <Text style={styles.capBannerLink}>{t('addListing.viewTiers')}</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -1468,6 +1532,24 @@ export default function AddListingScreen() {
                       </Text>
                     </View>
                   </View>
+
+                  {/* APP-Q541: sellers confirm they may use the listing material */}
+                  <TouchableOpacity
+                    style={styles.toggleRow}
+                    onPress={() => setField('rightsConfirmed', !form.rightsConfirmed)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: form.rightsConfirmed }}
+                  >
+                    <MaterialCommunityIcons
+                      name={form.rightsConfirmed ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                      size={20}
+                      color={form.rightsConfirmed ? COLORS.coral : COLORS.text2}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.toggleText}>{t('addListing.rightsLabel')}</Text>
+                      <Text style={styles.hint}>{t('addListing.rightsHint')}</Text>
+                    </View>
+                  </TouchableOpacity>
                 </View>
               )}
             </ScrollView>
@@ -1518,6 +1600,24 @@ export default function AddListingScreen() {
             {saveStatus === 'saved' && <View style={styles.savedStrip}>{saveChip}</View>}
 
             {/* Camera / library chooser */}
+            <ConfirmModal
+              visible={uploadReview !== null}
+              title={t('addListing.mobileDataUploadTitle')}
+              message={uploadReview?.unknown
+                ? t('addListing.mobileDataUploadUnknownMessage', { size: formatUploadSize(uploadReview.bytes), count: uploadReview.unknown })
+                : t('addListing.mobileDataUploadMessage', { size: formatUploadSize(uploadReview?.bytes ?? 0) })}
+              confirmLabel={t('addListing.uploadOnMobileData')}
+              cancelLabel={t('addListing.waitForWifi')}
+              kind="info"
+              onCancel={() => {
+                setUploadReview(null);
+                void flushSave();
+              }}
+              onConfirm={() => {
+                setUploadReview(null);
+                void handlePublish(true);
+              }}
+            />
             <Modal
               visible={showPickerSheet}
               transparent

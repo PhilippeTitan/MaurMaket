@@ -3,6 +3,7 @@ import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { processRefundPayout, settleSellerDebtPayment } from '../utils/helpers.js';
+import { releaseCancelledOrderStock } from '../utils/orderStock.js';
 
 const router = Router();
 
@@ -43,6 +44,11 @@ router.put('/api/admin/disputes/:id', authRequired, adminRequired, async (req, r
     return res.status(400).json({ error: 'Invalid status' });
   }
   try {
+    const existing = await pool.query('SELECT reason FROM disputes WHERE id = $1', [req.params.id]);
+    if (!existing.rowCount) return res.status(404).json({ error: 'Dispute not found' });
+    if (existing.rows[0].reason === 'cancellation_request') {
+      return res.status(409).json({ error: 'Cancellation requests require the dedicated audited resolution route.' });
+    }
     await pool.query(
       `UPDATE disputes SET status = $1, resolution = COALESCE($2, resolution), updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
       [status, resolution || null, req.params.id]
@@ -66,6 +72,138 @@ router.put('/api/admin/disputes/:id', authRequired, adminRequired, async (req, r
     console.error('Admin dispute update error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// A post-fulfillment cancellation can only resume unchanged after a human
+// review. This endpoint does not cancel an order, assign fault, or issue a
+// refund; those outcomes require their own explicit settlement workflow.
+router.put('/api/admin/cancellation-requests/:id/resolve', authRequired, adminRequired, async (req, res) => {
+  const decision = String(req.body?.decision || '');
+  const note = String(req.body?.note || '').trim().slice(0, 500);
+  if (!['resume_order', 'cancel_before_shipment'].includes(decision) || note.length < 10) {
+    return res.status(400).json({ error: 'Choose a supported resolution and provide a review note of at least 10 characters.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const found = await client.query(
+      `SELECT d.id, d.order_id, d.seller_id, d.raised_by, d.status, d.resolution,
+              o.buyer_id, o.status AS order_status, o.payment_method
+       FROM disputes d JOIN orders o ON o.id = d.order_id
+       WHERE d.id = $1 AND d.reason = 'cancellation_request'
+       FOR UPDATE OF d, o`, [req.params.id]
+    );
+    const request = found.rows[0];
+    if (!request) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cancellation request not found' });
+    }
+    if (request.status !== 'under_review') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Only an accepted, declined, or overdue request in review can be resolved here.' });
+    }
+
+    let outcome = 'order_resumed';
+    let newResolution = 'admin_reviewed_order_resumes';
+    let refundReviewOpened = false;
+    if (decision === 'cancel_before_shipment') {
+      if (request.resolution !== 'seller_accepted_pending_settlement') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'The seller must have accepted this cancellation before an admin can cancel the unshipped portion.' });
+      }
+      const fulfillmentResult = await client.query(
+        `SELECT * FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2 FOR UPDATE`,
+        [request.order_id, request.seller_id]
+      );
+      const fulfillment = fulfillmentResult.rows[0];
+      if (request.order_status === 'completed' || request.order_status === 'cancelled' ||
+          request.payment_method !== 'moncash' || !fulfillment || fulfillment.payment_status !== 'verified' ||
+          fulfillment.fulfillment_status !== 'processing' || fulfillment.fulfillment_method !== 'delivery') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Only an accepted, still-processing MonCash delivery portion can be cancelled here. Shipped, delivered, meetup, and NatCash cases remain under review.' });
+      }
+      const meetupCheckin = await client.query('SELECT 1 FROM meetup_checkins WHERE order_id = $1 LIMIT 1', [request.order_id]);
+      const heldEscrow = await client.query(
+        `SELECT id FROM order_escrow WHERE order_id = $1 AND seller_id = $2 AND status = 'held' FOR UPDATE`,
+        [request.order_id, request.seller_id]
+      );
+      if (meetupCheckin.rowCount || !heldEscrow.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'A meetup has started or held MonCash escrow is unavailable. No cancellation or refund state changed.' });
+      }
+      const existingRefundRequest = await client.query(
+        `SELECT id FROM disputes WHERE order_id = $1 AND seller_id = $2 AND reason = 'refund_request'
+         AND status IN ('open', 'under_review') LIMIT 1`, [request.order_id, request.seller_id]
+      );
+      if (existingRefundRequest.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'A refund review is already open for this seller portion.' });
+      }
+
+      await client.query(
+        `UPDATE seller_fulfillments SET fulfillment_status = 'cancelled', agreement_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+         WHERE order_id = $1 AND seller_id = $2`, [request.order_id, request.seller_id]
+      );
+      await releaseCancelledOrderStock(client, request.order_id, [fulfillment], request.seller_id);
+      await client.query(
+        `UPDATE message_offers SET accepted_checkout_id = NULL
+         WHERE accepted_checkout_id = $1 AND seller_id = $2 AND status = 'accepted'`, [request.order_id, request.seller_id]
+      );
+      const otherActive = await client.query(
+        `SELECT 1 FROM order_items oi LEFT JOIN seller_fulfillments sf
+           ON sf.order_id = oi.order_id AND sf.seller_id = oi.seller_id
+         WHERE oi.order_id = $1 AND oi.seller_id <> $2
+           AND COALESCE(sf.fulfillment_status, 'pending') <> 'cancelled' LIMIT 1`,
+        [request.order_id, request.seller_id]
+      );
+      if (!otherActive.rowCount) {
+        await client.query("UPDATE orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [request.order_id]);
+      }
+      await client.query(
+        `INSERT INTO disputes (order_id, seller_id, raised_by, reason, description, status)
+         VALUES ($1, $2, $3, 'refund_request', $4, 'open')`,
+        [request.order_id, request.seller_id, request.buyer_id,
+          'Admin cancelled this seller portion before shipment after seller acceptance. MonCash refund review is open; no transfer has been approved or confirmed.']
+      );
+      outcome = 'portion_cancelled_refund_pending';
+      newResolution = 'admin_cancelled_before_shipment_refund_review';
+      refundReviewOpened = true;
+    }
+
+    await client.query(
+      `UPDATE disputes SET status = 'resolved', resolution = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`, [request.id, newResolution]
+    );
+    await client.query(
+      `INSERT INTO order_events (order_id, event_type, actor_id, note)
+       VALUES ($1, 'cancellation_response', $2, $3)`,
+      [request.order_id, req.user.id, decision === 'resume_order'
+        ? `Admin reviewed cancellation request ${request.id}; order resumes unchanged. No order/payment/refund state was changed. Review note: ${note}`
+        : `Admin cancelled seller ${request.seller_id}'s unshipped portion after seller acceptance. Separate MonCash refund review opened; no transfer is approved or confirmed. Review note: ${note}`]
+    );
+    await client.query(
+      `UPDATE notifications SET action_resolved = true, is_read = true
+       WHERE (data->>'cancellationRequestId') = $1 AND type IN ('cancellation_requested', 'cancellation_response')`,
+      [String(request.id)]
+    );
+    await client.query('COMMIT');
+
+    const recipients = [...new Set([request.buyer_id, request.seller_id].filter(Boolean))];
+    for (const userId of recipients) {
+      createNotification(userId, decision === 'resume_order' ? 'cancellation_response' : 'order_cancelled',
+        decision === 'resume_order' ? 'Cancellation review complete' : 'Seller portion cancelled',
+        decision === 'resume_order'
+          ? 'The cancellation request was reviewed and closed. The order and payment continue unchanged; no refund was issued.'
+          : 'The unshipped seller portion was cancelled after review. MonCash refund review is open; no refund transfer has been approved or confirmed.',
+        { orderId: request.order_id, sellerId: request.seller_id, cancellationRequestId: request.id, cancellationOutcome: outcome, refundReviewPending: refundReviewOpened });
+    }
+    return res.json({ resolved: true, outcome, orderChanged: decision === 'cancel_before_shipment', paymentChanged: false, refundReviewOpened, refundIssued: false });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Admin cancellation resolution error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
 });
 
 // MonCash refund queue. A refund only leaves this queue after the signed

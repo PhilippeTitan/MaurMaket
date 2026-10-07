@@ -22,6 +22,11 @@ import subscriptionsRouter from './subscriptions.js';
 import feedRouter from './feed.js';
 import verificationRouter from './verification.js';
 import realtimeRouter from './realtime.js';
+import translateRouter from './translate.js';
+import policiesRouter from './policies.js';
+import securityRouter from './security.js';
+import accountRouter from './account.js';
+import dataExportRouter from './dataExport.js';
 
 export function registerRoutes(app) {
   // Routes WITH /api in their path → mount at root
@@ -45,6 +50,11 @@ export function registerRoutes(app) {
   app.use(subscriptionsRouter);
   app.use(feedRouter);
   app.use(realtimeRouter);
+  app.use(translateRouter);
+  app.use(policiesRouter);
+  app.use(securityRouter);
+  app.use(accountRouter);
+  app.use(dataExportRouter);
 
   // Mounted under /api (paths don't include /api)
   app.use('/api', authRouter);

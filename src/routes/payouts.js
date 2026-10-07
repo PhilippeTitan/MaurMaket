@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { pool } from '../config/database.js';
-import { authRequired, verifiedSellerRequired } from '../middleware/auth.js';
+import { authRequired, verifiedSellerRequired, accountActive } from '../middleware/auth.js';
 import { checkSubscriptionStatus, settleSellerDebtPayment } from '../utils/helpers.js';
 import { createNotification } from '../utils/notifications.js';
 
@@ -207,7 +207,7 @@ router.get('/api/seller/payouts', authRequired, sellerRequired, async (req, res)
 });
 
 // Request payout
-router.post('/api/seller/payouts/request', authRequired, sellerRequired, async (req, res) => {
+router.post('/api/seller/payouts/request', authRequired, sellerRequired, accountActive, async (req, res) => {
   if (!req.user?.email_verified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to request payouts.' });
   const tierCheck = await pool.query('SELECT seller_tier FROM users WHERE id = $1', [req.user.id]);
   const sellerTier = tierCheck.rows[0]?.seller_tier || 'none';

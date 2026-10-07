@@ -21,6 +21,7 @@ import { startJobs } from './src/jobs/index.js';
 import { registerRoutes } from './src/routes/index.js';
 import { createAuth, getAuth } from './src/config/auth.js';
 import { registerTemporaryStorageUpload } from './src/utils/temporaryStorage.js';
+import { BASELINE_POLICY_VERSIONS, POLICY_KINDS } from './src/utils/policyBaseline.js';
 import { toNodeHandler } from 'better-auth/node';
 
 // ───── Better Auth Studio (admin dashboard, optional) ─────
@@ -1659,6 +1660,10 @@ await step('NatCash phone separation', () => c.query(`
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS is_moderated BOOLEAN DEFAULT false;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderation_reason TEXT;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderated_at TIMESTAMPTZ;
+      -- Author deletion keeps the one-review-per-order audit row but hides it.
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+      -- One gentle review reminder per completed order (see the jobs cron).
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS review_reminder_sent_at TIMESTAMPTZ;
 
       CREATE TABLE IF NOT EXISTS user_reports (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1674,6 +1679,9 @@ await step('NatCash phone separation', () => c.query(`
       );
       CREATE INDEX IF NOT EXISTS idx_user_reports_target ON user_reports(target_type, target_id);
       CREATE INDEX IF NOT EXISTS idx_user_reports_reporter ON user_reports(reporter_id);
+      -- APP-Q544: rights holders get a dedicated identification path on a report;
+      -- a report alone is still not proof.
+      ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS rights_holder BOOLEAN DEFAULT false;
     `));
 
     // 81. Add Product experience: condition/disclosure, lifecycle states, drafts,
@@ -1689,6 +1697,11 @@ await step('NatCash phone separation', () => c.query(`
       ALTER TABLE products ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS appeal_note TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS appealed_at TIMESTAMPTZ;
+      -- Content-rights / authenticity review (APP-Q545–Q547). moderation_category is
+      -- a stable code; moderation_detail describes the affected content for the seller.
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS moderation_category VARCHAR(30);
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS moderation_detail TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS content_updated_during_review BOOLEAN DEFAULT false;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS has_variants BOOLEAN DEFAULT false;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS attrs JSONB;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS meetup_enabled BOOLEAN;
@@ -1771,6 +1784,110 @@ await step('NatCash phone separation', () => c.query(`
       ) AS v(id, name, display_order)
       WHERE NOT EXISTS (SELECT 1 FROM categories c WHERE lower(c.name) = lower(v.name))
       ON CONFLICT (id) DO NOTHING;
+    `));
+
+    // 83. Policy transparency & consent (Batch 72, APP-Q356–APP-Q365)
+    await step('Policy versions, acceptances, and notices', () => c.query(`
+      CREATE TABLE IF NOT EXISTS policy_versions (
+        id SERIAL PRIMARY KEY,
+        kind VARCHAR(16) NOT NULL,
+        version VARCHAR(32) NOT NULL,
+        is_material BOOLEAN NOT NULL DEFAULT false,
+        effective_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        summaries JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (kind, version)
+      );
+      CREATE INDEX IF NOT EXISTS idx_policy_versions_kind_effective ON policy_versions (kind, effective_at DESC);
+      CREATE TABLE IF NOT EXISTS user_policy_acceptances (
+        id SERIAL PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind VARCHAR(16) NOT NULL,
+        version VARCHAR(32) NOT NULL,
+        accepted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (user_id, kind, version)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_policy_acceptances_user ON user_policy_acceptances (user_id, accepted_at DESC);
+      CREATE TABLE IF NOT EXISTS user_policy_notices (
+        id SERIAL PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        policy_version_id INTEGER NOT NULL REFERENCES policy_versions(id) ON DELETE CASCADE,
+        dismissed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (user_id, policy_version_id)
+      );
+    `));
+
+    // 84. Seed baseline policy documents (one row per kind; skips kinds that already exist)
+    await step('Seed baseline policy versions', async () => {
+      for (const doc of BASELINE_POLICY_VERSIONS) {
+        if (!POLICY_KINDS.includes(doc.kind)) continue;
+        await c.query(
+          `INSERT INTO policy_versions (kind, version, is_material, summaries)
+           SELECT $1, $2, $3, $4::jsonb
+           WHERE NOT EXISTS (SELECT 1 FROM policy_versions WHERE kind = $1)`,
+          [doc.kind, doc.version, Boolean(doc.isMaterial), JSON.stringify(doc.summaries || {})]
+        );
+      }
+    });
+
+    // 85. Discoverability (Batch 77, APP-Q431): keep a person out of in-app
+    // search/suggestions while leaving direct links, listings, orders, and
+    // messages working. Defaults to true so existing accounts stay findable.
+    await step('search_discoverable column', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS search_discoverable BOOLEAN NOT NULL DEFAULT true;
+    `));
+    await step('search_discoverable lookup index', () => c.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_search_discoverable ON users (search_discoverable) WHERE search_discoverable = false;
+    `));
+
+    // 86. Private security activity history (Batch 73, APP-Q369): new sign-ins
+    // and other security events are recorded per account so the owner can
+    // review them in-app. Only structured type codes + non-secret metadata are
+    // stored; all user-facing wording is rendered from the app's locale.
+    await step('Security activity events', () => c.query(`
+      CREATE TABLE IF NOT EXISTS security_events (
+        id SERIAL PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        event_type VARCHAR(48) NOT NULL,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_security_events_user_created ON security_events (user_id, created_at DESC);
+    `));
+
+    // 87. Fast account freeze for suspected compromise (Batch 73/74/75,
+    // APP-Q371). Deliberately minimal: the account keeps sign-in, messages,
+    // orders, support, recovery, and export. Only new listings and payout
+    // requests are paused while the freeze is active.
+    await step('Account freeze columns', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS frozen_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS freeze_reason TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS frozen_by VARCHAR(32);
+    `));
+    await step('Account freeze lookup index', () => c.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_frozen_at ON users (frozen_at) WHERE frozen_at IS NOT NULL;
+    `));
+
+    // 88. Data export lifecycle (Batch 74/75, APP-Q379–APP-Q391). Exports are
+    // prepared as jobs rather than streamed straight out of a GET, so the user
+    // can see status, cancel while generating, and retry safely. A job's
+    // payload is only ever written by the atomic pending→ready transition, so a
+    // cancelled or failed generation can never leave a partial archive behind.
+    await step('Data export jobs', () => c.query(`
+      CREATE TABLE IF NOT EXISTS export_jobs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        payload JSONB,
+        error VARCHAR(64),
+        requested_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ,
+        cancelled_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_jobs_user_requested ON export_jobs (user_id, requested_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_export_jobs_pending ON export_jobs (status) WHERE status = 'pending';
     `));
 
     if (failed.length > 0) {

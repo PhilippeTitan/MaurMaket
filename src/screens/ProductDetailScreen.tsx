@@ -715,6 +715,9 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
                   {review.comment ? (
                     <Text style={styles.reviewComment}>{review.comment}</Text>
                   ) : null}
+                  {(review.is_transaction_level || review.is_verified_purchase) ? (
+                    <Text style={styles.reviewTransaction}>{t('productDetail.completedTransaction')}</Text>
+                  ) : null}
                   {review.seller_response ? (
                     <View style={styles.sellerResponse}>
                       <View style={styles.sellerResponseHeader}>
@@ -983,6 +986,7 @@ const styles = StyleSheet.create({
   reviewDate: { fontSize: 10, color: COLORS.text2, marginTop: 1 },
   starsRow: { flexDirection: 'row', gap: 1 },
   reviewComment: { fontSize: 12, color: COLORS.text2, marginTop: 6, lineHeight: 17 },
+  reviewTransaction: { fontSize: 11, color: COLORS.text3, marginTop: 4 },
   sellerResponse: {
     marginTop: 6, marginLeft: 8, paddingLeft: 8,
     borderLeftWidth: 2, borderLeftColor: COLORS.coral,

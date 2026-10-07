@@ -33,9 +33,10 @@ import * as Haptics from 'expo-haptics';
 import AnimatedRe, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 import { useAudioRecorder, useAudioRecorderState, RecordingPresets, setAudioModeAsync, requestRecordingPermissionsAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { useLowDataMode } from '../hooks/useLowDataMode';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
-type LocalMessage = Message & { pending?: boolean; failed?: boolean; localImageUri?: string; reactions?: { emoji: string; userId: string; userName: string }[]; delivery_status?: 'sent' | 'delivered' | 'read'; reply_to?: Message['reply_to']; client_id?: string };
+type LocalMessage = Message & { pending?: boolean; failed?: boolean; dataPaused?: boolean; localImageUri?: string; reactions?: { emoji: string; userId: string; userName: string }[]; delivery_status?: 'sent' | 'delivered' | 'read'; reply_to?: Message['reply_to']; client_id?: string };
 // WhatsApp-style swipe-right-to-reply on a message bubble.
 function SwipeReplyRow({ children, onReply }: { children: React.ReactNode; onReply: () => void }) {
   const { t } = useTranslation();
@@ -66,20 +67,34 @@ function SwipeReplyRow({ children, onReply }: { children: React.ReactNode; onRep
 let activeVoicePlayer: { pause: () => void } | null = null;
 
 const VOICE_BARS = 22;
-function VoiceNotePlayer({ uri, isMe, duration }: { uri: string; isMe: boolean; duration: number }) {
+function VoiceNotePlayer({ uri, isMe, duration, deferUntilPlay = false }: { uri: string; isMe: boolean; duration: number; deferUntilPlay?: boolean }) {
   const { t } = useTranslation();
-  const player = useAudioPlayer(uri, { updateInterval: 250 });
+  const player = useAudioPlayer(deferUntilPlay ? null : uri, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
+  const [wantsPlayback, setWantsPlayback] = useState(false);
   const total = status.duration && isFinite(status.duration) && status.duration > 0
     ? status.duration
     : (duration || 0);
   const current = total > 0 ? Math.min(status.currentTime || 0, total) : 0;
   const progress = total > 0 ? current / total : 0;
   const finished = status.didJustFinish;
+  useEffect(() => {
+    if (!deferUntilPlay || !wantsPlayback || !status.isLoaded || status.error) return;
+    if (activeVoicePlayer && activeVoicePlayer !== player) activeVoicePlayer.pause();
+    activeVoicePlayer = player;
+    player.play();
+    setWantsPlayback(false);
+  }, [deferUntilPlay, wantsPlayback, status.isLoaded, status.error, player]);
   const toggle = () => {
     try {
       if (status.playing) {
         player.pause();
+      } else if (deferUntilPlay && status.error) {
+        setWantsPlayback(true);
+        player.replace(uri);
+      } else if (deferUntilPlay && !status.isLoaded) {
+        setWantsPlayback(true);
+        player.replace(uri);
       } else {
         if (activeVoicePlayer && activeVoicePlayer !== player) activeVoicePlayer.pause();
         activeVoicePlayer = player;
@@ -90,12 +105,14 @@ function VoiceNotePlayer({ uri, isMe, duration }: { uri: string; isMe: boolean; 
   };
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   const shownTime = status.playing || (!finished && current > 0) ? current : (finished ? total : total);
+  const waitingForTap = deferUntilPlay && !status.isLoaded && !status.isBuffering && !status.error;
+  const loading = wantsPlayback || status.isBuffering || (deferUntilPlay && !status.isLoaded && !status.error && !waitingForTap);
   const fillColor = isMe ? COLORS.white : COLORS.coral;
   const trackColor = isMe ? 'rgba(255,255,255,0.3)' : COLORS.border;
   return (
     <View style={styles.voiceRow} accessibilityLabel={t('chat.voiceMessage')}>
-      <TouchableOpacity onPress={toggle} style={[styles.voicePlay, isMe && styles.voicePlayMe]} accessibilityRole="button" accessibilityLabel={t('chat.voicePlayback')}>
-        <MaterialCommunityIcons name={status.playing ? 'pause' : 'play'} size={16} color={isMe ? COLORS.coral : COLORS.white} />
+      <TouchableOpacity onPress={toggle} style={[styles.voicePlay, isMe && styles.voicePlayMe]} accessibilityRole="button" accessibilityLabel={status.error ? t('chat.retryVoiceLoad') : waitingForTap ? t('chat.tapToPlayVoice') : t('chat.voicePlayback')}>
+        {loading ? <ActivityIndicator size="small" color={isMe ? COLORS.coral : COLORS.white} /> : <MaterialCommunityIcons name={status.error ? 'refresh' : waitingForTap ? 'cloud-download-outline' : status.playing ? 'pause' : 'play'} size={16} color={isMe ? COLORS.coral : COLORS.white} />}
       </TouchableOpacity>
       <View style={styles.voiceBars}>
         {Array.from({ length: VOICE_BARS }).map((_, i) => {
@@ -104,7 +121,7 @@ function VoiceNotePlayer({ uri, isMe, duration }: { uri: string; isMe: boolean; 
           return <View key={i} style={{ width: 2, height: h, borderRadius: 1, backgroundColor: active ? fillColor : trackColor }} />;
         })}
       </View>
-      <Text style={[styles.voiceTime, isMe && styles.voiceTimeMe]}>{fmt(Math.round(shownTime))}</Text>
+      <Text style={[styles.voiceTime, isMe && styles.voiceTimeMe]}>{status.error ? t('chat.retryVoiceLoad') : waitingForTap ? t('chat.tapToPlayVoice') : fmt(Math.round(shownTime))}</Text>
     </View>
   );
 }
@@ -150,7 +167,7 @@ const urlHost = (u: string) => { try { return new URL(u).hostname.replace(/^www\
 const previewCache = new Map<string, LinkPreviewData | null>();
 const previewPending = new Map<string, Promise<LinkPreviewData | null>>();
 
-function LinkPreview({ url, isMe }: { url: string; isMe: boolean }) {
+function LinkPreview({ url, isMe, showImage = true }: { url: string; isMe: boolean; showImage?: boolean }) {
   const [preview, setPreview] = useState<LinkPreviewData | null | undefined>(() => (previewCache.has(url) ? previewCache.get(url)! : undefined));
   useEffect(() => {
     if (preview !== undefined) return;
@@ -175,7 +192,7 @@ function LinkPreview({ url, isMe }: { url: string; isMe: boolean }) {
       accessibilityRole="link"
       accessibilityLabel={preview.title || host}
     >
-      {preview.image ? (
+      {preview.image && showImage ? (
         <Image source={{ uri: preview.image }} style={styles.linkThumb} resizeMode="cover" />
       ) : (
         <View style={[styles.linkThumb, styles.linkThumbFallback]}>
@@ -227,6 +244,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const reduceMotion = useReduceMotion();
+  const lowDataMode = useLowDataMode();
   const toast = useToast();
   const { conversationId, otherUserName, otherUserId, otherUserAvatar, otherUserStoreLogoUrl, otherUserUseStoreIdentity, otherUserTier, draftOffer } = route.params;
   const [messages, setMessages] = useState<LocalMessage[]>([]);
@@ -255,6 +273,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [preview, setPreview] = useState<{ uri: string; sender: string; time: string } | null>(null);
   const [viewerChrome, setViewerChrome] = useState(true);
+  const [loadedChatImageIds, setLoadedChatImageIds] = useState<Set<string>>(() => new Set());
+  const [loadedMediaImageIds, setLoadedMediaImageIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    setLoadedChatImageIds(new Set());
+    setLoadedMediaImageIds(new Set());
+  }, [conversationId]);
 
   // Shared media gallery
   const [mediaVisible, setMediaVisible] = useState(false);
@@ -368,6 +393,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   const outboxRef = useRef<OutboxEntry[]>([]);
   const flushingRef = useRef(false);
   const onlineRef = useRef(true);
+  const lowDataRef = useRef(lowDataMode);
+  lowDataRef.current = lowDataMode;
   const lastMarkReadRef = useRef(0);
 
   // ───── Outbox: persist, flush, reconcile ─────
@@ -396,11 +423,12 @@ export default function ChatScreen({ route, navigation }: Props) {
     setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, pending: false, failed: true } : m)));
   };
 
-  const flushOutbox = async (opts?: { resetAttempts?: boolean }) => {
+  const flushOutbox = async (opts?: { resetAttempts?: boolean; allowCellularMediaId?: string }) => {
     if (flushingRef.current) return;
     flushingRef.current = true;
     try {
       let entries = (await readOutbox()).filter(e => e.conversationId === conversationId);
+      const connectionType = (await NetInfo.fetch().catch(() => null))?.type;
       if (opts?.resetAttempts) {
         entries = entries.map(e => ({ ...e, attempts: 0 }));
         const others = (await readOutbox()).filter(e => e.conversationId !== conversationId);
@@ -408,6 +436,11 @@ export default function ChatScreen({ route, navigation }: Props) {
       }
       for (const entry of entries) {
         if (entry.attempts >= 5) continue; // give up until explicit retry / reconnect
+        const pendingMediaUpload = (entry.messageType === 'image' && !entry.imageUrl) || (entry.messageType === 'audio' && !entry.audioUrl);
+        if (lowDataRef.current && connectionType === 'cellular' && pendingMediaUpload && opts?.allowCellularMediaId !== entry.tempId) {
+          setMessages(prev => prev.map(m => m.id === entry.tempId ? { ...m, pending: true, failed: false, dataPaused: true } : m));
+          continue;
+        }
         try {
           let imageUrl = entry.imageUrl;
           if (entry.messageType === 'image' && !imageUrl) {
@@ -447,14 +480,14 @@ export default function ChatScreen({ route, navigation }: Props) {
       return;
     }
     await persistEntry({ ...entry, attempts: 0 });
-    setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, pending: true, failed: false } : m)));
-    flushOutbox();
+    setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, pending: true, failed: false, dataPaused: false } : m)));
+    flushOutbox({ allowCellularMediaId: tempId });
   };
 
   const enqueueLocal = (entry: OutboxEntry, optimistic: LocalMessage) => {
     stickToLatest.current = true;
     setMessages(prev => [...prev.filter(m => m.id !== entry.tempId), optimistic]);
-    persistEntry(entry).then(() => flushOutbox());
+    persistEntry(entry).then(() => flushOutbox({ allowCellularMediaId: entry.tempId }));
   };
 
   const fetchMessages = async (pageNum = 0, older = false, quiet = false) => {
@@ -1234,26 +1267,43 @@ startPolling();
             </View>
           </View>
         )}
-        {isImage ? (
-          <TouchableOpacity onPress={() => setPreview({ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url!, sender: isMe ? (store.user?.full_name || 'You') : (otherUserName || 'Message'), time: new Date(item.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })} accessibilityRole="imagebutton" accessibilityLabel={t('chat.openPhoto')}>
-            <View>
-              <Image source={{ uri: item.localImageUri || getImageUrl(item.image_url!) || item.image_url! }} style={styles.chatImage} resizeMode="cover" />
-              {item.pending && (
-                <View style={styles.imageOverlay}>
-                  <ActivityIndicator size="small" color={COLORS.white} />
+        {isImage ? (() => {
+          const imageUri = item.localImageUri || getImageUrl(item.image_url!) || item.image_url!;
+          const needsTap = lowDataMode && !item.localImageUri && !loadedChatImageIds.has(item.id);
+          return (
+            <TouchableOpacity
+              onPress={() => {
+                if (needsTap) {
+                  setLoadedChatImageIds(current => new Set(current).add(item.id));
+                  return;
+                }
+                setPreview({ uri: imageUri, sender: isMe ? (store.user?.full_name || 'You') : (otherUserName || 'Message'), time: new Date(item.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) });
+              }}
+              accessibilityRole="imagebutton"
+              accessibilityLabel={needsTap ? t('chat.tapToLoadPhoto') : t('chat.openPhoto')}
+            >
+              {needsTap ? (
+                <View style={[styles.chatImage, styles.chatImagePlaceholder]}>
+                  <MaterialCommunityIcons name="cloud-download-outline" size={30} color={COLORS.text2} />
+                  <Text style={styles.chatImagePlaceholderText}>{t('chat.tapToLoadPhoto')}</Text>
+                </View>
+              ) : (
+                <View>
+                  <Image source={{ uri: imageUri }} style={styles.chatImage} resizeMode="cover" />
+                  {item.pending && <View style={styles.imageOverlay}><ActivityIndicator size="small" color={COLORS.white} /></View>}
                 </View>
               )}
-            </View>
-          </TouchableOpacity>
-        ) : null}
-        {isAudio ? <VoiceNotePlayer uri={item.audio_url!} isMe={isMe} duration={item.audio_duration || 0} /> : null}
+            </TouchableOpacity>
+          );
+        })() : null}
+        {isAudio ? <VoiceNotePlayer uri={item.audio_url!} isMe={isMe} duration={item.audio_duration || 0} deferUntilPlay={lowDataMode && !item.pending} /> : null}
         {item.content ? (
           <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
             <LinkifiedText content={item.content} isMe={isMe} />
           </Text>
         ) : null}
         {!isImage && !isOffer && !isAudio && item.content && !item.is_deleted && findFirstUrl(item.content) ? (
-          <LinkPreview url={findFirstUrl(item.content)!} isMe={isMe} />
+          <LinkPreview url={findFirstUrl(item.content)!} isMe={isMe} showImage={!lowDataMode} />
         ) : null}
         {item.is_edited && !isImage && <Text style={styles.editedLabel}>edited</Text>}
         <View style={styles.bubbleFooter}>
@@ -1262,6 +1312,11 @@ startPolling();
           {/* Delivery indicator for own messages (WhatsApp ticks) */}
           {isMe && item.pending && (
             <MaterialCommunityIcons name="clock-outline" size={11} color="rgba(255,255,255,0.55)" accessibilityLabel={t('chat.sending')} />
+          )}
+          {isMe && item.dataPaused && (
+            <TouchableOpacity onPress={() => retryMessage(item.id)} accessibilityRole="button" accessibilityLabel={t('chat.waitingForWifiTapToSend')}>
+              <Text style={styles.messageFailed}>{t('chat.waitingForWifiTapToSend')}</Text>
+            </TouchableOpacity>
           )}
           {isMe && item.failed && (
             <View style={styles.retryWrap} accessibilityRole="button" accessibilityLabel={t('chat.tapRetry')}>
@@ -1508,6 +1563,10 @@ startPolling();
                     <TouchableOpacity
                       style={styles.mediaCell}
                       onPress={() => {
+                        if (lowDataMode && !loadedMediaImageIds.has(item.id)) {
+                          setLoadedMediaImageIds(current => new Set(current).add(item.id));
+                          return;
+                        }
                         setMediaVisible(false);
                         setPreview({
                           uri: getImageUrl(item.image_url) || item.image_url,
@@ -1516,9 +1575,13 @@ startPolling();
                         });
                       }}
                       accessibilityRole="imagebutton"
-                      accessibilityLabel={t('chat.openPhoto')}
+                      accessibilityLabel={lowDataMode && !loadedMediaImageIds.has(item.id) ? t('chat.tapToLoadPhoto') : t('chat.openPhoto')}
                     >
-                      <Image source={{ uri: getImageUrl(item.image_url) || item.image_url }} style={styles.mediaCellImg} resizeMode="cover" />
+                      {lowDataMode && !loadedMediaImageIds.has(item.id) ? (
+                        <View style={styles.mediaCellPlaceholder}>
+                          <MaterialCommunityIcons name="cloud-download-outline" size={24} color={COLORS.text2} />
+                        </View>
+                      ) : <Image source={{ uri: getImageUrl(item.image_url) || item.image_url }} style={styles.mediaCellImg} resizeMode="cover" />}
                     </TouchableOpacity>
                   )}
                 />
@@ -1821,6 +1884,8 @@ const styles = StyleSheet.create({
   bubbleTextMe: { color: COLORS.white },
   bubbleTime: { fontSize: 10, color: 'rgba(255,255,255,0.65)', marginTop: 4, alignSelf: 'flex-end' },
   chatImage: { width: 240, height: 240, borderRadius: RADIUS.media },
+  chatImagePlaceholder: { backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16 },
+  chatImagePlaceholderText: { color: COLORS.text2, fontSize: 12, textAlign: 'center' },
   imageOverlay: { ...StyleSheet.absoluteFill, borderRadius: RADIUS.media, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' } as any,
   bubbleTimeImage: { marginTop: 4 },
   messageState: { fontSize: 10, color: COLORS.text2, marginTop: 3, alignSelf: 'flex-end' },
@@ -2293,6 +2358,7 @@ const styles = StyleSheet.create({
   mediaGrid: { padding: 6 },
   mediaCell: { width: '31.5%', aspectRatio: 1, marginBottom: 6, borderRadius: 8, overflow: 'hidden', backgroundColor: COLORS.surface },
   mediaCellImg: { width: '100%', height: '100%' },
+  mediaCellPlaceholder: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface },
   mediaEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
   mediaEmptyText: { fontSize: 14, color: COLORS.text2, textAlign: 'center' },
   mediaLinks: { padding: SPACING.md, gap: 8 },

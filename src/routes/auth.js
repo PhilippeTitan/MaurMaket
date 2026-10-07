@@ -172,7 +172,7 @@ router.get('/user/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed,
-              store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, language, pinned_product_id
+              store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, language, pinned_product_id
        FROM users WHERE id = $1`,
       [req.user.id]
     );
@@ -189,7 +189,7 @@ router.put('/user/profile', authRequired, async (req, res) => {
     fullName, email, phone, natcashPhone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng,
     showRealName, useStoreIdentity, acceptedPaymentMethods,
     storeName, storeLogoUrl, storeDescription, storeServiceArea, storeCategory,
-    showPublicCity, hideFollowerLists, hideFollowerCounts, language, pinnedProductId
+    showPublicCity, hideFollowerLists, hideFollowerCounts, searchDiscoverable, language, pinnedProductId
   } = req.body;
   email = undefined;
   if (phone) phone = phone.replace(/^\+?509/, '').replace(/^\+/, '');
@@ -223,6 +223,7 @@ router.put('/user/profile', authRequired, async (req, res) => {
         show_public_city = COALESCE($20, show_public_city),
         hide_follower_lists = COALESCE($21, hide_follower_lists),
         hide_follower_counts = COALESCE($22, hide_follower_counts),
+        search_discoverable = COALESCE($25, search_discoverable),
         language = COALESCE($23, language),
         pinned_product_id = CASE WHEN $24::text = 'clear' THEN NULL WHEN $24 IS NOT NULL THEN $24::uuid ELSE pinned_product_id END,
         email_verified = email_verified,
@@ -230,7 +231,7 @@ router.put('/user/profile', authRequired, async (req, res) => {
        WHERE id = $6
        RETURNING id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,
                  location_address, location_city, location_lat, location_lng, username, show_real_name,
-                 store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, language, pinned_product_id`,
+                 store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, language, pinned_product_id`,
       [
         fullName, email || null, phone, bio, avatarUrl, req.user.id, locationAddress || null, locationCity || null, locationLat || null, locationLng || null,
         showRealName !== undefined ? showRealName : null, useStoreIdentity !== undefined ? useStoreIdentity : null,
@@ -239,7 +240,8 @@ router.put('/user/profile', authRequired, async (req, res) => {
         storeServiceArea !== undefined ? storeServiceArea : null, storeCategory !== undefined ? storeCategory : null,
         showPublicCity !== undefined ? showPublicCity : null, hideFollowerLists !== undefined ? hideFollowerLists : null,
         hideFollowerCounts !== undefined ? hideFollowerCounts : null, language || null,
-        pinnedProductId !== undefined ? pinnedProductId : null
+        pinnedProductId !== undefined ? pinnedProductId : null,
+        searchDiscoverable !== undefined ? searchDiscoverable : null
       ]
     );
     res.json({ user: result.rows[0] });
@@ -347,21 +349,17 @@ router.post('/users/push-token', authRequired, async (req, res) => {
 // ACCOUNT DELETION (GDPR / App Store Compliance)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get('/user/export-data', authRequired, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const [profile, orders, messages, notifications, reviews] = await Promise.all([
-      pool.query('SELECT id, full_name, email, phone, bio, role, seller_tier, created_at FROM users WHERE id = $1', [userId]),
-      pool.query('SELECT * FROM orders WHERE buyer_id = $1 ORDER BY created_at DESC', [userId]),
-      pool.query('SELECT m.* FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.buyer_id = $1 OR c.seller_id = $1 ORDER BY m.created_at DESC', [userId]),
-      pool.query('SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC', [userId]),
-      pool.query('SELECT * FROM reviews WHERE reviewer_id = $1 OR seller_id = $1 ORDER BY created_at DESC', [userId]),
-    ]);
-    res.json({ exportedAt: new Date().toISOString(), profile: profile.rows[0] || null, orders: orders.rows, messages: messages.rows, notifications: notifications.rows, reviews: reviews.rows });
-  } catch (err) {
-    console.error('Account export error:', err);
-    res.status(500).json({ error: 'Failed to export account data' });
-  }
+// Batch 74/75 (APP-Q391): the old synchronous export has been replaced by the
+// identity-confirmed export lifecycle in src/routes/dataExport.js. It now
+// answers 410 so older clients get a clear signal instead of silently bypassing
+// re-authentication. New flow: GET /api/user/export/summary,
+// POST /api/user/export, GET /api/user/export/:id/download.
+router.get('/user/export-data', authRequired, (req, res) => {
+  res.status(410).json({
+    error: 'Data exports now confirm your identity first. Open Your Data & Privacy in Settings to prepare an export.',
+    code: 'EXPORT_FLOW_REPLACED',
+    export_endpoint: '/api/user/export',
+  });
 });
 
 router.delete('/user/delete-account', authRequired, async (req, res) => {

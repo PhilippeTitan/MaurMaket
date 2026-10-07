@@ -1,19 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenHeader from '../components/ScreenHeader';
 import LocationPicker from '../components/LocationPicker';
 import { COLORS, RADIUS, SPACING } from '../theme';
-import { decideBuyerFulfillment, getPendingAgreements, beginPendingPayment } from '../api';
+import { decideBuyerFulfillment, getPendingAgreements, beginPendingPayment, removePendingCheckoutSeller } from '../api';
 import { useToast } from '../components/Toast';
 import { useTranslation } from '@/localization';
 import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MeetupProposal'>;
 type Agreement = { id: string; seller_id: string; seller_name: string; status: string; last_proposed_by: string; response_expires_at: string; terms: { method: string; deliveryFee?: number; meetupAt?: string; location?: { lat: number; lng: number; address?: string; note?: string } } };
-type Snapshot = { checkout: { status: string; payment_method: string; expires_at: string }; agreements: Agreement[]; history: Array<{ seller_id: string; action: string; version: number; terms: Agreement['terms']; created_at: string }> };
+type Snapshot = { checkout: { status: string; payment_method: string; total_amount: number; expires_at: string }; agreements: Agreement[]; history: Array<{ seller_id: string; action: string; version: number; terms: Agreement['terms']; created_at: string }>; canRemoveSeller: boolean };
 
 const asLocalInput = (value?: string) => {
   const date = value ? new Date(value) : new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -82,6 +82,29 @@ export default function MeetupProposalScreen({ route, navigation }: Props) {
     finally { setBusy(false); }
   };
 
+  const confirmRemoveSeller = (agreement: Agreement) => {
+    Alert.alert(t('meetupProposal.removeSellerTitle'), t('meetupProposal.removeSellerBody', { seller: agreement.seller_name }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('meetupProposal.removeSeller'), style: 'destructive', onPress: () => {
+        void (async () => {
+          setBusy(true);
+          try {
+            const result = await removePendingCheckoutSeller(pendingId, agreement.seller_id) as { checkoutCancelled?: boolean; promoRemoved?: boolean };
+            if (result.checkoutCancelled) {
+              toast.show({ kind: 'success', title: t('meetupProposal.checkoutCancelledTitle'), message: t('meetupProposal.checkoutCancelledBody') });
+              navigation.goBack();
+              return;
+            }
+            await refresh();
+            toast.show({ kind: 'success', title: t('meetupProposal.sellerRemovedTitle'), message: result.promoRemoved ? t('meetupProposal.sellerRemovedPromoBody') : t('meetupProposal.sellerRemovedBody') });
+          } catch (error) {
+            toast.error(t('meetupProposal.updateFailed'), error instanceof Error ? error.message : t('common.tryAgain'));
+          } finally { setBusy(false); }
+        })();
+      } },
+    ]);
+  };
+
   useEffect(() => {
     if (counterSeller) {
       const selected = snapshot?.agreements.find(item => item.seller_id === counterSeller);
@@ -103,6 +126,7 @@ export default function MeetupProposalScreen({ route, navigation }: Props) {
           <Text style={styles.subtitle}>{expired ? t('meetupProposal.expiredBody') : snapshot.checkout.payment_method === 'natcash' ? allAccepted ? t('meetupProposal.natcashReady') : t('meetupProposal.natcashBody') : allAccepted ? t('meetupProposal.moncashReady') : t('meetupProposal.moncashWaiting')}</Text>
         </View>
       </Animated.View>
+      {!expired && <Text style={styles.total}>{t('meetupProposal.remainingTotal', { amount: Number(snapshot.checkout.total_amount || 0).toLocaleString() })}</Text>}
 
       {snapshot.agreements.map(agreement => {
         const term = agreement.terms || {};
@@ -118,6 +142,7 @@ export default function MeetupProposalScreen({ route, navigation }: Props) {
             <TouchableOpacity style={styles.secondary} disabled={busy} onPress={() => void act(agreement, 'accept')} accessibilityRole="button"><Text style={styles.secondaryText}>{t('meetupProposal.acceptPlan')}</Text></TouchableOpacity>
             <TouchableOpacity style={styles.secondary} disabled={busy} onPress={() => setCounterSeller(counterSeller === agreement.seller_id ? null : agreement.seller_id)} accessibilityRole="button"><Text style={styles.secondaryText}>{t('meetupProposal.suggestChange')}</Text></TouchableOpacity>
           </View>}
+          {snapshot.canRemoveSeller && snapshot.checkout.status === 'pending' && <TouchableOpacity style={styles.removeSeller} disabled={busy} onPress={() => confirmRemoveSeller(agreement)} accessibilityRole="button"><Text style={styles.removeSellerText}>{t('meetupProposal.removeSeller')}</Text></TouchableOpacity>}
           {(awaitingBuyer || sellerDeclined || (agreement.status === 'accepted' && snapshot.checkout.status === 'pending')) && term.method === 'meetup' && <TouchableOpacity onPress={() => setCounterSeller(counterSeller === agreement.seller_id ? null : agreement.seller_id)} accessibilityRole="button"><Text style={styles.link}>{sellerDeclined ? t('meetupProposal.chooseOtherSpot') : agreement.status === 'accepted' ? t('meetupProposal.proposeChange') : t('meetupProposal.openMapCounter')}</Text></TouchableOpacity>}
           {counterSeller === agreement.seller_id && <View style={styles.counterBox}>
             <Text style={styles.counterTitle}>{t('meetupProposal.counterTitle')}</Text>
@@ -130,7 +155,7 @@ export default function MeetupProposalScreen({ route, navigation }: Props) {
       })}
 
       {allAccepted && snapshot.checkout.payment_method === 'natcash' && <TouchableOpacity style={styles.primary} onPress={() => navigation.navigate('Orders')} accessibilityRole="button"><Text style={styles.primaryText}>{t('meetupProposal.viewOrder')}</Text></TouchableOpacity>}
-      {snapshot.checkout.status === 'pending' && !expired && <TouchableOpacity style={styles.cancel} disabled={busy} onPress={() => {
+      {snapshot.checkout.status === 'pending' && !expired && <TouchableOpacity style={styles.cancel} disabled={busy || !snapshot.canRemoveSeller} onPress={() => {
         const open = snapshot.agreements.find(item => item.status !== 'accepted') || snapshot.agreements[0];
         if (open) void act(open, 'cancel');
       }} accessibilityRole="button"><Text style={styles.cancelText}>{t('meetupProposal.cancel')}</Text></TouchableOpacity>}
@@ -144,6 +169,7 @@ const styles = StyleSheet.create({
   intro: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.surface, borderRadius: RADIUS.card, borderWidth: 1, borderColor: COLORS.border, padding: 16 },
   icon: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.coral + '18', alignItems: 'center', justifyContent: 'center' },
   title: { color: COLORS.text, fontSize: 17, fontWeight: '700' }, subtitle: { color: COLORS.text2, fontSize: 12, lineHeight: 17, marginTop: 4 },
+  total: { color: COLORS.text2, fontSize: 13, fontWeight: '700', alignSelf: 'flex-end' },
   card: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 16, gap: 10 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, seller: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   status: { fontSize: 11, fontWeight: '700' }, good: { color: COLORS.green }, action: { color: COLORS.coral }, waiting: { color: COLORS.text2 },
@@ -154,4 +180,5 @@ const styles = StyleSheet.create({
   input: { minHeight: 46, backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, color: COLORS.text, paddingHorizontal: 12 },
   primary: { minHeight: 46, borderRadius: RADIUS.button, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 4 }, primaryText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
   cancel: { minHeight: 44, alignItems: 'center', justifyContent: 'center' }, cancelText: { color: COLORS.text2, fontSize: 13, fontWeight: '600' },
+  removeSeller: { minHeight: 44, alignItems: 'flex-start', justifyContent: 'center' }, removeSellerText: { color: COLORS.text2, fontSize: 13, fontWeight: '600' },
 });

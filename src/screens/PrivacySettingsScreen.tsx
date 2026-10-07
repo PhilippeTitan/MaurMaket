@@ -28,12 +28,14 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
   const [showPublicCity, setShowPublicCity] = useState(user?.show_public_city ?? false);
   const [hideFollowerLists, setHideFollowerLists] = useState(user?.hide_follower_lists ?? false);
   const [hideFollowerCounts, setHideFollowerCounts] = useState(user?.hide_follower_counts ?? false);
+  // APP-Q431: separate in-app search discoverability from link access.
+  const [searchDiscoverable, setSearchDiscoverable] = useState(user?.search_discoverable ?? true);
 
   const [presenceVisibility, setPresenceVisibilityState] = useState<'everyone' | 'chatted_with' | 'nobody'>('chatted_with');
   const [presenceSaving, setPresenceSaving] = useState(false);
 
   const sections = useRef(
-    Array.from({ length: 4 }, () => ({
+    Array.from({ length: 5 }, () => ({
       opacity: new Animated.Value(0),
       translateY: new Animated.Value(16),
     }))
@@ -88,6 +90,22 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
     } catch {
       setShowPublicCity(!next);
       toast.error('Update Failed', 'Could not update city visibility. Rolled back.');
+    }
+  };
+
+  const handleToggleSearchDiscoverable = async () => {
+    const next = !searchDiscoverable;
+    setSearchDiscoverable(next);
+    try {
+      await updateProfile({ searchDiscoverable: next });
+      await store.setUser({ ...store.user!, search_discoverable: next } as any, store.token!);
+      toast.success(
+        next ? t('privacy.searchDiscoverableToastVisible') : t('privacy.searchDiscoverableToastHidden'),
+        next ? t('privacy.searchDiscoverableOn') : t('privacy.searchDiscoverableOff')
+      );
+    } catch {
+      setSearchDiscoverable(!next);
+      toast.error('Update Failed', t('privacy.searchDiscoverableFailed'));
     }
   };
 
@@ -210,8 +228,39 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
           </SettingsGroup>
         </Animated.View>
 
-        {/* ── Social Privacy ── */}
+        {/* ── Discoverability ── */}
         <Animated.View style={animStyle(1)}>
+          <SettingsGroup
+            header={t('privacy.discoverability')}
+            description={t('privacy.discoverabilityDesc')}
+          >
+            <View style={styles.toggleRow}>
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
+              </View>
+              <View style={styles.toggleText}>
+                <Text style={styles.toggleLabel}>{t('privacy.searchDiscoverable')}</Text>
+                <Text style={styles.rowValue}>
+                  {searchDiscoverable ? t('privacy.searchDiscoverableOn') : t('privacy.searchDiscoverableOff')}
+                </Text>
+              </View>
+              <SettingsToggle
+                value={searchDiscoverable}
+                onValueChange={handleToggleSearchDiscoverable}
+                accent={COLORS.blue}
+                accessibilityLabel={t('privacy.searchDiscoverable')}
+              />
+            </View>
+
+            <View style={styles.noteRow}>
+              <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.text3} />
+              <Text style={styles.noteText}>{t('privacy.searchDiscoverableNote')}</Text>
+            </View>
+          </SettingsGroup>
+        </Animated.View>
+
+        {/* ── Social Privacy ── */}
+        <Animated.View style={animStyle(2)}>
           <SettingsGroup
             header="Followers & Activity"
             description="Control who can see your network and followers."
@@ -257,7 +306,7 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* ── Online Status & Safety ── */}
-        <Animated.View style={animStyle(2)}>
+        <Animated.View style={animStyle(3)}>
           <SettingsGroup
             header="Presence & Safety"
             description="Manage your online activity status and blocked accounts."
@@ -301,6 +350,50 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
               <View style={styles.toggleText}>
                 <Text style={styles.toggleLabel}>{t('privacy.blockedUsers')}</Text>
                 <Text style={styles.rowValue}>Manage accounts blocked from contacting or following you</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+            </TouchableOpacity>
+          </SettingsGroup>
+        </Animated.View>
+
+        {/* ── Data & Privacy ── */}
+        <Animated.View style={animStyle(4)}>
+          <SettingsGroup
+            header={t('privacy.dataControl')}
+            description={t('privacy.dataControlDesc')}
+          >
+            <TouchableOpacity
+              style={styles.row}
+              activeOpacity={0.65}
+              onPress={() => navigation.navigate('DataPrivacy')}
+              accessibilityRole="button"
+              accessibilityLabel={t('dataPrivacy.title')}
+            >
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons name="shield-lock-outline" size={20} color={COLORS.text2} />
+              </View>
+              <View style={styles.toggleText}>
+                <Text style={styles.toggleLabel}>{t('dataPrivacy.title')}</Text>
+                <Text style={styles.rowValue}>{t('dataPrivacy.subtitle')}</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity
+              style={styles.row}
+              activeOpacity={0.65}
+              onPress={() => navigation.navigate('DevicePermissions')}
+              accessibilityRole="button"
+              accessibilityLabel={t('permissions.title')}
+            >
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons name="cellphone-key" size={20} color={COLORS.text2} />
+              </View>
+              <View style={styles.toggleText}>
+                <Text style={styles.toggleLabel}>{t('permissions.title')}</Text>
+                <Text style={styles.rowValue}>{t('permissions.subtitle')}</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
@@ -356,6 +449,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.border,
     marginLeft: SPACING.sm + 28 + SPACING.md,
   },
+
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.sm + 28 + SPACING.md,
+    paddingBottom: SPACING.sm,
+    paddingRight: SPACING.md,
+  },
+  noteText: { flex: 1, fontSize: FONT_SIZES.sm, color: COLORS.text3, lineHeight: 18 },
 
   bottomSpacer: { height: 60 },
 });

@@ -8,7 +8,7 @@ const router = Router();
 router.post('/api/feed/event', authRequired, async (req, res) => {
   const { productId, eventType, durationMs } = req.body;
   if (!productId || !eventType) return res.status(400).json({ error: 'productId and eventType required' });
-  const validTypes = ['view', 'like', 'unlike', 'relevant', 'not_relevant', 'save', 'dwell'];
+  const validTypes = ['view', 'like', 'unlike', 'relevant', 'not_relevant', 'undo_not_relevant', 'save', 'dwell'];
   if (!validTypes.includes(eventType)) return res.status(400).json({ error: `eventType must be one of: ${validTypes.join(', ')}` });
 
   try {
@@ -19,6 +19,65 @@ router.post('/api/feed/event', authRequired, async (req, res) => {
     );
     if (parseInt(rateCheck.rows[0].count) >= 50) {
       return res.status(429).json({ error: 'Too many actions. Please wait.', rateLimited: true });
+    }
+
+    // Recommendation feedback is a single reversible preference per listing.
+    // Serialize changes so opposite taps/retries cannot leave contradictory votes.
+    if (eventType === 'relevant' || eventType === 'not_relevant' || eventType === 'undo_not_relevant') {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [req.user.id, productId]);
+        const currentResult = await client.query(
+          `SELECT event_type FROM feed_events
+           WHERE user_id = $1 AND product_id = $2 AND event_type IN ('relevant', 'not_relevant')
+           ORDER BY created_at DESC LIMIT 1`,
+          [req.user.id, productId]
+        );
+        const currentType = currentResult.rows[0]?.event_type || null;
+        const currentScore = currentType === 'relevant' ? 1 : currentType === 'not_relevant' ? -1 : 0;
+        const nextType = eventType === 'undo_not_relevant'
+          ? (currentType === 'not_relevant' ? null : currentType)
+          : eventType;
+        const nextScore = nextType === 'relevant' ? 1 : nextType === 'not_relevant' ? -1 : 0;
+
+        if (eventType === 'undo_not_relevant' && currentType !== 'not_relevant') {
+          await client.query('COMMIT');
+          return res.json({ recorded: true, undone: false });
+        }
+
+        const category = await client.query('SELECT category_id FROM products WHERE id = $1', [productId]);
+        await client.query(
+          `DELETE FROM feed_events
+           WHERE user_id = $1 AND product_id = $2 AND event_type IN ('relevant', 'not_relevant')`,
+          [req.user.id, productId]
+        );
+        if (nextType) {
+          await client.query(
+            `INSERT INTO feed_events (user_id, product_id, event_type)
+             VALUES ($1, $2, $3)`,
+            [req.user.id, productId, nextType]
+          );
+        }
+        const scoreDelta = nextScore - currentScore;
+        if (scoreDelta && category.rows[0]?.category_id) {
+          await client.query(
+            `INSERT INTO user_category_affinities (user_id, category_id, score)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (user_id, category_id) DO UPDATE SET
+               score = GREATEST(-3, LEAST(3, user_category_affinities.score + EXCLUDED.score)),
+               updated_at = CURRENT_TIMESTAMP`,
+            [req.user.id, category.rows[0].category_id, scoreDelta]
+          );
+        }
+        await client.query('COMMIT');
+        return res.json({ recorded: true, undone: eventType === 'undo_not_relevant' });
+      } catch (feedbackError) {
+        await client.query('ROLLBACK');
+        throw feedbackError;
+      } finally {
+        client.release();
+      }
     }
 
     // Unlike: DELETE the like row (not insert an unlike row) so like_count decreases
@@ -48,21 +107,6 @@ router.post('/api/feed/event', authRequired, async (req, res) => {
            created_at = CURRENT_TIMESTAMP`,
         [req.user.id, productId, eventType, durationMs || null]
       );
-      // Explicit feedback should improve similar listings too, not only this exact product.
-      if (eventType === 'relevant' || eventType === 'not_relevant') {
-        const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);
-        if (category.rows[0]?.category_id) {
-          const delta = eventType === 'relevant' ? 1 : -1;
-          await pool.query(
-            `INSERT INTO user_category_affinities (user_id, category_id, score)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (user_id, category_id) DO UPDATE SET
-               score = GREATEST(-3, LEAST(3, user_category_affinities.score + EXCLUDED.score)),
-               updated_at = CURRENT_TIMESTAMP`,
-            [req.user.id, category.rows[0].category_id, delta]
-          );
-        }
-      }
       // Likes and saves also boost category affinity (positive signal)
       if (eventType === 'like' || eventType === 'save') {
         const category = await pool.query('SELECT category_id FROM products WHERE id = $1', [productId]);

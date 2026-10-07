@@ -10,6 +10,7 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
+import { reviewCategoryKey } from '../utils/listingReview';
 import {
   getProduct, updateProduct, deleteProduct, getCategories, uploadImage, getImageUrl,
   getSellerListingStats, resubmitListing,
@@ -146,6 +147,9 @@ export default function EditListingScreen({ route, navigation }: Props) {
   const [locked, setLocked] = useState(false);
   const [listingStatus, setListingStatus] = useState<string>('active');
   const [moderationReason, setModerationReason] = useState<string | null>(null);
+  const [moderationCategory, setModerationCategory] = useState<string | null>(null);
+  const [moderationDetail, setModerationDetail] = useState<string | null>(null);
+  const [pausedReason, setPausedReason] = useState<string | null>(null);
   const [resubmitting, setResubmitting] = useState(false);
 
   const needsVerification = !store.user?.id_verified;
@@ -193,6 +197,9 @@ export default function EditListingScreen({ route, navigation }: Props) {
         setVariantDims(vs.length > 0 ? dimsFromVariants(vs) : EMPTY_DIMS.map((d) => ({ ...d, values: [] })));
         setListingStatus(p.listing_status || 'active');
         setModerationReason(p.moderation_reason || null);
+        setModerationCategory((p as any).moderation_category || null);
+        setModerationDetail((p as any).moderation_detail || null);
+        setPausedReason((p as any).paused_reason || null);
         if (p.sale_price) {
           setShowSale(true);
           setSalePrice(String(p.sale_price));
@@ -505,7 +512,29 @@ export default function EditListingScreen({ route, navigation }: Props) {
       {listingStatus === 'pending_review' && (
         <View style={[styles.banner, styles.bannerPending]}>
           <MaterialCommunityIcons name="shield-search" size={16} color={COLORS.yellow} />
-          <Text style={[styles.bannerText, { color: COLORS.yellow }]}>{t('editListing.bannerPending')}</Text>
+          <Text style={[styles.bannerText, { color: COLORS.yellow }]}>
+            {moderationCategory ? t('editListing.bannerPendingReview') : t('editListing.bannerPending')}
+          </Text>
+        </View>
+      )}
+
+      {listingStatus === 'under_review' && (
+        <View style={[styles.banner, styles.bannerRejected]}>
+          <MaterialCommunityIcons name="shield-search" size={16} color={COLORS.blue} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.bannerText, { color: COLORS.blue }]}>{
+              t('editListing.bannerUnderReview', { category: t(reviewCategoryKey(moderationCategory)) })
+            }</Text>
+            {!!moderationDetail && (
+              <Text style={styles.bannerSub}>{t('editListing.underReviewAffected', { detail: moderationDetail })}</Text>
+            )}
+            <Text style={styles.bannerSub}>
+              {!isAvailable && pausedReason === 'content_review'
+                ? t('editListing.underReviewRestrictedHidden')
+                : t('editListing.underReviewRestrictedVisible')}
+            </Text>
+            <Text style={styles.bannerSub}>{t('editListing.underReviewResponsePath')}</Text>
+          </View>
         </View>
       )}
 
@@ -973,14 +1002,14 @@ export default function EditListingScreen({ route, navigation }: Props) {
 
       <TouchableOpacity
         style={[styles.saveBtn, saving && { opacity: 0.5 }]}
-        onPress={() => handleSave(listingStatus === 'rejected')}
+        onPress={() => handleSave(listingStatus === 'rejected' || listingStatus === 'under_review')}
         disabled={saving || resubmitting}
         accessibilityRole="button"
-        accessibilityLabel={listingStatus === 'rejected' ? t('editListing.saveResubmit') : t('editListing.saveChanges')}
+        accessibilityLabel={listingStatus === 'rejected' || listingStatus === 'under_review' ? t('editListing.saveResubmit') : t('editListing.saveChanges')}
       >
         {saving || resubmitting ? <ActivityIndicator color={COLORS.white} /> : (
           <Text style={styles.saveBtnText}>
-            {listingStatus === 'rejected' ? t('editListing.saveResubmit') : t('editListing.saveChanges')}
+            {listingStatus === 'rejected' || listingStatus === 'under_review' ? t('editListing.saveResubmit') : t('editListing.saveChanges')}
           </Text>
         )}
       </TouchableOpacity>

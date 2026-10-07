@@ -6,6 +6,8 @@ import { createNotification } from '../utils/notifications.js';
 import { logOrderEvent, canAccessOrder, processRefundPayout, parseNatCashSms, getCommissionRate, populateSellerOrderSnapshot } from '../utils/helpers.js';
 import { getNatCashAccess } from '../utils/natcashAccess.js';
 import { applyStockSideEffects } from '../utils/listingPolicy.js';
+import { releaseCancelledOrderStock } from '../utils/orderStock.js';
+import { calculatePendingCheckoutTotals } from '../utils/pendingCheckoutTotals.js';
 
 const router = Router();
 
@@ -291,10 +293,12 @@ router.get('/orders/:id', authRequired, async (req, res) => {
     const order = await canAccessOrder(req.user.id, req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     const items = await pool.query(
-      `SELECT oi.*, COALESCE(oi.product_name, p.name) AS product_name, p.price AS product_price,
+      // APP-Q550: order items carry their own item/terms snapshot, so a receipt
+      // survives even if the listing is later removed from public discovery.
+      `SELECT oi.*, COALESCE(oi.product_name, p.name) AS product_name, COALESCE(oi.price, p.price) AS product_price,
               COALESCE(oi.product_image, pi.image_url) AS product_image
        FROM order_items oi
-       JOIN products p ON oi.product_id = p.id
+       LEFT JOIN products p ON oi.product_id = p.id
        LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = true
        WHERE oi.order_id = $1`,
       [req.params.id]
@@ -342,6 +346,14 @@ router.get('/orders/:id', authRequired, async (req, res) => {
       ? await pool.query('SELECT 1 FROM meetup_checkins WHERE order_id = $1 LIMIT 1', [req.params.id])
       : { rowCount: 0 };
 
+    // The buyer's own review for this order, so Order Detail can offer edit or
+    // delete (the review is soft-deleted, not removed from the audit record).
+    const myReview = await pool.query(
+      `SELECT id, rating, comment, is_edited, seller_response, created_at, deleted_at
+         FROM reviews WHERE order_id = $1 AND reviewer_id = $2`,
+      [req.params.id, req.user.id]
+    );
+
     const cancellationRequests = await pool.query(
       `SELECT d.id, d.seller_id, d.raised_by, d.description, d.status, d.resolution,
               d.response_deadline, d.created_at, seller.full_name AS seller_name,
@@ -355,6 +367,24 @@ router.get('/orders/:id', authRequired, async (req, res) => {
       [req.params.id, myRole, req.user.id]
     );
 
+    // APP-Q364: expose the terms version in effect when this order began, for
+    // historical context. Accepted order terms are never rewritten by a later
+    // policy change; this is a read-time reference only.
+    let termsPolicyVersion = null;
+    try {
+      const versionAtOrder = await pool.query(
+        `SELECT version FROM policy_versions
+          WHERE kind = 'terms' AND effective_at <= $1
+          ORDER BY effective_at DESC, id DESC
+          LIMIT 1`,
+        [order.created_at]
+      );
+      termsPolicyVersion = versionAtOrder.rows[0]?.version || null;
+    } catch {
+      // Policy tables may not exist yet on an older database; the order is unaffected.
+      termsPolicyVersion = null;
+    }
+
     res.json({
       order: {
         ...order,
@@ -367,6 +397,8 @@ router.get('/orders/:id', authRequired, async (req, res) => {
         seller_fulfillments: fulfillmentsResult.rows,
         meetup_started: meetupCheckinResult.rowCount > 0,
         cancellation_requests: cancellationRequests.rows,
+        my_review: myReview.rows[0] || null,
+        terms_policy_version: termsPolicyVersion,
       }
     });
   } catch (err) {
@@ -402,8 +434,8 @@ router.get('/orders', authRequired, async (req, res) => {
                 COALESCE(o.seller_snapshot_name, u.full_name) AS seller_name, o.seller_snapshot_logo_url, u.phone AS seller_phone, u.natcash_phone,
                 'buyer' AS my_role,
                 (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) AS item_count,
-                (SELECT p.name FROM order_items oi2 JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
-                (SELECT COALESCE(pi.thumbnail_url, pi.image_url) FROM order_items oi3 JOIN product_images pi ON oi3.product_id = pi.product_id WHERE oi3.order_id = o.id AND pi.is_primary = true ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
+                (SELECT COALESCE(oi2.product_name, p.name) FROM order_items oi2 LEFT JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
+                (SELECT COALESCE(oi3.product_image, pi.thumbnail_url, pi.image_url) FROM order_items oi3 LEFT JOIN product_images pi ON oi3.product_id = pi.product_id AND pi.is_primary = true WHERE oi3.order_id = o.id ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
          FROM orders o
          JOIN order_items oi ON o.id = oi.order_id
          JOIN users u ON oi.seller_id = u.id
@@ -417,8 +449,8 @@ router.get('/orders', authRequired, async (req, res) => {
         SELECT DISTINCT ON (o.id) o.*, u.full_name AS buyer_name, u.phone AS buyer_phone,
                 'seller' AS my_role,
                 (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) AS item_count,
-                (SELECT p.name FROM order_items oi2 JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
-                (SELECT COALESCE(pi.thumbnail_url, pi.image_url) FROM order_items oi3 JOIN product_images pi ON oi3.product_id = pi.product_id WHERE oi3.order_id = o.id AND pi.is_primary = true ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
+                (SELECT COALESCE(oi2.product_name, p.name) FROM order_items oi2 LEFT JOIN products p ON oi2.product_id = p.id WHERE oi2.order_id = o.id ORDER BY oi2.id LIMIT 1) AS first_product_name,
+                (SELECT COALESCE(oi3.product_image, pi.thumbnail_url, pi.image_url) FROM order_items oi3 LEFT JOIN product_images pi ON oi3.product_id = pi.product_id AND pi.is_primary = true WHERE oi3.order_id = o.id ORDER BY oi3.id, pi.display_order ASC LIMIT 1) AS product_image
          FROM orders o
          JOIN order_items oi ON o.id = oi.order_id
          JOIN users u ON o.buyer_id = u.id
@@ -560,14 +592,17 @@ router.post('/checkout/pending', authRequired, async (req, res) => {
          AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)`, [String(promoCode).toUpperCase()]
       );
       const promo = promoResult.rows[0];
-      if (!promo || (promo.max_uses && promo.uses_count >= promo.max_uses) || merchandiseTotal < Number(promo.min_order_amount || 0)) {
+      const eligibleTotal = promo?.seller_id
+        ? normalizedCart.filter(item => item.seller_id === promo.seller_id).reduce((sum, item) => sum + Number(item.price) * item.quantity, 0)
+        : merchandiseTotal;
+      if (!promo || (promo.max_uses && promo.uses_count >= promo.max_uses) || eligibleTotal < Number(promo.min_order_amount || 0)) {
         return res.status(400).json({ error: 'Promo code is no longer valid for this cart' });
       }
       const alreadyUsed = await pool.query('SELECT 1 FROM promo_uses WHERE promo_id = $1 AND user_id = $2', [promo.id, req.user.id]);
       if (alreadyUsed.rows.length) return res.status(400).json({ error: 'You have already used this promo code' });
       checkoutDiscount = promo.discount_type === 'percentage'
-        ? Math.min(merchandiseTotal * Number(promo.discount_value) / 100, Number(promo.discount_value) * 10)
-        : Math.min(merchandiseTotal, Number(promo.discount_value));
+        ? Math.min(eligibleTotal * Number(promo.discount_value) / 100, Number(promo.discount_value) * 10)
+        : Math.min(eligibleTotal, Number(promo.discount_value));
     }
     const meetupAt = fulfillmentTerms.find(term => term.method === 'meetup')?.meetupAt || null;
     const result = await pool.query(
@@ -748,7 +783,7 @@ router.get('/checkout/popular-meetup-spots', authRequired, async (req, res) => {
 router.get('/seller/fulfillment-proposals', authRequired, async (req, res) => {
   try {
     const proposals = await pool.query(
-      `SELECT a.*, pc.total_amount, pc.payment_method, pc.created_at AS checkout_created_at,
+      `SELECT a.*, pc.payment_method, pc.created_at AS checkout_created_at,
               u.full_name AS buyer_name, u.phone AS buyer_phone
        FROM pending_fulfillment_agreements a
        JOIN pending_checkouts pc ON pc.id = a.checkout_id
@@ -765,7 +800,7 @@ router.get('/seller/fulfillment-proposals', authRequired, async (req, res) => {
 
 router.get('/checkout/pending/:id/agreements', authRequired, async (req, res) => {
   try {
-    const checkout = await pool.query('SELECT id, status, payment_method, expires_at, meetup_at, meetup_lat, meetup_lng, meetup_address, meetup_name FROM pending_checkouts WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    const checkout = await pool.query('SELECT id, status, payment_method, total_amount, expires_at, meetup_at, meetup_lat, meetup_lng, meetup_address, meetup_name FROM pending_checkouts WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
     if (!checkout.rows[0]) return res.status(404).json({ error: 'Pending checkout not found' });
     const agreements = await pool.query(
       `SELECT a.*, u.full_name AS seller_name
@@ -776,11 +811,142 @@ router.get('/checkout/pending/:id/agreements', authRequired, async (req, res) =>
       `SELECT seller_id, actor_id, action, version, terms, created_at FROM pending_fulfillment_history
        WHERE checkout_id = $1 ORDER BY created_at ASC`, [req.params.id]
     );
-    res.json({ checkout: checkout.rows[0], agreements: agreements.rows, history: history.rows });
+    const paymentActivity = await pool.query(
+      "SELECT 1 FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND status IN ('pending','processing','completed') LIMIT 1",
+      [req.params.id]
+    );
+    res.json({ checkout: checkout.rows[0], agreements: agreements.rows, history: history.rows, canRemoveSeller: checkout.rows[0].status === 'pending' && paymentActivity.rowCount === 0 });
   } catch (err) {
     console.error('Checkout agreement fetch error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+router.delete('/checkout/pending/:id/sellers/:sellerId', authRequired, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const checkoutResult = await client.query(
+      "SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP FOR UPDATE",
+      [req.params.id, req.user.id]
+    );
+    const checkout = checkoutResult.rows[0];
+    if (!checkout) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Pending checkout not found or no longer editable' }); }
+    const paymentActivity = await client.query(
+      "SELECT id FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND status IN ('pending','processing','completed') LIMIT 1 FOR UPDATE",
+      [checkout.id]
+    );
+    if (paymentActivity.rowCount) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'A seller payment has started. Checkout can no longer be changed.' }); }
+
+    const sellerId = String(req.params.sellerId);
+    const cart = Array.isArray(checkout.cart_data) ? checkout.cart_data : [];
+    const removed = cart.filter(item => String(item.seller_id || item.sellerId || '') === sellerId);
+    if (!removed.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Seller portion not found in this checkout' }); }
+    const remainingCart = cart.filter(item => String(item.seller_id || item.sellerId || '') !== sellerId);
+    const terms = Array.isArray(checkout.fulfillment_terms) ? checkout.fulfillment_terms : [];
+    const remainingTerms = terms.filter(term => String(term.sellerId || term.seller_id || '') !== sellerId);
+    const remainingSellerIds = new Set(remainingCart.map(item => String(item.seller_id || item.sellerId || '')).filter(Boolean));
+    if (remainingSellerIds.size !== remainingTerms.length || remainingTerms.some(term => !remainingSellerIds.has(String(term.sellerId || term.seller_id || '')))) {
+      await client.query('ROLLBACK'); return res.status(409).json({ error: 'Seller fulfillment allocations are inconsistent; checkout was not changed.' });
+    }
+
+    const agreements = await client.query('SELECT id FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND seller_id = $2 FOR UPDATE', [checkout.id, sellerId]);
+    let promoCode = checkout.promo_code;
+    let promo = null;
+    let promoRemoved = false;
+    if (promoCode && remainingCart.length) {
+      const promoResult = await client.query(
+        `SELECT id, seller_id, discount_type, discount_value, min_order_amount
+         FROM promo_codes WHERE code = $1 AND is_active = true AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP) FOR UPDATE`,
+        [promoCode]
+      );
+      promo = promoResult.rows[0] || null;
+      if (!promo || (promo.seller_id && !remainingSellerIds.has(String(promo.seller_id)))) {
+        promoCode = null; promo = null; promoRemoved = true;
+      }
+    } else if (promoCode) { promoCode = null; promoRemoved = true; }
+
+    let totals = { totalAmount: 0, sellers: [] };
+    if (remainingCart.length) {
+      if (promo) {
+        const eligibleAmount = promo.seller_id
+          ? remainingCart.filter(item => String(item.seller_id || item.sellerId || '') === String(promo.seller_id)).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0)
+          : remainingCart.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
+        if (eligibleAmount < Number(promo.min_order_amount || 0)) { promo = null; promoCode = null; promoRemoved = true; }
+      }
+      try { totals = calculatePendingCheckoutTotals(remainingCart, remainingTerms, promo); }
+      catch (error) { await client.query('ROLLBACK'); return res.status(409).json({ error: error.message || 'Checkout totals could not be safely recalculated.' }); }
+    }
+
+    const reservedRows = await client.query(
+      "SELECT product_id, variant_id, quantity FROM stock_reservations WHERE checkout_id = $1 AND seller_id = $2 AND status = 'active' FOR UPDATE",
+      [checkout.id, sellerId]
+    );
+    const aggregate = (items, getKey) => {
+      const result = new Map();
+      for (const item of items) {
+        const key = getKey(item);
+        result.set(key, (result.get(key) || 0) + Number(item.quantity || 1));
+      }
+      return result;
+    };
+    const expectedReservations = aggregate(removed, item => `${item.id || item.productId}:${item.variantId || ''}`);
+    const actualReservations = aggregate(reservedRows.rows, item => `${item.product_id}:${item.variant_id || ''}`);
+    if (expectedReservations.size !== actualReservations.size || [...expectedReservations].some(([key, quantity]) => actualReservations.get(key) !== quantity)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Reserved stock no longer matches this seller portion. Checkout was not changed; refresh and try again.' });
+    }
+
+    const released = await client.query(
+      "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND seller_id = $2 AND status = 'active' RETURNING product_id, quantity, variant_id",
+      [checkout.id, sellerId]
+    );
+    for (const reservation of released.rows) {
+      await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [reservation.quantity, reservation.product_id]);
+      if (reservation.variant_id) await client.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [reservation.quantity, reservation.variant_id]);
+    }
+    await client.query(
+      "UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND seller_id = $2 AND status = 'accepted'",
+      [checkout.id, sellerId]
+    );
+    await client.query(
+      `INSERT INTO pending_fulfillment_history (checkout_id, seller_id, actor_id, action, version, terms)
+       SELECT $1, $2, $3, 'buyer_removed_seller', COALESCE(MAX(version), 0) + 1,
+              COALESCE((SELECT terms FROM pending_fulfillment_agreements WHERE id = $4), '{}'::jsonb)
+       FROM pending_fulfillment_history WHERE checkout_id = $1 AND seller_id = $2`,
+      [checkout.id, sellerId, req.user.id, agreements.rows[0]?.id || null]
+    );
+    await client.query('DELETE FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND seller_id = $2', [checkout.id, sellerId]);
+
+    if (!remainingCart.length) {
+      const releasedAll = await client.query(
+        "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity, variant_id",
+        [checkout.id]
+      );
+      for (const reservation of releasedAll.rows) {
+        await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [reservation.quantity, reservation.product_id]);
+        if (reservation.variant_id) await client.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [reservation.quantity, reservation.variant_id]);
+      }
+      await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [checkout.id]);
+      await client.query("UPDATE pending_checkouts SET status = 'cancelled', cart_data = '[]'::jsonb, fulfillment_terms = '[]'::jsonb, promo_code = NULL, total_amount = 0 WHERE id = $1", [checkout.id]);
+    } else {
+      const meetup = remainingTerms.find(term => term.method === 'meetup');
+      await client.query(
+        `UPDATE pending_checkouts SET cart_data = $1, fulfillment_terms = $2, promo_code = $3, total_amount = $4,
+         meetup_lat = $5, meetup_lng = $6, meetup_address = $7, meetup_name = $8, meetup_at = $9 WHERE id = $10`,
+        [JSON.stringify(remainingCart), JSON.stringify(remainingTerms), promoCode, totals.totalAmount,
+          meetup?.location?.lat ?? null, meetup?.location?.lng ?? null, meetup?.location?.address ?? null,
+          meetup?.location?.name ?? null, meetup?.meetupAt ?? null, checkout.id]
+      );
+    }
+    await client.query('COMMIT');
+    createNotification(sellerId, 'fulfillment_cancelled', 'Checkout updated', 'The buyer removed your seller portion before payment started.', { pendingId: checkout.id, sellerId });
+    return res.json({ removed: true, checkoutCancelled: !remainingCart.length, sellerId, totalAmount: totals.totalAmount, sellers: totals.sellers, promoRemoved });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Pending checkout seller removal error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  } finally { client.release(); }
 });
 
 async function normalizeMeetupCounter(db, checkoutId, location, meetupAt) {
@@ -807,13 +973,19 @@ router.post('/checkout/pending/:id/agreements/:sellerId/counter', authRequired, 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const checkout = await client.query(
+      "SELECT user_id, status, expires_at FROM pending_checkouts WHERE id = $1 FOR UPDATE", [req.params.id]
+    );
+    if (!checkout.rows[0] || checkout.rows[0].status !== 'pending' || !checkout.rows[0].expires_at || new Date(checkout.rows[0].expires_at).getTime() <= Date.now()) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This checkout is no longer editable' });
+    }
     const row = await client.query(
-      `SELECT a.*, pc.user_id, pc.status AS checkout_status FROM pending_fulfillment_agreements a
-       JOIN pending_checkouts pc ON pc.id = a.checkout_id WHERE a.checkout_id = $1 AND a.seller_id = $2 FOR UPDATE`,
+      'SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND seller_id = $2 FOR UPDATE',
       [req.params.id, sellerId]
     );
     const agreement = row.rows[0];
-    if (!agreement || agreement.checkout_status !== 'pending' || !['proposed','rejected'].includes(agreement.status) || agreement.last_proposed_by === sellerId) {
+    if (!agreement || !['proposed','rejected'].includes(agreement.status) || agreement.last_proposed_by === sellerId) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This proposal can no longer be countered' });
     }
@@ -844,7 +1016,7 @@ router.post('/checkout/pending/:id/agreements/:sellerId/counter', authRequired, 
     }
     await client.query("UPDATE stock_reservations SET expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours' WHERE checkout_id = $1 AND status = 'active'", [req.params.id]);
     await client.query('COMMIT');
-    createNotification(agreement.user_id, 'fulfillment_countered', 'Meetup proposal updated', 'The seller suggested a different meetup plan. Review the new location and time.', { pendingId: req.params.id, sellerId });
+    createNotification(checkout.rows[0].user_id, 'fulfillment_countered', 'Meetup proposal updated', 'The seller suggested a different meetup plan. Review the new location and time.', { pendingId: req.params.id, sellerId });
     res.json({ status: 'proposed', version, responseExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -859,16 +1031,24 @@ router.put('/checkout/pending/:id/agreements/:sellerId/buyer-decision', authRequ
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const checkout = await client.query(
+      'SELECT user_id, status, expires_at FROM pending_checkouts WHERE id = $1 FOR UPDATE', [req.params.id]
+    );
+    if (!checkout.rows[0] || checkout.rows[0].user_id !== req.user.id || checkout.rows[0].status !== 'pending' || !checkout.rows[0].expires_at || new Date(checkout.rows[0].expires_at).getTime() <= Date.now()) {
+      await client.query('ROLLBACK'); return res.status(404).json({ error: 'Pending proposal not found or expired' });
+    }
     const row = await client.query(
-      `SELECT a.*, pc.user_id, pc.status AS checkout_status FROM pending_fulfillment_agreements a
-       JOIN pending_checkouts pc ON pc.id = a.checkout_id WHERE a.checkout_id = $1 AND a.seller_id = $2 FOR UPDATE`,
+      'SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND seller_id = $2 FOR UPDATE',
       [req.params.id, req.params.sellerId]
     );
     const agreement = row.rows[0];
-    if (!agreement || agreement.user_id !== req.user.id || agreement.checkout_status !== 'pending') {
-      await client.query('ROLLBACK'); return res.status(404).json({ error: 'Pending proposal not found or expired' });
-    }
+    if (!agreement) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Pending proposal not found or expired' }); }
     if (decision === 'cancel') {
+      const paymentStarted = await client.query(
+        "SELECT 1 FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND status IN ('pending','processing','completed') LIMIT 1 FOR UPDATE",
+        [req.params.id]
+      );
+      if (paymentStarted.rowCount) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'A seller payment has started. The checkout cannot be cancelled here.' }); }
       await client.query("UPDATE pending_checkouts SET status = 'cancelled' WHERE id = $1", [req.params.id]);
       const released = await client.query("UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity, variant_id", [req.params.id]);
       for (const item of released.rows) {
@@ -876,6 +1056,7 @@ router.put('/checkout/pending/:id/agreements/:sellerId/buyer-decision', authRequ
         if (item.variant_id) await client.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [item.quantity, item.variant_id]);
       }
       await client.query("UPDATE message_offers SET accepted_checkout_id = NULL WHERE accepted_checkout_id = $1 AND status = 'accepted'", [req.params.id]);
+      await client.query("UPDATE pending_fulfillment_agreements SET status = 'cancelled' WHERE checkout_id = $1", [req.params.id]);
       await client.query('COMMIT');
       return res.json({ status: 'cancelled' });
     }
@@ -958,14 +1139,19 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const checkout = await client.query(
+      'SELECT user_id, payment_method, status, expires_at FROM pending_checkouts WHERE id = $1 FOR UPDATE', [req.params.id]
+    );
+    if (!checkout.rows[0] || checkout.rows[0].status !== 'pending' || !checkout.rows[0].expires_at || new Date(checkout.rows[0].expires_at).getTime() <= Date.now()) {
+      await client.query('ROLLBACK'); return res.status(404).json({ error: 'Fulfillment proposal not found or expired' });
+    }
     const proposal = await client.query(
-      `SELECT a.*, pc.user_id, pc.payment_method, pc.status AS checkout_status FROM pending_fulfillment_agreements a
-       JOIN pending_checkouts pc ON pc.id = a.checkout_id
-       WHERE a.checkout_id = $1 AND a.seller_id = $2 FOR UPDATE`, [req.params.id, req.user.id]
+      'SELECT * FROM pending_fulfillment_agreements WHERE checkout_id = $1 AND seller_id = $2 FOR UPDATE', [req.params.id, req.user.id]
     );
     const agreement = proposal.rows[0];
     if (!agreement) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Fulfillment proposal not found' }); }
-    if (agreement.checkout_status !== 'pending' || agreement.status !== 'proposed') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This proposal is no longer available' }); }
+    agreement.payment_method = checkout.rows[0].payment_method;
+    if (agreement.status !== 'proposed') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This proposal is no longer available' }); }
     if (agreement.last_proposed_by === req.user.id) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This is your counterproposal; wait for the buyer to respond' }); }
     if (decision === 'accept' && agreement.payment_method === 'natcash') {
       const access = await getNatCashAccess(req.user.id, client);
@@ -1015,7 +1201,7 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
       await client.query("UPDATE stock_reservations SET expires_at = CURRENT_TIMESTAMP + INTERVAL '15 minutes' WHERE checkout_id = $1 AND status = 'active'", [req.params.id]);
     }
     await client.query('COMMIT');
-    createNotification(agreement.user_id, decision === 'accept' ? 'fulfillment_accepted' : 'fulfillment_rejected', decision === 'accept' ? 'Fulfillment accepted' : 'Fulfillment declined', natCashOrderId ? 'Every seller accepted. Your NatCash order is ready for its in-person meetup; payment is due when you meet.' : paymentReady ? 'This seller’s payment is ready.' : 'A seller responded to your fulfillment proposal.', { pendingId: req.params.id, sellerId: req.user.id, ...(natCashOrderId ? { orderId: natCashOrderId } : {}) });
+    createNotification(checkout.rows[0].user_id, decision === 'accept' ? 'fulfillment_accepted' : 'fulfillment_rejected', decision === 'accept' ? 'Fulfillment accepted' : 'Fulfillment declined', natCashOrderId ? 'Every seller accepted. Your NatCash order is ready for its in-person meetup; payment is due when you meet.' : paymentReady ? 'This seller’s payment is ready.' : 'A seller responded to your fulfillment proposal.', { pendingId: req.params.id, sellerId: req.user.id, ...(natCashOrderId ? { orderId: natCashOrderId } : {}) });
     res.json({ status, paymentReady, ...(natCashOrderId ? { orderId: natCashOrderId } : {}) });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -1025,57 +1211,64 @@ router.put('/checkout/pending/:id/agreements/:sellerId', authRequired, async (re
 });
 
 router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res) => {
+  let pc; let provider; let session;
   try {
     const { sellerId } = req.body || {};
     if (!sellerId) return res.status(400).json({ error: 'sellerId is required' });
-    const checkout = await pool.query("SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'pending'", [req.params.id, req.user.id]);
-    const pc = checkout.rows[0];
-    if (!pc) return res.status(404).json({ error: 'Pending checkout not found or expired' });
-    if (pc.expires_at && new Date(pc.expires_at).getTime() <= Date.now()) return res.status(410).json({ error: 'The 15-minute payment window has expired. Start checkout again to reserve these items.' });
-    const agreementReadiness = await pool.query(
-      "SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'accepted' AND terms_locked_at IS NOT NULL)::int AS locked FROM pending_fulfillment_agreements WHERE checkout_id = $1",
-      [pc.id]
-    );
-    if (!agreementReadiness.rows[0]?.total || agreementReadiness.rows[0].total !== agreementReadiness.rows[0].locked) {
-      return res.status(409).json({ error: 'All sellers must agree to the shared fulfillment plan before payment can start', code: 'FULFILLMENT_NOT_LOCKED' });
-    }
-    if (pc.payment_method === 'natcash') {
-      const access = await getNatCashAccess(sellerId);
-      if (!access.entitled || !access.paymentMethodEnabled) return res.status(403).json({ error: 'This seller has NatCash access disabled or inactive', code: 'NATCASH_ACCESS_REQUIRED', sellerId });
-    }
-    const agreementResult = await pool.query(
-      `SELECT terms FROM pending_fulfillment_agreements
-       WHERE checkout_id = $1 AND seller_id = $2 AND status = 'accepted' AND terms_locked_at IS NOT NULL`, [pc.id, sellerId]
-    );
-    const agreement = agreementResult.rows[0];
-    if (!agreement) return res.status(409).json({ error: 'This seller’s fulfillment terms are not locked yet' });
-    const provider = pc.payment_method === 'natcash' ? 'natcash' : 'moncash';
-    const cartSubtotal = pc.cart_data.filter(item => item.seller_id === sellerId).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
-    let sellerMerchandiseAmount = cartSubtotal;
-    if (provider === 'moncash' && pc.promo_code) {
-      const allMerchandise = pc.cart_data.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
-      if (allMerchandise > 0) {
-        const promoRes = await pool.query('SELECT discount_type, discount_value FROM promo_codes WHERE code = $1 AND is_active = true', [pc.promo_code]);
-        if (promoRes.rows.length) {
-          const promo = promoRes.rows[0];
-          const discount = promo.discount_type === 'percentage'
-            ? Math.min(allMerchandise * Number(promo.discount_value) / 100, Number(promo.discount_value) * 10)
-            : Math.min(Number(promo.discount_value), allMerchandise);
-          sellerMerchandiseAmount = Math.round((cartSubtotal * Math.max(0, allMerchandise - discount) / allMerchandise) * 100) / 100;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const checkout = await client.query("SELECT * FROM pending_checkouts WHERE id = $1 AND user_id = $2 AND status = 'pending' FOR UPDATE", [req.params.id, req.user.id]);
+      pc = checkout.rows[0];
+      if (!pc) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Pending checkout not found or expired' }); }
+      if (!pc.expires_at || new Date(pc.expires_at).getTime() <= Date.now()) { await client.query('ROLLBACK'); return res.status(410).json({ error: 'The checkout window has expired. Start checkout again to reserve these items.' }); }
+      const agreementReadiness = await client.query(
+        "SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'accepted' AND terms_locked_at IS NOT NULL)::int AS locked FROM pending_fulfillment_agreements WHERE checkout_id = $1",
+        [pc.id]
+      );
+      if (!agreementReadiness.rows[0]?.total || agreementReadiness.rows[0].total !== agreementReadiness.rows[0].locked) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'All sellers must agree to the shared fulfillment plan before payment can start', code: 'FULFILLMENT_NOT_LOCKED' });
+      }
+      if (pc.payment_method === 'natcash') {
+        const access = await getNatCashAccess(sellerId);
+        if (!access.entitled || !access.paymentMethodEnabled) {
+          await client.query('ROLLBACK');
+          return res.status(403).json({ error: 'This seller has NatCash access disabled or inactive', code: 'NATCASH_ACCESS_REQUIRED', sellerId });
         }
       }
-    }
-    const amount = sellerMerchandiseAmount + Number(agreement.terms?.deliveryFee || 0);
-    const existing = await pool.query("SELECT * FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND seller_id = $2 AND provider = $3 AND status IN ('pending','processing')", [pc.id, sellerId, provider]);
-    let session = existing.rows[0];
-    if (!session) {
-      const reference = `fps_${crypto.randomUUID().replaceAll('-', '')}`;
-      const created = await pool.query(
-        `INSERT INTO fulfillment_payment_sessions (checkout_id, seller_id, provider, provider_reference, amount)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`, [pc.id, sellerId, provider, reference, amount]
+      const agreementResult = await client.query(
+        `SELECT terms FROM pending_fulfillment_agreements
+         WHERE checkout_id = $1 AND seller_id = $2 AND status = 'accepted' AND terms_locked_at IS NOT NULL`, [pc.id, sellerId]
       );
-      session = created.rows[0];
-    }
+      const agreement = agreementResult.rows[0];
+      if (!agreement) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This seller’s fulfillment terms are not locked yet' }); }
+      provider = pc.payment_method === 'natcash' ? 'natcash' : 'moncash';
+      const promoResult = provider === 'moncash' && pc.promo_code
+        ? await client.query('SELECT seller_id, min_order_amount, discount_type, discount_value FROM promo_codes WHERE UPPER(code) = UPPER($1)', [pc.promo_code])
+        : { rows: [] };
+      const totals = calculatePendingCheckoutTotals(pc.cart_data, pc.fulfillment_terms, promoResult.rows[0] || null);
+      if (Math.round(totals.totalAmount * 100) !== Math.round(Number(pc.total_amount || 0) * 100)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Checkout total changed. Review the updated checkout before paying.', code: 'CHECKOUT_TOTAL_CHANGED', totalAmount: totals.totalAmount });
+      }
+      const sellerAmount = totals.sellers.find(item => item.sellerId === String(sellerId))?.total;
+      if (!Number.isFinite(sellerAmount)) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Seller portion not found in this checkout' }); }
+      const existing = await client.query("SELECT * FROM fulfillment_payment_sessions WHERE checkout_id = $1 AND seller_id = $2 AND provider = $3 AND status IN ('pending','processing') FOR UPDATE", [pc.id, sellerId, provider]);
+      session = existing.rows[0];
+      if (!session) {
+        const reference = `fps_${crypto.randomUUID().replaceAll('-', '')}`;
+        const created = await client.query(
+          `INSERT INTO fulfillment_payment_sessions (checkout_id, seller_id, provider, provider_reference, amount)
+           VALUES ($1, $2, $3, $4, $5) RETURNING *`, [pc.id, sellerId, provider, reference, sellerAmount]
+        );
+        session = created.rows[0];
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch {}
+      throw err;
+    } finally { client.release(); }
     if (provider === 'natcash') return res.json({ pendingId: pc.id, sellerId, paymentMethod: 'natcash', session });
     const moncashRes = await fetch(process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create', {
       method: 'POST', headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
@@ -1108,7 +1301,19 @@ router.get('/checkout/pending/:id/status', authRequired, async (req, res) => {
       const relClient = await pool.connect();
       try {
         await relClient.query('BEGIN');
-        await relClient.query("UPDATE pending_checkouts SET status = 'expired' WHERE id = $1 AND status IN ('pending','agreement_locked')", [req.params.id]);
+        const expired = await relClient.query(
+          "UPDATE pending_checkouts SET status = 'expired' WHERE id = $1 AND status IN ('pending','agreement_locked') AND expires_at <= CURRENT_TIMESTAMP RETURNING id",
+          [req.params.id]
+        );
+        if (!expired.rowCount) {
+          const latest = await relClient.query('SELECT status, expires_at FROM pending_checkouts WHERE id = $1', [req.params.id]);
+          const latestAgreements = await relClient.query(
+            `SELECT seller_id, status, buyer_accepted_at, seller_accepted_at, terms_locked_at
+             FROM pending_fulfillment_agreements WHERE checkout_id = $1 ORDER BY created_at`, [req.params.id]
+          );
+          await relClient.query('COMMIT');
+          return res.json({ status: latest.rows[0]?.status || pc.status, agreements: latestAgreements.rows, expiresAt: latest.rows[0]?.expires_at || pc.expires_at });
+        }
         // Idempotent release: mark released first, then increment stock
         const released = await relClient.query(
           "UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP WHERE checkout_id = $1 AND status = 'active' RETURNING product_id, quantity, variant_id",
@@ -2036,30 +2241,6 @@ router.post('/orders', authRequired, dobRequired, async (req, res) => {
 });
 
 // ── Cancel Order ──────────────────────────────────────────────────────────
-
-async function releaseCancelledOrderStock(client, orderId, fulfillments, sellerId = null) {
-  // Older MonCash checkouts kept confirmed inventory under the checkout id.
-  for (const fulfillment of fulfillments) {
-    const checkoutId = String(fulfillment.payment_reference || '');
-    if (/^[0-9a-f-]{36}$/i.test(checkoutId)) {
-      await client.query(
-        `UPDATE stock_reservations SET order_id = $1, checkout_id = NULL
-         WHERE checkout_id = $2 AND status IN ('active','confirmed') AND ($3::uuid IS NULL OR seller_id = $3)`, [orderId, checkoutId, sellerId]
-      );
-    }
-  }
-  const released = await client.query(
-    `UPDATE stock_reservations SET status = 'released', released_at = CURRENT_TIMESTAMP
-     WHERE order_id = $1 AND status IN ('active','confirmed') AND ($2::uuid IS NULL OR seller_id = $2)
-     RETURNING product_id, quantity, variant_id`, [orderId, sellerId]
-  );
-  for (const reservation of released.rows) {
-    await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [reservation.quantity, reservation.product_id]);
-    if (reservation.variant_id) {
-      await client.query('UPDATE product_variants SET stock = stock + $1 WHERE id = $2', [reservation.quantity, reservation.variant_id]);
-    }
-  }
-}
 
 router.post('/orders/:id/cancellation-requests', authRequired, async (req, res) => {
   const client = await pool.connect();

@@ -18,6 +18,7 @@ interface StoreState {
   followerCount: number;
   followingCount: number;
   appearanceMode: AppearanceMode;
+  lowDataMode: boolean;
   listeners: Listener[];
 }
 
@@ -49,6 +50,7 @@ const state: StoreState = {
   followerCount: 0,
   followingCount: 0,
   appearanceMode: 'system',
+  lowDataMode: false,
   listeners: [],
 };
 
@@ -78,14 +80,16 @@ export const store = {
   isFollowing(sellerId: string) { return state.followedSellerIds.has(sellerId); },
 
   async init() {
-    const [tokenStr, userStr, cartStr, appearanceStr] = await Promise.all([
+    const [tokenStr, userStr, cartStr, appearanceStr, lowDataStr] = await Promise.all([
       storage.getItem('ba_session_token'),
       storage.getItem('mm_user'),
       storage.getItem('mm_cart'),
       storage.getItem('mm_appearance_mode'),
+      storage.getItem('mm_low_data_mode'),
     ]);
     state.appearanceMode = appearanceStr === 'light' || appearanceStr === 'dark' ? appearanceStr : 'system';
     applyAppearanceMode(state.appearanceMode);
+    state.lowDataMode = lowDataStr === 'true';
     if (tokenStr) {
       state.token = tokenStr;
       setCachedToken(tokenStr);
@@ -168,6 +172,13 @@ export const store = {
     notify();
     const quantity = state.cart.find(c => cartLineKey(c) === cartLineKey(product))?.quantity || 0;
     return { added: true, quantity, stock };
+  },
+
+  get lowDataMode() { return state.lowDataMode; },
+  async setLowDataMode(enabled: boolean) {
+    await storage.setItem('mm_low_data_mode', String(enabled));
+    state.lowDataMode = enabled;
+    notify();
   },
 
   async addAcceptedOfferToCart(product: CartItem, offerMessageId: string) {

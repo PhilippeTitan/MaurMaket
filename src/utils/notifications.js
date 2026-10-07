@@ -28,6 +28,9 @@ const URGENT_TYPES = new Set([
   // Security / Account
   'account_security',
   'password_changed',
+  'new_sign_in',
+  'account_frozen',
+  'account_unfrozen',
   'verification_rejected',
   // Orders / Payments / Escrow / Payouts
   'order_status',
@@ -85,28 +88,98 @@ function isUrgentNotification(type) {
   return URGENT_TYPES.has(type);
 }
 
-function isQuietHoursActive(quietHoursConfig) {
+// Only these non-urgent event families can be routed to the daily summary.
+// Unknown notification types remain in-app until a delivery policy is defined.
+function getNotificationCategory(type) {
+  if (type === 'review_received') return 'reviews';
+  // Review reminders follow the reviews preference (no immediate push by default).
+  if (type === 'review_reminder') return 'reviews';
+  if (type === 'new_product_from_followed') return 'seller_updates';
+  if (type === 'price_drop') return 'price_drops';
+  if (type === 'promotional' || type === 'marketing') return 'marketing_promos';
+  if (type === 'low_stock' || type === 'product_sold_out') return 'inventory_alerts';
+  if (['new_follower'].includes(type)) return 'follows';
+  if (['new_offer', 'counter_offer', 'offer_accepted', 'offer_declined', 'offer_expired'].includes(type)) return 'offers';
+  return null;
+}
+
+function isDailySummaryEligible(type, preferences = {}) {
+  if (isUrgentNotification(type)) return false;
+  const category = getNotificationCategory(type);
+  return !!category && preferences.categories?.[category] === 'daily_summary';
+}
+
+function isValidTime(value) {
+  return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function getLocalClock(date, timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || 'America/Port-au-Prince',
+      weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(date);
+    const get = type => parts.find(part => part.type === type)?.value;
+    const dayIndex = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[get('weekday')];
+    return { day: dayIndex, minutes: Number(get('hour')) * 60 + Number(get('minute')) };
+  } catch {
+    const local = new Date(date);
+    return { day: local.getDay(), minutes: local.getHours() * 60 + local.getMinutes() };
+  }
+}
+
+function matchesQuietHoursDay(day, days) {
+  const isWeekend = day === 0 || day === 6;
+  return days === 'all' || (days === 'weekdays' && !isWeekend) || (days === 'weekends' && isWeekend);
+}
+
+function isQuietHoursScheduleEndingToday(quietHoursConfig, timeZone, date = new Date()) {
+  if (!quietHoursConfig?.enabled) return false;
+  const start = quietHoursConfig.start || '22:00';
+  const end = quietHoursConfig.end || '08:00';
+  if (!isValidTime(start) || !isValidTime(end) || start === end) return false;
+  const { day } = getLocalClock(date, timeZone);
+  const [startH, startM] = start.split(':').map(Number);
+  const [endH, endM] = end.split(':').map(Number);
+  const scheduleDay = startH * 60 + startM > endH * 60 + endM ? (day + 6) % 7 : day;
+  return matchesQuietHoursDay(scheduleDay, quietHoursConfig.days || 'all');
+}
+
+function isQuietHoursEndNow(quietHoursConfig, timeZone, date = new Date()) {
+  if (!quietHoursConfig?.enabled) return false;
+  const start = quietHoursConfig.start || '22:00';
+  const end = quietHoursConfig.end || '08:00';
+  if (!isValidTime(start) || !isValidTime(end)) return false;
+  const local = getLocalClock(date, timeZone);
+  const [startH, startM] = start.split(':').map(Number);
+  const [endH, endM] = end.split(':').map(Number);
+  const startMins = startH * 60 + startM;
+  const endMins = endH * 60 + endM;
+  if (startMins === endMins || local.minutes !== endMins) return false;
+  const scheduleDay = startMins > endMins ? (local.day + 6) % 7 : local.day;
+  return matchesQuietHoursDay(scheduleDay, quietHoursConfig.days || 'all');
+}
+
+function isQuietHoursActive(quietHoursConfig, timeZone = 'America/Port-au-Prince', date = new Date()) {
   if (!quietHoursConfig?.enabled) return false;
   try {
     const { start = '22:00', end = '08:00', days = 'all' } = quietHoursConfig;
-    const now = new Date();
-    const day = now.getDay(); // 0 is Sunday, 6 is Saturday
-    const isWeekend = day === 0 || day === 6;
-
-    if (days === 'weekdays' && isWeekend) return false;
-    if (days === 'weekends' && !isWeekend) return false;
-
+    if (!isValidTime(start) || !isValidTime(end)) return false;
+    const { day, minutes: currentMins } = getLocalClock(date, timeZone);
     const [startH, startM] = start.split(':').map(Number);
     const [endH, endM] = end.split(':').map(Number);
-    const currentMins = now.getHours() * 60 + now.getMinutes();
-    const startMins = startH * 60 + (startM || 0);
-    const endMins = endH * 60 + (endM || 0);
+    const startMins = startH * 60 + startM;
+    const endMins = endH * 60 + endM;
+    if (startMins === endMins) return false;
 
     if (startMins <= endMins) {
+      if (!matchesQuietHoursDay(day, days)) return false;
       return currentMins >= startMins && currentMins < endMins;
     } else {
-      // Overnight (e.g. 22:00 to 08:00)
-      return currentMins >= startMins || currentMins < endMins;
+      // For the after-midnight tail, the selected day is the day quiet hours began.
+      if (currentMins >= startMins) return matchesQuietHoursDay(day, days);
+      if (currentMins < endMins) return matchesQuietHoursDay((day + 6) % 7, days);
+      return false;
     }
   } catch {
     return false;
@@ -116,6 +189,16 @@ function isQuietHoursActive(quietHoursConfig) {
 function sanitizeForLockScreen(type, title, body) {
   // Hide sensitive details (payment amounts, dispute reasons, message text) by default
   switch (type) {
+    case 'new_sign_in':
+      // A security alert is useful on the lock screen, but never carries the
+      // device detail, tokens, or addresses — the safe next step is enough.
+      return { title: 'New sign-in', body: 'A new device signed in. If this was not you, open MaurMaket to secure your account.' };
+    case 'account_frozen':
+      // Freeze state is safety-relevant, so it shows on the lock screen — but
+      // without any of the owner's free-text reason.
+      return { title: 'Account frozen', body: 'New listings and payouts are paused. Open MaurMaket to review your account.' };
+    case 'account_unfrozen':
+      return { title: 'Account restored', body: 'Your account is active again. Open MaurMaket to review your security activity.' };
     case 'payment_confirmed':
       return { title: 'Payment Confirmed', body: 'Payment received. Open MaurMaket to view order details.' };
     case 'payment_failed':
@@ -318,7 +401,7 @@ async function sendPushNotification(userId, title, body, data, notificationType)
     );
     const user = userRes.rows[0];
     const token = user?.push_token;
-    if (!token || !Expo.isExpoPushToken(token)) return;
+    if (!token || !Expo.isExpoPushToken(token)) return { status: 'skipped', reason: 'no_valid_token' };
 
     const prefs = user.notification_preferences || {};
     const categories = prefs.categories || {};
@@ -329,7 +412,7 @@ async function sendPushNotification(userId, title, body, data, notificationType)
     if (type === 'new_product_from_followed' && data?.sellerId) {
       const mutedSellers = Array.isArray(prefs.muted_seller_ids) ? prefs.muted_seller_ids : [];
       if (mutedSellers.includes(String(data.sellerId))) {
-        return; // Suppressed: seller muted by user
+        return { status: 'skipped', reason: 'seller_muted' };
       }
     }
 
@@ -337,38 +420,27 @@ async function sendPushNotification(userId, title, body, data, notificationType)
     if (!isUrgent && prefs.snooze_until) {
       const snoozeEnd = new Date(prefs.snooze_until).getTime();
       if (Date.now() < snoozeEnd) {
-        return; // Suppressed while snooze active; retained in in-app activity
+        return { status: 'skipped', reason: 'snoozed' };
       }
     }
 
     // 3. Check quiet hours (urgent alerts remain immediate!)
-    if (!isUrgent && isQuietHoursActive(prefs.quiet_hours)) {
-      return; // Non-urgent alerts wait until quiet hours end and join daily summary
+    if (!isUrgent && isQuietHoursActive(prefs.quiet_hours, prefs.time_zone)) {
+      return { status: 'skipped', reason: 'quiet_hours' };
     }
 
     // 4. Check category preferences for non-urgent notifications
-    if (!isUrgent) {
-      if (type === 'review_received') {
-        const mode = categories.reviews || 'daily_summary';
-        if (mode === 'in_app' || mode === 'daily_summary') return;
-      } else if (type === 'new_product_from_followed') {
-        const mode = categories.seller_updates || 'daily_summary';
-        if (mode === 'in_app' || mode === 'daily_summary') return;
-      } else if (type === 'promotional' || type === 'marketing') {
-        const mode = categories.marketing_promos || 'off';
-        if (mode !== 'push_now') return;
-      } else if (type === 'price_drop') {
-        const mode = categories.price_drops || 'off';
-        if (mode !== 'push_now') return;
-      } else if (type === 'low_stock' || type === 'product_sold_out') {
-        const mode = categories.inventory_alerts || 'push_now';
-        if (mode !== 'push_now') return;
-      } else if (['listing_approved', 'listing_in_review'].includes(type)) {
-        // Non-urgent listing milestones: in-app only, no immediate push
-        return;
-      } else if (['verification_approved', 'subscription_activated', 'natcash_access_renewed'].includes(type)) {
-        // Non-urgent milestones: retained in in-app feed and daily summaries without immediate push
-        return;
+    if (!isUrgent && type !== 'daily_summary') {
+      const category = getNotificationCategory(type);
+      if (!category) {
+        if (['listing_approved', 'listing_in_review', 'verification_approved', 'subscription_activated', 'natcash_access_renewed'].includes(type)) {
+          return { status: 'skipped', reason: 'in_app_milestone' };
+        }
+        // Preserve the established immediate behavior for event types without a
+        // configurable category; add a category only after its policy is defined.
+      } else {
+        const mode = categories[category] || (category === 'reviews' || category === 'seller_updates' ? 'daily_summary' : 'in_app');
+        if (mode !== 'push_now') return { status: 'skipped', reason: `category_${mode}` };
       }
     }
 
@@ -419,9 +491,13 @@ async function sendPushNotification(userId, title, body, data, notificationType)
       // Best-effort image lookup
     }
 
-    await expo.sendPushNotificationsAsync([payload]);
+    const tickets = await expo.sendPushNotificationsAsync([payload]);
+    const ticket = tickets?.[0];
+    if (ticket?.status === 'error') return { status: 'failed', reason: ticket.message || 'expo_rejected' };
+    return { status: 'sent' };
   } catch (err) {
     console.error('Push notification failed:', err.message);
+    return { status: 'failed', reason: err.message };
   }
 }
 
@@ -430,4 +506,10 @@ export {
   sendPushNotification,
   isUrgentNotification,
   isQuietHoursActive,
+  getNotificationCategory,
+  isDailySummaryEligible,
+  isValidTime,
+  getLocalClock,
+  isQuietHoursEndNow,
+  isQuietHoursScheduleEndingToday,
 };

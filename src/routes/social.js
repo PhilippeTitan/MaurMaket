@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../config/database.js';
 import { authRequired, dobRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
+import { PUBLIC_REVIEW_PREDICATE } from '../utils/reviewVisibility.js';
 
 const router = Router();
 
@@ -170,6 +171,7 @@ router.put('/reviews/:id', authRequired, async (req, res) => {
     );
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Review not found' });
     const prevReview = existing.rows[0];
+    if (prevReview.deleted_at) return res.status(409).json({ error: 'This review was deleted' });
 
     const result = await pool.query(
       `UPDATE reviews
@@ -196,6 +198,29 @@ router.put('/reviews/:id', authRequired, async (req, res) => {
     res.json({ review: result.rows[0] });
   } catch (err) {
     console.error('Review update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete own review (soft delete; Profile & Settings handoff). The review must
+// vanish from public lists and rating averages, but the one-review-per-order
+// audit row is retained privately.
+router.delete('/reviews/:id', authRequired, async (req, res) => {
+  try {
+    const existing = await pool.query(
+      'SELECT reviewer_id, deleted_at FROM reviews WHERE id = $1',
+      [req.params.id]
+    );
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Review not found' });
+    if (existing.rows[0].reviewer_id !== req.user.id) {
+      return res.status(403).json({ error: 'You can only delete your own review' });
+    }
+    if (!existing.rows[0].deleted_at) {
+      await pool.query('UPDATE reviews SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
+    }
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error('Review delete error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -272,17 +297,17 @@ router.get('/reviews/seller/:sellerId', async (req, res) => {
     const offset = (page - 1) * limit;
 
     const result = await pool.query(
-      `SELECT r.*,
+      `       SELECT r.*,
               u.full_name AS reviewer_name,
               u.avatar_url AS reviewer_avatar,
               u.username AS reviewer_username,
-              u.show_real_name AS reviewer_show_real_name
+              u.show_real_name AS reviewer_show_real_name,
+              true AS is_transaction_level
        FROM reviews r
        JOIN users u ON r.reviewer_id = u.id
        JOIN orders o ON r.order_id = o.id
        WHERE r.seller_id = $1
-         AND r.is_moderated = false
-         AND COALESCE((SELECT SUM(rp.amount) FROM refund_payouts rp WHERE rp.order_id = o.id AND rp.status = 'completed'), 0) < o.total_amount
+         AND ${PUBLIC_REVIEW_PREDICATE}
        ORDER BY r.created_at DESC
        LIMIT $2 OFFSET $3`,
       [req.params.sellerId, limit, offset]
@@ -300,8 +325,7 @@ router.get('/reviews/seller/:sellerId', async (req, res) => {
        FROM reviews r
        JOIN orders o ON r.order_id = o.id
        WHERE r.seller_id = $1
-         AND r.is_moderated = false
-         AND COALESCE((SELECT SUM(rp.amount) FROM refund_payouts rp WHERE rp.order_id = o.id AND rp.status = 'completed'), 0) < o.total_amount`,
+         AND ${PUBLIC_REVIEW_PREDICATE}`,
       [req.params.sellerId]
     );
 
@@ -349,8 +373,7 @@ router.get('/reviews/product/:productId', async (req, res) => {
        JOIN orders o ON r.order_id = o.id
        JOIN users u ON r.reviewer_id = u.id
        WHERE oi.product_id = $1
-         AND r.is_moderated = false
-         AND COALESCE((SELECT SUM(rp.amount) FROM refund_payouts rp WHERE rp.order_id = o.id AND rp.status = 'completed'), 0) < o.total_amount
+         AND ${PUBLIC_REVIEW_PREDICATE}
        ORDER BY r.created_at DESC`,
       [req.params.productId]
     );
@@ -761,23 +784,71 @@ router.get('/notifications/preferences', authRequired, async (req, res) => {
 });
 
 router.put('/notifications/preferences', authRequired, async (req, res) => {
+  const allowedRootKeys = new Set(['categories', 'quiet_hours', 'snooze_until', 'daily_summary_time', 'hide_sensitive_previews', 'muted_seller_ids', 'time_zone']);
+  const allowedCategories = new Set(['reviews', 'seller_updates', 'marketing_promos', 'price_drops']);
   try {
     const updates = req.body || {};
-    const userRes = await pool.query(
-      `SELECT notification_preferences FROM users WHERE id = $1`,
-      [req.user.id]
-    );
-    const current = userRes.rows[0]?.notification_preferences || {};
-    const merged = {
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates) || Object.keys(updates).some(key => !allowedRootKeys.has(key))) {
+      return res.status(400).json({ error: 'Invalid notification preference update' });
+    }
+    if (updates.categories && (typeof updates.categories !== 'object' || Array.isArray(updates.categories) || Object.keys(updates.categories).some(key => !allowedCategories.has(key)))) {
+      return res.status(400).json({ error: 'Invalid notification category preference' });
+    }
+    if (updates.categories && Object.entries(updates.categories).some(([key, value]) =>
+      key === 'marketing_promos' ? !['push_now', 'in_app', 'off'].includes(value) : !['push_now', 'daily_summary', 'in_app'].includes(value)
+    )) return res.status(400).json({ error: 'Invalid notification delivery mode' });
+    if (updates.quiet_hours && (typeof updates.quiet_hours !== 'object' || Array.isArray(updates.quiet_hours))) {
+      return res.status(400).json({ error: 'Invalid quiet-hours preference' });
+    }
+    if (updates.quiet_hours) {
+      const qh = updates.quiet_hours;
+      if (Object.keys(qh).some(key => !['enabled', 'start', 'end', 'days'].includes(key)) ||
+          ('enabled' in qh && typeof qh.enabled !== 'boolean') ||
+          (('start' in qh && !/^([01]\d|2[0-3]):[0-5]\d$/.test(qh.start)) || ('end' in qh && !/^([01]\d|2[0-3]):[0-5]\d$/.test(qh.end))) ||
+          ('days' in qh && !['all', 'weekdays', 'weekends'].includes(qh.days))) {
+        return res.status(400).json({ error: 'Invalid quiet-hours schedule' });
+      }
+    }
+    if ('daily_summary_time' in updates && !/^([01]\d|2[0-3]):[0-5]\d$/.test(updates.daily_summary_time)) {
+      return res.status(400).json({ error: 'Invalid daily summary time' });
+    }
+    if ('time_zone' in updates) {
+      try { new Intl.DateTimeFormat('en-US', { timeZone: updates.time_zone }); }
+      catch { return res.status(400).json({ error: 'Invalid time zone' }); }
+    }
+    const client = await pool.connect();
+    let merged;
+    try {
+      await client.query('BEGIN');
+      const userRes = await client.query(
+        `SELECT notification_preferences FROM users WHERE id = $1 FOR UPDATE`,
+        [req.user.id]
+      );
+      const current = userRes.rows[0]?.notification_preferences || {};
+      if (!userRes.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'User not found' });
+      }
+      merged = {
       ...current,
       ...updates,
       categories: { ...(current.categories || {}), ...(updates.categories || {}) },
       quiet_hours: { ...(current.quiet_hours || {}), ...(updates.quiet_hours || {}) },
     };
-    await pool.query(
+      // Follows and offer/counter activity always notify immediately by product policy.
+      merged.categories.follows = 'push_now';
+      merged.categories.offers = 'push_now';
+      await client.query(
       `UPDATE users SET notification_preferences = $1 WHERE id = $2`,
       [JSON.stringify(merged), req.user.id]
-    );
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
     res.json({ preferences: merged });
   } catch (err) {
     console.error('Update notification preferences error:', err);
@@ -786,11 +857,13 @@ router.put('/notifications/preferences', authRequired, async (req, res) => {
 });
 
 router.post('/notifications/mute-seller', authRequired, async (req, res) => {
+  const client = await pool.connect();
   try {
     const { sellerId, muted } = req.body;
     if (!sellerId) return res.status(400).json({ error: 'sellerId required' });
-    const userRes = await pool.query(
-      `SELECT notification_preferences FROM users WHERE id = $1`,
+    await client.query('BEGIN');
+    const userRes = await client.query(
+      `SELECT notification_preferences FROM users WHERE id = $1 FOR UPDATE`,
       [req.user.id]
     );
     const current = userRes.rows[0]?.notification_preferences || {};
@@ -801,14 +874,18 @@ router.post('/notifications/mute-seller', authRequired, async (req, res) => {
       mutedList = mutedList.filter(id => id !== String(sellerId));
     }
     const updated = { ...current, muted_seller_ids: mutedList };
-    await pool.query(
+    await client.query(
       `UPDATE users SET notification_preferences = $1 WHERE id = $2`,
       [JSON.stringify(updated), req.user.id]
     );
+    await client.query('COMMIT');
     res.json({ muted: !!muted, muted_seller_ids: mutedList });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* transaction may not have started */ }
     console.error('Mute seller error:', err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -836,7 +913,8 @@ router.get('/sellers/nearby', async (req, res) => {
               )))) AS distance_km
        FROM seller_locations sl
        JOIN users u ON u.id = sl.seller_id
-       WHERE u.role = 'seller' AND sl.is_visible = true AND sl.public_area_confirmed = true
+       WHERE u.role = 'seller' AND u.search_discoverable = true
+         AND sl.is_visible = true AND sl.public_area_confirmed = true
          AND sl.public_lat IS NOT NULL AND sl.public_lng IS NOT NULL
        ORDER BY distance_km ASC`,
       [latNum, lngNum]
@@ -856,9 +934,9 @@ router.get('/sellers/nearby', async (req, res) => {
            WHERE p.seller_id = ANY($1::uuid[]) AND p.is_available = true
            ORDER BY p.seller_id, pi.is_primary DESC, pi.display_order ASC`, [sellerIds]),
         pool.query(
-          `SELECT seller_id, COALESCE(AVG(rating)::numeric(3,2), 0) AS avg_rating, COUNT(*) AS review_count
-           FROM reviews WHERE seller_id = ANY($1::uuid[])
-           GROUP BY seller_id`, [sellerIds])
+          `SELECT r.seller_id, COALESCE(AVG(r.rating)::numeric(3,2), 0) AS avg_rating, COUNT(*) AS review_count
+           FROM reviews r WHERE r.seller_id = ANY($1::uuid[]) AND ${PUBLIC_REVIEW_PREDICATE}
+           GROUP BY r.seller_id`, [sellerIds])
       ]);
       const pcMap = Object.fromEntries(productCounts.rows.map(r => [r.seller_id, parseInt(r.product_count)]));
       const piMap = Object.fromEntries(primaryImages.rows.map(r => [r.seller_id, r.image_url]));
@@ -895,7 +973,7 @@ router.get('/sellers/search', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, full_name, username, avatar_url, store_name, store_logo_url, seller_tier, use_store_identity
-       FROM users WHERE id <> $1 AND role = 'seller'
+       FROM users WHERE id <> $1 AND role = 'seller' AND search_discoverable = true
          AND (full_name ILIKE $2 OR username ILIKE $2 OR store_name ILIKE $2)
        ORDER BY CASE WHEN username ILIKE $3 OR store_name ILIKE $3 THEN 0 ELSE 1 END, full_name
        LIMIT 30`, [req.user.id, `%${query}%`, `${query}%`]
@@ -920,8 +998,8 @@ router.get('/sellers/:id', async (req, res) => {
                        OR EXISTS (SELECT 1 FROM natcash_access_subscriptions ns WHERE ns.seller_id = u.id AND ns.status = 'active' AND ns.expires_at + INTERVAL '3 days' > CURRENT_TIMESTAMP))
                    THEN u.accepted_payment_methods ELSE array_remove(COALESCE(u.accepted_payment_methods, ARRAY['moncash']::text[]), 'natcash') END AS accepted_payment_methods,
               (SELECT COUNT(*) FROM products p WHERE p.seller_id = u.id AND p.is_available = true) AS product_count,
-              (SELECT COALESCE(AVG(r.rating)::numeric(3,2), 0) FROM reviews r WHERE r.seller_id = u.id AND r.is_moderated = false) AS avg_rating,
-              (SELECT COUNT(*) FROM reviews r2 WHERE r2.seller_id = u.id AND r2.is_moderated = false) AS review_count,
+              (SELECT COALESCE(AVG(r.rating)::numeric(3,2), 0) FROM reviews r WHERE r.seller_id = u.id AND ${PUBLIC_REVIEW_PREDICATE}) AS avg_rating,
+              (SELECT COUNT(*) FROM reviews r WHERE r.seller_id = u.id AND ${PUBLIC_REVIEW_PREDICATE}) AS review_count,
               (SELECT COUNT(*) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.seller_id = u.id AND o.status = 'completed') AS sales_count,
               (SELECT COUNT(*) FROM follows f WHERE f.seller_id = u.id) AS followers_count,
               (SELECT COUNT(*) FROM follows f WHERE f.follower_id = u.id) AS following_count
@@ -1036,7 +1114,7 @@ router.post('/seller/pin-listing', authRequired, async (req, res) => {
 
 router.post('/reports', authRequired, async (req, res) => {
   try {
-    const { targetType, targetId, reportedUserId, reason, details, orderContext } = req.body;
+    const { targetType, targetId, reportedUserId, reason, details, orderContext, rightsHolder } = req.body;
     if (!targetType || !targetId || !reason) {
       return res.status(400).json({ error: 'targetType, targetId, and reason are required' });
     }
@@ -1054,10 +1132,10 @@ router.post('/reports', authRequired, async (req, res) => {
       }
     }
     const result = await pool.query(
-      `INSERT INTO user_reports (reporter_id, reported_user_id, target_type, target_id, reason, details, order_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO user_reports (reporter_id, reported_user_id, target_type, target_id, reason, details, order_context, rights_holder)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [req.user.id, resolvedReportedUserId, targetType, targetId, reason, details || null, orderContext ? JSON.stringify(orderContext) : null]
+      [req.user.id, resolvedReportedUserId, targetType, targetId, reason, details || null, orderContext ? JSON.stringify(orderContext) : null, rightsHolder === true]
     );
     res.status(201).json({ report: result.rows[0], success: true });
   } catch (err) {

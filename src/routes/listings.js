@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../config/database.js';
-import { authRequired, sellerRequired, verifiedSellerRequired } from '../middleware/auth.js';
+import { authRequired, sellerRequired, verifiedSellerRequired, accountActive } from '../middleware/auth.js';
 import { adminRequired } from './admin.js';
 import { createNotification } from '../utils/notifications.js';
 import {
@@ -153,6 +153,7 @@ router.get('/api/seller/listings', authRequired, sellerRequired, async (req, res
       pool.query(
         `SELECT p.id, p.name, p.price, p.sale_price, p.sale_starts_at, p.sale_ends_at, p.stock,
                 p.is_available, p.listing_status, p.paused_reason, p.moderation_reason,
+                p.moderation_category, p.moderation_detail, p.content_updated_during_review,
                 p.appeal_note, p.appealed_at, p.reviewed_at, p.condition, p.has_variants,
                 p.offers_enabled, p.low_stock_threshold, p.created_at, p.updated_at,
                 p.is_pinned,
@@ -185,12 +186,14 @@ router.get('/api/seller/listings', authRequired, sellerRequired, async (req, res
     const counts = {
       active: 0,
       pending_review: 0,
+      under_review: 0,
       rejected: 0,
       paused: 0,
       out_of_stock: 0,
     };
     for (const l of listings) {
       if (l.listing_status === 'pending_review') counts.pending_review += 1;
+      else if (l.listing_status === 'under_review') counts.under_review += 1;
       else if (l.listing_status === 'rejected') counts.rejected += 1;
       else if (!l.is_available) {
         counts.paused += 1;
@@ -237,7 +240,7 @@ router.post('/api/products/:id/pause', authRequired, sellerRequired, async (req,
   }
 });
 
-router.post('/api/products/:id/resume', authRequired, sellerRequired, async (req, res) => {
+router.post('/api/products/:id/resume', authRequired, sellerRequired, accountActive, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -335,9 +338,12 @@ router.post('/api/products/:id/resubmit', authRequired, verifiedSellerRequired, 
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Not your listing' });
     }
-    if (p.listing_status !== 'rejected') {
+    // APP-Q546: a seller may fix disputed photos/text while a content-rights
+    // review is open; that must not clear or restart the review.
+    const isContentRightsReview = p.listing_status === 'under_review';
+    if (p.listing_status !== 'rejected' && !isContentRightsReview) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Only rejected listings can be resubmitted' });
+      return res.status(409).json({ error: 'Only rejected or under-review listings can be resubmitted' });
     }
 
     const images = await pool.query(
@@ -370,7 +376,16 @@ router.post('/api/products/:id/resubmit', authRequired, verifiedSellerRequired, 
     const mod = assessModeration({ name: p.name, description: p.description, flawNotes: p.flaw_notes });
     let status = 'active';
     let available = true;
-    if (mod.flagged) {
+    if (isContentRightsReview) {
+      status = 'under_review';
+      available = false;
+    } else if (p.moderation_category) {
+      // A listing already confirmed as a content-rights violation goes back to
+      // human review; it must not return to public discovery on an edit alone
+      // (APP-Q547/Q549).
+      status = 'pending_review';
+      available = false;
+    } else if (mod.flagged) {
       status = 'pending_review';
       available = false;
     } else {
@@ -389,13 +404,20 @@ router.post('/api/products/:id/resubmit', authRequired, verifiedSellerRequired, 
     const result = await client.query(
       `UPDATE products
           SET listing_status = $2, is_available = $3, paused_reason = NULL,
-              moderation_reason = $4, reviewed_at = CURRENT_TIMESTAMP,
-              appeal_note = NULL, appealed_at = NULL, updated_at = CURRENT_TIMESTAMP
+              moderation_reason = CASE WHEN $5 THEN moderation_reason ELSE $4 END,
+              content_updated_during_review = CASE WHEN $5 THEN true ELSE content_updated_during_review END,
+              reviewed_at = CURRENT_TIMESTAMP,
+              appeal_note = CASE WHEN $5 THEN appeal_note ELSE NULL END,
+              appealed_at = CASE WHEN $5 THEN appealed_at ELSE NULL END,
+              updated_at = CURRENT_TIMESTAMP
         WHERE id = $1 RETURNING *`,
-      [req.params.id, status, available, mod.reason]
+      [req.params.id, status, available, mod.reason, isContentRightsReview]
     );
     await client.query('COMMIT');
-    res.json({ product: result.rows[0], moderated: mod.flagged ? 'pending_review' : 'approved' });
+    res.json({
+      product: result.rows[0],
+      moderated: isContentRightsReview ? 'under_review' : (status === 'pending_review' ? 'pending_review' : 'approved'),
+    });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch { /* ignore */ }
     console.error('Listing resubmit error:', err);
@@ -418,8 +440,9 @@ router.post('/api/products/:id/appeal', authRequired, sellerRequired, async (req
     );
     if (check.rows.length === 0) return res.status(404).json({ error: 'Listing not found' });
     if (check.rows[0].seller_id !== req.user.id) return res.status(403).json({ error: 'Not your listing' });
-    if (check.rows[0].listing_status !== 'rejected') {
-      return res.status(409).json({ error: 'Only rejected listings can be appealed' });
+    // APP-Q547: an open content-rights review may also be appealed.
+    if (!['rejected', 'under_review'].includes(check.rows[0].listing_status)) {
+      return res.status(409).json({ error: 'Only rejected or under-review listings can be appealed' });
     }
     const result = await pool.query(
       `UPDATE products SET appeal_note = $2, appealed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -547,7 +570,8 @@ router.get('/api/admin/listings/pending', authRequired, adminRequired, async (_r
   try {
     const result = await pool.query(
       `SELECT p.id, p.name, p.description, p.price, p.stock, p.condition, p.flaw_notes,
-              p.listing_status, p.moderation_reason, p.appeal_note, p.appealed_at,
+              p.listing_status, p.moderation_reason, p.moderation_category, p.moderation_detail,
+              p.content_updated_during_review, p.appeal_note, p.appealed_at,
               p.created_at, p.updated_at, p.is_available, p.paused_reason,
               u.id AS seller_id, u.full_name AS seller_name, u.seller_tier,
               c.name AS category,
@@ -558,6 +582,7 @@ router.get('/api/admin/listings/pending', authRequired, adminRequired, async (_r
          LEFT JOIN categories c ON c.id = p.category_id
         WHERE (p.listing_status = 'pending_review')
            OR (p.listing_status = 'rejected' AND p.appealed_at IS NOT NULL)
+           OR (p.listing_status = 'under_review')
         ORDER BY COALESCE(p.appealed_at, p.updated_at) ASC
         LIMIT 100`
     );
@@ -600,7 +625,8 @@ router.post('/api/admin/listings/:id/approve', authRequired, adminRequired, asyn
     const result = await client.query(
       `UPDATE products
           SET listing_status = 'active', is_available = true, paused_reason = NULL,
-              moderation_reason = NULL, reviewed_at = CURRENT_TIMESTAMP,
+              moderation_reason = NULL, moderation_category = NULL, moderation_detail = NULL,
+              content_updated_during_review = false, reviewed_at = CURRENT_TIMESTAMP,
               appeal_note = NULL, appealed_at = NULL, updated_at = CURRENT_TIMESTAMP
         WHERE id = $1 RETURNING *`,
       [req.params.id]
@@ -655,6 +681,138 @@ router.post('/api/admin/listings/:id/reject', authRequired, adminRequired, async
     res.json({ product: result.rows[0] });
   } catch (err) {
     console.error('Admin reject listing error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADMIN — content-rights / authenticity restriction (APP-Q545–APP-Q547)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CONTENT_REVIEW_CATEGORIES = new Set([
+  'counterfeit', 'stolen_content', 'brand_misuse', 'prohibited', 'other',
+]);
+
+// Restricts a listing into an open content review. The seller is told the reason
+// category, the affected content, and their response path — never the reporter's
+// identity or the private evidence (APP-Q545). Routine review keeps the listing
+// visible; only a credible immediate serious risk is hidden (APP-Q008), which
+// the reviewing person chooses with `hide`.
+router.post('/api/admin/listings/:id/restrict', authRequired, adminRequired, async (req, res) => {
+  try {
+    const category = String((req.body || {}).category || '').trim();
+    const detail = String((req.body || {}).detail || '').trim();
+    const hide = (req.body || {}).hide === true;
+    if (!CONTENT_REVIEW_CATEGORIES.has(category)) {
+      return res.status(400).json({ error: 'A valid review category is required' });
+    }
+    if (detail.length > 500) return res.status(400).json({ error: 'Detail too long (max 500 characters)' });
+
+    const check = await pool.query(
+      'SELECT seller_id, name, listing_status FROM products WHERE id = $1',
+      [req.params.id]
+    );
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Listing not found' });
+    if (check.rows[0].listing_status === 'under_review') {
+      return res.status(409).json({ error: 'Listing is already under content review' });
+    }
+
+    const result = await pool.query(
+      `UPDATE products
+          SET listing_status = 'under_review',
+              is_available = CASE WHEN $2 THEN false ELSE is_available END,
+              paused_reason = CASE WHEN $2 THEN 'content_review' ELSE paused_reason END,
+              moderation_category = $3, moderation_detail = $4,
+              content_updated_during_review = false,
+              reviewed_at = CURRENT_TIMESTAMP,
+              appeal_note = NULL, appealed_at = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 RETURNING *`,
+      [req.params.id, hide, category, detail || null]
+    );
+
+    createNotification(
+      check.rows[0].seller_id,
+      'listing_under_review',
+      hide ? 'Listing hidden while we review a report' : 'Listing under review',
+      hide
+        ? `"${check.rows[0].name}" is hidden from buyers while we review a concern. You can check the affected content and respond.`
+        : `"${check.rows[0].name}" stays visible while we review a concern. You can check the affected content and respond.`,
+      { screen: 'MyListings', productId: req.params.id }
+    ).catch(() => {});
+
+    res.json({ product: result.rows[0] });
+  } catch (err) {
+    console.error('Admin restrict listing error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Confirms a content-rights / authenticity concern after human review. The
+// listing leaves public discovery. Buyers whose completed orders included the
+// listing are told factually, with a Support route, without blame and without
+// any order/payment state change (APP-Q548). Reporter identity and private
+// evidence are never revealed. Item-affecting categories (counterfeit,
+// prohibited) notify buyers; content-only issues (stolen photos, brand misuse)
+// do not, because nothing about a delivered item changes.
+const BUYER_NOTICE_CATEGORIES = new Set(['counterfeit', 'prohibited']);
+
+router.post('/api/admin/listings/:id/confirm', authRequired, adminRequired, async (req, res) => {
+  try {
+    const detail = String((req.body || {}).detail || '').trim();
+    if (detail.length > 500) return res.status(400).json({ error: 'Detail too long (max 500 characters)' });
+
+    const check = await pool.query(
+      'SELECT seller_id, name, listing_status, moderation_category FROM products WHERE id = $1',
+      [req.params.id]
+    );
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Listing not found' });
+    if (check.rows[0].listing_status !== 'under_review') {
+      return res.status(409).json({ error: 'Only a listing under content review can be confirmed' });
+    }
+
+    const result = await pool.query(
+      `UPDATE products
+          SET listing_status = 'rejected', is_available = false,
+              paused_reason = 'content_review',
+              moderation_detail = COALESCE(NULLIF($2, ''), moderation_detail),
+              moderation_reason = COALESCE(NULLIF($2, ''), moderation_reason, 'Content review confirmed'),
+              reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 RETURNING *`,
+      [req.params.id, detail]
+    );
+
+    createNotification(
+      check.rows[0].seller_id,
+      'listing_content_confirmed',
+      'Listing removed after a content review',
+      `A content concern about "${check.rows[0].name}" was confirmed, so the listing is no longer public. You can appeal if you believe this is a mistake.`,
+      { screen: 'MyListings', productId: req.params.id }
+    ).catch(() => {});
+
+    let notifiedBuyers = 0;
+    if (BUYER_NOTICE_CATEGORIES.has(check.rows[0].moderation_category)) {
+      const affected = await pool.query(
+        `SELECT DISTINCT o.buyer_id
+           FROM orders o
+           JOIN order_items oi ON oi.order_id = o.id
+          WHERE oi.product_id = $1 AND o.status = 'completed'`,
+        [req.params.id]
+      );
+      for (const row of affected.rows) {
+        notifiedBuyers += 1;
+        createNotification(
+          row.buyer_id,
+          'content_review_buyer_notice',
+          'About an item from a past order',
+          `A content concern about "${check.rows[0].name}" from a past order was confirmed. Your order and payment are unchanged, and no action is needed. Contact Support if you have questions.`,
+          { screen: 'HelpSupport', productId: req.params.id }
+        ).catch(() => {});
+      }
+    }
+
+    res.json({ product: result.rows[0], notified_buyers: notifiedBuyers });
+  } catch (err) {
+    console.error('Admin confirm listing error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

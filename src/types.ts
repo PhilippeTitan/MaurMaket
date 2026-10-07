@@ -34,6 +34,9 @@ export interface User {
   show_public_city?: boolean;
   hide_follower_lists?: boolean;
   hide_follower_counts?: boolean;
+  // APP-Q431: keep the person out of in-app search/suggestions while direct
+  // links, listings, orders, and messages keep working. Defaults to true.
+  search_discoverable?: boolean;
   language?: string;
   pinned_product_id?: string | null;
   pinned_product?: {
@@ -232,6 +235,16 @@ export interface Order {
     resolution: string | null; response_deadline: string | null; created_at: string;
     seller_name?: string | null; requester_name?: string | null;
   }>;
+  // The buyer's own review for this order (edit/delete affordance in Order Detail).
+  my_review?: {
+    id: string;
+    rating: number;
+    comment: string | null;
+    is_edited?: boolean;
+    seller_response?: string | null;
+    created_at: string;
+    deleted_at?: string | null;
+  } | null;
 }
 
 export interface OrderEvent {
@@ -292,8 +305,8 @@ export interface NotificationPreferences {
     meetups?: 'push_now';
     disputes?: 'push_now';
     inventory_alerts?: 'push_now';
-    follows?: 'push_now' | 'daily_summary' | 'in_app';
-    offers?: 'push_now' | 'daily_summary' | 'in_app';
+    follows?: 'push_now';
+    offers?: 'push_now';
     reviews?: 'push_now' | 'daily_summary' | 'in_app';
     seller_updates?: 'push_now' | 'daily_summary' | 'in_app';
     marketing_promos?: 'push_now' | 'in_app' | 'off';
@@ -306,6 +319,7 @@ export interface NotificationPreferences {
   };
   snooze_until: string | null;
   daily_summary_time: string;
+  time_zone?: string;
   hide_sensitive_previews: boolean;
   muted_seller_ids: string[];
 }
@@ -477,4 +491,90 @@ export interface UserReportPayload {
   reason: string;
   details?: string;
   orderContext?: any;
+  // APP-Q544: set when the reporter identifies as the rights holder.
+  rightsHolder?: boolean;
+}
+
+export interface PolicyDocumentState {
+  kind: 'terms' | 'privacy';
+  version: string;
+  is_material: boolean;
+  effective_at: string;
+  title: string | null;
+  summary: string | null;
+  url: string | null;
+  available_locales: string[];
+  locale_available: boolean;
+  accepted: { version: string; accepted_at: string } | null;
+  acceptance_current: boolean;
+  baseline: boolean;
+  notice_dismissed: boolean;
+}
+
+export interface PolicyState {
+  locale: string;
+  supported_locales: string[];
+  documents: PolicyDocumentState[];
+  needs_acceptance: string[];
+  history: { kind: string; version: string; accepted_at: string }[];
+}
+
+// Batch 73 / APP-Q369 — the account's private security activity history.
+// `event_type` is a stable code so the app can render it in any locale, and
+// `user_agent` is the same non-secret device string the session list exposes.
+export interface SecurityEvent {
+  id: number;
+  event_type: 'sign_in' | 'account_frozen' | 'account_unfrozen';
+  user_agent: string | null;
+  /** Only ever the account owner's own freeze note. */
+  reason: string | null;
+  created_at: string;
+}
+
+// Batch 73/74/75 — fast account freeze for suspected compromise (APP-Q371).
+// A freeze stops new listings and payout requests only; sign-in, recovery,
+// messages, orders, Support, and export keep working.
+export interface AccountFreezeState {
+  frozen: boolean;
+  frozen_at: string | null;
+  reason: string | null;
+  frozen_by: 'self' | 'support' | null;
+  listings_paused: number;
+  has_password?: boolean;
+  listings_restored?: number;
+}
+
+// Batch 74/75 — data export lifecycle (APP-Q379–APP-Q391). An export is a job
+// the user deliberately starts (re-confirming their password when they have
+// one), can watch, cancel while it is being prepared, and retry after failure
+// without ever receiving a duplicate or partial archive.
+export type ExportJobStatus =
+  | 'pending'
+  | 'ready'
+  | 'failed'
+  | 'cancelled'
+  | 'expired'
+  | 'superseded';
+
+export interface ExportJob {
+  id: string;
+  status: ExportJobStatus;
+  /** Short machine code (never a raw server error). */
+  error: string | null;
+  requested_at: string;
+  completed_at: string | null;
+  /** Set once ready; the archive is deleted after this moment. */
+  expires_at: string | null;
+  cancelled_at: string | null;
+  has_payload: boolean;
+}
+
+/** Count-only summary; safe to read without re-authentication. */
+export interface DataExportSummary {
+  orders: number;
+  messages: number;
+  reviews: number;
+  notifications: number;
+  security_events: number;
+  retention_days: number;
 }

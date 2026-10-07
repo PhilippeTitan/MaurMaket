@@ -63,6 +63,9 @@ import SellerFulfillmentSettingsScreen from './src/screens/SellerFulfillmentSett
 import SellerMapVisibilityScreen from './src/screens/SellerMapVisibilityScreen';
 import NatCashAccessScreen from './src/screens/NatCashAccessScreen';
 import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
+import DataPrivacyScreen from './src/screens/DataPrivacyScreen';
+import DevicePermissionsScreen from './src/screens/DevicePermissionsScreen';
+import LegalPrivacyScreen from './src/screens/LegalPrivacyScreen';
 import BlockedUsersScreen from './src/screens/BlockedUsersScreen';
 import SecuritySettingsScreen from './src/screens/SecuritySettingsScreen';
 import NotificationsSettingsScreen from './src/screens/NotificationsSettingsScreen';
@@ -505,6 +508,9 @@ export default function App() {
             <Stack.Screen name="SellerMapVisibility" component={SellerMapVisibilityScreen} />
             <Stack.Screen name="NatCashAccess" component={NatCashAccessScreen} />
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
+            <Stack.Screen name="DataPrivacy" component={DataPrivacyScreen} />
+            <Stack.Screen name="DevicePermissions" component={DevicePermissionsScreen} />
+            <Stack.Screen name="LegalPrivacy" component={LegalPrivacyScreen} />
             <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
             <Stack.Screen name="SecuritySettings" component={SecuritySettingsScreen} />
             <Stack.Screen name="NotificationsSettings" component={NotificationsSettingsScreen} />

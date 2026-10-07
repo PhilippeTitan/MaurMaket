@@ -14,9 +14,11 @@ import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import {
   addAccountPasskey, deleteAccountPasskey, disableAuthenticator, enableAuthenticator,
-  getSecuritySnapshot, linkGoogleAccount, revokeAuthSession, verifyAuthenticator,
+  freezeAccount, getAccountFreeze, getSecurityEvents, getSecuritySnapshot, linkGoogleAccount,
+  revokeAuthSession, unfreezeAccount, verifyAuthenticator,
   type BetterAuthSecuritySession,
 } from '../api';
+import type { AccountFreezeState, SecurityEvent } from '../types';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -65,6 +67,16 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [revokeTarget, setRevokeTarget] = useState<BetterAuthSecuritySession | null>(null);
   const [deletePasskeyTarget, setDeletePasskeyTarget] = useState<Passkey | null>(null);
+  // Batch 73 / APP-Q369 — private security activity history.
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
+  const [eventsRetentionDays, setEventsRetentionDays] = useState(365);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  // Batch 73/74/75 — fast account freeze for suspected compromise (APP-Q371).
+  const [freezeState, setFreezeState] = useState<AccountFreezeState | null>(null);
+  const [freezeBusy, setFreezeBusy] = useState(false);
+  const [freezeModal, setFreezeModal] = useState<'freeze' | 'unfreeze' | null>(null);
+  const [freezeReason, setFreezeReason] = useState('');
+  const [unfreezePassword, setUnfreezePassword] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -103,6 +115,29 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   }, [refetchUser, t, toast, user?.id]);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+
+  // Loaded independently of the Better Auth snapshot: the history is
+  // supplemental, so it still appears when session listing needs a fresh
+  // sign-in (the state sessionsNeedFreshSignIn describes).
+  const loadSecurityEvents = useCallback(async () => {
+    setEventsLoading(true);
+    // Loaded separately so one failing call cannot blank the other section.
+    try {
+      const response = await getSecurityEvents();
+      setSecurityEvents(response.events || []);
+      setEventsRetentionDays(response.retention_days ?? 365);
+    } catch {
+      // Keep whatever was last shown rather than blanking the section.
+    }
+    try {
+      setFreezeState(await getAccountFreeze());
+    } catch {
+      // A freeze status failure must not hide the rest of the security screen.
+    }
+    setEventsLoading(false);
+  }, []);
+
+  useFocusEffect(useCallback(() => { void loadSecurityEvents(); }, [loadSecurityEvents]));
 
   const closeSetup = () => {
     setSetupVisible(false);
@@ -209,6 +244,41 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
     } finally { setBusy(false); }
   };
 
+  const handleFreeze = async () => {
+    setFreezeBusy(true);
+    try {
+      const next = await freezeAccount(freezeReason.trim() || undefined);
+      setFreezeState(next);
+      setFreezeModal(null);
+      setFreezeReason('');
+      toast.show({ kind: 'success', title: t('security.freezeFrozenToast'), message: t('security.freezeFrozenBody') });
+      await loadSecurityEvents();
+    } catch (error: any) {
+      toast.show({ kind: 'error', title: error?.message || t('security.freezeFailed') });
+    } finally { setFreezeBusy(false); }
+  };
+
+  const handleUnfreeze = async () => {
+    setFreezeBusy(true);
+    try {
+      const next = await unfreezeAccount(freezeState?.has_password ? unfreezePassword : undefined);
+      setFreezeState(next);
+      setFreezeModal(null);
+      setUnfreezePassword('');
+      toast.show({ kind: 'success', title: t('security.freezeRestoredToast') });
+      await loadSecurityEvents();
+    } catch (error: any) {
+      toast.show({ kind: 'error', title: error?.message || t('security.freezeFailed') });
+    } finally { setFreezeBusy(false); }
+  };
+
+  // Freeze and sign-in events share one history; only the wording differs.
+  const eventLabel = (type: SecurityEvent['event_type']) => type === 'account_frozen'
+    ? t('security.eventFrozen')
+    : type === 'account_unfrozen'
+      ? t('security.eventUnfrozen')
+      : t('security.eventSignIn');
+
   const emailVerified = securityDataLoaded && authEmailVerified;
   const checksPassed = Number(emailVerified) + Number(securityDataLoaded && twoFactorEnabled);
   const passwordStatus = !securityDataLoaded ? (loading ? t('common.loading') : '—')
@@ -235,6 +305,50 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
               <Text style={styles.checkLabel}>{t('security.authenticator')}</Text>
             </View>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('security.freezeTitle')}</Text>
+          {freezeState?.frozen ? (
+            <View style={styles.freezeBanner}>
+              <View style={styles.freezeBannerHeader}>
+                <MaterialCommunityIcons name="alert-decagram-outline" size={18} color={C.coral} />
+                <Text style={styles.freezeBannerTitle}>{t('security.freezeStatusFrozen')}</Text>
+              </View>
+              <Text style={styles.freezeBannerText}>{t('security.freezeFrozenBody')}</Text>
+              {freezeState.listings_paused > 0 && (
+                <Text style={styles.freezeBannerMeta}>
+                  {t('security.freezeListingsPaused', { count: freezeState.listings_paused })}
+                </Text>
+              )}
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={() => { setUnfreezePassword(''); setFreezeModal('unfreeze'); }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.primaryButtonText}>{t('security.freezeRestore')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.sectionHint}>{t('security.freezeDesc')}</Text>
+              <View style={styles.card}>
+                <TouchableOpacity
+                  style={styles.row}
+                  activeOpacity={0.72}
+                  onPress={() => { setFreezeReason(''); setFreezeModal('freeze'); }}
+                  accessibilityRole="button"
+                >
+                  <View style={styles.rowIcon}><MaterialCommunityIcons name="shield-lock-outline" size={19} color={C.text} /></View>
+                  <View style={styles.sessionCopy}>
+                    <Text style={styles.rowTitle}>{t('security.freezeAction')}</Text>
+                    <Text style={styles.sessionDate}>{t('security.freezeStatusActive')}</Text>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={19} color={C.faint} />
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -319,6 +433,52 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
             </View>
           )}
         </View>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('security.recentSignInActivity')}</Text>
+          <Text style={styles.sectionHint}>{t('security.recentSignInDesc')}</Text>
+          {securityEvents.length === 0 && !eventsLoading ? (
+            <View style={styles.emptyCard}><Text style={styles.emptyText}>{t('security.noSecurityEvents')}</Text></View>
+          ) : (
+            <View style={styles.card}>
+              {securityEvents.map((event, index) => (
+                <React.Fragment key={event.id}>
+                  {index > 0 && <View style={styles.divider} />}
+                  <View style={styles.row}>
+                    <View style={styles.rowIcon}><MaterialCommunityIcons name="shield-lock-outline" size={19} color={C.text} /></View>
+                    <View style={styles.sessionCopy}>
+                      <Text style={styles.rowTitle}>{eventLabel(event.event_type)}</Text>
+                      <Text style={styles.sessionDate}>
+                        {[event.user_agent ? deviceName(event.user_agent) : event.reason, new Date(event.created_at).toLocaleString()]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Text>
+                    </View>
+                  </View>
+                </React.Fragment>
+              ))}
+            </View>
+          )}
+          <Text style={styles.sectionHint}>{t('security.securityEventsRetention', { days: eventsRetentionDays })}</Text>
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>{t('security.notYouBody')}</Text>
+            <View style={styles.eventsActions}>
+              <TouchableOpacity
+                style={styles.secondaryAction}
+                onPress={() => navigation.navigate('SettingsEdit', { field: 'password', title: t('settings.changePassword') })}
+                accessibilityRole="button"
+              >
+                <Text style={styles.secondaryButtonText}>{t('settings.changePassword')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryAction}
+                onPress={() => navigation.navigate('HelpSupport')}
+                accessibilityRole="button"
+              >
+                <Text style={styles.secondaryButtonText}>{t('settings.helpSupport')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
@@ -372,6 +532,78 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         </View>
       </Modal>
 
+      <Modal visible={freezeModal === 'freeze'} transparent animationType="fade" onRequestClose={() => setFreezeModal(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('security.freezeConfirmTitle')}</Text>
+              <TouchableOpacity onPress={() => setFreezeModal(null)} style={styles.closeButton} accessibilityRole="button" accessibilityLabel={t('common.close')}>
+                <MaterialCommunityIcons name="close" size={20} color={C.sub} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalCopy}>{t('security.freezeConfirmBody')}</Text>
+            <Text style={styles.fieldLabel}>{t('security.freezeReasonLabel')}</Text>
+            <TextInput
+              value={freezeReason}
+              onChangeText={setFreezeReason}
+              placeholder={t('security.freezeReasonPlaceholder')}
+              placeholderTextColor={C.faint}
+              style={styles.input}
+              maxLength={200}
+              accessibilityLabel={t('security.freezeReasonLabel')}
+            />
+            <TouchableOpacity
+              style={[styles.primaryButton, styles.dangerButton]}
+              onPress={() => { void handleFreeze(); }}
+              disabled={freezeBusy}
+              accessibilityRole="button"
+            >
+              {freezeBusy ? <ActivityIndicator color={C.white} /> : <Text style={styles.primaryButtonText}>{t('security.freezeConfirmButton')}</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={freezeModal === 'unfreeze'} transparent animationType="fade" onRequestClose={() => setFreezeModal(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('security.freezeRestoreTitle')}</Text>
+              <TouchableOpacity onPress={() => setFreezeModal(null)} style={styles.closeButton} accessibilityRole="button" accessibilityLabel={t('common.close')}>
+                <MaterialCommunityIcons name="close" size={20} color={C.sub} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalCopy}>
+              {freezeState?.has_password ? t('security.freezeRestoreBody') : t('security.freezeRestoreNoPassword')}
+            </Text>
+            {Boolean(freezeState?.has_password) && (
+              <>
+                <Text style={styles.fieldLabel}>{t('security.freezePasswordLabel')}</Text>
+                <TextInput
+                  value={unfreezePassword}
+                  onChangeText={setUnfreezePassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder={t('security.currentPassword')}
+                  placeholderTextColor={C.faint}
+                  style={styles.input}
+                  accessibilityLabel={t('security.freezePasswordLabel')}
+                />
+              </>
+            )}
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => { void handleUnfreeze(); }}
+              disabled={freezeBusy || (Boolean(freezeState?.has_password) && !unfreezePassword)}
+              accessibilityRole="button"
+            >
+              {freezeBusy ? <ActivityIndicator color={C.white} /> : <Text style={styles.primaryButtonText}>{t('security.freezeRestoreButton')}</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={!!revokeTarget} transparent animationType="fade" onRequestClose={() => setRevokeTarget(null)}>
         <ConfirmDialog title={t('security.revokeDeviceTitle')} message={t('security.revokeDeviceCopy')} cancelLabel={t('common.cancel')} confirmLabel={t('security.revoke')} busy={busy} onCancel={() => setRevokeTarget(null)} onConfirm={() => { void handleRevokeSession(); }} />
       </Modal>
@@ -411,6 +643,14 @@ const styles = StyleSheet.create({
   checkLabel: { color: C.sub, fontSize: FONT_SIZES.xs },
   section: { marginBottom: SPACING.md },
   sectionTitle: { color: C.faint, fontSize: FONT_SIZES.xs, fontWeight: FONT_WEIGHTS.semibold, letterSpacing: 0.8, marginBottom: SPACING.xs, textTransform: 'uppercase' },
+  sectionHint: { color: C.sub, fontSize: FONT_SIZES.xs, lineHeight: 18, marginBottom: SPACING.sm, paddingHorizontal: SPACING.sm },
+  eventsActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
+  freezeBanner: { borderRadius: RADIUS.card, borderWidth: 1, borderColor: C.coral, padding: SPACING.md, gap: SPACING.xs },
+  freezeBannerHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
+  freezeBannerTitle: { color: C.coral, fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.bold },
+  freezeBannerText: { color: C.sub, fontSize: FONT_SIZES.sm, lineHeight: 20 },
+  freezeBannerMeta: { color: C.sub, fontSize: FONT_SIZES.xs },
+  fieldLabel: { color: C.sub, fontSize: FONT_SIZES.xs, fontWeight: FONT_WEIGHTS.semibold, marginBottom: 6 },
   card: { backgroundColor: 'transparent', borderWidth: 0, borderRadius: 0, overflow: 'hidden' },
   row: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingHorizontal: SPACING.sm, paddingVertical: SPACING.xs },
   rowIcon: { width: 28, height: 32, borderRadius: 0, borderWidth: 0, alignItems: 'center', justifyContent: 'center' },

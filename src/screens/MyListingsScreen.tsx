@@ -19,6 +19,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
 import { useTranslation } from '@/localization';
+import { reviewCategoryKey } from '../utils/listingReview';
 import {
   getImageUrl,
   getSellerListings,
@@ -45,9 +46,12 @@ type ListingRow = {
   sale_price?: string | number | null;
   stock: number;
   is_available: boolean;
-  listing_status: 'active' | 'pending_review' | 'rejected';
-  paused_reason?: 'seller_manual' | 'tier_cap' | 'out_of_stock' | null;
+  listing_status: 'active' | 'pending_review' | 'under_review' | 'rejected';
+  paused_reason?: 'seller_manual' | 'tier_cap' | 'out_of_stock' | 'content_review' | 'seller_removed' | null;
   moderation_reason?: string | null;
+  moderation_category?: string | null;
+  moderation_detail?: string | null;
+  content_updated_during_review?: boolean | null;
   appeal_note?: string | null;
   appealed_at?: string | null;
   created_at: string;
@@ -68,15 +72,18 @@ type DraftRow = {
   updated_at: string;
 };
 
-type StatusKey = 'active' | 'pending' | 'rejected' | 'paused';
+type StatusKey = 'active' | 'pending' | 'review' | 'rejected' | 'paused';
 type FilterKey = 'all' | StatusKey | 'drafts';
 
 const statusOf = (l: ListingRow): StatusKey => {
   if (l.listing_status === 'pending_review') return 'pending';
+  if (l.listing_status === 'under_review') return 'review';
   if (l.listing_status === 'rejected') return 'rejected';
   if (!l.is_available) return 'paused';
   return 'active';
 };
+
+
 
 const confirmOnWeb = (title: string, message: string, onConfirm: () => void) => {
   if (Platform.OS === 'web') {
@@ -173,6 +180,8 @@ export default function MyListingsScreen() {
           toast.warning(t('myListings.badgePending'), t('myListings.waitingNote'));
         } else if (code === 'LISTING_REJECTED') {
           toast.warning(t('myListings.badgeRejected'), t('myListings.rejectFirstBody'));
+        } else if (code === 'TIER_CAP' || code === 'VERIFIED_LISTING_LIMIT') {
+          toast.warning(t('myListings.badgeTierCap'), t('myListings.tierCapNote', { cap: cap ?? 10 }));
         } else {
           toast.error(t('common.error'), e?.message || t('common.tryAgain'));
         }
@@ -237,6 +246,7 @@ export default function MyListingsScreen() {
       { key: 'all', label: t('myListings.filterAll'), count: listings.length },
       { key: 'active', label: t('myListings.filterActive'), count: counts.active || 0 },
       { key: 'pending', label: t('myListings.filterPending'), count: counts.pending_review || 0 },
+      { key: 'review', label: t('myListings.filterReview'), count: counts.under_review || 0 },
       { key: 'rejected', label: t('myListings.filterRejected'), count: counts.rejected || 0 },
       { key: 'paused', label: t('myListings.filterPaused'), count: counts.paused || 0 },
       { key: 'drafts', label: t('myListings.filterDrafts'), count: draftsCount },
@@ -271,6 +281,13 @@ export default function MyListingsScreen() {
           <Text style={styles.badgePendingText}>{t('myListings.badgePending')}</Text>
         </View>
       );
+    if (st === 'review')
+      badges.push(
+        <View key="review" style={[styles.badge, styles.badgeReview]}>
+          <MaterialCommunityIcons name="shield-search" size={11} color={COLORS.blue} />
+          <Text style={styles.badgeReviewText}>{t('myListings.badgeReview')}</Text>
+        </View>
+      );
     if (st === 'rejected')
       badges.push(
         <View key="rejected" style={[styles.badge, styles.badgeRejected]}>
@@ -280,15 +297,16 @@ export default function MyListingsScreen() {
       );
     if (st === 'paused') {
       const oos = l.paused_reason === 'out_of_stock';
+      const tierPaused = l.paused_reason === 'tier_cap';
       badges.push(
         <View key="paused" style={[styles.badge, styles.badgePaused]}>
           <MaterialCommunityIcons
-            name={oos ? 'package-variant' : 'pause-circle-outline'}
+            name={oos ? 'package-variant' : tierPaused ? 'chart-box-outline' : 'pause-circle-outline'}
             size={11}
             color={COLORS.text2}
           />
           <Text style={styles.badgePausedText}>
-            {oos ? t('myListings.badgeOutOfStock') : t('myListings.badgePaused')}
+            {oos ? t('myListings.badgeOutOfStock') : tierPaused ? t('myListings.badgeTierCap') : t('myListings.badgePaused')}
           </Text>
         </View>
       );
@@ -354,6 +372,14 @@ export default function MyListingsScreen() {
     } else if (st === 'pending') {
       actions.push(action(t('myListings.editBtn'), 'pencil', () => nav.navigate('EditListing', { productId: l.id })));
       actions.push(action(t('myListings.duplicateBtn'), 'content-copy', () => handleDuplicate(l)));
+    } else if (st === 'review') {
+      // APP-Q546: fix the disputed content, then resubmit for review. APP-Q547: appeal.
+      actions.push(action(t('myListings.editBtn'), 'pencil', () => nav.navigate('EditListing', { productId: l.id }), true));
+      actions.push(action(t('myListings.resubmitBtn'), 'refresh', () => handleResubmit(l)));
+      actions.push(action(t('myListings.appealBtn'), 'lifebuoy', () => {
+        setAppealNote(l.appeal_note || '');
+        setAppealFor(l);
+      }));
     } else {
       actions.push(action(t('myListings.editBtn'), 'pencil', () => nav.navigate('EditListing', { productId: l.id }), true));
       actions.push(action(t('myListings.resubmitBtn'), 'refresh', () => handleResubmit(l)));
@@ -411,7 +437,38 @@ export default function MyListingsScreen() {
           </View>
         </View>
 
-        {st === 'pending' && <Text style={styles.noteText}>{t('myListings.waitingNote')}</Text>}
+        {st === 'pending' && (
+          <Text style={styles.noteText}>
+            {item.moderation_category ? t('myListings.waitingReviewNote') : t('myListings.waitingAutoNote')}
+          </Text>
+        )}
+        {st === 'paused' && item.paused_reason === 'tier_cap' && (
+          <Text style={styles.noteText}>{t('myListings.tierCapNote', { cap: cap ?? 0 })}</Text>
+        )}
+        {st === 'review' && (
+          <View>
+            <Text style={[styles.noteText, styles.noteReview]}>
+              {t('myListings.reviewNotice', { category: t(reviewCategoryKey(item.moderation_category)) })}
+            </Text>
+            {!!item.moderation_detail && (
+              <Text style={styles.noteText}>{t('myListings.reviewAffected', { detail: item.moderation_detail })}</Text>
+            )}
+            <Text style={styles.noteText}>
+              {!item.is_available && item.paused_reason === 'content_review'
+                ? t('myListings.reviewRestrictedHidden')
+                : t('myListings.reviewRestrictedVisible')}
+            </Text>
+            <Text style={styles.noteText}>{t('myListings.reviewResponsePath')}</Text>
+            {item.content_updated_during_review && (
+              <Text style={styles.appealSentText}>{t('myListings.reviewContentUpdated')}</Text>
+            )}
+            {item.appealed_at && (
+              <Text style={styles.appealSentText}>
+                {t('myListings.appealSent', { when: timeAgo(item.appealed_at) })}
+              </Text>
+            )}
+          </View>
+        )}
         {st === 'rejected' && (
           <View>
             <Text style={[styles.noteText, styles.noteRejected]}>
@@ -490,6 +547,15 @@ export default function MyListingsScreen() {
           <Text style={styles.capText}>
             {t('addListing.capUsage', { active: counts.active || 0, cap })}
           </Text>
+          {(counts.active || 0) >= cap && (
+            <TouchableOpacity
+              onPress={() => nav.navigate('SellerToolsSettings')}
+              accessibilityRole="button"
+              accessibilityLabel={t('addListing.viewTiers')}
+            >
+              <Text style={styles.capTierLink}>{t('addListing.viewTiers')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
       <FlatList
@@ -630,6 +696,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xs,
   },
   capText: { color: COLORS.text2, fontSize: 13, fontWeight: '600' },
+  capTierLink: { color: COLORS.coral, fontSize: 12, fontWeight: '700' },
   chipsRow: { gap: 8, paddingVertical: SPACING.sm, paddingRight: SPACING.md },
   chip: {
     flexDirection: 'row',
@@ -709,6 +776,8 @@ const styles = StyleSheet.create({
   },
   badgePending: { backgroundColor: 'rgba(230,168,23,0.14)' },
   badgePendingText: { color: '#B07C08', fontSize: 10.5, fontWeight: '700' },
+  badgeReview: { backgroundColor: 'rgba(45,110,220,0.12)' },
+  badgeReviewText: { color: COLORS.blue, fontSize: 10.5, fontWeight: '700' },
   badgeRejected: { backgroundColor: 'rgba(255,77,106,0.12)' },
   badgeRejectedText: { color: COLORS.coral, fontSize: 10.5, fontWeight: '700' },
   badgePaused: { backgroundColor: 'rgba(128,128,128,0.15)' },
@@ -728,6 +797,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   noteRejected: { color: COLORS.text },
+  noteReview: { color: COLORS.text, fontWeight: '600' },
   appealSentText: { color: COLORS.text3, fontSize: 12, marginTop: 6, fontStyle: 'italic' },
   actionsRow: {
     flexDirection: 'row',

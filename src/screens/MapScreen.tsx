@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Platform, Image, Animated, PanResponder,
-  TextInput} from 'react-native';
+  TextInput, ScrollView} from 'react-native';
 import type { MapRef, CameraRef } from '@maplibre/maplibre-react-native';
 
 let Map: any = null;
@@ -36,6 +36,7 @@ import type { RootStackParamList } from '../navigation';
 import type { Product } from '../types';
 import * as Location from 'expo-location';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { useLowDataMode } from '../hooks/useLowDataMode';
 
 /* ─── Map styles ─── */
 const LIGHT_STYLE = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
@@ -72,6 +73,7 @@ const CACHE_TTL = 5 * 60 * 1000;
 export default function MapScreen() {
   const { t } = useTranslation();
   const reduceMotion = useReduceMotion();
+  const lowDataMode = useLowDataMode();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const mapRef = useRef<MapRef>(null);
@@ -91,6 +93,9 @@ export default function MapScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
   const [, setStoreTick] = useState(0);
+  // APP-Q135 / APP-Q202: a searchable list of seller results sits alongside the
+  // map, so the same results are reachable without pan/drag gestures.
+  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
 
   if (!hasMapLibre || Platform.OS === 'web') {
     return (
@@ -254,6 +259,8 @@ export default function MapScreen() {
   }, []);
 
   const handleFindMe = useCallback(async () => {
+    // Locating yourself implies the map view.
+    setViewMode('map');
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
@@ -296,7 +303,7 @@ export default function MapScreen() {
   const menuItems = useMemo(() => {
     const items = [
       { icon: 'crosshairs-gps', color: COLORS.blue, action: handleFindMe, label: t('map.findMe') },
-      { icon: refreshing ? 'loading' : 'refresh', color: COLORS.text, action: handleRefreshLocation, label: 'Refresh' },
+      { icon: refreshing ? 'loading' : 'refresh', color: COLORS.text, action: handleRefreshLocation, label: t('map.refreshButton') },
     ];
     if (isSeller) {
       items.push({
@@ -310,7 +317,7 @@ export default function MapScreen() {
       icon: darkMode ? 'weather-sunny' : 'weather-night',
       color: COLORS.yellow,
       action: async () => handleToggleDarkMode(),
-      label: 'Theme',
+      label: t('map.themeButton'),
     });
     return items;
   }, [isSeller, refreshing, darkMode, handleFindMe, handleRefreshLocation, handleToggleVisibility, handleToggleDarkMode, t]);
@@ -461,7 +468,8 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ── Native MapLibre map ── */}
+      {/* ── Native MapLibre map (view) or the alongside list (view) ── */}
+      {viewMode === 'map' ? (
       <Map
         ref={mapRef}
         mapStyle={mapStyleUrl}
@@ -516,7 +524,7 @@ export default function MapScreen() {
                     borderColor: color, borderWidth: 3,
                   },
                 ]}>
-                  {avatarUrl ? (
+                  {avatarUrl && !lowDataMode ? (
                     <Image
                       source={{ uri: avatarUrl }}
                       style={[
@@ -537,7 +545,7 @@ export default function MapScreen() {
                       },
                     ]}>
                       <MaterialCommunityIcons
-                        name={seller.seller_tier === 'business' ? 'store' : 'account'}
+                        name={seller.seller_tier === 'business' ? 'storefront' : 'account'}
                         size={size * 0.4}
                         color="#fff"
                       />
@@ -551,6 +559,57 @@ export default function MapScreen() {
           );
         })}
       </Map>
+      ) : (
+        <ScrollView
+          style={styles.listShell}
+          contentContainerStyle={[styles.listContent, { paddingBottom: TAB_BAR_TOP_OFFSET + 96 }]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.listTitle} accessibilityRole="header">{t('map.nearbySellers')}</Text>
+          <Text style={styles.listNote}>{t('map.listHint')}</Text>
+
+          {filteredSellers.length === 0 ? (
+            <Text style={styles.listEmpty}>{t('map.noSellersNearby')}</Text>
+          ) : (
+            filteredSellers.map(seller => {
+              const color = getMarkerColor(seller.seller_tier);
+              const isVerified = seller.seller_tier === 'verified' || seller.seller_tier === 'business';
+              const name = getDisplayName(seller);
+              const distance = Number(seller.distance_km);
+              const meta = [
+                seller.seller_tier,
+                t('map.listingsCount', { count: seller.product_count || 0 }),
+                Number.isFinite(distance) ? t('map.distanceKm', { km: distance.toFixed(1) }) : null,
+              ].filter(Boolean).join(' · ');
+              return (
+                <TouchableOpacity
+                  key={seller.id}
+                  style={styles.listRow}
+                  onPress={() => openSheet(seller)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${name}, ${meta}`}
+                >
+                  <View style={[styles.listAvatar, { borderColor: color, borderRadius: seller.seller_tier === 'business' ? 12 : 22 }]}>
+                    <MaterialCommunityIcons
+                      name={seller.seller_tier === 'business' ? 'storefront' : 'account'}
+                      size={20}
+                      color={color}
+                    />
+                  </View>
+                  <View style={styles.listInfo}>
+                    <View style={styles.listNameRow}>
+                      <Text style={styles.listName} numberOfLines={1}>{name}</Text>
+                      {isVerified && <MaterialCommunityIcons name="check-decagram" size={14} color={color} />}
+                    </View>
+                    <Text style={styles.listMeta} numberOfLines={1}>{meta}</Text>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={22} color={COLORS.text2} />
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </ScrollView>
+      )}
 
       {/* ── Search bar ── */}
       <View style={styles.searchContainer}>
@@ -572,8 +631,31 @@ export default function MapScreen() {
           )}
         </View>
         {searchQuery.length > 0 && (
-          <Text style={styles.searchCount}>{filteredSellers.length} seller{filteredSellers.length !== 1 ? 's' : ''}</Text>
+          <Text style={styles.searchCount}>{t('map.sellerCount', { count: filteredSellers.length })}</Text>
         )}
+        {/* Map/list view switch — the list is the no-pan/drag alternative (APP-Q135). */}
+        <View style={styles.viewToggle}>
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, viewMode === 'map' && styles.viewToggleBtnActive]}
+            onPress={() => setViewMode('map')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: viewMode === 'map' }}
+            accessibilityLabel={t('map.viewMap')}
+          >
+            <MaterialCommunityIcons name="map" size={16} color={viewMode === 'map' ? COLORS.coral : COLORS.text2} />
+            <Text style={[styles.viewToggleText, viewMode === 'map' && styles.viewToggleTextActive]}>{t('map.viewMap')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}
+            onPress={() => setViewMode('list')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: viewMode === 'list' }}
+            accessibilityLabel={t('map.viewList')}
+          >
+            <MaterialCommunityIcons name="format-list-bulleted-square" size={16} color={viewMode === 'list' ? COLORS.coral : COLORS.text2} />
+            <Text style={[styles.viewToggleText, viewMode === 'list' && styles.viewToggleTextActive]}>{t('map.viewList')}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Radial FAB ── */}
@@ -597,6 +679,8 @@ export default function MapScreen() {
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={() => { closeFan(); item.action(); }}
+                accessibilityRole="button"
+                accessibilityLabel={item.label}
                 style={[styles.radialItemBtn, {
                   backgroundColor: isHighlighted ? item.color + '44' : COLORS.surface,
                   borderColor: isHighlighted ? item.color : COLORS.border,
@@ -640,26 +724,26 @@ export default function MapScreen() {
                   <View style={styles.sheetMeta}>
                     <View style={[styles.tierDot, { backgroundColor: TIER_COLORS[selectedSeller.seller_tier] || '#F5A623' }]} />
                     <Text style={styles.sheetTier}>{selectedSeller.seller_tier}</Text>
-                    {followerCount !== null && <Text style={styles.sheetFollower}>{followerCount} follower{followerCount !== 1 ? 's' : ''}</Text>}
+                    {followerCount !== null && <Text style={styles.sheetFollower}>{t('map.followerCount', { count: followerCount })}</Text>}
                   </View>
                 </View>
                 <TouchableOpacity onPress={handleFollowToggle} disabled={followBusy} style={[styles.followBtn, store.isFollowing(selectedSeller?.id || '') && styles.followBtnActive]} accessibilityLabel={store.isFollowing(selectedSeller?.id || '') ? t('map.unfollowSeller') : t('map.followSeller')} accessibilityRole="button">
-                  <Text style={[styles.followText, store.isFollowing(selectedSeller?.id || '') && styles.followTextActive]}>{store.isFollowing(selectedSeller?.id || '') ? 'Following' : 'Follow'}</Text>
+                  <Text style={[styles.followText, store.isFollowing(selectedSeller?.id || '') && styles.followTextActive]}>{store.isFollowing(selectedSeller?.id || '') ? t('map.followingButton') : t('map.followButton')}</Text>
                 </TouchableOpacity>
               </View>
 
               {sheetExpanded && (
                 <View style={styles.sheetItems}>
-                  <Text style={styles.sheetItemsLabel}>Latest items</Text>
+                  <Text style={styles.sheetItemsLabel}>{t('map.latestItems')}</Text>
                   {loadingDetail ? (
-                    <Text style={styles.sheetItemsEmpty}>Loading...</Text>
+                    <Text style={styles.sheetItemsEmpty}>{t('common.loading')}</Text>
                   ) : latestItems.length > 0 ? (
                     <Animated.ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.itemsScroll}>
                       {latestItems.map(item => {
                         const img = getImageUrl(item.images?.[0]?.image_url);
                         return (
                           <TouchableOpacity key={item.id} style={styles.itemCard} onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}>
-                            {img ? (
+                            {img && !lowDataMode ? (
                               <Image source={{ uri: img }} style={styles.itemImg} />
                             ) : (
                               <View style={[styles.itemImg, styles.itemImgFallback]}>
@@ -673,7 +757,7 @@ export default function MapScreen() {
                       })}
                     </Animated.ScrollView>
                   ) : (
-                    <Text style={styles.sheetItemsEmpty}>No products listed yet</Text>
+                    <Text style={styles.sheetItemsEmpty}>{t('map.noProducts')}</Text>
                   )}
                 </View>
               )}
@@ -709,6 +793,27 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   mapOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 },
+
+  /* Seller-result list view (the no-pan/drag alternative to the map) */
+  listShell: { flex: 1, backgroundColor: COLORS.bg },
+  listContent: { paddingTop: 156, paddingHorizontal: SPACING.md },
+  listTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700', marginBottom: 4 },
+  listNote: { color: COLORS.text2, fontSize: 12, lineHeight: 17, marginBottom: 14 },
+  listEmpty: { color: COLORS.text2, fontSize: 13, marginTop: 14 },
+  listRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  listAvatar: {
+    width: 44, height: 44, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  listInfo: { flex: 1 },
+  listNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  listName: { color: COLORS.text, fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  listMeta: { color: COLORS.text2, fontSize: 11, marginTop: 2, textTransform: 'capitalize' },
+
 
   /* Markers */
   markerContainer: { alignItems: 'center', width: 64 },
@@ -811,4 +916,17 @@ const styles = StyleSheet.create({
     color: COLORS.text2, fontSize: 11, textAlign: 'center',
     marginTop: 6, fontWeight: '600',
   },
+  viewToggle: {
+    flexDirection: 'row', alignSelf: 'flex-end',
+    marginTop: 8, backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.row, borderWidth: 1, borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  viewToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, minHeight: 44,
+  },
+  viewToggleBtnActive: { backgroundColor: COLORS.surface2 },
+  viewToggleText: { color: COLORS.text2, fontSize: 12, fontWeight: '600' },
+  viewToggleTextActive: { color: COLORS.coral },
 });

@@ -60,6 +60,22 @@ const REASONS_MAP: Record<string, string[]> = {
   ],
 };
 
+// APP-Q542: suspected counterfeit goods and stolen listing content get specific
+// reasons and a private evidence path, kept separate from ordinary complaints.
+const AUTHENTICITY_REASON_KEYS = [
+  'feed.reportCounterfeit',
+  'feed.reportStolenContent',
+  'feed.reportBrandMisuse',
+  'feed.reportProhibited',
+] as const;
+
+const LISTING_OTHER_REASON_KEYS = [
+  'feed.reportSpam',
+  'feed.reportInappropriate',
+  'feed.reportWrongCategory',
+  'feed.reportMisleading',
+] as const;
+
 export default function ReportModal({
   visible,
   targetType,
@@ -75,11 +91,18 @@ export default function ReportModal({
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [details, setDetails] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  // APP-Q544: rights holders can identify themselves when reporting authenticity
+  // or content-rights concerns.
+  const [rightsHolder, setRightsHolder] = useState(false);
 
   const isListingReport = targetType === 'listing';
+  const authenticityReasons = AUTHENTICITY_REASON_KEYS.map((k) => t(k));
+  const listingOtherReasons = [...LISTING_OTHER_REASON_KEYS.map((k) => t(k)), t('feed.reportOther')];
   const reasons = isListingReport
-    ? [t('feed.reportSpam'), t('feed.reportInappropriate'), t('feed.reportWrongCategory'), t('feed.reportMisleading'), t('feed.reportOther')]
+    ? [...authenticityReasons, ...listingOtherReasons]
     : REASONS_MAP[targetType] || REASONS_MAP.profile;
+  // APP-Q543: request evidence only for the reasons that actually need it.
+  const isAuthenticityReason = isListingReport && authenticityReasons.includes(selectedReason);
 
   const handleSubmit = async () => {
     if (!selectedReason) {
@@ -96,6 +119,7 @@ export default function ReportModal({
         reason: selectedReason,
         details: details.trim() || undefined,
         orderContext,
+        rightsHolder: isAuthenticityReason && rightsHolder ? true : undefined,
       });
 
       toast.success(
@@ -104,6 +128,7 @@ export default function ReportModal({
       );
       setSelectedReason('');
       setDetails('');
+      setRightsHolder(false);
       onClose();
       onSubmitSuccess?.();
     } catch (err: any) {
@@ -118,7 +143,36 @@ export default function ReportModal({
     if (loading) return;
     setSelectedReason('');
     setDetails('');
+    setRightsHolder(false);
     onClose();
+  };
+
+  const renderReason = (r: string) => {
+    const isSelected = selectedReason === r;
+    return (
+      <TouchableOpacity
+        key={r}
+        style={[styles.reasonOption, isSelected && styles.reasonOptionSelected]}
+        onPress={() => setSelectedReason(r)}
+        accessibilityRole="radio"
+        accessibilityState={{ selected: isSelected }}
+        activeOpacity={0.7}
+      >
+        <MaterialCommunityIcons
+          name={isSelected ? 'radiobox-marked' : 'radiobox-blank'}
+          size={20}
+          color={isSelected ? COLORS.coral : COLORS.text3}
+        />
+        <Text
+          style={[
+            styles.reasonText,
+            isSelected && styles.reasonTextSelected,
+          ]}
+        >
+          {r}
+        </Text>
+      </TouchableOpacity>
+    );
   };
 
   const titleType =
@@ -154,41 +208,53 @@ export default function ReportModal({
           <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
             <Text style={styles.sectionLabel}>{isListingReport ? t('feed.reportMessage') : 'Why are you reporting this?'}</Text>
             <View style={styles.reasonsList}>
-              {reasons.map((r) => {
-                const isSelected = selectedReason === r;
-                return (
-                  <TouchableOpacity
-                    key={r}
-                    style={[styles.reasonOption, isSelected && styles.reasonOptionSelected]}
-                    onPress={() => setSelectedReason(r)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: isSelected }}
-                    activeOpacity={0.7}
-                  >
-                    <MaterialCommunityIcons
-                      name={isSelected ? 'radiobox-marked' : 'radiobox-blank'}
-                      size={20}
-                      color={isSelected ? COLORS.coral : COLORS.text3}
-                    />
-                    <Text
-                      style={[
-                        styles.reasonText,
-                        isSelected && styles.reasonTextSelected,
-                      ]}
-                    >
-                      {r}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {isListingReport ? (
+                <>
+                  <Text style={styles.reasonGroupLabel}>{t('feed.reportGroupAuthenticity')}</Text>
+                  <Text style={styles.reasonGroupHint}>{t('feed.reportGroupAuthenticityHint')}</Text>
+                  {authenticityReasons.map(renderReason)}
+                  <Text style={[styles.reasonGroupLabel, styles.reasonGroupSpaced]}>{t('feed.reportGroupOther')}</Text>
+                  {listingOtherReasons.map(renderReason)}
+                </>
+              ) : (
+                reasons.map(renderReason)
+              )}
             </View>
 
             <Text style={[styles.sectionLabel, { marginTop: SPACING.md }]}> 
-              {isListingReport ? t('feed.reportDetailsLabel') : 'Additional details (optional)'}
+              {isAuthenticityReason
+                ? t('feed.reportEvidenceLabel')
+                : isListingReport ? t('feed.reportDetailsLabel') : 'Additional details (optional)'}
             </Text>
+            {isAuthenticityReason && (
+              <Text style={styles.reportPrivacyNote}>{t('feed.reportEvidenceHint')}</Text>
+            )}
+            {isAuthenticityReason && (
+              <TouchableOpacity
+                style={styles.rightsRow}
+                onPress={() => setRightsHolder(!rightsHolder)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: rightsHolder }}
+                activeOpacity={0.7}
+              >
+                <MaterialCommunityIcons
+                  name={rightsHolder ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                  size={20}
+                  color={rightsHolder ? COLORS.coral : COLORS.text3}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rightsText}>{t('feed.reportRightsHolder')}</Text>
+                  <Text style={styles.rightsHint}>{t('feed.reportRightsHolderHint')}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
             <TextInput
               style={styles.input}
-              placeholder={isListingReport ? t('feed.reportDetailsPlaceholder') : 'Provide any context that helps our team review this...'}
+              placeholder={
+                isAuthenticityReason
+                  ? t('feed.reportEvidencePlaceholder')
+                  : isListingReport ? t('feed.reportDetailsPlaceholder') : 'Provide any context that helps our team review this...'
+              }
               placeholderTextColor={COLORS.text3}
               value={details}
               onChangeText={setDetails}
@@ -196,6 +262,9 @@ export default function ReportModal({
               numberOfLines={3}
               maxLength={500}
             />
+            {isAuthenticityReason && (
+              <Text style={styles.reportPrivacyNote}>{t('feed.reportNotProof')}</Text>
+            )}
           </ScrollView>
 
           <View style={styles.actions}>
@@ -295,6 +364,45 @@ const styles = StyleSheet.create({
   reasonTextSelected: {
     fontWeight: FONT_WEIGHTS.semibold,
     color: COLORS.coral,
+  },
+  reasonGroupLabel: {
+    color: COLORS.text,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: FONT_WEIGHTS.semibold,
+    marginTop: SPACING.xs,
+  },
+  reasonGroupSpaced: {
+    marginTop: SPACING.md,
+  },
+  reasonGroupHint: {
+    color: COLORS.text3,
+    fontSize: FONT_SIZES.xs,
+    lineHeight: 16,
+    marginBottom: SPACING.xs,
+  },
+  reportPrivacyNote: {
+    color: COLORS.text3,
+    fontSize: FONT_SIZES.xs,
+    lineHeight: 16,
+    marginTop: SPACING.xs,
+  },
+  rightsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  rightsText: {
+    flex: 1,
+    color: COLORS.text2,
+    fontSize: FONT_SIZES.sm,
+    lineHeight: 18,
+  },
+  rightsHint: {
+    color: COLORS.text3,
+    fontSize: FONT_SIZES.xs,
+    lineHeight: 16,
+    marginTop: 2,
   },
   input: {
     borderWidth: 1,

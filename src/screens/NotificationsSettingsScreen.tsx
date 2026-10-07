@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Linking,
   Platform,
+  TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
@@ -46,6 +47,7 @@ const DEFAULT_PREFS: NotificationPreferences = {
   },
   snooze_until: null,
   daily_summary_time: '09:00',
+  time_zone: 'America/Port-au-Prince',
   hide_sensitive_previews: true,
   muted_seller_ids: [],
 };
@@ -57,6 +59,7 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
   const [prefs, setPrefs] = useState<NotificationPreferences>(DEFAULT_PREFS);
   const [loading, setLoading] = useState(true);
   const [hasPermission, setHasPermission] = useState<boolean>(true);
+  const [timeDrafts, setTimeDrafts] = useState({ start: DEFAULT_PREFS.quiet_hours.start, end: DEFAULT_PREFS.quiet_hours.end, summary: DEFAULT_PREFS.daily_summary_time });
 
   // Check device push permissions
   useEffect(() => {
@@ -84,6 +87,11 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
           categories: { ...prev.categories, ...(p.categories || {}) },
           quiet_hours: { ...prev.quiet_hours, ...(p.quiet_hours || {}) },
         }));
+        setTimeDrafts({
+          start: p.quiet_hours?.start || DEFAULT_PREFS.quiet_hours.start,
+          end: p.quiet_hours?.end || DEFAULT_PREFS.quiet_hours.end,
+          summary: p.daily_summary_time || DEFAULT_PREFS.daily_summary_time,
+        });
       }
     } catch {
       // Fallback to defaults
@@ -97,9 +105,26 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
   }, [loadPreferences]);
 
   const saveUpdates = async (newPrefs: NotificationPreferences) => {
-    setPrefs(newPrefs);
+    const current = prefs;
+    const patch: Partial<NotificationPreferences> = {};
+    for (const key of ['snooze_until', 'daily_summary_time', 'hide_sensitive_previews', 'muted_seller_ids'] as const) {
+      if (JSON.stringify(current[key]) !== JSON.stringify(newPrefs[key])) (patch as any)[key] = newPrefs[key];
+    }
+    const changedCategories: Partial<NotificationPreferences['categories']> = {};
+    for (const key of Object.keys(newPrefs.categories) as Array<keyof NotificationPreferences['categories']>) {
+      if (current.categories[key] !== newPrefs.categories[key]) changedCategories[key] = newPrefs.categories[key] as any;
+    }
+    if (Object.keys(changedCategories).length) patch.categories = changedCategories as NotificationPreferences['categories'];
+    const changedQuietHours: Partial<NotificationPreferences['quiet_hours']> = {};
+    for (const key of ['enabled', 'start', 'end', 'days'] as const) {
+      if (current.quiet_hours[key] !== newPrefs.quiet_hours[key]) (changedQuietHours as any)[key] = newPrefs.quiet_hours[key];
+    }
+    if (Object.keys(changedQuietHours).length) patch.quiet_hours = changedQuietHours as NotificationPreferences['quiet_hours'];
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Port-au-Prince';
+    if (current.time_zone !== timeZone) patch.time_zone = timeZone;
+    setPrefs({ ...newPrefs, time_zone: timeZone, categories: { ...newPrefs.categories, follows: 'push_now', offers: 'push_now' } });
     try {
-      await updateNotificationPreferences(newPrefs);
+      if (Object.keys(patch).length) await updateNotificationPreferences(patch);
     } catch {
       toast.error(t('feedback.notificationUpdateFailed'));
     }
@@ -178,6 +203,17 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
     saveUpdates(updated);
   };
 
+  const commitTime = (field: 'start' | 'end' | 'summary') => {
+    const value = timeDrafts[field];
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+      toast.error(t('notifSettings.invalidTime'));
+      setTimeDrafts(prev => ({ ...prev, [field]: field === 'summary' ? prefs.daily_summary_time : prefs.quiet_hours[field] }));
+      return;
+    }
+    if (field === 'summary') saveUpdates({ ...prefs, daily_summary_time: value });
+    else saveUpdates({ ...prefs, quiet_hours: { ...prefs.quiet_hours, [field]: value } });
+  };
+
   // Marketing opt-in toggle
   const handleTogglePromos = () => {
     const isCurrentlyOn = prefs.categories.marketing_promos === 'push_now';
@@ -238,7 +274,7 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
                   onPress={() => handleSetSnooze('off')}
                   accessibilityRole="button"
                 >
-                  <Text style={styles.resumeBtnText}>Resume</Text>
+                  <Text style={styles.resumeBtnText}>{t('notifSettings.resume')}</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -280,7 +316,7 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
             </View>
             <View style={styles.toggleText}>
               <Text style={styles.toggleLabel}>{t('notifSettings.quietHoursSchedule')}</Text>
-              <Text style={styles.toggleSubtitle}>10:00 PM – 8:00 AM</Text>
+            <Text style={styles.toggleSubtitle}>{prefs.quiet_hours.start} – {prefs.quiet_hours.end}</Text>
             </View>
             <SettingsToggle
               value={prefs.quiet_hours.enabled}
@@ -318,6 +354,30 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
           )}
         </SettingsGroup>
 
+        <SettingsGroup header={t('notifSettings.scheduleTimes')} footer={t('notifSettings.dailySummaryTimeDesc')}>
+          <View style={styles.timeSettingsRow}>
+            {(['start', 'end', 'summary'] as const).map(field => {
+              const label = field === 'start' ? t('notifSettings.startTime') : field === 'end' ? t('notifSettings.endTime') : t('notifSettings.dailySummaryTime');
+              return (
+                <View key={field} style={styles.timeSetting}>
+                  <Text style={styles.timeLabel}>{label}</Text>
+                  <TextInput
+                    value={timeDrafts[field]}
+                    onChangeText={value => setTimeDrafts(prev => ({ ...prev, [field]: value }))}
+                    onBlur={() => commitTime(field)}
+                    keyboardType="numbers-and-punctuation"
+                    maxLength={5}
+                    placeholder={field === 'start' ? '22:00' : field === 'end' ? '08:00' : '09:00'}
+                    placeholderTextColor={COLORS.text3}
+                    style={styles.timeInput}
+                    accessibilityLabel={label}
+                  />
+                </View>
+              );
+            })}
+          </View>
+        </SettingsGroup>
+
         {/* Lock Screen Privacy */}
         <SettingsGroup header={t('notifSettings.sensitivePreview')} footer={t('notifSettings.sensitivePreviewDesc')}>
           <View style={styles.toggleRow}>
@@ -343,41 +403,43 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
               <MaterialCommunityIcons name="shield-check" size={20} color={COLORS.green} />
             </View>
             <View style={styles.toggleText}>
-              <Text style={styles.toggleLabel}>Security, Orders & Meetups</Text>
-              <Text style={styles.toggleSubtitle}>Always immediate push alerts</Text>
+              <Text style={styles.toggleLabel}>{t('notifSettings.essentialCategories')}</Text>
+              <Text style={styles.toggleSubtitle}>{t('notifSettings.alwaysImmediate')}</Text>
             </View>
             <View style={styles.lockedBadge}>
-              <Text style={styles.lockedBadgeText}>Essential</Text>
+              <Text style={styles.lockedBadgeText}>{t('notifSettings.essentialBadge')}</Text>
             </View>
           </View>
         </SettingsGroup>
 
         {/* Configurable Category Preferences */}
-        <SettingsGroup header="Activity Categories">
+        <SettingsGroup header={t('notifSettings.activityCategories')}>
           {/* Follows */}
           <CategoryDeliveryRow
-            title="Follows"
-            subtitle="When new buyers or sellers follow you"
+            title={t('notifSettings.follows')}
+            subtitle={t('notifSettings.followsDesc')}
             mode={prefs.categories.follows || 'push_now'}
             onSelectMode={m => handleCategoryMode('follows', m)}
             t={t}
+            locked
           />
           <View style={styles.divider} />
 
           {/* Offers */}
           <CategoryDeliveryRow
-            title="Offers & Counters"
-            subtitle="Private price negotiations in chat"
+            title={t('notifSettings.offersCounters')}
+            subtitle={t('notifSettings.offersDesc')}
             mode={prefs.categories.offers || 'push_now'}
             onSelectMode={m => handleCategoryMode('offers', m)}
             t={t}
+            locked
           />
           <View style={styles.divider} />
 
           {/* Reviews */}
           <CategoryDeliveryRow
-            title="Reviews Received"
-            subtitle="Customer feedback on completed orders"
+            title={t('notifSettings.reviewsReceived')}
+            subtitle={t('notifSettings.reviewsDesc')}
             mode={prefs.categories.reviews || 'daily_summary'}
             onSelectMode={m => handleCategoryMode('reviews', m)}
             t={t}
@@ -386,8 +448,8 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
 
           {/* Seller Updates */}
           <CategoryDeliveryRow
-            title="Followed Seller Updates"
-            subtitle="New listings from sellers you follow"
+            title={t('notifSettings.sellerUpdates')}
+            subtitle={t('notifSettings.sellerUpdatesDesc')}
             mode={prefs.categories.seller_updates || 'daily_summary'}
             onSelectMode={m => handleCategoryMode('seller_updates', m)}
             t={t}
@@ -427,12 +489,14 @@ function CategoryDeliveryRow({
   mode,
   onSelectMode,
   t,
+  locked = false,
 }: {
   title: string;
   subtitle: string;
   mode: DeliveryMode;
   onSelectMode: (mode: DeliveryMode) => void;
   t: (key: string) => string;
+  locked?: boolean;
 }) {
   return (
     <View style={styles.categoryRow}>
@@ -440,7 +504,12 @@ function CategoryDeliveryRow({
         <Text style={styles.catTitle}>{title}</Text>
         <Text style={styles.catSubtitle}>{subtitle}</Text>
       </View>
-      <View style={styles.modeSegment}>
+      {locked ? (
+        <View style={styles.lockedMode}>
+          <MaterialCommunityIcons name="bell-ring-outline" size={15} color={COLORS.green} />
+          <Text style={styles.lockedModeText}>{t('notifSettings.alwaysImmediate')}</Text>
+        </View>
+      ) : <View style={styles.modeSegment}>
         {(['push_now', 'daily_summary', 'in_app'] as const).map(m => {
           const isActive = mode === m;
           const label =
@@ -461,7 +530,7 @@ function CategoryDeliveryRow({
             </TouchableOpacity>
           );
         })}
-      </View>
+      </View>}
     </View>
   );
 }
@@ -572,6 +641,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
+  timeSettingsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: SPACING.sm, paddingBottom: SPACING.sm },
+  timeSetting: { flex: 1, gap: 5 },
+  timeLabel: { fontSize: 11, color: COLORS.text2 },
+  timeInput: { minHeight: 40, borderRadius: 9, backgroundColor: COLORS.surface2, color: COLORS.text, paddingHorizontal: 8, fontSize: 14, fontWeight: '600', textAlign: 'center' },
   dayPill: {
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -596,6 +669,8 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 4,
   },
+  lockedMode: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 4, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 14, backgroundColor: COLORS.green + '18' },
+  lockedModeText: { fontSize: 11, fontWeight: '700', color: COLORS.green },
   modeBtn: {
     flex: 1,
     paddingVertical: 6,

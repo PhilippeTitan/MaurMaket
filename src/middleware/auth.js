@@ -134,4 +134,25 @@ async function dobRequired(req, res, next) {
   }
 }
 
-export { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired };
+// Batch 73/74/75 — a suspected-compromise freeze stops NEW listings and PAYOUT
+// requests only. This is deliberately not a global gate: sign-in, recovery,
+// messages, existing orders, Support, and data export must keep working while
+// frozen (APP-Q375/Q393). Apply it only to the specific routes a freeze halts.
+async function accountActive(req, res, next) {
+  try {
+    const result = await pool.query('SELECT frozen_at FROM users WHERE id = $1', [req.user.id]);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'User not found' });
+    if (result.rows[0].frozen_at) {
+      return res.status(403).json({
+        error: 'Your account is frozen. New listings and payout requests are paused until you restore it in Settings > Security.',
+        code: 'ACCOUNT_FROZEN',
+      });
+    }
+    next();
+  } catch (err) {
+    console.error('accountActive error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+export { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired, accountActive };

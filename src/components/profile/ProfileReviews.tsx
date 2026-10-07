@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../icons/Icon';
 import EmptyState from '../EmptyState';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADIUS, SPACING, TOUCH } from '../../theme';
-import { editReviewReply, replyToReview } from '../../api';
+import { editReviewReply, replyToReview, getTranslationStatus, translateText } from '../../api';
 import { useTranslation } from '@/localization';
 import { useToast } from '../Toast';
 import type { Review } from '../../types';
@@ -51,12 +51,29 @@ export default function ProfileReviews({
   onReportReply,
   onReplySaved,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const toast = useToast();
 
   const [replyTarget, setReplyTarget] = useState<Review | null>(null);
   const [replyText, setReplyText] = useState('');
   const [saving, setSaving] = useState(false);
+  // On-demand review translation: the affordance only appears once the server
+  // reports a translation provider, and the original is always kept above it.
+  const [translationAvailable, setTranslationAvailable] = useState(false);
+  const [translations, setTranslations] = useState<Record<string, string>>({});
+  const [translatingId, setTranslatingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getTranslationStatus()
+      .then((s) => {
+        if (active) setTranslationAvailable(!!s?.available);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const reviewTotal = Number(stats?.review_count ?? reviews.length) || 0;
   const average = Number(stats?.avg_rating ?? 0) ||
@@ -94,6 +111,21 @@ export default function ProfileReviews({
       setSaving(false);
     }
   }, [replyTarget, replyText, toast, t, onReplySaved]);
+
+  const handleTranslate = useCallback(async (review: Review) => {
+    if (!review.comment) return;
+    setTranslatingId(review.id);
+    try {
+      const res = await translateText(review.comment, language);
+      if (res?.translated_text) {
+        setTranslations((prev) => ({ ...prev, [review.id]: res.translated_text }));
+      }
+    } catch {
+      toast.error(t('profile.translateReview'), t('profile.translationFailed'));
+    } finally {
+      setTranslatingId(null);
+    }
+  }, [language, toast, t]);
 
   if (reviews.length === 0 && reviewTotal === 0) {
     return (
@@ -177,6 +209,33 @@ export default function ProfileReviews({
               </View>
 
               {review.comment ? <Text style={styles.comment}>{review.comment}</Text> : null}
+              {translationAvailable && review.comment && !translations[review.id] ? (
+                <TouchableOpacity
+                  style={styles.translateLink}
+                  onPress={() => handleTranslate(review)}
+                  disabled={translatingId === review.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('profile.translateReview')}
+                >
+                  {translatingId === review.id ? (
+                    <ActivityIndicator size="small" color={COLORS.coral} />
+                  ) : (
+                    <>
+                      <MaterialCommunityIcons name="translate" size={14} color={COLORS.coral} />
+                      <Text style={styles.translateLinkText}>{t('profile.translateReview')}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              ) : null}
+              {translations[review.id] ? (
+                <>
+                  <Text style={styles.translatedLabel}>{t('profile.translatedLabel')}</Text>
+                  <Text style={styles.comment}>{translations[review.id]}</Text>
+                </>
+              ) : null}
+              {review.is_transaction_level ? (
+                <Text style={styles.transactionLabel}>{t('profile.completedTransaction')}</Text>
+              ) : null}
 
               {review.seller_response ? (
                 <View style={styles.reply}>
@@ -332,6 +391,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   comment: { fontSize: FONT_SIZES.base, color: COLORS.text2, lineHeight: 19 },
+  transactionLabel: { fontSize: FONT_SIZES.xs, color: COLORS.text3, marginTop: SPACING.xs },
+  translateLink: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginTop: SPACING.xs, minHeight: 32 },
+  translateLinkText: { fontSize: FONT_SIZES.xs, color: COLORS.coral, fontWeight: FONT_WEIGHTS.medium },
+  translatedLabel: { fontSize: FONT_SIZES.xs, color: COLORS.text3, marginTop: SPACING.sm },
 
   reply: {
     marginTop: SPACING.sm,

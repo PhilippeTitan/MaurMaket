@@ -118,6 +118,9 @@ export function dimsFromVariants(variants) {
 // ───── Moderation (v1 keyword policy) ─────
 // Conservative high-confidence scam patterns only; ordinary marketplace language
 // (including phone numbers and prices) must never be flagged.
+// APP-Q549: matches are private review signals, never decisions. A flagged
+// listing is held for human review; automated checks never restrict, reject, or
+// punish on their own, and the seller is told a person will review the flag.
 const MODERATION_PATTERNS = [
   { id: 'wire_transfer', re: /western union|moneygram|money gram|wire transfer/i },
   { id: 'advance_fee', re: /advance (fee|payment)|pay (first|upfront)|send (money|cash) (first|ahead)/i },
