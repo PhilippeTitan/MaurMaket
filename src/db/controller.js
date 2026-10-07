@@ -18,12 +18,39 @@ const BREAKER_THRESHOLD = 3;
 const BREAKER_COOLDOWN_MS = 15_000;
 const QUOTA_COOLDOWN_MS = 60_000; // 1 min for quota errors — don't hammer
 
+// Node-level network failures carry an errno in `error.code` (ECONNRESET,
+// ETIMEDOUT, …) rather than a Postgres SQLSTATE, and pg reports TLS/socket
+// resets with messages that never mention "econn". Both must count as the
+// database being unavailable, otherwise the controller would rethrow, skip
+// failover, and never trip the breaker (observed with Neon's TLS resets).
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ETIMEDOUT', 'EPIPE',
+  'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'EAI_AGAIN',
+  'ERR_SOCKET_CONNECTION_TIMEOUT',
+]);
+
 function isDatabaseAvailabilityError(error) {
   const code = String(error?.code || '');
   const message = String(error?.message || '');
   return code.startsWith('08')
+    || NETWORK_ERROR_CODES.has(code.toUpperCase())
     || ['53300', '57P01', '57P02', '57P03'].includes(code)
-    || /quota.*exceeded|exceeded.*quota|connection terminated|connection closed|connect(?:ion)? timeout|econn(?:refused|reset|timedout)|socket hang up/i.test(message);
+    || /quota.*exceeded|exceeded.*quota|connection terminated|connection closed|server closed the connection|connect(?:ion)? timeout|econn(?:refused|reset|timedout)|socket hang up|socket disconnected|secure tls connection/i.test(message);
+}
+
+/**
+ * A connection that was accepted and then dropped (stale idle client, server
+ * suspending an idle compute, half-open socket) — as opposed to a database we
+ * could not reach at all. Only these are worth retrying once on a fresh
+ * connection before declaring the pool unavailable.
+ */
+function isStaleConnectionError(error) {
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || '');
+  return code === 'ECONNRESET'
+    || code === 'EPIPE'
+    || code === 'ECONNABORTED'
+    || /socket disconnected|secure tls connection|server closed the connection|connection terminated|socket hang up|read econnreset/i.test(message);
 }
 
 class CircuitBreaker {
@@ -151,12 +178,28 @@ export class DatabaseController {
     await this._secondaryPreparePromise;
   }
 
+  /**
+   * `SELECT 1` probe for the health check. A stale pooled socket (an idle
+   * compute that was suspended, a socket a proxy dropped) resets on first use;
+   * retry once on a fresh connection so a transient reset does not trip the
+   * breaker or flip the controller into FAILOVER. Genuine outages (refused,
+   * timed out) are not retried and still trip it immediately.
+   */
+  async _probe(pool) {
+    try {
+      return await pool.query('SELECT 1');
+    } catch (error) {
+      if (!isStaleConnectionError(error)) throw error;
+      return await pool.query('SELECT 1');
+    }
+  }
+
   async healthCheck() {
     const results = { supabase: false, neon: false };
 
     if (this.supabase && this.supabaseBreaker.isHealthy) {
       try {
-        await this.supabase.query('SELECT 1');
+        await this._probe(this.supabase);
         await this._ensureSecondarySchema(this.supabase);
         this.supabaseBreaker.recordSuccess();
         results.supabase = true;
@@ -168,7 +211,7 @@ export class DatabaseController {
 
     if (this.neon && this.neonBreaker.isHealthy) {
       try {
-        await this.neon.query('SELECT 1');
+        await this._probe(this.neon);
         await this._ensureSecondarySchema(this.neon);
         this.neonBreaker.recordSuccess();
         results.neon = true;
@@ -256,31 +299,49 @@ export class DatabaseController {
       throw new Error(`[DB:Controller] No healthy database available${failures ? ` (${failures})` : ''}`);
     }
 
+    // A pooled idle connection can be closed underneath us (Neon suspends an
+    // idle compute, a proxy drops the socket) and the reset only surfaces when
+    // the next statement is sent. Retry once on a fresh connection before
+    // treating the database as unavailable — this turns a stale-connection
+    // reset into an ordinary successful read instead of a user-facing 500.
+    let error;
     try {
       const result = await pool.query(sql, params);
       this._breakerForPool(pool).recordSuccess();
       return result;
-    } catch (error) {
-      const poolBreaker = this._breakerForPool(pool);
-      if (!isDatabaseAvailabilityError(error)) throw error;
-      poolBreaker.recordFailure(error?.message);
-      // Reads may fail over to the other database. Use the actual configured
-      // secondary pool; `_secondaryPool` was never initialized.
-      const secondary = pool === this.primaryPool ? this.secondaryPool : this.primaryPool;
-      const secondaryBreaker = pool === this.primaryPool ? this.secondaryBreaker : this.primaryBreaker;
-      if (secondary && secondary !== pool && secondaryBreaker.isHealthy) {
+    } catch (firstError) {
+      if (!isDatabaseAvailabilityError(firstError)) throw firstError;
+      error = firstError;
+      if (isStaleConnectionError(firstError)) {
         try {
-          const result = await secondary.query(sql, params);
-          secondaryBreaker.recordSuccess();
+          const result = await pool.query(sql, params);
+          this._breakerForPool(pool).recordSuccess();
           return result;
-        } catch (secondaryError) {
-          if (!isDatabaseAvailabilityError(secondaryError)) throw secondaryError;
-          secondaryBreaker.recordFailure(secondaryError?.message);
-          throw new AggregateError([error, secondaryError], '[DB:Controller] Read failed on both databases');
+        } catch (retryError) {
+          if (!isDatabaseAvailabilityError(retryError)) throw retryError;
+          error = retryError;
         }
       }
-      throw error;
     }
+
+    const poolBreaker = this._breakerForPool(pool);
+    poolBreaker.recordFailure(error?.message);
+    // Reads may fail over to the other database. Use the actual configured
+    // secondary pool; `_secondaryPool` was never initialized.
+    const secondary = pool === this.primaryPool ? this.secondaryPool : this.primaryPool;
+    const secondaryBreaker = pool === this.primaryPool ? this.secondaryBreaker : this.primaryBreaker;
+    if (secondary && secondary !== pool && secondaryBreaker.isHealthy) {
+      try {
+        const result = await secondary.query(sql, params);
+        secondaryBreaker.recordSuccess();
+        return result;
+      } catch (secondaryError) {
+        if (!isDatabaseAvailabilityError(secondaryError)) throw secondaryError;
+        secondaryBreaker.recordFailure(secondaryError?.message);
+        throw new AggregateError([error, secondaryError], '[DB:Controller] Read failed on both databases');
+      }
+    }
+    throw error;
   }
 
   _breakerForPool(pool) {
@@ -296,7 +357,14 @@ export class DatabaseController {
   async connect() {
     const pool = this._getWritePool();
     if (!pool) throw new Error('[DB:Controller] No healthy database available');
-    return pool.connect();
+    try {
+      return await pool.connect();
+    } catch (error) {
+      // Same stale-socket case as reads: retry once on a fresh connection so a
+      // pooled socket closed by the server does not fail a transaction.
+      if (!isStaleConnectionError(error)) throw error;
+      return pool.connect();
+    }
   }
 
   // ───── Atomic Write with Outbox ─────
