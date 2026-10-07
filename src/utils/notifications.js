@@ -32,6 +32,7 @@ const URGENT_TYPES = new Set([
   'account_frozen',
   'account_unfrozen',
   'second_factor_removed',
+  'trusted_device_revoked',
   'verification_rejected',
   // Orders / Payments / Escrow / Payouts
   'order_status',
@@ -204,6 +205,10 @@ function sanitizeForLockScreen(type, title, body) {
       // Never names which factor or the device detail on the lock screen; the
       // safe next step (open the app and review) is enough.
       return { title: 'Sign-in method removed', body: 'A sign-in method was removed from your account. If this was not you, open MaurMaket to secure it.' };
+    case 'trusted_device_revoked':
+      // Revocation tightens the account, so the reset is useful on the lock
+      // screen — without naming the device or how many were removed.
+      return { title: 'Trusted device removed', body: 'A device must verify a code again. If this was not you, open MaurMaket to review.' };
     case 'payment_confirmed':
       return { title: 'Payment Confirmed', body: 'Payment received. Open MaurMaket to view order details.' };
     case 'payment_failed':

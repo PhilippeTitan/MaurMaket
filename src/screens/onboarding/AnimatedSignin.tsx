@@ -11,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, RADIUS, FONTS } from '../../theme';
 import { useTranslation } from '@/localization';
 import { login as apiLogin, completeTwoFactorLogin, googleAuth, passkeyAuth, PasskeyUnavailableError } from '../../api';
+import { TRUSTED_DEVICE_DAYS } from '../../utils/trustedDevices';
 import { store } from '../../store';
 import OnboardingBackground from './components/OnboardingBackground';
 import type { User } from '../../types';
@@ -167,6 +168,9 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [usingBackupCode, setUsingBackupCode] = useState(false);
+  // Batch 74 / APP-Q379 — explicit "remember this device" opt-in, never on by
+  // default and reset whenever the challenge is abandoned.
+  const [trustDevice, setTrustDevice] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -303,7 +307,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
     if (twoFactorCode.trim().length < 6 || loading || isSuccess) return;
     setLoading(true);
     try {
-      const res = await completeTwoFactorLogin(twoFactorCode.trim(), usingBackupCode) as { user: User; token: string };
+      const res = await completeTwoFactorLogin(twoFactorCode.trim(), usingBackupCode, trustDevice) as { user: User; token: string };
       playSuccessAndEnter(res.user, res.token);
     } catch (err: any) {
       setErrorMessage(err?.message || 'That verification code was not accepted.');
@@ -445,6 +449,30 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
                   <Text style={{ color: C.text, fontSize: 18, fontWeight: '700', marginBottom: 8 }}>{t('signin.twoFactorTitle')}</Text>
                   <Text style={{ color: C.sub, fontSize: 13, marginBottom: 16 }}>{t('signin.twoFactorBody')}</Text>
                   <Field icon={usingBackupCode ? 'key-outline' : 'shield-key-outline'} label={usingBackupCode ? t('signin.backupCode') : t('signin.authenticatorCode')} value={twoFactorCode} onChangeText={setTwoFactorCode} placeholder="000000" keyboardType={usingBackupCode ? 'default' : 'number-pad'} />
+                  {/* Batch 74 / APP-Q379 — the duration is stated up front and
+                      what trusting a device does *not* mean is explicit. */}
+                  <TouchableOpacity
+                    onPress={() => setTrustDevice(value => !value)}
+                    activeOpacity={0.8}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: trustDevice }}
+                    accessibilityLabel={t('signin.trustDevice', { days: TRUSTED_DEVICE_DAYS })}
+                    style={s.trustRow}
+                  >
+                    <MaterialCommunityIcons
+                      name={trustDevice ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                      size={22}
+                      color={trustDevice ? C.violet : C.faint}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: C.text, fontSize: 13, fontWeight: '600' }}>
+                        {t('signin.trustDevice', { days: TRUSTED_DEVICE_DAYS })}
+                      </Text>
+                      <Text style={{ color: C.faint, fontSize: 11, lineHeight: 15, marginTop: 2 }}>
+                        {t('signin.trustDeviceBody', { days: TRUSTED_DEVICE_DAYS })}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 </>
               ) : (
                 <>
@@ -465,7 +493,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
                 <TouchableOpacity onPress={() => { setUsingBackupCode(value => !value); setTwoFactorCode(''); }} hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }} style={s.textLink}>
                   <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{usingBackupCode ? t('signin.useAuthenticator') : t('signin.useBackupCode')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => { setRequiresTwoFactor(false); setTwoFactorCode(''); setUsingBackupCode(false); }} hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }} style={s.textLink}>
+                <TouchableOpacity onPress={() => { setRequiresTwoFactor(false); setTwoFactorCode(''); setUsingBackupCode(false); setTrustDevice(false); }} hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }} style={s.textLink}>
                   <Text style={{ color: C.sub, fontSize: 13, fontWeight: '500' }}>{t('signin.backToSignIn')}</Text>
                 </TouchableOpacity>
               </View>
@@ -675,6 +703,10 @@ const s = StyleSheet.create({
 
   primaryTouch: { width: '100%', alignSelf: 'stretch' },
   // Text links get real geometry, not just hitSlop — mouse/trackpad clicks ignore hitSlop.
+  // Batch 74 / APP-Q379 — the "remember this device" choice: a full-width row
+  // that keeps the 44dp minimum target and reads as a checkbox, not a toggle
+  // hidden behind an icon.
+  trustRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 48, marginTop: 14, paddingVertical: 6 },
   textLink: { paddingVertical: 13, paddingHorizontal: 10, minHeight: 44, justifyContent: 'center' },
   primaryBtn: { height: 52, borderRadius: 999, backgroundColor: C.violet, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch' },
   primaryBtnDisabled: { borderWidth: 1, borderColor: C.border, backgroundColor: C.surfaceHi },

@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { dash } from '@better-auth/infra';
 import { bearer, username, phoneNumber, emailOTP, twoFactor } from 'better-auth/plugins';
+import { TRUSTED_DEVICE_MAX_AGE_SECONDS } from '../utils/trustedDevices.js';
 import { passkey } from '@better-auth/passkey';
 import bcrypt from 'bcrypt';
 import { verifyPassword as verifyBetterAuthPassword } from 'better-auth/crypto';
@@ -289,6 +290,11 @@ export function createAuth(adapter) {
         issuer: 'MaurMaket',
         // Don't force 2FA on everyone — let sellers/admins opt in
         requireTwoFactor: false,
+        // Batch 74 / APP-Q379 — a trusted device lasts a bounded, stated period.
+        // Setting this explicitly keeps the bound a deliberate product decision
+        // instead of an invisible library default, and it is the value the app
+        // labels to the user (src/utils/trustedDevices.js is the one source).
+        trustDeviceMaxAge: TRUSTED_DEVICE_MAX_AGE_SECONDS,
       }),
     ],
 

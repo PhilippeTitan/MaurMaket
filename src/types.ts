@@ -524,11 +524,22 @@ export interface PolicyState {
 // `user_agent` is the same non-secret device string the session list exposes.
 export interface SecurityEvent {
   id: number;
-  event_type: 'sign_in' | 'account_frozen' | 'account_unfrozen' | 'two_factor_disabled' | 'passkey_removed';
+  event_type: 'sign_in' | 'account_frozen' | 'account_unfrozen' | 'two_factor_disabled' | 'passkey_removed' | 'trusted_device_revoked';
   user_agent: string | null;
   /** Only ever the account owner's own freeze note. */
   reason: string | null;
   created_at: string;
+}
+
+// Batch 74 / APP-Q379 — a "remember this device" trust record.
+// Trust only ever decides whether a second-factor code is asked for; it is not
+// identity verification, KYC evidence, or payment/payout authorization. A
+// device is identified by when it was trusted, not by a fingerprint claim.
+export interface TrustedDevice {
+  id: string;
+  trusted_at: string;
+  expires_at: string;
+  days_remaining: number;
 }
 
 // Batch 73/74/75 — fast account freeze for suspected compromise (APP-Q371).

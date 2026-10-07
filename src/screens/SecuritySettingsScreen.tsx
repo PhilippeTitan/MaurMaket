@@ -14,11 +14,13 @@ import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import {
   addAccountPasskey, deleteAccountPasskey, disableAuthenticator, enableAuthenticator,
-  freezeAccount, getAccountFreeze, getSecurityEvents, getSecuritySnapshot, linkGoogleAccount,
-  revokeAuthSession, unfreezeAccount, verifyAuthenticator,
+  freezeAccount, getAccountFreeze, getSecurityEvents, getSecuritySnapshot, getTrustedDevices,
+  linkGoogleAccount, revokeAllTrustedDevices, revokeAuthSession, revokeTrustedDevice,
+  unfreezeAccount, verifyAuthenticator,
   type BetterAuthSecuritySession,
 } from '../api';
-import type { AccountFreezeState, SecurityEvent } from '../types';
+import { TRUSTED_DEVICE_DAYS } from '../utils/trustedDevices';
+import type { AccountFreezeState, SecurityEvent, TrustedDevice } from '../types';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -73,6 +75,13 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [eventsRetentionDays, setEventsRetentionDays] = useState(365);
   const [eventsLoading, setEventsLoading] = useState(true);
+  // Batch 74 / APP-Q379 — "remember this device" records: bounded, visible, and
+  // revocable immediately.
+  const [trustedDevices, setTrustedDevices] = useState<TrustedDevice[]>([]);
+  const [trustedDeviceDays, setTrustedDeviceDays] = useState(TRUSTED_DEVICE_DAYS);
+  const [trustedDevicesLoading, setTrustedDevicesLoading] = useState(true);
+  const [revokeTrustedTarget, setRevokeTrustedTarget] = useState<TrustedDevice | null>(null);
+  const [revokeAllTrustedVisible, setRevokeAllTrustedVisible] = useState(false);
   // Batch 73/74/75 — fast account freeze for suspected compromise (APP-Q371).
   const [freezeState, setFreezeState] = useState<AccountFreezeState | null>(null);
   const [freezeBusy, setFreezeBusy] = useState(false);
@@ -140,6 +149,24 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   }, []);
 
   useFocusEffect(useCallback(() => { void loadSecurityEvents(); }, [loadSecurityEvents]));
+
+  // Supplemental, like the history above: a failure here must not blank the
+  // rest of the security screen.
+  const loadTrustedDevices = useCallback(async () => {
+    setTrustedDevicesLoading(true);
+    try {
+      const response = await getTrustedDevices();
+      setTrustedDevices(response.devices || []);
+      // The server owns the bound; take the displayed duration from it so the
+      // label can never drift from what is actually enforced.
+      if (Number.isFinite(response.duration_days)) setTrustedDeviceDays(response.duration_days);
+    } catch {
+      // Keep whatever was last shown.
+    }
+    setTrustedDevicesLoading(false);
+  }, []);
+
+  useFocusEffect(useCallback(() => { void loadTrustedDevices(); }, [loadTrustedDevices]));
 
   const closeSetup = () => {
     setSetupVisible(false);
@@ -261,6 +288,35 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
     } finally { setBusy(false); }
   };
 
+  // Revocation tightens the account, so it takes effect at once and needs no
+  // password: the very next sign-in on that device is asked for a code again.
+  const handleRevokeTrustedDevice = async () => {
+    if (!revokeTrustedTarget) return;
+    setBusy(true);
+    try {
+      await revokeTrustedDevice(revokeTrustedTarget.id);
+      setRevokeTrustedTarget(null);
+      toast.show({ kind: 'success', title: t('security.trustedDeviceRevoked') });
+      await loadTrustedDevices();
+      await loadSecurityEvents();
+    } catch (error: any) {
+      toast.show({ kind: 'error', title: error?.message || t('security.trustedDeviceRevokeFailed') });
+    } finally { setBusy(false); }
+  };
+
+  const handleRevokeAllTrustedDevices = async () => {
+    setBusy(true);
+    try {
+      const result = await revokeAllTrustedDevices();
+      setRevokeAllTrustedVisible(false);
+      toast.show({ kind: 'success', title: t('security.trustedDevicesRevoked', { count: result?.revoked ?? 0 }) });
+      await loadTrustedDevices();
+      await loadSecurityEvents();
+    } catch (error: any) {
+      toast.show({ kind: 'error', title: error?.message || t('security.trustedDeviceRevokeFailed') });
+    } finally { setBusy(false); }
+  };
+
   const handleFreeze = async () => {
     setFreezeBusy(true);
     try {
@@ -299,7 +355,9 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         ? t('security.eventTwoFactorDisabled')
         : type === 'passkey_removed'
           ? t('security.eventPasskeyRemoved')
-          : t('security.eventSignIn');
+          : type === 'trusted_device_revoked'
+            ? t('security.eventTrustedDeviceRevoked')
+            : t('security.eventSignIn');
 
   const emailVerified = securityDataLoaded && authEmailVerified;
   const checksPassed = Number(emailVerified) + Number(securityDataLoaded && twoFactorEnabled);
@@ -455,6 +513,50 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
             </View>
           )}
         </View>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('security.trustedDevices')}</Text>
+          <Text style={styles.sectionHint}>{t('security.trustedDevicesDesc', { days: trustedDeviceDays })}</Text>
+          {trustedDevices.length === 0 && !trustedDevicesLoading ? (
+            <View style={styles.emptyCard}><Text style={styles.emptyText}>{t('security.noTrustedDevices')}</Text></View>
+          ) : (
+            <View style={styles.card}>
+              {trustedDevices.map((device, index) => (
+                <React.Fragment key={device.id}>
+                  {index > 0 && <View style={styles.divider} />}
+                  <View style={styles.row}>
+                    <View style={styles.rowIcon}><MaterialCommunityIcons name="shield-check-outline" size={19} color={C.text} /></View>
+                    <View style={styles.sessionCopy}>
+                      <Text style={styles.rowTitle}>{t('security.trustedDevice')}</Text>
+                      <Text style={styles.sessionDate}>
+                        {t('security.trustedDeviceWindow', {
+                          trusted: new Date(device.trusted_at).toLocaleDateString(),
+                          expires: new Date(device.expires_at).toLocaleDateString(),
+                          days: device.days_remaining,
+                        })}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.smallAction}
+                      onPress={() => setRevokeTrustedTarget(device)}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('security.revokeTrustedDevice')}
+                    >
+                      <Text style={styles.removeText}>{t('security.revoke')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </React.Fragment>
+              ))}
+            </View>
+          )}
+          {trustedDevices.length > 1 && (
+            <View style={styles.eventsActions}>
+              <TouchableOpacity style={styles.secondaryAction} onPress={() => setRevokeAllTrustedVisible(true)} accessibilityRole="button">
+                <Text style={styles.secondaryButtonText}>{t('security.revokeAllTrustedDevices')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('security.recentSignInActivity')}</Text>
           <Text style={styles.sectionHint}>{t('security.recentSignInDesc')}</Text>
@@ -626,6 +728,12 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         </View>
       </Modal>
 
+      <Modal visible={!!revokeTrustedTarget} transparent animationType="fade" onRequestClose={() => setRevokeTrustedTarget(null)}>
+        <ConfirmDialog title={t('security.revokeTrustedDeviceTitle')} message={t('security.revokeTrustedDeviceCopy')} cancelLabel={t('common.cancel')} confirmLabel={t('security.revoke')} busy={busy} onCancel={() => setRevokeTrustedTarget(null)} onConfirm={() => { void handleRevokeTrustedDevice(); }} />
+      </Modal>
+      <Modal visible={revokeAllTrustedVisible} transparent animationType="fade" onRequestClose={() => setRevokeAllTrustedVisible(false)}>
+        <ConfirmDialog title={t('security.revokeAllTrustedDevicesTitle')} message={t('security.revokeAllTrustedDevicesCopy')} cancelLabel={t('common.cancel')} confirmLabel={t('security.revokeAllTrustedDevices')} busy={busy} onCancel={() => setRevokeAllTrustedVisible(false)} onConfirm={() => { void handleRevokeAllTrustedDevices(); }} />
+      </Modal>
       <Modal visible={!!revokeTarget} transparent animationType="fade" onRequestClose={() => setRevokeTarget(null)}>
         <ConfirmDialog title={t('security.revokeDeviceTitle')} message={t('security.revokeDeviceCopy')} cancelLabel={t('common.cancel')} confirmLabel={t('security.revoke')} busy={busy} onCancel={() => setRevokeTarget(null)} onConfirm={() => { void handleRevokeSession(); }} />
       </Modal>

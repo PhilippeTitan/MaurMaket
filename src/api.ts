@@ -4,7 +4,7 @@ import * as AuthSession from 'expo-auth-session';
 import { createAuthClient } from 'better-auth/client';
 import { twoFactorClient } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
-import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats, NotificationPreferences, PolicyState, SecurityEvent, AccountFreezeState, ExportJob, DataExportSummary } from './types';
+import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats, NotificationPreferences, PolicyState, SecurityEvent, TrustedDevice, AccountFreezeState, ExportJob, DataExportSummary } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
 
@@ -452,11 +452,15 @@ export const login = async (email: string, password: string) => {
   }
 };
 
-export const completeTwoFactorLogin = async (code: string, backupCode = false) => {
+// Batch 74 / APP-Q379 — `trustDevice` is the user's explicit "remember this
+// device" choice. Better Auth stores the trust for the bounded window configured
+// in src/config/auth.js (see src/utils/trustedDevices.js for the same number the
+// UI labels) and the record is listed and revocable in Settings → Security.
+export const completeTwoFactorLogin = async (code: string, backupCode = false, trustDevice = false) => {
   const client = await ensureAuthTokenLoaded();
   const result = backupCode
-    ? await client.twoFactor.verifyBackupCode({ code, trustDevice: false })
-    : await client.twoFactor.verifyTotp({ code, trustDevice: false });
+    ? await client.twoFactor.verifyBackupCode({ code, trustDevice })
+    : await client.twoFactor.verifyTotp({ code, trustDevice });
   if (result.error) throw new Error(result.error.message || 'The verification code was not accepted.');
   const token = _cachedToken;
   const profile = await getMe() as any;
@@ -513,6 +517,9 @@ export const enableAuthenticator = async (password: string) => {
   return body as { totpURI: string; backupCodes: string[] };
 };
 
+// Enabling the authenticator never creates a trust record: the account is
+// already signed in on this device, so "remember this device" would be
+// meaningless here and would silently shorten a future challenge.
 export const verifyAuthenticator = async (code: string) => {
   const { res, body } = await authFetch('/auth/two-factor/verify-totp', {
     method: 'POST', body: JSON.stringify({ code, trustDevice: false }),
@@ -551,6 +558,22 @@ export const revokeAuthSession = async (token: string) => {
 // Structured events so the screen renders them in the active app language.
 export const getSecurityEvents = () =>
   request<{ events: SecurityEvent[]; retention_days: number; max_events: number }>('/security/events');
+
+// Batch 74 / APP-Q379 — trusted devices ("remember this device").
+// Read, revoke one, or revoke all. Revocation only ever tightens the account: it
+// removes the stored trust record so the device is asked for a code again at the
+// next sign-in. Trust never verifies identity or authorizes a payment or payout.
+export const getTrustedDevices = () =>
+  request<{ devices: TrustedDevice[]; duration_days: number }>('/security/trusted-devices');
+
+export const revokeTrustedDevice = (id: string) =>
+  request<{ revoked: number }>(
+    `/security/trusted-devices/${encodeURIComponent(id)}`,
+    { method: 'DELETE' }
+  );
+
+export const revokeAllTrustedDevices = () =>
+  request<{ revoked: number }>('/security/trusted-devices', { method: 'DELETE' });
 
 // Batch 73/74/75 — fast account freeze for suspected compromise (APP-Q371).
 export const getAccountFreeze = () =>

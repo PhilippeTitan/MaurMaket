@@ -7,15 +7,16 @@ import { pool } from '../config/database.js';
 // record reads correctly in EN/FR/HT (this follows the settled decision to
 // store structured notification/activity data rather than frozen prose).
 //
-// Records new sign-ins, account freeze/unfreeze, and second-factor removals
-// (APP-Q390). Password change is still owned by Better Auth and remains a
-// follow-up.
+// Records new sign-ins, account freeze/unfreeze, second-factor removals
+// (APP-Q390), and trusted-device revocations (APP-Q379). Password change is
+// still owned by Better Auth and remains a follow-up.
 export const SECURITY_EVENT_TYPES = new Set([
   'sign_in',
   'account_frozen',
   'account_unfrozen',
   'two_factor_disabled',
   'passkey_removed',
+  'trusted_device_revoked',
 ]);
 
 // Disclosed to the user on the security screen and enforced by the daily
