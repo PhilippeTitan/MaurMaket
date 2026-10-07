@@ -27,7 +27,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, invalidateUser } from './src/hooks';
 import { useReduceMotion } from './src/hooks/useReduceMotion';
 import { ToastProvider } from './src/components/Toast';
-import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/notifications';
+import { registerForPushNotificationsAsync, setupNotificationListeners, releaseHeldPush } from './src/notifications';
 import ForegroundNotificationBanner from './src/components/ForegroundNotificationBanner';
 import type { User } from './src/types';
 import type { RootStackParamList, AuthStackParamList, TabParamList } from './src/navigation';
@@ -390,6 +390,10 @@ export default function App() {
       setIsLoggedIn(!!store.user);
       setPendingDob(!!store.user?.pending_dob);
       setAppearanceMode(store.appearanceMode);
+      // Batch 75 follow-on: a push tapped while signed out was held, not routed;
+      // now that a session exists it can go where it pointed (if it is still
+      // fresh — see src/utils/pushRoutingPolicy.js).
+      if (store.user) releaseHeldPush(true);
       // A session that ends anywhere in the app takes the lock with it.
       if (!store.user) setAppLocked(false);
     });
@@ -461,7 +465,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setupNotificationListeners(navigationRef);
+    setupNotificationListeners(navigationRef, () => store.isLoggedIn);
   }, []);
 
   useEffect(() => {

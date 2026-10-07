@@ -17,6 +17,14 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
+  decidePushDelivery,
+  heldPushIsFresh,
+  releaseHeldPush,
+  PUSH_HOLD_WINDOW_MS,
+  PUSH_ROUTE,
+  PUSH_HOLD,
+} from '../src/utils/pushRoutingPolicy.js';
+import {
   selectAccountDeviceKeys,
   notificationCacheKey,
   UNSENT_DRAFTS_KEY,
@@ -148,6 +156,7 @@ check('the notification cache key comes from the policy', read('src/screens/Noti
 const authRoutes = read('src/routes/auth.js');
 const notifications = read('src/notifications.ts');
 const api = read('src/api.ts');
+const pushPolicy = read('src/utils/pushRoutingPolicy.js');
 check('the device remembers the token it registered', notifications.includes('writeStoredPushToken(token.data)'));
 check('sign-out unregisters this device', store.includes('await unregisterPushToken()'));
 check('the unregistration happens while the session is still valid',
@@ -159,6 +168,52 @@ check('the server compare-and-clears instead of wiping any registration',
 check('registration is unchanged for existing clients', authRoutes.includes('UPDATE users SET push_token = $1 WHERE id = $2'));
 check('the registration key is device-local, not an authenticated cache',
   DEVICE_LOCAL_KEYS.includes(PUSH_TOKEN_KEY) && !ACCOUNT_EXACT_KEYS.includes(PUSH_TOKEN_KEY));
+
+// ── 8. A push on a signed-out device is held, not routed (Session 409 follow-on) ──
+// The token is unregistered at sign-out, but a push already in flight still
+// lands. Showing it announces an account nobody is signed into; routing it opens
+// a screen that belongs to that account. So: hold a tap, show nothing.
+const NOW = 1_800_000_000_000;
+check('a push with no session is held rather than routed',
+  decidePushDelivery({ hasSession: false }) === PUSH_HOLD && decidePushDelivery({ hasSession: true }) === PUSH_ROUTE);
+check('an unknown session state counts as signed out (never assumed in)',
+  decidePushDelivery({}) === PUSH_HOLD && decidePushDelivery() === PUSH_HOLD);
+check('a fresh hold is released after sign-in',
+  JSON.stringify(releaseHeldPush({ type: 'order_status', data: { orderId: 'o1' }, heldAt: NOW - 1000 }, { hasSession: true, now: NOW }))
+  === JSON.stringify({ type: 'order_status', data: { orderId: 'o1' } }));
+check('no session means the hold stays held',
+  releaseHeldPush({ type: 'x', heldAt: NOW }, { hasSession: false, now: NOW }) === null);
+check('an expired hold is dropped, not replayed days later',
+  releaseHeldPush({ type: 'x', heldAt: NOW - PUSH_HOLD_WINDOW_MS - 1 }, { hasSession: true, now: NOW }) === null);
+check('the boundary of the window is inclusive',
+  heldPushIsFresh(NOW - PUSH_HOLD_WINDOW_MS, NOW) === true && heldPushIsFresh(NOW - PUSH_HOLD_WINDOW_MS - 1, NOW) === false);
+check('a clock that moved backwards is treated as stale, not trusted',
+  heldPushIsFresh(NOW + 1000, NOW) === false);
+check('nothing held releases nothing',
+  releaseHeldPush(null, { hasSession: true, now: NOW }) === null && releaseHeldPush({}, { hasSession: true, now: NOW }) === null);
+check('a push with no type still has a destination (the inbox)',
+  releaseHeldPush({ data: { x: 1 }, heldAt: NOW }, { hasSession: true, now: NOW })?.type === '');
+check('the hold is pure decision logic: no imports, no storage, so a held push cannot survive a restart',
+  !/^\s*import\s/m.test(pushPolicy) && !/require\(/.test(pushPolicy) && !/storage|SecureStore|localStorage/.test(pushPolicy));
+check('the device never shows the account\u2019s activity while signed out',
+  /if \(!sessionIsOpen\(\)\) return;/.test(notifications));
+// The handler routes on exactly one path, and only past the session check: a
+// second routing call anywhere in it is a bypass of the hold.
+const pushHandler = notifications.slice(
+  notifications.indexOf('function handlePushDestination'),
+  notifications.indexOf('export function releaseHeldPush')
+);
+check('a tap is routed through the session-aware handler',
+  notifications.includes('handlePushDestination(data?.type, data)')
+  && !/addNotificationResponseReceivedListener[\s\S]{0,300}routeNotification\(/.test(notifications));
+check('the handler has exactly one routing path', (pushHandler.match(/routeNotification\(/g) || []).length === 1);
+check('and that path sits after the session check',
+  pushHandler.indexOf('routeNotification(') > pushHandler.indexOf('decidePushDelivery({ hasSession: sessionIsOpen() })'));
+check('the cold-start launch takes the same path',
+  notifications.includes('getLastNotificationResponseAsync') && notifications.includes('handlePushDestination(data?.type, data);\n  }).catch'));
+check('the app passes the live session state in',
+  read('App.tsx').includes('setupNotificationListeners(navigationRef, () => store.isLoggedIn)'));
+check('a session opening releases the held push', read('App.tsx').includes('if (store.user) releaseHeldPush(true);'));
 
 if (failures > 0) {
   console.log(`\nFAIL: ${failures} sign-out policy violation(s).`);

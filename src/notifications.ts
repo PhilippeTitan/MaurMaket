@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import { savePushToken, clearPushToken } from './api';
 import { routeNotification } from './notificationRouting';
 import { PUSH_TOKEN_KEY } from './utils/signOutPolicy';
+import { decidePushDelivery, releaseHeldPush as releaseHeldPushDecision, PUSH_ROUTE } from './utils/pushRoutingPolicy.js';
 
 // The token this device registered, kept locally so sign-out can unregister
 // exactly this device (Batch 75). It is a device identifier rather than account
@@ -102,8 +103,54 @@ export async function unregisterPushToken(): Promise<boolean> {
   }
 }
 
-export function setupNotificationListeners(navigationRef: any) {
+// Batch 75 follow-on: a push is only a pointer, and the destination it points at
+// belongs to an account. On a signed-out device nothing is shown and a tap is
+// held for the next sign-in instead of routed (see src/utils/pushRoutingPolicy.js).
+let activeNavigationRef: any = null;
+let heldPush: { type: string; data: any; heldAt: number } | null = null;
+let hasSessionProbe: () => boolean = () => false;
+
+function sessionIsOpen(): boolean {
+  try {
+    return hasSessionProbe() === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Remember where a push pointed, so a sign-in moments later can honour it. */
+function handlePushDestination(type: any, data: any) {
+  if (decidePushDelivery({ hasSession: sessionIsOpen() }) === PUSH_ROUTE) {
+    heldPush = null;
+    if (activeNavigationRef?.isReady?.()) routeNotification(activeNavigationRef, type, data);
+    return;
+  }
+  heldPush = { type: typeof type === 'string' ? type : '', data: data ?? null, heldAt: Date.now() };
+}
+
+/**
+ * Route a held push, if one is still worth routing. Called when a session opens;
+ * returns whether anything was routed.
+ */
+export function releaseHeldPush(hasSession: boolean): boolean {
+  const release = releaseHeldPushDecision(heldPush, { hasSession });
+  const hadHeld = heldPush !== null;
+  heldPush = null;
+  if (!release) return false;
+  if (!activeNavigationRef?.isReady?.()) return false;
+  routeNotification(activeNavigationRef, release.type, release.data);
+  return true;
+}
+
+/** Signed out: hold the destination without telling the next account about it. */
+export function pendingPushHold(): { type: string; data: any; heldAt: number } | null {
+  return heldPush;
+}
+
+export function setupNotificationListeners(navigationRef: any, hasSession?: () => boolean) {
   const Notifications = getNotifications();
+  activeNavigationRef = navigationRef;
+  if (typeof hasSession === 'function') hasSessionProbe = hasSession;
   if (!Notifications) return;
 
   // Suppress native OS alert when app is foregrounded; app displays in-app banner instead
@@ -121,6 +168,9 @@ export function setupNotificationListeners(navigationRef: any) {
   Notifications.addNotificationReceivedListener((notification: any) => {
     const content = notification.request.content;
     const data = content.data || {};
+    // No session, no banner: the alert belongs to an account that is not signed
+    // in here, and it stays in that account's in-app feed until they return.
+    if (!sessionIsOpen()) return;
     if (foregroundListener) {
       foregroundListener({
         title: content.title || 'MaurMaket',
@@ -134,17 +184,14 @@ export function setupNotificationListeners(navigationRef: any) {
   // Handle tapping a notification in notification shade
   Notifications.addNotificationResponseReceivedListener((response: any) => {
     const data = response.notification.request.content.data;
-    if (!navigationRef?.isReady?.()) return;
-    routeNotification(navigationRef, data?.type, data);
+    handlePushDestination(data?.type, data);
   });
 
-  // Check cold-start notification launch
+  // Check cold-start notification launch. The response can arrive before the
+  // session is restored, which is exactly the case the hold exists for.
   Notifications.getLastNotificationResponseAsync().then((response: any) => {
-    if (response) {
-      const data = response.notification.request.content.data;
-      if (navigationRef?.isReady?.() && data?.type) {
-        routeNotification(navigationRef, data.type, data);
-      }
-    }
+    if (!response) return;
+    const data = response.notification.request.content.data;
+    handlePushDestination(data?.type, data);
   }).catch(() => {});
 }
