@@ -27,9 +27,13 @@ interface FAQItem {
 const getFaqs = (t: (k: string) => string): FAQItem[] =>
   FAQ_KEYS.map((k: FAQKey) => ({ question: t(`faq.${k}Q`), answer: t(`faq.${k}A`) }));
 
-export default function HelpSupportScreen({ navigation }: Props) {
+export default function HelpSupportScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
+  // A meetup safety concern arrives here because this is the live private
+  // channel. No case is filed from the app: the report is an allegation until
+  // Support reviews it, and nothing about the order changes either way.
+  const safetyTopic = route.params?.topic === 'safety';
   const [expandedFAQ, setExpandedFAQ] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const FAQS = getFaqs(t);
@@ -65,8 +69,11 @@ export default function HelpSupportScreen({ navigation }: Props) {
 
   const handleContactUs = () => {
     const email = 'support@maurmaket.com';
-    const subject = encodeURIComponent('MaurMaket Support Request');
-    const body = encodeURIComponent(`Hi MaurMaket team,\n\nI need help with:\n\n[Describe your issue]\n\nDevice: ${Platform.OS} ${Platform.Version}\nApp version: 1.0.0`);
+    const subject = encodeURIComponent(safetyTopic ? 'MaurMaket — private meetup safety report' : 'MaurMaket Support Request');
+    const opening = safetyTopic
+      ? 'I want to report a safety concern about a meetup.\n\nWhat happened (please include the area and, if you can, the date):\n\n[Describe what you saw or experienced]\n\nAnything that corroborates it (photos, messages, another person present):\n\n[Optional]'
+      : 'I need help with:\n\n[Describe your issue]';
+    const body = encodeURIComponent(`Hi MaurMaket team,\n\n${opening}\n\nDevice: ${Platform.OS} ${Platform.Version}\nApp version: 1.0.0`);
     Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
   };
 
@@ -82,6 +89,16 @@ export default function HelpSupportScreen({ navigation }: Props) {
       <ScreenHeader title={t('help.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {safetyTopic && (
+          <View style={styles.safetyBanner} accessibilityLiveRegion="polite">
+            <MaterialCommunityIcons name="shield-alert-outline" size={18} color={COLORS.text2} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.safetyTitle}>{t('meetupSafety.helpTitle')}</Text>
+              <Text style={styles.safetyBody}>{t('meetupSafety.reportPrivate')}</Text>
+            </View>
+          </View>
+        )}
+
         {/* Search Bar */}
         <Animated.View style={animStyle(0)}>
           <View style={styles.searchContainer}>
@@ -199,6 +216,16 @@ export default function HelpSupportScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingBottom: SPACING.page },
+
+  // Private-report path (Batch 82/83): explains how a report is handled before
+  // the shopper writes one, so no outcome is implied.
+  safetyBanner: {
+    flexDirection: 'row', gap: SPACING.sm, alignItems: 'flex-start',
+    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.card, padding: SPACING.md, marginHorizontal: SPACING.md, marginTop: SPACING.md,
+  },
+  safetyTitle: { color: COLORS.text, fontSize: 14, fontWeight: FONT_WEIGHTS.semibold, marginBottom: 3 },
+  safetyBody: { color: COLORS.text2, fontSize: 12, lineHeight: 17 },
 
   // Search
   searchContainer: {

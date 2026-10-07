@@ -9,6 +9,7 @@ import { COLORS, RADIUS, SPACING } from '../theme';
 import { decideBuyerFulfillment, getPendingAgreements, beginPendingPayment, removePendingCheckoutSeller } from '../api';
 import { useToast } from '../components/Toast';
 import { useTranslation } from '@/localization';
+import { meetupSafetyGateway, type MeetupSafetyAdvisory } from '../support/meetupSafetyGateway';
 import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MeetupProposal'>;
@@ -31,6 +32,9 @@ export default function MeetupProposalScreen({ route, navigation }: Props) {
   const [counterSeller, setCounterSeller] = useState<string | null>(null);
   const [counterLocation, setCounterLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
   const [counterAt, setCounterAt] = useState('');
+  // Batch 82/83: an advisory only ever appears when a reviewed risk is open, and
+  // the service that would say so does not exist yet — so today this stays null.
+  const [advisory, setAdvisory] = useState<MeetupSafetyAdvisory | null>(null);
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -42,6 +46,16 @@ export default function MeetupProposalScreen({ route, navigation }: Props) {
     catch (error) { toast.error(t('meetupProposal.refreshFailed'), error instanceof Error ? error.message : t('common.tryAgain')); }
   }, [pendingId, t]);
   useFocusEffect(useCallback(() => { void refresh(); const timer = setInterval(() => { void refresh(); }, 15000); return () => clearInterval(timer); }, [refresh]));
+
+  // Advisory notices change on their own review schedule, not per keystroke, so
+  // they are read once per pending checkout rather than on every refresh.
+  useEffect(() => {
+    let active = true;
+    void meetupSafetyGateway.forPendingCheckout(pendingId).then(read => {
+      if (active && read.connected) setAdvisory(read.advisory);
+    }).catch(() => { /* no service, no advisory — never a guessed one */ });
+    return () => { active = false; };
+  }, [pendingId]);
 
   const act = async (agreement: Agreement, decision: 'accept' | 'cancel') => {
     setBusy(true);
@@ -128,6 +142,24 @@ export default function MeetupProposalScreen({ route, navigation }: Props) {
       </Animated.View>
       {!expired && <Text style={styles.total}>{t('meetupProposal.remainingTotal', { amount: Number(snapshot.checkout.total_amount || 0).toLocaleString() })}</Text>}
 
+      {/* Advisory, never a verdict: the order, the spot and the payment are
+          untouched, and the shopper is told so in the same breath. */}
+      {advisory && (
+        <View style={styles.advisory} accessibilityLiveRegion="polite">
+          <MaterialCommunityIcons name="shield-alert-outline" size={18} color={COLORS.yellow} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.advisoryTitle}>
+              {advisory.condition === 'ongoing' ? t('meetupSafety.advisoryTitleOngoing') : t('meetupSafety.advisoryTitle')}
+            </Text>
+            <Text style={styles.advisoryBody}>
+              {advisory.areaLabel ? t('meetupSafety.advisoryArea', { area: advisory.areaLabel }) : t('meetupSafety.advisoryBody')}
+            </Text>
+            {advisory.note ? <Text style={styles.advisoryBody}>{advisory.note}</Text> : null}
+            <Text style={styles.advisoryNote}>{t('meetupSafety.advisoryUnchanged')}</Text>
+          </View>
+        </View>
+      )}
+
       {snapshot.agreements.map(agreement => {
         const term = agreement.terms || {};
         const awaitingBuyer = agreement.status === 'proposed' && agreement.last_proposed_by === agreement.seller_id && term.method === 'meetup';
@@ -159,6 +191,18 @@ export default function MeetupProposalScreen({ route, navigation }: Props) {
         const open = snapshot.agreements.find(item => item.status !== 'accepted') || snapshot.agreements[0];
         if (open) void act(open, 'cancel');
       }} accessibilityRole="button"><Text style={styles.cancelText}>{t('meetupProposal.cancel')}</Text></TouchableOpacity>}
+      {/* The real reporting path today: Help & Support, which carries the private
+          channel. Nothing here files a case or promises an outcome. */}
+      <TouchableOpacity
+        style={styles.safetyLink}
+        onPress={() => navigation.navigate('HelpSupport', { topic: 'safety' })}
+        accessibilityRole="button"
+        accessibilityLabel={t('meetupSafety.reportConcern')}
+      >
+        <MaterialCommunityIcons name="shield-alert-outline" size={16} color={COLORS.text2} />
+        <Text style={styles.safetyLinkText}>{t('meetupSafety.reportConcern')}</Text>
+      </TouchableOpacity>
+      <Text style={styles.safetyNote}>{t('meetupSafety.reportPrivate')}</Text>
       {busy && <ActivityIndicator style={{ marginTop: 12 }} color={COLORS.coral}/>}
     </ScrollView>}
   </View>;
@@ -180,5 +224,12 @@ const styles = StyleSheet.create({
   input: { minHeight: 46, backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, color: COLORS.text, paddingHorizontal: 12 },
   primary: { minHeight: 46, borderRadius: RADIUS.button, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 4 }, primaryText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
   cancel: { minHeight: 44, alignItems: 'center', justifyContent: 'center' }, cancelText: { color: COLORS.text2, fontSize: 13, fontWeight: '600' },
+  advisory: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, padding: 14 },
+  advisoryTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginBottom: 3 },
+  advisoryBody: { color: COLORS.text2, fontSize: 12, lineHeight: 17 },
+  advisoryNote: { color: COLORS.text2, fontSize: 12, lineHeight: 17, marginTop: 5, fontWeight: '600' },
+  safetyLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 44 },
+  safetyLinkText: { color: COLORS.text2, fontSize: 13, fontWeight: '600' },
+  safetyNote: { color: COLORS.text2, fontSize: 11, lineHeight: 16, textAlign: 'center' },
   removeSeller: { minHeight: 44, alignItems: 'flex-start', justifyContent: 'center' }, removeSellerText: { color: COLORS.text2, fontSize: 13, fontWeight: '600' },
 });

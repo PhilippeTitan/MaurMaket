@@ -87,7 +87,8 @@ export type RootStackParamList = {
   BlockedUsers: undefined;
   SecuritySettings: undefined;
   NotificationsSettings: undefined;
-  HelpSupport: undefined;
+  /** `topic` shapes the private reporting path (Batch 82/83 meetup safety). */
+  HelpSupport: { topic?: 'safety' } | undefined;
   AppearanceSettings: undefined;
   UsernameSettings: undefined;
   LanguageSettings: undefined;
