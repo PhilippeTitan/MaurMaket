@@ -31,6 +31,7 @@ const URGENT_TYPES = new Set([
   'new_sign_in',
   'account_frozen',
   'account_unfrozen',
+  'second_factor_removed',
   'verification_rejected',
   // Orders / Payments / Escrow / Payouts
   'order_status',
@@ -199,6 +200,10 @@ function sanitizeForLockScreen(type, title, body) {
       return { title: 'Account frozen', body: 'New listings and payouts are paused. Open MaurMaket to review your account.' };
     case 'account_unfrozen':
       return { title: 'Account restored', body: 'Your account is active again. Open MaurMaket to review your security activity.' };
+    case 'second_factor_removed':
+      // Never names which factor or the device detail on the lock screen; the
+      // safe next step (open the app and review) is enough.
+      return { title: 'Sign-in method removed', body: 'A sign-in method was removed from your account. If this was not you, open MaurMaket to secure it.' };
     case 'payment_confirmed':
       return { title: 'Payment Confirmed', body: 'Payment received. Open MaurMaket to view order details.' };
     case 'payment_failed':

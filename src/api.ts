@@ -521,11 +521,22 @@ export const verifyAuthenticator = async (code: string) => {
   return body;
 };
 
+// Batch 76 / APP-Q390 — turning the authenticator off goes through our server so
+// the password is re-confirmed, the change is recorded in the private security
+// history, and the owner is alerted. Better Auth rotates the session when the
+// authenticator is disabled, so the rotated bearer token has to be captured
+// here or the client would keep presenting a deleted session.
 export const disableAuthenticator = async (password: string) => {
-  const { res, body } = await authFetch('/auth/two-factor/disable', {
+  const { res, body } = await authFetch('/account/second-factor/authenticator/disable', {
     method: 'POST', body: JSON.stringify({ password }),
   });
-  if (!res.ok) throw new Error(body?.message || body?.error || 'Could not turn off two-step verification.');
+  if (!res.ok) {
+    const error = new Error(body?.error || body?.message || 'Could not turn off two-step verification.') as Error & { code?: string };
+    error.code = body?.code;
+    throw error;
+  }
+  const rotatedToken = res.headers.get('set-auth-token');
+  if (rotatedToken) setCachedToken(rotatedToken);
   return body;
 };
 
@@ -565,12 +576,15 @@ export const addAccountPasskey = async (name: string) => {
   return result.data;
 };
 
-export const deleteAccountPasskey = async (id: string) => {
-  const client = await ensureAuthTokenLoaded();
-  const result = await client.passkey.deletePasskey({ id });
-  if (result.error) throw new Error(result.error.message || 'Could not remove that passkey.');
-  return result.data;
-};
+// Batch 76 / APP-Q390 — passkey removal is gated on a fresh password
+// confirmation and a recovery-path check, then recorded and alerted. Better
+// Auth's own endpoint only trusts the existing session, so this must not use
+// the passkey client directly.
+export const deleteAccountPasskey = async (id: string, password?: string) =>
+  request<{ status: boolean }>(
+    `/account/second-factor/passkey/${encodeURIComponent(id)}/remove`,
+    { method: 'POST', body: JSON.stringify({ password: password || undefined }) }
+  );
 
 export const linkGoogleAccount = async () => {
   const client = await ensureAuthTokenLoaded();

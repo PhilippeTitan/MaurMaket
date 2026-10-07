@@ -524,7 +524,7 @@ export interface PolicyState {
 // `user_agent` is the same non-secret device string the session list exposes.
 export interface SecurityEvent {
   id: number;
-  event_type: 'sign_in' | 'account_frozen' | 'account_unfrozen';
+  event_type: 'sign_in' | 'account_frozen' | 'account_unfrozen' | 'two_factor_disabled' | 'passkey_removed';
   user_agent: string | null;
   /** Only ever the account owner's own freeze note. */
   reason: string | null;

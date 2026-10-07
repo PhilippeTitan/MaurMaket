@@ -21,6 +21,7 @@ export function routeNotification(nav: Nav, type: string, data: Record<string, a
     case 'password_changed':
     case 'account_frozen':
     case 'account_unfrozen':
+    case 'second_factor_removed':
       nav.navigate('SecuritySettings');
       break;
 

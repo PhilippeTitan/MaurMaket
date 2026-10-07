@@ -67,6 +67,8 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [revokeTarget, setRevokeTarget] = useState<BetterAuthSecuritySession | null>(null);
   const [deletePasskeyTarget, setDeletePasskeyTarget] = useState<Passkey | null>(null);
+  // Batch 76 / APP-Q390 — removing a sign-in factor re-confirms the password.
+  const [deletePasskeyPassword, setDeletePasskeyPassword] = useState('');
   // Batch 73 / APP-Q369 — private security activity history.
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [eventsRetentionDays, setEventsRetentionDays] = useState(365);
@@ -176,6 +178,17 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
     } finally { setBusy(false); }
   };
 
+  // APP-Q390 — the server returns stable codes for the second-factor gates so
+  // the copy stays localized and never says more than the user needs to know.
+  const secondFactorErrorMessage = (error: any, fallback: string) => {
+    switch (error?.code) {
+      case 'PASSWORD_REQUIRED': return t('security.secondFactorPasswordRequired');
+      case 'INVALID_PASSWORD': return t('security.secondFactorInvalidPassword');
+      case 'LAST_RECOVERY_PATH': return t('security.secondFactorLastPath');
+      default: return error?.message || fallback;
+    }
+  };
+
   const turnOffAuthenticator = async () => {
     if (!password) return;
     setBusy(true);
@@ -186,7 +199,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
       toast.show({ kind: 'success', title: t('security.twoFactorDisabled') });
       await refresh();
     } catch (error: any) {
-      toast.show({ kind: 'error', title: error?.message || t('security.twoFactorUpdateFailed') });
+      toast.show({ kind: 'error', title: secondFactorErrorMessage(error, t('security.twoFactorUpdateFailed')) });
     } finally { setBusy(false); }
   };
 
@@ -235,12 +248,16 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
     if (!deletePasskeyTarget) return;
     setBusy(true);
     try {
-      await deleteAccountPasskey(deletePasskeyTarget.id);
+      await deleteAccountPasskey(
+        deletePasskeyTarget.id,
+        hasPassword ? deletePasskeyPassword : undefined
+      );
       setDeletePasskeyTarget(null);
+      setDeletePasskeyPassword('');
       toast.show({ kind: 'success', title: t('security.passkeyRemoved') });
       await refresh();
     } catch (error: any) {
-      toast.show({ kind: 'error', title: error?.message || t('security.passkeyRemoveFailed') });
+      toast.show({ kind: 'error', title: secondFactorErrorMessage(error, t('security.passkeyRemoveFailed')) });
     } finally { setBusy(false); }
   };
 
@@ -272,12 +289,17 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
     } finally { setFreezeBusy(false); }
   };
 
-  // Freeze and sign-in events share one history; only the wording differs.
+  // Freeze, sign-in, and second-factor events share one history; only the
+  // wording differs.
   const eventLabel = (type: SecurityEvent['event_type']) => type === 'account_frozen'
     ? t('security.eventFrozen')
     : type === 'account_unfrozen'
       ? t('security.eventUnfrozen')
-      : t('security.eventSignIn');
+      : type === 'two_factor_disabled'
+        ? t('security.eventTwoFactorDisabled')
+        : type === 'passkey_removed'
+          ? t('security.eventPasskeyRemoved')
+          : t('security.eventSignIn');
 
   const emailVerified = securityDataLoaded && authEmailVerified;
   const checksPassed = Number(emailVerified) + Number(securityDataLoaded && twoFactorEnabled);
@@ -398,7 +420,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
                 <View style={styles.row}>
                   <View style={styles.rowIcon}><MaterialCommunityIcons name="key-outline" size={18} color={C.sub} /></View>
                   <Text style={styles.rowTitle} numberOfLines={1}>{passkey.name || t('security.passkey')}</Text>
-                  <TouchableOpacity style={styles.smallAction} onPress={() => setDeletePasskeyTarget(passkey)} accessibilityRole="button" accessibilityLabel={`${t('security.remove')} ${passkey.name || t('security.passkey')}`}>
+                  <TouchableOpacity style={styles.smallAction} onPress={() => { setDeletePasskeyPassword(''); setDeletePasskeyTarget(passkey); }} accessibilityRole="button" accessibilityLabel={`${t('security.remove')} ${passkey.name || t('security.passkey')}`}>
                     <Text style={styles.removeText}>{t('security.remove')}</Text>
                   </TouchableOpacity>
                 </View>
@@ -608,7 +630,40 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
         <ConfirmDialog title={t('security.revokeDeviceTitle')} message={t('security.revokeDeviceCopy')} cancelLabel={t('common.cancel')} confirmLabel={t('security.revoke')} busy={busy} onCancel={() => setRevokeTarget(null)} onConfirm={() => { void handleRevokeSession(); }} />
       </Modal>
       <Modal visible={!!deletePasskeyTarget} transparent animationType="fade" onRequestClose={() => setDeletePasskeyTarget(null)}>
-        <ConfirmDialog title={t('security.removePasskeyTitle')} message={t('security.removePasskeyCopy')} cancelLabel={t('common.cancel')} confirmLabel={t('security.remove')} busy={busy} onCancel={() => setDeletePasskeyTarget(null)} onConfirm={() => { void handleDeletePasskey(); }} />
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{t('security.removePasskeyTitle')}</Text>
+            <Text style={styles.modalCopy}>{t('security.removePasskeyCopy')}</Text>
+            <Text style={styles.modalCopy}>{t('security.removePasskeyRecovery')}</Text>
+            {hasPassword && <>
+              <Text style={styles.fieldLabel}>{t('security.removePasskeyPasswordLabel')}</Text>
+              <TextInput
+                value={deletePasskeyPassword}
+                onChangeText={setDeletePasskeyPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder={t('security.currentPassword')}
+                placeholderTextColor={C.faint}
+                style={styles.input}
+                accessibilityLabel={t('security.removePasskeyPasswordLabel')}
+              />
+            </>}
+            <View style={styles.dialogActions}>
+              <TouchableOpacity style={styles.secondaryAction} onPress={() => setDeletePasskeyTarget(null)} accessibilityRole="button">
+                <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.primaryButton, styles.dangerButton, styles.dialogConfirm]}
+                onPress={() => { void handleDeletePasskey(); }}
+                disabled={busy || (hasPassword && !deletePasskeyPassword)}
+                accessibilityRole="button"
+              >
+                {busy ? <ActivityIndicator color={C.white} /> : <Text style={styles.primaryButtonText}>{t('security.remove')}</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
