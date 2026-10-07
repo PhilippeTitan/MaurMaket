@@ -1,6 +1,7 @@
 import { pool } from '../config/database.js';
 import { createNotification } from './notifications.js';
 import { cleanupOldSecurityEvents as purgeOldSecurityEvents } from './securityEvents.js';
+import { cleanupOldKycEvidenceAccess as purgeOldKycEvidenceAccess } from './kycEvidenceAccess.js';
 import { cleanupOldExportJobs as purgeOldExportJobs } from './dataExport.js';
 
 async function logOrderEvent(orderId, eventType, actorId, oldValue, newValue, note, db) {
@@ -408,4 +409,17 @@ async function populateSellerOrderSnapshot(client, orderId) {
   }
 }
 
-export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, settleSellerDebtPayment, checkSubscriptionStatus, cleanupOldNotifications, cleanupOldSecurityEvents, cleanupOldExportJobs, recordProductCooccurrences, canAccessOrder, parseNatCashSms, populateSellerOrderSnapshot };
+// Batch 75 — the KYC access history is disclosed as retained for one year, so
+// the same daily cleanup enforces it. See src/utils/kycEvidenceAccess.js.
+async function cleanupOldKycEvidenceAccess() {
+  try {
+    const removed = await purgeOldKycEvidenceAccess();
+    if (removed > 0) console.log(`[CRON] Cleaned up ${removed} old KYC access entries`);
+    return removed;
+  } catch (err) {
+    console.error('[CRON] KYC access cleanup error:', err.message);
+    return 0;
+  }
+}
+
+export { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, settleSellerDebtPayment, checkSubscriptionStatus, cleanupOldNotifications, cleanupOldSecurityEvents, cleanupOldExportJobs, cleanupOldKycEvidenceAccess, recordProductCooccurrences, canAccessOrder, parseNatCashSms, populateSellerOrderSnapshot };

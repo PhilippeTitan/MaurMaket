@@ -531,6 +531,20 @@ export interface SecurityEvent {
   created_at: string;
 }
 
+// Batch 75 — staff reads of this account's identity evidence, shown to the
+// subject as a case-linked history. Display-safe by design: `actor_label` is a
+// team label rather than a staff identity, and `case_reference` is a plain
+// handle (e.g. a support case id), never a note about the review.
+export interface KycEvidenceAccessEntry {
+  id: string;
+  attempt_id: string | null;
+  actor_label: string;
+  purpose: 'case_review' | 'dispute_review' | 'fraud_review' | 'compliance_audit' | 'rights_claim';
+  scope: 'attempt' | 'document' | 'selfie' | 'metadata';
+  case_reference: string | null;
+  accessed_at: string;
+}
+
 // Batch 74 / APP-Q379 — a "remember this device" trust record.
 // Trust only ever decides whether a second-factor code is asked for; it is not
 // identity verification, KYC evidence, or payment/payout authorization. A

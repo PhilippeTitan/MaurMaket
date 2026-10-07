@@ -3,6 +3,7 @@ import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
 import { verifyLimiter } from '../middleware/rateLimit.js';
 import { deleteTemporaryStorageUpload, readTemporaryKycImage } from '../utils/temporaryStorage.js';
+import { KYC_ACCESS_RETENTION_DAYS, listKycEvidenceAccess } from '../utils/kycEvidenceAccess.js';
 
 const router = Router();
 
@@ -279,6 +280,22 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
       error: 'Verification failed. Please try again.',
       attempt: { status: 'error', failed_stage: null, rejection_reason: 'server_error', reasons: ['Server error during verification'] },
     });
+  }
+});
+
+// ─── GET /verification/evidence-access ──────────────────────────────────
+// Batch 75 — the subject's own case-linked history of staff reads of their
+// identity evidence. Display-safe by construction: the query in
+// listKycEvidenceAccess never selects the actor's user id, so no route-level
+// slip can turn this into a staff directory. An empty list is a real answer
+// here (nobody has opened the file), not an error state.
+router.get('/verification/evidence-access', authRequired, async (req, res) => {
+  try {
+    const entries = await listKycEvidenceAccess(req.user.id);
+    res.json({ entries, retention_days: KYC_ACCESS_RETENTION_DAYS });
+  } catch (err) {
+    console.error('[VERIFY] evidence access history error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

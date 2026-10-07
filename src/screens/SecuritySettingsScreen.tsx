@@ -14,14 +14,14 @@ import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import {
   addAccountPasskey, deleteAccountPasskey, disableAuthenticator, enableAuthenticator,
-  freezeAccount, getAccountFreeze, getDeviceLabels, getSecurityEvents, getSecuritySnapshot,
-  getTrustedDevices,
+  freezeAccount, getAccountFreeze, getDeviceLabels, getKycEvidenceAccess, getSecurityEvents,
+  getSecuritySnapshot, getTrustedDevices,
   linkGoogleAccount, revokeAllTrustedDevices, revokeAuthSession, revokeTrustedDevice,
   saveDeviceLabel, unfreezeAccount, verifyAuthenticator,
   type BetterAuthSecuritySession,
 } from '../api';
 import { TRUSTED_DEVICE_DAYS } from '../utils/trustedDevices';
-import type { AccountFreezeState, SecurityEvent, TrustedDevice } from '../types';
+import type { AccountFreezeState, KycEvidenceAccessEntry, SecurityEvent, TrustedDevice } from '../types';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
 
@@ -83,6 +83,11 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   const [trustedDevicesLoading, setTrustedDevicesLoading] = useState(true);
   const [revokeTrustedTarget, setRevokeTrustedTarget] = useState<TrustedDevice | null>(null);
   const [revokeAllTrustedVisible, setRevokeAllTrustedVisible] = useState(false);
+  // Batch 75 — who opened this account's identity evidence, and why. Kept
+  // separate from the sign-in history: different subject, different retention.
+  const [evidenceAccess, setEvidenceAccess] = useState<KycEvidenceAccessEntry[]>([]);
+  const [evidenceRetentionDays, setEvidenceRetentionDays] = useState(365);
+  const [evidenceAccessLoading, setEvidenceAccessLoading] = useState(true);
   // Batch 75 / APP-Q395 — private, owner-only names for signed-in devices.
   const [deviceLabels, setDeviceLabels] = useState<Record<string, string>>({});
   const [deviceLabelMax, setDeviceLabelMax] = useState(40);
@@ -173,6 +178,22 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   }, []);
 
   useFocusEffect(useCallback(() => { void loadTrustedDevices(); }, [loadTrustedDevices]));
+
+  // Supplemental like the two above: a failure here must not blank the screen,
+  // and an empty history is the honest answer rather than an error.
+  const loadEvidenceAccess = useCallback(async () => {
+    setEvidenceAccessLoading(true);
+    try {
+      const response = await getKycEvidenceAccess();
+      setEvidenceAccess(response.entries || []);
+      if (Number.isFinite(response.retention_days)) setEvidenceRetentionDays(response.retention_days);
+    } catch {
+      // Keep whatever was last shown.
+    }
+    setEvidenceAccessLoading(false);
+  }, []);
+
+  useFocusEffect(useCallback(() => { void loadEvidenceAccess(); }, [loadEvidenceAccess]));
 
   const loadDeviceLabels = useCallback(async () => {
     try {
@@ -398,6 +419,25 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
             ? t('security.eventTrustedDeviceRevoked')
             : t('security.eventSignIn');
 
+  // Why the evidence was opened, and how much of it was looked at. The reason is
+  // the point of the log; the scope is what makes it honest about breadth.
+  const purposeLabel = (purpose: KycEvidenceAccessEntry['purpose']) => purpose === 'dispute_review'
+    ? t('security.kycPurposeDispute')
+    : purpose === 'fraud_review'
+      ? t('security.kycPurposeFraud')
+      : purpose === 'compliance_audit'
+        ? t('security.kycPurposeCompliance')
+        : purpose === 'rights_claim'
+          ? t('security.kycPurposeRights')
+          : t('security.kycPurposeCase');
+  const scopeLabel = (scope: KycEvidenceAccessEntry['scope']) => scope === 'selfie'
+    ? t('security.kycScopeSelfie')
+    : scope === 'document'
+      ? t('security.kycScopeDocument')
+      : scope === 'metadata'
+        ? t('security.kycScopeMetadata')
+        : t('security.kycScopeAttempt');
+
   const emailVerified = securityDataLoaded && authEmailVerified;
   const checksPassed = Number(emailVerified) + Number(securityDataLoaded && twoFactorEnabled);
   const passwordStatus = !securityDataLoaded ? (loading ? t('common.loading') : '—')
@@ -608,6 +648,34 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
           )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('security.evidenceAccessTitle')}</Text>
+          <Text style={styles.sectionHint}>{t('security.evidenceAccessDesc')}</Text>
+          {evidenceAccess.length === 0 && !evidenceAccessLoading ? (
+            <View style={styles.emptyCard}><Text style={styles.emptyText}>{t('security.evidenceAccessEmpty')}</Text></View>
+          ) : (
+            <View style={styles.card}>
+              {evidenceAccess.map((entry, index) => (
+                <React.Fragment key={entry.id}>
+                  {index > 0 && <View style={styles.divider} />}
+                  <View style={styles.row}>
+                    <View style={styles.rowIcon}><MaterialCommunityIcons name="file-search-outline" size={19} color={C.sub} /></View>
+                    <View style={styles.sessionCopy}>
+                      <Text style={styles.rowTitle}>{purposeLabel(entry.purpose)}</Text>
+                      <Text style={styles.sessionDate}>
+                        {[entry.actor_label, scopeLabel(entry.scope), entry.case_reference, new Date(entry.accessed_at).toLocaleString()]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Text>
+                    </View>
+                  </View>
+                </React.Fragment>
+              ))}
+            </View>
+          )}
+          <Text style={styles.sectionHint}>{t('security.evidenceAccessRetention', { days: evidenceRetentionDays })}</Text>
         </View>
 
         <View style={styles.section}>

@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { pool } from '../config/database.js';
-import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, recordProductCooccurrences, processRefundPayout, cleanupOldNotifications, cleanupOldSecurityEvents, cleanupOldExportJobs } from '../utils/helpers.js';
+import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, recordProductCooccurrences, processRefundPayout, cleanupOldNotifications, cleanupOldSecurityEvents, cleanupOldExportJobs, cleanupOldKycEvidenceAccess } from '../utils/helpers.js';
 import { createNotification, sendPushNotification, isDailySummaryEligible, getLocalClock, isValidTime, isQuietHoursEndNow, isQuietHoursScheduleEndingToday } from '../utils/notifications.js';
 import { expireTemporaryStorageUploads } from '../utils/temporaryStorage.js';
 import { checkAndProcessExpiredSubscriptions } from '../utils/tierCap.js';
@@ -284,6 +284,7 @@ export function startJobs() {
     await cleanupOldNotifications();
     await cleanupOldSecurityEvents();
     await cleanupOldExportJobs();
+    await cleanupOldKycEvidenceAccess();
   });
 
   // ───── Auto-expire expired offers (every 5 minutes) ─────

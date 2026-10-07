@@ -1912,6 +1912,38 @@ await step('NatCash phone separation', () => c.query(`
       CREATE INDEX IF NOT EXISTS idx_device_labels_session ON device_labels (session_id);
     `));
 
+    // 90. KYC evidence access log (Batch 75). Identity documents are the most
+    // sensitive thing a seller hands over, so every staff read of them is
+    // recorded and the subject can see a case-linked history of those reads.
+    // `attempt_id` ties an entry to the verification case it belongs to;
+    // `actor_user_id` is nullable so a future Support service acting on its own
+    // credentials is still attributable, while `actor_label` is the only thing
+    // ever shown to the subject (never a staff identity).
+    //
+    // The CHECK constraints are the database-side half of the same rule the
+    // writer enforces in src/utils/kycEvidenceAccess.js: a purpose must be one of
+    // the recognised review reasons and a scope must be one of the four evidence
+    // widths. Without them a future staff tool writing raw SQL could store an
+    // "other" access, which is indistinguishable from no log at all.
+    // Keep both lists in sync with KYC_ACCESS_PURPOSES / KYC_EVIDENCE_SCOPES.
+    await step('KYC evidence access log', () => c.query(`
+      CREATE TABLE IF NOT EXISTS kyc_evidence_access (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        attempt_id UUID REFERENCES verification_attempts(id) ON DELETE SET NULL,
+        actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        actor_label VARCHAR(60) NOT NULL DEFAULT 'MaurMaket Support',
+        purpose VARCHAR(40) NOT NULL
+          CHECK (purpose IN ('case_review', 'dispute_review', 'fraud_review', 'compliance_audit', 'rights_claim')),
+        scope VARCHAR(20) NOT NULL DEFAULT 'attempt'
+          CHECK (scope IN ('attempt', 'document', 'selfie', 'metadata')),
+        case_reference VARCHAR(60),
+        accessed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_kyc_evidence_access_subject
+        ON kyc_evidence_access (subject_user_id, accessed_at DESC);
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

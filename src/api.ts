@@ -4,7 +4,7 @@ import * as AuthSession from 'expo-auth-session';
 import { createAuthClient } from 'better-auth/client';
 import { twoFactorClient } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
-import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats, NotificationPreferences, PolicyState, SecurityEvent, TrustedDevice, AccountFreezeState, ExportJob, DataExportSummary } from './types';
+import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats, NotificationPreferences, PolicyState, SecurityEvent, TrustedDevice, AccountFreezeState, ExportJob, DataExportSummary, KycEvidenceAccessEntry } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
 
@@ -558,6 +558,12 @@ export const revokeAuthSession = async (token: string) => {
 // Structured events so the screen renders them in the active app language.
 export const getSecurityEvents = () =>
   request<{ events: SecurityEvent[]; retention_days: number; max_events: number }>('/security/events');
+
+// Batch 75 — who opened this account's identity evidence, and why. The server
+// returns display-safe rows only (a team label, never a staff identity), and an
+// empty list is a real answer: nobody has opened the file.
+export const getKycEvidenceAccess = () =>
+  request<{ entries: KycEvidenceAccessEntry[]; retention_days: number }>('/verification/evidence-access');
 
 // Batch 74 / APP-Q379 — trusted devices ("remember this device").
 // Read, revoke one, or revoke all. Revocation only ever tightens the account: it

@@ -4,6 +4,7 @@ import { authRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { processRefundPayout, settleSellerDebtPayment } from '../utils/helpers.js';
 import { releaseCancelledOrderStock } from '../utils/orderStock.js';
+import { recordKycEvidenceAccess } from '../utils/kycEvidenceAccess.js';
 
 const router = Router();
 
@@ -420,6 +421,46 @@ router.post('/api/admin/moncash/legacy-transfers/:kind/:id/confirm', authRequire
     res.json({ confirmed: true });
   } catch (err) {
     console.error('Admin legacy MonCash settlement confirmation error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── POST /api/admin/verification/:attemptId/evidence-access ────────────
+// Batch 75 — "Log staff access to sensitive KYC evidence".
+//
+// This is the disconnected seam, not a working staff tool: no screen in the app
+// calls it, and it deliberately does not return any evidence. Whichever staff
+// surface eventually opens a subject's documents (the planned Support website)
+// calls this first, so the subject's history records the read. Until that
+// surface exists the endpoint stays unexercised — so do not claim to anyone that
+// it has logged a case.
+//
+// `purpose` is required and must be one of KYC_ACCESS_PURPOSES: an unexplained
+// access is refused rather than stored, because a log full of "other" would be
+// indistinguishable from no log at all.
+router.post('/api/admin/verification/:attemptId/evidence-access', authRequired, adminRequired, async (req, res) => {
+  try {
+    const { purpose, scope, caseReference, actorLabel } = req.body || {};
+    const attempt = await pool.query(
+      'SELECT id, user_id FROM verification_attempts WHERE id = $1',
+      [req.params.attemptId]
+    );
+    if (attempt.rows.length === 0) return res.status(404).json({ error: 'Verification case not found' });
+
+    const entry = await recordKycEvidenceAccess({
+      subjectUserId: attempt.rows[0].user_id,
+      attemptId: attempt.rows[0].id,
+      actorUserId: req.user.id,
+      actorLabel,
+      purpose,
+      scope,
+      caseReference,
+    });
+    if (!entry) return res.status(400).json({ error: 'A recognised purpose is required to log this access', code: 'INVALID_PURPOSE' });
+
+    res.json({ entry });
+  } catch (err) {
+    console.error('Admin KYC evidence access logging error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
