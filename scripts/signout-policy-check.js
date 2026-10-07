@@ -35,6 +35,7 @@ import {
   APP_LOCK_DELAY_KEY,
   APP_LOCK_LAST_ACTIVE_KEY,
 } from '../src/utils/appLockPolicy.js';
+import { CART_ACCOUNT_KEY } from '../src/utils/cartSync.js';
 
 const read = (rel) => readFileSync(join(process.cwd(), rel), 'utf8');
 
@@ -60,6 +61,7 @@ const ALL_KEYS = [
   LEGACY_MAP_SELLERS_CACHE_KEY,
   UNSENT_DRAFTS_KEY,
   'mm_cart',
+  CART_ACCOUNT_KEY,
   'mm_appearance_mode',
   'mm_low_data_mode',
   'mm_lang',
@@ -88,7 +90,8 @@ check('the policy owns the notification cache prefix', ACCOUNT_KEY_PREFIXES.incl
 
 // ── 2. What it must never touch ──
 check('unsent drafts are protected by default', !swept.includes(UNSENT_DRAFTS_KEY));
-check('the local cart is kept', !swept.includes('mm_cart'));
+check('the guest cart is kept', !swept.includes('mm_cart'));
+check('the signed-in account cart is swept (APP-Q097)', swept.includes(CART_ACCOUNT_KEY));
 check('device preferences are kept', !['mm_appearance_mode', 'mm_low_data_mode', 'mm_lang', 'mm_explore_filters'].some(k => swept.includes(k)));
 check('the app-lock setting is kept at sign-out', !swept.includes(APP_LOCK_ENABLED_KEY) && !swept.includes(APP_LOCK_DELAY_KEY) && !swept.includes(APP_LOCK_LAST_ACTIVE_KEY));
 check('public snapshots are kept', !swept.some(k => k.startsWith('mm_snapshot:public:')));

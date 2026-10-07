@@ -25,6 +25,7 @@
 // The extension is explicit: Node's ESM resolver (used by the guardrail scripts)
 // will not guess it, while Metro and TypeScript both accept it.
 import { APP_LOCK_ENABLED_KEY, APP_LOCK_DELAY_KEY, APP_LOCK_LAST_ACTIVE_KEY } from './appLockPolicy.js';
+import { CART_ACCOUNT_KEY, CART_GUEST_KEY } from './cartSync.js';
 
 /** Unsent chat drafts. Protected unless the user opts in to removing them. */
 export const UNSENT_DRAFTS_KEY = 'mm_outbox';
@@ -62,6 +63,10 @@ export const ACCOUNT_EXACT_KEYS = [
   OFFLINE_QUEUE_KEY,
   MAP_SELLERS_CACHE_KEY,
   LEGACY_MAP_SELLERS_CACHE_KEY,
+  // APP-Q097: the signed-in cart is the account's cart, cached here. It is
+  // server-derived account data, so it leaves with the session — while the guest
+  // cart (mm_cart) stays, because it belongs to whoever holds the phone.
+  CART_ACCOUNT_KEY,
 ];
 
 /** Removed by prefix at sign-out: per-account caches that may predate this sign-in. */
@@ -73,7 +78,7 @@ export const ACCOUNT_KEY_PREFIXES = [NOTIFICATION_CACHE_PREFIX, USER_SNAPSHOT_PR
  */
 export const DEVICE_LOCAL_KEYS = [
   UNSENT_DRAFTS_KEY,
-  'mm_cart',
+  CART_GUEST_KEY,
   // Batch 75 / APP-Q116 — an app lock belongs to whoever holds the phone, not to
   // the account that happened to sign in last, so signing out keeps it. The
   // 'last active' stamp is kept for the same reason and is cleared by the lock's

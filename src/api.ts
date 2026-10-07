@@ -4,7 +4,7 @@ import * as AuthSession from 'expo-auth-session';
 import { createAuthClient } from 'better-auth/client';
 import { twoFactorClient } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
-import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats, NotificationPreferences, PolicyState, SecurityEvent, TrustedDevice, AccountFreezeState, ExportJob, DataExportSummary, KycEvidenceAccessEntry } from './types';
+import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats, NotificationPreferences, PolicyState, SecurityEvent, TrustedDevice, AccountFreezeState, ExportJob, DataExportSummary, KycEvidenceAccessEntry, CartItem } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
 
@@ -564,6 +564,22 @@ export const getSecurityEvents = () =>
 // empty list is a real answer: nobody has opened the file.
 export const getKycEvidenceAccess = () =>
   request<{ entries: KycEvidenceAccessEntry[]; retention_days: number }>('/verification/evidence-access');
+
+// Batch 75 / APP-Q097 — the signed-in cart follows the account across devices.
+// Only identity and quantity are sent: the server reads names, prices, images and
+// stock live from the listing, so a cart opened on a second device shows current
+// prices, and nothing here reserves stock.
+export const getAccountCart = () =>
+  request<{ items: CartItem[] }>('/cart');
+
+export const pushAccountCart = (items: Array<{ productId: string; variantId: string | null; quantity: number }>) =>
+  request<{ items: CartItem[]; ignored: Array<{ productId: string; reason: string }> }>(
+    '/cart',
+    { method: 'PUT', body: JSON.stringify({ items }) }
+  );
+
+export const clearAccountCart = () =>
+  request<{ items: CartItem[] }>('/cart', { method: 'DELETE' });
 
 // Batch 74 / APP-Q379 — trusted devices ("remember this device").
 // Read, revoke one, or revoke all. Revocation only ever tightens the account: it

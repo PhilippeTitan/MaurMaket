@@ -1944,6 +1944,29 @@ await step('NatCash phone separation', () => c.query(`
         ON kyc_evidence_access (subject_user_id, accessed_at DESC);
     `));
 
+    // 91. Account carts (Batch 75 / APP-Q097). A signed-in cart follows the
+    // account across devices, so the line lives here rather than on one phone.
+    // Deliberately stores identity and intent only — product, variant, quantity —
+    // and no price or stock snapshot: those are read live from the listing, so a
+    // cart opened on a second device cannot show a stale price. Nothing in this
+    // table reserves stock; that decision stays at checkout.
+    await step('Account carts', () => c.query(`
+      CREATE TABLE IF NOT EXISTS cart_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        variant_id UUID REFERENCES product_variants(id) ON DELETE CASCADE,
+        quantity INTEGER NOT NULL CHECK (quantity > 0 AND quantity <= 999),
+        added_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      -- One row per line: COALESCE keeps "no variant" to a single row too, since
+      -- a NULL in a unique index would otherwise allow duplicates.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_items_line
+        ON cart_items (user_id, product_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
+      CREATE INDEX IF NOT EXISTS idx_cart_items_user ON cart_items (user_id, added_at);
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

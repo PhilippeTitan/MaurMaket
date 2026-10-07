@@ -9,6 +9,7 @@ import socialRouter from './social.js';
 import productsRouter from './products.js';
 import listingsRouter from './listings.js';
 import ordersRouter from './orders.js';
+import cartRouter from './cart.js';
 import sellerDashboardRouter from './seller-dashboard.js';
 import promosRouter from './promos.js';
 import analyticsRouter from './analytics.js';
@@ -59,6 +60,7 @@ export function registerRoutes(app) {
   // Mounted under /api (paths don't include /api)
   app.use('/api', authRouter);
   app.use('/api', ordersRouter);
+  app.use('/api', cartRouter);
   app.use('/api', socialRouter);
   app.use('/api', categoriesRouter);
   app.use('/api', productsRouter);

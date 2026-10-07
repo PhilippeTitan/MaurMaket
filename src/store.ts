@@ -2,13 +2,17 @@ import { Platform } from 'react-native';
 import type { User, CartItem } from './types';
 import { setCachedToken, clearSessionToken } from './api';
 import { clearAccountDeviceData } from './signOutCleanup';
+import { CART_ACCOUNT_KEY, CART_GUEST_KEY, cartLineKey as cartLineKeyOf, mergeCarts, toCartPayload } from './utils/cartSync.js';
 import { applyAppearanceMode, type AppearanceMode } from './theme';
 
 type Listener = () => void;
 
-/** Identity of a cart line: product id, or product+variant when options differ. */
-export const cartLineKey = (c: Pick<CartItem, 'id' | 'variantId'>) =>
-  c.variantId ? `${c.id}::${c.variantId}` : c.id;
+/**
+ * Identity of a cart line: product id, or product+variant when options differ.
+ * Defined in src/utils/cartSync.js so the sync layer and every screen agree on
+ * what counts as the same line (Batch 75 / APP-Q097).
+ */
+export const cartLineKey = (c: Pick<CartItem, 'id' | 'variantId'>) => cartLineKeyOf(c);
 
 interface StoreState {
   user: User | null;
@@ -80,10 +84,11 @@ export const store = {
   isFollowing(sellerId: string) { return state.followedSellerIds.has(sellerId); },
 
   async init() {
-    const [tokenStr, userStr, cartStr, appearanceStr, lowDataStr] = await Promise.all([
+    const [tokenStr, userStr, cartStr, accountCartStr, appearanceStr, lowDataStr] = await Promise.all([
       storage.getItem('ba_session_token'),
       storage.getItem('mm_user'),
-      storage.getItem('mm_cart'),
+      storage.getItem(CART_GUEST_KEY),
+      storage.getItem(CART_ACCOUNT_KEY),
       storage.getItem('mm_appearance_mode'),
       storage.getItem('mm_low_data_mode'),
     ]);
@@ -94,8 +99,11 @@ export const store = {
       state.token = tokenStr;
       setCachedToken(tokenStr);
     }
-    if (cartStr) {
-      try { state.cart = JSON.parse(cartStr); } catch { /* ignore */ }
+    // APP-Q097: a signed-in session starts from the account's own cart; the guest
+    // cart is the fallback (and is merged into the account on hydration).
+    const cartSource = (tokenStr && accountCartStr) ? accountCartStr : cartStr;
+    if (cartSource) {
+      try { state.cart = JSON.parse(cartSource); } catch { /* ignore */ }
     }
     if (userStr) {
       try { state.user = JSON.parse(userStr); } catch { /* ignore */ }
@@ -119,6 +127,61 @@ export const store = {
     if (user) await storage.setItem('mm_user', JSON.stringify(user));
     else await storage.deleteItem('mm_user');
     notify();
+    // APP-Q097: signing in hands the device's cart to the account (merged, never
+    // replaced by a half-remembered server copy). Fire-and-forget: a failed sync
+    // must not hold up the sign-in the user just completed.
+    if (user && token) void store.hydrateAccountCart();
+  },
+
+  /**
+   * Reconcile this device's cart with the account's cart: union by line, larger
+   * quantity per shared line, server data for shared lines. The guest cart is
+   * folded into the account and cleared, so the next sign-in on this device starts
+   * from the account's cart rather than re-merging the same items.
+   *
+   * Best-effort: offline, the device cart simply stays what it is and syncs on the
+   * next cart change or sign-in.
+   */
+  async hydrateAccountCart() {
+    if (!state.token || !state.user) return;
+    const { getAccountCart, pushAccountCart } = require('./api');
+    try {
+      const res = await getAccountCart() as { items: CartItem[] };
+      const remote = res?.items || [];
+      const merged = mergeCarts(state.cart, remote) as CartItem[];
+      state.cart = merged;
+      await storage.setItem(CART_ACCOUNT_KEY, JSON.stringify(merged));
+      // The device's own cart has now been handed over; keep nothing behind that
+      // would be merged a second time on the next launch.
+      await storage.deleteItem(CART_GUEST_KEY);
+      notify();
+      // Only push when the merge actually added something the server does not have.
+      if (merged.length !== remote.length) {
+        const pushed = await pushAccountCart(toCartPayload(merged)) as { items: CartItem[] } | null;
+        if (pushed?.items) {
+          state.cart = pushed.items;
+          await storage.setItem(CART_ACCOUNT_KEY, JSON.stringify(state.cart));
+          notify();
+        }
+      }
+    } catch { /* offline or token expired — the device cart stands */ }
+  },
+
+  /**
+   * Where the cart is kept: the account's cache while signed in, the device's own
+   * key while signed out. Two keys, because a guest cart must survive sign-in and
+   * an account cart must not follow the account onto someone else's session.
+   */
+  cartStorageKey() { return state.user && state.token ? CART_ACCOUNT_KEY : CART_GUEST_KEY; },
+
+  /** Persist the cart, and mirror it to the account when there is one. */
+  async persistCart() {
+    await storage.setItem(store.cartStorageKey(), JSON.stringify(state.cart));
+    if (!state.user || !state.token) return;
+    try {
+      const { pushAccountCart } = require('./api');
+      await pushAccountCart(toCartPayload(state.cart));
+    } catch { /* offline: the account cart catches up on the next change or sign-in */ }
   },
 
   async refreshUser() {
@@ -161,7 +224,7 @@ export const store = {
     if (existing) {
       if (existing.quantity >= stock) {
         existing.quantity = stock;
-        await storage.setItem('mm_cart', JSON.stringify(state.cart));
+        await store.persistCart();
         notify();
         return { added: false, reason: 'max-stock' as const, quantity: existing.quantity, stock };
       }
@@ -170,7 +233,7 @@ export const store = {
     } else {
       state.cart.push({ ...product, stock, quantity: 1 });
     }
-    await storage.setItem('mm_cart', JSON.stringify(state.cart));
+    await store.persistCart();
     notify();
     const quantity = state.cart.find(c => cartLineKey(c) === cartLineKey(product))?.quantity || 0;
     return { added: true, quantity, stock };
@@ -203,14 +266,14 @@ export const store = {
     };
     if (existing) Object.assign(existing, acceptedItem);
     else state.cart.push(acceptedItem);
-    await storage.setItem('mm_cart', JSON.stringify(state.cart));
+    await store.persistCart();
     notify();
     return { added: true, quantity, stock };
   },
 
   async removeFromCart(lineKey: string) {
     state.cart = state.cart.filter(c => cartLineKey(c) !== lineKey);
-    await storage.setItem('mm_cart', JSON.stringify(state.cart));
+    await store.persistCart();
     notify();
   },
 
@@ -227,15 +290,23 @@ export const store = {
           item.quantity = Math.min(qty, stock);
         }
       }
-      await storage.setItem('mm_cart', JSON.stringify(state.cart));
+      await store.persistCart();
       notify();
     }
   },
 
   async clearCart() {
     state.cart = [];
-    await storage.deleteItem('mm_cart');
+    await storage.deleteItem(store.cartStorageKey());
     notify();
+    // Emptying the cart is a decision the account should hear about too, so a
+    // device that still holds the old cart cannot push it back later.
+    if (state.user && state.token) {
+      try {
+        const { clearAccountCart } = require('./api');
+        await clearAccountCart();
+      } catch { /* offline: the next push replaces the account cart anyway */ }
+    }
   },
 
   setFollowingList(ids: string[]) {
