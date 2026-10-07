@@ -819,7 +819,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.cancellationRequestTitle}>
                   {request.seller_name || t('orderDetail.seller')} · {waiting ? t('orderDetail.cancellationWaiting') : orderResumed ? t('orderDetail.cancellationOrderResumed') : portionCancelledRefundPending ? t('orderDetail.cancellationPortionCancelled') : accepted ? t('orderDetail.cancellationAccepted') : overdue ? t('orderDetail.cancellationUnresolved') : declined ? t('orderDetail.cancellationDeclined') : t('orderDetail.cancellationClosed')}
                 </Text>
-                <Text style={styles.cancellationRequestCopy}>{waiting ? t('orderDetail.cancellationAwaitingResponse') : orderResumed ? t('orderDetail.cancellationOrderResumedBody') : portionCancelledRefundPending ? t('orderDetail.cancellationRefundReviewPending') : t('orderDetail.cancellationSettlementNotice')}</Text>
+                <Text style={styles.cancellationRequestCopy}>{waiting ? t('orderDetail.cancellationAwaitingResponse') : orderResumed ? t('orderDetail.cancellationOrderResumedBody') : portionCancelledRefundPending ? t('orderDetail.cancellationRefundReviewPending') : overdue ? t('orderDetail.cancellationUnansweredBody') : t('orderDetail.cancellationSettlementNotice')}</Text>
                 {!!requestReason && <Text style={styles.cancellationRequestCopy}>{getCancellationReasonLabel(requestReason, t)}{requestDetails ? ` · ${requestDetails}` : ''}</Text>}
                 {waiting && request.response_deadline && <Text style={styles.cancellationRequestCopy}>{t('orderDetail.cancellationDeadline', { date: new Date(request.response_deadline).toLocaleString() })}</Text>}
                 {isSellerOfOrder && request.seller_id === user?.id && waiting && (
@@ -842,11 +842,6 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
               </View>
             );
           })}
-        </View>
-      )}
-      {isBuyerOfOrder && (order.seller_count || 1) > 1 && order.seller_fulfillments?.some((f) => ['processing', 'shipped', 'delivered'].includes(f.fulfillment_status)) && (
-        <View style={styles.card}>
-          <Text style={styles.cancellationUnavailable}>{t('orderDetail.multiSellerCancellationUnavailable')}</Text>
         </View>
       )}
 
@@ -881,7 +876,8 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
       {/* ── Bottom Action Bar ── */}
       <View style={[styles.bottomBar, { paddingBottom: SPACING.lg }]}>
-        {isBuyerOfOrder && order.delivery_method !== 'meetup' && order.seller_count === 1 && order.seller_fulfillments?.filter((f) => ['processing', 'shipped', 'delivered'].includes(f.fulfillment_status)).map((f) => {
+        {/* One button per active seller portion: a multi-seller checkout can cancel one portion without touching the others (APP-Q340). */}
+        {isBuyerOfOrder && order.delivery_method !== 'meetup' && order.seller_fulfillments?.filter((f) => ['processing', 'shipped', 'delivered'].includes(f.fulfillment_status)).map((f) => {
           const active = order.cancellation_requests?.some((request) => request.seller_id === f.seller_id && ['open', 'under_review'].includes(request.status));
           const seller = order.other_sellers?.find((candidate: any) => candidate.id === f.seller_id);
           if (active) return null;

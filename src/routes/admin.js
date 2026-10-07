@@ -5,6 +5,7 @@ import { createNotification } from '../utils/notifications.js';
 import { processRefundPayout, settleSellerDebtPayment } from '../utils/helpers.js';
 import { releaseCancelledOrderStock } from '../utils/orderStock.js';
 import { recordKycEvidenceAccess } from '../utils/kycEvidenceAccess.js';
+import { cancellationBasis, portionIsCancellableBeforeShipment, portionCancellationResolution } from '../utils/cancellationScopePolicy.js';
 
 const router = Router();
 
@@ -108,38 +109,42 @@ router.put('/api/admin/cancellation-requests/:id/resolve', authRequired, adminRe
     let outcome = 'order_resumed';
     let newResolution = 'admin_reviewed_order_resumes';
     let refundReviewOpened = false;
+    // An unanswered request is resolvable on exactly the same terms as one the
+    // seller agreed to (APP-Q341: no fault, no automatic refund) — the basis only
+    // changes what the record says, never what is allowed.
+    const basis = decision === 'cancel_before_shipment' ? cancellationBasis(request) : null;
     if (decision === 'cancel_before_shipment') {
-      if (request.resolution !== 'seller_accepted_pending_settlement') {
+      if (!basis) {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'The seller must have accepted this cancellation before an admin can cancel the unshipped portion.' });
+        return res.status(409).json({ error: 'The seller must have accepted this cancellation, or the response window must have lapsed unanswered, before a portion can be cancelled.' });
       }
       const fulfillmentResult = await client.query(
         `SELECT * FROM seller_fulfillments WHERE order_id = $1 AND seller_id = $2 FOR UPDATE`,
         [request.order_id, request.seller_id]
       );
       const fulfillment = fulfillmentResult.rows[0];
-      if (request.order_status === 'completed' || request.order_status === 'cancelled' ||
-          request.payment_method !== 'moncash' || !fulfillment || fulfillment.payment_status !== 'verified' ||
-          fulfillment.fulfillment_status !== 'processing' || fulfillment.fulfillment_method !== 'delivery') {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'Only an accepted, still-processing MonCash delivery portion can be cancelled here. Shipped, delivered, meetup, and NatCash cases remain under review.' });
-      }
       const meetupCheckin = await client.query('SELECT 1 FROM meetup_checkins WHERE order_id = $1 LIMIT 1', [request.order_id]);
       const heldEscrow = await client.query(
         `SELECT id FROM order_escrow WHERE order_id = $1 AND seller_id = $2 AND status = 'held' FOR UPDATE`,
         [request.order_id, request.seller_id]
       );
-      if (meetupCheckin.rowCount || !heldEscrow.rowCount) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'A meetup has started or held MonCash escrow is unavailable. No cancellation or refund state changed.' });
-      }
       const existingRefundRequest = await client.query(
         `SELECT id FROM disputes WHERE order_id = $1 AND seller_id = $2 AND reason = 'refund_request'
          AND status IN ('open', 'under_review') LIMIT 1`, [request.order_id, request.seller_id]
       );
-      if (existingRefundRequest.rowCount) {
+      // Every hard condition lives in one pure, tested place. Shipping started,
+      // a meetup under way, missing escrow, a non-MonCash rail, or a refund review
+      // already open all still freeze this decision.
+      if (!portionIsCancellableBeforeShipment({
+        orderStatus: request.order_status,
+        paymentMethod: request.payment_method,
+        fulfillment,
+        hasMeetupCheckin: (meetupCheckin.rowCount || 0) > 0,
+        hasHeldEscrow: (heldEscrow.rowCount || 0) > 0,
+        hasOpenRefundReview: (existingRefundRequest.rowCount || 0) > 0,
+      })) {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'A refund review is already open for this seller portion.' });
+        return res.status(409).json({ error: 'Only a still-processing MonCash delivery portion with held escrow can be cancelled here. Shipped, delivered, meetup, NatCash, completed, escrow-free, and already-refund-reviewing cases remain under review.' });
       }
 
       await client.query(
@@ -165,10 +170,12 @@ router.put('/api/admin/cancellation-requests/:id/resolve', authRequired, adminRe
         `INSERT INTO disputes (order_id, seller_id, raised_by, reason, description, status)
          VALUES ($1, $2, $3, 'refund_request', $4, 'open')`,
         [request.order_id, request.seller_id, request.buyer_id,
-          'Admin cancelled this seller portion before shipment after seller acceptance. MonCash refund review is open; no transfer has been approved or confirmed.']
+          basis === 'unanswered'
+            ? 'Admin cancelled this unshipped seller portion after the response window lapsed unanswered. No fault is assigned. MonCash refund review is open; no transfer has been approved or confirmed.'
+            : 'Admin cancelled this seller portion before shipment after seller acceptance. MonCash refund review is open; no transfer has been approved or confirmed.']
       );
       outcome = 'portion_cancelled_refund_pending';
-      newResolution = 'admin_cancelled_before_shipment_refund_review';
+      newResolution = portionCancellationResolution(basis);
       refundReviewOpened = true;
     }
 
@@ -181,7 +188,9 @@ router.put('/api/admin/cancellation-requests/:id/resolve', authRequired, adminRe
        VALUES ($1, 'cancellation_response', $2, $3)`,
       [request.order_id, req.user.id, decision === 'resume_order'
         ? `Admin reviewed cancellation request ${request.id}; order resumes unchanged. No order/payment/refund state was changed. Review note: ${note}`
-        : `Admin cancelled seller ${request.seller_id}'s unshipped portion after seller acceptance. Separate MonCash refund review opened; no transfer is approved or confirmed. Review note: ${note}`]
+        : basis === 'unanswered'
+          ? `Admin cancelled seller ${request.seller_id}'s unshipped portion after the response window lapsed unanswered. No fault was assigned. Separate MonCash refund review opened; no transfer is approved or confirmed. Review note: ${note}`
+          : `Admin cancelled seller ${request.seller_id}'s unshipped portion after seller acceptance. Separate MonCash refund review opened; no transfer is approved or confirmed. Review note: ${note}`]
     );
     await client.query(
       `UPDATE notifications SET action_resolved = true, is_read = true
@@ -196,7 +205,9 @@ router.put('/api/admin/cancellation-requests/:id/resolve', authRequired, adminRe
         decision === 'resume_order' ? 'Cancellation review complete' : 'Seller portion cancelled',
         decision === 'resume_order'
           ? 'The cancellation request was reviewed and closed. The order and payment continue unchanged; no refund was issued.'
-          : 'The unshipped seller portion was cancelled after review. MonCash refund review is open; no refund transfer has been approved or confirmed.',
+          : basis === 'unanswered'
+            ? 'The unshipped seller portion was cancelled after review. The seller did not respond in time and no fault is assigned. MonCash refund review is open; no refund transfer has been approved or confirmed.'
+            : 'The unshipped seller portion was cancelled after review. MonCash refund review is open; no refund transfer has been approved or confirmed.',
         { orderId: request.order_id, sellerId: request.seller_id, cancellationRequestId: request.id, cancellationOutcome: outcome, refundReviewPending: refundReviewOpened });
     }
     return res.json({ resolved: true, outcome, orderChanged: decision === 'cancel_before_shipment', paymentChanged: false, refundReviewOpened, refundIssued: false });

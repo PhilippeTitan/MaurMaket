@@ -2269,11 +2269,13 @@ router.post('/orders/:id/cancellation-requests', authRequired, async (req, res) 
       [req.params.id, sellerId]
     );
     if (!fulfillmentRes.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Seller portion not found' }); }
-    const sellerCount = await client.query('SELECT COUNT(DISTINCT seller_id)::int AS count FROM order_items WHERE order_id = $1', [req.params.id]);
-    if (Number(sellerCount.rows[0]?.count || 0) !== 1) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Seller-scoped cancellation is not available for multi-seller orders yet because fulfillment and refund state are not independently represented.' });
-    }
+    // A multi-seller order is supported here (APP-Q340: cancel only the affected
+    // seller sub-order unless the buyer cancels the whole checkout). Everything
+    // this request can reach is already per-seller: it blocks only this seller's
+    // status advancement, and if a reviewer later cancels the portion, that
+    // seller's fulfillment, escrow, stock reservations and accepted-offer claims
+    // are released on their own while the other portions stay active. The order
+    // itself is cancelled only when no other portion remains active.
     if (!['processing', 'shipped', 'delivered'].includes(fulfillmentRes.rows[0].fulfillment_status)) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This seller has not started fulfillment. Use the order cancellation option while it is still available.' });
@@ -3182,10 +3184,23 @@ router.post('/orders/:id/escrow/release', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'Escrow is frozen — an open dispute must be resolved first.' });
     }
 
-    const escrows = await client.query("SELECT * FROM order_escrow WHERE order_id = $1 AND status = 'held' FOR UPDATE", [req.params.id]);
+    // A cancelled seller portion is settled only through its own MonCash refund
+    // review — never through this order-level release. Without this exclusion a
+    // portion that was cancelled (and whose refund review later closed without
+    // draining its whole gross) would still be paid out here, crediting a seller
+    // for goods the buyer is not receiving. The other portions are unaffected.
+    const escrows = await client.query(
+      `SELECT oe.* FROM order_escrow oe
+       LEFT JOIN seller_fulfillments sf
+         ON sf.order_id = oe.order_id AND sf.seller_id = oe.seller_id
+       WHERE oe.order_id = $1 AND oe.status = 'held'
+         AND COALESCE(sf.fulfillment_status, '') <> 'cancelled'
+       FOR UPDATE OF oe`,
+      [req.params.id]
+    );
     if (escrows.rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'No held escrow found for this order' });
+      return res.status(400).json({ error: 'No held escrow is releasable for this order. Cancelled seller portions wait on their own MonCash refund review.' });
     }
 
     const debtOffsets = [];
@@ -3244,9 +3259,11 @@ router.post('/orders/:id/escrow/release', authRequired, async (req, res) => {
 
     // Only MonCash commission is transferred through the MonCash payout rail.
     if (o.payment_method === 'moncash') try {
+      // Commission is transferred only for the portions actually released just
+      // now, never for a portion held back for refund review.
       const totalCommission = (await pool.query(
-        'SELECT COALESCE(SUM(commission_amount), 0) AS total FROM order_escrow WHERE order_id = $1',
-        [req.params.id]
+        'SELECT COALESCE(SUM(commission_amount), 0) AS total FROM order_escrow WHERE order_id = $1 AND id = ANY($2::uuid[])',
+        [req.params.id, escrows.rows.map((row) => row.id)]
       )).rows[0].total;
       const commissionAmount = parseFloat(totalCommission);
       const platformTransferAmount = Math.round(commissionAmount);
