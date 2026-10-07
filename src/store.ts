@@ -1,8 +1,8 @@
 import { Platform } from 'react-native';
-import type { User, CartItem } from './types';
+import type { User, CartItem, CartSyncIssue, CartSyncNotice } from './types';
 import { setCachedToken, clearSessionToken } from './api';
 import { clearAccountDeviceData } from './signOutCleanup';
-import { CART_ACCOUNT_KEY, CART_GUEST_KEY, cartLineKey as cartLineKeyOf, mergeCarts, toCartPayload } from './utils/cartSync.js';
+import { CART_ACCOUNT_KEY, CART_GUEST_KEY, cartLineKey as cartLineKeyOf, cartNeedsPush, mergeCarts, toCartPayload } from './utils/cartSync.js';
 import { applyAppearanceMode, type AppearanceMode } from './theme';
 
 type Listener = () => void;
@@ -18,6 +18,8 @@ interface StoreState {
   user: User | null;
   token: string | null;
   cart: CartItem[];
+  /** What the account cart said it could not keep, for the cart screen to explain. */
+  cartIssues: CartSyncNotice[];
   followedSellerIds: Set<string>;
   followerCount: number;
   followingCount: number;
@@ -50,6 +52,7 @@ const state: StoreState = {
   user: null,
   token: null,
   cart: [],
+  cartIssues: [],
   followedSellerIds: new Set(),
   followerCount: 0,
   followingCount: 0,
@@ -76,6 +79,12 @@ export const store = {
     const pending = usernamePromptPending;
     usernamePromptPending = false;
     return pending;
+  },
+  get cartIssues() { return state.cartIssues; },
+  clearCartIssues() {
+    if (state.cartIssues.length === 0) return;
+    state.cartIssues = [];
+    notify();
   },
   get followedSellerIds() { return state.followedSellerIds; },
   get followerCount() { return state.followerCount; },
@@ -155,12 +164,14 @@ export const store = {
       // would be merged a second time on the next launch.
       await storage.deleteItem(CART_GUEST_KEY);
       notify();
-      // Only push when the merge actually added something the server does not have.
-      if (merged.length !== remote.length) {
-        const pushed = await pushAccountCart(toCartPayload(merged)) as { items: CartItem[] } | null;
-        if (pushed?.items) {
+      // Only push when the merge holds something the server does not: a line it
+      // has never seen, a larger quantity, or an offer agreement accepted here.
+      if (cartNeedsPush(merged, remote)) {
+        const pushed = await pushAccountCart(toCartPayload(merged)) as { items: CartItem[]; ignored?: CartSyncIssue[]; released?: CartSyncIssue[] } | null;
+        if (pushed) {
           state.cart = pushed.items;
           await storage.setItem(CART_ACCOUNT_KEY, JSON.stringify(state.cart));
+          store.recordCartIssues(pushed);
           notify();
         }
       }
@@ -174,14 +185,67 @@ export const store = {
    */
   cartStorageKey() { return state.user && state.token ? CART_ACCOUNT_KEY : CART_GUEST_KEY; },
 
-  /** Persist the cart, and mirror it to the account when there is one. */
+  /**
+   * Persist the cart, and mirror it to the account when there is one.
+   *
+   * The account's answer is authoritative about what it kept, so it is applied
+   * rather than discarded: a line whose listing is gone is removed here as well
+   * (otherwise the next hydration would merge it straight back in and push it
+   * again, forever), and a line whose agreed price lapsed stays but is unlocked
+   * and shows the live price. Both are recorded so the cart screen can say so
+   * instead of the shopper discovering it silently.
+   */
   async persistCart() {
     await storage.setItem(store.cartStorageKey(), JSON.stringify(state.cart));
     if (!state.user || !state.token) return;
     try {
       const { pushAccountCart } = require('./api');
-      await pushAccountCart(toCartPayload(state.cart));
+      const pushed = await pushAccountCart(toCartPayload(state.cart)) as { items: CartItem[]; ignored?: CartSyncIssue[]; released?: CartSyncIssue[] } | null;
+      if (pushed) {
+        store.applyCartAnswer(pushed);
+        await storage.setItem(store.cartStorageKey(), JSON.stringify(state.cart));
+      }
     } catch { /* offline: the account cart catches up on the next change or sign-in */ }
+  },
+
+  /**
+   * Apply the account cart's answer to this device's cart. Only the lines the
+   * server named are touched — a local change made while the request was in
+   * flight must not be overwritten by a reply that predates it.
+   */
+  applyCartAnswer(answer: { items?: CartItem[]; ignored?: CartSyncIssue[]; released?: CartSyncIssue[] }) {
+    const ignored = answer.ignored || [];
+    const released = answer.released || [];
+    if (ignored.length > 0) {
+      const dropped = new Set(ignored.map((issue) => cartLineKeyOf({ id: issue.productId, variantId: issue.variantId || undefined })));
+      state.cart = state.cart.filter((item) => !dropped.has(cartLineKey(item)));
+    }
+    for (const issue of released) {
+      const key = cartLineKeyOf({ id: issue.productId, variantId: issue.variantId || undefined });
+      const line = state.cart.find((item) => cartLineKey(item) === key);
+      const live = answer.items?.find((item) => cartLineKey(item) === key);
+      if (!line) continue;
+      // The agreement is gone; the line is not. Unlock the quantity and take the
+      // live price the server just read, so the shopper sees what they will pay.
+      delete line.acceptedOfferMessageId;
+      // The server's copy of that line carries the live price and stock.
+      if (live) {
+        Object.assign(line, live);
+        delete line.acceptedOfferMessageId;
+      }
+    }
+    store.recordCartIssues(answer);
+    notify();
+  },
+
+  /** Remember what to explain on the cart screen; an empty answer clears it. */
+  recordCartIssues(answer: { ignored?: CartSyncIssue[]; released?: CartSyncIssue[] }) {
+    const notices: CartSyncNotice[] = [
+      ...(answer.ignored || []).map((issue) => ({ kind: 'removed' as const, productId: issue.productId, variantId: issue.variantId ?? null, reason: issue.reason })),
+      ...(answer.released || []).map((issue) => ({ kind: 'released' as const, productId: issue.productId, variantId: issue.variantId ?? null, reason: issue.reason })),
+    ];
+    if (notices.length === 0 && state.cartIssues.length === 0) return;
+    state.cartIssues = notices;
   },
 
   async refreshUser() {
@@ -213,6 +277,7 @@ export const store = {
     } catch { /* ignore — server might be down */ }
     state.user = null;
     state.token = null;
+    state.cartIssues = [];
     await clearSessionToken();
     await storage.deleteItem('mm_user');
     // APP-Q403: authenticated caches and credentials leave the device. Unsent
@@ -305,6 +370,7 @@ export const store = {
 
   async clearCart() {
     state.cart = [];
+    state.cartIssues = [];
     await storage.deleteItem(store.cartStorageKey());
     notify();
     // Emptying the cart is a decision the account should hear about too, so a

@@ -17,12 +17,20 @@ const router = Router();
 //     else — reserving on cart-add is how a marketplace lets one shopper hold a
 //     seller's only item hostage. Stock is decided at checkout, as it already is.
 //   * it does not accept a client's idea of price or stock. Quantity and identity
-//     are the only things a device gets to assert.
+//     are the only things a device gets to assert, plus a *reference* to an offer
+//     it claims to have accepted — and that reference is checked here, on every
+//     read, and again at checkout before it can change a price.
 //
 // Reads are scoped to the caller's own rows; there is no route that can read or
 // write another account's cart.
 
 // Live view of one account's cart lines, hydrated from the listings.
+//
+// The offer join is deliberately narrow: it matches only while the offer is still
+// the buyer's, for this same product, accepted, not already turned into an order,
+// and not past its accepted window. An offer that lapsed simply stops matching, so
+// the line falls back to live pricing and becomes editable again — the cart never
+// shows an agreement the buyer can no longer use.
 const CART_QUERY = `
   SELECT ci.product_id, ci.variant_id, ci.quantity, ci.added_at,
          p.name, p.price, p.sale_price, p.sale_starts_at, p.sale_ends_at,
@@ -30,6 +38,7 @@ const CART_QUERY = `
          s.full_name AS seller_name, s.store_name,
          v.id AS v_id, v.price AS v_price, v.stock AS v_stock,
          v.option_label AS v_label, v.options AS v_options, v.is_active AS v_active,
+         mo.message_id AS offer_message_id, mo.offered_price AS offer_price,
          (SELECT json_agg(json_build_object(
                    'id', pi.id, 'url', pi.image_url,
                    'is_primary', pi.is_primary, 'display_order', pi.display_order)
@@ -39,6 +48,13 @@ const CART_QUERY = `
     JOIN products p ON p.id = ci.product_id
     LEFT JOIN product_variants v ON v.id = ci.variant_id
     LEFT JOIN users s ON s.id = p.seller_id
+    LEFT JOIN message_offers mo
+           ON mo.message_id = ci.accepted_offer_message_id
+          AND mo.buyer_id = ci.user_id
+          AND mo.product_id = ci.product_id
+          AND mo.status = 'accepted'
+          AND mo.accepted_checkout_id IS NULL
+          AND (mo.accepted_expires_at IS NULL OR mo.accepted_expires_at > CURRENT_TIMESTAMP)
    WHERE ci.user_id = $1
    ORDER BY ci.added_at ASC, p.name ASC
 `;
@@ -58,13 +74,20 @@ function saleIsActive(row) {
  */
 function shapeCartLine(row) {
   const hasVariant = Boolean(row.variant_id);
+  // An accepted offer replaces the price for its line, exactly as it did when the
+  // buyer tapped "checkout this offer" — one agreed price, no sale tag on top.
+  const offerPrice = row.offer_message_id ? Number(row.offer_price) : null;
   // Same visibility rule the rest of the catalogue uses: published and available.
   // A listing pulled back into review, paused, or rejected is not purchasable.
   const published = row.listing_status === 'active' || row.listing_status === null || row.listing_status === undefined;
   const purchasable = row.is_available === true && published && (!hasVariant || row.v_active === true);
-  const listPrice = hasVariant ? Number(row.v_price) : Number(row.price);
-  const onSale = !hasVariant && saleIsActive(row);
-  const effective = hasVariant ? Number(row.v_price) : (onSale ? Number(row.sale_price) : Number(row.price));
+  const listPrice = offerPrice !== null
+    ? offerPrice
+    : (hasVariant ? Number(row.v_price) : Number(row.price));
+  const onSale = offerPrice === null && !hasVariant && saleIsActive(row);
+  const effective = offerPrice !== null
+    ? offerPrice
+    : (hasVariant ? Number(row.v_price) : (onSale ? Number(row.sale_price) : Number(row.price)));
   const discountPct = onSale && listPrice > 0
     ? Math.max(0, Math.round((1 - effective / listPrice) * 100))
     : 0;
@@ -75,6 +98,7 @@ function shapeCartLine(row) {
     effective_price: effective,
     is_on_sale: onSale,
     discount_pct: discountPct,
+    ...(offerPrice !== null ? { acceptedOfferMessageId: row.offer_message_id } : {}),
     quantity: row.quantity,
     images: row.images || [],
     seller_id: row.seller_id,
@@ -113,6 +137,12 @@ router.get('/cart', authRequired, async (req, res) => {
 // a listing deleted, a variant that no longer belongs to the product, or the
 // caller's own listing — and the response names them, so the device can tell the
 // difference between "synced" and "synced, minus one".
+//
+// An offer reference is checked the same way: only an offer that is the caller's,
+// for the line's own product and quantity, still accepted, unconsumed and inside
+// its window is stored. A reference that fails is *released* instead of ignored —
+// the line is kept at live pricing and reported separately, because "this item is
+// gone" and "your agreed price expired" are different things to be told.
 router.put('/cart', authRequired, async (req, res) => {
   const lines = normalizeCartLines(req.body?.items);
   const client = await pool.connect();
@@ -121,39 +151,70 @@ router.put('/cart', authRequired, async (req, res) => {
 
     const productIds = [...new Set(lines.map((line) => line.item.id))];
     const variantIds = [...new Set(lines.map((line) => line.item.variantId).filter(Boolean))];
+    const offerIds = [...new Set(lines.map((line) => line.item.offerMessageId).filter(Boolean))];
     const products = productIds.length
       ? await client.query('SELECT id, seller_id FROM products WHERE id = ANY($1::uuid[])', [productIds])
       : { rows: [] };
     const variants = variantIds.length
       ? await client.query('SELECT id, product_id FROM product_variants WHERE id = ANY($1::uuid[])', [variantIds])
       : { rows: [] };
+    const offers = offerIds.length
+      ? await client.query(
+        `SELECT message_id, product_id, quantity
+           FROM message_offers
+          WHERE message_id = ANY($1::uuid[])
+            AND buyer_id = $2
+            AND status = 'accepted'
+            AND accepted_checkout_id IS NULL
+            AND (accepted_expires_at IS NULL OR accepted_expires_at > CURRENT_TIMESTAMP)`,
+        [offerIds, req.user.id]
+      )
+      : { rows: [] };
     const productById = new Map(products.rows.map((row) => [row.id, row]));
     const variantById = new Map(variants.rows.map((row) => [row.id, row]));
+    const offerById = new Map(offers.rows.map((row) => [row.message_id, row]));
 
     const accepted = [];
     const ignored = [];
+    const released = [];
+    const claimedOffers = new Set();
     for (const line of lines) {
       const product = productById.get(line.item.id);
-      if (!product) { ignored.push({ productId: line.item.id, reason: 'unavailable' }); continue; }
-      if (product.seller_id === req.user.id) { ignored.push({ productId: line.item.id, reason: 'own-listing' }); continue; }
+      if (!product) { ignored.push({ productId: line.item.id, variantId: line.item.variantId, reason: 'unavailable' }); continue; }
+      if (product.seller_id === req.user.id) { ignored.push({ productId: line.item.id, variantId: line.item.variantId, reason: 'own-listing' }); continue; }
       if (line.item.variantId && variantById.get(line.item.variantId)?.product_id !== line.item.id) {
-        ignored.push({ productId: line.item.id, reason: 'variant-mismatch' });
+        ignored.push({ productId: line.item.id, variantId: line.item.variantId, reason: 'variant-mismatch' });
         continue;
       }
-      accepted.push(line);
+
+      let offerMessageId = null;
+      if (line.item.offerMessageId) {
+        const offer = offerById.get(line.item.offerMessageId);
+        if (!offer) {
+          released.push({ productId: line.item.id, variantId: line.item.variantId, reason: 'offer-expired' });
+        } else if (offer.product_id !== line.item.id || Number(offer.quantity) !== line.item.quantity || claimedOffers.has(line.item.offerMessageId)) {
+          released.push({ productId: line.item.id, variantId: line.item.variantId, reason: 'offer-mismatch' });
+        } else {
+          claimedOffers.add(line.item.offerMessageId);
+          offerMessageId = line.item.offerMessageId;
+        }
+      }
+
+      accepted.push({ line, offerMessageId });
     }
 
     await client.query('DELETE FROM cart_items WHERE user_id = $1', [req.user.id]);
-    for (const line of accepted) {
+    for (const { line, offerMessageId } of accepted) {
       await client.query(
-        'INSERT INTO cart_items (user_id, product_id, variant_id, quantity) VALUES ($1, $2, $3, $4)',
-        [req.user.id, line.item.id, line.item.variantId, line.item.quantity]
+        `INSERT INTO cart_items (user_id, product_id, variant_id, quantity, accepted_offer_message_id)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [req.user.id, line.item.id, line.item.variantId, line.item.quantity, offerMessageId]
       );
     }
 
     const items = await loadCart(req.user.id, client);
     await client.query('COMMIT');
-    res.json({ items, ignored });
+    res.json({ items, ignored, released });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('Cart write error:', err);

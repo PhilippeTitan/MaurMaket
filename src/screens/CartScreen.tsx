@@ -35,9 +35,13 @@ export default function CartScreen({ navigation }: Props) {
   const [discount, setDiscount] = useState(0);
   const [promoLoading, setPromoLoading] = useState(false);
   const [showClearCartModal, setShowClearCartModal] = useState(false);
+  const [syncIssues, setSyncIssues] = useState(store.cartIssues);
 
   useEffect(() => {
-    const unsub = store.onChange(() => setCart([...store.cart]));
+    const unsub = store.onChange(() => {
+      setCart([...store.cart]);
+      setSyncIssues([...store.cartIssues]);
+    });
     return unsub;
   }, []);
 
@@ -213,10 +217,37 @@ export default function CartScreen({ navigation }: Props) {
             keyExtractor={item => item.key}
             contentContainerStyle={styles.list}
             ListHeaderComponent={
-              <CheckoutSurface style={styles.cartOverview}>
-                <CheckoutSection icon="cart-outline" title={`${itemCount} ${itemCount === 1 ? t('common.item') : t('common.items')}`} detail={`${sellerCount} ${sellerCount === 1 ? t('checkout.seller') : t('checkout.sellers')}`} />
-                <Text style={styles.cartOverviewCopy}>{t('cart.reviewBeforeCheckout')}</Text>
-              </CheckoutSurface>
+              <View>
+                {syncIssues.length > 0 && (
+                  <View style={styles.syncNote} accessibilityLiveRegion="polite">
+                    <MaterialCommunityIcons name="information-outline" size={18} color={COLORS.text2} />
+                    <View style={styles.syncNoteText}>
+                      {syncIssues.some(issue => issue.kind === 'removed') && (
+                        <Text style={styles.syncNoteLine}>
+                          {t('cart.syncNoteRemoved', { count: String(syncIssues.filter(issue => issue.kind === 'removed').length) })}
+                        </Text>
+                      )}
+                      {syncIssues.some(issue => issue.kind === 'released') && (
+                        <Text style={styles.syncNoteLine}>
+                          {t('cart.syncNoteReleased', { count: String(syncIssues.filter(issue => issue.kind === 'released').length) })}
+                        </Text>
+                      )}
+                    </View>
+                    <TouchableOpacity
+                      style={styles.syncNoteDismiss}
+                      onPress={() => store.clearCartIssues()}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('cart.syncNoteDismiss')}
+                    >
+                      <Icon name="close" size={16} color={COLORS.text2} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <CheckoutSurface style={styles.cartOverview}>
+                  <CheckoutSection icon="cart-outline" title={`${itemCount} ${itemCount === 1 ? t('common.item') : t('common.items')}`} detail={`${sellerCount} ${sellerCount === 1 ? t('checkout.seller') : t('checkout.sellers')}`} />
+                  <Text style={styles.cartOverviewCopy}>{t('cart.reviewBeforeCheckout')}</Text>
+                </CheckoutSurface>
+              </View>
             }
           />
           <View style={[styles.footer, { paddingBottom: insets.bottom + SPACING.md }]}>
@@ -288,6 +319,16 @@ const styles = StyleSheet.create({
   clearHeaderBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   cartOverview: { marginBottom: SPACING.md },
   cartOverviewCopy: { color: COLORS.text2, fontSize: 13, lineHeight: 19 },
+  // A quiet standing note, not a toast: it stays until the shopper dismisses it,
+  // because it is the only explanation for a line that disappeared.
+  syncNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm,
+    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.card, padding: SPACING.md, marginBottom: SPACING.md,
+  },
+  syncNoteText: { flex: 1, gap: 2 },
+  syncNoteLine: { color: COLORS.text, fontSize: 13, lineHeight: 19 },
+  syncNoteDismiss: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginTop: -8, marginRight: -8 },
   item: {
     flexDirection: 'row', backgroundColor: COLORS.surface, borderWidth: 1,
     borderColor: COLORS.border, borderRadius: RADIUS.card, padding: SPACING.md, marginBottom: SPACING.sm, alignItems: 'center', gap: SPACING.md,

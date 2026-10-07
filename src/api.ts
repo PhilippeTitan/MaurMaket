@@ -4,7 +4,7 @@ import * as AuthSession from 'expo-auth-session';
 import { createAuthClient } from 'better-auth/client';
 import { twoFactorClient } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
-import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats, NotificationPreferences, PolicyState, SecurityEvent, TrustedDevice, AccountFreezeState, ExportJob, DataExportSummary, KycEvidenceAccessEntry, CartItem } from './types';
+import type { Conversation, Product, BlockedUser, UserReportPayload, SellerReviewStats, NotificationPreferences, PolicyState, SecurityEvent, TrustedDevice, AccountFreezeState, ExportJob, DataExportSummary, KycEvidenceAccessEntry, CartItem, CartSyncIssue } from './types';
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
 
@@ -572,8 +572,8 @@ export const getKycEvidenceAccess = () =>
 export const getAccountCart = () =>
   request<{ items: CartItem[] }>('/cart');
 
-export const pushAccountCart = (items: Array<{ productId: string; variantId: string | null; quantity: number }>) =>
-  request<{ items: CartItem[]; ignored: Array<{ productId: string; reason: string }> }>(
+export const pushAccountCart = (items: Array<{ productId: string; variantId: string | null; quantity: number; acceptedOfferMessageId?: string }>) =>
+  request<{ items: CartItem[]; ignored: CartSyncIssue[]; released: CartSyncIssue[] }>(
     '/cart',
     { method: 'PUT', body: JSON.stringify({ items }) }
   );

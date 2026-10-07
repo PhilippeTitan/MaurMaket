@@ -23,6 +23,8 @@ import {
   cartLineKey,
   normalizeCartLines,
   mergeCarts,
+  cartNeedsPush,
+  normalizeOfferReference,
   toCartPayload,
   CART_ACCOUNT_KEY,
   CART_GUEST_KEY,
@@ -126,12 +128,93 @@ check('deleting an account or a listing takes its cart lines with it',
 
 // ── 8. The app keeps the two carts apart ──
 const store = read('src/store.ts');
+const screen = read('src/screens/CartScreen.tsx');
 check('the store picks a key by session state', store.includes('cartStorageKey()') && store.includes('CART_ACCOUNT_KEY : CART_GUEST_KEY'));
 check('every cart change persists through one helper', (store.match(/await store\.persistCart\(\)/g) || []).length >= 4);
 check('signing in merges rather than overwrites', store.includes('mergeCarts(state.cart, remote)') && store.includes('void store.hydrateAccountCart()'));
 check('the device cart stops being a guest cart once handed over', store.includes('await storage.deleteItem(CART_GUEST_KEY);'));
 check('a signed-in cart starts from the account\'s copy', store.includes('(tokenStr && accountCartStr) ? accountCartStr : cartStr'));
 check('sign-out still sweeps the account cart through the policy, not by name', !/deleteItem\('mm_cart_account'\)/.test(store));
+
+// ── 9. An agreed price travels with the line ──
+// "A price agreed in a chat and tapped into the cart belongs to the account, not
+// to the phone that accepted it." The reference is opaque here: whether it still
+// stands is the server's answer.
+const OFFER = '11111111-2222-3333-4444-555555555555';
+const OTHER_OFFER = '99999999-8888-7777-6666-555555555555';
+check('an offer reference must be a uuid, or nothing',
+  normalizeOfferReference(OFFER) === OFFER
+  && normalizeOfferReference('not-an-offer') === null
+  && normalizeOfferReference(null) === null
+  && normalizeOfferReference(42) === null
+  && normalizeOfferReference(` ${OFFER} `) === OFFER);
+check('a line carries the agreement it was accepted under',
+  normalizeCartLines([{ id: 'p1', quantity: 1, acceptedOfferMessageId: OFFER }])[0].item.offerMessageId === OFFER);
+check('a junk reference is dropped, not guessed at',
+  normalizeCartLines([{ id: 'p1', quantity: 1, acceptedOfferMessageId: 'x' }])[0].item.offerMessageId === null);
+check('an ordinary line carries no reference',
+  normalizeCartLines([{ id: 'p1', quantity: 1 }])[0].item.offerMessageId === null);
+same('the reference crosses the wire only on the line that has one',
+  toCartPayload([{ id: 'p1', quantity: 1, acceptedOfferMessageId: OFFER }, { id: 'p2', quantity: 2 }]),
+  [{ productId: 'p1', variantId: null, quantity: 1, acceptedOfferMessageId: OFFER },
+    { productId: 'p2', variantId: null, quantity: 2 }]);
+check('an agreement made on this device survives a merge with an account that has none',
+  mergeCarts([{ id: 'p1', quantity: 1, acceptedOfferMessageId: OFFER }], [{ id: 'p1', quantity: 1 }])[0].acceptedOfferMessageId === OFFER);
+check('the account\'s own record of the agreement wins',
+  mergeCarts([{ id: 'p1', quantity: 1, acceptedOfferMessageId: OTHER_OFFER }],
+    [{ id: 'p1', quantity: 1, acceptedOfferMessageId: OFFER }])[0].acceptedOfferMessageId === OFFER);
+check('a merge does not invent an agreement for a plain line',
+  mergeCarts([{ id: 'p1', quantity: 1 }], [{ id: 'p1', quantity: 1 }])[0].acceptedOfferMessageId === undefined);
+
+// ── 10. When the account needs this device's version of the cart ──
+// Pushing on every sign-in is noise; not pushing after a real change loses an
+// agreement. Prices and stock are never a reason: the server reads those live.
+same('a line the account has never seen needs a push', cartNeedsPush([{ id: 'p2', quantity: 1 }], [{ id: 'p1', quantity: 1 }]), true);
+same('a larger quantity here needs a push', cartNeedsPush([{ id: 'p1', quantity: 3 }], [{ id: 'p1', quantity: 1 }]), true);
+same('an agreement the account does not have needs a push',
+  cartNeedsPush([{ id: 'p1', quantity: 1, acceptedOfferMessageId: OFFER }], [{ id: 'p1', quantity: 1 }]), true);
+same('a larger quantity on the account does not', cartNeedsPush([{ id: 'p1', quantity: 1 }], [{ id: 'p1', quantity: 2 }]), false);
+same('the same cart twice does not', cartNeedsPush([{ id: 'p1', quantity: 1 }], [{ id: 'p1', quantity: 1 }]), false);
+same('two empty carts do not', cartNeedsPush([], []), false);
+
+// ── 11. The offer is checked, never trusted ──
+check('the offer must be the caller\'s, for this product',
+  /mo\.buyer_id = ci\.user_id/.test(route) && /mo\.product_id = ci\.product_id/.test(route));
+check('the offer must still be accepted, unconsumed and unexpired',
+  /mo\.status = 'accepted'/.test(route) && /mo\.accepted_checkout_id IS NULL/.test(route) && /accepted_expires_at/.test(route));
+check('the writer checks the offer the same way before storing it',
+  /status = 'accepted'/.test(route) && /buyer_id = \$2/.test(route) && /offer\.quantity\) !== line\.item\.quantity/.test(route));
+check('one offer cannot be claimed by two lines', /claimedOffers\.has\(line\.item\.offerMessageId\)/.test(route));
+check('a lapsed agreement is released with a reason, not dropped silently',
+  /released\.push/.test(route) && /reason: 'offer-expired'/.test(route) && /reason: 'offer-mismatch'/.test(route));
+check('the route stores a reference, never the agreed price',
+  /accepted_offer_message_id/.test(route) && !/offered_price/.test(route.replace(/mo\.offered_price AS offer_price/g, '')));
+check('a refused line names its variant too, so the right line is removed',
+  /reason: 'unavailable'/.test(route) && /productId: line\.item\.id, variantId: line\.item\.variantId/.test(route));
+
+// ── 12. The migration adds a reference, not a snapshot ──
+const step92 = server.match(/await step\('Cart offer references', \(\) => c\.query\(`([\s\S]*?)`\)\);/);
+check('migration step 92 exists', Boolean(step92));
+const step92Sql = step92 ? step92[1] : '';
+check('the reference is a message and the line outlives it',
+  /accepted_offer_message_id UUID REFERENCES messages\(id\) ON DELETE SET NULL/.test(step92Sql));
+check('the migration stores no price', !/price/i.test(step92Sql));
+
+// ── 13. The app acts on the account\'s answer ──
+check('the answer is applied, not discarded', store.includes('store.applyCartAnswer(pushed)'));
+check('a line the account refused is removed here too, so it cannot come back',
+  /state\.cart = state\.cart\.filter\(\(item\) => !dropped\.has\(cartLineKey\(item\)\)\)/.test(store));
+check('a lapsed agreement unlocks the line instead of deleting it',
+  /delete line\.acceptedOfferMessageId;/.test(store));
+check('only the named lines are touched, so an in-flight change is not overwritten',
+  !/state\.cart = answer\.items/.test(store));
+check('the cart explains what happened instead of losing a line quietly',
+  screen.includes("t('cart.syncNoteRemoved'") && screen.includes("t('cart.syncNoteReleased'") && screen.includes('store.clearCartIssues()'));
+const localeKeys = ['cart.syncNoteRemoved', 'cart.syncNoteReleased'];
+for (const lang of ['en', 'fr', 'ht']) {
+  const messages = JSON.parse(read(`messages/${lang}.json`));
+  check(`the cart notice is localised in ${lang}`, localeKeys.every((key) => typeof messages[key] === 'string'));
+}
 
 if (failures > 0) {
   console.log(`\nFAIL: ${failures} cart-sync violation(s).`);

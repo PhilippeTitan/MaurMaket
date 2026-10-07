@@ -1967,6 +1967,20 @@ await step('NatCash phone separation', () => c.query(`
       CREATE INDEX IF NOT EXISTS idx_cart_items_user ON cart_items (user_id, added_at);
     `));
 
+    // 92. Accepted-offer lines in a cart (Batch 75 / APP-Q097 follow-on). A
+    // price agreed in a chat and tapped into the cart used to survive only on the
+    // device that accepted it: `cart_items` stored identity alone, so the same
+    // cart opened anywhere else showed the listing price with no agreement. The
+    // column stores a *reference* to the offer message, never the agreed price —
+    // the route re-validates the offer on every read, and checkout validates it
+    // again, so an expired or already-consumed offer simply stops matching and the
+    // line reverts to normal pricing. ON DELETE SET NULL keeps the line when the
+    // message goes away, because the shopper still wants the item.
+    await step('Cart offer references', () => c.query(`
+      ALTER TABLE cart_items
+        ADD COLUMN IF NOT EXISTS accepted_offer_message_id UUID REFERENCES messages(id) ON DELETE SET NULL;
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

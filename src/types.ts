@@ -178,6 +178,24 @@ export interface CartItem {
   variantOptions?: Record<string, string> | null;
 }
 
+/**
+ * One line the account cart refused to keep (`ignored`) or kept without its
+ * agreed price (`released`), as reported by PUT /api/cart (APP-Q097).
+ */
+export interface CartSyncIssue {
+  productId: string;
+  variantId?: string | null;
+  reason: string;
+}
+
+/** The same answer, tagged with what it means for the shopper, for the UI. */
+export interface CartSyncNotice {
+  kind: 'removed' | 'released';
+  productId: string;
+  variantId: string | null;
+  reason: string;
+}
+
 export interface OrderItem {
   id: string;
   order_id: string;
