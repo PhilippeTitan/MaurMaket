@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
+import { policyCurrentRequired } from '../middleware/policyAcceptance.js';
 import { msgLimiter } from '../middleware/rateLimit.js';
 import { createNotification } from '../utils/notifications.js';
 import { emitToUsers } from '../realtime.js';
@@ -17,7 +18,9 @@ async function notifyIfNeeded(userId, conversationId, title, body, data) {
 }
 
 // Send an offer
-router.post('/api/conversations/:id/offer', authRequired, msgLimiter, async (req, res) => {
+// Making an offer is a new commitment. Existing conversations and orders keep
+// working whatever the policy state (Batch 72, APP-Q359).
+router.post('/api/conversations/:id/offer', authRequired, msgLimiter, policyCurrentRequired('make_offer'), async (req, res) => {
   const client = await pool.connect();
   try {
     const { productId, offeredPrice } = req.body;

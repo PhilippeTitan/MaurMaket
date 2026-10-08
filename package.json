@@ -25,7 +25,8 @@
     "test:messagesearch": "node scripts/message-search-check.js",
     "test:cancellationscope": "node scripts/cancellation-scope-check.js",
     "test:bookmarks": "node scripts/message-bookmark-check.js",
-    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js && node scripts/icon-check.js && node scripts/signout-policy-check.js && node scripts/app-lock-check.js && node scripts/cart-sync-check.js && node scripts/kyc-access-check.js && node scripts/meetup-safety-check.js && node scripts/read-receipts-check.js && node scripts/conversation-list-check.js && node scripts/message-search-check.js && node scripts/cancellation-scope-check.js && node scripts/message-bookmark-check.js",
+    "test:policyenforcement": "node scripts/policy-enforcement-check.js",
+    "test": "node scripts/design-guardrails.js && node scripts/i18n-check.js && node scripts/icon-check.js && node scripts/signout-policy-check.js && node scripts/app-lock-check.js && node scripts/cart-sync-check.js && node scripts/kyc-access-check.js && node scripts/meetup-safety-check.js && node scripts/read-receipts-check.js && node scripts/conversation-list-check.js && node scripts/message-search-check.js && node scripts/cancellation-scope-check.js && node scripts/message-bookmark-check.js && node scripts/policy-enforcement-check.js",
     "test:realtime": "node scripts/realtime-check.js"
   },
   "dependencies": {

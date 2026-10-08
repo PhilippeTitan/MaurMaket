@@ -2022,6 +2022,24 @@ await step('NatCash phone separation', () => c.query(`
         ON message_bookmarks(user_id, created_at DESC);
     `));
 
+    // 96. Declined policy versions (Batch 72, APP-Q359: "If a user declines a
+    //    material update, explain the resulting access limits, preserve account
+    //    help and existing obligations, and provide closure/export paths").
+    //    Declining is a decision, so it is recorded against the exact version the
+    //    user read — exactly like acceptance — and kept as history rather than
+    //    being folded into the notice dismissal, which means something different.
+    await step('Declined policy versions', () => c.query(`
+      CREATE TABLE IF NOT EXISTS user_policy_declines (
+        id SERIAL PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind VARCHAR(16) NOT NULL,
+        version VARCHAR(32) NOT NULL,
+        declined_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (user_id, kind, version)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_policy_declines_user ON user_policy_declines (user_id, declined_at DESC);
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

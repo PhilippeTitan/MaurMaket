@@ -532,6 +532,8 @@ export interface PolicyDocumentState {
   accepted: { version: string; accepted_at: string } | null;
   acceptance_current: boolean;
   baseline: boolean;
+  /** True when the user read this exact version and declined it (APP-Q359). */
+  declined?: boolean;
   notice_dismissed: boolean;
 }
 
@@ -540,7 +542,23 @@ export interface PolicyState {
   supported_locales: string[];
   documents: PolicyDocumentState[];
   needs_acceptance: string[];
+  /**
+   * Batch 72 / APP-Q359 — the limits a pending or declined decision applies.
+   * Only these new commitments pause; `preserved_actions` is the promise that
+   * help, existing obligations, and closure/export paths keep working.
+   */
+  access?: PolicyAccessState;
   history: { kind: string; version: string; accepted_at: string }[];
+  declined_history?: { kind: string; version: string }[];
+}
+
+export interface PolicyAccessState {
+  restricted: boolean;
+  needs_decision: string[];
+  pending_decision: string[];
+  declined: string[];
+  gated_actions: string[];
+  preserved_actions: string[];
 }
 
 // Batch 73 / APP-Q369 — the account's private security activity history.

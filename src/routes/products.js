@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../config/database.js';
 import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired, accountActive } from '../middleware/auth.js';
+import { policyCurrentRequired } from '../middleware/policyAcceptance.js';
 import { createNotification } from '../utils/notifications.js';
 import { checkSubscriptionStatus } from '../utils/helpers.js';
 import {
@@ -564,7 +565,9 @@ router.get('/products/:id', optionalAuth, async (req, res) => {
 // PRODUCT CREATE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.post('/products', authRequired, verifiedSellerRequired, dobRequired, accountActive, async (req, res) => {
+// A new listing is a new commitment, so an undecided or declined material
+// policy pauses it. Everything the seller already has keeps working (Batch 72).
+router.post('/products', authRequired, verifiedSellerRequired, dobRequired, accountActive, policyCurrentRequired('create_listing'), async (req, res) => {
   if (!req.user?.email_verified) {
     return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to start selling.' });
   }

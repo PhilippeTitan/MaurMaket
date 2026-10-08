@@ -957,6 +957,13 @@ export const retryDataExport = (id: string, password?: string) =>
 export const getPolicies = (locale?: string) =>
   request<PolicyState>(`/policies${locale ? `?locale=${encodeURIComponent(locale)}` : ''}`);
 
+// Declining is recorded against the exact version the user read, and the reply
+// states the resulting access limits rather than just applying them (APP-Q359).
+export const declinePolicy = (kind: string, version: string) =>
+  request(`/policies/${encodeURIComponent(kind)}/decline`, {
+    method: 'POST',
+    body: JSON.stringify({ version }),
+  });
 export const acceptPolicy = (kind: string, version: string) =>
   request<{ kind: string; version: string; accepted_at: string | null }>(
     `/policies/${encodeURIComponent(kind)}/accept`,

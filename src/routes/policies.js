@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../config/database.js';
 import { authRequired } from '../middleware/auth.js';
 import { POLICY_KINDS, SUPPORTED_POLICY_LOCALES, DEFAULT_POLICY_LOCALE, resolvePolicyLocale } from '../utils/policyBaseline.js';
+import { policyDecisions, policyAccessState } from '../utils/policyAcceptancePolicy.js';
 
 const router = Router();
 
@@ -39,6 +40,19 @@ async function loadPolicyState(userId, locale) {
     ),
   ]);
 
+  const declines = await pool.query(
+    'SELECT kind, version FROM user_policy_declines WHERE user_id = $1 ORDER BY declined_at DESC, id DESC',
+    [userId]
+  );
+  // One shared decision model, so the enforcement gate and this screen can never
+  // disagree about who still owes an answer (Batch 72, APP-Q359).
+  const decisions = policyDecisions({
+    versions: versions.rows,
+    acceptances: acceptances.rows,
+    declines: declines.rows,
+  });
+  const decisionByKind = new Map(decisions.map((decision) => [decision.kind, decision]));
+
   const byKind = new Map();
   for (const row of versions.rows) {
     const list = byKind.get(row.kind) || [];
@@ -54,11 +68,14 @@ async function loadPolicyState(userId, locale) {
   const documents = [];
   for (const [kind, list] of byKind) {
     const current = list[list.length - 1];
-    const baseline = list.length > 0 && list[0].id === current.id;
+    const decision = decisionByKind.get(kind) || null;
+    const baseline = decision ? decision.baseline : (list.length > 0 && list[0].id === current.id);
     const accepted = acceptedLatest.get(kind) || null;
     const summaries = current.summaries || {};
     const text = summaries[locale] || summaries[DEFAULT_POLICY_LOCALE] || {};
-    const acceptanceCurrent = Boolean(accepted && accepted.version === current.version) || (baseline && !accepted);
+    const acceptanceCurrent = decision
+      ? decision.accepted_current
+      : (Boolean(accepted && accepted.version === current.version) || (baseline && !accepted));
     documents.push({
       kind,
       version: current.version,
@@ -72,6 +89,7 @@ async function loadPolicyState(userId, locale) {
       accepted: accepted ? { version: accepted.version, accepted_at: accepted.accepted_at } : null,
       acceptance_current: acceptanceCurrent,
       baseline,
+      declined: decision ? decision.declined : false,
       notice_dismissed: dismissed.has(`${kind}:${current.version}`),
     });
   }
@@ -82,7 +100,11 @@ async function loadPolicyState(userId, locale) {
     supported_locales: SUPPORTED_POLICY_LOCALES,
     documents,
     needs_acceptance: documents.filter(d => d.is_material && !d.acceptance_current).map(d => d.kind),
+    // The same access limits the enforcement gate applies, stated once so the
+    // screen can explain exactly what a decision would pause (APP-Q359).
+    access: policyAccessState(decisions),
     history: acceptances.rows.map(r => ({ kind: r.kind, version: r.version, accepted_at: r.accepted_at })),
+    declined_history: declines.rows.map(r => ({ kind: r.kind, version: r.version })),
   };
 }
 
@@ -183,6 +205,66 @@ router.post('/api/policies/:kind/dismiss', authRequired, async (req, res) => {
     res.json({ kind, version, dismissed_at: result.rows[0]?.dismissed_at || null });
   } catch (err) {
     console.error('Policy dismiss error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Decline a material update (Batch 72 / APP-Q359). Declining is a decision, not a
+// dismissal, so it is recorded against the exact version the user read — the
+// version is re-checked here for the same reason acceptance re-checks it, so a
+// stale client can never decline a document it did not actually see.
+//
+// The response states the resulting limits and what is preserved, because the
+// ledger requires the limits to be explained rather than merely applied. Nothing
+// here closes, freezes, or restricts the account itself: only new commitments
+// pause, and accepting the new version clears it immediately.
+router.post('/api/policies/:kind/decline', authRequired, async (req, res) => {
+  const kind = String(req.params.kind || '').toLowerCase();
+  const version = typeof req.body?.version === 'string' ? req.body.version.trim() : '';
+  if (!POLICY_KINDS.includes(kind)) {
+    return res.status(400).json({ error: 'Unknown policy', code: 'POLICY_UNKNOWN' });
+  }
+  if (!version) {
+    return res.status(400).json({ error: 'version is required', code: 'POLICY_VERSION_REQUIRED' });
+  }
+
+  try {
+    const current = await pool.query(
+      `SELECT version, is_material FROM policy_versions
+       WHERE kind = $1
+       ORDER BY effective_at DESC, id DESC
+       LIMIT 1`,
+      [kind]
+    );
+    if (!current.rows[0]) {
+      return res.status(404).json({ error: 'Policy not found', code: 'POLICY_NOT_FOUND' });
+    }
+    if (current.rows[0].version !== version) {
+      return res.status(409).json({
+        error: 'This policy has been updated',
+        code: 'POLICY_VERSION_STALE',
+        current_version: current.rows[0].version,
+      });
+    }
+
+    await pool.query(
+      `INSERT INTO user_policy_declines (user_id, kind, version)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, kind, version) DO NOTHING`,
+      [req.user.id, kind, version]
+    );
+
+    const state = await loadPolicyState(req.user.id, resolvePolicyLocale(req.query.locale));
+    res.json({
+      kind,
+      version,
+      declined: true,
+      access: state.access,
+      needs_acceptance: state.needs_acceptance,
+      preserved_actions: state.access.preserved_actions,
+    });
+  } catch (err) {
+    console.error('Policy decline error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

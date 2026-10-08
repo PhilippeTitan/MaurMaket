@@ -8,7 +8,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
-import { getPolicies, acceptPolicy, dismissPolicyNotice, OfflineError } from '../api';
+import { getPolicies, acceptPolicy, declinePolicy, dismissPolicyNotice, OfflineError } from '../api';
 import type { PolicyDocumentState, PolicyState } from '../types';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation';
@@ -82,6 +82,32 @@ export default function LegalPrivacyScreen({ navigation }: Props) {
     }
   }, [busyKind, t, toast]);
 
+  // APP-Q359 — declining is a decision, so it is recorded on the server against
+  // the exact version the user read, never only in local state. The reply states
+  // the resulting limits; nothing is recorded until the server confirms it, the
+  // same rule acceptance follows.
+  const handleDecline = useCallback(async (doc: PolicyDocumentState) => {
+    if (busyKind) return;
+    setBusyKind(doc.kind);
+    try {
+      await declinePolicy(doc.kind, doc.version);
+      setDeclineKind(null);
+      setReloadKey(k => k + 1);
+      toast.success(t('legal.title'), t('legal.declinedToast'));
+    } catch (err: any) {
+      if (err instanceof OfflineError) {
+        toast.error(t('legal.title'), t('legal.offlineAccept'));
+      } else if (err?.code === 'POLICY_VERSION_STALE') {
+        setReloadKey(k => k + 1);
+        toast.error(t('legal.title'), t('legal.staleVersion'));
+      } else {
+        toast.error(t('legal.title'), t('legal.declineFailed'));
+      }
+    } finally {
+      setBusyKind(null);
+    }
+  }, [busyKind, t, toast]);
+
   const handleDismiss = useCallback(async (doc: PolicyDocumentState) => {
     if (busyKind) return;
     setBusyKind(doc.kind);
@@ -125,6 +151,9 @@ export default function LegalPrivacyScreen({ navigation }: Props) {
                 <Text style={styles.noticeTitle}>{t('legal.noticeTitle')}</Text>
               </View>
               <Text style={styles.noticeBody}>{t('legal.noticeBody')}</Text>
+              {state?.access?.restricted ? (
+                <Text style={styles.noticeBody}>{t('legal.accessLimits')}</Text>
+              ) : null}
             </View>
           </Animated.View>
         ) : null}
@@ -218,6 +247,11 @@ export default function LegalPrivacyScreen({ navigation }: Props) {
                           </Text>
                         </TouchableOpacity>
                       ) : null}
+                      {doc.declined ? (
+                        <View style={styles.dismissedChip}>
+                          <Text style={styles.dismissedChipText}>{t('legal.declined')}</Text>
+                        </View>
+                      ) : null}
                       {pending ? (
                         <TouchableOpacity
                           style={styles.secondaryButton}
@@ -254,6 +288,19 @@ export default function LegalPrivacyScreen({ navigation }: Props) {
                   <View style={styles.declinePanel}>
                     <Text style={styles.sectionLabel}>{t('legal.declineTitle')}</Text>
                     <Text style={styles.infoBody}>{t('legal.declineBody')}</Text>
+                    <TouchableOpacity
+                      style={styles.declineConfirm}
+                      activeOpacity={0.7}
+                      onPress={() => void handleDecline(doc)}
+                      disabled={busyKind === doc.kind}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('legal.declineConfirm')}
+                      accessibilityState={{ disabled: busyKind === doc.kind, busy: busyKind === doc.kind }}
+                    >
+                      <Text style={styles.declineConfirmText}>
+                        {busyKind === doc.kind ? t('legal.declining') : t('legal.declineConfirm')}
+                      </Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.declineLink}
                       activeOpacity={0.65}
@@ -426,6 +473,11 @@ const styles = StyleSheet.create({
   declinePanel: { paddingHorizontal: SPACING.sm, paddingBottom: SPACING.md, gap: SPACING.xs },
   declineLink: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, minHeight: TOUCH.min },
   declineLinkText: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.semibold, color: COLORS.coral },
+  declineConfirm: {
+    minHeight: TOUCH.recommended, alignItems: 'center', justifyContent: 'center',
+    marginTop: SPACING.xs, borderRadius: RADIUS.button, borderWidth: 1, borderColor: COLORS.coral,
+  },
+  declineConfirmText: { color: COLORS.coral, fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.semibold },
 
   noteWrap: { paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm },
   bottomSpacer: { height: 60 },

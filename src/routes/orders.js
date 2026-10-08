@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../config/database.js';
 import { authRequired, dobRequired } from '../middleware/auth.js';
+import { policyCurrentRequired } from '../middleware/policyAcceptance.js';
 import { createNotification } from '../utils/notifications.js';
 import { logOrderEvent, canAccessOrder, processRefundPayout, parseNatCashSms, getCommissionRate, populateSellerOrderSnapshot } from '../utils/helpers.js';
 import { getNatCashAccess } from '../utils/natcashAccess.js';
@@ -2048,7 +2049,9 @@ router.post('/payments/abandoned', authRequired, async (req, res) => {
 
 // ── Create Order ──────────────────────────────────────────────────────────
 
-router.post('/orders', authRequired, dobRequired, async (req, res) => {
+// Placing an order is a new commitment: an undecided or declined material policy
+// pauses it while every existing order keeps working (Batch 72, APP-Q359).
+router.post('/orders', authRequired, dobRequired, policyCurrentRequired('place_order'), async (req, res) => {
   if (!req.user?.email_verified) {
     return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to place orders.' });
   }
