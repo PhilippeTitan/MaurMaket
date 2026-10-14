@@ -654,9 +654,10 @@ function PrimaryButton({ children, onPress, disabled }: { children: React.ReactN
 
 function StepActions({ children, step, label, onBack, compact, onMeasure }: { children: React.ReactNode; step: number; label: string; onBack: () => void; compact?: boolean; onMeasure?: (height: number) => void }) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   return (
     <>
-      <View style={s.stepTopBar}>
+      <View style={[s.stepTopBar, { top: Math.max(insets.top + 4, 28) }]}>
         <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={s.topBackAction} accessibilityRole="button" accessibilityLabel={t('common.back')}>
           <MaterialCommunityIcons name="arrow-left" size={18} color={C.sub} />
           <Text style={s.backActionText}>{t('signup.back')}</Text>
@@ -741,6 +742,11 @@ interface Props {
 
 export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0, initialGoogleInfo }: Props) {
   const insets = useSafeAreaInsets();
+  // Safe-area-aware chrome: the step bar clears the notch/status bar, and every
+  // layout that reserves space for it (body ceiling, DOB stage math) uses the same
+  // strip height, so the painted chrome and the reserved space stay in agreement.
+  const topBarTop = Math.max(insets.top + 4, 28);
+  const topBarStrip = topBarTop + TOUCH.min;
   const { t } = useTranslation();
   const reduceMotion = useReduceMotion();
   const STEP_LABELS = getStepLabels(t);
@@ -818,7 +824,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
   // controls keep their size and the picture is the only thing that changes between a 667px
   // phone and a 900px window.
   const [actionsHeight, setActionsHeight] = useState(0);
-  const stepBodyMax = Math.max(0, vp.height - STEP_SCROLL_PADDING - STEP_TOPBAR_STRIP - STEP_ACTIONBAR_GUTTER - (actionsHeight || STEP_CTA_HEIGHT));
+  const stepBodyMax = Math.max(0, vp.height - STEP_SCROLL_PADDING - topBarStrip - STEP_ACTIONBAR_GUTTER - (actionsHeight || STEP_CTA_HEIGHT));
   // The reveal circle starts from the measured button once the splash is pressed, and from
   // the window centre until then.
   const [revealOrigin, setRevealOrigin] = useState<{ x: number; y: number } | null>(null);
@@ -1221,7 +1227,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 1 -- WELCOME */}
             {index === 1 && (
-              <View style={[s.welcomeScreen, screenMin]}>
+              <View style={[s.welcomeScreen, screenMin, { paddingTop: insets.top + 8 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingTop: 8, paddingBottom: 24 }}>
                   <Logomark size={34} />
                   <Text style={{ fontSize: 17, fontWeight: '700', color: C.text }}>MaurMaket</Text>
@@ -1232,7 +1238,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
                   <Text style={s.heroAccent}>{t('signup.welcomeTitle2')}</Text>
                 </Text>
                 <Text style={[s.heroSub, { textAlign: 'center', alignSelf: 'center' }]}>{t('signup.welcomeBody')}</Text>
-                <View style={s.welcomeActions}>
+                <View style={[s.welcomeActions, { bottom: Math.max(18, insets.bottom + 16) }]}>
                   <PrimaryButton onPress={() => go(1)}>{t('signup.getStarted')}</PrimaryButton>
                   <TouchableOpacity onPress={onSwitchToSignin} style={{ paddingVertical: 14 }}>
                     <Text style={{ textAlign: 'center', color: C.sub, fontSize: 14, fontWeight: '500' }}>{t('signup.iHaveAccount')}</Text>
@@ -1243,7 +1249,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 2 -- NAME */}
             {index === 2 && (
-              <View style={[s.stepScreen, screenMin]}>
+              <View style={[s.stepScreen, screenMin, { paddingTop: topBarStrip }]}>
                 <View style={[s.centeredStepBody, s.nameStepBody, { maxHeight: stepBodyMax }]}>
                   <AssetIllustration asset="lets-start" accessibilityLabel={t('signup.illLetsStart')} />
                   <View style={s.nameFields}>
@@ -1270,7 +1276,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 3 -- USERNAME */}
             {index === 3 && (
-              <View style={[s.stepScreen, screenMin]}>
+              <View style={[s.stepScreen, screenMin, { paddingTop: topBarStrip }]}>
                 <View style={[s.centeredStepBody, { maxHeight: stepBodyMax }]}>
                   {/* The artwork lives in the body (not the CTA block) so it can give up height
                       on a short window and still leave the hint text somewhere visible. */}
@@ -1306,7 +1312,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 4 -- EMAIL */}
             {index === 4 && (
-              <View style={[s.stepScreen, screenMin]}>
+              <View style={[s.stepScreen, screenMin, { paddingTop: topBarStrip }]}>
                 <View style={[s.centeredStepBody, { maxHeight: stepBodyMax }]}>
                   <AssetIllustration
                     asset="digital-address"
@@ -1330,7 +1336,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 5 -- PURPOSE */}
             {index === 5 && (
-              <View style={[s.stepScreen, screenMin]}>
+              <View style={[s.stepScreen, screenMin, { paddingTop: topBarStrip }]}>
                 <View style={[s.centeredStepBody, s.purposeStepBody, { maxHeight: stepBodyMax }]}>
                   <AssetIllustration
                     asset="choose-purpose"
@@ -1398,7 +1404,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               // actionsHeight is the measured CTA block, so a step with a taller CTA gives the
               // wheel less room on its own — nothing here guesses a button height.
               const ctaTop = stepLayoutHeight - STEP_ACTIONBAR_GUTTER - (actionsHeight || STEP_CTA_HEIGHT);
-              const dobStageBudget = Math.max(0, ctaTop - DOB_STAGE_CTA_GAP - STEP_TOPBAR_STRIP);
+              const dobStageBudget = Math.max(0, ctaTop - DOB_STAGE_CTA_GAP - topBarStrip);
 
               // Drum first: it keeps its five rows unless the window can't hold a minimal card
               // and the selector row as well, in which case it sheds rows and the glass lens
@@ -1428,7 +1434,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               )));
               // Bottom-anchored: the stage rests on the CTA's shoulder, so opening the wheel
               // reads as a picker rising into place rather than a card drifting mid-screen.
-              const dobStageTop = Math.max(STEP_TOPBAR_STRIP, Math.round(ctaTop - DOB_STAGE_CTA_GAP - dobStageHeight));
+              const dobStageTop = Math.max(topBarStrip, Math.round(ctaTop - DOB_STAGE_CTA_GAP - dobStageHeight));
               // Where the selector row rests while the wheel is shut — tucked just under the
               // artwork, which is where the step's own bottom offset already puts it.
               const dobRowRestTop = stepLayoutHeight - DOB_ART_BOTTOM + DOB_ROW_GAP;
@@ -1439,7 +1445,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               // Back button on a short screen.
               const dobArtHeight = Math.round(Math.max(200, Math.min(
                 DOB_ART_HEIGHT,
-                stepLayoutHeight - DOB_ART_BOTTOM - STEP_TOPBAR_STRIP - STEP_BODY_GUTTER,
+                stepLayoutHeight - DOB_ART_BOTTOM - topBarStrip - STEP_BODY_GUTTER,
               )));
 
               // Closed: the stage is pushed down so the selector row sits under the artwork.
@@ -1470,7 +1476,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
               });
 
               return (
-                <View style={[s.stepScreen, screenMin]}>
+                <View style={[s.stepScreen, screenMin, { paddingTop: topBarStrip }]}>
                   {/* Backdrop dismiss when wheel is open */}
                   {dobPickerActive && (
                     <TouchableOpacity
@@ -1669,7 +1675,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 7 -- PASSWORD */}
             {index === 7 && (
-              <View style={[s.stepScreen, screenMin]}>
+              <View style={[s.stepScreen, screenMin, { paddingTop: topBarStrip }]}>
                 <View style={[s.centeredStepBody, { maxHeight: stepBodyMax }]}>
                   <AssetIllustration asset="keep-it-protected" accessibilityLabel={t('signup.illKeepProtected')} />
                 </View>
@@ -1692,7 +1698,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
 
             {/* SCREEN 8 -- REVIEW */}
             {index === 8 && (
-              <View style={[s.stepScreen, screenMin]}>
+              <View style={[s.stepScreen, screenMin, { paddingTop: topBarStrip }]}>
                 <View style={[s.reviewBody, { maxHeight: stepBodyMax }]}>
                   <AssetIllustration
                     asset="youre-ready"

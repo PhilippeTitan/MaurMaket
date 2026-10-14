@@ -103,7 +103,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={[styles.content, { paddingTop: insets.top + SPACING.md }]}>
+      <View style={[styles.content, { paddingTop: insets.top + SPACING.md, paddingBottom: insets.bottom + SPACING.lg }]}>
         <BackButton onPress={() => navigation.goBack()} style={{ marginBottom: SPACING.md }} />
 
         {/* Sheet handle */}

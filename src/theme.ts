@@ -32,21 +32,27 @@ function adaptiveColor(name: string, pair: ThemeColorPair): any {
 
 export const COLORS: Record<string, any> = {
   // Backgrounds
-  bg: adaptiveColor('bg', { light: '#F6F7F9', dark: '#0D1117', android: '?android:attr/colorBackground' }),
-  surface: adaptiveColor('surface', { light: '#FFFFFF', dark: '#161B22', android: '?android:attr/colorBackgroundFloating' }),
-  surface2: adaptiveColor('surface-2', { light: '#EEF0F3', dark: '#1C2235', android: '?android:attr/colorBackgroundFloating' }),
-  surfaceHover: adaptiveColor('surface-hover', { light: '#E8EBEF', dark: '#21262D', android: '?android:attr/colorBackgroundFloating' }),
+  // Android keys are explicit @color resources (values/ + values-night/), NOT
+  // ?android:attr theme attributes. Theme attrs like textColorPrimary resolve
+  // through ColorStateList resources, and RN's ColorPropConverter returns
+  // outValue.data as a single int — which comes back as garbage/white for
+  // ColorStateLists (white-on-white invisible text onboarding bug). Explicit
+  // color resources always resolve to a plain ARGB int and follow night mode.
+  bg: adaptiveColor('bg', { light: '#F6F7F9', dark: '#0D1117', android: '@color/mm_bg' }),
+  surface: adaptiveColor('surface', { light: '#FFFFFF', dark: '#161B22', android: '@color/mm_surface' }),
+  surface2: adaptiveColor('surface-2', { light: '#EEF0F3', dark: '#1C2235', android: '@color/mm_surface_2' }),
+  surfaceHover: adaptiveColor('surface-hover', { light: '#E8EBEF', dark: '#21262D', android: '@color/mm_surface_hover' }),
 
   // Borders
-  border: adaptiveColor('border', { light: '#E1E4E8', dark: '#21262D', android: '?android:attr/colorControlHighlight' }),
-  borderLight: adaptiveColor('border-light', { light: '#D2D7DE', dark: '#30363D', android: '?android:attr/colorControlHighlight' }),
+  border: adaptiveColor('border', { light: '#E1E4E8', dark: '#21262D', android: '@color/mm_border' }),
+  borderLight: adaptiveColor('border-light', { light: '#D2D7DE', dark: '#30363D', android: '@color/mm_border_light' }),
   borderFocus: '#FF4D6A',  // Focus ring color
 
   // Text
-  text: adaptiveColor('text', { light: '#18202B', dark: '#E6EDF3', android: '?android:attr/textColorPrimary' }),
-  text2: adaptiveColor('text-2', { light: '#596575', dark: '#8B949E', android: '?android:attr/textColorSecondary' }),
-  text3: adaptiveColor('text-3', { light: '#778292', dark: '#6E7681', android: '?android:attr/textColorSecondary' }),
-  textInverse: adaptiveColor('text-inverse', { light: '#FFFFFF', dark: '#0D1117', android: '?android:attr/textColorPrimaryInverse' }),
+  text: adaptiveColor('text', { light: '#18202B', dark: '#E6EDF3', android: '@color/mm_text' }),
+  text2: adaptiveColor('text-2', { light: '#596575', dark: '#8B949E', android: '@color/mm_text_2' }),
+  text3: adaptiveColor('text-3', { light: '#778292', dark: '#6E7681', android: '@color/mm_text_3' }),
+  textInverse: adaptiveColor('text-inverse', { light: '#FFFFFF', dark: '#0D1117', android: '@color/mm_text_inverse' }),
 
   // Brand / Accent
   coral: '#FF4D6A',        // Primary accent (CTAs, active states)
@@ -201,7 +207,11 @@ const WEB_THEME_COLORS = {
 
 /** Apply app appearance to platform-native controls and the web document. */
 export function applyAppearanceMode(mode: AppearanceMode, systemScheme?: 'light' | 'dark' | null): void {
-  const appearance = mode === 'system' ? 'auto' : mode;
+  // RN Android's AppearanceModule.setColorScheme only matches "dark", "light"
+  // and "unspecified" — any other string (e.g. "auto") silently no-ops, leaving
+  // a previously forced dark/light night mode stuck. "unspecified" is the
+  // documented follow-system value (see Appearance.js setColorScheme).
+  const appearance = mode === 'system' ? 'unspecified' : mode;
   if (Platform.OS !== 'web') {
     // React Native Appearance applies the override to the app only.
     const { Appearance } = require('react-native');

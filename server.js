@@ -615,8 +615,8 @@ async function runMigrations(targetPool) {
       );
       CREATE TABLE IF NOT EXISTS seller_locations (
         seller_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-        lat DECIMAL(10,7) NOT NULL,
-        lng DECIMAL(10,7) NOT NULL,
+        lat DECIMAL(10,7),
+        lng DECIMAL(10,7),
         is_visible BOOLEAN DEFAULT true,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -631,6 +631,13 @@ async function runMigrations(targetPool) {
       ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_lng DECIMAL(10,3);
       ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_area_confirmed BOOLEAN NOT NULL DEFAULT false;
       UPDATE seller_locations SET is_visible = false WHERE public_area_confirmed = false AND is_visible = true;
+    `));
+    // Private fulfillment coordinates became optional once the map flow switched to
+    // consented public_lat/public_lng only: the first-time INSERT writes no lat/lng,
+    // so the legacy NOT NULL constraint made every first-time save fail with 23502.
+    await step('seller_locations optional private coordinates', () => c.query(`
+      ALTER TABLE seller_locations ALTER COLUMN lat DROP NOT NULL;
+      ALTER TABLE seller_locations ALTER COLUMN lng DROP NOT NULL;
     `));
 
     // 25. Sale price columns

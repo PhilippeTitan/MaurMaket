@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, Component, Suspense, useCallback } from 'react';
-import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text, AppState, Modal, Pressable, useColorScheme } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, TouchableOpacity, Linking, Text, AppState, Modal, Pressable, useColorScheme, Appearance } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -296,6 +296,15 @@ export default function App() {
   const appLockedRef = useRef(false);
   const justUnlockedRef = useRef(false);
   useEffect(() => { appLockedRef.current = appLocked; }, [appLocked]);
+  // Android resolves PlatformColor / ?android:attr references once, when a prop is
+  // first set, into a concrete color int. After the user (or the OS) flips night
+  // mode, already-mounted views keep the old ints, so a theme change looked like it
+  // "needed an app restart". Remounting the tree re-resolves every adaptive color.
+  // iOS DynamicColorIOS and web CSS variables update in place and don't need this;
+  // the key change is a no-op cost there. First application is skipped so launch
+  // doesn't remount.
+  const [themeEpoch, setThemeEpoch] = useState(0);
+  const lastResolvedSchemeRef = useRef<string | null>(null);
 
   // One place decides whether this device should lock right now. The rules live
   // in src/utils/appLockPolicy.js; this gathers the four inputs they need.
@@ -404,6 +413,13 @@ export default function App() {
 
   useEffect(() => {
     applyAppearanceMode(appearanceMode, systemColorScheme === 'light' || systemColorScheme === 'dark' ? systemColorScheme : null);
+    const resolved = appearanceMode === 'system'
+      ? (systemColorScheme === 'light' || systemColorScheme === 'dark' ? systemColorScheme : 'light')
+      : appearanceMode;
+    if (lastResolvedSchemeRef.current !== null && lastResolvedSchemeRef.current !== resolved) {
+      setThemeEpoch((e) => e + 1);
+    }
+    lastResolvedSchemeRef.current = resolved;
   }, [appearanceMode, systemColorScheme]);
 
   useEffect(() => {
@@ -622,7 +638,7 @@ export default function App() {
     </NavigationContainer>
   );
 
-  return <GestureHandlerRootView style={{ flex: 1 }}><QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner /><ForegroundNotificationBanner navigationRef={navigationRef} />{appContent}<DobConfirmModal visible={pendingDob} allowSkip onCompleted={() => setPendingDob(false)} />{isLoggedIn && !pendingDob && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}<Modal visible={!!paymentFailed} transparent animationType="fade"><Pressable style={pmStyles.overlay} onPress={() => setPaymentFailed(null)}><Pressable style={pmStyles.card} onPress={() => {}}><View style={pmStyles.iconWrap}><MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} /></View><Text style={pmStyles.title}>{paymentFailed?.title}</Text><Text style={pmStyles.message}>{paymentFailed?.message}</Text><TouchableOpacity style={pmStyles.retryBtn} onPress={() => { paymentFailed?.onRetry(); setPaymentFailed(null); }}><Text style={pmStyles.retryText}>Retry Payment</Text></TouchableOpacity><TouchableOpacity style={pmStyles.cancelBtn} onPress={() => setPaymentFailed(null)}><Text style={pmStyles.cancelText}>Cancel</Text></TouchableOpacity></Pressable></Pressable></Modal><AppLockGate visible={appLocked} onUnlocked={handleAppUnlocked} onSignOut={handleAppLockSignOut} /></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider></GestureHandlerRootView>;
+  return <GestureHandlerRootView key={`theme-${themeEpoch}`} style={{ flex: 1 }}><QueryClientProvider client={queryClient}><SafeAreaProvider><ToastProvider><ErrorBoundary><OfflineBanner /><ForegroundNotificationBanner navigationRef={navigationRef} />{appContent}<DobConfirmModal visible={pendingDob} allowSkip onCompleted={() => setPendingDob(false)} />{isLoggedIn && !pendingDob && store.user?.taste_onboarding_completed === false && <TasteOnboarding />}<Modal visible={!!paymentFailed} transparent animationType="fade"><Pressable style={pmStyles.overlay} onPress={() => setPaymentFailed(null)}><Pressable style={pmStyles.card} onPress={() => {}}><View style={pmStyles.iconWrap}><MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.coral} /></View><Text style={pmStyles.title}>{paymentFailed?.title}</Text><Text style={pmStyles.message}>{paymentFailed?.message}</Text><TouchableOpacity style={pmStyles.retryBtn} onPress={() => { paymentFailed?.onRetry(); setPaymentFailed(null); }}><Text style={pmStyles.retryText}>Retry Payment</Text></TouchableOpacity><TouchableOpacity style={pmStyles.cancelBtn} onPress={() => setPaymentFailed(null)}><Text style={pmStyles.cancelText}>Cancel</Text></TouchableOpacity></Pressable></Pressable></Modal><AppLockGate visible={appLocked} onUnlocked={handleAppUnlocked} onSignOut={handleAppLockSignOut} /></ErrorBoundary></ToastProvider></SafeAreaProvider></QueryClientProvider></GestureHandlerRootView>;
 }
 
 const styles = StyleSheet.create({

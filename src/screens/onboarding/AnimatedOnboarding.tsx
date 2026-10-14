@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, View, Text, StyleSheet, Animated, Easing, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { COLORS } from '../../theme';
@@ -244,6 +245,7 @@ function Loader({ autoExpand, onComplete, onPressChange }: {
 
 export default function AnimatedOnboarding({ onSwitchToSignin, onNaturalComplete, onGoogleComplete }: AnimatedOnboardingProps) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [googleLoading, setGoogleLoading] = useState(false);
   const [autoExpand, setAutoExpand] = useState(false);
   const controlsOpacity = useRef(new Animated.Value(1)).current;
@@ -290,7 +292,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, onNaturalComplete
         <Animated.View style={{ flex: 1, opacity: fade }}>
           <Loader autoExpand={autoExpand} onComplete={handleComplete} onPressChange={handlePressChange} />
         </Animated.View>
-        <Animated.View style={[styles.authActions, { opacity: controlsOpacity }]}>
+        <Animated.View style={[styles.authActions, { opacity: controlsOpacity, bottom: Math.max(32, insets.bottom + 16) }]}>
           <GoogleButton onPress={handleGoogle} loading={googleLoading} label={t('auth.googleSignUp')} />
           {onSwitchToSignin && (
             <Pressable onPress={onSwitchToSignin} hitSlop={{ top: 10, bottom: 10, left: 24, right: 24 }} style={styles.signinAction}>

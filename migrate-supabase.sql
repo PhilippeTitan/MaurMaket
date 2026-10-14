@@ -462,8 +462,8 @@ CREATE TABLE IF NOT EXISTS feed_events (
 
 CREATE TABLE IF NOT EXISTS seller_locations (
   seller_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  lat DECIMAL(10,7) NOT NULL,
-  lng DECIMAL(10,7) NOT NULL,
+  lat DECIMAL(10,7),
+  lng DECIMAL(10,7),
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -543,6 +543,10 @@ ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_lat DECIMAL(10,3);
 ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_lng DECIMAL(10,3);
 ALTER TABLE seller_locations ADD COLUMN IF NOT EXISTS public_area_confirmed BOOLEAN NOT NULL DEFAULT false;
 UPDATE seller_locations SET is_visible = false WHERE public_area_confirmed = false AND is_visible = true;
+-- Private fulfillment coordinates are optional: the map flow writes only consented
+-- public points, and the first-time INSERT omits lat/lng entirely.
+ALTER TABLE seller_locations ALTER COLUMN lat DROP NOT NULL;
+ALTER TABLE seller_locations ALTER COLUMN lng DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS unmatched_payments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
