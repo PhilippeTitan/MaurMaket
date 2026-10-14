@@ -3,13 +3,12 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated, Image, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
-import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
 import { ONBOARDING_COLORS } from './onboarding/theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
-import ProfileCard from '../components/ProfileCard';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -20,13 +19,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'AccountDashboard'>;
 /**
  * Account Dashboard
  *
- * Architecture: PROFILE CARD → PERSONAL INFO → CONTACT INFO → PREFERENCES
+ * Architecture: PERSONAL INFO → CONTACT INFO → PREFERENCES
  *
  * ┌─────────────────────────────────────┐
- * │ PROFILE CARD                        │
- * │  64px avatar, name, @username       │
- * │  tier badge, verification status    │
- * ├─────────────────────────────────────┤
  * │ PERSONAL INFORMATION                │
  * │  Full name                          │
  * │  Bio                                │
@@ -47,7 +42,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
   const { user } = useUser();
 
   const sections = useRef(
-    Array.from({ length: 5 }, () => ({
+    Array.from({ length: 3 }, () => ({
       opacity: new Animated.Value(0),
       translateY: new Animated.Value(16),
     }))
@@ -71,12 +66,6 @@ export default function AccountDashboardScreen({ navigation }: Props) {
 
   const langLabel = language === 'en' ? 'English' : language === 'ht' ? 'Kreyòl' : 'Français';
   const isVerified = user?.email_verified;
-  const tierLabel =
-    user?.seller_tier === 'business' ? t('productDetail.trustBusiness')
-    : user?.seller_tier === 'verified' ? t('settings.verified')
-    : user?.seller_tier === 'casual' ? t('sellerOnboarding.casualTitle')
-    : null;
-  const tierColor = user?.seller_tier ? TIER_COLORS[user.seller_tier] ?? COLORS.text2 : undefined;
 
   return (
     <View style={styles.container}>
@@ -84,13 +73,11 @@ export default function AccountDashboardScreen({ navigation }: Props) {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* ── Profile Card ── */}
-        <Animated.View style={animStyle(0)}>
-          <ProfileCard compact user={user} onPress={() => navigation.navigate('EditProfile')} />
-        </Animated.View>
+        {/* The identity card lives on Settings and the Me tab now — this page is
+            the account fields themselves (Philippe, 2026-10-08). */}
 
         {/* ── Personal Information ── */}
-        <Animated.View style={animStyle(1)}>
+        <Animated.View style={animStyle(0)}>
           <SettingsGroup
             header={t('account.personalInfo')}
             description={t('account.personalInfoDesc')}
@@ -132,7 +119,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* ── Contact Information ── */}
-        <Animated.View style={animStyle(2)}>
+        <Animated.View style={animStyle(1)}>
           <SettingsGroup
             header={t('account.contactInfo')}
             description={t('account.contactInfoDesc')}
@@ -168,16 +155,12 @@ export default function AccountDashboardScreen({ navigation }: Props) {
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>{t('field.phone')}</Text>
-                <View style={styles.valueRow}>
-                  <Text style={styles.rowValue} numberOfLines={1}>
-                    {user?.phone ? `+509 ${user.phone}` : t('account.addPhone')}
-                  </Text>
-                  {user?.phone && (
-                    <View style={styles.phoneBadge}>
-                      <Text style={styles.phoneBadgeText}>MonCash</Text>
-                    </View>
-                  )}
-                </View>
+                {/* A contact/delivery number — the "MonCash" badge was removed
+                    (Session 422/423): MonCash payments never use a stored
+                    number, so the badge promised a purpose the app lacks. */}
+                <Text style={styles.rowValue} numberOfLines={1}>
+                  {user?.phone ? `+509 ${user.phone}` : t('account.addPhone')}
+                </Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
             </TouchableOpacity>
@@ -185,26 +168,13 @@ export default function AccountDashboardScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* ── Preferences ── */}
-        <Animated.View style={animStyle(3)}>
+        <Animated.View style={animStyle(2)}>
           <SettingsGroup
             header={t('account.preferencesHeader')}
             description={t('account.preferencesDesc')}
           >
-            <TouchableOpacity
-              style={styles.row}
-              activeOpacity={0.6}
-              onPress={() => navigation.navigate('UsernameSettings')}
-            >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="at" size={20} color={COLORS.text2} />
-              </View>
-              <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>{t('field.username')}</Text>
-                <Text style={styles.rowValue}>{user?.username ? `@${user.username}` : t('common.notSet')}</Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
-            </TouchableOpacity>
-            <View style={styles.divider} />
+            {/* @username edits in exactly one place — the identity row on Edit
+                Profile (Philippe, 2026-10-08). It is not a preference. */}
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.6}
@@ -270,16 +240,6 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.medium, color: ONBOARDING_COLORS.text },
   rowValue: { fontSize: FONT_SIZES.sm, color: ONBOARDING_COLORS.sub, marginTop: 2 },
   valueRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  phoneBadge: {
-    backgroundColor: 'rgba(0, 194, 255, 0.15)',
-    borderRadius: RADIUS.xs,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    marginLeft: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 194, 255, 0.32)',
-  },
-  phoneBadgeText: { fontSize: FONT_SIZES.xs - 1, color: ONBOARDING_COLORS.blue, fontWeight: FONT_WEIGHTS.semibold },
 
   // Divider
   divider: {

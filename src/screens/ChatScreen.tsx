@@ -283,6 +283,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [conversationIsMuted, setConversationIsMuted] = useState(false);
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [blockedByOther, setBlockedByOther] = useState(false);
+  // Message requests (APP-Q154, Q166–Q172). While a request is pending the thread
+  // is not a chat yet: the sender gets one message, the recipient answers in the
+  // Requests area, and neither gets a read receipt here.
+  const [requestInfo, setRequestInfo] = useState<{
+    state: string | null; role: string; senderStatus: string | null;
+    recipientState: string | null; canSend: boolean;
+  } | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [, setHeaderHeight] = useState(0);
   const [page, setPage] = useState(0);
@@ -526,6 +533,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         setConversationIsMuted(!!res.context.isMuted);
         setBlockedByMe(!!res.context.blockedByMe);
         setBlockedByOther(!!res.context.blockedByOther);
+        if (res.context.request) setRequestInfo(res.context.request);
         // They may have read receipts off: ticks stop at "delivered" and the
         // chat says so quietly rather than pretending a read happened.
         if (typeof res.context.readReceiptsOff === 'boolean') setReadReceiptsOff(res.context.readReceiptsOff);
@@ -715,6 +723,11 @@ startPolling();
           setMessages(prev => prev.map(m => (m.sender_id === store.user?.id ? { ...m, delivery_status: 'read' as const } : m)));
         }
       } else if (e.type === 'offer_updated' && e.conversationId === conversationId) {
+        lastMessageCursor.current = null;
+        fetchMessages(0, false, true);
+      } else if (e.type === 'request_updated' && e.conversationId === conversationId) {
+        // The recipient accepted: the thread becomes an ordinary conversation
+        // for both people, so the held composer is resolved from the server.
         lastMessageCursor.current = null;
         fetchMessages(0, false, true);
       } else if (e.type === 'block_updated' && e.blockerId && e.blockedId) {
@@ -1622,7 +1635,23 @@ startPolling();
           </View>
         )}
         <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md), opacity: blockedByMe || blockedByOther ? 0.55 : 1 }]}>
-          {recording ? (
+          {/* A pending message request holds the composer: one plain message for
+              the sender, and the recipient answers in Message Requests. A
+              declined request keeps the sender's composer held and shows only
+              the neutral status (APP-Q167/Q172). */}
+          {(requestInfo?.state === 'pending' || (requestInfo?.state === 'declined' && requestInfo?.role === 'requester')) && (
+            <View style={styles.requestNotice}>
+              <MaterialCommunityIcons name="email-lock-outline" size={16} color={COLORS.text2} />
+              <Text style={styles.requestNoticeText}>
+                {requestInfo?.state === 'declined'
+                  ? t('requests.senderDeclined')
+                  : requestInfo.role === 'requester'
+                    ? (requestInfo.canSend ? t('requests.senderHint') : t('requests.senderWaitingBody'))
+                    : t('requests.recipientHint')}
+              </Text>
+            </View>
+          )}
+          {requestInfo && !requestInfo.canSend ? null : recording ? (
             <View style={styles.recordingRow}>
               <TouchableOpacity onPress={() => stopRecording(false)} style={styles.recordingCancel} accessibilityLabel={t('common.cancel')} accessibilityRole="button">
                 <MaterialCommunityIcons name="close-circle" size={28} color={COLORS.text2} />
@@ -1999,6 +2028,12 @@ const styles = StyleSheet.create({
   offlineBannerText: { flex: 1, fontSize: 11.5, color: '#F5A623', fontWeight: '600' },
   blockedBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.md, paddingVertical: 10, backgroundColor: COLORS.surface2, borderTopWidth: 1, borderColor: COLORS.border },
   blockedBannerText: { flex: 1, color: COLORS.text2, fontSize: 12 },
+  requestNotice: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.surface2, borderRadius: RADIUS.row, margin: SPACING.sm,
+  },
+  requestNoticeText: { flex: 1, color: COLORS.text2, fontSize: 12, lineHeight: 17 },
   unblockText: { color: COLORS.coral, fontWeight: '700', marginLeft: 12 },
   receiptsNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: SPACING.md, paddingVertical: 6 },
   receiptsNoteText: { color: COLORS.text3, fontSize: 11 },

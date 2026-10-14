@@ -39,6 +39,12 @@ export interface User {
   search_discoverable?: boolean;
   /** Inbox/Messaging decision: configurable read receipts, default on. */
   read_receipts_enabled?: boolean;
+  // Batch 77 (APP-Q416/APP-Q432): optional product-usage analytics are separated
+  // from essential reliability/security records, and nothing optional is
+  // recorded unless the user allows it — hence the opted-out default.
+  analytics_opt_out?: boolean;
+  /** When the analytics choice was last actually changed (null = never touched). */
+  analytics_decision_at?: string | null;
   language?: string;
   pinned_product_id?: string | null;
   pinned_product?: {
@@ -365,6 +371,12 @@ export interface Conversation {
   other_party_name?: string;
   other_party_username?: string | null;
   last_message_type?: string;
+  // Message requests (APP-Q154, Q172): only ever 'pending' on a first-contact
+  // thread; ordinary and order conversations carry null.
+  request_state?: string | null;
+  requested_by?: string | null;
+  /** Sender-side label: waiting for acceptance, or neutrally not accepted. */
+  request_label?: 'waiting' | 'not_accepted' | null;
 }
 
 export interface Message {

@@ -7,12 +7,14 @@ import { useReduceMotion } from '../../hooks';
 
 interface OwnerActionsProps {
   variant: 'owner';
-  editLabel: string;
+  /** The prominent labelled button: Seller Tools on a seller's own tab, Edit Profile otherwise. */
+  primaryLabel: string;
   shareLabel: string;
-  visitorLabel: string;
-  onEdit: () => void;
+  /** Label for the square icon button, which opens Edit Profile. */
+  iconLabel?: string;
+  onPrimary: () => void;
   onShare: () => void;
-  onVisitorView?: () => void;
+  onIconPress?: () => void;
 }
 
 interface VisitorActionsProps {
@@ -32,24 +34,25 @@ type Props = OwnerActionsProps | VisitorActionsProps;
 /**
  * Profile actions, shared by both surfaces.
  *
- * Owner: one prominent Edit Profile button with Share and Visitor View as
- * smaller secondary controls beside it. Visitor: Message is the primary action
- * (shopping happens on the listing page), Follow is secondary and updates
- * immediately with a small state change.
+ * Owner: one prominent context button (Seller Tools for a seller, Edit Profile
+ * otherwise) with Share beside it, and a pencil icon that opens Edit Profile —
+ * the old visitor-preview eye was removed on Philippe's call (Session 422).
+ * Visitor: Message is the primary action (shopping happens on the listing
+ * page), Follow is secondary and updates immediately with a small state change.
  */
 export default function ProfileActions(props: Props) {
   if (props.variant === 'owner') {
-    const { editLabel, shareLabel, visitorLabel, onEdit, onShare, onVisitorView } = props;
+    const { primaryLabel, shareLabel, iconLabel, onPrimary, onShare, onIconPress } = props;
     return (
       <View style={styles.row}>
         <TouchableOpacity
           style={styles.ownerBtn}
-          onPress={onEdit}
+          onPress={onPrimary}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel={editLabel}
+          accessibilityLabel={primaryLabel}
         >
-          <Text style={styles.ownerBtnText}>{editLabel}</Text>
+          <Text style={styles.ownerBtnText}>{primaryLabel}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.ownerBtn}
@@ -60,15 +63,15 @@ export default function ProfileActions(props: Props) {
         >
           <Text style={styles.ownerBtnText}>{shareLabel}</Text>
         </TouchableOpacity>
-        {onVisitorView ? (
+        {onIconPress ? (
           <TouchableOpacity
             style={styles.ownerIconBtn}
-            onPress={onVisitorView}
+            onPress={onIconPress}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel={visitorLabel}
+            accessibilityLabel={iconLabel}
           >
-            <MaterialCommunityIcons name="eye-outline" size={20} color={COLORS.text} />
+            <MaterialCommunityIcons name="pencil" size={20} color={COLORS.text} />
           </TouchableOpacity>
         ) : null}
       </View>

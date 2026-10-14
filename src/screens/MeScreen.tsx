@@ -10,7 +10,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH, FONTS,
-  getDisplayName, formatPrice, TIER_COLORS,
+  getDisplayName, formatPrice, LAYOUT, SHADOW,
 } from '../theme';
 import { useTranslation } from '@/localization';
 import { useUser, useReduceMotion } from '../hooks';
@@ -99,10 +99,6 @@ export default function MeScreen() {
   const displayedName = profileName || fullName || username || t('profile.you');
   const displayName = displayedName;
   const isVerified = tier === 'verified' || tier === 'business';
-  const tierLabel =
-    tier === 'business' ? t('profile.tierBusiness')
-    : tier === 'verified' ? t('profile.tierVerified')
-    : t('profile.tierCasual');
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : '';
@@ -373,15 +369,6 @@ export default function MeScreen() {
           <>
             <TouchableOpacity
               style={styles.headerIconBtn}
-              onPress={() => nav.navigate(isSeller ? 'AddListing' : 'SellerOnboarding')}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={isSeller ? t('me.addListing') : t('me.becomeSeller')}
-            >
-              <MaterialCommunityIcons name="plus" size={24} color={COLORS.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerIconBtn}
               onPress={() => nav.navigate('Settings')}
               activeOpacity={0.7}
               accessibilityRole="button"
@@ -401,7 +388,7 @@ export default function MeScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: contentTopPad, paddingBottom: insets.bottom + 96 },
+          { paddingTop: contentTopPad, paddingBottom: insets.bottom + 150 },
         ]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.coral} />}
         onScroll={onScroll}
@@ -521,40 +508,17 @@ export default function MeScreen() {
               <View style={styles.actionsWrap}>
                 <ProfileActions
                   variant="owner"
-                  editLabel={t('me.editProfile')}
+                  primaryLabel={isSeller ? t('profile.sellerTools') : t('me.editProfile')}
                   shareLabel={t('profile.shareProfile')}
-                  visitorLabel={t('profile.visitorView')}
-                  onEdit={() => nav.navigate('EditProfile')}
+                  iconLabel={t('me.editProfile')}
+                  onPrimary={() => nav.navigate(isSeller ? 'SellerToolsSettings' : 'EditProfile')}
                   onShare={handleShareProfile}
-                  onVisitorView={user ? () => nav.navigate('Storefront', { sellerId: user.id }) : undefined}
+                  onIconPress={isSeller ? () => nav.navigate('EditProfile') : undefined}
                 />
               </View>
 
-              {isSeller ? (
-                <TouchableOpacity
-                  style={styles.sellerToolsRow}
-                  onPress={() => nav.navigate('SellerToolsSettings')}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('profile.sellerTools')}
-                >
-                  <View style={styles.sellerToolsIconWrap}>
-                    <MaterialCommunityIcons name="storefront-outline" size={18} color={COLORS.coral} />
-                  </View>
-                  <View style={styles.sellerToolsInfo}>
-                    <View style={styles.sellerToolsHeader}>
-                      <Text style={styles.sellerToolsTitle}>{t('profile.sellerTools')}</Text>
-                      <View style={[styles.tierTag, { backgroundColor: (TIER_COLORS[tier] || COLORS.blue) + '20' }]}>
-                        <Text style={[styles.tierTagText, { color: TIER_COLORS[tier] || COLORS.blue }]}>{tierLabel}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.sellerToolsSub}>
-                      {t('profile.listingsCount', { count: products.length })} · {t('profile.salesCount', { count: sellingOrderCount })}
-                    </Text>
-                  </View>
-                  <Icon name="chevron-right" size={18} color={COLORS.text2} />
-                </TouchableOpacity>
-              ) : (
+              {/* Seller Tools lives in the actions row now; the standalone card is gone. */}
+              {!isSeller && (
                 <TouchableOpacity
                   style={styles.sellBanner}
                   onPress={() => nav.navigate('SellerOnboarding')}
@@ -652,8 +616,6 @@ export default function MeScreen() {
                         icon="storefront-outline"
                         title={t('me.noListings')}
                         hint={t('me.noListingsHint')}
-                        actionLabel={t('me.addListing')}
-                        onAction={() => nav.navigate('AddListing')}
                         size={56}
                         topSpacing={SPACING.xl}
                       />
@@ -751,6 +713,21 @@ export default function MeScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* One way to add a listing, always one tap away — mirrors Inbox's chat FAB. */}
+      <TouchableOpacity
+        style={[
+          styles.newListingFab,
+          { bottom: (insets.bottom > 0 ? insets.bottom + SPACING.xs : LAYOUT.tabBarMarginBottom) + LAYOUT.tabBarHeight + SPACING.sm },
+        ]}
+        onPress={() => nav.navigate(isSeller ? 'AddListing' : 'SellerOnboarding')}
+        accessibilityRole="button"
+        accessibilityLabel={isSeller ? t('me.addListing') : t('me.becomeSeller')}
+        activeOpacity={0.85}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <MaterialCommunityIcons name="plus" size={24} color={COLORS.white} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -866,34 +843,20 @@ const styles = StyleSheet.create({
 
   actionsWrap: { marginTop: SPACING.lg },
 
-  /* Seller tools + buyer CTA */
-  sellerToolsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    marginTop: SPACING.md,
-    padding: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.card,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    minHeight: 56,
-  },
-  sellerToolsIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surface2,
+  /* The floating +, mirroring Inbox's chat FAB. */
+  newListingFab: {
+    position: 'absolute',
+    right: SPACING.lg,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: COLORS.coral,
     alignItems: 'center',
     justifyContent: 'center',
+    ...SHADOW.xl,
   },
-  sellerToolsInfo: { flex: 1, gap: 2 },
-  sellerToolsHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  sellerToolsTitle: { fontSize: FONT_SIZES.md, fontWeight: FONT_WEIGHTS.bold, color: COLORS.text },
-  tierTag: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: RADIUS.pill },
-  tierTagText: { fontSize: FONT_SIZES.xs, fontWeight: FONT_WEIGHTS.bold },
-  sellerToolsSub: { fontSize: FONT_SIZES.sm, color: COLORS.text2 },
 
+  /* Buyer CTA (sellers reach Seller Tools from the actions row) */
   sellBanner: {
     flexDirection: 'row',
     alignItems: 'center',

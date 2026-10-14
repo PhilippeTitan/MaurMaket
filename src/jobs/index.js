@@ -4,6 +4,7 @@ import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveO
 import { createNotification, sendPushNotification, isDailySummaryEligible, getLocalClock, isValidTime, isQuietHoursEndNow, isQuietHoursScheduleEndingToday } from '../utils/notifications.js';
 import { expireTemporaryStorageUploads } from '../utils/temporaryStorage.js';
 import { checkAndProcessExpiredSubscriptions } from '../utils/tierCap.js';
+import { shouldArchiveStaleRequest } from '../utils/messageRequestPolicy.js';
 
 export function startJobs() {
   // NatCash access reminders are informational; entitlement is still checked
@@ -560,6 +561,34 @@ export function startJobs() {
     }
   });
 
+  // ───── Cron: File away stale unanswered message requests (daily) ─────
+  // APP-Q168: an unanswered request is never silently expired quickly. After the
+  // disclosed period it moves to the recipient's own archive, where a one-tap
+  // restore puts it back. Nothing is deleted, and no sender is notified.
+  cron.schedule('0 4 * * *', async () => {
+    try {
+      const candidates = await pool.query(
+        `SELECT id, created_at FROM conversations
+          WHERE request_state = 'pending' AND request_archived_at IS NULL
+          ORDER BY created_at ASC LIMIT 200`
+      );
+      // The shared policy decides, not this query — so the job and the API agree
+      // on what "stale" means.
+      const stale = candidates.rows
+        .filter((row) => shouldArchiveStaleRequest({ createdAt: row.created_at }))
+        .map((row) => row.id);
+      if (stale.length > 0) {
+        await pool.query(
+          'UPDATE conversations SET request_archived_at = CURRENT_TIMESTAMP WHERE id = ANY($1::uuid[]) AND request_state = \'pending\'',
+          [stale]
+        );
+        console.log(`[MESSAGE REQUESTS] Archived ${stale.length} stale request(s)`);
+      }
+    } catch (err) {
+      console.error('[MESSAGE REQUESTS] Archive job error:', err.message);
+    }
+  });
+
   // ───── Cron: Expired business subscriptions & tier-cap enforcement (hourly) ─────
   cron.schedule('0 * * * *', async () => {
     await checkAndProcessExpiredSubscriptions();
@@ -610,5 +639,5 @@ export function startJobs() {
     }
   }, { timezone: 'America/Port-au-Prince' });
 
-  console.log('[JOBS] All cron jobs started: meetup timeout, refund retry, stale orders, offer expiry, notification cleanup, stock release, natcash session expiry, daily summary, action reminders, review reminder, tier cap check');
+  console.log('[JOBS] All cron jobs started: meetup timeout, refund retry, stale orders, offer expiry, notification cleanup, stock release, natcash session expiry, daily summary, action reminders, review reminder, stale message requests, tier cap check');
 }

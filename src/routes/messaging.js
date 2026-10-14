@@ -10,6 +10,10 @@ import { touchPresence, markConversationActive, isConversationOpen, isOnline, la
 import { staysInInbox, normalizeMarkUnread, inboxUnreadTotal } from '../utils/conversationListPolicy.js';
 import { normalizeSearchQuery, MESSAGE_SEARCH_LIMIT } from '../utils/messageSearchPolicy.js';
 import { bookmarkableMessage, bookmarkExcerpt, bookmarkPageSize } from '../utils/messageBookmarkPolicy.js';
+import {
+  REQUEST_STATE, requestRecipientId, firstContactState, requestAllows,
+  readReceiptAllowed, senderRequestStatus, recipientRequestState,
+} from '../utils/messageRequestPolicy.js';
 
 const router = Router();
 
@@ -92,6 +96,12 @@ router.get('/api/conversations', authRequired, async (req, res) => {
        LEFT JOIN orders o ON o.id = c.order_id
        LEFT JOIN LATERAL (SELECT p.name AS product_name FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = c.order_id ORDER BY oi.id LIMIT 1) oi ON true
        WHERE (c.buyer_id = $1 OR c.seller_id = $1)
+         -- A pending request belongs to the recipient's Requests area, not their
+         -- Inbox, and a declined one is gone for the recipient entirely — while
+         -- the sender keeps seeing their own thread here with its neutral status,
+         -- so a message never silently disappears from the person who sent it
+         -- (APP-Q154, APP-Q167, APP-Q172).
+         AND ((c.request_state IS DISTINCT FROM 'pending' AND c.request_state IS DISTINCT FROM 'declined') OR c.requested_by = $1)
        GROUP BY c.id, u.id, latest.last_message, latest.last_message_type, cus.is_pinned, cus.is_muted, cus.muted_until, cus.is_archived, cus.marked_unread, o.status, oi.product_name
        ORDER BY COALESCE(cus.is_pinned, false) DESC, c.last_message_at DESC`,
       [req.user.id]
@@ -104,6 +114,10 @@ router.get('/api/conversations', authRequired, async (req, res) => {
     const offers = [];
     const archived = [];
     for (const conv of result.rows) {
+      // The sender's own waiting request is labeled here ("waiting"/"not
+      // accepted"); the recipient never sees this thread in the Inbox at all,
+      // because the WHERE clause above keeps it out (APP-Q172).
+      conv.request_label = senderRequestStatus({ requestState: conv.request_state, isRequester: conv.requested_by === req.user.id });
       if (!staysInInbox({ isArchived: conv.is_archived, hasActiveOffer: conv.has_active_offer })) archived.push(conv);
       else if (conv.has_active_offer) offers.push(conv);
       else if (conv.is_pinned) pinned.push(conv);
@@ -168,16 +182,30 @@ router.post('/api/conversations', authRequired, convLimiter, dobRequired, async 
     // first messages cannot create duplicate general threads.
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))", [pairA, pairB]);
     const existing = await client.query(
-      `SELECT id FROM conversations WHERE ((buyer_id = $1 AND seller_id = $2) OR (buyer_id = $2 AND seller_id = $1)) AND (($3::uuid IS NULL AND order_id IS NULL) OR order_id = $3) FOR SHARE`,
+      `SELECT id, request_state FROM conversations WHERE ((buyer_id = $1 AND seller_id = $2) OR (buyer_id = $2 AND seller_id = $1)) AND (($3::uuid IS NULL AND order_id IS NULL) OR order_id = $3) FOR SHARE`,
       [buyerId, sellerId, orderId || null]
     );
-    if (existing.rows.length > 0) { await client.query('COMMIT'); return res.json({ conversationId: existing.rows[0].id }); }
+    if (existing.rows.length > 0) {
+      await client.query('COMMIT');
+      // Reusing a thread keeps its history: a request waiting for an answer stays
+      // waiting, and an answered one is never quietly reopened as a fresh knock.
+      return res.json({ conversationId: existing.rows[0].id, requestState: existing.rows[0].request_state || null });
+    }
+    // First contact gets the lightweight Requests treatment; an order thread, or
+    // a pair with any earlier conversation, stays direct (APP-Q154).
+    const prior = orderId ? { rows: [] } : await client.query(
+      `SELECT 1 FROM conversations WHERE ((buyer_id = $1 AND seller_id = $2) OR (buyer_id = $2 AND seller_id = $1))
+         AND request_state IS DISTINCT FROM 'pending' LIMIT 1`,
+      [buyerId, sellerId]
+    );
+    const requestState = firstContactState({ orderId, hasPriorConversation: prior.rows.length > 0 });
     const result = await client.query(
-      `INSERT INTO conversations (order_id, product_id, buyer_id, seller_id) VALUES ($1, $2, $3, $4) RETURNING id`,
-      [orderId || null, productId || null, buyerId, sellerId]
+      `INSERT INTO conversations (order_id, product_id, buyer_id, seller_id, request_state, requested_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [orderId || null, productId || null, buyerId, sellerId, requestState, requestState ? req.user.id : null]
     );
     await client.query('COMMIT');
-    res.status(201).json({ conversationId: result.rows[0].id });
+    res.status(201).json({ conversationId: result.rows[0].id, requestState });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
     if (err.code === '23505' && orderId) {
@@ -200,18 +228,29 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
   try {
     const conv = await pool.query('SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    const pendingRequest = conv.rows[0].request_state === REQUEST_STATE.PENDING;
+    const isRequester = conv.rows[0].requested_by === req.user.id;
     touchPresence(req.user.id);
     markConversationActive(req.user.id, req.params.id);
-    // Flip 'sent' → 'delivered': recipient's client fetched these messages (WhatsApp 2nd gray tick)
+    // Flip 'sent' → 'delivered': recipient's client fetched these messages (WhatsApp 2nd gray tick).
+    // Delivery is not a read receipt, so it stays honest while a request is pending (APP-Q166).
     await pool.query(
       `UPDATE message_deliveries md SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
        WHERE md.recipient_id = $1 AND md.status = 'sent'
          AND md.message_id IN (SELECT id FROM messages WHERE conversation_id = $2 AND sender_id <> $1)`,
       [req.user.id, req.params.id]
     );
-    const unreadCheck = await pool.query('SELECT 1 FROM messages WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false LIMIT 1', [req.params.id, req.user.id]);
-    if (unreadCheck.rows.length > 0) {
-      await pool.query('UPDATE messages SET is_read = true WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false', [req.params.id, req.user.id]);
+    // A pending request marks nothing read: the read tick waits for acceptance
+    // even when the thread is opened by a deep link (APP-Q166).
+    if (readReceiptAllowed({ requestState: conv.rows[0].request_state })) {
+      const unreadCheck = await pool.query('SELECT 1 FROM messages WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false LIMIT 1', [req.params.id, req.user.id]);
+      if (unreadCheck.rows.length > 0) {
+        await pool.query('UPDATE messages SET is_read = true WHERE conversation_id = $1 AND sender_id != $2 AND is_read = false', [req.params.id, req.user.id]);
+      }
+    }
+    let requesterSentCount = 0;
+    if (pendingRequest && isRequester) {
+      requesterSentCount = (await pool.query('SELECT COUNT(*)::int AS count FROM messages WHERE conversation_id = $1 AND sender_id = $2', [req.params.id, req.user.id])).rows[0].count;
     }
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const offset = parseInt(req.query.offset) || 0;
@@ -336,6 +375,15 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
       blockedByMe: blocks.rows.some(b => b.blocker_id === req.user.id),
       blockedByOther: blocks.rows.some(b => b.blocker_id === otherId),
       myRole: conv.rows[0].seller_id === req.user.id ? 'seller' : 'buyer',
+      // The client renders the held/waiting states from these shared answers
+      // instead of re-deriving them (APP-Q166/Q167/Q172).
+      request: {
+        state: conv.rows[0].request_state || null,
+        role: isRequester ? 'requester' : 'recipient',
+        senderStatus: senderRequestStatus({ requestState: conv.rows[0].request_state, isRequester }),
+        recipientState: recipientRequestState({ requestState: conv.rows[0].request_state, isRequester }),
+        canSend: requestAllows({ requestState: conv.rows[0].request_state, isRequester, sentByRequester: requesterSentCount, messageType: 'text' }).allowed,
+      },
     } });
   } catch (err) {
     console.error('Messages fetch error:', err);
@@ -546,6 +594,26 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
   try {
     const conv = await pool.query('SELECT * FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    // A pending request is a one-message, text-only zone until the recipient
+    // accepts (APP-Q166/Q167/Q169). The initiator's follow-ups are held with a
+    // stated reason; the recipient can only answer by accepting. A declined
+    // request was never accepted, so both sides stay held there too (APP-Q167).
+    const gateState = conv.rows[0].request_state;
+    if (gateState === REQUEST_STATE.PENDING || gateState === REQUEST_STATE.DECLINED) {
+      const isRequester = conv.rows[0].requested_by === req.user.id;
+      const sentByRequester = isRequester
+        ? (await pool.query('SELECT COUNT(*)::int AS count FROM messages WHERE conversation_id = $1 AND sender_id = $2', [req.params.id, req.user.id])).rows[0].count
+        : 0;
+      const gate = requestAllows({ requestState: gateState, isRequester, sentByRequester, messageType: msgType });
+      if (!gate.allowed) {
+        return res.status(409).json({
+          error: gate.reason === 'request_not_accepted'
+            ? (gateState === REQUEST_STATE.DECLINED ? 'This message request was not accepted' : 'Accept this message request before replying')
+            : 'You can send one message until they accept',
+          code: gate.reason === 'request_not_accepted' ? 'REQUEST_NOT_ACCEPTED' : 'REQUEST_FOLLOWUP_HELD',
+        });
+      }
+    }
     const recipientId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
     const blocked = await pool.query('SELECT 1 FROM blocked_users WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) LIMIT 1', [req.user.id, recipientId]);
     if (blocked.rows.length) return res.status(403).json({ error: 'Messaging is unavailable because one participant blocked the other', code: 'USER_BLOCKED' });
@@ -632,6 +700,20 @@ router.post('/api/conversations/:id/products', authRequired, msgLimiter, dobRequ
     if (!conv.rows.length) return res.status(404).json({ error: 'Conversation not found' });
     const conversation = conv.rows[0];
     const otherId = conversation.buyer_id === req.user.id ? conversation.seller_id : conversation.buyer_id;
+    // A listing share is a follow-up like any other: held until acceptance
+    // (APP-Q167/Q169). The same shared gate the message and offer routes use
+    // answers it, so pending and declined are covered by one table.
+    const gate = requestAllows({
+      requestState: conversation.request_state,
+      isRequester: conversation.requested_by === req.user.id,
+      kind: 'listing',
+    });
+    if (!gate.allowed) {
+      return res.status(409).json({
+        error: gate.reason === 'request_not_accepted' ? 'Accept this message request before replying' : 'You can send one message until they accept',
+        code: gate.reason === 'request_not_accepted' ? 'REQUEST_NOT_ACCEPTED' : 'REQUEST_FOLLOWUP_HELD',
+      });
+    }
     const blocked = await pool.query('SELECT 1 FROM blocked_users WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) LIMIT 1', [req.user.id, otherId]);
     if (blocked.rows.length) return res.status(403).json({ error: 'Messaging is unavailable because one participant blocked the other', code: 'USER_BLOCKED' });
     const result = await pool.query(
@@ -673,14 +755,20 @@ router.get('/api/conversations/unread-count', authRequired, async (req, res) => 
     // Real unread messages plus the chats this user flagged as reminders — one
     // number, so the tab badge and the list it opens can never disagree.
     const [unreadMessages, markedConversations] = await Promise.all([
+      // Pending requests never inflate the Inbox badge: they have their own count
+      // in the Requests area (APP-Q173), and declined-for-me threads are gone
+      // entirely. The sender's own waiting thread is not counted either, because
+      // its message is their own.
       pool.query(
         `SELECT COUNT(*) AS count FROM messages m JOIN conversations c ON m.conversation_id = c.id
-         WHERE (c.buyer_id = $1 OR c.seller_id = $1) AND m.sender_id != $1 AND m.is_read = false`,
+         WHERE (c.buyer_id = $1 OR c.seller_id = $1) AND m.sender_id != $1 AND m.is_read = false
+           AND ((c.request_state IS DISTINCT FROM 'pending' AND c.request_state IS DISTINCT FROM 'declined') OR c.requested_by = $1)`,
         [req.user.id]
       ),
       pool.query(
         `SELECT COUNT(*) AS count FROM conversation_user_settings cus JOIN conversations c ON c.id = cus.conversation_id
-         WHERE cus.user_id = $1 AND cus.marked_unread = true AND (c.buyer_id = $1 OR c.seller_id = $1)`,
+         WHERE cus.user_id = $1 AND cus.marked_unread = true AND (c.buyer_id = $1 OR c.seller_id = $1)
+           AND ((c.request_state IS DISTINCT FROM 'pending' AND c.request_state IS DISTINCT FROM 'declined') OR c.requested_by = $1)`,
         [req.user.id]
       ),
     ]);
@@ -1134,8 +1222,13 @@ router.post('/api/conversations/:id/report', authRequired, async (req, res) => {
 
 router.put('/api/conversations/:id/read', authRequired, async (req, res) => {
   try {
-    const conv = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
+    const conv = await pool.query('SELECT buyer_id, seller_id, request_state FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)', [req.params.id, req.user.id]);
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    // No read receipt before acceptance (APP-Q166): nothing is marked and no
+    // tick is emitted. The sender's one message shows delivered, never read.
+    if (!readReceiptAllowed({ requestState: conv.rows[0].request_state })) {
+      return res.json({ marked: 0, readReceiptsOff: true, requestPending: true });
+    }
     touchPresence(req.user.id);
     markConversationActive(req.user.id, req.params.id);
     // Read receipts off: this account still marks its own messages read, because
@@ -1176,6 +1269,110 @@ router.put('/api/conversations/:id/read', authRequired, async (req, res) => {
     res.json({ marked: Math.max(result.rows.length, deliveries.rows.length), readReceiptsOff: receiptsOff });
   } catch (err) {
     console.error('Mark read error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ───── Message Requests (first contact) ─────
+// APP-Q154/Q164–Q173. The recipient sees chosen public identity and the
+// listing/order context — never private account or KYC data. The sender sees
+// only a neutral status, and one message is all they get until acceptance.
+
+router.get('/api/conversations/requests', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT c.id, c.created_at, c.product_id, c.order_id, c.request_archived_at,
+              u.id AS requester_id, u.full_name AS requester_name, u.username AS requester_username,
+              u.avatar_url AS requester_avatar, u.store_name AS requester_store_name,
+              u.store_logo_url AS requester_store_logo_url, u.use_store_identity AS requester_use_store_identity,
+              u.seller_tier AS requester_seller_tier,
+              m.id AS message_id, m.content AS message_content, m.created_at AS message_created_at,
+              p.name AS product_name,
+              (SELECT image_url FROM product_images WHERE product_id = c.product_id ORDER BY is_primary DESC, display_order ASC LIMIT 1) AS product_image
+         FROM conversations c
+         JOIN users u ON u.id = c.requested_by
+         LEFT JOIN LATERAL (
+           SELECT id, content, created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at ASC, id ASC LIMIT 1
+         ) m ON true
+         LEFT JOIN products p ON p.id = c.product_id
+        WHERE c.request_state = 'pending' AND c.requested_by <> $1 AND (c.buyer_id = $1 OR c.seller_id = $1)
+        ORDER BY (c.request_archived_at IS NOT NULL) ASC, c.created_at DESC`,
+      [req.user.id]
+    );
+    const active = [];
+    const archived = [];
+    for (const row of result.rows) (row.request_archived_at ? archived : active).push(row);
+    // The recipient has now seen these: delivery is honest, read is not (APP-Q166).
+    if (active.length > 0) {
+      await pool.query(
+        `UPDATE message_deliveries md SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
+          WHERE md.recipient_id = $1 AND md.status = 'sent'
+            AND md.message_id IN (SELECT id FROM messages WHERE conversation_id = ANY($2::uuid[]) AND sender_id <> $1)`,
+        [req.user.id, active.map((row) => row.id)]
+      );
+    }
+    // `unreadCount` is the separate Requests badge of APP-Q173 — it never mixes
+    // with the Inbox count, and archived requests stay reachable through the
+    // restore path rather than nagging.
+    res.json({ active, archived, unreadCount: active.length });
+  } catch (err) {
+    console.error('Message requests fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// The recipient's own decisions on a request. Accepting turns it into an
+// ordinary conversation; declining is neutral for the sender — no push, no
+// reveal of whether it was a delete, a report or a block — and nothing here
+// touches an order or a listing (APP-Q165/Q171/Q172). Archive and restore are
+// the recipient's private filing of a stale request (APP-Q168).
+const REQUEST_DECISIONS = new Set(['accept', 'decline', 'archive', 'restore']);
+router.post('/api/conversations/:id/request/:decision', authRequired, async (req, res) => {
+  const { decision } = req.params;
+  if (!REQUEST_DECISIONS.has(decision)) return res.status(400).json({ error: 'Unknown request action' });
+  try {
+    const conv = await pool.query(
+      'SELECT id, request_state, requested_by, buyer_id, seller_id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [req.params.id, req.user.id]
+    );
+    if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    const conversation = conv.rows[0];
+    // Only the recipient answers a request — the person who wrote it never
+    // controls whether it is pending, accepted, declined or archived.
+    const recipientId = requestRecipientId({ buyerId: conversation.buyer_id, sellerId: conversation.seller_id, requestedBy: conversation.requested_by });
+    if (recipientId !== req.user.id) return res.status(403).json({ error: 'Only the recipient can answer a message request' });
+    if (decision === 'accept') {
+      const accepted = await pool.query(
+        `UPDATE conversations SET request_state = 'accepted' WHERE id = $1 AND request_state = 'pending' RETURNING requested_by`,
+        [req.params.id]
+      );
+      if (accepted.rowCount === 0) return res.status(409).json({ error: 'This request was already answered', code: 'REQUEST_ALREADY_ANSWERED' });
+      // The conversation simply opens: the requester sees it become ordinary and
+      // both clients refresh live. Accepting follows no one (APP-Q171).
+      emitToUsers([conversation.requested_by, req.user.id], { type: 'request_updated', conversationId: req.params.id, requestState: 'accepted' });
+      return res.json({ state: 'accepted' });
+    }
+    if (decision === 'decline') {
+      const declined = await pool.query(
+        `UPDATE conversations SET request_state = 'declined' WHERE id = $1 AND request_state = 'pending' RETURNING id`,
+        [req.params.id]
+      );
+      if (declined.rowCount === 0) return res.status(409).json({ error: 'This request was already answered', code: 'REQUEST_ALREADY_ANSWERED' });
+      // Deliberately silent: no notification, no push, no reason — so the sender
+      // cannot tell a delete from a report from a block (APP-Q172).
+      return res.json({ state: 'declined' });
+    }
+    if (conversation.request_state !== REQUEST_STATE.PENDING) {
+      return res.status(409).json({ error: 'This request was already answered', code: 'REQUEST_ALREADY_ANSWERED' });
+    }
+    if (decision === 'archive') {
+      await pool.query('UPDATE conversations SET request_archived_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
+      return res.json({ state: 'archived' });
+    }
+    await pool.query('UPDATE conversations SET request_archived_at = NULL WHERE id = $1', [req.params.id]);
+    return res.json({ state: 'pending' });
+  } catch (err) {
+    console.error('Message request decision error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

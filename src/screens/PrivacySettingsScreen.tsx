@@ -31,12 +31,16 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
   // APP-Q431: separate in-app search discoverability from link access.
   const [searchDiscoverable, setSearchDiscoverable] = useState(user?.search_discoverable ?? true);
   const [readReceipts, setReadReceipts] = useState(user?.read_receipts_enabled !== false);
+  // Batch 77 (APP-Q416/APP-Q432): optional product-usage analytics. Anything
+  // other than an explicit `false` counts as opted out, matching the stored
+  // default, so a stale local copy can never enable recording by accident.
+  const [analyticsAllowed, setAnalyticsAllowed] = useState(user?.analytics_opt_out === false);
 
   const [presenceVisibility, setPresenceVisibilityState] = useState<'everyone' | 'chatted_with' | 'nobody'>('chatted_with');
   const [presenceSaving, setPresenceSaving] = useState(false);
 
   const sections = useRef(
-    Array.from({ length: 5 }, () => ({
+    Array.from({ length: 6 }, () => ({
       opacity: new Animated.Value(0),
       translateY: new Animated.Value(16),
     }))
@@ -129,6 +133,26 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
     } catch {
       setReadReceipts(!next);
       toast.error(t('common.error'), t('privacy.readReceiptsFailed'));
+    }
+  };
+
+  // Batch 77 (APP-Q416/APP-Q432): optional usage analytics are separated from
+  // essential security/reliability records, and the stored default is already
+  // off. Turning this on is the only way optional events could ever be recorded;
+  // turning it off stops future optional collection. No feature depends on it.
+  const handleToggleAnalytics = async () => {
+    const next = !analyticsAllowed;
+    setAnalyticsAllowed(next);
+    try {
+      await updateProfile({ analyticsOptOut: !next });
+      await store.setUser({ ...store.user!, analytics_opt_out: !next } as any, store.token!);
+      toast.success(
+        next ? t('privacy.analyticsToastOn') : t('privacy.analyticsToastOff'),
+        next ? t('privacy.analyticsOn') : t('privacy.analyticsOff')
+      );
+    } catch {
+      setAnalyticsAllowed(!next);
+      toast.error(t('common.error'), t('privacy.analyticsFailed'));
     }
   };
 
@@ -444,6 +468,46 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.text3} />
             </TouchableOpacity>
+          </SettingsGroup>
+        </Animated.View>
+
+        {/* ── Optional analytics (Batch 77) ── */}
+        <Animated.View style={animStyle(5)}>
+          <SettingsGroup
+            header={t('privacy.analyticsGroup')}
+            description={t('privacy.analyticsGroupDesc')}
+          >
+            <View style={styles.toggleRow}>
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons name="chart-line" size={20} color={COLORS.text2} />
+              </View>
+              <View style={styles.toggleText}>
+                <Text style={styles.toggleLabel}>{t('privacy.analyticsToggle')}</Text>
+                <Text style={styles.rowValue}>
+                  {analyticsAllowed ? t('privacy.analyticsOn') : t('privacy.analyticsOff')}
+                </Text>
+              </View>
+              <SettingsToggle
+                value={analyticsAllowed}
+                onValueChange={handleToggleAnalytics}
+                accent={COLORS.blue}
+                accessibilityLabel={t('privacy.analyticsToggle')}
+              />
+            </View>
+
+            <View style={styles.noteRow}>
+              <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.text3} />
+              <Text style={styles.noteText}>{t('privacy.analyticsNote')}</Text>
+            </View>
+
+            {user?.analytics_decision_at ? (
+              <View style={styles.noteRow}>
+                <MaterialCommunityIcons name="clock-outline" size={16} color={COLORS.text3} />
+                <Text style={styles.noteText}>
+                  {t('privacy.analyticsDecided', { date: new Date(user.analytics_decision_at).toLocaleDateString() })}
+                </Text>
+              </View>
+            ) : null}
           </SettingsGroup>
         </Animated.View>
 

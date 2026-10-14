@@ -172,7 +172,7 @@ router.get('/user/me', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, created_at, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, location_address, location_city, location_lat, location_lng, username, show_real_name, date_of_birth, pending_dob, taste_onboarding_completed,
-              store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, read_receipts_enabled, language, pinned_product_id
+              store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, read_receipts_enabled, analytics_opt_out, analytics_decision_at, language, pinned_product_id
        FROM users WHERE id = $1`,
       [req.user.id]
     );
@@ -189,7 +189,11 @@ router.put('/user/profile', authRequired, async (req, res) => {
     fullName, email, phone, natcashPhone, bio, avatarUrl, locationAddress, locationCity, locationLat, locationLng,
     showRealName, useStoreIdentity, acceptedPaymentMethods,
     storeName, storeLogoUrl, storeDescription, storeServiceArea, storeCategory,
-    showPublicCity, hideFollowerLists, hideFollowerCounts, searchDiscoverable, readReceiptsEnabled, language, pinnedProductId
+    showPublicCity, hideFollowerLists, hideFollowerCounts, searchDiscoverable, readReceiptsEnabled, language, pinnedProductId,
+    // Batch 77 (APP-Q416/APP-Q432): the optional-analytics opt-out. Its stored
+    // default is already `true`, so a client that never sends this changes
+    // nothing, and `analytics_decision_at` only moves on a real change.
+    analyticsOptOut
   } = req.body;
   email = undefined;
   if (phone) phone = phone.replace(/^\+?509/, '').replace(/^\+/, '');
@@ -225,6 +229,10 @@ router.put('/user/profile', authRequired, async (req, res) => {
         hide_follower_counts = COALESCE($22, hide_follower_counts),
         search_discoverable = COALESCE($25, search_discoverable),
         read_receipts_enabled = COALESCE($26, read_receipts_enabled),
+        analytics_opt_out = COALESCE($27, analytics_opt_out),
+        analytics_decision_at = CASE
+          WHEN $27::boolean IS NOT NULL AND $27::boolean IS DISTINCT FROM analytics_opt_out
+          THEN CURRENT_TIMESTAMP ELSE analytics_decision_at END,
         language = COALESCE($23, language),
         pinned_product_id = CASE WHEN $24::text = 'clear' THEN NULL WHEN $24 IS NOT NULL THEN $24::uuid ELSE pinned_product_id END,
         email_verified = email_verified,
@@ -232,7 +240,7 @@ router.put('/user/profile', authRequired, async (req, res) => {
        WHERE id = $6
        RETURNING id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_verified, use_store_identity, email_verified,
                  location_address, location_city, location_lat, location_lng, username, show_real_name,
-                 store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, read_receipts_enabled, language, pinned_product_id`,
+                 store_description, store_service_area, store_category, show_public_city, hide_follower_lists, hide_follower_counts, search_discoverable, read_receipts_enabled, analytics_opt_out, analytics_decision_at, language, pinned_product_id`,
       [
         fullName, email || null, phone, bio, avatarUrl, req.user.id, locationAddress || null, locationCity || null, locationLat || null, locationLng || null,
         showRealName !== undefined ? showRealName : null, useStoreIdentity !== undefined ? useStoreIdentity : null,
@@ -243,7 +251,8 @@ router.put('/user/profile', authRequired, async (req, res) => {
         hideFollowerCounts !== undefined ? hideFollowerCounts : null, language || null,
         pinnedProductId !== undefined ? pinnedProductId : null,
         searchDiscoverable !== undefined ? searchDiscoverable : null,
-        readReceiptsEnabled !== undefined ? readReceiptsEnabled : null
+        readReceiptsEnabled !== undefined ? readReceiptsEnabled : null,
+        analyticsOptOut !== undefined ? analyticsOptOut : null
       ]
     );
     // Turning read receipts off takes effect now, not from the next message:

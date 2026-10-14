@@ -1398,6 +1398,41 @@ export const getMessages = (conversationId: string, params?: { limit?: number; o
 export const sendMessage = (conversationId: string, content: string, imageUrl?: string, clientId?: string, audioUrl?: string, audioDuration?: number) =>
   request(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content, imageUrl, messageType: audioUrl ? 'audio' : imageUrl ? 'image' : 'text', clientId, audioUrl, audioDuration }) });
 export const getConversationUnreadCount = () => request('/conversations/unread-count');
+
+// Message requests — first contact (APP-Q154, Q164–Q173). The recipient sees
+// chosen public identity and the listing/order context; the sender only ever
+// learns a neutral status. One message, text only, no offers, no attachments,
+// and no read receipts until the request is accepted.
+export interface MessageRequest {
+  id: string;
+  created_at: string;
+  product_id: string | null;
+  order_id: string | null;
+  request_archived_at: string | null;
+  requester_id: string;
+  requester_name: string;
+  requester_username: string | null;
+  requester_avatar: string | null;
+  requester_store_name: string | null;
+  requester_store_logo_url: string | null;
+  requester_use_store_identity: boolean | null;
+  requester_seller_tier: string | null;
+  message_id: string | null;
+  message_content: string | null;
+  message_created_at: string | null;
+  product_name: string | null;
+  product_image: string | null;
+}
+export const getMessageRequests = () =>
+  request('/conversations/requests') as Promise<{ active: MessageRequest[]; archived: MessageRequest[]; unreadCount: number }>;
+export const acceptMessageRequest = (conversationId: string) =>
+  request(`/conversations/${conversationId}/request/accept`, { method: 'POST', body: JSON.stringify({}) });
+export const declineMessageRequest = (conversationId: string) =>
+  request(`/conversations/${conversationId}/request/decline`, { method: 'POST', body: JSON.stringify({}) });
+export const archiveMessageRequest = (conversationId: string) =>
+  request(`/conversations/${conversationId}/request/archive`, { method: 'POST', body: JSON.stringify({}) });
+export const restoreMessageRequest = (conversationId: string) =>
+  request(`/conversations/${conversationId}/request/restore`, { method: 'POST', body: JSON.stringify({}) });
 export type ConversationMediaItem = { id: string; sender_id: string; image_url: string; created_at: string };
 export const getConversationMedia = (conversationId: string) =>
   request(`/conversations/${conversationId}/media`) as Promise<{ media: ConversationMediaItem[] }>;

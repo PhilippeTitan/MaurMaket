@@ -2040,6 +2040,39 @@ await step('NatCash phone separation', () => c.query(`
       CREATE INDEX IF NOT EXISTS idx_user_policy_declines_user ON user_policy_declines (user_id, declined_at DESC);
     `));
 
+    // 97. Optional-analytics opt-out (Batch 77, APP-Q416/APP-Q432: "separate
+    //    optional analytics from essential reliability/security measurements,
+    //    with a clear opt-out that does not remove core features", and opting out
+    //    stops future optional collection).
+    //    The default is `true` deliberately: nothing optional is recorded before
+    //    the user has decided anything at all. `analytics_decision_at` records
+    //    when the choice was actually made, not the last time a client sent the
+    //    field — the route only stamps it when the value changes.
+    await step('Optional-analytics opt-out', () => c.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS analytics_opt_out BOOLEAN NOT NULL DEFAULT true;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS analytics_decision_at TIMESTAMPTZ;
+    `));
+
+    // 98. Message Requests as a first-contact area (Inbox/Messaging decisions,
+    //    APP-Q154, Q164–Q173: "use a lightweight Requests area for first contact
+    //    with listing/order context; acceptance moves it into Inbox, while urgent
+    //    order messages stay direct").
+    //    `request_state` is NULL on every conversation that existed before this
+    //    step and on every order thread, so nothing changes meaning and ORDER
+    //    CONTACT STAYS DIRECT structurally rather than by a special case.
+    //    `requested_by` names the person who wrote the request; the recipient is
+    //    the other participant, which is what lets the sender see a neutral
+    //    waiting/declined label while the recipient's own list stays private.
+    //    `request_archived_at` is the recipient's filing of a stale request — a
+    //    restore path exists, and time alone never deletes anything.
+    await step('Message requests', () => c.query(`
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS request_state TEXT;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS requested_by UUID REFERENCES users(id);
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS request_archived_at TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS idx_conversations_pending_requests
+        ON conversations (requested_by, created_at DESC) WHERE request_state = 'pending';
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

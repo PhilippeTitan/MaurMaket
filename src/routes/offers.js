@@ -6,6 +6,7 @@ import { msgLimiter } from '../middleware/rateLimit.js';
 import { createNotification } from '../utils/notifications.js';
 import { emitToUsers } from '../realtime.js';
 import { isConversationOpen } from '../utils/chatActivity.js';
+import { requestAllows } from '../utils/messageRequestPolicy.js';
 
 const router = Router();
 
@@ -32,6 +33,23 @@ router.post('/api/conversations/:id/offer', authRequired, msgLimiter, policyCurr
     const conversation = conv.rows[0];
     const buyerId = conversation.buyer_id;
     const sellerId = conversation.seller_id;
+    // A formal offer is a follow-up, not a first contact: accept the conversation
+    // first, then use the established offer flow (APP-Q170). The same shared gate
+    // the message routes use answers it, so there is one place to change.
+    const requestGate = requestAllows({
+      requestState: conversation.request_state,
+      isRequester: conversation.requested_by === req.user.id,
+      kind: 'offer',
+    });
+    if (!requestGate.allowed) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: requestGate.reason === 'request_not_accepted'
+          ? 'Accept this message request before making an offer'
+          : 'You can send one message until they accept',
+        code: requestGate.reason === 'request_not_accepted' ? 'REQUEST_NOT_ACCEPTED' : 'REQUEST_FOLLOWUP_HELD',
+      });
+    }
     if (req.user.id !== buyerId) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Only the buyer can send offers' }); }
     const blocked = await client.query('SELECT 1 FROM blocked_users WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) LIMIT 1', [buyerId, sellerId]);
     if (blocked.rows.length) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Offers are unavailable because one participant blocked the other', code: 'USER_BLOCKED' }); }

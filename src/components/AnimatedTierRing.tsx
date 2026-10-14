@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, Easing } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Platform } from 'react-native';
 import Svg, { Defs, RadialGradient, Stop, Circle, Path } from 'react-native-svg';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { COLORS } from '@/theme';
@@ -57,12 +57,14 @@ export default function AnimatedTierRing({ tier, size, ringWidth, animated = tru
   const progress = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
   const shouldAnimate = animated && !reduceMotion;
+  // Animated props on an SVG gradient do not survive react-native-web (they are
+  // applied as DOM attributes), so web drives the drift from a throttled rAF
+  // loop writing plain percentage strings — same motion, no Animated gradient.
+  const [webDrift, setWebDrift] = useState({ cx: config.driftFrom.cx, cy: config.driftFrom.cy });
 
+  // Native: one Animated loop, exactly as before.
   useEffect(() => {
-    if (!shouldAnimate) {
-      progress.setValue(0);
-      return;
-    }
+    if (Platform.OS === 'web' || !shouldAnimate) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(progress, { toValue: 1, duration: config.duration, easing: Easing.inOut(Easing.sin), useNativeDriver: false }),
@@ -73,12 +75,46 @@ export default function AnimatedTierRing({ tier, size, ringWidth, animated = tru
     return () => loop.stop();
   }, [shouldAnimate, config.duration, progress]);
 
-  const cx = shouldAnimate
-    ? progress.interpolate({ inputRange: [0, 1], outputRange: [`${config.driftFrom.cx}%`, `${config.driftTo.cx}%`] })
-    : `${config.driftFrom.cx}%`;
-  const cy = shouldAnimate
-    ? progress.interpolate({ inputRange: [0, 1], outputRange: [`${config.driftFrom.cy}%`, `${config.driftTo.cy}%`] })
-    : `${config.driftFrom.cy}%`;
+  // Web: the same sine drift, sampled at ~15fps instead of every frame.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !shouldAnimate) {
+      setWebDrift({ cx: config.driftFrom.cx, cy: config.driftFrom.cy });
+      return;
+    }
+    let raf = 0;
+    let last = 0;
+    const started = Date.now();
+    const tick = () => {
+      const now = Date.now();
+      if (now - last >= 66) {
+        last = now;
+        const cycle = (now - started) % (config.duration * 2);
+        const p = cycle < config.duration ? cycle / config.duration : 2 - cycle / config.duration;
+        const eased = (1 - Math.cos(Math.PI * p)) / 2;
+        setWebDrift({
+          cx: config.driftFrom.cx + (config.driftTo.cx - config.driftFrom.cx) * eased,
+          cy: config.driftFrom.cy + (config.driftTo.cy - config.driftFrom.cy) * eased,
+        });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [shouldAnimate, config]);
+
+  const animatedPos = shouldAnimate && Platform.OS !== 'web'
+    ? {
+        cx: progress.interpolate({ inputRange: [0, 1], outputRange: [`${config.driftFrom.cx}%`, `${config.driftTo.cx}%`] }),
+        cy: progress.interpolate({ inputRange: [0, 1], outputRange: [`${config.driftFrom.cy}%`, `${config.driftTo.cy}%`] }),
+      }
+    : null;
+  const cx: any = animatedPos
+    ? animatedPos.cx
+    : `${shouldAnimate && Platform.OS === 'web' ? webDrift.cx : config.driftFrom.cx}%`;
+  const cy: any = animatedPos
+    ? animatedPos.cy
+    : `${shouldAnimate && Platform.OS === 'web' ? webDrift.cy : config.driftFrom.cy}%`;
+  const Gradient: any = animatedPos ? AnimatedRadialGradient : RadialGradient;
 
   const gradId = `tierRing-${tier}`;
   const innerR = 50 - (rw / size) * 50;
@@ -86,11 +122,11 @@ export default function AnimatedTierRing({ tier, size, ringWidth, animated = tru
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100">
       <Defs>
-        <AnimatedRadialGradient id={gradId} cx={cx as any} cy={cy as any} r="80%">
+        <Gradient id={gradId} cx={cx} cy={cy} r="80%">
           {config.stops.map((s, i) => (
             <Stop key={i} offset={s.offset} stopColor={s.color} />
           ))}
-        </AnimatedRadialGradient>
+        </Gradient>
       </Defs>
 
       <Circle cx="50" cy="50" r="48.5" fill={`url(#${gradId})`} />

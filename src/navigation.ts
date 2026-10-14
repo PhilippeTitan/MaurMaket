@@ -46,6 +46,7 @@ export type RootStackParamList = {
   Orders: undefined;
   Inbox: { returnTab?: keyof TabParamList } | undefined;
   SavedMessages: undefined;
+  MessageRequests: undefined;
   Chat: {
     conversationId: string;
     otherUserName: string;

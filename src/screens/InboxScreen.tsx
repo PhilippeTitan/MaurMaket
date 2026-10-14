@@ -12,7 +12,7 @@ import { COLORS, SPACING, RADIUS, formatPrice, LAYOUT, SHADOW } from '../theme';
 import { useTranslation } from '@/localization';
 import EmptyState from '../components/EmptyState';
 import { RowListSkeleton } from '../components/Skeleton';
-import { getConversations, getFollowing, createConversation, getConversationsWithOffers, markOfferSeen, searchSellersForChat, archiveConversation, markConversationUnread } from '../api';
+import { getConversations, getFollowing, createConversation, getConversationsWithOffers, markOfferSeen, searchSellersForChat, archiveConversation, markConversationUnread, getMessageRequests } from '../api';
 import { useToast } from '../components/Toast';
 import { staysInInbox, unreadState } from '../utils/conversationListPolicy.js';
 import { store } from '../store';
@@ -54,6 +54,8 @@ export default function InboxScreen() {
   const [loading, setLoading] = useState(true);
   const [followedSellers, setFollowedSellers] = useState<any[]>([]);
   const [offerConversations, setOfferConversations] = useState<any[]>([]);
+  const [requestCount, setRequestCount] = useState(0);
+  const [archivedRequestCount, setArchivedRequestCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [searchFilter, setSearchFilter] = useState<'all' | 'today' | 'week' | 'unread'>('all');
@@ -77,23 +79,27 @@ export default function InboxScreen() {
       setConversations(d.conversations);
       setFollowedSellers(d.followedSellers);
       setOfferConversations(d.offerConversations || []);
+      setRequestCount(d.requestCount || 0);
+      setArchivedRequestCount(d.archivedRequestCount || 0);
       setLoading(false);
       return;
     }
     if (!force && cacheKey) {
-      const snapshot = await readSnapshot<{ conversations: Conversation[]; followedSellers: any[]; offerConversations: any[] }>(cacheKey);
+      const snapshot = await readSnapshot<{ conversations: Conversation[]; followedSellers: any[]; offerConversations: any[]; requestCount?: number; archivedRequestCount?: number }>(cacheKey);
       if (snapshot?.value) {
         const d = snapshot.value;
         setConversations(d.conversations || []);
         setFollowedSellers(d.followedSellers || []); setOfferConversations(d.offerConversations || []);
+        setRequestCount(d.requestCount || 0); setArchivedRequestCount(d.archivedRequestCount || 0);
         setLoading(false);
       }
     }
     try {
-      const [convoResult, followingResult, offersResult] = await Promise.allSettled([
+      const [convoResult, followingResult, offersResult, requestsResult] = await Promise.allSettled([
         getConversations() as Promise<{ conversations: Conversation[] }>,
         getFollowing() as Promise<{ following: any[] }>,
         getConversationsWithOffers() as Promise<{ conversations: any[] }>,
+        getMessageRequests() as Promise<{ active: any[]; archived: any[]; unreadCount: number }>,
       ]);
       if (convoResult.status !== 'fulfilled') throw convoResult.reason;
       const conversations = convoResult.value.conversations || [];
@@ -103,8 +109,16 @@ export default function InboxScreen() {
       setFollowedSellers(followedSellers);
       store.setFollowingList(followedSellers.map((s: any) => s.seller_id || s.id).filter(Boolean));
       setOfferConversations(offerConversations);
-      _inboxCache = { timestamp: Date.now(), data: { conversations, followedSellers, offerConversations } };
-      if (cacheKey) void writeSnapshot(cacheKey, { conversations, followedSellers, offerConversations });
+      // Message Requests has its own count, separate from the Inbox badge
+      // (APP-Q173): a stranger's knock never inflates the number behind the
+      // user's own chats. It rides the same fetch and the same cache.
+      const requests = requestsResult.status === 'fulfilled' ? requestsResult.value : null;
+      const pendingRequests = requests?.unreadCount || 0;
+      const archivedRequests = (requests?.archived || []).length;
+      setRequestCount(pendingRequests);
+      setArchivedRequestCount(archivedRequests);
+      _inboxCache = { timestamp: Date.now(), data: { conversations, followedSellers, offerConversations, requestCount: pendingRequests, archivedRequestCount: archivedRequests } };
+      if (cacheKey) void writeSnapshot(cacheKey, { conversations, followedSellers, offerConversations, requestCount: pendingRequests, archivedRequestCount: archivedRequests });
     } catch {
       // Offline: cached data is already on screen and the global banner explains why
       if (!network.isOffline) toast.error(t('feedback.inboxRefreshFailed'), t('feedback.connectionRetry'), () => fetchData(true));
@@ -211,6 +225,16 @@ export default function InboxScreen() {
               {(item as any).has_active_offer && (
                 <View style={styles.offerBadge}>
                   <Text style={styles.offerBadgeText}>{t('inbox.offerBadge')}</Text>
+                </View>
+              )}
+              {/* The sender's own first-contact thread keeps a neutral status:
+                  "waiting" or "not accepted", never what the recipient did
+                  (APP-Q172). */}
+              {(item as any).request_label && (
+                <View style={styles.requestBadge}>
+                  <Text style={styles.requestBadgeText}>
+                    {t((item as any).request_label === 'waiting' ? 'requests.statusWaiting' : 'requests.statusNotAccepted')}
+                  </Text>
                 </View>
               )}
               <Text style={styles.convoTime}>{timeAgo(item.last_message_at || item.created_at)}</Text>
@@ -330,6 +354,30 @@ export default function InboxScreen() {
   const messagesListHeader = (
     <>
       {conversationsListHeader}
+      {/* First contact has its own area and its own count — a stranger's knock never
+          mixes with the user's own chats (APP-Q154/Q173). The row appears only while
+          something is waiting or filed away. */}
+      {!showArchived && (requestCount > 0 || archivedRequestCount > 0) && (
+        <TouchableOpacity
+          style={styles.archivedRow}
+          onPress={() => nav.navigate('MessageRequests')}
+          accessibilityRole="button"
+          accessibilityLabel={t('inbox.requestsEntry')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="email-outline" size={20} color={COLORS.text2} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.archivedRowText}>{t('inbox.requestsEntry')}</Text>
+            <Text style={styles.requestsHint}>{t('inbox.requestsHint')}</Text>
+          </View>
+          {requestCount > 0 && (
+            <View style={styles.requestsCountBadge}>
+              <Text style={styles.requestsCountText}>{requestCount > 9 ? '9+' : requestCount}</Text>
+            </View>
+          )}
+          <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.text2} />
+        </TouchableOpacity>
+      )}
       {/* Saved messages are the user's own private bookmarks, so the entry is always
           offered rather than appearing only once something is saved. */}
       {!showArchived && (
@@ -949,6 +997,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.border,
   },
   archivedRowText: { flex: 1, color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  requestsHint: { color: COLORS.text2, fontSize: 12, marginTop: 1 },
+  requestsCountBadge: {
+    minWidth: 22, height: 22, borderRadius: RADIUS.pill, paddingHorizontal: 6,
+    backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center',
+  },
+  requestsCountText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
   archivedHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: SPACING.md, marginBottom: SPACING.sm, paddingVertical: 10 },
   archivedHeaderText: { color: COLORS.coral, fontSize: 14, fontWeight: '700' },
   modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
@@ -962,6 +1016,11 @@ const styles = StyleSheet.create({
   menuRowText: { color: COLORS.text, fontSize: 15 },
   offerBadge: { backgroundColor: COLORS.coral, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, marginLeft: 6 },
   offerBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white },
+  requestBadge: {
+    backgroundColor: COLORS.surface2, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1,
+    marginLeft: 6, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border,
+  },
+  requestBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.text2 },
 
   /* Bubbles */
   bubblesSection: { paddingTop: SPACING.sm, paddingBottom: SPACING.xs },

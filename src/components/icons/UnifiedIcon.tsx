@@ -56,7 +56,7 @@ const ICONS: Record<string, LucideIcon> = {
   counter: CircleHelp, 'crosshairs-gps': Navigation, 'delete-outline': Trash2,
   delivery: Truck, 'dice-5-outline': Shapes, 'dots-horizontal': MoreHorizontal,
   'dots-vertical': MoreVertical, edit: Pencil, 'email-check-outline': MailCheck,
-  'email-fast-outline': Send, 'email-outline': Mail, 'eye-outline': Eye,
+  'email-fast-outline': Send, 'email-lock-outline': Mail, 'email-outline': Mail, 'eye-outline': Eye,
   'file-document-outline': FileText, 'file-edit-outline': Pencil, 'file-search-outline': FileSearch,
   fingerprint: Fingerprint, fire: Flame, 'flag-outline': Flag, 'form-textbox-password': KeyRound,
   'format-list-bulleted-square': List, fullscreen: Maximize, google: Circle,
