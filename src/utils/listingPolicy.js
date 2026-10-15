@@ -18,6 +18,7 @@ import {
   LISTING_LANGUAGES,
   DEFAULT_LOW_STOCK_THRESHOLD,
   tierCapFor,
+  flawNotesRequired,
 } from './listingConstants.js';
 
 export * from './listingConstants.js';
