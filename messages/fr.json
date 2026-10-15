@@ -2732,6 +2732,8 @@
   "verification.qcNotLiveTitle": "Veuillez prendre un selfie en direct",
   "verification.qcOcrDesc": "Évitez les reflets et les ombres, et gardez la carte à plat et nette.",
   "verification.qcOcrTitle": "Nous n'avons pas pu lire le texte de votre CIN",
+  "verification.qcSelfieNotDesc": "Prenez le selfie vous-même, remplissez le cadre avec votre visage et utilisez une lumière uniforme.",
+  "verification.qcSelfieNotTitle": "Votre visage n'a pas été détecté sur le selfie",
   "verification.qcServerDesc": "Nous n'avons pas pu terminer la vérification de vos documents. Veuillez réessayer.",
   "verification.qcServerTitle": "Une erreur s'est produite",
   "verification.qcTimeoutDesc": "Veuillez réessayer de soumettre.",

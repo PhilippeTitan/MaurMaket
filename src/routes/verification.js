@@ -144,9 +144,16 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
     const faceMatch = lightningResult.face_match || {};
     const liveness = lightningResult.liveness || {};
 
-    // Stage 1: Card detection (CIN front face present)
-    if (!faceMatch.faces_found || faceMatch.faces_found.cin === 0) {
-      const cinDet = faceMatch.best_det?.cin ?? faceMatch.det_scores?.cin ?? 0;
+    // Stage 1: Card detection (CIN front face present). The card is judged
+    // from its own signal — when only the selfie fails, the verifier's early
+    // return omits faces_found, and treating that absence as "card has no
+    // usable face" told users to re-shoot a perfectly good card photo while
+    // the real problem was the selfie (card det 0.91 was blamed as "too
+    // blurry"). With no usable detection signal at all, fall back to best_det.
+    const cinDet = faceMatch.best_det?.cin ?? faceMatch.det_scores?.cin ?? 0;
+    const cardFaces = faceMatch.faces_found?.cin;
+    const cardFaceUsable = cardFaces != null ? cardFaces > 0 : cinDet >= 0.6;
+    if (!cardFaceUsable) {
       if (cinDet >= 0.3) {
         reasonCodes.push('face_not_found');
         issues.push('We found a face on the card, but it is too small or blurry to use. Move closer and retake the card photo in even light.');
@@ -195,24 +202,34 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
       }
     }
 
-    // Stage 3: Face match (selfie vs CIN)
+    // Stage 3: Face match (selfie vs CIN). Only pass through verifier errors
+    // we recognize — anything else is an internal failure and must not reach
+    // applicants raw (a remote unpack bug once leaked "too many values to
+    // unpack (expected 4)" into a rejection message). A no-face result on the
+    // selfie gets its own code so QC reopens the SELFIE step with the right
+    // copy, instead of pointing users back at the card.
     if (!faceMatch.match) {
-      if (faceMatch.error) {
-        issues.push(faceMatch.error);
+      const faceErr = typeof faceMatch.error === 'string' ? faceMatch.error : '';
+      const cinNoFace = faceErr === 'No face detected in CIN image';
+      const selfieNoFace = faceErr === 'No face detected in selfie';
+      if (cinNoFace || selfieNoFace) {
+        issues.push(faceErr);
+        reasonCodes.push(cinNoFace ? 'face_not_found' : 'selfie_not_found');
+      } else if (faceMatch.error) {
+        issues.push("We couldn't compare your selfie with your CIN photo. Please retake both photos in good light.");
+        reasonCodes.push('face_mismatch');
       } else {
         issues.push(`Selfie doesn't match your CIN photo (score: ${faceMatch.score || 0})`);
+        reasonCodes.push('face_mismatch');
       }
-      reasonCodes.push(faceMatch.error && /no face detected in CIN/i.test(faceMatch.error) ? 'face_not_found' : 'face_mismatch');
       failedStage = failedStage || 'face';
     }
 
-    // Stage 4: Liveness (anti-spoofing)
+    // Stage 4: Liveness (anti-spoofing). Same scrub rule as stage 3 — only
+    // the known no-face string passes through untouched.
     if (!liveness.live) {
-      if (liveness.error) {
-        issues.push(liveness.error);
-      } else {
-        issues.push('Please take a live selfie (not a photo of a photo)');
-      }
+      const liveErr = typeof liveness.error === 'string' ? liveness.error : '';
+      issues.push(liveErr === 'No face detected' ? liveErr : 'Please take a live selfie (not a photo of a photo)');
       reasonCodes.push('not_live');
       failedStage = failedStage || 'face';
     }

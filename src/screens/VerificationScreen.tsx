@@ -46,7 +46,14 @@ if (Platform.OS !== 'web') {
 // resize strips EXIF without applying it, so a vertical shot reaches the
 // server rotated 90Â° and the face detector finds nothing. Normalize pixels
 // to portrait before upload/preview.
-const normalizeCaptureOrientation = async (uri: string, exif?: any): Promise<string> => {
+// When viewW/viewH are given, the frame is also center-cropped to the
+// preview's aspect: the preview fills its container (cover), so the user only
+// ever saw the center region, while takePictureAsync saves the whole sensor
+// frame — without this crop every photo came out as a wider shot than what
+// was framed ("even up close it's a wide shot").
+const normalizeCaptureOrientation = async (
+  uri: string, exif?: any, viewW?: number, viewH?: number,
+): Promise<string> => {
   if (!ImageManipulator) return uri;
   try {
     const probe = await ImageManipulator.manipulateAsync(uri, [], { compress: 1 });
@@ -54,9 +61,30 @@ const normalizeCaptureOrientation = async (uri: string, exif?: any): Promise<str
     let rotate = 0;
     if (probe.width > probe.height) rotate = orientation === 8 || orientation === 7 ? 270 : 90;
     else if (orientation === 3 || orientation === 4) rotate = 180;
-    if (!rotate) return uri;
+
+    const uprightW = rotate % 180 === 0 ? probe.width : probe.height;
+    const uprightH = rotate % 180 === 0 ? probe.height : probe.width;
+    let crop: { originX: number; originY: number; width: number; height: number } | null = null;
+    if (viewW && viewH && viewW > 0 && viewH > 0) {
+      const viewAspect = viewW / viewH;
+      const imgAspect = uprightW / uprightH;
+      if (Math.abs(imgAspect - viewAspect) > 0.01) {
+        if (imgAspect > viewAspect) {
+          const w = Math.round(uprightH * viewAspect);
+          crop = { originX: Math.round((uprightW - w) / 2), originY: 0, width: w, height: uprightH };
+        } else {
+          const h = Math.round(uprightW / viewAspect);
+          crop = { originX: 0, originY: Math.round((uprightH - h) / 2), width: uprightW, height: h };
+        }
+      }
+    }
+
+    if (!rotate && !crop) return uri;
+    const actions: any[] = [];
+    if (rotate) actions.push({ rotate });
+    if (crop) actions.push({ crop });
     const out = await ImageManipulator.manipulateAsync(
-      uri, [{ rotate }], { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
+      uri, actions, { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
     );
     return out.uri || uri;
   } catch {
@@ -82,6 +110,7 @@ const STAGE_LIST = [
 const QC_COPY: Record<string, { titleKey: string; descKey: string; step: Step; clear: CaptureTarget | null }> = {
   card_not_detected: { titleKey: 'verification.qcCardNotTitle', descKey: 'verification.qcCardNotDesc', step: 'cinFront', clear: 'cinFront' },
   face_not_found: { titleKey: 'verification.qcFaceNotTitle', descKey: 'verification.qcFaceNotDesc', step: 'cinFront', clear: 'cinFront' },
+  selfie_not_found: { titleKey: 'verification.qcSelfieNotTitle', descKey: 'verification.qcSelfieNotDesc', step: 'selfie', clear: 'selfie' },
   ocr_low: { titleKey: 'verification.qcOcrTitle', descKey: 'verification.qcOcrDesc', step: 'cinFront', clear: 'cinFront' },
   details_mismatch: { titleKey: 'verification.qcDetailsTitle', descKey: 'verification.qcDetailsDesc', step: 'cinFront', clear: 'cinFront' },
   face_mismatch: { titleKey: 'verification.qcMismatchTitle', descKey: 'verification.qcMismatchDesc', step: 'selfie', clear: 'selfie' },
@@ -149,6 +178,10 @@ export default function VerificationScreen() {
   const [selfieLocal, setSelfieLocal] = useState(restoredDraft?.selfieLocal || '');
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
   const [cameraReady, setCameraReady] = useState(false);
+  // Live size of the camera viewport — captures are cropped to this frame so
+  // the saved photo matches exactly what the preview showed (the raw sensor
+  // output is a much wider shot than the filled preview).
+  const [camLayout, setCamLayout] = useState({ w: 0, h: 0 });
   const [permission, requestPermission] = useCameraPermissions();
   const [pendingCapture, setPendingCapture] = useState<{ target: CaptureTarget; localUri: string; url: string; deleteUrl: string } | null>(null);
   const [captureError, setCaptureError] = useState<{ titleKey: string; descKey: string; reasons: string[] } | null>(null);
@@ -223,7 +256,7 @@ export default function VerificationScreen() {
       }
       setLoading(true);
       setCaptureError(null);
-      const uprightUri = await normalizeCaptureOrientation(photo.uri, photo.exif);
+      const uprightUri = await normalizeCaptureOrientation(photo.uri, photo.exif, camLayout.w, camLayout.h);
       const uploadRes = await uploadImage(uprightUri, 7200, 'kyc');
       setPendingCapture({
         target,
@@ -258,7 +291,7 @@ export default function VerificationScreen() {
         Alert.alert(t('verification.captureFailed'), t('verification.noPhoto'));
         return;
       }
-      const uprightUri = await normalizeCaptureOrientation(photo.uri, photo.exif);
+      const uprightUri = await normalizeCaptureOrientation(photo.uri, photo.exif, camLayout.w, camLayout.h);
       const uploadRes = await uploadImage(uprightUri, 7200, 'kyc');
       setPendingCapture({
         target: 'selfie',
@@ -444,7 +477,13 @@ export default function VerificationScreen() {
   );
 
   const renderCamera = (facing: 'front' | 'back', target: CaptureTarget, onCapture: () => void, label: string, hint?: string) => (
-    <View style={styles.cameraWrap}>
+    <View
+      style={styles.cameraWrap}
+      onLayout={e => {
+        const { width, height } = e.nativeEvent.layout;
+        setCamLayout(prev => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
+      }}
+    >
       {permission === null ? (
         <ActivityIndicator size="large" color={COLORS.coral} />
       ) : !permission.granted ? (

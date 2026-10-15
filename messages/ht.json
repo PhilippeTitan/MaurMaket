@@ -2732,6 +2732,8 @@
   "verification.qcNotLiveTitle": "Tanpri pran yon selfie an dirèk",
   "verification.qcOcrDesc": "Evite refleksyon ak lonbres, e kenbe kat la plat e klè.",
   "verification.qcOcrTitle": "Nou pa kapab li tèk CIN ou",
+  "verification.qcSelfieNotDesc": "Pran selfie a tèt ou, ranpli kad la ak figi ou, e itilize limyè inifòm.",
+  "verification.qcSelfieNotTitle": "Nou pa jwenn figi ou nan selfie a",
   "verification.qcServerDesc": "Nou pa fin verifye dokiman ou yo. Tanpri eseye ankò.",
   "verification.qcServerTitle": "Yon bagay mal pase",
   "verification.qcTimeoutDesc": "Tanpri eseye soumèt ankò.",

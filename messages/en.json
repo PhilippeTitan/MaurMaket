@@ -2732,6 +2732,8 @@
   "verification.qcNotLiveTitle": "Please take a live selfie",
   "verification.qcOcrDesc": "Avoid glare and shadows, and keep the card flat and in focus.",
   "verification.qcOcrTitle": "We couldn't read your CIN text",
+  "verification.qcSelfieNotDesc": "Take the selfie yourself, fill the frame with your face, and use even light.",
+  "verification.qcSelfieNotTitle": "We couldn't find your face in the selfie",
   "verification.qcServerDesc": "We couldn't finish checking your documents. Please try again.",
   "verification.qcServerTitle": "Something went wrong",
   "verification.qcTimeoutDesc": "Please try submitting again.",
