@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import LottieView from 'lottie-react-native';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Platform,
@@ -44,7 +44,7 @@ if (Platform.OS !== 'web') {
 
 // The camera returns raw sensor pixels with EXIF orientation tags; the upload
 // resize strips EXIF without applying it, so a vertical shot reaches the
-// server rotated 90° and the face detector finds nothing. Normalize pixels
+// server rotated 90Â° and the face detector finds nothing. Normalize pixels
 // to portrait before upload/preview.
 const normalizeCaptureOrientation = async (uri: string, exif?: any): Promise<string> => {
   if (!ImageManipulator) return uri;
@@ -92,10 +92,11 @@ const QC_COPY: Record<string, { titleKey: string; descKey: string; step: Step; c
 const STAGE_FALLBACK_CODE: Record<string, string> = { card: 'ocr_low', details: 'ocr_low', face: 'face_mismatch' };
 
 // In-session draft so a brief navigation away doesn't lose captures
-// (APP-Q563). Module scope only — never persisted to disk.
+// (APP-Q563). Module scope only â€” never persisted to disk.
 type KycDraft = {
   idFrontUrl: string; idBackUrl: string; selfieUrl: string;
   idFrontDeleteUrl: string; idBackDeleteUrl: string; selfieDeleteUrl: string;
+  idFrontLocal?: string; idBackLocal?: string; selfieLocal?: string;
   step: Step; updatedAt: number;
 };
 const DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
@@ -105,6 +106,22 @@ const readDraft = (): KycDraft | null =>
 const clearDraft = () => { kycDraftStore = null; };
 
 const { width: SCREEN_W } = Dimensions.get('window');
+
+// Review thumbnail: prefer the local capture (always present in-session),
+// fall back to the temporary remote URL, then to the placeholder icon.
+function ReviewThumb({ local, remote }: { local?: string; remote?: string }) {
+  const [uri, setUri] = useState<string | null>(local || remote || null);
+  useEffect(() => { setUri(local || remote || null); }, [local, remote]);
+  if (!uri) return <MaterialCommunityIcons name="camera-off-outline" size={24} color={COLORS.text2} />;
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.reviewThumb}
+      resizeMode="cover"
+      onError={() => setUri(local && remote && uri === local ? remote : null)}
+    />
+  );
+}
 
 export default function VerificationScreen() {
   const { t } = useTranslation();
@@ -125,6 +142,11 @@ export default function VerificationScreen() {
   const [idFrontDeleteUrl, setIdFrontDeleteUrl] = useState(restoredDraft?.idFrontDeleteUrl || '');
   const [idBackDeleteUrl, setIdBackDeleteUrl] = useState(restoredDraft?.idBackDeleteUrl || '');
   const [selfieDeleteUrl, setSelfieDeleteUrl] = useState(restoredDraft?.selfieDeleteUrl || '');
+  // Local file copies of the captures â€” always renderable in review even if
+  // the temporary remote URL is slow, expired, or blocked on the device.
+  const [idFrontLocal, setIdFrontLocal] = useState(restoredDraft?.idFrontLocal || '');
+  const [idBackLocal, setIdBackLocal] = useState(restoredDraft?.idBackLocal || '');
+  const [selfieLocal, setSelfieLocal] = useState(restoredDraft?.selfieLocal || '');
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
   const [cameraReady, setCameraReady] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -146,9 +168,10 @@ export default function VerificationScreen() {
     kycDraftStore = {
       idFrontUrl, idBackUrl, selfieUrl,
       idFrontDeleteUrl, idBackDeleteUrl, selfieDeleteUrl,
+      idFrontLocal, idBackLocal, selfieLocal,
       step, updatedAt: Date.now(),
     };
-  }, [step, idFrontUrl, idBackUrl, selfieUrl, idFrontDeleteUrl, idBackDeleteUrl, selfieDeleteUrl]);
+  }, [step, idFrontUrl, idBackUrl, selfieUrl, idFrontDeleteUrl, idBackDeleteUrl, selfieDeleteUrl, idFrontLocal, idBackLocal, selfieLocal]);
 
   useEffect(() => {
     if (step === 'result' && resultState === 'verified') {
@@ -201,7 +224,7 @@ export default function VerificationScreen() {
       setLoading(true);
       setCaptureError(null);
       const uprightUri = await normalizeCaptureOrientation(photo.uri, photo.exif);
-      const uploadRes = await uploadImage(uprightUri, 3600, 'kyc');
+      const uploadRes = await uploadImage(uprightUri, 7200, 'kyc');
       setPendingCapture({
         target,
         localUri: uprightUri,
@@ -236,7 +259,7 @@ export default function VerificationScreen() {
         return;
       }
       const uprightUri = await normalizeCaptureOrientation(photo.uri, photo.exif);
-      const uploadRes = await uploadImage(uprightUri, 3600, 'kyc');
+      const uploadRes = await uploadImage(uprightUri, 7200, 'kyc');
       setPendingCapture({
         target: 'selfie',
         localUri: uprightUri,
@@ -253,18 +276,18 @@ export default function VerificationScreen() {
 
   const confirmCapture = () => {
     if (!pendingCapture) return;
-    const { target, url, deleteUrl } = pendingCapture;
-    // Continue with the first photo that is still missing — a retake of one
+    const { target, url, deleteUrl, localUri } = pendingCapture;
+    // Continue with the first photo that is still missing â€” a retake of one
     // photo jumps straight back to review instead of re-walking the wizard.
     let next: Step;
     if (target === 'cinFront') {
-      setIdFrontUrl(url); setIdFrontDeleteUrl(deleteUrl);
+      setIdFrontUrl(url); setIdFrontDeleteUrl(deleteUrl); setIdFrontLocal(localUri);
       next = idBackUrl ? (selfieUrl ? 'reviewAll' : 'selfieTip') : 'cinBack';
     } else if (target === 'cinBack') {
-      setIdBackUrl(url); setIdBackDeleteUrl(deleteUrl);
+      setIdBackUrl(url); setIdBackDeleteUrl(deleteUrl); setIdBackLocal(localUri);
       next = selfieUrl ? 'reviewAll' : 'selfieTip';
     } else {
-      setSelfieUrl(url); setSelfieDeleteUrl(deleteUrl);
+      setSelfieUrl(url); setSelfieDeleteUrl(deleteUrl); setSelfieLocal(localUri);
       next = idFrontUrl && idBackUrl ? 'reviewAll' : idBackUrl ? 'cinFront' : 'cinBack';
     }
     goToStep(next);
@@ -305,7 +328,7 @@ export default function VerificationScreen() {
         setResultState('pending_review');
         setStep('result');
       } else {
-        // Rejected — reopen the exact capture step with granular, localized
+        // Rejected â€” reopen the exact capture step with granular, localized
         // QC feedback instead of a generic failure screen (APP-Q559).
         const codes = res.attempt.reason_codes || [];
         const primaryCode = codes[0] || STAGE_FALLBACK_CODE[res.attempt.failed_stage || ''] || 'face_mismatch';
@@ -315,8 +338,8 @@ export default function VerificationScreen() {
           descKey: copy.descKey,
           reasons: (res.attempt.reasons || []).filter(r => typeof r === 'string' && r.length > 0),
         });
-        if (copy.clear === 'cinFront') { setIdFrontUrl(''); setIdFrontDeleteUrl(''); }
-        if (copy.clear === 'selfie') { setSelfieUrl(''); setSelfieDeleteUrl(''); }
+        if (copy.clear === 'cinFront') { setIdFrontUrl(''); setIdFrontDeleteUrl(''); setIdFrontLocal(''); }
+        if (copy.clear === 'selfie') { setSelfieUrl(''); setSelfieDeleteUrl(''); setSelfieLocal(''); }
         goToStep(copy.step);
       }
     } catch (e: any) {
@@ -332,11 +355,26 @@ export default function VerificationScreen() {
   };
 
   const retakeOnly = (target: CaptureTarget) => {
-    if (target === 'cinFront') { setIdFrontUrl(''); setIdFrontDeleteUrl(''); }
-    else if (target === 'cinBack') { setIdBackUrl(''); setIdBackDeleteUrl(''); }
-    else { setSelfieUrl(''); setSelfieDeleteUrl(''); }
+    if (target === 'cinFront') { setIdFrontUrl(''); setIdFrontDeleteUrl(''); setIdFrontLocal(''); }
+    else if (target === 'cinBack') { setIdBackUrl(''); setIdBackDeleteUrl(''); setIdBackLocal(''); }
+    else { setSelfieUrl(''); setSelfieDeleteUrl(''); setSelfieLocal(''); }
     setCaptureError(null);
     goToStep(target);
+  };
+
+  // Cancel must fully restart the flow: wipe the in-session draft so the next
+  // entry starts at 'info', then leave the screen.
+  const cancelForNow = () => {
+    clearDraft();
+    setIdFrontUrl(''); setIdFrontDeleteUrl(''); setIdFrontLocal('');
+    setIdBackUrl(''); setIdBackDeleteUrl(''); setIdBackLocal('');
+    setSelfieUrl(''); setSelfieDeleteUrl(''); setSelfieLocal('');
+    setPendingCapture(null);
+    setCaptureError(null);
+    setResultState(null);
+    setStep('info');
+    if (nav.canGoBack()) nav.goBack();
+    else nav.navigate('Main', { screen: 'FeedTab' });
   };
 
   const stepProgress = () => {
@@ -543,17 +581,13 @@ export default function VerificationScreen() {
 
       <View style={styles.reviewGrid}>
         {([
-          { key: 'cinFront' as CaptureTarget, label: t('verification.idFront'), uri: idFrontUrl },
-          { key: 'cinBack' as CaptureTarget, label: t('verification.idBack'), uri: idBackUrl },
-          { key: 'selfie' as CaptureTarget, label: t('verification.selfie'), uri: selfieUrl },
+          { key: 'cinFront' as CaptureTarget, label: t('verification.idFront'), uri: idFrontUrl, local: idFrontLocal },
+          { key: 'cinBack' as CaptureTarget, label: t('verification.idBack'), uri: idBackUrl, local: idBackLocal },
+          { key: 'selfie' as CaptureTarget, label: t('verification.selfie'), uri: selfieUrl, local: selfieLocal },
         ]).map((item) => (
           <View key={item.key} style={styles.reviewCard}>
             <View style={styles.reviewThumb}>
-              {item.uri ? (
-                <Image source={{ uri: item.uri }} style={styles.reviewThumb} resizeMode="cover" />
-              ) : (
-                <MaterialCommunityIcons name="camera-off-outline" size={24} color={COLORS.text2} />
-              )}
+              <ReviewThumb local={item.local} remote={item.uri} />
             </View>
             <Text style={styles.reviewLabel}>{item.label}</Text>
             <TouchableOpacity onPress={() => retakeOnly(item.key)} style={styles.retakeHit}>
@@ -572,13 +606,13 @@ export default function VerificationScreen() {
           </>
         )}
       </TouchableOpacity>
-      <TouchableOpacity style={styles.ghostBtn} onPress={() => nav.goBack()}>
+      <TouchableOpacity style={styles.ghostBtn} onPress={cancelForNow}>
         <Text style={styles.ghostBtnText}>{t('verification.cancelForNow')}</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 
-  // Honest processing state — one real request, no fake stage animation
+  // Honest processing state â€” one real request, no fake stage animation
   // (APP-Q561).
   const renderProcessing = () => (
     <View style={styles.processingWrap}>
@@ -619,7 +653,7 @@ export default function VerificationScreen() {
       );
     }
 
-    // Manual review (APP-Q561 honesty — this is a real backend state).
+    // Manual review (APP-Q561 honesty â€” this is a real backend state).
     return (
       <View style={contentStyle}>
         <View style={[styles.resultIcon, { borderWidth: 1.5, borderColor: COLORS.blue, backgroundColor: `${COLORS.blue}12` }]}>
