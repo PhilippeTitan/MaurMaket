@@ -1244,7 +1244,7 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
     #    cloudspace: {cloudspaceId, port: "8000", type: "ENDPOINT_PLUGIN_PORT",
     #                 autoStart: True, command: "nohup bash .../supervisor.sh > /dev/null 2>&1 & echo supervisor-started"}
     # 5. GET endpoints again → confirm autoStart/command persisted
-    # 6. compute base64(user_id:api_key) → hand to cron-job.org config (I cannot edit cron-job.org API)
+    # 6. cron-job.org IS scriptable: `https://api.cron-job.org/jobs` (PUT create / PATCH update / DELETE, Bearer key in the secrets table above; jobs GET lists). Watchdog job 8649466 created 2026-10-15 (every 10 min, POST /execute, saveResponses on, verify first run in /history/{id})
     ```
   - **Shell footguns found the hard way** (Lightning exec runs through zsh -c, whose cmdline contains your literal command text):
     - `pkill -f 'python verify.py'` self-matches the exec wrapper shell → kills your own session mid-command. Use the bracket trick `pkill -f '[v]erify.py'` AND keep every other literal `verify.py` out of that same shell command (run kill and poll as separate exec calls).
