@@ -37,6 +37,33 @@ type Step = 'info' | 'cinFront' | 'captureConfirm' | 'cinBack' | 'selfieTip' | '
 type CaptureTarget = 'cinFront' | 'cinBack' | 'selfie';
 type ResultState = 'verified' | 'pending_review' | null;
 
+let ImageManipulator: any = null;
+if (Platform.OS !== 'web') {
+  try { ImageManipulator = require('expo-image-manipulator'); } catch { /* optional */ }
+}
+
+// The camera returns raw sensor pixels with EXIF orientation tags; the upload
+// resize strips EXIF without applying it, so a vertical shot reaches the
+// server rotated 90° and the face detector finds nothing. Normalize pixels
+// to portrait before upload/preview.
+const normalizeCaptureOrientation = async (uri: string, exif?: any): Promise<string> => {
+  if (!ImageManipulator) return uri;
+  try {
+    const probe = await ImageManipulator.manipulateAsync(uri, [], { compress: 1 });
+    const orientation = Number(exif?.Orientation ?? exif?.orientation ?? 0);
+    let rotate = 0;
+    if (probe.width > probe.height) rotate = orientation === 8 || orientation === 7 ? 270 : 90;
+    else if (orientation === 3 || orientation === 4) rotate = 180;
+    if (!rotate) return uri;
+    const out = await ImageManipulator.manipulateAsync(
+      uri, [{ rotate }], { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
+    );
+    return out.uri || uri;
+  } catch {
+    return uri;
+  }
+};
+
 const PHOTO_LABEL_KEYS: Record<CaptureTarget, string> = {
   cinFront: 'verification.idFront',
   cinBack: 'verification.idBack',
@@ -166,17 +193,18 @@ export default function VerificationScreen() {
         Alert.alert(t('verification.cameraNotReady'), t('verification.cameraNull'));
         return;
       }
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, exif: true });
       if (!photo?.uri) {
         Alert.alert(t('verification.captureFailed'), t('verification.noPhoto'));
         return;
       }
       setLoading(true);
       setCaptureError(null);
-      const uploadRes = await uploadImage(photo.uri, 3600, 'kyc');
+      const uprightUri = await normalizeCaptureOrientation(photo.uri, photo.exif);
+      const uploadRes = await uploadImage(uprightUri, 3600, 'kyc');
       setPendingCapture({
         target,
-        localUri: photo.uri,
+        localUri: uprightUri,
         url: uploadRes.url,
         deleteUrl: uploadRes.deleteUrl || '',
       });
@@ -202,15 +230,16 @@ export default function VerificationScreen() {
         Alert.alert(t('verification.cameraNotReady'), t('verification.cameraNull'));
         return;
       }
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, exif: true });
       if (!photo?.uri) {
         Alert.alert(t('verification.captureFailed'), t('verification.noPhoto'));
         return;
       }
-      const uploadRes = await uploadImage(photo.uri, 3600, 'kyc');
+      const uprightUri = await normalizeCaptureOrientation(photo.uri, photo.exif);
+      const uploadRes = await uploadImage(uprightUri, 3600, 'kyc');
       setPendingCapture({
         target: 'selfie',
-        localUri: photo.uri,
+        localUri: uprightUri,
         url: uploadRes.url,
         deleteUrl: uploadRes.deleteUrl || '',
       });
@@ -225,16 +254,20 @@ export default function VerificationScreen() {
   const confirmCapture = () => {
     if (!pendingCapture) return;
     const { target, url, deleteUrl } = pendingCapture;
+    // Continue with the first photo that is still missing — a retake of one
+    // photo jumps straight back to review instead of re-walking the wizard.
+    let next: Step;
     if (target === 'cinFront') {
       setIdFrontUrl(url); setIdFrontDeleteUrl(deleteUrl);
-      goToStep('cinBack');
+      next = idBackUrl ? (selfieUrl ? 'reviewAll' : 'selfieTip') : 'cinBack';
     } else if (target === 'cinBack') {
       setIdBackUrl(url); setIdBackDeleteUrl(deleteUrl);
-      goToStep('selfieTip');
+      next = selfieUrl ? 'reviewAll' : 'selfieTip';
     } else {
       setSelfieUrl(url); setSelfieDeleteUrl(deleteUrl);
-      goToStep('reviewAll');
+      next = idFrontUrl && idBackUrl ? 'reviewAll' : idBackUrl ? 'cinFront' : 'cinBack';
     }
+    goToStep(next);
     setPendingCapture(null);
     setCaptureError(null);
   };
