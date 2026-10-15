@@ -67,6 +67,7 @@ export type RootStackParamList = {
   Wishlist: undefined;
   Addresses: undefined;
   Payments: undefined;
+  PaymentMethods: undefined;
   MonCashSupport: undefined;
   EditListing: { productId: string };
   SettingsEdit: { field: 'name' | 'email' | 'phone' | 'phones' | 'natcash_phone' | 'bio' | 'password' | 'storeName'; title: string };

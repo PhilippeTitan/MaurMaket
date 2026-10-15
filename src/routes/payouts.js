@@ -4,6 +4,7 @@ import { pool } from '../config/database.js';
 import { authRequired, verifiedSellerRequired, accountActive } from '../middleware/auth.js';
 import { checkSubscriptionStatus, settleSellerDebtPayment } from '../utils/helpers.js';
 import { createNotification } from '../utils/notifications.js';
+import { userHasPassword, verifyUserPassword } from '../utils/passwordVerify.js';
 
 const router = Router();
 
@@ -206,6 +207,54 @@ router.get('/api/seller/payouts', authRequired, sellerRequired, async (req, res)
   }
 });
 
+// Payout destination (APP-Q253, APP-Q569–APP-Q570). The account phone number
+// remains the MonCash destination — payouts already snapshot it as
+// receiver_phone — but it is only managed here, behind fresh authentication
+// (APP-Q117), never through the session alone.
+router.get('/api/seller/payout-destination', authRequired, sellerRequired, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT phone FROM users WHERE id = $1', [req.user.id]);
+    const hasPassword = await userHasPassword(req.user.id);
+    res.json({ destination: result.rows[0]?.phone || null, has_password: hasPassword });
+  } catch (err) {
+    console.error('Payout destination fetch error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/api/seller/payout-destination', authRequired, sellerRequired, accountActive, async (req, res) => {
+  try {
+    const destination = String(req.body?.destination || '')
+      .replace(/[\s()-]/g, '')
+      .replace(/^\+?509/, '')
+      .replace(/^\+/, '');
+    if (!/^\d{8}$/.test(destination)) {
+      return res.status(400).json({ error: 'Enter a valid 8-digit Haitian number', code: 'INVALID_DESTINATION' });
+    }
+    const hasPassword = await userHasPassword(req.user.id);
+    if (hasPassword) {
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (!password) {
+        return res.status(400).json({ error: 'Enter your password to change your payout destination.', code: 'PASSWORD_REQUIRED' });
+      }
+      const ok = await verifyUserPassword(req.user.id, password);
+      if (!ok) {
+        return res.status(401).json({ error: 'That password is not correct.', code: 'INVALID_PASSWORD' });
+      }
+    }
+    const updated = await pool.query(
+      `UPDATE users SET phone = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1
+       RETURNING id, full_name, email, phone, natcash_phone, accepted_payment_methods, role, avatar_url, bio, store_name, store_logo_url, seller_tier, id_submitted_at, id_verified, id_verified_at, id_verification_result, use_store_identity, email_verified, created_at, location_address, location_city, location_lat, location_lng, username, show_real_name`,
+      [req.user.id, destination]
+    );
+    if (updated.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json({ destination, user: updated.rows[0] });
+  } catch (err) {
+    console.error('Payout destination update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Request payout
 router.post('/api/seller/payouts/request', authRequired, sellerRequired, accountActive, async (req, res) => {
   if (!req.user?.email_verified) return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email to request payouts.' });
@@ -251,7 +300,7 @@ router.post('/api/seller/payouts/request', authRequired, sellerRequired, account
     if (currentBalance < totalDebit) { await c.query('ROLLBACK'); releaseClient(); return res.status(400).json({ error: 'Insufficient balance including the 5% MonCash withdrawal fee' }); }
     const userResult = await c.query('SELECT phone FROM users WHERE id = $1', [req.user.id]);
     const phone = userResult.rows[0]?.phone;
-    if (!phone) { await c.query('ROLLBACK'); releaseClient(); return res.status(400).json({ error: 'Set your phone number in Profile before requesting a payout' }); }
+    if (!phone) { await c.query('ROLLBACK'); releaseClient(); return res.status(400).json({ error: 'Set your payout destination in Settings > Payment methods before requesting a payout' }); }
     const payoutResult = await c.query(
       `INSERT INTO payouts (seller_id, amount, fee_amount, total_debit, status, receiver_phone) VALUES ($1, $2, $3, $4, 'processing', $5) RETURNING *`,
       [req.user.id, payoutAmount, feeAmount, totalDebit, phone]

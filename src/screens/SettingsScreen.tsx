@@ -166,16 +166,18 @@ export default function SettingsScreen({ navigation }: Props) {
             <SettingsRow
               icon="cash"
               label={t('settings.paymentMethods')}
+              subtitle={t('settings.moncashNatcash')}
               chevron
               appearance="minimal"
               divider
-              onPress={() => navigation.navigate('Payments')}
+              onPress={() => navigation.navigate('PaymentMethods')}
             />
             {isSeller ? (
               <>
                 <SettingsRow
                   icon="bank-transfer-out"
                   label={t('settings.payouts')}
+                  subtitle={t('settings.manageEarnings')}
                   chevron
                   appearance="minimal"
                   divider

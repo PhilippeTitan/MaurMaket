@@ -1208,6 +1208,15 @@ export const confirmAdminMonCashLegacyTransfer = (kind: string, id: string, prov
   request(`/admin/moncash/legacy-transfers/${kind}/${id}/confirm`, { method: 'POST', body: JSON.stringify({ providerReference, note }) });
 export const requestPayout = (amount: number) =>
   request('/seller/payouts/request', { method: 'POST', body: JSON.stringify({ amount }) });
+// Payout destination management (APP-Q253, APP-Q569–APP-Q570): the account
+// phone is the MonCash destination; changes re-confirm the password first.
+export const getPayoutDestination = () =>
+  request<{ destination: string | null; has_password: boolean }>('/seller/payout-destination');
+export const updatePayoutDestination = (destination: string, password?: string) =>
+  request<{ destination: string; user: any }>('/seller/payout-destination', {
+    method: 'PUT',
+    body: JSON.stringify({ destination, password: password || undefined }),
+  });
 export const getSellerAnalytics = () => request('/seller/analytics');
 export const getLowStockProducts = () => request('/seller/products/low-stock');
 

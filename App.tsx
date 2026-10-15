@@ -57,6 +57,7 @@ import BusinessSubscriptionScreen from './src/screens/BusinessSubscriptionScreen
 import WishlistScreen from './src/screens/WishlistScreen';
 import AddressesScreen from './src/screens/AddressesScreen';
 import PaymentsScreen from './src/screens/PaymentsScreen';
+import PaymentMethodsScreen from './src/screens/PaymentMethodsScreen';
 import MonCashSupportScreen from './src/screens/MonCashSupportScreen';
 import SellerOnboardingScreen from './src/screens/SellerOnboardingScreen';
 import EditListingScreen from './src/screens/EditListingScreen';
@@ -630,6 +631,7 @@ export default function App() {
             <Stack.Screen name="Wishlist" component={WishlistScreen} />
             <Stack.Screen name="Addresses" component={AddressesScreen} />
             <Stack.Screen name="Payments" component={PaymentsScreen} />
+            <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
             <Stack.Screen name="MonCashSupport" component={MonCashSupportScreen} />
             <Stack.Screen name="EditListing" component={EditListingScreen} />
             <Stack.Screen name="Analytics" component={AnalyticsScreen} />
