@@ -36,7 +36,8 @@ interface Props {
  *
  * Uses absolute positioning for the title so it stays centered regardless of
  * asymmetric left/right action widths. Left and right slots are fixed
- * TOUCH.min (44px) containers to ensure symmetry.
+ * TOUCH.recommended (48px) containers to ensure symmetry, and the title is
+ * centered within the content row (below the safe-area inset).
  */
 export default function ScreenHeader({
   title,
@@ -60,11 +61,17 @@ export default function ScreenHeader({
     >
       {/* Left slot — fixed width for symmetry */}
       <View style={styles.sideSlot}>
-        {left || (onBack ? <BackButton onPress={onBack} size={backSize ?? 24} /> : null)}
+        {left || (onBack ? <BackButton onPress={onBack} size={backSize ?? 28} /> : null)}
       </View>
 
-      {/* Title — absolutely centered in the full header width */}
-      <View style={styles.titleContainer}>
+      {/* Title — absolutely centered within the content row (below the safe
+          area), not across the full bar including insets.top */}
+      <View
+        style={[
+          styles.titleContainer,
+          { top: insets.top + HEADER.topPad },
+        ]}
+      >
         <Text
           style={variant === 'branded' ? styles.titleBranded : [styles.title, titleSize ? { fontSize: titleSize } : undefined]}
           numberOfLines={1}
@@ -99,8 +106,8 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   sideSlot: {
-    width: TOUCH.min,
-    height: TOUCH.min,
+    width: TOUCH.recommended,
+    height: TOUCH.recommended,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -112,7 +119,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: TOUCH.min + SPACING.sm,
+    paddingHorizontal: TOUCH.recommended + SPACING.sm,
     pointerEvents: 'none',
   },
   title: {

@@ -36,14 +36,14 @@ export default function BackButton({ onPress, variant = 'standard', size = 24, s
 
 const styles = StyleSheet.create({
   standard: {
-    width: TOUCH.min,
-    height: TOUCH.min,
+    width: TOUCH.recommended,
+    height: TOUCH.recommended,
     justifyContent: 'center',
     alignItems: 'center',
   },
   overlay: {
-    width: TOUCH.min,
-    height: TOUCH.min,
+    width: TOUCH.recommended,
+    height: TOUCH.recommended,
     borderRadius: RADIUS.full,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
