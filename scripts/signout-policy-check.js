@@ -74,6 +74,7 @@ const ALL_KEYS = [
   'mm_appearance_mode',
   'mm_low_data_mode',
   'mm_lang',
+  'mm_last_tab',
   'mm_explore_filters',
   PUSH_TOKEN_KEY,
   APP_LOCK_ENABLED_KEY,
@@ -102,7 +103,7 @@ check('the policy owns the notification cache prefix', ACCOUNT_KEY_PREFIXES.incl
 check('unsent drafts are protected by default', !swept.includes(UNSENT_DRAFTS_KEY));
 check('the guest cart is kept', !swept.includes('mm_cart'));
 check('the signed-in account cart is swept (APP-Q097)', swept.includes(CART_ACCOUNT_KEY));
-check('device preferences are kept', !['mm_appearance_mode', 'mm_low_data_mode', 'mm_lang', 'mm_explore_filters'].some(k => swept.includes(k)));
+check('device preferences are kept', !['mm_appearance_mode', 'mm_low_data_mode', 'mm_lang', 'mm_last_tab', 'mm_explore_filters'].some(k => swept.includes(k)));
 check('the app-lock setting is kept at sign-out', !swept.includes(APP_LOCK_ENABLED_KEY) && !swept.includes(APP_LOCK_DELAY_KEY) && !swept.includes(APP_LOCK_LAST_ACTIVE_KEY));
 check('public snapshots are kept', !swept.some(k => k.startsWith('mm_snapshot:public:')));
 check('unrelated keys are kept', !swept.includes('expo-push-token'));
@@ -114,7 +115,7 @@ const survivors = ALL_KEYS.filter(k => !swept.includes(k));
 check(
   'survivors are exactly drafts, local state, preferences and public caches',
   JSON.stringify(survivors) === JSON.stringify([
-    UNSENT_DRAFTS_KEY, 'mm_cart', 'mm_appearance_mode', 'mm_low_data_mode', 'mm_lang', 'mm_explore_filters',
+    UNSENT_DRAFTS_KEY, 'mm_cart', 'mm_appearance_mode', 'mm_low_data_mode', 'mm_lang', 'mm_last_tab', 'mm_explore_filters',
     PUSH_TOKEN_KEY,
     APP_LOCK_ENABLED_KEY, APP_LOCK_DELAY_KEY, APP_LOCK_LAST_ACTIVE_KEY,
     'mm_snapshot:public:feed:forYou:v1', 'mm_snapshot:public:seller:seller-1:v1', 'expo-push-token',

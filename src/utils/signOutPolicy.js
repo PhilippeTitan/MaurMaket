@@ -98,6 +98,8 @@ export const DEVICE_LOCAL_KEYS = [
   'mm_appearance_mode',
   'mm_low_data_mode',
   'mm_lang',
+  // APP-Q003 — which tab the phone was left on is a device habit, not account data.
+  'mm_last_tab',
   'mm_explore_filters',
 ];
 

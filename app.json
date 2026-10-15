@@ -42,7 +42,8 @@
       "expo-asset",
       "expo-image",
       "@react-native-google-signin/google-signin",
-      "expo-audio"
+      "expo-audio",
+      "expo-localization"
     ],
     "extra": {
       "eas": {

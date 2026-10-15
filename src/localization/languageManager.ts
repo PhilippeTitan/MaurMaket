@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import * as Localization from 'expo-localization';
 import type { Language } from './types';
 
 const STORAGE_KEY = 'mm_lang';
@@ -32,9 +33,23 @@ export const languageManager = {
       const stored = await storage.getItem(STORAGE_KEY);
       if (stored === 'en' || stored === 'ht' || stored === 'fr') {
         currentLang = stored;
+        return;
       }
     } catch {
-      // Default to English on error
+      // Stored preference unreadable — fall through to the device-language default.
+    }
+    // APP-Q010: with no saved choice, use the supported device language;
+    // anything else falls back to Haitian Creole. English stays the module
+    // default only when the locale lookup itself fails.
+    try {
+      const deviceLang = Localization.getLocales?.()[0]?.languageCode;
+      if (deviceLang === 'en' || deviceLang === 'ht' || deviceLang === 'fr') {
+        currentLang = deviceLang;
+      } else {
+        currentLang = 'ht';
+      }
+    } catch {
+      // Keep the English module default if locale lookup fails.
     }
   },
 

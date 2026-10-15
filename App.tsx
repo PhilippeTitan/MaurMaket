@@ -15,6 +15,7 @@ import { network } from './src/network';
 import { offlineQueue } from './src/offlineQueue';
 import { PENDING_PAYMENT_KEY } from './src/utils/signOutPolicy';
 import { shouldLockNow } from './src/utils/appLockPolicy';
+import { isMainTabName, loadLastTab, saveLastTab, type MainTabName } from './src/utils/lastTab';
 import { clearAppLockActivity, getAppLockLastActive, getDeviceAuthAvailability, loadAppLockSettings, recordAppLockActivity } from './src/appLock';
 import AppLockGate from './src/components/AppLockGate';
 // Web-only: strips the browser's own focus ring and autofill fill off our text fields.
@@ -169,6 +170,16 @@ function AuthNavigator() {
 }
 
 function MainTabs() {
+  // APP-Q003 — cold start reopens the last main tab; the navigator only mounts
+  // once the (fast, device-local) restore has resolved so initialRouteName is right.
+  const [restoredTab, setRestoredTab] = useState<MainTabName | null>(null);
+  useEffect(() => {
+    let active = true;
+    loadLastTab().then((tab) => {
+      if (active) setRestoredTab(tab ?? 'FeedTab');
+    });
+    return () => { active = false; };
+  }, []);
   const insets = require('react-native-safe-area-context').useSafeAreaInsets();
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -187,9 +198,25 @@ function MainTabs() {
     }, [])
   );
 
+  if (restoredTab === null) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={COLORS.coral} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.mainShell}>
       <Tab.Navigator
+        initialRouteName={restoredTab}
+        screenListeners={{
+          state: (e) => {
+            const navState = (e.data as { state?: { index?: number; routes?: Array<{ name?: string }> } } | undefined)?.state;
+            const name = navState?.routes?.[navState.index ?? -1]?.name;
+            if (isMainTabName(name)) saveLastTab(name);
+          },
+        }}
         screenOptions={{
           headerShown: false,
           tabBarShowLabel: false,
