@@ -2,7 +2,7 @@
 
 ## Operating state
 
-- Status: Active discovery; product-code implementation is paused except for separately requested fixes.
+- Status: Discovery concluded at 526 answers; ledger implementation has been carried out in build-phase sessions (see the implementation checkpoints below and the external source-of-truth log). Support website/API remains deferred by sequencing rule (adapter stays disconnected); its 21 Asked questions (Q453-Q494, Q483-Q494) are intentionally parked, not gaps.
 - Goal: At least 500 unique, answered questions across MaurMaket; continue beyond 500 if meaningful unresolved topics remain.
 - Cadence: Starting at APP-Q144, ask ten questions per round and give a recommendation for each. Keep the established decision-log update cadence of every nine answered questions.
 - Progress: 526 / 500 unique questions answered, including a three-question focused design-system follow-up and a fifteen-question focused KYC onboarding follow-up after the whole-app discovery concluded. Existing discovery work is indexed below as already covered and will not be counted again.
@@ -1377,3 +1377,93 @@ Session 385 continuation: Map seller markers now use icon fallbacks instead of f
 Session 385 final Low Data continuation: Background queued photo/voice uploads now pause on cellular while Low Data is enabled and show a localized “Waiting for Wi-Fi · tap to send” action; explicit send/retry is honored. Offline text retains automatic reconnect delivery. Link-preview thumbnails are suppressed. Checks after all final edits: `npm test` (0 design violations/warnings; 2,354 EN/FR/HT keys; 1,763 calls; 591 existing unused notices), increased-stack TypeScript, `git diff --check`, Expo web (3,572 modules/9 bundles), Android (3,911 modules/9 MB) all passed. Metro cache deserialization failed and Expo recovered via full crawl. No live device/network test or commit/push.
 
 Build-phase implementation follow-up — Session 386 (2026-10-15): Implemented the accepted KYC onboarding follow-up APP-Q554–APP-Q568. VerificationScreen was revamped: the manual crop step and the dead Didit WebView path are removed; CIN/selfie capture is full-frame with the card-shaped guide, manual shutter, and a shared post-capture confirm screen; the review step shows the three photos; processing is an honest indeterminate spinner with duration copy and a passive checklist (no fake stage animation); rejected submissions reopen the exact capture step with granular localized QC feedback (card_not_detected, face_not_found, ocr_low, details_mismatch, face_mismatch, not_live, timeout, server_error) instead of a generic failure screen; manual_review now shows a real “in review” result state; an in-session draft restores captures and step for two hours if the user navigates away. Backend `verification.js` emits `reason_codes` (derived from Lightning det scores/best_det) alongside the human-readable reasons, including timeout/server-error paths. Status and entry surfaces: Account Dashboard gained the Profile > Verification status row (verified/rejected/not-started → opens Verification); NatCash Access links unverified users to verification; seller onboarding already gates the Verified tier. Icons: three new aliases in UnifiedIcon (card-account-details-outline, camera-retake-outline, shield-search-outline). api.ts: removed createDiditSession and the unused idFaceUrl payload. Locales EN/FR/HT updated in lockstep (2,793 keys in sync; tip3 rewritten; 21 dead keys removed; 36 added). Validation: `npm test` (design 0/0; 2,793 keys; 2,127 t() calls; icon check clean), increased-stack TypeScript, route syntax, and Expo web export (VerificationScreen bundle 24 KB) all pass. No live database/provider/device validation, migration, commit, or push. Discovery remains at 526. Next: live end-to-end KYC retry on device against Render + Lightning (reason_codes round-trip), then commit/push on Philippe's request.
+
+Implementation checkpoint — external log Session 387 (2026-10-05): Authenticity and content-rights reporting surface landed — anyone can flag a listing while rights holders get a dedicated identified reporting path; a report is never treated as proof (APP-Q544).
+
+Implementation checkpoint — external log Session 388 (2026-10-05): Seller-facing content-rights review and appeals — affected sellers receive the content, reason category, and response path (never reporter identity), and a confirmed-counterfeit appeal re-enters the review queue with a different reviewer where practical (APP-Q545–APP-Q547).
+
+Implementation checkpoint — external log Session 389 (2026-10-05): Listing-rights batch complete — publish-time rights confirmation (APP-Q541), buyer notification after confirmed counterfeit/prohibited on completed orders without changing order state (APP-Q548), safe edits remain visible during pending review (APP-Q546), removed listings keep only the item/terms snapshot in order history (APP-Q550), and routine moderation review keeps listings visible by default per APP-Q008.
+
+Implementation checkpoint — external log Session 390 (2026-10-05): Reviews v1 — buyers may edit and soft-delete their own reviews; an edited marker stays visible; the public-visibility predicate excludes moderated and deleted rows and fully refunded orders.
+
+Implementation checkpoint — external log Session 391 (2026-10-05): Reviews remainder — one gentle review reminder per eligible order (daily job, skips open disputes), private feedback routed to Support stays separate from the public review form, and translation reuses the on-demand provider seam.
+
+Implementation checkpoint — external log Session 392 (2026-10-06): "Your Data & Privacy" center screen — data categories, retention, and providers, reachable from Privacy Settings.
+
+Implementation checkpoint — external log Session 393 (2026-10-06): Device permissions review screen (APP-Q420–APP-Q422) — camera/photos/location/notification status with a system-settings shortcut; each in-feature permission bail-out preserves the current draft.
+
+Implementation checkpoint — external log Session 394 (2026-10-06): Policy transparency and consent (APP-Q356–APP-Q365) — policy versions, notices, accept/decline with confirmation, acceptance history, baseline never gates, and orders retain the terms version in effect.
+
+Implementation checkpoint — external log Session 395 (2026-10-06): In-app search discoverability (APP-Q431) — sellers control whether their profile appears in search independently of direct-link access.
+
+Implementation checkpoint — external log Session 396 (2026-10-06): Private security activity history and sign-in alerts (APP-Q369) — caller-scoped event log with allow-listed types and no IP storage; new sign-in sends a notification with a route into Security Settings.
+
+Implementation checkpoint — external log Session 397 (2026-10-06): Fast self-service account freeze (APP-Q371/APP-Q373/APP-Q374) — freezes block new sessions, listings, and payout actions, preserve recovery and Support access, restore paused listings on unfreeze, and record a security event.
+
+Implementation checkpoint — external log Session 398 (2026-10-06): Sign-in throttling with generic failure wording and no account-existence leak (APP-Q380); also closed a stale handoff by confirming data export was already implemented.
+
+Implementation checkpoint — external log Session 399 (2026-10-06): Database resilience — production connection handling now recovers from TLS and socket resets without process death.
+
+Implementation checkpoint — external log Session 400 (2026-10-06): Second-factor removal now requires fresh authentication first (APP-Q390).
+
+Implementation checkpoint — external log Session 401 (2026-10-07): Trusted-device duration and immediate revocation (APP-Q379) — remaining-days visibility plus revoke-one and revoke-all, never usable as KYC or payout proof.
+
+Implementation checkpoint — external log Session 402 (2026-10-07): Icon audit — 55 missing-icon placeholders replaced across screens.
+
+Implementation checkpoint — external log Session 403 (2026-10-07): Private device labels (APP-Q395) — caller-owned, display-only labels with input normalization and cascade cleanup.
+
+Implementation checkpoint — external log Session 404 (2026-10-07): Sign-out now sweeps device caches through a central policy (APP-Q403) while protecting unsent drafts and the guest cart.
+
+Implementation checkpoint — external log Session 405 (2026-10-07): Icon consistency sweep across Settings surfaces.
+
+Implementation checkpoint — external log Session 406 (2026-10-07): Staff KYC-evidence access log with subject-visible history — constrained writer, subject-safe SELECTs, retention cleanup, and export inclusion.
+
+Implementation checkpoint — external log Session 407 (2026-10-07): Optional client-side app auto-lock (APP-Q116) — device-local, default off, never locking without a valid session and sane clock.
+
+Implementation checkpoint — external log Session 408 (2026-10-07): Account cart syncs across devices (APP-Q097) — guest cart device-local, signed-in cart synced, merge idempotent by max quantity, never reserving stock.
+
+Implementation checkpoint — external log Session 409 (2026-10-07): Push tokens unregister at sign-out; delivery holds on signed-out devices instead of leaking notifications.
+
+Implementation checkpoint — external log Session 410 (2026-10-07): KYC evidence-access history added to the data summary and export.
+
+Implementation checkpoint — external log Session 411 (2026-10-07): Agreed price belongs to the account — checkout/offer agreement rehydration and ignored-line handling so a cart rebuild never silently re-prices an agreed deal.
+
+Implementation checkpoint — external log Session 412 (2026-10-07): Meetup safety advisory and private report path (APP-Q515–APP-Q524) — flagged places pause from suggestions while credible risk is unresolved; reports are private, non-punitive, and never auto-change order state; the in-app advisory display sits behind an intentionally disconnected support-gateway seam pending a connected support surface.
+
+Implementation checkpoint — external log Session 413 (2026-10-07): Foreground push banners held on signed-out devices (decidePushDelivery HOLD), single routing path gated on an open session.
+
+Implementation checkpoint — external log Session 414 (2026-10-07): Read receipts become a choice (APP-Q144/APP-Q192/APP-Q166) — user setting gates receipt recording and sender-facing read state on both paths.
+
+Implementation checkpoint — external log Session 415 (2026-10-07): Conversation archive and personal mark-unread (APP-Q152/APP-Q162) — caller-scoped, restorable, with unread filter and badge totals.
+
+Implementation checkpoint — external log Session 416 (2026-10-07): In-conversation literal substring search (APP-Q161/APP-Q148) — case-insensitive strpos, no wildcards, min length 2, conversation-scoped, limit 50.
+
+Implementation checkpoint — external log Session 417 (2026-10-07): Multi-seller per-portion cancellation remainder (APP-Q340–APP-Q341) — buyer deadline/overdue/no-fault events, unanswered-request resolution, seller-initiated portion cancel, and seller-scoped refunds; pinned permanently by the cancellation-scope guardrail.
+
+Implementation checkpoint — external log Session 418 (2026-10-07): Private message bookmarks (APP-Q156) — caller-scoped rows with no reach into orders, offers, disputes, or delivery state.
+
+Implementation checkpoint — external log Session 419 (2026-10-07): Policy-acceptance enforcement (APP-Q356–APP-Q365 remainder) — exactly three gated commitment actions (create listing, place order, make offer), 409 with a dedicated error code; preserved actions stay open and the baseline never gates.
+
+Implementation checkpoint — external log Session 420 (2026-10-07): Analytics are optional and off until asked (APP-Q416/APP-Q432) — users.analytics_opt_out defaults true, essential collection is never gated, no optional analytics SDK or event table exists, and unknown event classes are refused.
+
+Implementation checkpoint — external log Session 421 (2026-10-07): Message Requests first-contact area (APP-Q154/APP-Q164–APP-Q173) — one text-only message before acceptance, no offers/attachments, neutral sender status, accept/decline/report with block in overflow, stale-pending archive with restore, and a separate Requests badge.
+
+Implementation checkpoint — external log Session 422 (2026-10-08): Profile tab gains add-listing, edit-profile, and Seller Tools access rows.
+
+External-log backfill complete through Session 422 (2026-10-08). Numbering note: these entries follow the external source-of-truth log (AGENTS.md) and are distinct from the ledger-local "Session 386" KYC follow-up above, which reuses a colliding local number. Support website/API (APP-Q453–APP-Q494) remains deferred by sequencing rule.
+
+Implementation audit checkpoint — external log Session 423 (2026-10-15): Domain-by-domain audit of this ledger against the codebase (three parallel passes over trust/safety, transactions, social/messaging, privacy/security, and onboarding/discovery; ~50 load-bearing decisions re-verified with file-level evidence, all 16 guardrail scripts green). Result: everything the build trail tracked through Session 422 is implemented. The audit also surfaced earlier answers no session had picked up — gap register (status at audit time):
+- APP-Q003 restore last main tab: implemented this session (mm_last_tab, device-local, kept at sign-out).
+- APP-Q010 device language → Haitian Creole fallback: implemented this session (expo-localization; supported locale wins, otherwise ht).
+- APP-Q001 browse-before-signin: not implemented (app gates on auth; server already allows optional-auth browsing).
+- APP-Q002 contextual dismissible hints: partial (no blocking tour exists; hint system absent).
+- APP-Q011/APP-Q012 on-demand translation of descriptions/messages: partial (provider + reviews surface only; product detail and chat surfaces absent).
+- APP-Q013–APP-Q015 self-service account closure: partial (server endpoint complete with impact checks and anonymization; no client screen, impact preview, or re-auth UI).
+- APP-Q009 account-level enforcement notice/appeal: partial (listing-level restriction/appeal live; no account suspend/ban loop or user-report review queue).
+- APP-Q549 duplicate-media comparison signals: partial (human-review-only policy live; no photo/text duplicate detection).
+- APP-Q369 password-change sign-out-other-devices opt-in: partial (security resets revoke; ordinary password change has no toggle).
+- APP-Q422 shared permission-revoke handling: partial (per-screen convention preserves drafts; no shared helper or guardrail).
+- APP-Q432 analytics deletion on opt-out: vacuous-by-design (no optional analytics collected, so no cleanup routine exists; clause unexercised).
+- Low Data link-preview suppression: partial (preview image suppressed; metadata fetch and text card still render).
+- Meetup credible-risk advisory: partial (suggestion pause live; in-app advisory display behind the intentionally disconnected support seam).
+Support website/API (APP-Q453–APP-Q494) remains deferred by sequencing rule.

@@ -509,8 +509,10 @@ Config at: `C:\Users\drato\.config\opencode\opencode.json`
 ### External Services
 | Service | Purpose | Key/Config |
 |---------|---------|------------|
-| **cron-job.org** | Render keep-alive pings (replaces throttled GitHub Actions cron) | API key: `ZhYnvsj66LV9BnAiURgHJa9q/AVND65BnN1tkMBRAmg=` |
+| **cron-job.org** | Render keep-alive pings (replaces throttled GitHub Actions cron) | API key: `ZhYnvsj66LV9BnAiURgHJa9q/AVND65Bn1tkMBRAmg=` |
 | | Target URL: `https://maurmaket.onrender.com/api/health` | Free tier, 1-min interval |
+| **Lightning.ai** | KYC verify.py studio (kyc-probe cloudspace) — **access via direct REST API + this key, never via MCP** | Basic auth header: `NTMxODkzMzgtMzc1OC00YTZhLTg5OWEtM2QyYTQ0NmM5ODQyOmU5NzM2ZWZjLTMyZjktNGNmMC1hY2NkLTA1NDJmYjUyN2FlZA==` (= base64 `user_id:api_key`) |
+| | user `53189338-3758-4a6a-899a-3d2a446c9842`, project `01m2xxt33j2582e80tcswxyt6v`, cloudspace `01m2y06yr92z5qmmwnwr72xxrh` | REST base: `https://lightning.ai/v1` — see "Lightning Studio keep-alive formula" for endpoints |
 
 ### Supabase MCP Tools
 **ALWAYS use these for database queries instead of connecting via `pg` directly.**
@@ -1212,6 +1214,15 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
   - **DO NOT use** `eas build --local` — does NOT work on Windows (requires macOS/Linux).
   - **gradle.properties**: JVM args `-Xmx4096m`, `org.gradle.workers.max=2`, `org.gradle.parallel=false` (prevent reanimated CMake OOM).
 - **Lightning Studio keep-alive formula** (proven 2026-10-14 on `kyc-probe`; reusable for maurvideos / any long-running Lightning service — Philippe may ask another instance to apply this):
+  - **HOW TO ACCESS LIGHTNING — read this first**: access is **always direct REST with the API key**, from any machine, via `Invoke-RestMethod` / curl / fetch. **Do NOT look for or wait on a Lightning MCP server** — it is usually not attached to the session (2026-10-15: an instance wasted time discovering `lightning_execute_code` was unavailable; the previous instance never used MCP at all, only the REST API). If MCP tools happen to exist in a session they are optional sugar, never the path. Credentials and IDs are in the External Services table above (Basic auth header, user/project/cloudspace). Ready-to-paste PowerShell:
+    ```powershell
+    $H = @{ Authorization = 'Basic NTMxODkzMzgtMzc1OC00YTZhLTg5OWEtM2QyYTQ0NmM5ODQyOmU5NzM2ZWZjLTMyZjktNGNmMC1hY2NkLTA1NDJmYjUyN2FlZA=='; 'Content-Type' = 'application/json' }
+    $B = 'https://lightning.ai/v1/projects/01m2xxt33j2582e80tcswxyt6v/cloudspaces/01m2y06yr92z5qmmwnwr72xxrh'
+    # run a command on the studio (zsh; returns {output, exitCode}):
+    Invoke-RestMethod -Method Post -Uri "$B/execute" -Headers $H -Body '{"command":"curl -sf http://127.0.0.1:8000/health","detached":false}'
+    # wake the machine if stopped (~90 s cold boot; no-op if already up):
+    Invoke-RestMethod -Method Post -Uri "$B/start" -Headers $H -Body '{}'
+    ```
   - **Problem**: Lightning cloudspaces auto-sleep ~10-25 min after idle; everything on the studio dies. Public endpoints then return plain-text `404 page not found` (machine asleep/off) or empty `502` (machine on, port not listening).
   - **Formula — 3 layers, all three required**:
     1. **Endpoint with `autoStart` + supervisor launch**: the public endpoint's start command must launch a supervisor, so any reboot/sleep self-heals. `PUT /v1/projects/{proj}/cloudspaces/{cs}/endpoints/{endp}` with `{"autoStart": true, "command": "nohup bash /teamspace/studios/this_studio/supervisor.sh > /dev/null 2>&1 & echo supervisor-started"}` (verify persisted via GET).
