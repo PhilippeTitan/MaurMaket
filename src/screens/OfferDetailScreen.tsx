@@ -234,7 +234,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
       </ScrollView>
 
       {!isFinalized && !isExpired && (
-        <View style={[styles.actions, { paddingBottom: insets.bottom + SPACING.md }]}>
+          <View style={[styles.actions, { paddingBottom: insets.bottom + SPACING.lg }]}>
           {canRespond && (
             <>
               <TouchableOpacity style={[styles.acceptBtn, !stockSufficient && { opacity: 0.45 }]} onPress={handleAccept} disabled={acting || !stockSufficient} accessibilityLabel="accept offer" accessibilityRole="button">
@@ -270,7 +270,7 @@ export default function OfferDetailScreen({ route, navigation }: Props) {
       )}
 
       {(isFinalized || isExpired) && (
-        <View style={[styles.actions, { paddingBottom: insets.bottom + SPACING.md }]}>
+          <View style={[styles.actions, { paddingBottom: insets.bottom + SPACING.lg }]}>
           <TouchableOpacity style={styles.chatBtn} onPress={openConversation} accessibilityLabel={t('offer.openChat')} accessibilityRole="button">
             <Text style={styles.chatBtnText}>{t('offer.openChat')}</Text>
           </TouchableOpacity>

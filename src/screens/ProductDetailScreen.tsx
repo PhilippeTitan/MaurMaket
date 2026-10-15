@@ -783,7 +783,7 @@ export default function ProductDetailScreen({ route, navigation }: Props) {
       </ScrollView>
 
       {/* ── Sticky bottom CTA ── */}
-      <View style={[styles.bottomBar, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>
+          <View style={[styles.bottomBar, { paddingBottom: insets.bottom + SPACING.lg }]}>
         <BuyRow product={product} navigation={navigation} variant={activeVariant} />
       </View>
 

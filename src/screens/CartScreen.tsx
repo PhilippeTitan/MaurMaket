@@ -250,7 +250,7 @@ export default function CartScreen({ navigation }: Props) {
               </View>
             }
           />
-          <View style={[styles.footer, { paddingBottom: insets.bottom + SPACING.md }]}>
+          <View style={[styles.footer, { paddingBottom: insets.bottom + SPACING.lg }]}>
             <View style={styles.promoRow}>
               <TextInput
                 style={styles.promoInput}

@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '@/localization';
 import { getAddresses, createAddress, updateAddress, deleteAddress } from '../api';
 import type { Address } from '../types';
@@ -22,6 +23,7 @@ const ADDRESSES_CACHE_TTL = 60_000;
 let _addressesCache: { data: any; timestamp: number } | null = null;
 
 export default function AddressesScreen() {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -126,7 +128,7 @@ export default function AddressesScreen() {
         <FlatList
           data={addresses}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + SPACING.page }]}
           showsVerticalScrollIndicator={false}
           renderItem={({ item, index }) => (
             <TouchableOpacity
@@ -183,7 +185,7 @@ export default function AddressesScreen() {
       <Modal visible={modalVisible} animationType="slide" transparent>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+            <View style={[styles.modalContent, { paddingBottom: insets.bottom + 40 }]}>
               {/* Handle bar */}
               <View style={styles.modalHandle} />
 

@@ -6,6 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ONBOARDING_COLORS } from './onboarding/theme';
 import AuthInput from '../components/AuthInput';
 import PrimaryButton from '../components/PrimaryButton';
@@ -35,6 +36,7 @@ const FIELD_META: Record<string, { placeholderKey: string; icon: string; iconCol
 };
 
 export default function SettingsEditScreen({ route, navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
   const { field, title } = route.params;
@@ -200,7 +202,7 @@ export default function SettingsEditScreen({ route, navigation }: Props) {
         ) : undefined}
       />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + SPACING.page }]} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
 
           {field === 'phones' ? (

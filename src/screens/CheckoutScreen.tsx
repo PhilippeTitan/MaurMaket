@@ -382,7 +382,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     if (step === 3) { handleCheckout(); return; }
     if (canContinue()) setStep((step + 1) as Step);
   };
-  const renderStep1 = () => (<ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
+  const renderStep1 = () => (<ScrollView contentContainerStyle={[styles.stepContent, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
     <Text style={styles.stepLabel}>{t("checkout.delivery")}</Text>
     <View style={styles.methodRow}>
       <TouchableOpacity style={[styles.methodCard, method==="delivery"&&styles.methodActive]} onPress={()=>setAllFulfillmentMethods("delivery")} accessibilityRole="button"><Icon name="delivery" size={22} color={method==="delivery"?COLORS.coral:COLORS.text2}/><Text style={[styles.methodTitle,method==="delivery"&&styles.methodTitleActive]}>{t("checkout.delivery")}</Text><Text style={styles.methodSub}>{t("checkout.deliverySubtitle")}</Text></TouchableOpacity>
@@ -418,7 +418,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <TextInput style={styles.input} placeholder={t("checkout.meetupNote")} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline/>
     </>}
   </ScrollView>);
-  const renderStep2 = () => (<ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
+  const renderStep2 = () => (<ScrollView contentContainerStyle={[styles.stepContent, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
     <Text style={styles.stepLabel}>{t("checkout.payment")}</Text>
     <View style={styles.paymentOptions}>
       <TouchableOpacity style={[styles.paymentCard,paymentMethod==="moncash"&&styles.paymentCardActive]} onPress={()=>setPaymentMethod("moncash")} accessibilityRole="button"><View style={styles.paymentCardLeft}><Image source={moncashLogo} style={styles.paymentLogo} resizeMode="cover"/><View style={styles.paymentInfo}><Text style={styles.paymentName}>MonCash</Text><Text style={styles.paymentSub}>{t("checkout.securePayment")}</Text></View></View><View style={[styles.radio,paymentMethod==="moncash"&&styles.radioActive]}>{paymentMethod==="moncash"&&<View style={styles.radioDot}/>}</View></TouchableOpacity>
@@ -429,7 +429,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     {paymentMethod==="moncash"&&<View style={styles.trustRow}><MaterialCommunityIcons name="lock-check" size={16} color={COLORS.green}/><Text style={styles.trustItem}>{t("checkout.trustHeld")}</Text></View>}
     {paymentMethod==="natcash"&&<View style={styles.trustRow}><MaterialCommunityIcons name="swap-horizontal" size={16} color={COLORS.blue}/><Text style={styles.trustItem}>NatCash sends payment directly from you to the seller</Text></View>}
   </ScrollView>);
-  const renderStep3 = () => (<ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
+  const renderStep3 = () => (<ScrollView contentContainerStyle={[styles.stepContent, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
     <Text style={styles.stepLabel}>{t("checkout.orderSummary")}</Text>
     <View style={styles.reviewCard}>{cart.map((item,idx)=>{const img=item.images?.find(i=>i.is_primary)||item.images?.[0];const url=getImageUrl(img?.image_url);return(<View key={cartLineKey(item)} style={[styles.reviewItem,idx<cart.length-1&&styles.reviewItemBorder]}><View style={styles.reviewThumb}>{url?<Image source={{uri:url}} style={styles.reviewThumbImg} resizeMode="cover"/>:<Icon name="image-unavailable" size={16} color={COLORS.text2}/>}</View><View style={styles.reviewItemInfo}><Text style={styles.reviewItemName} numberOfLines={1}>{item.name}</Text><Text style={styles.reviewItemQty}>{item.variantLabel ? `${item.variantLabel} · ` : ''}x{item.quantity}</Text></View><Text style={styles.reviewItemPrice}>{formatPrice((item.effective_price??item.price)*item.quantity)} G</Text></View>);})}</View>
     <View style={styles.totalsCard}>
@@ -445,7 +445,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     <ScreenHeader title={step===1?t("checkout.step1Title"):step===2?t("checkout.step2Title"):t("checkout.step3Title")} onBack={()=>step>1?setStep((step-1)as Step):navigation.goBack()}/>
     <Stepper current={step}/>
     {step===1&&renderStep1()}{step===2&&renderStep2()}{step===3&&renderStep3()}
-    <View style={[styles.bottomBar,{paddingBottom:Math.max(insets.bottom,12)}]}>
+          <View style={[styles.bottomBar,{paddingBottom:insets.bottom + SPACING.lg}]}>
       {step<3&&<View style={styles.bottomTotalRow}><Text style={styles.bottomTotalLabel}>{t("common.total")}</Text><Text style={styles.bottomTotalValue}>{formatPrice(finalTotal)} G</Text></View>}
       <TouchableOpacity style={[styles.ctaBtn,(!canContinue()||loading)&&styles.ctaBtnDisabled]} onPress={handleNext} disabled={!canContinue()||loading} accessibilityRole="button">
         {loading?<ActivityIndicator color={COLORS.white}/>:<View style={styles.ctaRow}><Text style={styles.ctaText}>{step===3?t("checkout.payButton",{amount:formatPrice(finalTotal)+" G"}):t("checkout.continue")}</Text><MaterialCommunityIcons name={step===3?"lock":"arrow-right"} size={18} color={COLORS.white}/></View>}

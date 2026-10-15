@@ -119,18 +119,18 @@ export default function FormSheet({
             {scrollable ? (
               <ScrollView
                 style={styles.contentScroll}
-                contentContainerStyle={styles.contentContainer}
+                contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + SPACING.xxl }]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
               >
                 {children}
               </ScrollView>
             ) : (
-              <View style={styles.contentContainer}>{children}</View>
+              <View style={[styles.contentContainer, { paddingBottom: insets.bottom + SPACING.xxl }]}>{children}</View>
             )}
 
             {/* Footer */}
-            {footer && <View style={styles.footer}>{footer}</View>}
+            {footer && <View style={[styles.footer, { paddingBottom: insets.bottom + SPACING.xxl }]}>{footer}</View>}
           </View>
         </KeyboardAvoidingView>
       </View>

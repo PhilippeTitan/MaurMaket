@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ONBOARDING_COLORS } from './onboarding/theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
@@ -37,12 +38,13 @@ type Props = NativeStackScreenProps<RootStackParamList, 'AccountDashboard'>;
  * └─────────────────────────────────────┘
  */
 export default function AccountDashboardScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t, language } = useTranslation();
   const toast = useToast();
   const { user } = useUser();
 
   const sections = useRef(
-    Array.from({ length: 3 }, () => ({
+    Array.from({ length: 4 }, () => ({
       opacity: new Animated.Value(0),
       translateY: new Animated.Value(16),
     }))
@@ -71,13 +73,46 @@ export default function AccountDashboardScreen({ navigation }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('account.title')} onBack={() => navigation.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.page }]} showsVerticalScrollIndicator={false}>
 
         {/* The identity card lives on Settings and the Me tab now — this page is
             the account fields themselves (Philippe, 2026-10-08). */}
 
-        {/* ── Personal Information ── */}
+        {/* ── Identity verification (APP-Q566: Profile > Verification) ── */}
         <Animated.View style={animStyle(0)}>
+          <SettingsGroup
+            header={t('verification.accountHeader')}
+            description={t('verification.accountDesc')}
+          >
+            <TouchableOpacity
+              style={styles.row}
+              activeOpacity={0.6}
+              onPress={() => navigation.navigate('Verification')}
+            >
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons name="card-account-details-outline" size={20} color={COLORS.text2} />
+              </View>
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>{t('verification.accountRowLabel')}</Text>
+                <Text style={styles.rowValue}>
+                  {user?.id_verified
+                    ? t('verification.statusVerified')
+                    : user?.id_verification_result === 'rejected'
+                      ? t('verification.statusRejectedDesc')
+                      : t('verification.statusNoneDesc')}
+                </Text>
+              </View>
+              {user?.id_verified ? (
+                <MaterialCommunityIcons name="check-circle" size={18} color={ONBOARDING_COLORS.green} />
+              ) : (
+                <MaterialCommunityIcons name="chevron-right" size={18} color={ONBOARDING_COLORS.faint} />
+              )}
+            </TouchableOpacity>
+          </SettingsGroup>
+        </Animated.View>
+
+        {/* ── Personal Information ── */}
+        <Animated.View style={animStyle(1)}>
           <SettingsGroup
             header={t('account.personalInfo')}
             description={t('account.personalInfoDesc')}
@@ -119,7 +154,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* ── Contact Information ── */}
-        <Animated.View style={animStyle(1)}>
+        <Animated.View style={animStyle(2)}>
           <SettingsGroup
             header={t('account.contactInfo')}
             description={t('account.contactInfoDesc')}
@@ -168,7 +203,7 @@ export default function AccountDashboardScreen({ navigation }: Props) {
         </Animated.View>
 
         {/* ── Preferences ── */}
-        <Animated.View style={animStyle(2)}>
+        <Animated.View style={animStyle(3)}>
           <SettingsGroup
             header={t('account.preferencesHeader')}
             description={t('account.preferencesDesc')}

@@ -5,6 +5,7 @@ import {
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TIER_COLORS } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
@@ -19,6 +20,7 @@ import type { RootStackParamList } from '../navigation';
 type Props = NativeStackScreenProps<RootStackParamList, 'EditProfile'>;
 
 export default function EditProfileScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
   const { user } = useUser();
@@ -72,7 +74,7 @@ export default function EditProfileScreen({ navigation }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('me.editProfile')} onBack={() => navigation.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.page }]} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
 
           {/* ── Avatar Section ── */}

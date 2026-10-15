@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import { useTranslation } from '@/localization';
@@ -28,6 +29,7 @@ const getFaqs = (t: (k: string) => string): FAQItem[] =>
   FAQ_KEYS.map((k: FAQKey) => ({ question: t(`faq.${k}Q`), answer: t(`faq.${k}A`) }));
 
 export default function HelpSupportScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
   // A meetup safety concern arrives here because this is the live private
@@ -88,7 +90,7 @@ export default function HelpSupportScreen({ navigation, route }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('help.title')} onBack={() => navigation.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.page }]} showsVerticalScrollIndicator={false}>
         {safetyTopic && (
           <View style={styles.safetyBanner} accessibilityLiveRegion="polite">
             <MaterialCommunityIcons name="shield-alert-outline" size={18} color={COLORS.text2} />

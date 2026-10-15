@@ -11,6 +11,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo, { NetInfoStateType } from '@react-native-community/netinfo';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import {
@@ -310,6 +311,7 @@ async function estimateSelectedPhotoBytes(uris: string[]) {
 }
 
 export default function AddListingScreen() {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
   const route = useRoute<AddListingRoute>();
@@ -879,7 +881,7 @@ export default function AddListingScreen() {
           </ScrollView>
         ) : (
           <>
-            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
               {atCap && (
                 <View style={styles.capBanner}>
                   <MaterialCommunityIcons name="information-outline" size={16} color={COLORS.yellow} />
@@ -1555,7 +1557,7 @@ export default function AddListingScreen() {
             </ScrollView>
 
             {/* Bottom action bar */}
-            <View style={styles.bottomBar}>
+            <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 14 }]}>
               <View style={styles.dotsRow}>
                 {[0, 1, 2, 3].map((i) => (
                   <View
@@ -1625,7 +1627,7 @@ export default function AddListingScreen() {
               onRequestClose={() => setShowPickerSheet(false)}
             >
               <Pressable style={styles.sheetBackdrop} onPress={() => setShowPickerSheet(false)}>
-                <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+                <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 32 }]} onPress={(e) => e.stopPropagation()}>
                   <Text style={styles.sheetTitle}>{t('addListing.addPhoto')}</Text>
                   <TouchableOpacity
                     style={styles.sheetOption}

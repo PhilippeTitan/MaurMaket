@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ONBOARDING_COLORS } from './onboarding/theme';
 import { store } from '../store';
 import { useUser } from '../hooks';
@@ -19,6 +20,7 @@ import type { RootStackParamList } from '../navigation';
 type Props = NativeStackScreenProps<RootStackParamList, 'PrivacySettings'>;
 
 export default function PrivacySettingsScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const { user } = useUser();
   const toast = useToast();
@@ -206,7 +208,7 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('privacy.title')} onBack={() => navigation.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.page }]} showsVerticalScrollIndicator={false}>
 
         {/* ── Public Identity & Privacy ── */}
         <Animated.View style={animStyle(0)}>

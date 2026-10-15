@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import SettingsToggle from '../components/SettingsToggle';
@@ -53,6 +54,7 @@ const DEFAULT_PREFS: NotificationPreferences = {
 };
 
 export default function NotificationsSettingsScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
 
@@ -236,7 +238,7 @@ export default function NotificationsSettingsScreen({ navigation }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('settings.notifications')} onBack={() => navigation.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.page }]} showsVerticalScrollIndicator={false}>
         {/* Device Permission Banner */}
         {!hasPermission && (
           <View style={styles.permissionCard}>

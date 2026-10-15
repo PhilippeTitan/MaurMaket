@@ -368,7 +368,7 @@ export default function AnimatedSignin({ onSwitchToSignup, onForgotPassword, onA
             s.screenScrollContent,
             {
               paddingTop: Math.max(insets.top, SPACING.lg),
-              paddingBottom: Math.max(insets.bottom, SPACING.lg),
+              paddingBottom: insets.bottom + SPACING.lg,
             },
           ]}
           keyboardShouldPersistTaps="handled"

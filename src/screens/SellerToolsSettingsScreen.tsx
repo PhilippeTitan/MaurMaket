@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS, TOUCH } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { store } from '../store';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
@@ -31,6 +32,7 @@ const toLocalDateTimeInput = (value?: string) => {
 };
 
 export default function SellerToolsSettingsScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
   const { user } = useUser();
@@ -125,7 +127,7 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
     return (
       <View style={styles.container}>
         <ScreenHeader title={t('settings.seller')} onBack={() => navigation.goBack()} />
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 20 }]}>
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.row}
@@ -145,7 +147,7 @@ export default function SellerToolsSettingsScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScreenHeader title={t('settings.seller')} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 20 }]} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: anim.opacity, transform: [{ translateY: anim.translateY }] }}>
 
       {/* ── Store Profile ── */}

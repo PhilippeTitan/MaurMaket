@@ -652,7 +652,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.close')}
           />
-          <View style={styles.moreSheet}>
+          <View style={[styles.moreSheet, { paddingBottom: insets.bottom + 40 }]}>
             <View style={styles.sheetHandle} />
             {moreProduct && moreProduct.seller_id === store.user?.id ? (
               /* Own product options */
@@ -741,7 +741,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
         onRequestClose={() => setReasonProduct(null)}
       >
         <Pressable style={styles.reasonOverlay} onPress={() => setReasonProduct(null)}>
-          <Pressable style={styles.reasonSheet} onPress={(event) => event.stopPropagation()}>
+          <Pressable style={[styles.reasonSheet, { paddingBottom: insets.bottom + 36 }]} onPress={(event) => event.stopPropagation()}>
             <View style={styles.sheetHandle} />
             <View style={styles.reasonHeader}>
               <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={COLORS.coral} />

@@ -8,6 +8,7 @@ import { COLORS, SPACING } from '../theme';
 import { useTranslation } from '@/localization';
 import { MaterialCommunityIcons } from '../components/icons/UnifiedIcon';
 import ScreenHeader from '../components/ScreenHeader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SavedMessages'>;
 
@@ -26,6 +27,7 @@ export default function SavedMessagesScreen({ navigation }: Props) {
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const insets = useSafeAreaInsets();
 
   const load = useCallback(() => {
     setError('');
@@ -62,6 +64,7 @@ export default function SavedMessagesScreen({ navigation }: Props) {
         <FlatList
           data={bookmarks}
           keyExtractor={(item) => item.messageId}
+          contentContainerStyle={{ paddingBottom: insets.bottom + SPACING.page }}
           ListEmptyComponent={<Text style={styles.empty}>{t('savedMessages.empty')}</Text>}
           renderItem={({ item }) => (
             <TouchableOpacity

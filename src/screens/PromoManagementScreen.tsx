@@ -181,7 +181,7 @@ export default function PromoManagementScreen() {
         </ScrollView>
 
       {/* Create button */}
-      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
+          <View style={[styles.bottomBar, { paddingBottom: insets.bottom + SPACING.lg }]}>
         <TouchableOpacity style={styles.createBtn} onPress={() => setShowCreate(true)} accessibilityRole="button" accessibilityLabel="create promo code">
           <Icon name="plus" size={18} color={COLORS.white} />
           <Text style={styles.createBtnText}>Create Promo Code</Text>
@@ -200,7 +200,7 @@ export default function PromoManagementScreen() {
               <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalScroll}>
+            <ScrollView contentContainerStyle={[styles.modalScroll, { paddingBottom: insets.bottom + 40 }]}>
               <Text style={styles.fieldLabel}>Code</Text>
               <View style={styles.codeRow}>
                 <TextInput style={[styles.input, { flex: 1 }]} placeholder="XKMP-2B7N" placeholderTextColor={COLORS.text2} value={code} onChangeText={setCode} autoCapitalize="characters" accessibilityLabel="promo code" />

@@ -71,7 +71,7 @@ export default function OfferBuilder({ visible, item, conversationId, onClose, o
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleClose} accessibilityLabel="close" accessibilityRole="button" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }]}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.lg }]}>
           <View style={styles.handle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{t('offer.make')}</Text>

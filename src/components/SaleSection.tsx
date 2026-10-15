@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, formatPrice } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const DISCOUNT_OPTIONS = [10, 15, 20, 25];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -31,6 +32,7 @@ export default function SaleSection({
   onSalePriceChange,
   onSaleEndDateChange,
 }: SaleSectionProps) {
+  const insets = useSafeAreaInsets();
   const origNum = parseFloat(originalPrice) || 0;
   const initPct = origNum > 0 && parseFloat(salePrice) > 0 && parseFloat(salePrice) < origNum
     ? Math.round((1 - parseFloat(salePrice) / origNum) * 100)
@@ -238,7 +240,7 @@ export default function SaleSection({
       {/* Date Picker Modal */}
       <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={() => setShowDatePicker(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDatePicker(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalContent} onPress={() => {}}>
+          <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { paddingBottom: insets.bottom + 34 }]} onPress={() => {}}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Select End Date</Text>
 

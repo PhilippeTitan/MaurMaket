@@ -875,7 +875,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
       </ScrollView>
 
       {/* ── Bottom Action Bar ── */}
-      <View style={[styles.bottomBar, { paddingBottom: SPACING.lg }]}>
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + SPACING.lg }]}>
         {/* One button per active seller portion: a multi-seller checkout can cancel one portion without touching the others (APP-Q340). */}
         {isBuyerOfOrder && order.delivery_method !== 'meetup' && order.seller_fulfillments?.filter((f) => ['processing', 'shipped', 'delivered'].includes(f.fulfillment_status)).map((f) => {
           const active = order.cancellation_requests?.some((request) => request.seller_id === f.seller_id && ['open', 'under_review'].includes(request.status));
@@ -1036,7 +1036,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + SPACING.xxl + 20 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle} accessibilityRole="header">{reviewEditId ? t('orderDetail.editReview') : t('orderDetail.reviewOrder')}</Text>
               <TouchableOpacity style={styles.modalClose} onPress={closeReviewModal} accessibilityLabel={t('accessibility.close')} accessibilityRole="button">
@@ -1108,7 +1108,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + SPACING.xxl + 20 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle} accessibilityRole="header">{t('orderDetail.openDispute')}</Text>
               <TouchableOpacity style={styles.modalClose} onPress={() => setDisputeModalVisible(false)} accessibilityLabel={t('accessibility.close')} accessibilityRole="button">
@@ -1199,7 +1199,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
       <Modal visible={buyerCancelScopeModalVisible} transparent animationType="slide" onRequestClose={() => setBuyerCancelScopeModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + SPACING.xxl + 20 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle} accessibilityRole="header">{t('orderDetail.cancelScopeTitle')}</Text>
               <TouchableOpacity onPress={() => setBuyerCancelScopeModalVisible(false)} style={styles.modalClose} accessibilityRole="button" accessibilityLabel={t('orderDetail.close')}>
@@ -1252,7 +1252,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
       <Modal visible={!!cancellationModalSellerId} transparent animationType="slide" onRequestClose={() => setCancellationModalSellerId(null)}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + SPACING.xxl + 20 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle} accessibilityRole="header">{t('orderDetail.requestCancellation')}</Text>
               <TouchableOpacity onPress={() => setCancellationModalSellerId(null)} style={styles.modalClose} accessibilityRole="button" accessibilityLabel={t('orderDetail.close')}><MaterialCommunityIcons name="close" size={22} color={COLORS.text2} /></TouchableOpacity>
@@ -1276,7 +1276,7 @@ export default function OrderDetailScreen({ route, navigation }: Props) {
 
       <Modal visible={sellerCancellationModalVisible} transparent animationType="slide" onRequestClose={() => setSellerCancellationModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + SPACING.xxl + 20 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('orderDetail.sellerCancelTitle')}</Text>
               <TouchableOpacity onPress={() => setSellerCancellationModalVisible(false)} style={styles.modalClose} accessibilityRole="button" accessibilityLabel={t('orderDetail.close')}>

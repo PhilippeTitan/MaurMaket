@@ -77,36 +77,59 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
     const cinFrontB64 = cinFrontImage.toString('base64');
     const selfieB64 = selfieImage.toString('base64');
 
-    // Call Lightning /verify
+    // Call Lightning /verify. The KYC cloudspace can be mid-restart or
+    // cold-booting after auto-sleep (Lightning restarts/parks VMs), so
+    // transient failures get one retry after a grace period.
     let lightningResult;
-    try {
+    const attemptLightning = async () => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 45000);
-
-      const lr = await fetch(`${LIGHTNING_URL}/verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${LIGHTNING_KEY}`,
-        },
-        body: JSON.stringify({
-          cin_front_base64: cinFrontB64,
-          selfie_base64: selfieB64,
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!lr.ok) {
-        const errBody = await lr.text();
-        throw new Error(`Lightning returned ${lr.status}: ${errBody}`);
+      try {
+        const lr = await fetch(`${LIGHTNING_URL}/verify`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${LIGHTNING_KEY}`,
+          },
+          body: JSON.stringify({
+            cin_front_base64: cinFrontB64,
+            selfie_base64: selfieB64,
+          }),
+          signal: controller.signal,
+        });
+        if (lr.status >= 500) {
+          const errBody = await lr.text();
+          const err = new Error(`Lightning returned ${lr.status}: ${errBody}`);
+          err.transient = true;
+          throw err;
+        }
+        if (!lr.ok) {
+          const errBody = await lr.text();
+          throw new Error(`Lightning returned ${lr.status}: ${errBody}`);
+        }
+        return await lr.json();
+      } catch (e) {
+        if (e.name === 'AbortError' || e instanceof TypeError) e.transient = true;
+        throw e;
+      } finally {
+        clearTimeout(timeout);
       }
-      lightningResult = await lr.json();
+    };
+
+    try {
+      try {
+        lightningResult = await attemptLightning();
+      } catch (firstErr) {
+        if (!firstErr.transient) throw firstErr;
+        console.warn('[VERIFY] transient Lightning failure, retrying after cold-boot grace:', firstErr.message);
+        await new Promise(r => setTimeout(r, 15000));
+        lightningResult = await attemptLightning();
+      }
     } catch (fetchErr) {
       if (fetchErr.name === 'AbortError') {
         return res.status(504).json({
           error: 'Verification service timed out. Please try again.',
-          attempt: { status: 'error', failed_stage: null, rejection_reason: 'timeout', reasons: ['Verification service timed out'] },
+          attempt: { status: 'error', failed_stage: null, rejection_reason: 'timeout', reasons: ['Verification service timed out'], reason_codes: ['timeout'] },
         });
       }
       throw fetchErr;
@@ -114,6 +137,7 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
 
     // ─── POLICY ENGINE (backend decides) ─────────────────────────────
     const issues = [];
+    const reasonCodes = [];
     let failedStage = null;
 
     const ocr = lightningResult.ocr?.fields || {};
@@ -122,7 +146,14 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
 
     // Stage 1: Card detection (CIN front face present)
     if (!faceMatch.faces_found || faceMatch.faces_found.cin === 0) {
-      issues.push('No face detected on your CIN card');
+      const cinDet = faceMatch.best_det?.cin ?? faceMatch.det_scores?.cin ?? 0;
+      if (cinDet >= 0.3) {
+        reasonCodes.push('face_not_found');
+        issues.push('We found a face on the card, but it is too small or blurry to use. Move closer and retake the card photo in even light.');
+      } else {
+        reasonCodes.push('card_not_detected');
+        issues.push('No face found on the CIN photo. Make sure the whole card — including the photo — is fully in frame.');
+      }
       failedStage = failedStage || 'card';
     }
 
@@ -133,6 +164,7 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
     const hasSex = ocr.sex;
 
     if (!hasName && !hasDob && !hasCin) {
+      reasonCodes.push('ocr_low');
       issues.push('Could not read your CIN. Ensure the photo is clear, well-lit, and not blurry.');
       failedStage = failedStage || 'details';
     } else {
@@ -148,6 +180,7 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
         if (cinName && userName && cinName !== userName && !cinName.includes(userName) && !userName.includes(cinName)) {
           // Don't block, just note it — could be middle name vs last name
           issues.push(`CIN name "${ocr.last_name}" may not match your profile name`);
+          reasonCodes.push('details_mismatch');
         }
       }
 
@@ -157,6 +190,7 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
         const userDob = new Date(req.user.date_of_birth).toISOString().split('T')[0];
         if (normalizedDob !== userDob) {
           issues.push(`Date of birth on CIN (${ocr.date_of_birth}) doesn't match your profile (${userDob})`);
+          reasonCodes.push('details_mismatch');
         }
       }
     }
@@ -168,6 +202,7 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
       } else {
         issues.push(`Selfie doesn't match your CIN photo (score: ${faceMatch.score || 0})`);
       }
+      reasonCodes.push(faceMatch.error && /no face detected in CIN/i.test(faceMatch.error) ? 'face_not_found' : 'face_mismatch');
       failedStage = failedStage || 'face';
     }
 
@@ -178,6 +213,7 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
       } else {
         issues.push('Please take a live selfie (not a photo of a photo)');
       }
+      reasonCodes.push('not_live');
       failedStage = failedStage || 'face';
     }
 
@@ -271,6 +307,7 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
         rejection_reason: attempt.rejection_reason,
         failed_stage: attempt.failed_stage,
         reasons: issues,
+        reason_codes: [...new Set(reasonCodes)],
       },
       user: updatedUser,
     });
@@ -278,7 +315,7 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
     console.error('[VERIFY] submit error:', err);
     res.status(500).json({
       error: 'Verification failed. Please try again.',
-      attempt: { status: 'error', failed_stage: null, rejection_reason: 'server_error', reasons: ['Server error during verification'] },
+      attempt: { status: 'error', failed_stage: null, rejection_reason: 'server_error', reasons: ['Server error during verification'], reason_codes: ['server_error'] },
     });
   }
 });

@@ -614,7 +614,7 @@ export default function MapScreen() {
       )}
 
       {/* ── Search bar ── */}
-      <View style={styles.searchContainer}>
+      <View style={[styles.searchContainer, { top: insets.top + 14 }]}>
         <View style={styles.searchBar}>
           <MaterialCommunityIcons name="magnify" size={20} color={COLORS.text2} />
           <TextInput

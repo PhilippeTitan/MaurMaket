@@ -12,6 +12,7 @@ import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
 import { network } from '../network';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -41,6 +42,7 @@ let _paymentsCache: { data: any; timestamp: number } | null = null;
 export default function PaymentsScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
   const isSeller = store.isSeller;
   const [balance, setBalance] = useState(0);
   const [totalEarned, setTotalEarned] = useState(0);
@@ -209,7 +211,7 @@ export default function PaymentsScreen() {
           data={[] as { id: string }[]}
           keyExtractor={item => item.id}
           renderItem={() => null}
-          contentContainerStyle={{ padding: SPACING.md, flexGrow: 1 }}
+          contentContainerStyle={{ padding: SPACING.md, flexGrow: 1, paddingBottom: insets.bottom + SPACING.page }}
           ListHeaderComponent={
             <>
               <EmptyState
@@ -251,6 +253,7 @@ export default function PaymentsScreen() {
       <FlatList
         data={payouts}
         keyExtractor={item => item.id}
+        contentContainerStyle={{ paddingBottom: insets.bottom + SPACING.page }}
         ListHeaderComponent={
           <>
             <View style={styles.balanceCard}>

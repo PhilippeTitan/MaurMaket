@@ -264,7 +264,7 @@ export default function NatCashPaymentScreen() {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <ScreenHeader title="NatCash Payment" onBack={() => nav.goBack()} />
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false}>
           <View style={styles.stepContent}>
             <View style={[styles.infoCard, { borderColor: COLORS.coral + '33' }]}>
               <MaterialCommunityIcons name="sim-alert" size={32} color={COLORS.coral} />
@@ -296,7 +296,7 @@ export default function NatCashPaymentScreen() {
     <KeyboardAvoidingView style={[styles.container, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScreenHeader title="NatCash Payment" onBack={() => nav.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false}>
 
         {/* ── Step Progress ── */}
         <View style={styles.progressRow}>

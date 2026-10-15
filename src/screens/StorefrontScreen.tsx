@@ -643,7 +643,7 @@ export default function StorefrontScreen({ route, navigation }: Props) {
       {/* ── Overflow menu (Report / Block) ── */}
       <Modal visible={overflowMenuVisible} transparent animationType="fade" onRequestClose={() => setOverflowMenuVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setOverflowMenuVisible(false)}>
-          <View style={[styles.overflowSheet, { paddingBottom: Math.max(SPACING.xl, insets.bottom + SPACING.md) }]}>
+          <View style={[styles.overflowSheet, { paddingBottom: insets.bottom + SPACING.lg }]}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>{t('profile.options')}</Text>
 

@@ -1680,15 +1680,11 @@ export const uploadImage = async (uri: string, expiration?: number, purpose?: 'k
 };
 
 // Verification
-export const createDiditSession = () =>
-  request('/verification/didit-session', { method: 'POST' });
-
 export const submitVerification = (data: {
   idFrontUrl: string;
-  idFaceUrl?: string;
   idBackUrl: string;
   selfieUrl: string;
-  deleteUrls?: { idFront?: string; idFace?: string; idBack?: string; selfie?: string };
+  deleteUrls?: { idFront?: string; idBack?: string; selfie?: string };
 }) => request('/verification/submit', { method: 'POST', body: JSON.stringify(data) });
 
 // Subscriptions

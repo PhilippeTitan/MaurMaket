@@ -433,7 +433,7 @@ export default function InboxScreen() {
       </View>
 
       <Modal visible={newChatVisible} animationType="slide" onRequestClose={() => { setNewChatVisible(false); setSellerSearch(''); }}>
-        <View style={[styles.newChatRoot, { paddingTop: insets.top + SPACING.sm, paddingBottom: insets.bottom + SPACING.sm }]}>
+          <View style={[styles.newChatRoot, { paddingTop: insets.top + SPACING.sm, paddingBottom: insets.bottom + SPACING.lg }]}>
           <View style={styles.newChatHeader}>
             <Text style={styles.newChatTitle}>{t('chat.newChat')}</Text>
             <TouchableOpacity onPress={() => { setNewChatVisible(false); setSellerSearch(''); }} accessibilityLabel={t('common.close')} accessibilityRole="button">
@@ -642,7 +642,7 @@ export default function InboxScreen() {
               ) : null
             }
           />
-          <View style={[styles.searchModalFooter, { paddingBottom: insets.bottom > 0 ? insets.bottom + SPACING.sm : SPACING.md }]}>
+          <View style={[styles.searchModalFooter, { paddingBottom: insets.bottom + SPACING.lg }]}>
             <TouchableOpacity
               onPress={() => { setSearchOpen(false); setSearch(''); Keyboard.dismiss(); }}
               accessibilityLabel={t('inbox.closeSearch')}

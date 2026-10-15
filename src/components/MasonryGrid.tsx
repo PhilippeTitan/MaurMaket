@@ -4,6 +4,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import Reanimated, { LinearTransition } from 'react-native-reanimated';
 import { COLORS, RADIUS, formatPrice } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReduceMotion } from '../hooks';
 import { useLowDataMode } from '../hooks/useLowDataMode';
 import { getImageUrl } from '../api';
@@ -83,6 +84,7 @@ export default function MasonryGrid({
   detailsBelow = 'name',
   priceOverlay = true,
 }: MasonryGridProps) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const { width: windowWidth, height: SCREEN_H } = useWindowDimensions();
   const SCREEN_W = availableWidth ?? windowWidth;
@@ -321,7 +323,7 @@ export default function MasonryGrid({
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={[styles.gridContainer, contentContainerStyle]}
+      contentContainerStyle={[styles.gridContainer, { paddingBottom: insets.bottom + 80 }, contentContainerStyle]}
       onScroll={onScroll}
       refreshControl={refreshControl}
       showsVerticalScrollIndicator={false}

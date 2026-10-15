@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADIUS, SPACING, TOUCH } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import { useTranslation } from '@/localization';
@@ -31,6 +32,7 @@ function normalize(status?: string): PermStatus {
 }
 
 export default function DevicePermissionsScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
 
@@ -126,7 +128,7 @@ export default function DevicePermissionsScreen({ navigation }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('permissions.title')} onBack={() => navigation.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.xxxl }]} showsVerticalScrollIndicator={false}>
         <Animated.View style={animStyle}>
           <Text style={styles.intro}>{t('permissions.intro')}</Text>
           <Text style={styles.note}>{t('permissions.osNote')}</Text>

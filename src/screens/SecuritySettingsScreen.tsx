@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import { COLORS, RADIUS, SPACING, FONT_SIZES, FONT_WEIGHTS } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ONBOARDING_COLORS as C } from './onboarding/theme';
 import { useUser } from '../hooks';
 import ScreenHeader from '../components/ScreenHeader';
@@ -56,6 +57,7 @@ function deviceName(userAgent?: string | null) {
 }
 
 export default function SecuritySettingsScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const { user, refetch: refetchUser } = useUser();
   const toast = useToast();
@@ -497,7 +499,7 @@ export default function SecuritySettingsScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScreenHeader title={t('security.title')} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.xl }]} showsVerticalScrollIndicator={false}>
         <View style={styles.summary}>
           <View style={styles.summaryTop}>
             <MaterialCommunityIcons name="shield-check-outline" size={23} color={C.mint} />

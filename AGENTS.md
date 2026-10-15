@@ -1211,6 +1211,47 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
   - **DO NOT use** `android.enableAapt2=false` — removed from modern AGP, causes build failure.
   - **DO NOT use** `eas build --local` — does NOT work on Windows (requires macOS/Linux).
   - **gradle.properties**: JVM args `-Xmx4096m`, `org.gradle.workers.max=2`, `org.gradle.parallel=false` (prevent reanimated CMake OOM).
+- **Lightning Studio keep-alive formula** (proven 2026-10-14 on `kyc-probe`; reusable for maurvideos / any long-running Lightning service — Philippe may ask another instance to apply this):
+  - **Problem**: Lightning cloudspaces auto-sleep ~10-25 min after idle; everything on the studio dies. Public endpoints then return plain-text `404 page not found` (machine asleep/off) or empty `502` (machine on, port not listening).
+  - **Formula — 3 layers, all three required**:
+    1. **Endpoint with `autoStart` + supervisor launch**: the public endpoint's start command must launch a supervisor, so any reboot/sleep self-heals. `PUT /v1/projects/{proj}/cloudspaces/{cs}/endpoints/{endp}` with `{"autoStart": true, "command": "nohup bash /teamspace/studios/this_studio/supervisor.sh > /dev/null 2>&1 & echo supervisor-started"}` (verify persisted via GET).
+    2. **Supervisor inside the studio** (`supervisor.sh` on the studio volume, survives reboots): flock-singleton loop, every 30s checks the service via `pgrep -f "[v]ervice-name"` (bracket trick — plain pattern self-matches and blocks relaunch) and relaunches with nohup >> app.log if dead. Log relaunches with UTC timestamps. Template (swap service cmd):
+      ```bash
+      #!/bin/bash
+      exec 9>/tmp/supervisor.lock
+      flock -n 9 || exit 0
+      while true; do
+        if ! pgrep -f "[v]erify.py" > /dev/null; then
+          cd /teamspace/studios/this_studio/
+          nohup /home/zeus/miniconda3/envs/cloudspace/bin/python verify.py >> verify.log 2>&1 &
+          echo "$(date -u +%FT%TZ) relaunched" >> supervisor.log
+        fi
+        sleep 30
+      done
+      ```
+    3. **External keep-alive pings**: something outside Lightning (cron-job.org, every ≤10 min) must `POST https://lightning.ai/v1/projects/{proj}/cloudspaces/{cs}/keep-alive` body `{}`. Without this, idle sleep still happens even with layers 1-2.
+  - **Auth for cron**: `Authorization: Basic base64(user_id:api_key)` — no expiry. (Alternative `POST /v1/auth/login {"apiKey": key}` → JWT, but it expires after 12h — never use JWT in cron.) The API key is the SDK key (`apiKey` field in the key JSON), NOT the model/litellm key.
+  - **REST base**: `https://lightning.ai/v1/...`. Setup/verification exec: `POST /v1/projects/{proj}/cloudspaces/{cs}/execute` `{"command": "...", "detached": false}` → `{output, exitCode}`. IDs (user/project/cloudspace/endpoint) come from the corresponding GET list endpoints. Studio exec shell is zsh.
+  - **Recovery-path truth (why it's self-healing, not 100%)**: keep-alive CANNOT wake a sleeping machine (`no running instances found to keep alive`). Sleep is prevented only while cron fires. If cron dies and the machine sleeps anyway, the NEXT hit to the public endpoint URL cold-boots it (autoStart) → Lightning runs the supervisor command on boot → supervisor relaunches the service. First request during boot may be slow/502, then 200s. So worst case = one slow request, not days-dead.
+  - **One-shot apply script** (run from any machine via REST, no Lightning login needed beyond API key — proven pattern; swap placeholders):
+    ```python
+    # login → Bearer JWT for exec calls (JWT ok here; only cron needs Basic)
+    st, raw = call("POST", "/v1/auth/login", {"apiKey": KEY}); token = json.loads(raw)["token"]
+    # 1. write supervisor.sh inside studio via heredoc through execute API, chmod +x
+    # 2. launch detached: nohup bash /teamspace/studios/this_studio/supervisor.sh > /dev/null 2>&1 &
+    # 3. resilience kill-test (see footguns below): pkill app → poll pgrep + public /keepalive 200
+    # 4. GET /v1/projects/{proj}/endpoints → find endp, PUT it back with its existing name/ports PLUS:
+    #    cloudspace: {cloudspaceId, port: "8000", type: "ENDPOINT_PLUGIN_PORT",
+    #                 autoStart: True, command: "nohup bash .../supervisor.sh > /dev/null 2>&1 & echo supervisor-started"}
+    # 5. GET endpoints again → confirm autoStart/command persisted
+    # 6. compute base64(user_id:api_key) → hand to cron-job.org config (I cannot edit cron-job.org API)
+    ```
+  - **Shell footguns found the hard way** (Lightning exec runs through zsh -c, whose cmdline contains your literal command text):
+    - `pkill -f 'python verify.py'` self-matches the exec wrapper shell → kills your own session mid-command. Use the bracket trick `pkill -f '[v]erify.py'` AND keep every other literal `verify.py` out of that same shell command (run kill and poll as separate exec calls).
+    - Supervisor `pgrep` patterns must match BOTH the real process (`.../bin/python verify.py`) AND Lightning's exec wrapper (`/bin/bash /commands/python verify.py`) — pattern `python verify.py` catches both; a full-path pattern misses the wrapper and the service looks dead when it isn't.
+    - Don't guard the supervisor singleton with `pgrep supervisor.sh` — the launch command's own wrapper cmdline contains that text and false-triggers the guard. `flock -n` on a lockfile is the reliable singleton.
+  - **Gotchas**: `404 page not found` vs `502` distinguishes machine-asleep from service-dead; keep secrets in studio env vars, never in committed source; SDK key ≠ model key — rotate and don't commit either; Pylance/editor warnings about runtime-only modules (e.g. cv2 contrib symbols) are settled by `python -c "import cv2; print(hasattr(cv2,'...'))"` via the exec API on the actual env.
+  - **Verification checklist**: public URL 200s → kill service manually (`pkill -f '[v]erify.py'`) → supervisor relaunches ≤30s (poll pgrep + /keepalive) → survive >25 min with only cron pings → GET endpoint shows `autoStart: true` + command persisted.
 
 ## Session 6 — 2026-06-28 (ID Verification + Subscription + Inbox Redesign)
 

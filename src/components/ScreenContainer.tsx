@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS } from '../theme';
+import { COLORS, SPACING } from '../theme';
 
 interface Props {
   children: React.ReactNode;
@@ -46,7 +46,7 @@ export default function ScreenContainer({
         styles.container,
         { backgroundColor },
         safeAreaTop && { paddingTop: insets.top },
-        safeAreaBottom && { paddingBottom: insets.bottom },
+        safeAreaBottom && { paddingBottom: insets.bottom + SPACING.lg },
         style,
       ]}
     >

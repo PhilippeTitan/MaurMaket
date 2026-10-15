@@ -204,7 +204,7 @@ export default function SellerFulfillmentSettingsScreen({ navigation }: Props) {
         </View>
       ) : (
         <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: 24 + insets.bottom }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.lg }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.intro}>{t('fulfillmentSettings.intro')}</Text>
 
             <Text style={styles.section}>{t('fulfillmentSettings.availability')}</Text>
@@ -309,7 +309,7 @@ export default function SellerFulfillmentSettingsScreen({ navigation }: Props) {
               </View>
             )}
           </ScrollView>
-          <View style={[styles.saveBar, { paddingBottom: Math.max(insets.bottom, SPACING.md) }]}>
+          <View style={[styles.saveBar, { paddingBottom: insets.bottom + SPACING.lg }]}>
             <PrimaryButton onPress={save} disabled={saving || !profileLoaded}>
               {saving ? <ActivityIndicator size="small" color={COLORS.white} /> : t('fulfillmentSettings.save')}
             </PrimaryButton>

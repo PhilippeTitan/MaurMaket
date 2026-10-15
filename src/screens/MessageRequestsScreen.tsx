@@ -10,6 +10,7 @@ import {
 } from '../api';
 import type { RootStackParamList } from '../navigation';
 import { COLORS, SPACING, RADIUS } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '@/localization';
 import { MaterialCommunityIcons } from '../components/icons/UnifiedIcon';
 import ScreenHeader from '../components/ScreenHeader';
@@ -32,6 +33,7 @@ const REPORT_REASONS = ['harassment', 'scam', 'inappropriate', 'spam', 'other'] 
  * says more than "not accepted" to them.
  */
 export default function MessageRequestsScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
   const [active, setActive] = useState<MessageRequest[]>([]);
@@ -240,7 +242,7 @@ export default function MessageRequestsScreen({ navigation }: Props) {
           <Text style={styles.empty}>{error} · {t('common.retry')}</Text>
         </TouchableOpacity>
       ) : (
-        <ScrollView contentContainerStyle={{ paddingBottom: SPACING.xl }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + SPACING.xl }}>
           {active.length === 0 ? (
             <>
               <Text style={styles.empty}>{t('requests.empty')}</Text>

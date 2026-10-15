@@ -1,27 +1,25 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import LottieView from 'lottie-react-native';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Platform,
-  Animated, Dimensions, ScrollView, Image, PanResponder,
+  Animated, Dimensions, ScrollView, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
-import Svg, { Rect, Path, Circle as SvgCircle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Rect, Path, Circle as SvgCircle } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import { useTranslation } from '@/localization';
-import { uploadImage, submitVerification, createDiditSession, getMe } from '../api';
+import { uploadImage, submitVerification, getMe } from '../api';
 import { store } from '../store';
 import { invalidateUser } from '../hooks/useUser';
 import type { RootStackParamList } from '../navigation';
 
 let CameraView: any = null;
 let useCameraPermissions: any = () => [null, () => {}];
-let ImageManipulator: any = null;
-let WebView: any = null;
 let hasCameraSupport = false;
 if (Platform.OS !== 'web') {
   try {
@@ -29,72 +27,110 @@ if (Platform.OS !== 'web') {
     CameraView = cam.CameraView;
     useCameraPermissions = cam.useCameraPermissions;
     hasCameraSupport = true;
-    // Keep Expo Go on Expo modules only. ML Kit modules are native custom-build
-    // dependencies and cannot be loaded by the Expo Go binary.
-    try { ImageManipulator = require('expo-image-manipulator'); } catch {}
-    try { WebView = require('react-native-webview').WebView; } catch {}
   } catch (error) {
     console.warn('expo-camera disabled for local UI editing; using a static verification placeholder.');
   }
 }
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type Step = 'info' | 'didit' | 'cinFront' | 'cropConfirm' | 'cinBack' | 'selfieTip' | 'selfie' | 'reviewAll' | 'processing' | 'result';
-type FailedStage = 'card' | 'details' | 'face' | null;
+type Step = 'info' | 'cinFront' | 'captureConfirm' | 'cinBack' | 'selfieTip' | 'selfie' | 'reviewAll' | 'processing' | 'result';
+type CaptureTarget = 'cinFront' | 'cinBack' | 'selfie';
+type ResultState = 'verified' | 'pending_review' | null;
 
-const PHOTO_LABEL_KEYS: Record<string, string> = { cinFront: 'verification.idFront', cinBack: 'verification.idBack', selfie: 'verification.selfie' };
+const PHOTO_LABEL_KEYS: Record<CaptureTarget, string> = {
+  cinFront: 'verification.idFront',
+  cinBack: 'verification.idBack',
+  selfie: 'verification.selfie',
+};
+const CAMERA_STEPS: Step[] = ['cinFront', 'cinBack', 'selfie'];
+const PROGRESS_STEPS: Step[] = ['cinFront', 'cinBack', 'selfieTip', 'selfie', 'reviewAll'];
 const STAGE_LIST = [
   { key: 'card', labelKey: 'verification.stageCard' },
   { key: 'details', labelKey: 'verification.stageDetails' },
   { key: 'face', labelKey: 'verification.stageFace' },
 ];
-const FAILURE_COPY: Record<string, { titleKey: string; detailKey: string; retakeLabelKey: string; retakeStep: Step }> = {
-  card: {
-    titleKey: 'verification.failCardTitle',
-    detailKey: 'verification.failCardDetail',
-    retakeLabelKey: 'verification.retakeIdPhotos',
-    retakeStep: 'cinFront',
-  },
-  details: {
-    titleKey: 'verification.failDetailsTitle',
-    detailKey: 'verification.failDetailsDetail',
-    retakeLabelKey: 'verification.retakeIdPhotos',
-    retakeStep: 'cinFront',
-  },
-  face: {
-    titleKey: 'verification.failFaceTitle',
-    detailKey: 'verification.failFaceDetail',
-    retakeLabelKey: 'verification.retakeSelfie',
-    retakeStep: 'selfieTip',
-  },
+
+// Granular QC codes returned by the backend map to localized copy and to the
+// capture step that should reopen for a retake (APP-Q559).
+const QC_COPY: Record<string, { titleKey: string; descKey: string; step: Step; clear: CaptureTarget | null }> = {
+  card_not_detected: { titleKey: 'verification.qcCardNotTitle', descKey: 'verification.qcCardNotDesc', step: 'cinFront', clear: 'cinFront' },
+  face_not_found: { titleKey: 'verification.qcFaceNotTitle', descKey: 'verification.qcFaceNotDesc', step: 'cinFront', clear: 'cinFront' },
+  ocr_low: { titleKey: 'verification.qcOcrTitle', descKey: 'verification.qcOcrDesc', step: 'cinFront', clear: 'cinFront' },
+  details_mismatch: { titleKey: 'verification.qcDetailsTitle', descKey: 'verification.qcDetailsDesc', step: 'cinFront', clear: 'cinFront' },
+  face_mismatch: { titleKey: 'verification.qcMismatchTitle', descKey: 'verification.qcMismatchDesc', step: 'selfie', clear: 'selfie' },
+  not_live: { titleKey: 'verification.qcNotLiveTitle', descKey: 'verification.qcNotLiveDesc', step: 'selfie', clear: 'selfie' },
+  timeout: { titleKey: 'verification.qcTimeoutTitle', descKey: 'verification.qcTimeoutDesc', step: 'reviewAll', clear: null },
+  server_error: { titleKey: 'verification.qcServerTitle', descKey: 'verification.qcServerDesc', step: 'reviewAll', clear: null },
 };
+const STAGE_FALLBACK_CODE: Record<string, string> = { card: 'ocr_low', details: 'ocr_low', face: 'face_mismatch' };
+
+// In-session draft so a brief navigation away doesn't lose captures
+// (APP-Q563). Module scope only — never persisted to disk.
+type KycDraft = {
+  idFrontUrl: string; idBackUrl: string; selfieUrl: string;
+  idFrontDeleteUrl: string; idBackDeleteUrl: string; selfieDeleteUrl: string;
+  step: Step; updatedAt: number;
+};
+const DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
+let kycDraftStore: KycDraft | null = null;
+const readDraft = (): KycDraft | null =>
+  kycDraftStore && Date.now() - kycDraftStore.updatedAt < DRAFT_TTL_MS ? kycDraftStore : null;
+const clearDraft = () => { kycDraftStore = null; };
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
 export default function VerificationScreen() {
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
 
-  const [step, setStep] = useState<Step>('info');
+  const restoredDraft = useRef(readDraft()).current;
+  const [step, setStep] = useState<Step>(() => {
+    const d = restoredDraft;
+    if (!d) return 'info';
+    if (d.idFrontUrl && d.idBackUrl && d.selfieUrl) return 'reviewAll';
+    return CAMERA_STEPS.includes(d.step) || d.step === 'selfieTip' || d.step === 'reviewAll' ? d.step : 'info';
+  });
   const [loading, setLoading] = useState(false);
-  const [idFrontUrl, setIdFrontUrl] = useState('');
-  const [idFaceUrl, setIdFaceUrl] = useState('');
-  const [idBackUrl, setIdBackUrl] = useState('');
-  const [selfieUrl, setSelfieUrl] = useState('');
-  const [idFrontDeleteUrl, setIdFrontDeleteUrl] = useState('');
-  const [idFaceDeleteUrl, setIdFaceDeleteUrl] = useState('');
-  const [idBackDeleteUrl, setIdBackDeleteUrl] = useState('');
-  const [selfieDeleteUrl, setSelfieDeleteUrl] = useState('');
+  const [idFrontUrl, setIdFrontUrl] = useState(restoredDraft?.idFrontUrl || '');
+  const [idBackUrl, setIdBackUrl] = useState(restoredDraft?.idBackUrl || '');
+  const [selfieUrl, setSelfieUrl] = useState(restoredDraft?.selfieUrl || '');
+  const [idFrontDeleteUrl, setIdFrontDeleteUrl] = useState(restoredDraft?.idFrontDeleteUrl || '');
+  const [idBackDeleteUrl, setIdBackDeleteUrl] = useState(restoredDraft?.idBackDeleteUrl || '');
+  const [selfieDeleteUrl, setSelfieDeleteUrl] = useState(restoredDraft?.selfieDeleteUrl || '');
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
   const [cameraReady, setCameraReady] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
-  const [failedStage, setFailedStage] = useState<FailedStage>(null);
-  const [rejectionReasons, setRejectionReasons] = useState<string[]>([]);
-  const insets = useSafeAreaInsets();
-  const contentStyle = { flexGrow: 1 as const, padding: SPACING.lg, paddingBottom: SPACING.lg + insets.bottom + 8 };
-  const [verified, setVerified] = useState(false);
-  const [frontPhotoUri, setFrontPhotoUri] = useState('');
-  const [croppedFaceUri, setCroppedFaceUri] = useState('');
+  const [pendingCapture, setPendingCapture] = useState<{ target: CaptureTarget; localUri: string; url: string; deleteUrl: string } | null>(null);
+  const [captureError, setCaptureError] = useState<{ titleKey: string; descKey: string; reasons: string[] } | null>(null);
+  const [resultState, setResultState] = useState<ResultState>(null);
+  const cameraRef = useRef<any>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const contentStyle = { flexGrow: 1 as const, padding: SPACING.lg, paddingBottom: SPACING.lg + insets.bottom + 16 };
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+  }, [step]);
+
+  // Persist the in-session draft while the flow is in progress.
+  useEffect(() => {
+    if (step === 'info' || step === 'processing' || step === 'result' || step === 'captureConfirm') return;
+    kycDraftStore = {
+      idFrontUrl, idBackUrl, selfieUrl,
+      idFrontDeleteUrl, idBackDeleteUrl, selfieDeleteUrl,
+      step, updatedAt: Date.now(),
+    };
+  }, [step, idFrontUrl, idBackUrl, selfieUrl, idFrontDeleteUrl, idBackDeleteUrl, selfieDeleteUrl]);
+
+  useEffect(() => {
+    if (step === 'result' && resultState === 'verified') {
+      invalidateUser();
+      getMe().then((res: any) => {
+        if (res.user) store.setUser(res.user, store.token);
+      }).catch(() => {});
+    }
+  }, [step, resultState]);
 
   if (!hasCameraSupport && Platform.OS !== 'web') {
     return (
@@ -107,209 +143,52 @@ export default function VerificationScreen() {
       </View>
     );
   }
-  const [cropSourceSize, setCropSourceSize] = useState({ w: 1080, h: 1920 });
-  const [cropBox, setCropBox] = useState({ x: 0, y: 0, size: 200 });
-  const cropDragRef = useRef<any>(null);
-  const containerDimRef = useRef({ w: 0, h: 0 });
-  const cropBoxRef = useRef(cropBox);
-  cropBoxRef.current = cropBox;
-  const [diditUrl, setDiditUrl] = useState('');
-  const [diditLoading, setDiditLoading] = useState(false);
-  const [diditError, setDiditError] = useState('');
 
-  useEffect(() => {
-    if (step === 'cropConfirm' && cropSourceSize.w > 0) {
-      const dw = SCREEN_W - SPACING.lg * 2;
-      const maxH = Dimensions.get('window').height * 0.55;
-      const dh = Math.min(maxH, dw * 1.3);
-      containerDimRef.current = { w: dw, h: dh };
-      const size = Math.min(dw, dh) * 0.5;
-      setCropBox({ x: (dw - size) / 2, y: (dh - size) / 2, size });
+  const photos: Record<CaptureTarget, boolean> = { cinFront: !!idFrontUrl, cinBack: !!idBackUrl, selfie: !!selfieUrl };
+  const photoKeys: CaptureTarget[] = ['cinFront', 'cinBack', 'selfie'];
+
+  const goToStep = (s: Step) => {
+    if (CAMERA_STEPS.includes(s)) {
+      setCameraReady(false);
+      setCameraFacing(s === 'selfie' ? 'front' : 'back');
     }
-  }, [step]);
-
-  const moveResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponderCapture: () => true,
-    onPanResponderGrant: () => {
-      cropDragRef.current = { mode: 'move', startCrop: { ...cropBoxRef.current } };
-    },
-    onPanResponderMove: (_, gs) => {
-      if (!cropDragRef.current || cropDragRef.current.mode !== 'move') return;
-      const s = cropDragRef.current.startCrop;
-      const { w, h } = containerDimRef.current;
-      setCropBox(prev => ({
-        ...prev,
-        x: Math.max(0, Math.min(w - prev.size, s.x + gs.dx)),
-        y: Math.max(0, Math.min(h - prev.size, s.y + gs.dy)),
-      }));
-    },
-  })).current;
-
-  const resizeResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponderCapture: () => true,
-    onPanResponderGrant: () => {
-      cropDragRef.current = { mode: 'resize', startCrop: { ...cropBoxRef.current } };
-    },
-    onPanResponderMove: (_, gs) => {
-      if (!cropDragRef.current || cropDragRef.current.mode !== 'resize') return;
-      const s = cropDragRef.current.startCrop;
-      const { w, h } = containerDimRef.current;
-      setCropBox(prev => {
-        const ns = Math.max(60, Math.min(s.size + Math.max(gs.dx, gs.dy), Math.min(w - s.x, h - s.y)));
-        return { ...prev, size: ns };
-      });
-    },
-  })).current;
-  const [stages, setStages] = useState<Record<string, 'pending' | 'active' | 'done' | 'failed'>>({});
-  const cameraRef = useRef<any>(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-  }, [step]);
-
-  useEffect(() => {
-    if (step === 'result' && verified) {
-      invalidateUser();
-      getMe().then((res: any) => {
-        if (res.user) store.setUser(res.user, store.token);
-      }).catch(() => {});
-    }
-  }, [step, verified]);
-
-  const photos = { cinFront: !!idFrontUrl, cinBack: !!idBackUrl, selfie: !!selfieUrl };
-  const photoKeys = ['cinFront', 'cinBack', 'selfie'] as const;
-  const getKept = (currentPhoto: string) => photoKeys.filter(k => k !== currentPhoto && photos[k]);
-
-  const launchDidit = async () => {
-    setDiditLoading(true);
-    setDiditError('');
-    try {
-      const res = await createDiditSession() as { url: string; sessionId: string };
-      console.log(`[VERIFY] Didit session: ${res.sessionId}`);
-      setDiditUrl(res.url);
-      setStep('didit');
-    } catch (e: any) {
-      console.log(`[VERIFY] Didit unavailable, using camera fallback: ${e?.message}`);
-      setDiditError(e?.message || t('verification.diditUnavailable'));
-      setStep('cinFront');
-    } finally {
-      setDiditLoading(false);
-    }
+    setStep(s);
   };
 
-  const renderDidit = () => {
-    if (!WebView) {
-      return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: SPACING.lg }}>
-          <Text style={styles.infoTitle}>{t('verification.webviewUnavailable')}</Text>
-          <Text style={styles.infoDesc}>{t('verification.useCameraInstead')}</Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('cinFront')}>
-            <Text style={styles.primaryBtnText}>{t('verification.useCameraBtn')}</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    return (
-      <View style={{ flex: 1 }}>
-        <WebView
-          source={{ uri: diditUrl }}
-          style={{ flex: 1 }}
-          userAgent="Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-          javaScriptEnabled
-          domStorageEnabled
-          mediaPlaybackRequiresUserAction={false}
-          allowsInlineMediaPlayback
-          allowsFullscreenVideo
-          mediaCapturePermissionGrantType={Platform.OS === 'ios' ? 'grant' : undefined}
-          onPermissionRequest={(event: any) => {
-            console.log(`[VERIFY] WebView permission request: ${JSON.stringify(event.permissions)}`);
-            event.grant(event.permissions);
-          }}
-          onNavigationStateChange={(navState: any) => {
-            const url = navState.url;
-            if (url.includes('/api/webhooks/didit') || url.includes('verificationSessionId')) {
-              console.log(`[VERIFY] Didit callback detected: ${url.substring(0, 100)}`);
-              setStep('processing');
-              setTimeout(() => {
-                setVerified(true);
-                setStep('result');
-              }, 2000);
-            }
-          }}
-          onMessage={(event: any) => {
-            try {
-              const data = JSON.parse(event.nativeEvent.data);
-              if (data.type === 'didit:completed') {
-                console.log(`[VERIFY] Didit completed via postMessage: ${data.data?.status}`);
-                if (data.data?.status === 'Approved') {
-                  setStep('processing');
-                  setTimeout(() => {
-                    setVerified(true);
-                    setStep('result');
-                  }, 2000);
-                }
-              }
-            } catch {}
-          }}
-          onShouldStartLoadWithRequest={(req: any) => true}
-        />
-      </View>
-    );
-  };
-
-  const captureImage = async (facing: 'front' | 'back') => {
-    console.log(`[VERIFY-DEBUG] captureImage called, facing=${facing}, cameraReady=${cameraReady}, cameraRef=${!!cameraRef.current}`);
+  const captureImage = async (target: 'cinFront' | 'cinBack') => {
     if (!permission?.granted) {
       const p = await requestPermission();
       if (!p.granted) { Alert.alert(t('common.error'), t('verification.cameraPermRequired')); return; }
     }
+    if (!cameraReady) { Alert.alert(t('verification.cameraNotReady'), t('verification.cameraInit')); return; }
     try {
       if (!cameraRef.current) {
-        console.log(`[VERIFY-DEBUG] ❌ cameraRef.current is null`);
         Alert.alert(t('verification.cameraNotReady'), t('verification.cameraNull'));
         return;
       }
-      console.log(`[VERIFY-DEBUG] Calling takePictureAsync...`);
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
-      console.log(`[VERIFY-DEBUG] takePictureAsync returned: ${JSON.stringify(photo ? { uri: photo.uri?.substring(0, 80), width: photo.width, height: photo.height, type: photo.type } : 'null')}`);
       if (!photo?.uri) {
-        console.log(`[VERIFY-DEBUG] ❌ No photo URI returned`);
         Alert.alert(t('verification.captureFailed'), t('verification.noPhoto'));
-        setLoading(false);
         return;
       }
-      console.log(`[VERIFY-CROP] Photo captured: ${photo.width}x${photo.height} uri=${photo.uri.substring(0, 60)}`);
       setLoading(true);
-      console.log(`[VERIFY-DEBUG] Uploading temporary KYC image...`);
+      setCaptureError(null);
       const uploadRes = await uploadImage(photo.uri, 3600, 'kyc');
-      console.log(`[VERIFY-DEBUG] ✅ Image uploaded: ${uploadRes.url?.substring(0, 60)}`);
-
-        if (facing === 'front') {
-          setIdFrontUrl(uploadRes.url);
-          if (uploadRes.deleteUrl) setIdFrontDeleteUrl(uploadRes.deleteUrl);
-          setFrontPhotoUri(photo.uri);
-          setCropSourceSize({ w: photo.width || 1080, h: photo.height || 1920 });
-          setLoading(false);
-          setStep('cropConfirm');
-      } else {
-        setIdBackUrl(uploadRes.url);
-        if (uploadRes.deleteUrl) setIdBackDeleteUrl(uploadRes.deleteUrl);
-        setCameraReady(false);
-        setCameraFacing('front');
-        setLoading(false);
-        setStep('selfieTip');
-      }
+      setPendingCapture({
+        target,
+        localUri: photo.uri,
+        url: uploadRes.url,
+        deleteUrl: uploadRes.deleteUrl || '',
+      });
+      setStep('captureConfirm');
     } catch (e: any) {
-      console.log(`[VERIFY-DEBUG] ❌ captureImage error: ${e?.message}`, e?.stack?.split('\n').slice(0, 3).join(' | '));
-      setLoading(false);
       Alert.alert(t('common.error'), e?.message || t('verification.captureError'));
+    } finally {
+      setLoading(false);
     }
   };
 
   const captureSelfie = async () => {
-    console.log(`[VERIFY-DEBUG] captureSelfie called, cameraReady=${cameraReady}, cameraRef=${!!cameraRef.current}`);
     if (!permission?.granted) {
       const p = await requestPermission();
       if (!p.granted) { Alert.alert(t('common.error'), t('verification.cameraPermRequired')); return; }
@@ -318,131 +197,144 @@ export default function VerificationScreen() {
     try {
       await new Promise(r => setTimeout(r, 1000));
       setLoading(true);
+      setCaptureError(null);
       if (!cameraRef.current) {
-        console.log(`[VERIFY-DEBUG] ❌ selfie cameraRef.current is null after 1s delay`);
         Alert.alert(t('verification.cameraNotReady'), t('verification.cameraNull'));
-        setLoading(false);
         return;
       }
-      console.log(`[VERIFY-DEBUG] Calling takePictureAsync for selfie...`);
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
-      console.log(`[VERIFY-DEBUG] Selfie takePictureAsync returned: ${JSON.stringify(photo ? { uri: photo.uri?.substring(0, 80), width: photo.width, height: photo.height } : 'null')}`);
-      if (photo?.uri) {
-        console.log(`[VERIFY-DEBUG] Uploading temporary KYC selfie...`);
-        const uploadRes = await uploadImage(photo.uri, 3600, 'kyc');
-        console.log(`[VERIFY-DEBUG] ✅ Selfie uploaded: ${uploadRes.url?.substring(0, 60)}`);
-        setSelfieUrl(uploadRes.url);
-        if (uploadRes.deleteUrl) setSelfieDeleteUrl(uploadRes.deleteUrl);
-        setLoading(false);
-        setStep('reviewAll');
+      if (!photo?.uri) {
+        Alert.alert(t('verification.captureFailed'), t('verification.noPhoto'));
         return;
-      } else {
-        console.log(`[VERIFY-DEBUG] ❌ Selfie: no photo URI`);
       }
-      setLoading(false);
+      const uploadRes = await uploadImage(photo.uri, 3600, 'kyc');
+      setPendingCapture({
+        target: 'selfie',
+        localUri: photo.uri,
+        url: uploadRes.url,
+        deleteUrl: uploadRes.deleteUrl || '',
+      });
+      setStep('captureConfirm');
     } catch (e: any) {
-      console.log(`[VERIFY-DEBUG] ❌ captureSelfie error: ${e?.message}`, e?.stack?.split('\n').slice(0, 3).join(' | '));
-      setLoading(false);
       Alert.alert(t('common.error'), e?.message || t('verification.selfieFailed'));
+    } finally {
+      setLoading(false);
     }
   };
 
+  const confirmCapture = () => {
+    if (!pendingCapture) return;
+    const { target, url, deleteUrl } = pendingCapture;
+    if (target === 'cinFront') {
+      setIdFrontUrl(url); setIdFrontDeleteUrl(deleteUrl);
+      goToStep('cinBack');
+    } else if (target === 'cinBack') {
+      setIdBackUrl(url); setIdBackDeleteUrl(deleteUrl);
+      goToStep('selfieTip');
+    } else {
+      setSelfieUrl(url); setSelfieDeleteUrl(deleteUrl);
+      goToStep('reviewAll');
+    }
+    setPendingCapture(null);
+    setCaptureError(null);
+  };
+
+  const retakeCapture = () => {
+    if (!pendingCapture) return;
+    const target = pendingCapture.target;
+    setPendingCapture(null);
+    goToStep(target);
+  };
+
   const submitAll = async () => {
-    setLoading(true);
+    setCaptureError(null);
     setStep('processing');
-    setStages({ card: 'active', details: 'pending', face: 'pending' });
-
-    const stageTimers: NodeJS.Timeout[] = [];
-    stageTimers.push(setTimeout(() => setStages(s => ({ ...s, card: 'done', details: 'active' })), 1500));
-    stageTimers.push(setTimeout(() => setStages(s => ({ ...s, details: 'done', face: 'active' })), 3000));
-
+    setLoading(true);
     try {
       const res = await submitVerification({
         idFrontUrl,
-        idFaceUrl: idFaceUrl || undefined,
         idBackUrl,
         selfieUrl,
         deleteUrls: {
           idFront: idFrontDeleteUrl || undefined,
-          idFace: idFaceDeleteUrl || undefined,
           idBack: idBackDeleteUrl || undefined,
           selfie: selfieDeleteUrl || undefined,
         },
-      }) as { attempt: { status: string; rejection_reason?: string; failed_stage?: FailedStage; reasons?: string[] }; user?: any; token?: string };
-
-      stageTimers.forEach(clearTimeout);
+      }) as { attempt: { status: string; rejection_reason?: string; failed_stage?: string | null; reasons?: string[]; reason_codes?: string[] }; user?: any; token?: string };
 
       if (res.attempt.status === 'verified') {
-        setStages({ card: 'done', details: 'done', face: 'done' });
-        setVerified(true);
+        clearDraft();
+        setResultState('verified');
         if (res.user) await store.setUser(res.user, res.token || store.token);
-        setTimeout(() => setStep('result'), 600);
+        setStep('result');
+      } else if (res.attempt.status === 'manual_review') {
+        clearDraft();
+        setResultState('pending_review');
+        setStep('result');
       } else {
-        const fs = res.attempt.failed_stage || 'face';
-        setStages(s => {
-          const order = ['card', 'details', 'face'];
-          const failIdx = order.indexOf(fs);
-          const newS = { ...s };
-          order.forEach((k, i) => {
-            if (i <= failIdx) newS[k] = i === failIdx ? 'failed' : (newS[k] === 'active' ? 'done' : newS[k]);
-          });
-          return newS;
+        // Rejected — reopen the exact capture step with granular, localized
+        // QC feedback instead of a generic failure screen (APP-Q559).
+        const codes = res.attempt.reason_codes || [];
+        const primaryCode = codes[0] || STAGE_FALLBACK_CODE[res.attempt.failed_stage || ''] || 'face_mismatch';
+        const copy = QC_COPY[primaryCode] || QC_COPY.face_mismatch;
+        setCaptureError({
+          titleKey: copy.titleKey,
+          descKey: copy.descKey,
+          reasons: (res.attempt.reasons || []).filter(r => typeof r === 'string' && r.length > 0),
         });
-        setFailedStage(fs);
-        setRejectionReasons(res.attempt.reasons || [res.attempt.rejection_reason || t('verification.failed')]);
-        setTimeout(() => setStep('result'), 800);
+        if (copy.clear === 'cinFront') { setIdFrontUrl(''); setIdFrontDeleteUrl(''); }
+        if (copy.clear === 'selfie') { setSelfieUrl(''); setSelfieDeleteUrl(''); }
+        goToStep(copy.step);
       }
     } catch (e: any) {
-      stageTimers.forEach(clearTimeout);
-      setStages({ card: 'failed', details: 'pending', face: 'pending' });
-      setFailedStage('card');
-      setRejectionReasons([e.message || t('verification.submissionFailed')]);
-      setTimeout(() => setStep('result'), 600);
+      setCaptureError({
+        titleKey: 'verification.qcServerTitle',
+        descKey: 'verification.qcServerDesc',
+        reasons: [e?.message || t('verification.submissionFailed')],
+      });
+      setStep('reviewAll');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const resetAll = () => {
-    setStep('cinFront');
-    setIdFrontUrl(''); setIdFaceUrl(''); setIdBackUrl(''); setSelfieUrl('');
-    setIdFrontDeleteUrl(''); setIdFaceDeleteUrl(''); setIdBackDeleteUrl(''); setSelfieDeleteUrl('');
-    setFailedStage(null); setRejectionReasons([]); setVerified(false);
-    setCameraFacing('back'); setCameraReady(false);
-    setCameraFacing('back'); setCameraReady(false);
-    setCropSourceSize({ w: 1080, h: 1920 }); setFrontPhotoUri(''); setCroppedFaceUri('');
-    setStages({});
-  };
-
-  const retakeOnly = (target: Step) => {
-    if (target === 'selfieTip') {
-      setSelfieUrl(''); setSelfieDeleteUrl('');
-    } else if (target === 'cinFront') {
-      setIdFrontUrl(''); setIdFaceUrl(''); setIdBackUrl('');
-      setIdFrontDeleteUrl(''); setIdFaceDeleteUrl(''); setIdBackDeleteUrl('');
-    }
-    setFailedStage(null); setRejectionReasons([]);
-    setCameraFacing(target === 'selfieTip' ? 'front' : 'back');
-    setCameraReady(false);
-    setStep(target);
+  const retakeOnly = (target: CaptureTarget) => {
+    if (target === 'cinFront') { setIdFrontUrl(''); setIdFrontDeleteUrl(''); }
+    else if (target === 'cinBack') { setIdBackUrl(''); setIdBackDeleteUrl(''); }
+    else { setSelfieUrl(''); setSelfieDeleteUrl(''); }
+    setCaptureError(null);
+    goToStep(target);
   };
 
   const stepProgress = () => {
-    const steps = ['cinFront', 'cropConfirm', 'cinBack', 'selfieTip', 'selfie', 'reviewAll'];
-    const idx = steps.indexOf(step);
+    const idx = PROGRESS_STEPS.indexOf(step);
     if (idx < 0) return 0;
-    return Math.round((idx / (steps.length - 1)) * 100);
+    return Math.round((idx / (PROGRESS_STEPS.length - 1)) * 100);
   };
 
-  const renderKeptBanner = (currentPhoto: string) => {
-    const kept = getKept(currentPhoto);
+  const renderKeptBanner = (current: CaptureTarget) => {
+    const kept = photoKeys.filter(k => k !== current && photos[k]);
     if (kept.length === 0) return null;
     return (
       <View style={styles.keptBanner}>
-        <Icon name="check-circle" size={14} color={COLORS.green} />
+        <Icon name="check-circle" size={13} color={COLORS.green} />
         <Text style={styles.keptText}>
           <Text style={{ fontWeight: '700' }}>{t('verification.kept')} </Text>
           {kept.map(k => t(PHOTO_LABEL_KEYS[k])).join(', ')}{t('verification.onlyRedo')}
         </Text>
+      </View>
+    );
+  };
+
+  const renderCaptureError = () => {
+    if (!captureError) return null;
+    return (
+      <View style={styles.errorBanner} accessibilityLiveRegion="polite">
+        <View style={styles.errorHeader}>
+          <MaterialCommunityIcons name="alert-circle" size={16} color={COLORS.coral} />
+          <Text style={styles.errorTitle}>{t(captureError.titleKey)}</Text>
+        </View>
+        <Text style={styles.errorDesc}>{t(captureError.descKey)}</Text>
       </View>
     );
   };
@@ -480,7 +372,7 @@ export default function VerificationScreen() {
     </Svg>
   );
 
-  const renderCamera = (facing: 'front' | 'back', onCapture: () => void, label: string, hint?: string) => (
+  const renderCamera = (facing: 'front' | 'back', target: CaptureTarget, onCapture: () => void, label: string, hint?: string) => (
     <View style={styles.cameraWrap}>
       {permission === null ? (
         <ActivityIndicator size="large" color={COLORS.coral} />
@@ -508,6 +400,11 @@ export default function VerificationScreen() {
           )}
         </>
       )}
+      {captureError && (
+        <View style={styles.camErrorWrap}>
+          {renderCaptureError()}
+        </View>
+      )}
       <View style={[styles.cameraActions, { bottom: 60 + insets.bottom }]}>
         <TouchableOpacity style={[styles.captureBtn, !cameraReady && { opacity: 0.4 }]}
           onPress={onCapture} disabled={loading || !cameraReady}>
@@ -515,6 +412,7 @@ export default function VerificationScreen() {
         </TouchableOpacity>
       </View>
       <Text style={[styles.cameraLabel, { bottom: 30 + insets.bottom }]}>{label}</Text>
+      <View style={[styles.keptChip, { top: 8 }]}>{renderKeptBanner(target)}</View>
     </View>
   );
 
@@ -543,104 +441,36 @@ export default function VerificationScreen() {
           ))}
         </View>
       </View>
-      <TouchableOpacity style={styles.primaryBtn} onPress={launchDidit} disabled={diditLoading}>
-        {diditLoading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-          <>
-            <Text style={styles.primaryBtnText}>{t('verification.startBtn')}</Text>
-            <Icon name="chevron-right" size={18} color={COLORS.white} />
-          </>
-        )}
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => goToStep('cinFront')}>
+        <Text style={styles.primaryBtnText}>{t('verification.startBtn')}</Text>
+        <Icon name="chevron-right" size={18} color={COLORS.white} />
       </TouchableOpacity>
     </ScrollView>
   );
 
-  const renderCropConfirm = () => {
-    const dw = containerDimRef.current.w || SCREEN_W - SPACING.lg * 2;
-    const dh = containerDimRef.current.h || 300;
-    const imgW = cropSourceSize.w || 1;
-    const imgH = cropSourceSize.h || 1;
-    const containScale = Math.min(dw / imgW, dh / imgH);
-    const offsetX = (dw - imgW * containScale) / 2;
-    const offsetY = (dh - imgH * containScale) / 2;
-
+  const renderCaptureConfirm = () => {
+    if (!pendingCapture) return null;
+    const isSelfie = pendingCapture.target === 'selfie';
     return (
-      <View style={{ flex: 1, paddingHorizontal: SPACING.lg }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: SPACING.lg + insets.bottom + 8 }}>
-          <Text style={styles.eyebrow}>{t('verification.quickCheck')}</Text>
-          <Text style={styles.infoTitle}>{t('verification.isThisYourFace')}</Text>
-          <Text style={styles.infoDesc}>
-            {t('verification.cropDesc')}
-          </Text>
-          {renderKeptBanner('cinFront')}
-
-          <View style={{ width: dw, height: dh, borderRadius: 16, overflow: 'hidden', backgroundColor: '#000', marginBottom: 12 }}>
-            {frontPhotoUri ? (
-              <Image source={{ uri: frontPhotoUri }} style={{ width: dw, height: dh }} resizeMode="contain" />
-            ) : null}
-
-            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: cropBox.y, backgroundColor: 'rgba(0,0,0,0.55)' }} />
-            <View style={{ position: 'absolute', top: cropBox.y + cropBox.size, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' }} />
-            <View style={{ position: 'absolute', top: cropBox.y, left: 0, width: cropBox.x, height: cropBox.size, backgroundColor: 'rgba(0,0,0,0.55)' }} />
-            <View style={{ position: 'absolute', top: cropBox.y, left: cropBox.x + cropBox.size, right: 0, height: cropBox.size, backgroundColor: 'rgba(0,0,0,0.55)' }} />
-
-            <View
-              style={{ position: 'absolute', top: cropBox.y, left: cropBox.x, width: cropBox.size, height: cropBox.size, borderWidth: 2, borderColor: COLORS.coral, borderRadius: 12 }}
-              {...moveResponder.panHandlers}
-            >
-              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-                <MaterialCommunityIcons name="account-outline" size={cropBox.size * 0.36} color={COLORS.coral} style={{ opacity: 0.7 }} />
-              </View>
-              <View
-                style={{ position: 'absolute', right: -10, bottom: -10, width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.coral, borderWidth: 2.5, borderColor: COLORS.bg }}
-                {...resizeResponder.panHandlers}
-              />
-            </View>
-          </View>
-
-          <Text style={{ fontSize: 12, color: COLORS.text2, textAlign: 'center', marginBottom: 16 }}>
-            {t('verification.cropHint')}
-          </Text>
-
-          <View style={{ flex: 1, minHeight: 20 }} />
-          <TouchableOpacity style={styles.primaryBtn} onPress={async () => {
-              setLoading(true);
-            try {
-              const actualX = Math.max(0, Math.round((cropBox.x - offsetX) / containScale));
-              const actualY = Math.max(0, Math.round((cropBox.y - offsetY) / containScale));
-              const actualSize = Math.round(cropBox.size / containScale);
-              console.log(`[VERIFY-CROP] Manual crop: ${actualSize}x${actualSize} at (${actualX},${actualY}), containScale=${containScale}`);
-              if (ImageManipulator && frontPhotoUri) {
-                const manipulated = await ImageManipulator.manipulateAsync(
-                  frontPhotoUri,
-                  [{ crop: { originX: actualX, originY: actualY, width: actualSize, height: actualSize } }],
-                  { compress: 0.85, format: 'jpeg' }
-                );
-                console.log(`[VERIFY-CROP] Manual crop result: ${manipulated.uri.substring(0, 60)}`);
-                setCroppedFaceUri(manipulated.uri);
-                const faceUpload = await uploadImage(manipulated.uri, 3600, 'kyc');
-                setIdFaceUrl(faceUpload.url);
-                if (faceUpload.deleteUrl) setIdFaceDeleteUrl(faceUpload.deleteUrl);
-                console.log(`[VERIFY-CROP] Face URL set: ${faceUpload.url.substring(0, 60)}`);
-              }
-            } catch (e: any) {
-              console.log(`[VERIFY-CROP] Manual crop error: ${e?.message}`);
-            }
-            setLoading(false);
-            setStep('cinBack');
-          }} disabled={loading}>
-            {loading ? <ActivityIndicator size="small" color={COLORS.white} /> : (
-              <>
-                <Icon name="check" size={16} color={COLORS.white} />
-                <Text style={styles.primaryBtnText}>{t('verification.useCrop')}</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.outlineBtn} onPress={() => setStep('cinFront')}>
-            <Icon name="back" size={15} color={COLORS.text} />
-            <Text style={styles.outlineBtnText}>{t('verification.retakeAll')}</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
+      <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        <Text style={styles.eyebrow}>{t(PHOTO_LABEL_KEYS[pendingCapture.target])}</Text>
+        <Text style={styles.infoTitle}>{t('verification.confirmTitle')}</Text>
+        <Text style={styles.infoDesc}>
+          {t(isSelfie ? 'verification.confirmDescSelfie' : 'verification.confirmDescCard')}
+        </Text>
+        <View style={styles.confirmPhotoWrap}>
+          <Image source={{ uri: pendingCapture.localUri }} style={styles.confirmPhoto} resizeMode="contain" />
+        </View>
+        <View style={{ flex: 1, minHeight: 16 }} />
+        <TouchableOpacity style={styles.primaryBtn} onPress={confirmCapture}>
+          <Icon name="check" size={16} color={COLORS.white} />
+          <Text style={styles.primaryBtnText}>{t('verification.usePhoto')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.outlineBtn} onPress={retakeCapture}>
+          <MaterialCommunityIcons name="camera-retake-outline" size={16} color={COLORS.text} />
+          <Text style={styles.outlineBtnText}>{t('verification.retakePhoto')}</Text>
+        </TouchableOpacity>
+      </ScrollView>
     );
   };
 
@@ -654,7 +484,7 @@ export default function VerificationScreen() {
       <Text style={styles.infoDesc}>{t('verification.selfieDesc')}</Text>
       {renderKeptBanner('selfie')}
       <View style={styles.tipsList}>
-        {[t('verification.tip1'), t('verification.tip2'), t('verification.tip3')].map((tip, i) => (
+        {[t('verification.tip1'), t('verification.tip2'), t('verification.tip3'), t('verification.tip4')].map((tip, i) => (
           <View key={i} style={styles.tipItem}>
             <View style={styles.tipNum}>
               <Text style={styles.tipNumText}>{i + 1}</Text>
@@ -664,7 +494,7 @@ export default function VerificationScreen() {
         ))}
       </View>
       <View style={{ flex: 1, minHeight: 20 }} />
-      <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep('selfie')}>
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => goToStep('selfie')}>
         <Text style={styles.primaryBtnText}>{t('verification.gotIt')}</Text>
         <Icon name="chevron-right" size={18} color={COLORS.white} />
       </TouchableOpacity>
@@ -672,27 +502,28 @@ export default function VerificationScreen() {
   );
 
   const renderReviewAll = () => (
-    <ScrollView contentContainerStyle={contentStyle}>
+    <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
       <Text style={styles.infoTitle}>{t('verification.reviewTitle')}</Text>
       <Text style={styles.infoDesc}>{t('verification.reviewDesc')}</Text>
 
+      {renderCaptureError()}
+
       <View style={styles.reviewGrid}>
-        {[
-          { key: 'cinFront', label: t('verification.idFront'), goto: 'cinFront' as Step, uri: frontPhotoUri },
-          { key: 'cinBack', label: t('verification.idBack'), goto: 'cinBack' as Step, uri: idBackUrl },
-          { key: 'face', label: t('verification.croppedFace'), goto: 'cropConfirm' as Step, uri: croppedFaceUri },
-          { key: 'selfie', label: t('verification.selfie'), goto: 'selfieTip' as Step, uri: selfieUrl },
-        ].map((item) => (
+        {([
+          { key: 'cinFront' as CaptureTarget, label: t('verification.idFront'), uri: idFrontUrl },
+          { key: 'cinBack' as CaptureTarget, label: t('verification.idBack'), uri: idBackUrl },
+          { key: 'selfie' as CaptureTarget, label: t('verification.selfie'), uri: selfieUrl },
+        ]).map((item) => (
           <View key={item.key} style={styles.reviewCard}>
-            <View style={[styles.reviewThumb, item.key === 'face' && { borderRadius: 32 }]}>
+            <View style={styles.reviewThumb}>
               {item.uri ? (
-                <Image source={{ uri: item.uri }} style={[styles.reviewThumb, item.key === 'face' && { borderRadius: 32 }]} resizeMode="cover" />
+                <Image source={{ uri: item.uri }} style={styles.reviewThumb} resizeMode="cover" />
               ) : (
                 <MaterialCommunityIcons name="camera-off-outline" size={24} color={COLORS.text2} />
               )}
             </View>
             <Text style={styles.reviewLabel}>{item.label}</Text>
-            <TouchableOpacity onPress={() => setStep(item.goto)}>
+            <TouchableOpacity onPress={() => retakeOnly(item.key)} style={styles.retakeHit}>
               <Text style={styles.retakeBtn}>{t('verification.retake')}</Text>
             </TouchableOpacity>
           </View>
@@ -708,37 +539,32 @@ export default function VerificationScreen() {
           </>
         )}
       </TouchableOpacity>
+      <TouchableOpacity style={styles.ghostBtn} onPress={() => nav.goBack()}>
+        <Text style={styles.ghostBtnText}>{t('verification.cancelForNow')}</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 
+  // Honest processing state — one real request, no fake stage animation
+  // (APP-Q561).
   const renderProcessing = () => (
     <View style={styles.processingWrap}>
-      <Text style={styles.infoTitle}>{t('verification.verifying')}</Text>
-      <Text style={[styles.infoDesc, { marginBottom: 28 }]}>{t('verification.usuallyFewSeconds')}</Text>
-      {STAGE_LIST.map((stage) => {
-        const status = stages[stage.key] || 'pending';
-        return (
-          <View key={stage.key} style={[styles.stageRow, status === 'pending' && { opacity: 0.4 }]}>
-            <View style={[
-              styles.stageDot,
-              status === 'done' && { backgroundColor: COLORS.green },
-              status === 'failed' && { backgroundColor: COLORS.coral },
-              status === 'active' && { backgroundColor: COLORS.surface2 },
-            ]}>
-              {status === 'done' && <Icon name="check" size={14} color="#06231A" />}
-              {status === 'failed' && <Icon name="close" size={14} color="#fff" />}
-              {status === 'active' && <ActivityIndicator size="small" color={COLORS.coral} />}
-              {status === 'pending' && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.text2 }} />}
-            </View>
-            <Text style={[styles.stageLabel, status !== 'pending' && { color: COLORS.text }]}>{t(stage.labelKey)}</Text>
+      <ActivityIndicator size="large" color={COLORS.coral} />
+      <Text style={[styles.infoTitle, { marginTop: 24 }]}>{t('verification.verifying')}</Text>
+      <Text style={[styles.infoDesc, { marginBottom: 28 }]}>{t('verification.processingDuration')}</Text>
+      <View style={styles.passiveChecks}>
+        {STAGE_LIST.map((stage) => (
+          <View key={stage.key} style={styles.passiveRow}>
+            <MaterialCommunityIcons name="shield-search-outline" size={16} color={COLORS.text2} />
+            <Text style={styles.passiveLabel}>{t(stage.labelKey)}</Text>
           </View>
-        );
-      })}
+        ))}
+      </View>
     </View>
   );
 
   const renderResult = () => {
-    if (verified) {
+    if (resultState === 'verified') {
       return (
         <View style={contentStyle}>
           <View accessible accessibilityRole="image" accessibilityLabel={t('verification.verifiedTitle')}>
@@ -753,75 +579,43 @@ export default function VerificationScreen() {
           <Text style={styles.infoDesc}>
             {t('verification.verifiedDesc')}
           </Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => { invalidateUser(); nav.goBack(); }}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => { clearDraft(); invalidateUser(); nav.goBack(); }}>
             <Text style={styles.primaryBtnText}>{t('common.done')}</Text>
           </TouchableOpacity>
         </View>
       );
     }
 
-    const info = failedStage ? FAILURE_COPY[failedStage] : FAILURE_COPY.face;
+    // Manual review (APP-Q561 honesty — this is a real backend state).
     return (
-      <ScrollView contentContainerStyle={contentStyle}>
-        <View style={[styles.resultIcon, { borderWidth: 1.5, borderColor: COLORS.coral, backgroundColor: COLORS.surface2 }]}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={32} color={COLORS.coral} />
+      <View style={contentStyle}>
+        <View style={[styles.resultIcon, { borderWidth: 1.5, borderColor: COLORS.blue, backgroundColor: `${COLORS.blue}12` }]}>
+          <MaterialCommunityIcons name="clock-outline" size={32} color={COLORS.blue} />
         </View>
-        <Text style={styles.infoTitle}>{t(info.titleKey)}</Text>
-        <Text style={styles.infoDesc}>{t(info.detailKey)}</Text>
-
-        {rejectionReasons.length > 0 && (
-          <View style={styles.rejectionBox}>
-            {rejectionReasons.map((reason, i) => (
-              <View key={i} style={styles.rejectionItem}>
-                <MaterialCommunityIcons name="alert-circle" size={14} color={COLORS.coral} />
-                <Text style={styles.rejectionText}>{reason}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.stageChecklist}>
-          {STAGE_LIST.map((s) => {
-            const failed = s.key === failedStage;
-            return (
-              <View key={s.key} style={styles.stageCheckRow}>
-                {failed ? <Icon name="close" size={14} color={COLORS.coral} /> : <Icon name="check" size={14} color={COLORS.green} />}
-                <Text style={[styles.stageCheckLabel, failed && { color: COLORS.text, fontWeight: '700' }]}>{t(s.labelKey)}</Text>
-                <Text style={[styles.stageCheckStatus, failed ? { color: COLORS.coral } : { color: COLORS.green }]}>
-                  {failed ? t('verification.needsRetake') : t('verification.passed')}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => retakeOnly(info.retakeStep)}>
-          <Icon name="back" size={16} color={COLORS.white} />
-          <Text style={styles.primaryBtnText}>{t(info.retakeLabelKey)}</Text>
+        <Text style={styles.infoTitle}>{t('verification.pendingReviewTitle')}</Text>
+        <Text style={styles.infoDesc}>{t('verification.pendingReviewDesc')}</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => { clearDraft(); nav.goBack(); }}>
+          <Text style={styles.primaryBtnText}>{t('common.done')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.ghostBtn} onPress={() => nav.goBack()}>
-          <Text style={styles.ghostBtnText}>{t('verification.cancelForNow')}</Text>
-        </TouchableOpacity>
-      </ScrollView>
+      </View>
     );
   };
 
   return (
     <View style={styles.container}>
       <ScreenHeader title={t('verification.title')} onBack={() => nav.goBack()} />
-      {step !== 'info' && step !== 'didit' && step !== 'processing' && step !== 'result' && (
+      {PROGRESS_STEPS.includes(step) && (
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${stepProgress()}%` }]} />
         </View>
       )}
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         {step === 'info' && renderInfo()}
-        {step === 'didit' && renderDidit()}
-        {step === 'cinFront' && renderCamera('back', () => captureImage('front'), t('verification.captureFrontLabel'), t('verification.captureFrontHint'))}
-        {step === 'cropConfirm' && renderCropConfirm()}
-        {step === 'cinBack' && renderCamera('back', () => captureImage('back'), t('verification.captureBackLabel'), t('verification.captureBackHint'))}
+        {step === 'cinFront' && renderCamera('back', 'cinFront', () => captureImage('cinFront'), t('verification.captureFrontLabel'), t('verification.captureFrontHint'))}
+        {step === 'captureConfirm' && renderCaptureConfirm()}
+        {step === 'cinBack' && renderCamera('back', 'cinBack', () => captureImage('cinBack'), t('verification.captureBackLabel'), t('verification.captureBackHint'))}
         {step === 'selfieTip' && renderSelfieTip()}
-        {step === 'selfie' && renderCamera('front', captureSelfie, t('verification.selfieLabel'), t('verification.selfieHint'))}
+        {step === 'selfie' && renderCamera('front', 'selfie', captureSelfie, t('verification.selfieLabel'), t('verification.selfieHint'))}
         {step === 'reviewAll' && renderReviewAll()}
         {step === 'processing' && renderProcessing()}
         {step === 'result' && renderResult()}
@@ -832,7 +626,6 @@ export default function VerificationScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  content: { flexGrow: 1, padding: SPACING.lg },
   progressTrack: { height: 4, backgroundColor: COLORS.surface2, marginHorizontal: SPACING.lg },
   progressFill: { height: '100%', backgroundColor: COLORS.coral, borderRadius: 2 },
   eyebrow: { fontSize: 12, fontWeight: '700', color: COLORS.coral, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 },
@@ -848,11 +641,11 @@ const styles = StyleSheet.create({
   reqItem: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 56, paddingVertical: SPACING.sm },
   reqDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
   reqText: { fontSize: 14, color: COLORS.text, flex: 1 },
-  primaryBtn: { backgroundColor: COLORS.coral, padding: 16, borderRadius: RADIUS.button, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  primaryBtn: { backgroundColor: COLORS.coral, padding: 16, borderRadius: RADIUS.button, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, minHeight: 48 },
   primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
-  outlineBtn: { backgroundColor: 'transparent', padding: 14, borderRadius: RADIUS.button, alignItems: 'center', borderWidth: 1.5, borderColor: COLORS.border, marginTop: 10 },
+  outlineBtn: { backgroundColor: 'transparent', padding: 14, borderRadius: RADIUS.button, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderColor: COLORS.border, marginTop: 10, minHeight: 48 },
   outlineBtnText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
-  ghostBtn: { padding: 14, alignItems: 'center', marginTop: 10 },
+  ghostBtn: { padding: 14, alignItems: 'center', marginTop: 10, minHeight: 44, justifyContent: 'center' },
   ghostBtnText: { color: COLORS.text2, fontSize: 14, fontWeight: '600' },
   cameraWrap: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
@@ -863,28 +656,22 @@ const styles = StyleSheet.create({
   cameraLabel: { position: 'absolute', bottom: 30, left: 0, right: 0, textAlign: 'center', color: COLORS.white, fontSize: 13, fontWeight: '600' },
   permissionWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 40 },
   permissionText: { fontSize: 14, color: COLORS.text2, textAlign: 'center' },
-  permissionBtn: { backgroundColor: COLORS.coral, paddingHorizontal: 20, paddingVertical: 10, borderRadius: RADIUS.row, marginTop: 8 },
+  permissionBtn: { backgroundColor: COLORS.coral, paddingHorizontal: 20, paddingVertical: 10, borderRadius: RADIUS.row, marginTop: 8, minHeight: 44, justifyContent: 'center' },
   permissionBtnText: { color: COLORS.white, fontWeight: '600' },
   processingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  stageRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, width: '100%' },
-  stageDot: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
-  stageLabel: { fontSize: 15, fontWeight: '600', color: COLORS.text2 },
+  passiveChecks: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, paddingHorizontal: 16, width: '100%', maxWidth: 300 },
+  passiveRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
+  passiveLabel: { fontSize: 13.5, color: COLORS.text2, fontWeight: '500', flex: 1 },
   keptBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: `${COLORS.green}14`, borderWidth: 1, borderColor: `${COLORS.green}33`, borderRadius: 12, padding: 10, marginBottom: 14 },
   keptText: { fontSize: 12.5, color: COLORS.text, flex: 1, lineHeight: 18 },
-  cropToggleRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 18 },
-  cropToggle: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999, backgroundColor: COLORS.surface2 },
-  cropToggleActive: { backgroundColor: COLORS.coral },
-  cropToggleText: { fontSize: 12.5, fontWeight: '700', color: COLORS.text2 },
-  cropToggleTextActive: { color: COLORS.white },
-  cropPreviewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 24 },
-  cropPreviewItem: { alignItems: 'center' },
-  cropPreviewThumb: { backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
-  cropPreviewLabel: { fontSize: 11, color: COLORS.text2, marginTop: 6 },
-  manualCropInfo: { marginBottom: 16 },
-  cropBox: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 12 },
-  cropAdjustRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: 10 },
-  cropAdjBtn: { backgroundColor: COLORS.surface2, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
-  cropAdjBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.text },
+  keptChip: { position: 'absolute', left: SPACING.lg, right: SPACING.lg },
+  errorBanner: { backgroundColor: 'rgba(20,10,10,0.88)', borderWidth: 1, borderColor: `${COLORS.coral}66`, borderRadius: RADIUS.card, padding: 12, gap: 4 },
+  camErrorWrap: { position: 'absolute', top: 12, left: SPACING.lg, right: SPACING.lg },
+  errorHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  errorTitle: { fontSize: 13.5, fontWeight: '700', color: COLORS.white, flex: 1 },
+  errorDesc: { fontSize: 12.5, color: 'rgba(255,255,255,0.85)', lineHeight: 17 },
+  confirmPhotoWrap: { width: SCREEN_W - SPACING.lg * 2, height: Math.min(Dimensions.get('window').height * 0.4, 320), borderRadius: RADIUS.card, overflow: 'hidden', backgroundColor: '#000' },
+  confirmPhoto: { width: '100%', height: '100%' },
   tipsList: { gap: 14, marginBottom: 8, paddingHorizontal: 4 },
   tipItem: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   tipNum: { width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
@@ -892,17 +679,10 @@ const styles = StyleSheet.create({
   tipText: { fontSize: 14, color: COLORS.text, flex: 1, lineHeight: 20 },
   reviewGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 8 },
   reviewCard: { width: (SCREEN_W - 52) / 2, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, padding: 12, alignItems: 'center', gap: 6 },
-  reviewThumb: { width: 60, height: 60, borderRadius: 10, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  reviewThumb: { width: 60, height: 60, borderRadius: 10, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   reviewLabel: { fontSize: 12, color: COLORS.text2, fontWeight: '600' },
-  reviewTag: { fontSize: 10, fontWeight: '700', color: COLORS.text2, textTransform: 'uppercase', letterSpacing: 0.3 },
+  retakeHit: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8 },
   retakeBtn: { fontSize: 12, fontWeight: '700', color: COLORS.blue },
   resultIcon: { alignSelf: 'center', width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   successAnimation: { alignSelf: 'center', width: 180, height: 180, marginBottom: 8 },
-  rejectionBox: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.coral, borderRadius: RADIUS.card, padding: 14, marginBottom: 16, gap: 8 },
-  rejectionItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  rejectionText: { fontSize: 13, color: COLORS.text, flex: 1, lineHeight: 18 },
-  stageChecklist: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.card, paddingHorizontal: 16, marginBottom: 20 },
-  stageCheckRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  stageCheckLabel: { fontSize: 13.5, color: COLORS.text2, fontWeight: '500', flex: 1 },
-  stageCheckStatus: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
 });

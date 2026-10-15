@@ -5,6 +5,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADIUS, SPACING, TOUCH } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import { useTranslation } from '@/localization';
@@ -65,6 +66,7 @@ function formatExpiry(value: string | null): string {
 }
 
 export default function DataPrivacyScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
 
@@ -280,7 +282,7 @@ export default function DataPrivacyScreen({ navigation }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('dataPrivacy.title')} onBack={() => navigation.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.xxxl }]} showsVerticalScrollIndicator={false}>
         <Animated.View style={animStyle}>
           <Text style={styles.intro}>{t('dataPrivacy.intro')}</Text>
           <Text style={styles.footerNote}>{t('dataPrivacy.footer')}</Text>

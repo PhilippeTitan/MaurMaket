@@ -6,6 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import ScreenHeader from '../components/ScreenHeader';
 import LocationPicker from '../components/LocationPicker';
 import { COLORS, RADIUS, SPACING } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { decideBuyerFulfillment, getPendingAgreements, beginPendingPayment, removePendingCheckoutSeller } from '../api';
 import { useToast } from '../components/Toast';
 import { useTranslation } from '@/localization';
@@ -24,6 +25,7 @@ const asLocalInput = (value?: string) => {
 };
 
 export default function MeetupProposalScreen({ route, navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { pendingId } = route.params;
   const toast = useToast();
   const { t } = useTranslation();
@@ -132,7 +134,7 @@ export default function MeetupProposalScreen({ route, navigation }: Props) {
 
   return <View style={styles.container}>
     <ScreenHeader title={t('meetupProposal.title')} onBack={() => navigation.goBack()} />
-    {!snapshot ? <ActivityIndicator style={{ marginTop: 48 }} color={COLORS.coral} /> : <ScrollView contentContainerStyle={styles.content}>
+    {!snapshot ? <ActivityIndicator style={{ marginTop: 48 }} color={COLORS.coral} /> : <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 36 }]}>
       <Animated.View style={[styles.intro, { opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }]}>
         <View style={styles.icon}><MaterialCommunityIcons name={expired ? 'clock-alert-outline' : 'map-marker-check-outline'} size={24} color={expired ? COLORS.yellow : COLORS.coral} /></View>
         <View style={{ flex: 1 }}>

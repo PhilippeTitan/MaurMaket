@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADIUS, SPACING, type AppearanceMode } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import { useTranslation } from '@/localization';
@@ -21,6 +22,7 @@ const THEMES: { key: AppearanceMode; labelKey: string; descriptionKey: string; i
 ];
 
 export default function AppearanceSettingsScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
   const [selectedTheme, setSelectedTheme] = useState<AppearanceMode>(store.appearanceMode);
@@ -50,7 +52,7 @@ export default function AppearanceSettingsScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScreenHeader title={t('appearance.title')} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.xxxl }]} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>
           <SettingsGroup header={t('appearance.theme')}>
             <View style={styles.themeList}>

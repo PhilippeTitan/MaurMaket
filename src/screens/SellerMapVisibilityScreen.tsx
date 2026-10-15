@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADIUS, SPACING, TOUCH } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getSellerLocation, setSellerLocation, toggleSellerVisibility } from '../api';
 import ScreenHeader from '../components/ScreenHeader';
 import LocationPicker from '../components/LocationPicker';
@@ -15,6 +16,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'SellerMapVisibility'>;
 type PublicArea = { lat: number; lng: number; label: string };
 
 export default function SellerMapVisibilityScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
   const [loading, setLoading] = useState(true);
@@ -76,7 +78,7 @@ export default function SellerMapVisibilityScreen({ navigation }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('sellerMapVisibility.title')} onBack={() => navigation.goBack()} />
       {loading ? <View style={styles.loading}><ActivityIndicator color={COLORS.coral} /></View> : (
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}>
           <View style={styles.card}>
             <Text style={styles.heading}>{t('sellerMapVisibility.visibilityTitle')}</Text>
             <Text style={styles.body}>{t('sellerMapVisibility.visibilityDescription')}</Text>

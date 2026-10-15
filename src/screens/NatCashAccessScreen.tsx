@@ -4,6 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { COLORS, SPACING, RADIUS } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/ScreenHeader';
 import PrimaryButton from '../components/PrimaryButton';
 import SettingsLinkButton from '../components/SettingsLinkButton';
@@ -18,6 +19,7 @@ type AccessState = { source: string | null; status: string; entitled: boolean; p
 type AccessResponse = { access: AccessState; pendingPayment: { reference_id: string; status?: string } | null };
 
 export default function NatCashAccessScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
   const [access, setAccess] = useState<AccessState | null>(null);
@@ -81,7 +83,7 @@ export default function NatCashAccessScreen({ navigation }: Props) {
 
   return <View style={styles.container}>
     <ScreenHeader title={t('natcashAccess.title')} onBack={() => navigation.goBack()} />
-    {loading ? <View style={styles.loader}><ActivityIndicator color={COLORS.coral} /></View> : <ScrollView contentContainerStyle={styles.content}>
+    {loading ? <View style={styles.loader}><ActivityIndicator color={COLORS.coral} /></View> : <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACING.xl }]}>
       <View style={styles.card}>
         <View style={styles.headingRow}>
           <View style={styles.icon}><MaterialCommunityIcons name="cash-multiple" size={22} color={COLORS.purple} /></View>
@@ -94,6 +96,12 @@ export default function NatCashAccessScreen({ navigation }: Props) {
         <View style={styles.rule} />
         <Text style={styles.body}>{t('natcashAccess.summary')}</Text>
       </View>
+
+      {!store.user?.id_verified && (
+        <SettingsLinkButton onPress={() => navigation.navigate('Verification')} style={styles.verifyLink}>
+          {t('natcashAccess.verifyIdentityLink')}
+        </SettingsLinkButton>
+      )}
 
       <View style={styles.card}>
         <View style={styles.toggleRow}>
@@ -139,6 +147,7 @@ const styles = StyleSheet.create({
   price: { color: COLORS.text, fontSize: 24, fontWeight: '800' },
   action: { minHeight: 48 },
   secondary: { minHeight: 44 },
+  verifyLink: { minHeight: 44 },
   notice: { color: COLORS.yellow, fontSize: 13, lineHeight: 19 },
   footnote: { color: COLORS.text3, fontSize: 12, lineHeight: 18, paddingHorizontal: 4 },
 });

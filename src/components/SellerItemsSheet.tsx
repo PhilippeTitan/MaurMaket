@@ -60,7 +60,7 @@ export default function SellerItemsSheet({ visible, sellerId, sellerName, onClos
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} accessibilityLabel="close" accessibilityRole="button" />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }]}>
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.lg }]}>
         <View style={styles.handle} />
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle} numberOfLines={1}>{selected ? selected.name : t('chat.shareListingTitle', { name: sellerName })}</Text>

@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { Icon } from '../components/icons/Icon';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '@/localization';
 import { useToast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
@@ -107,6 +108,7 @@ function validateEdit(f: {
 }
 
 export default function EditListingScreen({ route, navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const toast = useToast();
   const { productId } = route.params;
@@ -507,7 +509,7 @@ export default function EditListingScreen({ route, navigation }: Props) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
     <ScreenHeader title={t('editListing.title')} onBack={() => navigation.goBack()} />
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 60 }]}>
 
       {listingStatus === 'pending_review' && (
         <View style={[styles.banner, styles.bannerPending]}>

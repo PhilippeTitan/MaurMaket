@@ -1634,7 +1634,7 @@ startPolling();
             {blockedByMe && <TouchableOpacity onPress={toggleBlock} disabled={actionBusy}><Text style={styles.unblockText}>{t('chat.unblock')}</Text></TouchableOpacity>}
           </View>
         )}
-        <View style={[styles.inputArea, { paddingBottom: Math.max(insets.bottom, SPACING.md), opacity: blockedByMe || blockedByOther ? 0.55 : 1 }]}>
+          <View style={[styles.inputArea, { paddingBottom: insets.bottom + SPACING.lg, opacity: blockedByMe || blockedByOther ? 0.55 : 1 }]}>
           {/* A pending message request holds the composer: one plain message for
               the sender, and the recipient answers in Message Requests. A
               declined request keeps the sender's composer held and shows only
@@ -1830,7 +1830,7 @@ startPolling();
 
         <Modal visible={attachmentMenuVisible} transparent animationType="fade" onRequestClose={() => setAttachmentMenuVisible(false)}>
           <Pressable style={styles.modalShade} onPress={() => setAttachmentMenuVisible(false)}>
-            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+            <Pressable style={[styles.chatSheet, { paddingBottom: insets.bottom + SPACING.xl }]} onPress={e => e.stopPropagation()}>
               <Text style={styles.chatSheetTitle}>{t('chat.addAttachment')}</Text>
               <TouchableOpacity style={styles.menuRow} onPress={() => { setAttachmentMenuVisible(false); handleSendImage(); }} accessibilityRole="button">
                 <MaterialCommunityIcons name="image-outline" size={21} color={COLORS.coral} /><Text style={styles.menuRowText}>{t('chat.photo')}</Text>
@@ -1844,7 +1844,7 @@ startPolling();
 
         <Modal visible={profileMenuVisible} transparent animationType="fade" onRequestClose={() => setProfileMenuVisible(false)}>
           <Pressable style={styles.modalShade} onPress={() => setProfileMenuVisible(false)}>
-            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+            <Pressable style={[styles.chatSheet, { paddingBottom: insets.bottom + SPACING.xl }]} onPress={e => e.stopPropagation()}>
               <Text style={styles.chatSheetTitle}>{otherUserName}</Text>
               <TouchableOpacity style={styles.menuRow} onPress={togglePin} disabled={actionBusy} accessibilityRole="button">
                 <MaterialCommunityIcons name={conversationPinned ? 'pin-off-outline' : 'pin-outline'} size={20} color={COLORS.text2} /><Text style={styles.menuRowText}>{conversationPinned ? t('chat.unpinChat') : t('chat.pinChat')}</Text>
@@ -1873,7 +1873,7 @@ startPolling();
 
         <Modal visible={mutePickerVisible} transparent animationType="fade" onRequestClose={() => setMutePickerVisible(false)}>
           <Pressable style={styles.modalShade} onPress={() => setMutePickerVisible(false)}>
-            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+            <Pressable style={[styles.chatSheet, { paddingBottom: insets.bottom + SPACING.xl }]} onPress={e => e.stopPropagation()}>
               <Text style={styles.chatSheetTitle}>{t('chat.muteChat')}</Text>
               {[{ label: t('chat.muteEightHours'), hours: 8 }, { label: t('chat.muteOneWeek'), hours: 168 }, { label: t('chat.muteIndefinitely'), hours: null as number | null }].map(option => (
                 <TouchableOpacity key={option.label} style={styles.menuRow} onPress={() => applyMute(option.hours)} accessibilityRole="button">
@@ -1891,7 +1891,7 @@ startPolling();
 
         <Modal visible={confirmBlockVisible} transparent animationType="fade" onRequestClose={() => setConfirmBlockVisible(false)}>
           <Pressable style={styles.modalShade} onPress={() => setConfirmBlockVisible(false)}>
-            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+            <Pressable style={[styles.chatSheet, { paddingBottom: insets.bottom + SPACING.xl }]} onPress={e => e.stopPropagation()}>
               <Text style={styles.chatSheetTitle}>{blockedByMe ? t('chat.unblockUser') : t('chat.blockUser')}</Text>
               <Text style={styles.sheetHint}>{blockedByMe ? t('chat.unblockConfirm') : t('chat.blockConfirm')}</Text>
               <View style={styles.sheetActions}>
@@ -1904,7 +1904,7 @@ startPolling();
 
         <Modal visible={reportVisible} transparent animationType="fade" onRequestClose={closeReport}>
           <Pressable style={styles.modalShade} onPress={closeReport}>
-            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+            <Pressable style={[styles.chatSheet, { paddingBottom: insets.bottom + SPACING.xl }]} onPress={e => e.stopPropagation()}>
               <Text style={styles.chatSheetTitle}>{t('chat.reportUser')}</Text>
               {(['harassment', 'scam', 'inappropriate', 'spam', 'other'] as const).map(reason => (
                 <TouchableOpacity key={reason} style={styles.reasonRow} onPress={() => setReportReason(reason)} accessibilityRole="radio" accessibilityState={{ selected: reportReason === reason }}>
@@ -1919,7 +1919,7 @@ startPolling();
 
         <Modal visible={privacyInfoVisible} transparent animationType="fade" onRequestClose={() => setPrivacyInfoVisible(false)}>
           <Pressable style={styles.modalShade} onPress={() => setPrivacyInfoVisible(false)}>
-            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+            <Pressable style={[styles.chatSheet, { paddingBottom: insets.bottom + SPACING.xl }]} onPress={e => e.stopPropagation()}>
               <Text style={styles.chatSheetTitle}>{t('chat.privacyInfo')}</Text>
               <Text style={styles.sheetHint}>{t('chat.privacyNotice')}</Text>
               <TouchableOpacity style={styles.primaryAction} onPress={() => setPrivacyInfoVisible(false)} accessibilityRole="button"><Text style={styles.primaryActionText}>{t('common.confirm')}</Text></TouchableOpacity>
@@ -1929,7 +1929,7 @@ startPolling();
 
         <Modal visible={peerProfileVisible} transparent animationType="fade" onRequestClose={() => setPeerProfileVisible(false)}>
           <Pressable style={styles.modalShade} onPress={() => setPeerProfileVisible(false)}>
-            <Pressable style={styles.chatSheet} onPress={e => e.stopPropagation()}>
+            <Pressable style={[styles.chatSheet, { paddingBottom: insets.bottom + SPACING.xl }]} onPress={e => e.stopPropagation()}>
               <View style={styles.peerProfileHeader}><UserAvatar seller={{ avatar_url: otherUserAvatar, full_name: otherUserName, seller_tier: 'none' } as any} size={66} animated={false} /><View style={{ flex: 1 }}><Text style={styles.peerProfileName}>{otherUserName || t('common.seller')}</Text><Text style={styles.peerProfileType}>{t('chat.marketplaceMember')}</Text></View></View>
               <TouchableOpacity style={styles.primaryAction} onPress={() => setPeerProfileVisible(false)} accessibilityRole="button"><Text style={styles.primaryActionText}>{t('common.confirm')}</Text></TouchableOpacity>
             </Pressable>

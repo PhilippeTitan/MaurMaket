@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenHeader from '../components/ScreenHeader';
 import SettingsGroup from '../components/SettingsGroup';
 import { i18n, useTranslation, type Language } from '@/localization';
@@ -21,6 +22,7 @@ const LANGUAGES: { code: Language; label: string; native: string; flag: string }
 ];
 
 export default function LanguageSettingsScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { t, language } = useTranslation();
 
   const handleSelect = async (code: Language) => {
@@ -36,7 +38,7 @@ export default function LanguageSettingsScreen({ navigation }: Props) {
     <View style={styles.container}>
       <ScreenHeader title={t('language.title')} onBack={() => navigation.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + SPACING.page }]} showsVerticalScrollIndicator={false}>
         <View>
           <SettingsGroup
             header={t('language.select')}
