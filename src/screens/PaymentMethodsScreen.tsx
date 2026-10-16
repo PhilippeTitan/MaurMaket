@@ -138,10 +138,10 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
                   </Text>
                 </View>
                 <View style={styles.buttonRow}>
-                  <SettingsLinkButton onPress={openDestinationModal}>
+                  <SettingsLinkButton small onPress={openDestinationModal}>
                     {destination ? t('paymentMethods.destinationChange') : t('paymentMethods.destinationAdd')}
                   </SettingsLinkButton>
-                  <SettingsLinkButton onPress={() => navigation.navigate('Payments')}>
+                  <SettingsLinkButton small onPress={() => navigation.navigate('Payments')}>
                     {t('paymentMethods.viewPayouts')}
                   </SettingsLinkButton>
                 </View>

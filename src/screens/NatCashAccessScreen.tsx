@@ -79,6 +79,7 @@ export default function NatCashAccessScreen({ navigation }: Props) {
   const business = access?.source === 'business' && access.entitled;
   const paused = access?.status === 'paused';
   const active = !!access?.entitled && !business;
+  const needsPayment = access?.status === 'not_subscribed' || access?.status === 'expired' || !!access?.inGracePeriod;
   const expiry = access?.expiresAt ? new Date(access.expiresAt).toLocaleDateString() : '';
 
   return <View style={styles.container}>
@@ -118,7 +119,7 @@ export default function NatCashAccessScreen({ navigation }: Props) {
         <View style={styles.priceRow}><Text style={styles.price}>500 HTG</Text><Text style={styles.meta}>{t('natcashAccess.perMonth')}</Text></View>
         <Text style={styles.body}>{t('natcashAccess.terms')}</Text>
         {active && access?.inGracePeriod ? <Text style={styles.notice}>{t('natcashAccess.grace')}</Text> : null}
-        {pendingPayment ? <Text style={styles.notice}>{pendingPayment.status === 'reconciliation_required' ? t('natcashAccess.paymentReconciliation') : t('natcashAccess.paymentPending')}</Text> : <PrimaryButton onPress={buy} disabled={busy} style={styles.action}>{busy ? t('common.loading') : t('natcashAccess.pay')}</PrimaryButton>}
+        {pendingPayment ? <Text style={styles.notice}>{pendingPayment.status === 'reconciliation_required' ? t('natcashAccess.paymentReconciliation') : t('natcashAccess.paymentPending')}</Text> : needsPayment ? <PrimaryButton onPress={buy} disabled={busy} style={styles.action}>{busy ? t('common.loading') : t('natcashAccess.pay')}</PrimaryButton> : null}
         {active && <SettingsLinkButton onPress={() => changeStatus('pause')} disabled={busy} style={styles.secondary}>{t('natcashAccess.pause')}</SettingsLinkButton>}
         {paused && <PrimaryButton onPress={() => changeStatus('reactivate')} disabled={busy} style={styles.action}>{t('natcashAccess.reactivate')}</PrimaryButton>}
       </View>}
