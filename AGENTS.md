@@ -511,7 +511,7 @@ Config at: `C:\Users\drato\.config\opencode\opencode.json`
 |---------|---------|------------|
 | **cron-job.org** | Render keep-alive pings (replaces throttled GitHub Actions cron) | API key: `ZhYnvsj66LV9BnAiURgHJa9q/AVND65Bn1tkMBRAmg=` |
 | | Target URL: `https://maurmaket.onrender.com/api/health` | Free tier, 1-min interval |
-| **Lightning.ai** | KYC verify.py studio (kyc-probe cloudspace) — **access via direct REST API + this key, never via MCP** | Basic auth header: `NTMxODkzMzgtMzc1OC00YTZhLTg5OWEtM2QyYTQ0NmM5ODQyOmU5NzM2ZWZjLTMyZjktNGNmMC1hY2NkLTA1NDJmYjUyN2FlZA==` (= base64 `user_id:api_key`) |
+| **Lightning.ai** | KYC verify.py studio (kyc-probe cloudspace) — **access via direct REST API + this key, never via MCP** | Basic auth header: `NTMxODkzMzgtMzc1OC00YTZhLTg5OWEtM2QyYTQ0NmM5ODQyOjQzYzA1YmY3LTk1ZTUtNDdiYS1hZTQ0LWZjMmMwYjA5YTQ1Yw==` (= base64 `user_id:api_key`); api_key `43c05bf7-95e5-47ba-ae44-fc2c0a09a45c` (rotated 2026-10-16; old `e9736...` and local credentials.json `d7feb0...` both dead) |
 | | user `53189338-3758-4a6a-899a-3d2a446c9842`, project `01m2xxt33j2582e80tcswxyt6v`, cloudspace `01m2y06yr92z5qmmwnwr72xxrh` | REST base: `https://lightning.ai/v1` — see "Lightning Studio keep-alive formula" for endpoints |
 
 ### Supabase MCP Tools
@@ -1216,7 +1216,7 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
 - **Lightning Studio keep-alive formula** (proven 2026-10-14 on `kyc-probe`; reusable for maurvideos / any long-running Lightning service — Philippe may ask another instance to apply this):
   - **HOW TO ACCESS LIGHTNING — read this first**: access is **always direct REST with the API key**, from any machine, via `Invoke-RestMethod` / curl / fetch. **Do NOT look for or wait on a Lightning MCP server** — it is usually not attached to the session (2026-10-15: an instance wasted time discovering `lightning_execute_code` was unavailable; the previous instance never used MCP at all, only the REST API). If MCP tools happen to exist in a session they are optional sugar, never the path. Credentials and IDs are in the External Services table above (Basic auth header, user/project/cloudspace). Ready-to-paste PowerShell:
     ```powershell
-    $H = @{ Authorization = 'Basic NTMxODkzMzgtMzc1OC00YTZhLTg5OWEtM2QyYTQ0NmM5ODQyOmU5NzM2ZWZjLTMyZjktNGNmMC1hY2NkLTA1NDJmYjUyN2FlZA=='; 'Content-Type' = 'application/json' }
+    $H = @{ Authorization = 'Basic NTMxODkzMzgtMzc1OC00YTZhLTg5OWEtM2QyYTQ0NmM5ODQyOjQzYzA1YmY3LTk1ZTUtNDdiYS1hZTQ0LWZjMmMwYjA5YTQ1Yw=='; 'Content-Type' = 'application/json' }
     $B = 'https://lightning.ai/v1/projects/01m2xxt33j2582e80tcswxyt6v/cloudspaces/01m2y06yr92z5qmmwnwr72xxrh'
     # run a command on the studio (zsh; returns {output, exitCode}):
     Invoke-RestMethod -Method Post -Uri "$B/execute" -Headers $H -Body '{"command":"curl -sf http://127.0.0.1:8000/health","detached":false}'
@@ -1224,6 +1224,7 @@ users.id_verification_result: 'pending' | 'verified' | 'rejected'
     Invoke-RestMethod -Method Post -Uri "$B/start" -Headers $H -Body '{}'
     ```
   - **Problem**: Lightning cloudspaces auto-sleep ~10-25 min after idle; everything on the studio dies. Public endpoints then return plain-text `404 page not found` (machine asleep/off) or empty `502` (machine on, port not listening).
+  - **2026-10-16 platform incident**: `POST /start` returned HTTP 500 `creating cloud space instance: getting subscription: {"code":"api_key_expired","message":"Expired API Key provided: sk_live_...d8ML"}` — expired Stripe secret key **on Lightning's billing backend** during their open emergency maintenance (status.lightning.ai, investigating since 03:08 UTC). Not fixable client-side: API key itself valid (GET works), machine provisioning blocked platform-wide. If `/start` fails this way, check status.lightning.ai and wait — do not rotate keys or rebuild the studio.
   - **Formula — 3 layers, all three required**:
     1. **Endpoint with `autoStart` + supervisor launch**: the public endpoint's start command must launch a supervisor, so any reboot/sleep self-heals. `PUT /v1/projects/{proj}/cloudspaces/{cs}/endpoints/{endp}` with `{"autoStart": true, "command": "nohup bash /teamspace/studios/this_studio/supervisor.sh > /dev/null 2>&1 & echo supervisor-started"}` (verify persisted via GET).
     2. **Supervisor inside the studio** (`supervisor.sh` on the studio volume, survives reboots): flock-singleton loop, every 30s checks the service via `pgrep -f "[v]ervice-name"` (bracket trick — plain pattern self-matches and blocks relaunch) and relaunches with nohup >> app.log if dead. Log relaunches with UTC timestamps. Template (swap service cmd):
