@@ -5,9 +5,11 @@ import { COLORS, SPACING, RADIUS } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchAreasHybrid, type HaitiArea } from '../data/haiti-areas';
 import { getFastLocation } from '../fast-location';
+import { detectCurrentLocation, LOCATION_PERMISSION_DENIED } from '../utils/currentLocation';
 import NativeMap, { MAP_STYLE_LIGHT, type NativeMapRef } from './NativeMap';
 import { useTranslation } from '@/localization';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { useToast } from './Toast';
 
 interface LocationPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
@@ -20,6 +22,8 @@ interface LocationPickerProps {
 export default function LocationPicker({ onLocationSelect, initialLat, initialLng, height = 260, allowCurrentLocation = true }: LocationPickerProps) {
   const { t } = useTranslation();
   const reduceMotion = useReduceMotion();
+  const toast = useToast();
+  const [locating, setLocating] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -104,6 +108,33 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
       .catch(() => setExpandedAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`))
       .finally(() => setExpandedLoading(false));
   }, []);
+
+  const handleUseCurrentLocation = useCallback(async () => {
+    if (locating) return;
+    setLocating(true);
+    try {
+      const loc = await detectCurrentLocation();
+      setSelectedLat(loc.lat);
+      setSelectedLng(loc.lng);
+      setPendingCoords({ lat: loc.lat, lng: loc.lng });
+      setExpandedAddress(loc.address);
+      setSearchFocused(false);
+      setSearchResults([]);
+      searchInputRef.current?.blur();
+      expandedMapRef.current?.flyTo(loc.lat, loc.lng, 16);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === LOCATION_PERMISSION_DENIED) {
+        toast.warning(t('settings.locationDeniedTitle'), t('settings.locationDeniedMessage'));
+      } else if (code === 'E_LOCATION_SERVICES_DISABLED') {
+        toast.error(t('settings.error'), t('locationSettings.gpsOff'));
+      } else {
+        toast.error(t('settings.error'), t('locationSettings.detectFailed'));
+      }
+    } finally {
+      setLocating(false);
+    }
+  }, [locating, t, toast]);
 
   const selectArea = useCallback((area: HaitiArea) => {
     setSelectedLat(area.lat);
@@ -216,8 +247,23 @@ export default function LocationPicker({ onLocationSelect, initialLat, initialLn
             onMapReady={() => setExpandedMapReady(true)}
           />
 
-          {/* Close button — top right */}
+          {/* Close + find-me buttons — top right */}
           <View style={[styles.closeBtnRow, { top: insets.top + 8, right: 14 }]}>
+            {allowCurrentLocation && (
+              <TouchableOpacity
+                style={styles.closeBtn}
+                onPress={handleUseCurrentLocation}
+                disabled={locating}
+                accessibilityLabel={t('locationSettings.findMeA11y')}
+                accessibilityRole="button"
+              >
+                {locating ? (
+                  <ActivityIndicator size="small" color={COLORS.coral} />
+                ) : (
+                  <MaterialCommunityIcons name="crosshairs-gps" size={22} color={COLORS.coral} />
+                )}
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.closeBtn} onPress={() => {
               setExpanded(false);
               setExpandedMapReady(false);
@@ -357,7 +403,7 @@ const styles = StyleSheet.create({
   expandedMap: { flex: 1 },
 
   /* Close button — top right */
-  closeBtnRow: { position: 'absolute', flexDirection: 'row', alignItems: 'center' },
+  closeBtnRow: { position: 'absolute', flexDirection: 'row', alignItems: 'center', gap: 8 },
   closeBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', elevation: 4 },
 
   /* Bottom pill container */

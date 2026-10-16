@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, TextInput, Modal,
-  KeyboardAvoidingView, Platform, Animated,
+  KeyboardAvoidingView, Platform, Animated, ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -14,6 +14,7 @@ import type { Address } from '../types';
 import type { RootStackParamList } from '../navigation';
 import ScreenHeader from '../components/ScreenHeader';
 import EmptyState from '../components/EmptyState';
+import { detectCurrentLocation, LOCATION_PERMISSION_DENIED } from '../utils/currentLocation';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -33,6 +34,7 @@ export default function AddressesScreen() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [locating, setLocating] = useState(false);
 
   const listAnim = useRef(new Animated.Value(0)).current;
 
@@ -105,6 +107,24 @@ export default function AddressesScreen() {
     } catch { Alert.alert(t('common.error'), t('addresses.deleteFailed')); }
       }},
     ]);
+  };
+
+  const handleUseCurrentLocation = async () => {
+    if (locating) return;
+    setLocating(true);
+    try {
+      const loc = await detectCurrentLocation();
+      setForm(p => ({ ...p, address: loc.address, city: loc.city || p.city }));
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === LOCATION_PERMISSION_DENIED) {
+        Alert.alert(t('settings.locationDeniedTitle'), t('settings.locationDeniedMessage'));
+      } else {
+        Alert.alert(t('common.error'), t('locationSettings.detectFailed'));
+      }
+    } finally {
+      setLocating(false);
+    }
   };
 
   return (
@@ -227,6 +247,22 @@ export default function AddressesScreen() {
                     {i < 4 ? <View style={styles.modalDivider} /> : null}
                   </View>
                 ))}
+                {Platform.OS !== 'web' && (
+                  <TouchableOpacity
+                    style={[styles.useLocationBtn, locating && { opacity: 0.6 }]}
+                    onPress={handleUseCurrentLocation}
+                    disabled={locating}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('common.useMyLocation')}
+                  >
+                    {locating ? (
+                      <ActivityIndicator size="small" color={COLORS.coral} />
+                    ) : (
+                      <MaterialCommunityIcons name="crosshairs-gps" size={16} color={COLORS.coral} />
+                    )}
+                    <Text style={styles.useLocationText}>{t('common.useMyLocation')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               <TouchableOpacity
@@ -379,6 +415,23 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: COLORS.border,
     marginLeft: 18 + SPACING.md,
+  },
+  useLocationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 44,
+    marginTop: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.coral,
+    borderRadius: RADIUS.card,
+    backgroundColor: COLORS.coral + '0D',
+  },
+  useLocationText: {
+    color: COLORS.coral,
+    fontSize: FONT_SIZES.md,
+    fontWeight: FONT_WEIGHTS.bold,
   },
   modalSaveBtn: {
     marginHorizontal: SPACING.lg,

@@ -15,7 +15,7 @@ import { useTranslation } from '@/localization';
 import { validatePromo } from '../api';
 import ScreenHeader from '../components/ScreenHeader';
 import { store, cartLineKey } from '../store';
-import { createPendingCheckout, getPendingSellerInfo, getAddresses, getImageUrl, getNatCashAvailability, getPopularMeetupSpots } from '../api';
+import { createPendingCheckout, getPendingSellerInfo, getAddresses, getImageUrl, getNatCashAvailability, getPopularMeetupSpots, updateProfile } from '../api';
 import type { RootStackParamList } from '../navigation';
 import type { Address } from '../types';
 import SalePriceTag from '../components/SalePriceTag';
@@ -26,6 +26,7 @@ import { network } from '../network';
 // Shared with the sign-out sweep (APP-Q403): an unfinished payment reference must
 // not outlive the account that started it.
 import { PENDING_PAYMENT_KEY } from '../utils/signOutPolicy';
+import { detectCurrentLocation, LOCATION_PERMISSION_DENIED } from '../utils/currentLocation';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
@@ -69,6 +70,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [meetupAt, setMeetupAt] = useState(() => localDateTimeInput(new Date(Date.now() + 24 * 60 * 60 * 1000)));
   const [popularMeetupSpots, setPopularMeetupSpots] = useState<Array<{ id: string; name: string; lat: number; lng: number; label: string; communitySignal: string }>>([]);
   const [fulfillmentMethods, setFulfillmentMethods] = useState<Record<string, DeliveryMethod>>({});
+  const [locating, setLocating] = useState(false);
 
   // ---- "Laser Conic Sweep" (bar-for-bar port of the HTML mockup) ----
   // CSS: .laser-bg { conic-gradient(from var(--angle-a), transparent 60%,
@@ -382,6 +384,39 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     if (step === 3) { handleCheckout(); return; }
     if (canContinue()) setStep((step + 1) as Step);
   };
+
+  const handleUseCurrentLocation = useCallback(async () => {
+    if (locating) return;
+    setLocating(true);
+    try {
+      const loc = await detectCurrentLocation();
+      setAddress(loc.address);
+      if (loc.city) setCity(loc.city);
+      setSelectedAddressId(null);
+      // Delivery readiness and order creation both read the profile's
+      // location_lat/lng — persist the fix alongside the typed fields.
+      const res = await updateProfile({
+        locationAddress: loc.address,
+        locationCity: loc.city || city,
+        locationLat: String(loc.lat),
+        locationLng: String(loc.lng),
+      }) as { user?: typeof store.user };
+      if (res.user) await store.setUser(res.user, store.token);
+      toast.success(t('checkout.locationSet'));
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === LOCATION_PERMISSION_DENIED) {
+        toast.warning(t('settings.locationDeniedTitle'), t('settings.locationDeniedMessage'));
+      } else if (code === 'E_LOCATION_SERVICES_DISABLED') {
+        toast.error(t('settings.error'), t('locationSettings.gpsOff'));
+      } else {
+        toast.error(t('settings.error'), t('locationSettings.detectFailed'));
+      }
+    } finally {
+      setLocating(false);
+    }
+  }, [locating, city, t, toast]);
+
   const renderStep1 = () => (<ScrollView contentContainerStyle={[styles.stepContent, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
     <Text style={styles.stepLabel}>{t("checkout.delivery")}</Text>
     <View style={styles.methodRow}>
@@ -397,6 +432,22 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <TextInput style={styles.input} placeholder={t("checkout.phone")} placeholderTextColor={COLORS.text2} value={phone} onChangeText={setPhone} keyboardType="phone-pad"/>
       <TextInput style={styles.input} placeholder={t("checkout.address")} placeholderTextColor={COLORS.text2} value={address} onChangeText={setAddress}/>
       <TextInput style={styles.input} placeholder={t("checkout.city")} placeholderTextColor={COLORS.text2} value={city} onChangeText={setCity}/>
+      {Platform.OS !== 'web' && (
+        <TouchableOpacity
+          style={[styles.useLocationBtn, locating && styles.useLocationBtnDisabled]}
+          onPress={handleUseCurrentLocation}
+          disabled={locating}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.useMyLocation')}
+        >
+          {locating ? (
+            <ActivityIndicator size="small" color={COLORS.coral} />
+          ) : (
+            <MaterialCommunityIcons name="crosshairs-gps" size={18} color={COLORS.coral} />
+          )}
+          <Text style={styles.useLocationText}>{t('common.useMyLocation')}</Text>
+        </TouchableOpacity>
+      )}
       <TextInput style={styles.input} placeholder={t("checkout.note")} placeholderTextColor={COLORS.text2} value={note} onChangeText={setNote} multiline/>
     </>}
     {sellerGroups.some(seller => (fulfillmentMethods[seller.sellerId] || method) === 'meetup') && <><Text style={styles.stepLabel}>{t("checkout.meetupLocation")}</Text>
@@ -465,6 +516,9 @@ const styles = StyleSheet.create({
   methodTitleActive: { color: COLORS.coral },
   methodSub: { fontSize: 11, color: COLORS.text2, textAlign: "center" },
   input: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.row, padding: 12, color: COLORS.text, fontSize: 13, marginBottom: 8, marginHorizontal: SPACING.lg },
+  useLocationBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 44, borderWidth: 1, borderColor: COLORS.coral, borderRadius: RADIUS.row, backgroundColor: COLORS.coral + '0D', marginBottom: 8, marginHorizontal: SPACING.lg },
+  useLocationBtnDisabled: { opacity: 0.6 },
+  useLocationText: { color: COLORS.coral, fontSize: 13, fontWeight: '700' },
   savedAddressHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: SPACING.lg, marginBottom: 8 },
   savedAddressTitle: { color: COLORS.text2, fontSize: 12, fontWeight: '600' },
   savedAddressLink: { color: COLORS.coral, fontSize: 12, fontWeight: '700' },
