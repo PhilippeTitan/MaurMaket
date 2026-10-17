@@ -14,7 +14,7 @@ stages:
   - deploy
 
 default:
-  image: node:22
+  image: node:24
   interruptible: true
 
 .npm_cache: &npm_cache
@@ -73,6 +73,29 @@ smoke:
       done
     - echo "── Server smoke (boot + migrations + listen) ──"
     - node scripts/server-smoke.mjs
+
+ui:
+  stage: test
+  allow_failure: true   # report-only until the visual rig stabilizes; then tighten
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=6144"
+    EXPO_NO_TELEMETRY: "1"
+    CI: "true"
+  cache:
+    <<: *npm_cache
+  script:
+    - npm ci --cache .npm --no-audit --no-fund
+    - echo "── Expo web export ──"
+    - npx expo export --platform web --output-dir dist-web
+    - echo "── Playwright UI smoke ──"
+    - npx playwright install chromium --with-deps
+    - npx playwright test
+  artifacts:
+    when: always
+    paths:
+      - playwright-report/
+      - test-results/
+    expire_in: 1 week
 
 mirror:
   stage: deploy
