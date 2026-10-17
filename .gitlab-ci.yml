@@ -17,16 +17,19 @@ default:
   image: node:22
   interruptible: true
 
+.npm_cache: &npm_cache
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm
+
 test:
   stage: test
   variables:
     NODE_OPTIONS: "--max-old-space-size=4096"
   cache:
-    key:
-      files:
-        - package-lock.json
-    paths:
-      - .npm
+    <<: *npm_cache
   script:
     - npm ci --cache .npm --no-audit --no-fund
     - echo "── TypeScript compile check ──"
@@ -34,9 +37,46 @@ test:
     - echo "── Guardrails (16 checks) ──"
     - npm test
 
+unit:
+  stage: test
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  cache:
+    <<: *npm_cache
+  script:
+    - npm ci --cache .npm --no-audit --no-fund
+    - echo "── Unit tests (vitest) ──"
+    - npx vitest run
+
+smoke:
+  stage: test
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "ci"
+    POSTGRES_PASSWORD: "ci"
+    POSTGRES_DB: "maurmaket_ci"
+    DATABASE_URL: "postgres://ci:ci@postgres:5432/maurmaket_ci"
+    NODE_ENV: "test"
+    JWT_SECRET: "ci-smoke-secret-not-for-prod"
+    PORT: "3999"
+  cache:
+    <<: *npm_cache
+  script:
+    - npm ci --cache .npm --no-audit --no-fund
+    - |
+      echo "Waiting for postgres..."
+      for i in $(seq 1 45); do
+        node -e "const n=require('net');const s=n.connect(5432,'postgres',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))" && break
+        sleep 2
+      done
+    - echo "── Server smoke (boot + migrations + listen) ──"
+    - node scripts/server-smoke.mjs
+
 mirror:
   stage: deploy
-  needs: ["test"]
+  needs: ["test", "unit", "smoke"]
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   variables:
