@@ -76,7 +76,6 @@ smoke:
 
 ui:
   stage: test
-  allow_failure: true   # report-only until the visual rig stabilizes; then tighten
   variables:
     NODE_OPTIONS: "--max-old-space-size=6144"
     EXPO_NO_TELEMETRY: "1"
@@ -99,7 +98,7 @@ ui:
 
 mirror:
   stage: deploy
-  needs: ["test", "unit", "smoke"]
+  needs: ["test", "unit", "smoke", "ui"]
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   variables:
