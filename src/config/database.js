@@ -21,7 +21,7 @@ const _rawPool = new Pool({
   max: isTestMode ? 5 : 15,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: isTestMode ? 5000 : 15000,
-  ssl: primaryDatabaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
+  ssl: primaryDatabaseUrl.includes('localhost') || primaryDatabaseUrl.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
 });
 
 _rawPool.on('error', (err) => {

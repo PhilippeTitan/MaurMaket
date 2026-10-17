@@ -28,7 +28,7 @@ async function runMigrations() {
 
     const pool = new pg.Pool({
       connectionString: db.url,
-      ssl: db.url.includes('localhost') ? false : { rejectUnauthorized: false },
+      ssl: db.url.includes('localhost') || db.url.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
     });
 
     try {

@@ -99,7 +99,7 @@ function createPool(connectionString, label) {
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10_000,
-    ssl: connectionString.includes('localhost') ? false : { rejectUnauthorized: false },
+    ssl: connectionString.includes('localhost') || connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
   });
   pool.on('error', (err) => {
     console.error(`[DB:${label}] Unexpected pool error:`, err.message);

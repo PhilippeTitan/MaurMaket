@@ -57,7 +57,7 @@ smoke:
     POSTGRES_USER: "ci"
     POSTGRES_PASSWORD: "ci"
     POSTGRES_DB: "maurmaket_ci"
-    DATABASE_URL: "postgres://ci:ci@postgres:5432/maurmaket_ci"
+    DATABASE_URL: "postgres://ci:ci@postgres:5432/maurmaket_ci?sslmode=disable"
     NODE_ENV: "test"
     JWT_SECRET: "ci-smoke-secret-not-for-prod"
     PORT: "3999"
