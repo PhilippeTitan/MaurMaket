@@ -17,6 +17,7 @@ workflow:
 stages:
   - test
   - deploy
+  - deps
 
 default:
   image: node:24
@@ -137,3 +138,26 @@ mirror:
     - git fetch github main
     - git push --force-with-lease="refs/heads/main:$(git rev-parse FETCH_HEAD)" github HEAD:main
     - echo "GitHub mirror synced ← $(git rev-parse --short HEAD) $(git log -1 --pretty=%s)"
+
+# Dependency update MRs (Dependabot-equivalent, free tier).
+# Run manually from CI/CD → Jobs → renovate → Run (or add a schedule).
+# Requires CI/CD variable RENOVATE_TOKEN — see AGENTS.md "Renovate".
+renovate:
+  stage: deps
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  image: renovate/renovate:latest
+  variables:
+    RENOVATE_PLATFORM: "gitlab"
+    RENOVATE_REPOSITORIES: "PhilippeTitan/MaurMaket"
+    RENOVATE_ONBOARDING: "false"
+    RENOVATE_LOG_LEVEL: "INFO"
+  script:
+    - |
+      if [ -z "${RENOVATE_TOKEN}" ]; then
+        echo "RENOVATE_TOKEN CI/CD variable is not set — see AGENTS.md 'Renovate' for the one-time setup."
+        exit 0
+      fi
+    - renovate
