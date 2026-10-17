@@ -79,6 +79,15 @@ smoke:
     - echo "── Server smoke (boot + migrations + listen) ──"
     - node scripts/server-smoke.mjs
 
+audit:
+  stage: test
+  cache:
+    <<: *npm_cache
+  script:
+    - npm ci --cache .npm --no-audit --no-fund
+    - echo "── npm audit (known vulnerabilities, high+ gate) ──"
+    - npm audit --audit-level=high
+
 ui:
   stage: test
   variables:
