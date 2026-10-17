@@ -1,0 +1,61 @@
+# MaurMaket — GitLab QA gate → clean GitHub mirror
+# Flow: every push lands HERE first, tests run, and main mirrors to
+# GitHub ONLY when the full test stage is green. Never hand-push GitHub again.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+stages:
+  - test
+  - deploy
+
+default:
+  image: node:22
+  interruptible: true
+
+test:
+  stage: test
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm
+  script:
+    - npm ci --cache .npm --no-audit --no-fund
+    - echo "── TypeScript compile check ──"
+    - npx tsc --noEmit
+    - echo "── Guardrails (16 checks) ──"
+    - npm test
+
+mirror:
+  stage: deploy
+  needs: ["test"]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - |
+      if [ -z "${GITHUB_SYNC_TOKEN}" ]; then
+        echo "ERROR: GITHUB_SYNC_TOKEN CI variable is not set."
+        echo ""
+        echo "Setup (one-time, ~2 minutes):"
+        echo "  1. github.com → Settings → Developer settings → Fine-grained tokens"
+        echo "     Repository access: Only select repositories → PhilippeTitan/MaurMaket"
+        echo "     Permissions → Repository permissions → Contents: Read and write"
+        echo "  2. gitlab.com → PhilippeTitan/MaurMaket → Settings → CI/CD → Variables"
+        echo "     Add variable GITHUB_SYNC_TOKEN (Masked ✓, Protected ✓)"
+        echo "  3. Re-run this job (or push again to main)"
+        exit 1
+      fi
+    - git remote add github "https://oauth2:${GITHUB_SYNC_TOKEN}@github.com/PhilippeTitan/MaurMaket.git"
+    - git fetch github main
+    - git push --force-with-lease="refs/heads/main:$(git rev-parse FETCH_HEAD)" github HEAD:main
+    - echo "GitHub mirror synced ← $(git rev-parse --short HEAD) $(git log -1 --pretty=%s)"
