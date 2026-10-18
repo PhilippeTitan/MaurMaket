@@ -75,6 +75,8 @@ export const COLORS: Record<string, any> = {
   // Neutrals
   white: '#FFFFFF',
   black: '#000000',
+  /** Fixed dark surface for the immersive commerce feed; feed text/actions stay high-contrast in both appearance modes. */
+  feedSurface: '#111820',
 
   // Semantic
   error: '#FF4D6A',        // Same as coral — error states
