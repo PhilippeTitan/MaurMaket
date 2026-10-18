@@ -4,6 +4,8 @@ import { authRequired } from '../middleware/auth.js';
 import { verifyLimiter } from '../middleware/rateLimit.js';
 import { deleteTemporaryStorageUpload, readTemporaryKycImage } from '../utils/temporaryStorage.js';
 import { KYC_ACCESS_RETENTION_DAYS, listKycEvidenceAccess } from '../utils/kycEvidenceAccess.js';
+import { kycV2Enabled, verifyAppPinClaim, decodeIntegrityToken, evaluateDeviceSignals } from '../utils/appIntegrity.js';
+import { queueKycAttempt, normalizeEmbedding, normalizeDeviceResults } from '../utils/kycReview.js';
 
 const router = Router();
 
@@ -57,6 +59,16 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
        ORDER BY created_at DESC LIMIT 1`,
       [req.user.id]
     );
+
+    // ─── KYC v2 (docs/rfc/kyc-on-device.md, DECIDED 2026-10-17) ─────────
+    // Free stack, explicitly temporary: no Lightning call, no auto-decision.
+    // Client-supplied signals (Play Integrity token, pin claim, TFLite scores)
+    // are stored as advisory columns and the attempt joins the human review
+    // queue. The Lightning path below stays intact behind the flag for
+    // rollback until Phase 5 retires it.
+    if (kycV2Enabled()) {
+      return submitV2(req, res, { idFrontUrl, idBackUrl, selfieUrl, deleteUrls });
+    }
 
     // New KYC uploads are private Supabase objects; old in-flight clients may
     // still submit a temporary provider URL, which remains supported.
@@ -340,6 +352,56 @@ router.post('/verification/submit', verifyLimiter, authRequired, async (req, res
     });
   }
 });
+
+// ─── KYC v2 submit path ─────────────────────────────────────────────────
+// Reached only when KYC_V2_ENABLED=true. Images stay in private temporary
+// storage (refs are re-registered under the 90-day retention TTL by
+// queueKycAttempt); nothing is downloaded here — the reviewer streams them
+// through the audited evidence endpoint when the case is opened.
+async function submitV2(req, res, { idFrontUrl, idBackUrl, selfieUrl, deleteUrls }) {
+  const pinResult = verifyAppPinClaim(req.body.pinClaim);
+
+  // Integrity decode is best-effort: a missing SA, a timeout, or a rejected
+  // token stores { error } and never blocks the submission — a network blip
+  // must not lock a real person out of the review queue.
+  let integrity = null;
+  if (req.body.integrityToken) {
+    try {
+      const payload = await decodeIntegrityToken({ integrityToken: req.body.integrityToken });
+      const signals = evaluateDeviceSignals(payload?.deviceRecognitionVerdict);
+      integrity = { ...payload, attestation: signals };
+    } catch (err) {
+      console.warn('[VERIFY v2] integrity decode failed (stored as signal):', err.message);
+      integrity = { error: err.message };
+    }
+  }
+
+  const attempt = await queueKycAttempt({
+    userId: req.user.id,
+    idFrontRef: deleteUrls?.idFront || (String(idFrontUrl).startsWith('https://') ? idFrontUrl : null),
+    idBackRef: deleteUrls?.idBack || (String(idBackUrl).startsWith('https://') ? idBackUrl : null),
+    selfieRef: deleteUrls?.selfie || (String(selfieUrl).startsWith('https://') ? selfieUrl : null),
+    deviceResults: normalizeDeviceResults(req.body.deviceResults),
+    integrity,
+    pinResult,
+    embedding: normalizeEmbedding(req.body.embedding),
+  });
+
+  // Legacy clients that never heard of pending_review render it as
+  // "processing"; the copy matches the manual_review message they already
+  // understand.
+  return res.json({
+    attempt: {
+      id: attempt.id,
+      status: attempt.status,
+      rejection_reason: null,
+      failed_stage: null,
+      reasons: ['Your verification is being reviewed. This usually takes 24 hours.'],
+      reason_codes: ['pending_review'],
+    },
+    user: null,
+  });
+}
 
 // ─── GET /verification/evidence-access ──────────────────────────────────
 // Batch 75 — the subject's own case-linked history of staff reads of their

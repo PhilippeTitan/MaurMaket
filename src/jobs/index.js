@@ -3,6 +3,7 @@ import { pool } from '../config/database.js';
 import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, recordProductCooccurrences, processRefundPayout, cleanupOldNotifications, cleanupOldSecurityEvents, cleanupOldExportJobs, cleanupOldKycEvidenceAccess } from '../utils/helpers.js';
 import { createNotification, sendPushNotification, isDailySummaryEligible, getLocalClock, isValidTime, isQuietHoursEndNow, isQuietHoursScheduleEndingToday } from '../utils/notifications.js';
 import { expireTemporaryStorageUploads } from '../utils/temporaryStorage.js';
+import { purgeExpiredKycImages } from '../utils/kycReview.js';
 import { checkAndProcessExpiredSubscriptions } from '../utils/tierCap.js';
 import { shouldArchiveStaleRequest } from '../utils/messageRequestPolicy.js';
 
@@ -286,6 +287,7 @@ export function startJobs() {
     await cleanupOldSecurityEvents();
     await cleanupOldExportJobs();
     await cleanupOldKycEvidenceAccess();
+    await purgeExpiredKycImages();
   });
 
   // ───── Auto-expire expired offers (every 5 minutes) ─────
