@@ -435,16 +435,20 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
         </View>
 
         {/* Right-side action rail — absolute, thumb-reachable */}
-        <View style={[styles.actionRail, { bottom: screenHeight * 0.25 }]}>
-          <FeedLikeButton productId={item.id} />
-          <FeedSaveButton productId={item.id} />
+        <View style={[styles.actionRail, { bottom: screenHeight * 0.48 }]}>
+          <View style={styles.railBubble}>
+            <FeedLikeButton productId={item.id} size={28} />
+          </View>
+          <View style={styles.railBubble}>
+            <FeedSaveButton productId={item.id} size={28} />
+          </View>
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={() => setMoreProduct(item)}
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.moreOptions')}
           >
-            <MaterialCommunityIcons name="dots-horizontal" size={35} color={COLORS.white} />
+            <MaterialCommunityIcons name="dots-horizontal" size={26} color={COLORS.white} />
           </TouchableOpacity>
         </View>
 
@@ -456,7 +460,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
         />
 
         {/* Bottom overlay — caption + actions, sits ON TOP of image */}
-        <View style={[styles.bottomOverlay, { paddingBottom: Math.max(90, insets.bottom + 80) }]} pointerEvents="box-none">
+        <View style={[styles.bottomOverlay, { paddingBottom: Math.max(94, insets.bottom + 82) }]} pointerEvents="auto">
           {/* Seller chip + follow */}
           <View style={styles.sellerRow}>
             <TouchableOpacity
@@ -486,7 +490,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
               effectivePrice={item.effective_price ?? item.price}
               isOnSale={item.is_on_sale || false}
               discountPct={item.discount_pct || 0}
-              size="md"
+              size="lg"
             />
           </View>
 
@@ -577,7 +581,7 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
             accessibilityRole="button"
             accessibilityLabel={t('accessibility.openNotifications')}
           >
-            <MaterialCommunityIcons name="bell-outline" size={35} color={COLORS.white} />
+            <MaterialCommunityIcons name="bell-outline" size={24} color={COLORS.white} />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -772,283 +776,100 @@ const fetchProducts = useCallback(async (p = 1, replace = false) => {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
+  container: { flex: 1, backgroundColor: COLORS.black },
   feedTopbar: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    top: SPACING.xl + 28,
-    zIndex: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    position: 'absolute', left: SPACING.lg, right: SPACING.lg, top: SPACING.xl + 28,
+    zIndex: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   brand: {
-    color: COLORS.white,
-    
-    fontSize: 18,
-    fontWeight: '800',
-    textShadowColor: 'rgba(0,0,0,0.55)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    color: COLORS.white, fontSize: 20, fontWeight: '800', letterSpacing: -0.35,
+    textShadowColor: 'rgba(0,0,0,0.55)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
-  brandSub: {
-    color: 'rgba(255,255,255,0.68)',
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginTop: -1,
-  },
-  utilityRow: {
-    flexDirection: 'row',
-    gap: 9,
-  },
+  brandSub: { color: 'rgba(255,255,255,0.68)', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginTop: -1 },
+  utilityRow: { flexDirection: 'row', gap: 9 },
   utilityBtn: {
-    width: 50,
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.full,
+    backgroundColor: 'rgba(0,0,0,0.48)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
   },
   badge: {
-    position: 'absolute',
-    top: -3,
-    right: -3,
-    minWidth: 17,
-    height: 17,
-    borderRadius: 9,
-    paddingHorizontal: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.coral,
-    borderWidth: 1,
-    borderColor: '#05070D',
+    position: 'absolute', top: -2, right: -2, minWidth: 18, height: 18, borderRadius: RADIUS.full,
+    paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.coral,
+    borderWidth: 1, borderColor: COLORS.black,
   },
-  badgeText: {
-    color: COLORS.white,
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  slide: {
-    width: '100%',
-    backgroundColor: '#000',
-    position: 'relative',
-  },
-  mediaContainer: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: '#000',
-  },
-  mediaFill: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    width: '100%', height: '100%',
-    opacity: 0.4,
-  },
-  mediaContain: {
-    width: '100%', height: '100%',
-  },
-
-  /* Image dots indicator */
-  imgDots: {
-    position: 'absolute', bottom: 100, alignSelf: 'center',
-    flexDirection: 'row', gap: 5, zIndex: 10,
-  },
-  imgDot: {
-    width: 6, height: 6, borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.4)',
-  },
-  imgDotActive: {
-    backgroundColor: '#fff', width: 8, height: 8, borderRadius: 4,
-  },
-  imgDotsInline: {
-    flexDirection: 'row', gap: 4, alignItems: 'center',
-  },
-  imgDotsCentered: {
-    flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center',
-    marginBottom: 12,
-  },
-
-  /* Right-side action rail — TikTok style */
-  actionRail: {
-    position: 'absolute',
-    right: 12,
-    alignItems: 'center',
-    gap: 12,
-    zIndex: 15,
+  badgeText: { color: COLORS.white, fontSize: 9, fontWeight: '800' },
+  slide: { width: '100%', backgroundColor: COLORS.black, position: 'relative' },
+  mediaContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: COLORS.black },
+  mediaFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', opacity: 0.4 },
+  mediaContain: { width: '100%', height: '100%' },
+  imgDots: { position: 'absolute', bottom: 100, alignSelf: 'center', flexDirection: 'row', gap: 5, zIndex: 10 },
+  imgDot: { width: 6, height: 6, borderRadius: RADIUS.full, backgroundColor: 'rgba(255,255,255,0.4)' },
+  imgDotActive: { backgroundColor: COLORS.white, width: 8, height: 8, borderRadius: RADIUS.full },
+  imgDotsInline: { flexDirection: 'row', gap: 4, alignItems: 'center' },
+  imgDotsCentered: { flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  /* Image actions: larger targets and separated from purchase controls. */
+  actionRail: { position: 'absolute', right: SPACING.md, alignItems: 'center', gap: 10, zIndex: 15 },
+  railBubble: {
+    width: 54, minHeight: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(10,14,20,0.70)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)',
   },
   actionBtn: {
-    alignItems: 'center',
-    width: 48,
-    height: 60,
-    justifyContent: 'center',
-    gap: 4,
+    alignItems: 'center', width: 54, height: 54, borderRadius: 18, justifyContent: 'center',
+    backgroundColor: 'rgba(10,14,20,0.70)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)',
   },
-  /* Bottom gradient overlay — real fade */
-  bottomGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '55%',
-    zIndex: 5,
-  },
-
-  /* Bottom content — sits ON TOP of image */
+  /* Gradient stays behind the opaque product panel. */
+  bottomGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '50%', zIndex: 5 },
+  /* Product information is a distinct commerce surface rather than copy over the image. */
   bottomOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingLeft: 14,
-    paddingRight: 14,
-    paddingTop: SPACING.md,
-    zIndex: 10,
+    position: 'absolute', bottom: 0, left: 0, right: 0, paddingLeft: SPACING.lg, paddingRight: SPACING.lg,
+    paddingTop: SPACING.lg, zIndex: 10, backgroundColor: COLORS.feedSurface,
+    borderTopLeftRadius: RADIUS.fab, borderTopRightRadius: RADIUS.fab,
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.10)',
+    shadowColor: COLORS.black, shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.18, shadowRadius: 14, elevation: 12,
   },
-  sellerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
-  },
-  sellerChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 1,
-    maxWidth: '68%',
-  },
-  sellerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.coral,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sellerAvatarText: {
-    fontSize: 14,
-    color: COLORS.white,
-    fontWeight: '700',
-  },
-  sellerName: {
-    fontSize: 14,
-    color: COLORS.white,
-    fontWeight: '700',
-    flexShrink: 1,
-  },
+  sellerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  sellerChip: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1, maxWidth: '70%', minHeight: 42 },
+  sellerAvatar: { width: 40, height: 40, borderRadius: RADIUS.full, backgroundColor: COLORS.coral, alignItems: 'center', justifyContent: 'center' },
+  sellerAvatarText: { fontSize: 14, color: COLORS.white, fontWeight: '700' },
+  sellerName: { fontSize: 14, color: COLORS.white, fontWeight: '700', flexShrink: 1 },
   priceTag: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,77,106,0.2)',
-    borderWidth: 1,
-    borderColor: COLORS.coral,
-    borderRadius: RADIUS.row,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 6,
+    alignSelf: 'flex-start', backgroundColor: 'rgba(255,77,106,0.12)', borderWidth: 1,
+    borderColor: 'rgba(255,77,106,0.30)', borderRadius: RADIUS.pill,
+    paddingHorizontal: 12, paddingVertical: 6, marginBottom: 10,
   },
-  reasonPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.42)', borderRadius: 14, paddingHorizontal: 10, minHeight: 28, marginBottom: 8 },
+  reasonPill: {
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,77,106,0.12)', borderWidth: 1, borderColor: 'rgba(255,77,106,0.20)',
+    borderRadius: RADIUS.pill, paddingHorizontal: 10, minHeight: 30, marginBottom: 10,
+  },
   reasonText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
-  priceText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.coral,
-  },
-  productName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: COLORS.white,
-    marginBottom: 2,
-    lineHeight: 22,
-  },
-  productInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  productInfo: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.7)',
-  },
+  priceText: { fontSize: 16, fontWeight: '800', color: COLORS.coral },
+  productName: { fontSize: 21, fontWeight: '800', color: COLORS.white, marginBottom: 4, lineHeight: 27 },
+  productInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  productInfo: { fontSize: 13, color: 'rgba(255,255,255,0.72)' },
   actionDisabled: { opacity: 0.45 },
-
-  loadingFooter: {
-    paddingVertical: SPACING.lg,
-    alignItems: 'center',
-  },
-  empty: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-  },
-  emptyIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
-  emptyText: {
-    fontSize: 16,
-    color: COLORS.white,
-    fontWeight: '600',
-  },
-  emptyHint: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
-  },
-  commentScrim: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.42)',
-  },
-  commentDismissArea: {
-    flex: 1,
-  },
-  sheetHandle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-    marginBottom: 12,
-  },
-  /* Feed Tabs */
+  loadingFooter: { paddingVertical: SPACING.lg, alignItems: 'center' },
+  empty: { alignItems: 'center', justifyContent: 'center', gap: SPACING.sm },
+  emptyIcon: { width: 72, height: 72, borderRadius: RADIUS.full, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  emptyText: { fontSize: 16, color: COLORS.white, fontWeight: '600' },
+  emptyHint: { fontSize: 13, color: 'rgba(255,255,255,0.5)' },
+  commentScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.42)' },
+  commentDismissArea: { flex: 1 },
+  sheetHandle: { alignSelf: 'center', width: 42, height: 4, borderRadius: 2, backgroundColor: COLORS.border, marginBottom: 12 },
+  /* Segmented control with a clear active state and shared outer boundary. */
   feedTabs: {
-    flexDirection: 'row',
-    gap: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 3, padding: 4, borderRadius: RADIUS.pill,
+    backgroundColor: 'rgba(0,0,0,0.54)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
   },
-  feedTab: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: RADIUS.media,
-    backgroundColor: 'rgba(255,255,255,0.35)',
-  },
-  feedTabActive: {
-    backgroundColor: COLORS.white,
-  },
-  feedTabText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.7)',
-  },
-  feedTabTextActive: {
-    color: '#000',
-  },
-
+  feedTab: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADIUS.pill, backgroundColor: 'transparent' },
+  feedTabActive: { backgroundColor: COLORS.coral },
+  feedTabText: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.82)' },
+  feedTabTextActive: { color: COLORS.white },
   /* More Menu */
-  moreSheet: {
-    paddingHorizontal: SPACING.md,
-    paddingTop: 10,
-    paddingBottom: SPACING.xxl + 16,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    backgroundColor: COLORS.bg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
+  moreSheet: { paddingHorizontal: SPACING.md, paddingTop: 10, paddingBottom: SPACING.xxl + 16, borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border },
   reasonOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.48)' },
   reasonSheet: {
-    width: '100%', maxWidth: 460, alignSelf: 'center',
-    paddingHorizontal: SPACING.lg, paddingTop: 12, paddingBottom: SPACING.xxl + 12,
-    borderTopLeftRadius: 18, borderTopRightRadius: 18,
+    width: '100%', maxWidth: 460, alignSelf: 'center', paddingHorizontal: SPACING.lg, paddingTop: 12,
+    paddingBottom: SPACING.xxl + 12, borderTopLeftRadius: 18, borderTopRightRadius: 18,
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   reasonHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 12 },
@@ -1057,20 +878,7 @@ const styles = StyleSheet.create({
   reasonBody: { color: COLORS.text2, fontSize: 13, lineHeight: 19 },
   reasonCloseBtn: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: RADIUS.row, backgroundColor: COLORS.surface2 },
   reasonCloseText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
-  moreItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 4,
-  },
-  moreItemText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  moreDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
+  moreItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 4 },
+  moreItemText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+  moreDivider: { height: 1, backgroundColor: COLORS.border },
 });
