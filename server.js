@@ -2080,6 +2080,27 @@ await step('NatCash phone separation', () => c.query(`
         ON conversations (requested_by, created_at DESC) WHERE request_state = 'pending';
     `));
 
+    // 99. KYC v2 review queue (docs/rfc/kyc-on-device.md — free stack,
+    //    EXPLICITLY TEMPORARY until the $25 Play Console upgrade). Human
+    //    review is the final authority: `review_status` gates the queue,
+    //    integrity signals (Play Integrity decode, app pin claim) are stored
+    //    as advisory columns, and raw image refs stay on the attempt until
+    //    the 90-day purge nulls them. `selfie_embedding` is JSONB (pgvector
+    //    deferred); duplicate-face detection runs in JS cosine.
+    await step('KYC v2 review queue', () => c.query(`
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS review_status TEXT
+        CHECK (review_status IN ('pending','approved','rejected'));
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES users(id);
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS review_note TEXT;
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS device_verdict JSONB;
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS app_pin_sha256 TEXT;
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS client_device_results JSONB;
+      ALTER TABLE verification_attempts ADD COLUMN IF NOT EXISTS selfie_embedding JSONB;
+      CREATE INDEX IF NOT EXISTS idx_verification_attempts_pending_review
+        ON verification_attempts (created_at ASC) WHERE review_status = 'pending';
+    `));
+
     if (failed.length > 0) {
       console.log(`[MIGRATION] Complete with ${failed.length} failure(s): ${failed.join(', ')}`);
     } else {

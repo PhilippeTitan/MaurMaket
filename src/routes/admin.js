@@ -5,6 +5,7 @@ import { createNotification } from '../utils/notifications.js';
 import { processRefundPayout, settleSellerDebtPayment } from '../utils/helpers.js';
 import { releaseCancelledOrderStock } from '../utils/orderStock.js';
 import { recordKycEvidenceAccess } from '../utils/kycEvidenceAccess.js';
+import { getReviewQueue, getReviewCase, decideReview, readAttemptEvidenceImage } from '../utils/kycReview.js';
 import { cancellationBasis, portionIsCancellableBeforeShipment, portionCancellationResolution } from '../utils/cancellationScopePolicy.js';
 
 const router = Router();
@@ -472,6 +473,80 @@ router.post('/api/admin/verification/:attemptId/evidence-access', authRequired, 
     res.json({ entry });
   } catch (err) {
     console.error('Admin KYC evidence access logging error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── KYC v2 human review queue (docs/rfc/kyc-on-device.md) ──────────────
+// Philippe is the temporary final authority until the $25 Play Console
+// upgrade enables full attestation. These endpoints back the future admin
+// website UI; every evidence read and every decision is audit-logged via
+// kyc_evidence_access.
+
+router.get('/api/admin/kyc/review-queue', authRequired, adminRequired, async (req, res) => {
+  try {
+    const queue = await getReviewQueue({ limit: req.query.limit, offset: req.query.offset });
+    res.json(queue);
+  } catch (err) {
+    console.error('Admin KYC review queue error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/api/admin/kyc/review-queue/:attemptId', authRequired, adminRequired, async (req, res) => {
+  try {
+    const attempt = await getReviewCase(req.params.attemptId);
+    if (!attempt) return res.status(404).json({ error: 'Verification case not found' });
+    // Strip the actor id so the case payload cannot leak reviewer identity.
+    const { reviewed_by, ...safe } = attempt;
+    res.json({ attempt: safe });
+  } catch (err) {
+    console.error('Admin KYC case detail error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/api/admin/kyc/review-queue/:attemptId/evidence-image/:which', authRequired, adminRequired, async (req, res) => {
+  try {
+    const which = req.params.which;
+    if (!['front', 'back', 'selfie'].includes(which)) {
+      return res.status(400).json({ error: 'which must be front, back, or selfie' });
+    }
+    const attempt = await getReviewCase(req.params.attemptId);
+    if (!attempt) return res.status(404).json({ error: 'Verification case not found' });
+    const buffer = await readAttemptEvidenceImage(attempt.user_id, req.params.attemptId, which, req.user.id);
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'no-store');
+    return res.send(buffer);
+  } catch (err) {
+    if (/no longer retained|Unknown evidence/.test(err.message)) {
+      return res.status(410).json({ error: err.message });
+    }
+    console.error('Admin KYC evidence image error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/api/admin/kyc/review-queue/:attemptId/decide', authRequired, adminRequired, async (req, res) => {
+  try {
+    const { decision, note } = req.body || {};
+    if (!['approved', 'rejected'].includes(decision)) {
+      return res.status(400).json({ error: 'decision must be approved or rejected' });
+    }
+    const result = await decideReview({
+      attemptId: req.params.attemptId,
+      decision,
+      note,
+      actorUserId: req.user.id,
+    });
+    if (result.error === 'not_found') return res.status(404).json({ error: 'Verification case not found' });
+    if (result.error === 'not_pending') {
+      return res.status(409).json({ error: 'Case has already been decided', current: result.current });
+    }
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({ attempt: result.attempt });
+  } catch (err) {
+    console.error('Admin KYC decide error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

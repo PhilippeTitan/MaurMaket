@@ -40,7 +40,7 @@ test:
     - npm ci --cache .npm --no-audit --no-fund
     - echo "── TypeScript compile check ──"
     - npx tsc --noEmit
-    - echo "── Guardrails (16 checks) ──"
+    - echo "── Guardrails (17 checks) ──"
     - npm test
 
 unit:
