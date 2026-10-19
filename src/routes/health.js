@@ -22,10 +22,9 @@ router.get('/api/health', async (_req, res) => {
     node: process.version,
     memMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
   };
-  // The failover-aware pool may answer a read from Neon when Supabase is down.
-  // This endpoint is also used by the host watchdog, so it must report whether
-  // the canonical primary is actually writable/reachable, not merely whether
-  // some database answered a read.
+  // The watchdog needs the canonical primary's health. A reachable Neon
+  // standby is not eligible to serve traffic until replication freshness and
+  // promotion/failback safety are proven.
   const dbController = res.req.app?.locals?.dbController;
   const primaryHealthPool = dbController?.primaryPool || pool;
   try {

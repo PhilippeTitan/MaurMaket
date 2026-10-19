@@ -2,7 +2,7 @@
  * Dual-Database Controller with Circuit Breaker + Outbox Pattern
  *
  * Drop-in replacement for pg Pool. Same .query() and .connect() API.
- * Routes all writes through the outbox for async replication.
+ * Supabase remains authoritative; the partial outbox is not a full replica.
  */
 
 import pg from 'pg';
@@ -126,8 +126,10 @@ export class DatabaseController {
     this._primary = process.env.DATABASE_PRIMARY || 'supabase';
     this._mode = 'PRIMARY'; // PRIMARY | FAILOVER | RECOVERING
     // A reachable secondary is not necessarily current. Replication is an
-    // incomplete application outbox, not a promotable database replica, so
-    // secondary writes stay hard-disabled until a real promotion protocol is built.
+    // incomplete application outbox, not a promotable database replica. Keep
+    // both read and write promotion hard-disabled until full replication and
+    // a tested promotion/failback protocol exist.
+    this.secondaryReadsEnabled = false;
     this.secondaryWritesEnabled = false;
 
     // Health check interval
@@ -260,15 +262,9 @@ export class DatabaseController {
   // ───── Pool Selection ─────
 
   _getReadPool() {
-    if (this._mode === 'FAILOVER') {
-      if (this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
-      return null;
-    }
-    if (!this.primaryIsHealthy) {
-      if (this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
-      return null;
-    }
-    return this.primaryPool;
+    // A DB health probe only proves connectivity, not replication freshness.
+    // Never serve potentially stale marketplace data from Neon automatically.
+    return this.primaryIsHealthy ? this.primaryPool : null;
   }
 
   _getWritePool() {
@@ -294,7 +290,7 @@ export class DatabaseController {
   // ───── Core Operations (pg Pool-compatible API) ─────
 
   /**
-   * Execute a read query. Routes to healthy pool with circuit breaker.
+   * Execute a read query against the authoritative primary only.
    */
   async query(sql, params) {
     const pool = this._getReadPool();
@@ -333,21 +329,8 @@ export class DatabaseController {
 
     const poolBreaker = this._breakerForPool(pool);
     poolBreaker.recordFailure(error?.message);
-    // Reads may fail over to the other database. Use the actual configured
-    // secondary pool; `_secondaryPool` was never initialized.
-    const secondary = pool === this.primaryPool ? this.secondaryPool : this.primaryPool;
-    const secondaryBreaker = pool === this.primaryPool ? this.secondaryBreaker : this.primaryBreaker;
-    if (secondary && secondary !== pool && secondaryBreaker.isHealthy && this.isSecondaryReady) {
-      try {
-        const result = await secondary.query(sql, params);
-        secondaryBreaker.recordSuccess();
-        return result;
-      } catch (secondaryError) {
-        if (!isDatabaseAvailabilityError(secondaryError)) throw secondaryError;
-        secondaryBreaker.recordFailure(secondaryError?.message);
-        throw new AggregateError([error, secondaryError], '[DB:Controller] Read failed on both databases');
-      }
-    }
+    // No secondary retry here: availability of a standby does not establish
+    // that its rows, schema, sequences, or transactions are current.
     throw error;
   }
 
@@ -706,8 +689,11 @@ export class DatabaseController {
       supabaseFailures: this.supabaseBreaker.failures,
       neonFailures: this.neonBreaker.failures,
       secondarySchemaReady: this.isSecondaryReady,
+      secondaryReadsEnabled: this.secondaryReadsEnabled,
       secondaryWritesEnabled: this.secondaryWritesEnabled,
-      writesAvailable: this.primaryIsHealthy || (this.secondaryWritesEnabled && this.secondaryBreaker.isHealthy && this.isSecondaryReady),
+      standbyPromotionEnabled: this.secondaryReadsEnabled || this.secondaryWritesEnabled,
+      readsAvailable: this.primaryIsHealthy,
+      writesAvailable: this.primaryIsHealthy,
     };
   }
 

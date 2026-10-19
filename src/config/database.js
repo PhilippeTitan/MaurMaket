@@ -36,11 +36,11 @@ let _controller = null;
 
 /**
  * Called by server.js after DB Controller initializes.
- * Wires SELECT failover through the controller.
+ * Wires primary-only SELECT handling through the controller.
  */
 function setDbController(controller) {
   _controller = controller;
-  console.log('[DB] Failover proxy active — SELECT queries route through DB Controller');
+  console.log('[DB] Primary-only query proxy active — standby reads remain disabled until replication is proven current');
 }
 
 // ───── Read-only query classifier ─────
@@ -56,20 +56,20 @@ function isReadOnly(sql) {
 // ───── Pool-like proxy (drop-in replacement for raw pool) ─────
 /**
  * Exported `pool` is a proxy that:
- *   - SELECT / WITH / EXPLAIN → routes through DB Controller (failover-aware)
+ *   - SELECT / WITH / EXPLAIN → routes through DB Controller (primary-only until standby is proven current)
  *   - INSERT / UPDATE / DELETE → routes to primary pool (pinned)
  *   - pool.connect() → raw client from primary pool (for transactions)
  *   - pool.on('error', ...) → delegates to raw pool (EventEmitter)
  *
- * This gives ALL existing routes automatic read failover with zero code changes.
+ * This gives existing routes primary health handling with zero code changes.
  * Writes and transactions remain pinned to the primary database.
  */
 const pool = new Proxy(_rawPool, {
   get(target, prop, receiver) {
-    // Intercept .query() — route SELECTs through controller for failover
+    // Intercept .query() — route SELECTs through controller for primary health handling
     if (prop === 'query') {
       return async function(sqlOrConfig, params) {
-        // If controller is available AND this is a read query, use failover
+        // If controller is available AND this is a read query, keep it on primary.
         if (_controller && isReadOnly(sqlOrConfig)) {
           try {
             return await _controller.query(sqlOrConfig, params);
