@@ -9,7 +9,7 @@ const { join } = path;
 import morgan from 'morgan';
 
 // ───── Modularized infrastructure ─────
-import { pool, isTestMode, neonBackupDatabaseUrl, setDbController } from './src/config/database.js';
+import { pool, isTestMode, setDbController } from './src/config/database.js';
 import { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_KYC_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand } from './src/config/storage.js';
 import { JWT_SECRET, BCRYPT_ROUNDS, PRODUCTION_URL } from './src/config/security.js';
 import { isAllowedOrigin } from './src/config/cors.js';
@@ -2354,103 +2354,6 @@ app.use((_req, res, next) => {
 registerRoutes(app);
 
 // Background jobs start only in the main (Render) bootstrap below — never on import.
-
-// ───── Auto-Migration: Supabase → Neon (keeps Neon in sync with primary) ─────
-// NOTE: product_images excluded — Neon uses integer auto-increment id, Supabase uses UUID.
-const MIGRATION_TABLES = [
-  'users', 'categories', 'products', 'orders', 'order_items',
-  'processed_events', 'seller_balances', 'payouts', 'order_events', 'saved_addresses',
-  'reviews', 'wishlists', 'follows', 'notifications', 'conversations', 'messages',
-  'promo_codes', 'promo_uses', 'disputes', 'platform_revenue', 'platform_payouts',
-  'verification_attempts', 'seller_subscriptions', 'order_escrow', 'meetup_checkins',
-  'feed_events', 'seller_locations', 'message_offers', 'user_category_affinities', 'product_cooccurrences'
-];
-
-// Column whitelist for tables with schema drift between Neon and Supabase
-const MIGRATION_COLUMNS = {
-  categories: 'id, name, display_order',
-  orders: 'id, buyer_id, total_amount, status, moncash_reference, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_note, meetup_confirmed, meetup_proposed_by, meetup_started_at, created_at, updated_at',
-};
-
-function isValidUUID(val) {
-  return typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-}
-
-async function migrateSupabaseToNeon() {
-  if (!neonBackupDatabaseUrl || isTestMode) return;
-  // Read from the live primary only. Neon is never part of request handling.
-  const readPool = pool;
-
-  const writePool = new (await import('pg')).Pool({
-    connectionString: neonBackupDatabaseUrl,
-    connectionTimeoutMillis: 10000,
-    ssl: neonBackupDatabaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
-  });
-
-  try {
-    const test = await readPool.query('SELECT 1');
-    if (!test) return;
-    console.log('[MIGRATION] Supabase → Neon: Starting data sync...');
-  } catch {
-    await writePool.end().catch(() => {});
-    return; // Supabase down (shouldn't happen)
-  }
-
-  let totalRows = 0;
-  const UUID_COLS = ['id', 'order_id', 'product_id', 'seller_id', 'buyer_id', 'reviewer_id', 'user_id', 'seller_id', 'follower_id'];
-  const PK_COLS = { seller_locations: 'seller_id', seller_balances: 'seller_id' };
-
-  for (const table of MIGRATION_TABLES) {
-    let successCount = 0;
-    let failCount = 0;
-    try {
-      const colList = MIGRATION_COLUMNS[table] || '*';
-      const { rows } = await readPool.query(`SELECT ${colList} FROM ${table}`);
-      if (rows.length === 0) continue;
-
-      for (const row of rows) {
-        try {
-          // Skip rows with invalid UUIDs in UUID columns
-          for (const col of Object.keys(row)) {
-            if (UUID_COLS.includes(col) && row[col] !== null && !isValidUUID(row[col])) {
-              console.warn(`[MIGRATION] ${table} row skipped: invalid UUID in ${col}: "${row[col]}"`);
-              failCount++;
-              continue;
-            }
-          }
-
-          const cols = Object.keys(row);
-          const vals = Object.values(row);
-          const placeholders = cols.map((_, i) => `$${i + 1}`);
-          const updateCols = cols.filter(c => c !== (PK_COLS[table] || 'id'));
-          const conflictCol = PK_COLS[table] || 'id';
-          const conflictClause = updateCols.length > 0
-            ? ` ON CONFLICT (${conflictCol}) DO UPDATE SET ${updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ')}`
-            : ' ON CONFLICT DO NOTHING';
-
-          await writePool.query(
-            `INSERT INTO ${table} (${cols.join(',')}) VALUES (${placeholders.join(',')})${conflictClause}`,
-            vals
-          );
-          successCount++;
-        } catch (rowErr) {
-          console.warn(`[MIGRATION] ${table} row ${row.id || '?'} skipped:`, rowErr.message);
-          failCount++;
-        }
-      }
-      totalRows += successCount;
-      const log = failCount > 0 ? ` (${failCount} skipped)` : '';
-      console.log(`[MIGRATION] ${table}: ${successCount} rows${log}`);
-    } catch (err) {
-      console.error(`[MIGRATION] ${table} error:`, err.message);
-    }
-  }
-
-  await writePool.end().catch(() => {});
-  console.log(`[MIGRATION] Complete! ${totalRows} total rows synced from Supabase → Neon.`);
-}
-
-// Backup sync is triggered by the dedicated scheduled GitHub Actions workflow.
 
 // ───── Global Error Handler ─────
 app.use((err, req, res, next) => {

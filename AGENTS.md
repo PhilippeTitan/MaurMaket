@@ -3222,3 +3222,9 @@ These decisions complete the four-question checkout/map follow-up and clarify th
 - Centralized `PRODUCTION_URL` in `src/config/publicUrl.js`, defaulting to `https://maurmaket.vercel.app` and honoring an explicit deployment override.
 - Updated MonCash/MonCashConnect return URLs for checkout, payment sessions, debt settlement, NatCash access, and Business subscriptions, plus legal-page host branding, to use the centralized origin. Removed repeated Render-primary defaults.
 - This is a code default only; verify the actual Vercel and Render `PRODUCTION_URL` environment values before relying on production redirects. No provider dashboard or payment webhook settings were changed.
+
+### Session 429 — Remove the obsolete table-copy backup (2026-10-19)
+- Removed the dormant `migrateSupabaseToNeon()` row-copy implementation from `server.js` and deleted `.github/workflows/backup-sync.yml`, which called an endpoint that does not exist in the current route set.
+- This old copier only handled a table allowlist, silently skipped failed rows, and used `ON CONFLICT` row updates; it was not a complete or safe database backup. It must not be revived as a failover strategy.
+- `SYNC_KEY` has no remaining repository consumer. Confirm and remove any corresponding GitHub/Render environment secret when convenient; this change did not alter provider settings.
+- No live database/provider configuration was changed. No local test suite was run; review and GitLab CI remain the QA path.
