@@ -34,6 +34,7 @@
     "test:unit": "vitest run",
     "test:smoke": "node scripts/server-smoke.mjs",
     "test:ui": "playwright test",
+    "ops:sync-cron-jobs": "node scripts/sync-cron-job-org.mjs",
     "export:web": "expo export --platform web --output-dir dist-web"
   },
   "dependencies": {
@@ -90,7 +91,6 @@
     "lucide-react": "^1.45.0",
     "lucide-react-native": "^1.51.0",
     "morgan": "^1.11.0",
-    "node-cron": "^4.5.0",
     "nodemailer": "^10.0.11",
     "pg": "^8.22.0",
     "react": "19.2.3",

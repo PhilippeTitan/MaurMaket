@@ -18,7 +18,6 @@ import { initRealtime, closeRealtime } from './src/realtime.js';
 import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from './src/middleware/auth.js';
 import { createNotification, sendPushNotification } from './src/utils/notifications.js';
 import { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences } from './src/utils/helpers.js';
-import { startJobs } from './src/jobs/index.js';
 import { registerRoutes } from './src/routes/index.js';
 import { createAuth, getAuth } from './src/config/auth.js';
 import { registerTemporaryStorageUpload } from './src/utils/temporaryStorage.js';
@@ -68,6 +67,15 @@ async function runMigrations(targetPool) {
     }
   };
   try {
+    await step('Scheduled job leases', () => c.query(`
+      CREATE TABLE IF NOT EXISTS scheduled_job_leases (
+        job_name TEXT PRIMARY KEY,
+        lease_token UUID NOT NULL,
+        lease_until TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+
     // 1. Base tables
     await step('Base tables', () => c.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -2353,7 +2361,33 @@ app.use((_req, res, next) => {
 // ───── All routes registered via src/routes/index.js ─────
 registerRoutes(app);
 
-// Background jobs start only in the main (Render) bootstrap below — never on import.
+// cron-job.org calls this narrow endpoint. It accepts only known job IDs and
+// requires a separate high-entropy secret; it is not an admin/general runner.
+app.post('/api/internal/jobs/:name', async (req, res) => {
+  const expected = process.env.JOB_SCHEDULER_SECRET || '';
+  const supplied = String(req.get('x-maurmaket-cron-secret') || '');
+  if (expected.length < 32) {
+    return res.status(503).json({ error: 'Job scheduler is not configured' });
+  }
+  const expectedBytes = Buffer.from(expected);
+  const suppliedBytes = Buffer.from(supplied);
+  if (expectedBytes.length !== suppliedBytes.length || !crypto.timingSafeEqual(expectedBytes, suppliedBytes)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const { runScheduledJob } = await import('./src/jobs/index.js');
+    const result = await runScheduledJob(req.params.name);
+    return res.status(result.status === 'already_running' ? 202 : 200).json({ job: req.params.name, ...result });
+  } catch (error) {
+    console.error(`[JOBS] ${req.params.name} invocation failed:`, error.message);
+    return res.status(error.message.startsWith('Unknown scheduled job:') ? 404 : 500)
+      .json({ error: 'Scheduled job failed' });
+  }
+});
+
+// Scheduled work is invoked through the authenticated cron-job.org endpoint;
+// neither Render nor Vercel starts per-process cron timers.
 
 // ───── Global Error Handler ─────
 app.use((err, req, res, next) => {
@@ -2467,14 +2501,13 @@ if (isMain) {
   const startServer = () => {
     server = app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
-      console.log('Cron jobs active: meetup timeout auto-refund (every 5 min), offer expiry (every 15 min)');
+      console.log('Scheduled tasks are owned by cron-job.org; this server does not run local job timers.');
       initRealtime(server);
     });
   };
 
   initApp({ runDbMigrations: true, runDatabaseWorkers: true }).then(() => {
-    // Start schedules only after migrations and auth initialization succeed.
-    startJobs();
+    // Serve requests only after migrations and auth initialization succeed.
     startServer();
   }).catch(err => {
     console.error('[STARTUP] Database/auth initialization failed; server not started:', err.message);
