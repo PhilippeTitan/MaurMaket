@@ -1137,6 +1137,16 @@ await step('NatCash phone separation', () => c.query(`
       CREATE INDEX IF NOT EXISTS idx_message_deliveries_msg ON message_deliveries(message_id);
       CREATE INDEX IF NOT EXISTS idx_message_deliveries_recipient ON message_deliveries(recipient_id, status);
 
+      -- Cross-instance typing state for serverless hosts. Rows expire quickly;
+      -- one row per conversation/user prevents unbounded growth.
+      CREATE TABLE IF NOT EXISTS typing_indicators (
+        conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE NOT NULL,
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (conversation_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_typing_indicators_expiry ON typing_indicators(expires_at);
+
       -- Block users
       CREATE TABLE IF NOT EXISTS blocked_users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
