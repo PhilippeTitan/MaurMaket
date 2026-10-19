@@ -22,27 +22,24 @@ router.get('/api/health', async (_req, res) => {
     node: process.version,
     memMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
   };
+  // The watchdog needs the canonical primary's health. A reachable Neon
+  // standby is not eligible to serve traffic until replication freshness and
+  // promotion/failback safety are proven.
+  const dbController = res.req.app?.locals?.dbController;
+  const primaryHealthPool = dbController?.primaryPool || pool;
   try {
-    await Promise.race([pool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
+    await Promise.race([primaryHealthPool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
     result.primary = 'connected';
   } catch { result.primary = 'down'; }
   result.status = result.primary === 'connected' ? 'ok' : 'error';
 
-  // DB Controller + Replicator status (if available)
-  const dbController = res.req.app?.locals?.dbController;
-  const replicator = res.req.app?.locals?.replicator;
+  // DB Controller status. Neon connectivity alone is not a promotion signal.
   if (dbController) {
     try {
       const dbStatus = await dbController.getStatus();
       result.dbController = dbStatus;
     } catch { result.dbController = { error: 'unavailable' }; }
   }
-  if (replicator) {
-    try {
-      result.replication = await replicator.getStatus();
-    } catch { result.replication = { error: 'unavailable' }; }
-  }
-
   res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
 

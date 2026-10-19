@@ -5,9 +5,8 @@
  * Handles field mapping (Better Auth ↔ DB columns), model→table mapping,
  * JOIN queries (for includeAccounts), and reverse mapping on read.
  *
- * CRITICAL: The transaction() method buffers all writes and flushes them
- * to mirror_outbox after commit, ensuring Better Auth's transactional
- * operations (signup, session create) get replicated to Neon.
+ * The transaction() method preserves Better Auth transaction atomicity.
+ * The former mirror_outbox path is disabled; it did not capture all app writes.
  */
 import crypto from 'crypto';
 
@@ -333,7 +332,7 @@ function buildUpdateManyQuery(model, where, update) {
   const setClauses = Object.keys(mapped).map((k, i) => `"${k}" = $${i + 1}`);
   const setValues = Object.values(mapped);
   const { conditions, values: whereValues } = buildWhere(model, where, setValues.length + 1);
-  // RETURNING id so transactional callers can buffer each touched row for the outbox.
+  // RETURNING id so callers can retain adapter-compatible result mapping.
   const whereClause = conditions.length ? conditions.join(' AND ') : 'TRUE';
   return {
     sql: `UPDATE ${tableName} SET ${setClauses.join(', ')} WHERE ${whereClause} RETURNING id`,
@@ -449,8 +448,7 @@ export function createRaidAdapter(controller) {
     },
 
     async updateMany({ model, where, update }) {
-      // Update row-by-row through the controller so every touched row gets its
-      // mirror_outbox entry (matches the replication behavior of update/deleteMany).
+      // Keep the existing controller-based update path for adapter compatibility.
       const records = await this.findMany({ model, where });
       const mappedUpdate = mapData(model, update);
       for (const record of records) {
@@ -482,28 +480,22 @@ export function createRaidAdapter(controller) {
     async runRaw(sql, params) { return controller.query(sql, params); },
 
     /**
-     * Execute a Better Auth transaction with outbox replication.
+     * Execute a Better Auth transaction on the authoritative primary.
      *
      * Better Auth wraps signup (user + account + session) in a transaction.
      * The pinned adapter writes directly to the pool client for atomicity,
-     * which bypasses controller.create() and the outbox — breaking replication.
-     *
-     * FIX: Buffer all writes during the transaction, then flush them to
-     * mirror_outbox after the main commit. This ensures every Better Auth
-     * transactional operation gets replicated to Neon.
+     * which bypasses controller.create(). The transaction remains pinned to
+     * the authoritative primary for its full lifetime.
      */
     async transaction(cb) {
       const writePool = controller._getWritePool();
       if (!writePool) throw new Error('[RAID] No healthy database for transaction');
       const client = await writePool.connect();
 
-      // Buffer to collect all write operations during the transaction
-      const writeBuffer = [];
-
       try {
         await client.query('BEGIN');
 
-        // Pinned adapter: reads go to the client, writes are buffered
+        // Pinned adapter: reads and writes use this transaction's client.
         const pinned = {
           async findOne({ model, where, select, join }) {
             const { row, joinData } = await findOneWithJoin(
@@ -522,38 +514,28 @@ export function createRaidAdapter(controller) {
             const { sql, values } = buildInsertQuery(model, data);
             const result = await client.query(sql, values);
             const row = fromDbRow(model, result.rows[0]);
-            // Buffer for outbox flush after commit
-            writeBuffer.push({ model: toTable(model), action: 'create', recordId: row.id, payload: mapData(model, { ...data, ...(data.id ? {} : { id: row.id }) }) });
             return row;
           },
           async update({ model, where, update }) {
             const { sql, values } = buildUpdateQuery(model, where, update);
             const result = await client.query(sql, values);
             const row = fromDbRow(model, result.rows[0]);
-            if (row) writeBuffer.push({ model: toTable(model), action: 'update', recordId: row.id, payload: mapData(model, update) });
             return row;
           },
           async delete({ model, where }) {
             const { sql, values } = buildDeleteQuery(model, where);
             const result = await client.query(sql, values);
             const row = fromDbRow(model, result.rows[0]);
-            if (row) writeBuffer.push({ model: toTable(model), action: 'delete', recordId: row.id, payload: { id: row.id } });
             return row || null;
           },
           async deleteMany({ model, where }) {
             const { sql, values } = buildDeleteQuery(model, where);
             const result = await client.query(sql, values);
-            for (const row of result.rows) {
-              writeBuffer.push({ model: toTable(model), action: 'delete', recordId: row.id, payload: { id: row.id } });
-            }
             return result.rowCount;
           },
           async updateMany({ model, where, update }) {
             const { sql, values } = buildUpdateManyQuery(model, where, update);
             const result = await client.query(sql, values);
-            for (const row of result.rows) {
-              writeBuffer.push({ model: toTable(model), action: 'update', recordId: row.id, payload: mapData(model, update) });
-            }
             return result.rowCount;
           },
           async count({ model, where }) {
@@ -565,7 +547,6 @@ export function createRaidAdapter(controller) {
             const { sql, values } = buildDeleteQuery(model, where);
             const result = await client.query(sql, values);
             const row = fromDbRow(model, result.rows[0]);
-            if (row) writeBuffer.push({ model: toTable(model), action: 'delete', recordId: row.id, payload: { id: row.id } });
             return row || null;
           },
           async incrementOne({ model, where, increments }) {
@@ -580,7 +561,6 @@ export function createRaidAdapter(controller) {
               [...setValues, ...whereValues]
             );
             const row = fromDbRow(model, result.rows[0]);
-            if (row) writeBuffer.push({ model: tableName, action: 'update', recordId: row.id, payload: mapData(model, increments) });
             return row;
           },
           async runRaw(sql, params) { return client.query(sql, params); },
@@ -593,11 +573,6 @@ export function createRaidAdapter(controller) {
         // Commit the main transaction (data is now on primary)
         await client.query('COMMIT');
 
-        // Flush buffered writes to outbox (separate transaction)
-        if (writeBuffer.length > 0) {
-          await this._flushOutbox(writeBuffer);
-        }
-
         return result;
       } catch (error) {
         await client.query('ROLLBACK');
@@ -607,39 +582,6 @@ export function createRaidAdapter(controller) {
       }
     },
 
-    /**
-     * Flush buffered write operations to mirror_outbox.
-     * Called after the main transaction commits successfully.
-     * Uses a separate transaction — if this fails, data is still on primary
-     * but won't replicate until a reconciliation pass catches it.
-     */
-    async _flushOutbox(buffer) {
-      const writePool = controller._getWritePool();
-      if (!writePool) {
-        console.warn(`[RAID] No healthy DB for outbox flush — ${buffer.length} operations won't replicate`);
-        return;
-      }
-      const client = await writePool.connect();
-      try {
-        await client.query('BEGIN');
-        for (const op of buffer) {
-          const operationId = crypto.randomUUID();
-          await client.query(
-            `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
-             VALUES ($1, $2, $3, $4, $5, 'supabase', $6)`,
-            [operationId, op.model, op.action, String(op.recordId), JSON.stringify(op.payload),
-             ['users', 'sessions', 'accounts', 'verifications'].includes(op.model) ? 'high' : 'normal']
-          );
-        }
-        await client.query('COMMIT');
-        console.log(`[RAID] Flushed ${buffer.length} outbox entries (transaction writes now replicable)`);
-      } catch (error) {
-        await client.query('ROLLBACK').catch(() => {});
-        console.error(`[RAID] Outbox flush failed — ${buffer.length} operations won't replicate:`, error.message);
-      } finally {
-        client.release();
-      }
-    },
   };
 
   return adapter;

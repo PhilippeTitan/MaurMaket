@@ -8,6 +8,11 @@ import type { Conversation, Product, BlockedUser, UserReportPayload, SellerRevie
 import { network } from './network';
 import { offlineQueue } from './offlineQueue';
 
+// Production failover pair: Vercel is primary; Render is the auto-suspended
+// secondary. Keep this pair shared by native and web clients.
+const PROD_API_PRIMARY = 'https://maurmaket.vercel.app/api';
+const PROD_API_FALLBACK = 'https://maurmaket.onrender.com/api';
+
 export class OfflineError extends Error {
   constructor(message = 'No internet connection') {
     super(message);
@@ -19,14 +24,16 @@ const getWebApiBase = () => {
   if (typeof window === 'undefined') return 'http://localhost:4000/api';
   const { hostname } = window.location;
   if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:4000/api';
-  return `https://molecules-restaurant-diploma-fate.trycloudflare.com/api`;
+  return PROD_API_PRIMARY;
 };
 
 const getWebUploadBase = () => {
   if (typeof window === 'undefined') return 'http://localhost:4000';
   const { hostname } = window.location;
   if (hostname === 'localhost' || hostname === '127.0.0.1') return 'http://localhost:4000';
-  return `https://molecules-restaurant-diploma-fate.trycloudflare.com`;
+  // Legacy /uploads files exist on Render's disk. Cloud-hosted new uploads
+  // already use absolute URLs and do not depend on this base.
+  return 'https://maurmaket.onrender.com';
 };
 
 const getDevHost = (): string => {
@@ -39,12 +46,6 @@ const getDevHost = (): string => {
 };
 
 const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
-
-// Production failover pair: Vercel is PRIMARY, Render is the auto-suspended
-// SECONDARY (see the Render↔Vercel failover plan). Dev keeps localhost; web
-// keeps its existing tunnel/localhost behavior.
-const PROD_API_PRIMARY = 'https://maurmaket.vercel.app/api';
-const PROD_API_FALLBACK = 'https://maurmaket.onrender.com/api';
 
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
@@ -65,9 +66,11 @@ export const UPLOAD_BASE = Platform.OS === 'web'
 // successful failover so subsequent requests skip the dead backend. Reset on
 // app restart (next launch tries PRIMARY first again).
 let _activeApiBase: string = API_BASE;
+let _lastPrimaryProbeAt = 0;
+const PRIMARY_PROBE_INTERVAL_MS = 30_000;
 
 function alternateApiBase(base: string): string | null {
-  if (Platform.OS === 'web' || isDev) return null;
+  if (isDev) return null;
   if (base === PROD_API_PRIMARY) return PROD_API_FALLBACK;
   if (base === PROD_API_FALLBACK) return PROD_API_PRIMARY;
   return null;
@@ -83,9 +86,32 @@ function isNetworkLevelError(err: any): boolean {
 }
 
 /**
- * fetch with production failover. Retries the alternate backend ONLY on
- * network-level failures (DNS/TCP/timeout) — never on 4xx or a parsed JSON
- * error response, so a deliberate server rejection is never replayed.
+ * Once a request has failed over to Render, periodically check whether Vercel
+ * has recovered. This probe is read-only and never replays a caller mutation.
+ */
+async function restorePrimaryIfHealthy() {
+  if (isDev || _activeApiBase !== PROD_API_FALLBACK) return;
+  const now = Date.now();
+  if (now - _lastPrimaryProbeAt < PRIMARY_PROBE_INTERVAL_MS) return;
+  _lastPrimaryProbeAt = now;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(`${PROD_API_PRIMARY}/health`, { signal: controller.signal });
+    if (response.ok) _activeApiBase = PROD_API_PRIMARY;
+  } catch {
+    // Keep using the fallback; the normal request path will surface its own
+    // error if both hosts are unavailable.
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * fetch with production failover. Only replay read-only GET/HEAD requests on
+ * network-level failures. A timed-out mutation may already have committed on
+ * the first host; retrying it on another host without server-enforced
+ * idempotency can create duplicate orders, messages, or payment actions.
  */
 async function fetchWithFailover(
   path: string,
@@ -101,13 +127,18 @@ async function fetchWithFailover(
       if (timeout) clearTimeout(timeout);
     }
   };
+  const method = (options.method || 'GET').toUpperCase();
+  const readOnly = method === 'GET' || method === 'HEAD';
+  if (readOnly) await restorePrimaryIfHealthy();
   try {
     return await attempt(_activeApiBase);
   } catch (err) {
     const alt = alternateApiBase(_activeApiBase);
-    if (!alt || !isNetworkLevelError(err)) throw err;
+    if (!alt || !readOnly || !isNetworkLevelError(err)) throw err;
     const res = await attempt(alt);
-    _activeApiBase = alt;
+    // Keep a waking/unhealthy fallback from becoming sticky. 4xx responses
+    // still prove that the host answered; 5xx responses do not.
+    if (res.status < 500) _activeApiBase = alt;
     return res;
   }
 }

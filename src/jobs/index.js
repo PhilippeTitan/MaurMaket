@@ -1,4 +1,4 @@
-import cron from 'node-cron';
+import { randomUUID } from 'node:crypto';
 import { pool } from '../config/database.js';
 import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, recordProductCooccurrences, processRefundPayout, cleanupOldNotifications, cleanupOldSecurityEvents, cleanupOldExportJobs, cleanupOldKycEvidenceAccess } from '../utils/helpers.js';
 import { createNotification, sendPushNotification, isDailySummaryEligible, getLocalClock, isValidTime, isQuietHoursEndNow, isQuietHoursScheduleEndingToday } from '../utils/notifications.js';
@@ -7,10 +7,19 @@ import { purgeExpiredKycImages } from '../utils/kycReview.js';
 import { checkAndProcessExpiredSubscriptions } from '../utils/tierCap.js';
 import { shouldArchiveStaleRequest } from '../utils/messageRequestPolicy.js';
 
-export function startJobs() {
+const scheduledJobHandlers = new Map();
+let jobHandlersRegistered = false;
+
+function registerJob(name, schedule, handler, options = undefined) {
+  if (scheduledJobHandlers.has(name)) throw new Error(`Duplicate scheduled job: ${name}`);
+  scheduledJobHandlers.set(name, { schedule, handler, options });
+}
+
+export function registerJobs() {
+  if (jobHandlersRegistered) return;
   // NatCash access reminders are informational; entitlement is still checked
   // synchronously by checkout and reminders never extend access.
-  cron.schedule('0 9 * * *', async () => {
+  registerJob('natcash-access-reminders', '*/5 * * * *', async () => {
     try {
       const reminders = await pool.query(
         `WITH due AS (
@@ -20,6 +29,7 @@ export function startJobs() {
                   (CURRENT_TIMESTAMP AT TIME ZONE 'America/Port-au-Prince')::date AS local_date
            FROM natcash_access_subscriptions s
            WHERE s.status = 'active'
+             AND (CURRENT_TIMESTAMP AT TIME ZONE 'America/Port-au-Prince')::time >= TIME '09:00'
              AND s.expires_at - INTERVAL '7 days' <= CURRENT_TIMESTAMP
              AND s.expires_at + INTERVAL '3 days' > CURRENT_TIMESTAMP
              AND NOT EXISTS (
@@ -47,20 +57,22 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[NATCASH ACCESS] Reminder job error:', err.message);
+      throw err;
     }
-  }, { timezone: 'America/Port-au-Prince' });
+  });
 
   // ───── Expire temporary KYC photos even when a user abandons the flow ─────
-  cron.schedule('*/5 * * * *', async () => {
+  registerJob('temporary-kyc-upload-expiry', '*/5 * * * *', async () => {
     try {
       await expireTemporaryStorageUploads();
     } catch (err) {
       console.error('[UPLOAD EXPIRY] Cleanup job error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Auto-refund expired meetup check-ins (every 5 minutes) ─────
-  cron.schedule('*/5 * * * *', async () => {
+  registerJob('meetup-checkin-refunds', '*/5 * * * *', async () => {
     try {
       const expiredCheckins = await pool.query(`
         SELECT DISTINCT mc.order_id
@@ -149,32 +161,34 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[CRON] Meetup timeout check error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Refund payout retry (every 5 minutes) ─────
-  cron.schedule('*/5 * * * *', async () => {
+  registerJob('refund-payout-retries', '*/5 * * * *', async () => {
     try {
       const pendingRefunds = await pool.query(
         `SELECT id FROM refund_payouts
          WHERE status = 'pending' AND next_attempt_at <= CURRENT_TIMESTAMP
-         ORDER BY created_at ASC LIMIT 20`
+         ORDER BY created_at ASC LIMIT 2`
       );
       for (const refund of pendingRefunds.rows) {
         await processRefundPayout(refund.id);
       }
     } catch (err) {
       console.error('[CRON] Refund payout retry error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Process stale pending orders via pay-status poll (every 5 minutes) ─────
-  cron.schedule('*/5 * * * *', async () => {
+  registerJob('stale-moncash-reconciliation', '*/5 * * * *', async () => {
     try {
       const staleOrders = await pool.query(
         `SELECT id, buyer_id, moncash_reference FROM orders
          WHERE status = 'pending' AND payment_method = 'moncash' AND created_at < NOW() - INTERVAL '10 minutes'
-         ORDER BY created_at ASC LIMIT 10`
+         ORDER BY created_at ASC LIMIT 2`
       );
       if (staleOrders.rows.length === 0) return;
 
@@ -258,11 +272,12 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[CRON] Stale order check error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Expire stale offers (every 15 minutes) ─────
-  cron.schedule('*/15 * * * *', async () => {
+  registerJob('stale-offer-notifications', '*/15 * * * *', async () => {
     try {
       const expired = await pool.query(
         "UPDATE message_offers SET status = 'expired' WHERE status IN ('pending', 'countered') AND expires_at < CURRENT_TIMESTAMP RETURNING buyer_id, product_id"
@@ -278,11 +293,12 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[CRON] Offer expiry error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Clean up old read notifications (daily at 3 AM) ─────
-  cron.schedule('0 3 * * *', async () => {
+  registerJob('daily-data-retention', '0 3 * * *', async () => {
     await cleanupOldNotifications();
     await cleanupOldSecurityEvents();
     await cleanupOldExportJobs();
@@ -291,7 +307,7 @@ export function startJobs() {
   });
 
   // ───── Auto-expire expired offers (every 5 minutes) ─────
-  cron.schedule('*/5 * * * *', async () => {
+  registerJob('message-offer-expiry', '*/5 * * * *', async () => {
     try {
       const result = await pool.query(
         `UPDATE message_offers SET status = 'expired'
@@ -307,11 +323,12 @@ export function startJobs() {
       if (total > 0) console.log(`[OFFER EXPIRY] Auto-expired ${total} offers`);
     } catch (err) {
       console.error('[OFFER EXPIRY] Error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Release expired stock reservations (every 5 minutes) ─────
-  cron.schedule('*/5 * * * *', async () => {
+  registerJob('stock-reservation-release', '*/5 * * * *', async () => {
     try {
       // Idempotent: mark as released first (atomic), then increment stock only if row was returned
       const client = await pool.connect();
@@ -394,12 +411,13 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[STOCK RELEASE] Error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Expire NatCash payment sessions (every 1 minute) ─────
   // Releases stock ONLY for the specific seller whose session expired
-  cron.schedule('* * * * *', async () => {
+  registerJob('natcash-session-expiry', '* * * * *', async () => {
     try {
       const client = await pool.connect();
       try {
@@ -453,11 +471,12 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[NATCASH CRON] Error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Daily Summary notifications (user-local time) ─────
-  cron.schedule('* * * * *', async () => {
+  registerJob('daily-notification-delivery', '* * * * *', async () => {
     try {
       const now = new Date();
       const usersRes = await pool.query(`
@@ -511,11 +530,12 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[DAILY SUMMARY CRON] Error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Single reminder before time-limited action expires (every 15 min) ─────
-  cron.schedule('*/15 * * * *', async () => {
+  registerJob('overdue-cancellation-review', '*/15 * * * *', async () => {
     try {
       const overdueCancellations = await pool.query(
         `UPDATE disputes SET status = 'under_review', resolution = 'seller_response_overdue', updated_at = CURRENT_TIMESTAMP
@@ -560,6 +580,7 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[ACTION REMINDER CRON] Error:', err.message);
+      throw err;
     }
   });
 
@@ -567,7 +588,7 @@ export function startJobs() {
   // APP-Q168: an unanswered request is never silently expired quickly. After the
   // disclosed period it moves to the recipient's own archive, where a one-tap
   // restore puts it back. Nothing is deleted, and no sender is notified.
-  cron.schedule('0 4 * * *', async () => {
+  registerJob('stale-message-request-archive', '0 4 * * *', async () => {
     try {
       const candidates = await pool.query(
         `SELECT id, created_at FROM conversations
@@ -588,11 +609,12 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[MESSAGE REQUESTS] Archive job error:', err.message);
+      throw err;
     }
   });
 
   // ───── Cron: Expired business subscriptions & tier-cap enforcement (hourly) ─────
-  cron.schedule('0 * * * *', async () => {
+  registerJob('expired-business-subscriptions', '0 * * * *', async () => {
     await checkAndProcessExpiredSubscriptions();
   });
 
@@ -601,8 +623,10 @@ export function startJobs() {
   // eligible order completes, and only while no review has been submitted.
   // Kept to a 30-day window so older completed orders are not mass-notified,
   // and the notification is an in-app activity (no immediate push).
-  cron.schedule('0 10 * * *', async () => {
+  registerJob('completed-order-review-reminders', '*/5 * * * *', async () => {
     try {
+      const localNow = getLocalClock(new Date(), 'America/Port-au-Prince');
+      if (localNow.minutes < 600) return;
       const due = await pool.query(
         `SELECT o.id, o.buyer_id
            FROM orders o
@@ -638,8 +662,55 @@ export function startJobs() {
       }
     } catch (err) {
       console.error('[REVIEW REMINDER] Job error:', err.message);
+      throw err;
     }
-  }, { timezone: 'America/Port-au-Prince' });
+  });
 
-  console.log('[JOBS] All cron jobs started: meetup timeout, refund retry, stale orders, offer expiry, notification cleanup, stock release, natcash session expiry, daily summary, action reminders, review reminder, stale message requests, tier cap check');
+  jobHandlersRegistered = true;
+  console.log(`[JOBS] Registered ${scheduledJobHandlers.size} job handlers; cron-job.org owns scheduling`);
+}
+
+export function getScheduledJobManifest() {
+  registerJobs();
+  return [...scheduledJobHandlers.entries()].map(([name, definition]) => ({
+    name,
+    cron: definition.schedule,
+    timezone: definition.options?.timezone || 'UTC',
+  }));
+}
+
+/** Run one registered job under an expiring distributed database lease. */
+export async function runScheduledJob(name) {
+  registerJobs();
+  const definition = scheduledJobHandlers.get(name);
+  if (!definition) throw new Error(`Unknown scheduled job: ${name}`);
+
+  const leaseToken = randomUUID();
+  const client = await pool.connect();
+  try {
+    const claim = await client.query(
+      `INSERT INTO scheduled_job_leases (job_name, lease_token, lease_until)
+       VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '3 minutes')
+       ON CONFLICT (job_name) DO UPDATE
+         SET lease_token = EXCLUDED.lease_token,
+             lease_until = EXCLUDED.lease_until,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE scheduled_job_leases.lease_until <= CURRENT_TIMESTAMP
+       RETURNING job_name`,
+      [name, leaseToken]
+    );
+    if (!claim.rowCount) return { status: 'already_running' };
+  } finally {
+    client.release();
+  }
+
+  try {
+    await definition.handler();
+    return { status: 'completed' };
+  } finally {
+    await pool.query(
+      'DELETE FROM scheduled_job_leases WHERE job_name = $1 AND lease_token = $2',
+      [name, leaseToken]
+    ).catch((error) => console.error(`[JOBS] Could not release ${name} lease:`, error.message));
+  }
 }

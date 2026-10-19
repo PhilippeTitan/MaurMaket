@@ -8,9 +8,10 @@
 // are deliberately NOT run here — Render owns schema migration so a Vercel
 // deploy can never race a live Render boot.
 //
-// Realtime WebSocket and node-cron jobs are NOT started on Vercel: /ws degrades
-// to the existing 5s HTTP polling fallback, and time-sensitive jobs are
-// triggered externally (cron-job.org) against whichever backend is primary.
+// Realtime WebSocket, node-cron jobs, and database health-check timers are
+// NOT started on Vercel. /ws degrades to the existing 5s HTTP polling fallback.
+// The long-lived Render process owns health checks and scheduled jobs while
+// it is running.
 import { app, initApp } from '../server.js';
 
 const ready = initApp({ runDbMigrations: false }).catch((err) => {

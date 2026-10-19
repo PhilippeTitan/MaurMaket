@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { PRODUCTION_URL } from '../config/publicUrl.js';
 import { authRequired } from '../middleware/auth.js';
 import express from 'express';
 
@@ -23,7 +24,7 @@ router.get('/api/map-config', authRequired, (_req, res) => {
 });
 
 // ───── Legal Pages (Google OAuth requirement) ─────
-const legalPage = (title, content) => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} - MaurMaket</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1a1a1a;line-height:1.6}h1{font-size:1.8em;margin-bottom:.3em}h2{font-size:1.3em;margin-top:1.5em}p,li{font-size:.95em}a{color:#C0406A}ul{padding-left:1.5em}.meta{color:#666;font-size:.85em;margin-bottom:2em}</style></head><body><h1>${title}</h1><p class="meta">Effective: August 7, 2026 &middot; MaurMaket (maurmaket.onrender.com)</p>${content}<hr><p style="color:#999;font-size:.8em">Questions? Contact us at maurinexus.contact@gmail.com</p></body></html>`;
+const legalPage = (title, content) => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} - MaurMaket</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1a1a1a;line-height:1.6}h1{font-size:1.8em;margin-bottom:.3em}h2{font-size:1.3em;margin-top:1.5em}p,li{font-size:.95em}a{color:#C0406A}ul{padding-left:1.5em}.meta{color:#666;font-size:.85em;margin-bottom:2em}</style></head><body><h1>${title}</h1><p class="meta">Effective: August 7, 2026 &middot; MaurMaket (${PRODUCTION_URL})</p>${content}<hr><p style="color:#999;font-size:.8em">Questions? Contact us at maurinexus.contact@gmail.com</p></body></html>`;
 
 router.get('/privacy', (_req, res) => {
   res.type('html').send(legalPage('Privacy Policy', `

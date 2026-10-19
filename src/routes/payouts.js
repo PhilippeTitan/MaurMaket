@@ -5,6 +5,7 @@ import { authRequired, verifiedSellerRequired, accountActive } from '../middlewa
 import { checkSubscriptionStatus, settleSellerDebtPayment } from '../utils/helpers.js';
 import { createNotification } from '../utils/notifications.js';
 import { userHasPassword, verifyUserPassword } from '../utils/passwordVerify.js';
+import { PRODUCTION_URL } from '../config/publicUrl.js';
 
 const router = Router();
 
@@ -117,7 +118,7 @@ router.post('/api/seller/debts/pay', authRequired, sellerRequired, async (req, r
           body: JSON.stringify({
             amount: chargeAmount,
             referenceId,
-            returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?debtPaymentId=${paymentId}`,
+            returnUrl: `${PRODUCTION_URL}/payment/return?debtPaymentId=${paymentId}`,
           }),
           signal: AbortSignal.timeout(15000),
         }

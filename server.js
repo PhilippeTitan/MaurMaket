@@ -9,7 +9,7 @@ const { join } = path;
 import morgan from 'morgan';
 
 // ───── Modularized infrastructure ─────
-import { pool, isTestMode, neonBackupDatabaseUrl, setDbController } from './src/config/database.js';
+import { pool, isTestMode, setDbController } from './src/config/database.js';
 import { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_KYC_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand } from './src/config/storage.js';
 import { JWT_SECRET, BCRYPT_ROUNDS, PRODUCTION_URL } from './src/config/security.js';
 import { isAllowedOrigin } from './src/config/cors.js';
@@ -18,7 +18,6 @@ import { initRealtime, closeRealtime } from './src/realtime.js';
 import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from './src/middleware/auth.js';
 import { createNotification, sendPushNotification } from './src/utils/notifications.js';
 import { logOrderEvent, generateUsername, isAtLeast18, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, processRefundPayout, checkSubscriptionStatus, cleanupOldNotifications, recordProductCooccurrences } from './src/utils/helpers.js';
-import { startJobs } from './src/jobs/index.js';
 import { registerRoutes } from './src/routes/index.js';
 import { createAuth, getAuth } from './src/config/auth.js';
 import { registerTemporaryStorageUpload } from './src/utils/temporaryStorage.js';
@@ -68,6 +67,15 @@ async function runMigrations(targetPool) {
     }
   };
   try {
+    await step('Scheduled job leases', () => c.query(`
+      CREATE TABLE IF NOT EXISTS scheduled_job_leases (
+        job_name TEXT PRIMARY KEY,
+        lease_token UUID NOT NULL,
+        lease_until TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+
     // 1. Base tables
     await step('Base tables', () => c.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -1491,54 +1499,6 @@ await step('NatCash phone separation', () => c.query(`
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     `));
 
-    // ── Replication schema (dual-database failover) ──
-    await step('Replication: mirror_outbox', () => c.query(`
-      CREATE TABLE IF NOT EXISTS mirror_outbox (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        operation_id UUID UNIQUE NOT NULL,
-        model TEXT NOT NULL,
-        action TEXT NOT NULL,
-        record_id TEXT NOT NULL,
-        payload JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        source TEXT NOT NULL DEFAULT 'supabase',
-        synced BOOLEAN NOT NULL DEFAULT FALSE,
-        synced_at TIMESTAMPTZ,
-        priority TEXT NOT NULL DEFAULT 'normal'
-      )
-    `));
-    await step('Replication: mirror_outbox indexes', () => c.query(`
-      CREATE INDEX IF NOT EXISTS idx_mirror_outbox_synced ON mirror_outbox(synced, created_at);
-      CREATE INDEX IF NOT EXISTS idx_mirror_outbox_priority ON mirror_outbox(priority, synced);
-    `));
-    await step('Replication: mirror_operations', () => c.query(`
-      CREATE TABLE IF NOT EXISTS mirror_operations (
-        operation_id UUID PRIMARY KEY,
-        source TEXT NOT NULL,
-        processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `));
-    await step('Replication: mirror_operations index', () => c.query(`
-      CREATE INDEX IF NOT EXISTS idx_mirror_operations_source ON mirror_operations(source, processed_at);
-    `));
-    await step('Replication: sync_state', () => c.query(`
-      CREATE TABLE IF NOT EXISTS sync_state (
-        id SERIAL PRIMARY KEY,
-        key TEXT UNIQUE NOT NULL,
-        value TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `));
-    await step('Replication: sync_state seed', () => c.query(`
-      INSERT INTO sync_state (key, value) VALUES
-        ('primary', 'supabase'),
-        ('last_sync_supabase_to_neon', ''),
-        ('last_sync_neon_to_supabase', ''),
-        ('supabase_failures', '0'),
-        ('neon_failures', '0')
-      ON CONFLICT (key) DO NOTHING;
-    `));
-
     // ── Better Auth plugins: schema additions ──
     await step('Auth plugin: username columns', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT UNIQUE;
@@ -2401,104 +2361,33 @@ app.use((_req, res, next) => {
 // ───── All routes registered via src/routes/index.js ─────
 registerRoutes(app);
 
-// Background jobs start only in the main (Render) bootstrap below — never on import.
-
-// ───── Auto-Migration: Supabase → Neon (keeps Neon in sync with primary) ─────
-// NOTE: product_images excluded — Neon uses integer auto-increment id, Supabase uses UUID.
-const MIGRATION_TABLES = [
-  'users', 'categories', 'products', 'orders', 'order_items',
-  'processed_events', 'seller_balances', 'payouts', 'order_events', 'saved_addresses',
-  'reviews', 'wishlists', 'follows', 'notifications', 'conversations', 'messages',
-  'promo_codes', 'promo_uses', 'disputes', 'platform_revenue', 'platform_payouts',
-  'verification_attempts', 'seller_subscriptions', 'order_escrow', 'meetup_checkins',
-  'feed_events', 'seller_locations', 'message_offers', 'user_category_affinities', 'product_cooccurrences'
-];
-
-// Column whitelist for tables with schema drift between Neon and Supabase
-const MIGRATION_COLUMNS = {
-  categories: 'id, name, display_order',
-  orders: 'id, buyer_id, total_amount, status, moncash_reference, delivery_method, delivery_name, delivery_phone, delivery_address, delivery_city, delivery_note, meetup_lat, meetup_lng, meetup_address, meetup_note, meetup_confirmed, meetup_proposed_by, meetup_started_at, created_at, updated_at',
-};
-
-function isValidUUID(val) {
-  return typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-}
-
-async function migrateSupabaseToNeon() {
-  if (!neonBackupDatabaseUrl || isTestMode) return;
-  // Read from the live primary only. Neon is never part of request handling.
-  const readPool = pool;
-
-  const writePool = new (await import('pg')).Pool({
-    connectionString: neonBackupDatabaseUrl,
-    connectionTimeoutMillis: 10000,
-    ssl: neonBackupDatabaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
-  });
+// cron-job.org calls this narrow endpoint. It accepts only known job IDs and
+// requires a separate high-entropy secret; it is not an admin/general runner.
+app.post('/api/internal/jobs/:name', async (req, res) => {
+  const expected = process.env.JOB_SCHEDULER_SECRET || '';
+  const supplied = String(req.get('x-maurmaket-cron-secret') || '');
+  if (expected.length < 32) {
+    return res.status(503).json({ error: 'Job scheduler is not configured' });
+  }
+  const expectedBytes = Buffer.from(expected);
+  const suppliedBytes = Buffer.from(supplied);
+  if (expectedBytes.length !== suppliedBytes.length || !crypto.timingSafeEqual(expectedBytes, suppliedBytes)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   try {
-    const test = await readPool.query('SELECT 1');
-    if (!test) return;
-    console.log('[MIGRATION] Supabase → Neon: Starting data sync...');
-  } catch {
-    await writePool.end().catch(() => {});
-    return; // Supabase down (shouldn't happen)
+    const { runScheduledJob } = await import('./src/jobs/index.js');
+    const result = await runScheduledJob(req.params.name);
+    return res.status(result.status === 'already_running' ? 202 : 200).json({ job: req.params.name, ...result });
+  } catch (error) {
+    console.error(`[JOBS] ${req.params.name} invocation failed:`, error.message);
+    return res.status(error.message.startsWith('Unknown scheduled job:') ? 404 : 500)
+      .json({ error: 'Scheduled job failed' });
   }
+});
 
-  let totalRows = 0;
-  const UUID_COLS = ['id', 'order_id', 'product_id', 'seller_id', 'buyer_id', 'reviewer_id', 'user_id', 'seller_id', 'follower_id'];
-  const PK_COLS = { seller_locations: 'seller_id', seller_balances: 'seller_id' };
-
-  for (const table of MIGRATION_TABLES) {
-    let successCount = 0;
-    let failCount = 0;
-    try {
-      const colList = MIGRATION_COLUMNS[table] || '*';
-      const { rows } = await readPool.query(`SELECT ${colList} FROM ${table}`);
-      if (rows.length === 0) continue;
-
-      for (const row of rows) {
-        try {
-          // Skip rows with invalid UUIDs in UUID columns
-          for (const col of Object.keys(row)) {
-            if (UUID_COLS.includes(col) && row[col] !== null && !isValidUUID(row[col])) {
-              console.warn(`[MIGRATION] ${table} row skipped: invalid UUID in ${col}: "${row[col]}"`);
-              failCount++;
-              continue;
-            }
-          }
-
-          const cols = Object.keys(row);
-          const vals = Object.values(row);
-          const placeholders = cols.map((_, i) => `$${i + 1}`);
-          const updateCols = cols.filter(c => c !== (PK_COLS[table] || 'id'));
-          const conflictCol = PK_COLS[table] || 'id';
-          const conflictClause = updateCols.length > 0
-            ? ` ON CONFLICT (${conflictCol}) DO UPDATE SET ${updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ')}`
-            : ' ON CONFLICT DO NOTHING';
-
-          await writePool.query(
-            `INSERT INTO ${table} (${cols.join(',')}) VALUES (${placeholders.join(',')})${conflictClause}`,
-            vals
-          );
-          successCount++;
-        } catch (rowErr) {
-          console.warn(`[MIGRATION] ${table} row ${row.id || '?'} skipped:`, rowErr.message);
-          failCount++;
-        }
-      }
-      totalRows += successCount;
-      const log = failCount > 0 ? ` (${failCount} skipped)` : '';
-      console.log(`[MIGRATION] ${table}: ${successCount} rows${log}`);
-    } catch (err) {
-      console.error(`[MIGRATION] ${table} error:`, err.message);
-    }
-  }
-
-  await writePool.end().catch(() => {});
-  console.log(`[MIGRATION] Complete! ${totalRows} total rows synced from Supabase → Neon.`);
-}
-
-// Backup sync is triggered by the dedicated scheduled GitHub Actions workflow.
+// Scheduled work is invoked through the authenticated cron-job.org endpoint;
+// neither Render nor Vercel starts per-process cron timers.
 
 // ───── Global Error Handler ─────
 app.use((err, req, res, next) => {
@@ -2542,7 +2431,7 @@ if (isMain) {
 // Promise-guarded so concurrent serverless invocations initialize exactly once.
 // Does NOT listen, start cron jobs, or attach realtime — callers own that.
 let initAppPromise = null;
-export function initApp({ runDbMigrations = false } = {}) {
+export function initApp({ runDbMigrations = false, runDatabaseWorkers = false } = {}) {
   if (initAppPromise) return initAppPromise;
   initAppPromise = (async () => {
     // Better Auth needs its tables before it can serve requests. Only the
@@ -2559,27 +2448,12 @@ export function initApp({ runDbMigrations = false } = {}) {
       }
     }
 
-    // ───── DB Controller: dual-database failover + replication ─────
-    const { getDbController, Replicator, Reconciler, createRaidAdapter } = await import('./src/db/index.js');
+    // ───── DB Controller: authoritative primary + standby diagnostics ─────
+    const { getDbController, createRaidAdapter } = await import('./src/db/index.js');
     const dbController = getDbController();
 
-    // Don't spend startup attempts on an offline backup. When Neon first
-    // passes its health probe, prepare its schema before marking it usable.
-    if (dbController.secondaryPool) {
-      dbController.prepareSecondary = async (secondaryPool) => {
-        console.log(`[MIGRATION] Preparing ${dbController.secondaryName} after recovery...`);
-        const failures = await runMigrations(secondaryPool);
-        if (failures.length > 0) {
-          throw new Error(`${dbController.secondaryName} schema migration failed: ${failures.join(', ')}`);
-        }
-      };
-    }
-
-    // Wire the failover proxy — all pool.query(SELECT) routes through controller
+    // Wire the primary-only proxy — all pool.query(SELECT) routes through controller
     setDbController(dbController);
-
-    const replicator = new Replicator(dbController);
-    const reconciler = new Reconciler(dbController);
 
     // Wire Better Auth through RAID adapter → DB Controller
     const raidAdapter = createRaidAdapter(dbController);
@@ -2600,28 +2474,18 @@ export function initApp({ runDbMigrations = false } = {}) {
       console.log('[Auth] Studio dashboard at /api/studio');
     }
 
-    dbController.startHealthChecks();
-    replicator.start();
-
-    // Watch for RECOVERING state → trigger reconciliation
-    const origHealthCheck = dbController.healthCheck.bind(dbController);
-    dbController.healthCheck = async function() {
-      const result = await origHealthCheck();
-      // Neon recovered → clear quota backoff
-      if (this.neonBreaker?.isHealthy) reconciler.resetQuotaBackoff();
-      if (this.mode === 'RECOVERING') {
-        reconciler.reconcile().catch(err => {
-          console.error('[Reconciler] Error:', err.message);
-        });
-      }
-      return result;
-    };
+    // Vercel Functions can create many warm isolates and may freeze them at
+    // any time. Process timers are not durable workers. Only the long-lived
+    // Render process runs health checks; app-level outbox replication and
+    // automatic secondary schema migrations remain disabled.
+    if (runDatabaseWorkers) {
+      dbController.startHealthChecks();
+    }
 
     // Expose for health endpoint + routes
     app.locals.dbController = dbController;
-    app.locals.replicator = replicator;
 
-    console.log('[DB:Controller] ✅ Dual-database failover + replication active');
+    console.log(`[DB:Controller] ✅ Database controller ready${runDatabaseWorkers ? ' with background workers' : ' (request-only mode)'}`);
     return app;
   })();
   return initAppPromise;
@@ -2637,15 +2501,15 @@ if (isMain) {
   const startServer = () => {
     server = app.listen(PORT, () => {
       console.log(`MaurMaket API running on http://localhost:${PORT}`);
-      console.log('Cron jobs active: meetup timeout auto-refund (every 5 min), offer expiry (every 15 min)');
+      console.log('Scheduled tasks are owned by cron-job.org; this server does not run local job timers.');
       initRealtime(server);
     });
   };
 
-  // ───── Background Jobs (extracted to src/jobs/index.js) — main process only ─────
-  startJobs();
-
-  initApp({ runDbMigrations: true }).then(() => startServer()).catch(err => {
+  initApp({ runDbMigrations: true, runDatabaseWorkers: true }).then(() => {
+    // Serve requests only after migrations and auth initialization succeed.
+    startServer();
+  }).catch(err => {
     console.error('[STARTUP] Database/auth initialization failed; server not started:', err.message);
   });
 
