@@ -12,6 +12,7 @@ import morgan from 'morgan';
 import { pool, isTestMode, neonBackupDatabaseUrl, setDbController } from './src/config/database.js';
 import { supabaseStorage, SUPABASE_STORAGE_BUCKET, SUPABASE_KYC_BUCKET, SUPABASE_PUBLIC_BASE, r2Storage, R2_BUCKET, R2_PUBLIC_BASE, PutObjectCommand, DeleteObjectCommand } from './src/config/storage.js';
 import { JWT_SECRET, BCRYPT_ROUNDS, PRODUCTION_URL } from './src/config/security.js';
+import { isAllowedOrigin } from './src/config/cors.js';
 import { generalLimiter, signinLimiter, paymentLimiter, uploadLimiter, msgLimiter, convLimiter, verifyLimiter } from './src/middleware/rateLimit.js';
 import { initRealtime, closeRealtime } from './src/realtime.js';
 import { optionalAuth, authRequired, sellerRequired, verifiedSellerRequired, dobRequired } from './src/middleware/auth.js';
@@ -2117,23 +2118,13 @@ await step('NatCash phone separation', () => c.query(`
 // WebP migration extracted to src/routes/migration.js
 
 // ───── CORS (production + dev origins) ─────
-const ALLOWED_ORIGINS = [
-  'https://maurmaket.onrender.com',
-  'http://localhost:3001',
-  'http://localhost:4000',
-  'http://localhost:8081',
-  'http://localhost:19006',
-];
+// Policy lives in src/config/cors.js so the allowlist is unit-tested: the 2026-10
+// Vercel cutover showed that a Render-only allowlist silently 500s every
+// browser request coming from the primary host.
 app.use(cors({
   origin: (origin, callback) => {
-    // No origin (native app / curl) — allow
-    if (!origin) return callback(null, true);
-    // Known browser origins — allow
-    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-    // LAN dev (native app sends its own IP as Origin) — allow
-    if (/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|localhost|127\.0\.0\.1)/.test(origin)) {
-      return callback(null, true);
-    }
+    // Missing Origin (native app / curl / server-to-server) or an allowed host
+    if (isAllowedOrigin(origin)) return callback(null, true);
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,

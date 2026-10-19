@@ -302,6 +302,7 @@ export function createAuth(adapter) {
     // Function form: receives request, returns array of allowed origin strings
     trustedOrigins: async (request) => {
       const base = [
+        'https://maurmaket.vercel.app', // primary host since the 2026-10-19 failover
         'https://maurmaket.onrender.com',
         'maurmaket://', // mobile app deep link callback
       ];
