@@ -16,8 +16,8 @@ export default function AuthMethodsCard({ googleConnected = false, compact = fal
   useEffect(() => {
     Animated.timing(opacity, { toValue: 1, duration: 350, useNativeDriver: true }).start();
     if (Platform.OS !== 'web') return;
-    const { API_BASE } = require('../api');
-    fetch(`${API_BASE.replace('/api', '')}/api/auth/list-sessions`, { method: 'GET' })
+    const { getApiOrigin } = require('../api');
+    fetch(`${getApiOrigin()}/api/auth/list-sessions`, { method: 'GET' })
       .then(r => r.json())
       .then(() => setPasskeyCount(0))
       .catch(() => setPasskeyCount(0));
@@ -58,8 +58,8 @@ export default function AuthMethodsCard({ googleConnected = false, compact = fal
           activeOpacity={0.6}
           onPress={() => {
             // Trigger Google OAuth flow
-            const { API_BASE } = require('../api');
-            window.location.href = `${API_BASE.replace('/api', '')}/api/auth/sign-in/google`;
+            const { getApiOrigin } = require('../api');
+            window.location.href = `${getApiOrigin()}/api/auth/sign-in/google`;
           }}
         >
           <View style={styles.methodIcon}>

@@ -14,7 +14,7 @@ import { COLORS, SPACING, RADIUS, FONTS, TOUCH } from '../../theme';
 import { useTranslation } from '@/localization';
 import { useViewport } from '@/hooks';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
-import { signup as apiSignup, retrySignupProfileBootstrap, googleAuth, googleAuthInfo, linkGoogleIdentity, API_BASE } from '../../api';
+import { signup as apiSignup, retrySignupProfileBootstrap, googleAuth, googleAuthInfo, linkGoogleIdentity, getApiBase } from '../../api';
 import { store } from '../../store';
 import AuthInput from '@/components/AuthInput';
 import GoogleButton from './components/GoogleButton';
@@ -948,7 +948,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       emailTimer.current = setTimeout(async () => {
         setEmailChecking(true);
         try {
-          const res = await fetch(`${API_BASE}/user/check-email?email=${encodeURIComponent(form.email)}`);
+          const res = await fetch(`${getApiBase()}/user/check-email?email=${encodeURIComponent(form.email)}`);
           const data = await res.json();
           setEmailAvailable(data.available);
           if (!data.available) setErrors(p => ({ ...p, email: t('signup.emailTaken') }));
@@ -967,7 +967,7 @@ export default function AnimatedOnboarding({ onSwitchToSignin, initialIndex = 0,
       setUsernameChecking(true);
       usernameTimer.current = setTimeout(async () => {
         try {
-          const res = await fetch(`${API_BASE}/user/check-username?username=${encodeURIComponent(form.username)}`);
+          const res = await fetch(`${getApiBase()}/user/check-username?username=${encodeURIComponent(form.username)}`);
           const data = await res.json();
           setUsernameAvailable(data.available);
           if (!data.available) setErrors(p => ({ ...p, username: t('signup.usernameTaken') }));

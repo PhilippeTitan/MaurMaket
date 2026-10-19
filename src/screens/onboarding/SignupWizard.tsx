@@ -5,7 +5,7 @@ import {
 import { MaterialCommunityIcons } from '@/components/icons/UnifiedIcon';
 import { COLORS, SPACING, RADIUS } from '../../theme';
 import { useTranslation } from '@/localization';
-import { signup as apiSignup, API_BASE } from '../../api';
+import { signup as apiSignup, getApiBase } from '../../api';
 import { store } from '../../store';
 import AuthInput from '@/components/AuthInput';
 import StepHeading from './components/StepHeading';
@@ -79,7 +79,7 @@ export default function SignupWizard({ switchMode }: SignupWizardProps) {
     }
     setEmailChecking(true);
     try {
-      const res = await fetch(`${API_BASE}/user/check-email?email=${encodeURIComponent(emailToCheck)}`);
+      const res = await fetch(`${getApiBase()}/user/check-email?email=${encodeURIComponent(emailToCheck)}`);
       const data = await res.json();
       setEmailAvailable(data.available);
       if (!data.available) {

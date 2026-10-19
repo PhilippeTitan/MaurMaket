@@ -1,0 +1,46 @@
+name: Render Failover Watchdog
+
+# Vercel is primary; Render is billing-suspended and resumed automatically.
+# Runs every 5 minutes from the public mirror (GitHub Actions scheduled
+# workflows are free and unlimited on public repos). The job itself is gated
+# on the WATCHDOG_ENABLED repository variable so an accidental enable in the
+# workflow file still cannot mutate Render; the script double-gates and
+# supports DRY_RUN for wiring checks before the switch is flipped.
+#
+# Caveats: GitHub delays scheduled runs by minutes at busy times, and disables
+# scheduled workflows after 60 days without repo activity (mirror pushes keep
+# this repo active).
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Log the decision without mutating Render state'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    if: vars.WATCHDOG_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run watchdog
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          WATCHDOG_ENABLED: ${{ vars.WATCHDOG_ENABLED }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: node scripts/render-watchdog.mjs
