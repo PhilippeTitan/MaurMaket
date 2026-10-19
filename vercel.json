@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "installCommand": "node strip-mobile-deps.mjs && npm install --legacy-peer-deps",
+  "buildCommand": "",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api" }
+  ],
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60
+    }
+  }
+}

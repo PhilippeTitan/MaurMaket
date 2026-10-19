@@ -40,17 +40,77 @@ const getDevHost = (): string => {
 
 const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 
+// Production failover pair: Vercel is PRIMARY, Render is the auto-suspended
+// SECONDARY (see the Render↔Vercel failover plan). Dev keeps localhost; web
+// keeps its existing tunnel/localhost behavior.
+const PROD_API_PRIMARY = 'https://maurmaket.vercel.app/api';
+const PROD_API_FALLBACK = 'https://maurmaket.onrender.com/api';
+
 export const API_BASE = Platform.OS === 'web'
   ? getWebApiBase()
   : isDev
     ? `http://${getDevHost()}:4000/api`
-    : 'https://maurmaket.onrender.com/api';
+    : PROD_API_PRIMARY;
 
+// Relative image URLs (legacy /uploads/ files) only exist on Render's disk,
+// so production UPLOAD_BASE stays pointed at Render. New uploads go to cloud
+// storage and return absolute URLs, which never touch this base.
 export const UPLOAD_BASE = Platform.OS === 'web'
   ? getWebUploadBase()
   : isDev
     ? `http://${getDevHost()}:4000`
     : 'https://maurmaket.onrender.com';
+
+// Sticky active base: starts at PRIMARY; flips to the alternate after a
+// successful failover so subsequent requests skip the dead backend. Reset on
+// app restart (next launch tries PRIMARY first again).
+let _activeApiBase: string = API_BASE;
+
+function alternateApiBase(base: string): string | null {
+  if (Platform.OS === 'web' || isDev) return null;
+  if (base === PROD_API_PRIMARY) return PROD_API_FALLBACK;
+  if (base === PROD_API_FALLBACK) return PROD_API_PRIMARY;
+  return null;
+}
+
+function isNetworkLevelError(err: any): boolean {
+  return (
+    err?.name === 'AbortError' ||
+    err?.message?.includes('Network request failed') ||
+    err?.message?.includes('Failed to fetch') ||
+    err?.message?.includes('Network request timed out')
+  );
+}
+
+/**
+ * fetch with production failover. Retries the alternate backend ONLY on
+ * network-level failures (DNS/TCP/timeout) — never on 4xx or a parsed JSON
+ * error response, so a deliberate server rejection is never replayed.
+ */
+async function fetchWithFailover(
+  path: string,
+  options: RequestInit,
+  timeoutMs = 15000
+): Promise<Response> {
+  const attempt = async (base: string): Promise<Response> => {
+    const controller = new AbortController();
+    const timeout = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    try {
+      return await fetch(`${base}${path}`, { ...options, signal: controller.signal });
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  };
+  try {
+    return await attempt(_activeApiBase);
+  } catch (err) {
+    const alt = alternateApiBase(_activeApiBase);
+    if (!alt || !isNetworkLevelError(err)) throw err;
+    const res = await attempt(alt);
+    _activeApiBase = alt;
+    return res;
+  }
+}
 
 let _cachedToken: string | null = null;
 let _tokenRead = false;
@@ -82,10 +142,20 @@ export async function getToken(): Promise<string | null> {
   return _cachedToken;
 }
 
-/** WebSocket URL for realtime chat events (derived from API_BASE). */
+/** WebSocket URL for realtime chat events (derived from the active API base). */
 export function getRealtimeUrl(): string {
-  const base = API_BASE.replace(/\/api\/?$/, '');
+  const base = _activeApiBase.replace(/\/api\/?$/, '');
   return base.replace(/^http/, 'ws') + '/ws';
+}
+
+/** Current API base (follows production failover). Prefer this over API_BASE. */
+export function getApiBase(): string {
+  return _activeApiBase;
+}
+
+/** Origin of the current API base (scheme + host, no path). */
+export function getApiOrigin(): string {
+  try { return new URL(_activeApiBase).origin; } catch { return 'https://maurmaket.onrender.com'; }
 }
 
 export function setCachedToken(token: string | null) {
@@ -97,15 +167,18 @@ export function setCachedToken(token: string | null) {
 
 function getBetterAuthClient() {
   if (!_betterAuthClient) {
+    // Pinned to the active base at creation time. If a failover happens later,
+    // sign-in/2FA flows recreate this client on next app launch; ordinary API
+    // traffic already follows the active base.
     _betterAuthClient = createAuthClient({
-      baseURL: API_BASE.replace(/\/api\/?$/, ''),
+      baseURL: _activeApiBase.replace(/\/api\/?$/, ''),
       basePath: '/api/auth',
       plugins: [twoFactorClient(), passkeyClient()],
       fetchOptions: {
         credentials: 'include',
         // React Native fetch does not supply Origin automatically. Better Auth
         // requires it for CSRF checks on POSTs such as TOTP verification.
-        ...(Platform.OS !== 'web' ? { headers: { Origin: new URL(API_BASE).origin } } : {}),
+        ...(Platform.OS !== 'web' ? { headers: { Origin: new URL(_activeApiBase).origin } } : {}),
         auth: { type: 'Bearer', token: () => _cachedToken || '' },
         onSuccess: (context: any) => {
           const token = context.response.headers.get('set-auth-token');
@@ -144,14 +217,10 @@ async function request<T = Record<string, unknown>>(
   if (options.body) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetchWithFailover(path, {
       ...options,
       headers,
-      signal: controller.signal,
     });
     const text = await res.text();
     let data: any;
@@ -178,8 +247,6 @@ async function request<T = Record<string, unknown>>(
       throw new OfflineError();
     }
     throw err;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -300,10 +367,9 @@ function extractSessionToken(res: Response, body: any): string | null {
 
 /** Auth-fetch wrapper: calls the backend with auto-env and returns JSON. */
 async function authFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; body: any }> {
-  const url = `${API_BASE}${path}`;
   const token = await getToken();
   const origin = (() => {
-    try { return new URL(API_BASE).origin; } catch { return 'https://maurmaket.onrender.com'; }
+    try { return new URL(_activeApiBase).origin; } catch { return 'https://maurmaket.onrender.com'; }
   })();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -311,7 +377,8 @@ async function authFetch(path: string, options: RequestInit = {}): Promise<{ res
     ...(options.headers as Record<string, string> || {}),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(url, { ...options, headers, credentials: 'include' });
+  // No timeout here (matches prior behavior) — auth flows are user-interactive.
+  const res = await fetchWithFailover(path, { ...options, headers, credentials: 'include' }, 0);
   let body: any;
   try { body = await res.json(); } catch { body = {}; }
   return { res, body };
@@ -685,7 +752,7 @@ export const googleAuth = async () => {
   // Native: use expo-auth-session to redirect to Better Auth's Google OAuth endpoint
   if (Platform.OS !== 'web') {
     const redirectUri = AuthSession.makeRedirectUri({ scheme: 'maurmaket', path: 'auth/callback' });
-    const authUrl = `${API_BASE.replace('/api', '')}/api/auth/signin/google?callbackURL=${encodeURIComponent(redirectUri)}`;
+    const authUrl = `${getApiOrigin()}/api/auth/signin/google?callbackURL=${encodeURIComponent(redirectUri)}`;
 
     const WebBrowser = require('expo-web-browser');
     WebBrowser.maybeCompleteAuthSession();
@@ -735,7 +802,7 @@ export const googleAuth = async () => {
 
   // Web: redirect to Better Auth's Google OAuth
   const redirectTo = `${window.location.origin}/`;
-  const authUrl = `${API_BASE.replace('/api', '')}/api/auth/signin/google?callbackURL=${encodeURIComponent(redirectTo)}`;
+  const authUrl = `${getApiOrigin()}/api/auth/signin/google?callbackURL=${encodeURIComponent(redirectTo)}`;
 
   const WebBrowser = require('expo-web-browser');
   WebBrowser.maybeCompleteAuthSession();
@@ -807,7 +874,7 @@ export const googleAuthInfo = async (): Promise<{ firstName: string; lastName: s
   const redirectTo = Platform.OS === 'web'
     ? `${window.location.origin}/`
     : AuthSession.makeRedirectUri({ scheme: 'maurmaket', path: 'auth/callback' });
-  const authUrl = `${API_BASE.replace('/api', '')}/api/auth/signin/google?callbackURL=${encodeURIComponent(redirectTo)}`;
+  const authUrl = `${getApiOrigin()}/api/auth/signin/google?callbackURL=${encodeURIComponent(redirectTo)}`;
 
   const WebBrowser = require('expo-web-browser');
   WebBrowser.maybeCompleteAuthSession();
@@ -1649,11 +1716,12 @@ export const uploadAudio = async (uri: string): Promise<{ url: string }> => {
   const token = await getToken();
   if (!token) throw new Error('Not authenticated');
   const dataUri = await fileToAudioDataUri(uri);
-  const res = await fetch(`${API_BASE}/upload-audio`, {
+  // Voice notes are small; 60s budget (up from unbounded) still covers slow networks.
+  const res = await fetchWithFailover('/upload-audio', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body: JSON.stringify({ audio: dataUri }),
-  });
+  }, 60000);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Voice note upload failed (${res.status})`);
   return { url: data.url };
@@ -1673,12 +1741,13 @@ export const uploadImage = async (uri: string, expiration?: number, purpose?: 'k
   const { base64 } = await resizeAndConvert(uri);
   console.log(`[UPLOAD-DEBUG] resizeAndConvert done, base64 length=${base64?.length}`);
 
-  // Send to backend — Supabase Storage primary, then R2/imgBB fallback
-  const res = await fetch(`${API_BASE}/upload`, {
+  // Send to backend — Supabase Storage primary, then R2/imgBB fallback.
+  // 120s budget: listing photos can be a few MB on slow mobile connections.
+  const res = await fetchWithFailover('/upload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body: JSON.stringify({ image: `data:image/jpeg;base64,${base64}`, expiration, purpose }),
-  });
+  }, 120000);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     console.error(`[UPLOAD-DEBUG] Server upload failed, status=${res.status}, error=${data.error || 'unknown error'}`);

@@ -2410,8 +2410,7 @@ app.use((_req, res, next) => {
 // ───── All routes registered via src/routes/index.js ─────
 registerRoutes(app);
 
-// ───── Background Jobs (extracted to src/jobs/index.js) ─────
-startJobs();
+// Background jobs start only in the main (Render) bootstrap below — never on import.
 
 // ───── Auto-Migration: Supabase → Neon (keeps Neon in sync with primary) ─────
 // NOTE: product_images excluded — Neon uses integer auto-increment id, Supabase uses UUID.
@@ -2520,29 +2519,125 @@ app.use((err, req, res, next) => {
 });
 
 // ───── Graceful Shutdown ─────
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection:', reason);
-  if (!isTestMode) process.exit(1);
-});
-
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
-  closeRealtime();
-  if (server) server.close();
-  try { await pool.end(); } catch {}
-  process.exit(0);
-});
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down gracefully...');
-  closeRealtime();
-  if (server) server.close();
-  try { await pool.end(); } catch {}
-  process.exit(0);
-});
-
 const __execPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 const __thisFile = fileURLToPath(import.meta.url);
 const isMain = __execPath === __thisFile || __execPath === path.resolve(__thisFile);
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection:', reason);
+  // Never kill a serverless (Vercel) isolate from a stray rejection — only the
+  // long-running Render process treats it as fatal.
+  if (!isTestMode && isMain) process.exit(1);
+});
+
+if (isMain) {
+  process.on('SIGTERM', async () => {
+    console.log('SIGTERM received. Shutting down gracefully...');
+    closeRealtime();
+    if (server) server.close();
+    try { await pool.end(); } catch {}
+    process.exit(0);
+  });
+  process.on('SIGINT', async () => {
+    console.log('SIGINT received, shutting down gracefully...');
+    closeRealtime();
+    if (server) server.close();
+    try { await pool.end(); } catch {}
+    process.exit(0);
+  });
+}
+
+// ───── Shared app init (Render main + Vercel function entry) ─────
+// Promise-guarded so concurrent serverless invocations initialize exactly once.
+// Does NOT listen, start cron jobs, or attach realtime — callers own that.
+let initAppPromise = null;
+export function initApp({ runDbMigrations = false } = {}) {
+  if (initAppPromise) return initAppPromise;
+  initAppPromise = (async () => {
+    // Better Auth needs its tables before it can serve requests. Only the
+    // primary (Render) boot runs migrations; the Vercel fallback reuses the
+    // schema already applied there and must not race a live Render deploy.
+    if (runDbMigrations) {
+      const migrationFailures = await runMigrations().catch(err => {
+        console.error('[MIGRATION] Primary database migration failed:', err.message);
+        throw err;
+      });
+      const failedAuthMigrations = migrationFailures.filter(name => REQUIRED_AUTH_MIGRATIONS.includes(name));
+      if (failedAuthMigrations.length > 0) {
+        throw new Error(`Required Better Auth schema migrations failed: ${failedAuthMigrations.join(', ')}`);
+      }
+    }
+
+    // ───── DB Controller: dual-database failover + replication ─────
+    const { getDbController, Replicator, Reconciler, createRaidAdapter } = await import('./src/db/index.js');
+    const dbController = getDbController();
+
+    // Don't spend startup attempts on an offline backup. When Neon first
+    // passes its health probe, prepare its schema before marking it usable.
+    if (dbController.secondaryPool) {
+      dbController.prepareSecondary = async (secondaryPool) => {
+        console.log(`[MIGRATION] Preparing ${dbController.secondaryName} after recovery...`);
+        const failures = await runMigrations(secondaryPool);
+        if (failures.length > 0) {
+          throw new Error(`${dbController.secondaryName} schema migration failed: ${failures.join(', ')}`);
+        }
+      };
+    }
+
+    // Wire the failover proxy — all pool.query(SELECT) routes through controller
+    setDbController(dbController);
+
+    const replicator = new Replicator(dbController);
+    const reconciler = new Reconciler(dbController);
+
+    // Wire Better Auth through RAID adapter → DB Controller
+    const raidAdapter = createRaidAdapter(dbController);
+    createAuth(raidAdapter);
+    console.log('[DB:Controller] ✅ Better Auth wired through RAID adapter');
+
+    // Mount Better Auth Studio after auth is initialized
+    if (betterAuthStudio) {
+      app.use('/api/studio', betterAuthStudio({
+        auth: getAuth(),
+        basePath: '/api/studio',
+        metadata: { title: 'MaurMaket Admin', theme: 'dark' },
+        access: {
+          roles: ['admin'],
+          allowEmails: ['lexikonstrsut@gmail.com', 'maurinexus.contact@gmail.com'],
+        },
+      }));
+      console.log('[Auth] Studio dashboard at /api/studio');
+    }
+
+    dbController.startHealthChecks();
+    replicator.start();
+
+    // Watch for RECOVERING state → trigger reconciliation
+    const origHealthCheck = dbController.healthCheck.bind(dbController);
+    dbController.healthCheck = async function() {
+      const result = await origHealthCheck();
+      // Neon recovered → clear quota backoff
+      if (this.neonBreaker?.isHealthy) reconciler.resetQuotaBackoff();
+      if (this.mode === 'RECOVERING') {
+        reconciler.reconcile().catch(err => {
+          console.error('[Reconciler] Error:', err.message);
+        });
+      }
+      return result;
+    };
+
+    // Expose for health endpoint + routes
+    app.locals.dbController = dbController;
+    app.locals.replicator = replicator;
+
+    console.log('[DB:Controller] ✅ Dual-database failover + replication active');
+    return app;
+  })();
+  return initAppPromise;
+}
+
+export { app };
+
 if (isMain) {
   if (isTestMode) {
     console.log('[TEST MODE] NODE_ENV=test, using local test database');
@@ -2555,89 +2650,13 @@ if (isMain) {
       initRealtime(server);
     });
   };
-  // Better Auth needs its tables before it can serve requests. Keep startup gated
-  // on the primary migration run so requests cannot race table creation.
-  const primaryMigrations = runMigrations().catch(err => {
-    console.error('[MIGRATION] Primary database migration failed:', err.message);
-    throw err;
+
+  // ───── Background Jobs (extracted to src/jobs/index.js) — main process only ─────
+  startJobs();
+
+  initApp({ runDbMigrations: true }).then(() => startServer()).catch(err => {
+    console.error('[STARTUP] Database/auth initialization failed; server not started:', err.message);
   });
-
-  // ───── DB Controller: dual-database failover + replication ─────
-  (async () => {
-    try {
-      const migrationFailures = await primaryMigrations;
-      const failedAuthMigrations = migrationFailures.filter(name => REQUIRED_AUTH_MIGRATIONS.includes(name));
-      if (failedAuthMigrations.length > 0) {
-        throw new Error(`Required Better Auth schema migrations failed: ${failedAuthMigrations.join(', ')}`);
-      }
-
-      const { getDbController, Replicator, Reconciler, createRaidAdapter } = await import('./src/db/index.js');
-      const dbController = getDbController();
-
-      // Don't spend startup attempts on an offline backup. When Neon first
-      // passes its health probe, prepare its schema before marking it usable.
-      if (dbController.secondaryPool) {
-        dbController.prepareSecondary = async (secondaryPool) => {
-          console.log(`[MIGRATION] Preparing ${dbController.secondaryName} after recovery...`);
-          const failures = await runMigrations(secondaryPool);
-          if (failures.length > 0) {
-            throw new Error(`${dbController.secondaryName} schema migration failed: ${failures.join(', ')}`);
-          }
-        };
-      }
-
-      // Wire the failover proxy — all pool.query(SELECT) routes through controller
-      setDbController(dbController);
-
-      const replicator = new Replicator(dbController);
-      const reconciler = new Reconciler(dbController);
-
-      // Wire Better Auth through RAID adapter → DB Controller
-      const raidAdapter = createRaidAdapter(dbController);
-      createAuth(raidAdapter);
-      console.log('[DB:Controller] ✅ Better Auth wired through RAID adapter');
-
-      // Mount Better Auth Studio after auth is initialized
-      if (betterAuthStudio) {
-        app.use('/api/studio', betterAuthStudio({
-          auth: getAuth(),
-          basePath: '/api/studio',
-          metadata: { title: 'MaurMaket Admin', theme: 'dark' },
-          access: {
-            roles: ['admin'],
-            allowEmails: ['lexikonstrsut@gmail.com', 'maurinexus.contact@gmail.com'],
-          },
-        }));
-        console.log('[Auth] Studio dashboard at /api/studio');
-      }
-
-      dbController.startHealthChecks();
-      replicator.start();
-
-      // Watch for RECOVERING state → trigger reconciliation
-      const origHealthCheck = dbController.healthCheck.bind(dbController);
-      dbController.healthCheck = async function() {
-        const result = await origHealthCheck();
-        // Neon recovered → clear quota backoff
-        if (this.neonBreaker?.isHealthy) reconciler.resetQuotaBackoff();
-        if (this.mode === 'RECOVERING') {
-          reconciler.reconcile().catch(err => {
-            console.error('[Reconciler] Error:', err.message);
-          });
-        }
-        return result;
-      };
-
-      // Expose for health endpoint + routes
-      app.locals.dbController = dbController;
-      app.locals.replicator = replicator;
-
-      console.log('[DB:Controller] ✅ Dual-database failover + replication active');
-      startServer();
-    } catch (err) {
-      console.error('[STARTUP] Database/auth initialization failed; server not started:', err.message);
-    }
-  })();
 
   // Non-blocking cleanup with timeout — never blocks server startup
   setTimeout(async () => {

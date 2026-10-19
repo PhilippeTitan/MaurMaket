@@ -272,8 +272,8 @@ export const store = {
     } catch { /* offline or unsupported: the sign-out proceeds */ }
     // Sign out from Better Auth (fire-and-forget, don't block on errors)
     try {
-      const { API_BASE } = require('./api');
-      await fetch(`${API_BASE.replace('/api', '')}/api/auth/sign-out`, { method: 'POST' });
+      const { getApiOrigin } = require('./api');
+      await fetch(`${getApiOrigin()}/api/auth/sign-out`, { method: 'POST' });
     } catch { /* ignore — server might be down */ }
     state.user = null;
     state.token = null;
