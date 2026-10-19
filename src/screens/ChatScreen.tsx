@@ -398,7 +398,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
   const [otherTyping, setOtherTyping] = useState(false);
-  const [presence, setPresence] = useState<{ online: boolean; lastSeen: string | null } | null>(null);
+  const [presence, setPresence] = useState<{ online: boolean; hidden?: boolean } | null>(null);
   const [offline, setOffline] = useState(false);
   const [sellerItemsVisible, setSellerItemsVisible] = useState(false);
   const [offerBuilderItem, setOfferBuilderItem] = useState<{ id: string; name: string; price: number; stock?: number; image_url?: string | null } | null>(null);
@@ -1472,17 +1472,6 @@ startPolling();
     );
   };
 
-  const formatLastSeen = (iso: string) => {
-    const d = new Date(iso);
-    const now = new Date();
-    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    if (d.toDateString() === now.toDateString()) return `${t('chat.today')}, ${time}`;
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    if (d.toDateString() === yesterday.toDateString()) return `${t('chat.yesterday')}, ${time}`;
-    return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
-  };
-
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <LinearGradient
@@ -1513,11 +1502,7 @@ startPolling();
                     {otherTyping ? t('chat.typing') : t('chat.online')}
                   </Text>
                 </View>
-              ) : presence?.lastSeen ? (
-                <Text style={styles.headerLastSeen} numberOfLines={1}>{t('chat.lastSeenAt', { time: formatLastSeen(presence.lastSeen) })}</Text>
-              ) : (
-                <Text style={styles.headerLastSeen}>{' '}</Text>
-              )}
+              ) : null}
             </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerMore} onPress={openMessageSearch} accessibilityLabel={t('chat.searchMessages')} accessibilityRole="button">
@@ -2018,7 +2003,6 @@ const styles = StyleSheet.create({
   onlineDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#00C853' },
   onlineText: { fontSize: 11, color: COLORS.text2, fontWeight: '500' },
   onlineTextTyping: { color: '#00C853', fontStyle: 'italic' },
-  headerLastSeen: { fontSize: 11, color: COLORS.text2, fontWeight: '400', marginTop: 1 },
   offlineBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: 'rgba(245,166,35,0.12)',

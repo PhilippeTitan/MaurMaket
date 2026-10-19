@@ -1147,6 +1147,17 @@ await step('NatCash phone separation', () => c.query(`
       );
       CREATE INDEX IF NOT EXISTS idx_typing_indicators_expiry ON typing_indicators(expires_at);
 
+      -- Shared short-lived presence and open-chat state for serverless hosts.
+      -- Store only expiry windows, never a durable last-seen timestamp.
+      CREATE TABLE IF NOT EXISTS chat_user_activity (
+        user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        presence_expires_at TIMESTAMPTZ NOT NULL,
+        active_conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+        active_expires_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_chat_user_activity_active
+        ON chat_user_activity(active_conversation_id, active_expires_at);
+
       -- Block users
       CREATE TABLE IF NOT EXISTS blocked_users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -6,7 +6,7 @@ import dns from 'node:dns/promises';
 import { dobRequired } from '../middleware/auth.js';
 import { sendPushNotification } from '../utils/notifications.js';
 import { emitToUsers } from '../realtime.js';
-import { touchPresence, markConversationActive, isConversationOpen, isOnline, lastSeen } from '../utils/chatActivity.js';
+import { touchPresence, markConversationActive, isConversationOpen, isOnline } from '../utils/chatActivity.js';
 import { staysInInbox, normalizeMarkUnread, inboxUnreadTotal } from '../utils/conversationListPolicy.js';
 import { normalizeSearchQuery, MESSAGE_SEARCH_LIMIT } from '../utils/messageSearchPolicy.js';
 import { bookmarkableMessage, bookmarkExcerpt, bookmarkPageSize } from '../utils/messageBookmarkPolicy.js';
@@ -17,10 +17,7 @@ import {
 
 const router = Router();
 
-// ───── Presence (WhatsApp-style Online / Last seen) ─────
-// In-memory, single-instance. A user is "online" while messaging endpoints are being hit
-// (ChatScreen polls every 5s while open, InboxScreen on focus) — mirrors WhatsApp semantics
-// of "app/chat open on their device".
+// ───── Privacy-aware ephemeral presence ─────
 router.get('/api/users/:id/presence', authRequired, async (req, res) => {
   try {
   const target = await pool.query('SELECT presence_visibility FROM users WHERE id = $1', [req.params.id]);
@@ -34,10 +31,9 @@ router.get('/api/users/:id/presence', authRequired, async (req, res) => {
   const visible = req.user.id !== req.params.id && viewer.rows[0]?.presence_visibility !== 'nobody' &&
     (visibility === 'everyone' || (visibility === 'chatted_with' && hasChatted.rows.length > 0));
   if (!visible) return res.json({ online: false, lastSeen: null, hidden: true });
-  const lastSeenMs = lastSeen(req.params.id);
   res.json({
-    online: isOnline(req.params.id),
-    lastSeen: lastSeenMs ? new Date(lastSeenMs).toISOString() : null,
+    online: await isOnline(req.params.id),
+    lastSeen: null,
   });
   } catch (err) {
     console.error('Presence privacy error:', err);
@@ -63,8 +59,8 @@ router.put('/api/users/me/presence-visibility', authRequired, async (req, res) =
 
 // Conversations list
 router.get('/api/conversations', authRequired, async (req, res) => {
-  touchPresence(req.user.id);
   try {
+    await touchPresence(req.user.id);
     const result = await pool.query(
       `SELECT c.*,
               CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS other_party_id,
@@ -230,8 +226,7 @@ router.get('/api/conversations/:id/messages', authRequired, async (req, res) => 
     if (conv.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
     const pendingRequest = conv.rows[0].request_state === REQUEST_STATE.PENDING;
     const isRequester = conv.rows[0].requested_by === req.user.id;
-    touchPresence(req.user.id);
-    markConversationActive(req.user.id, req.params.id);
+    await markConversationActive(req.user.id, req.params.id);
     // Flip 'sent' → 'delivered': recipient's client fetched these messages (WhatsApp 2nd gray tick).
     // Delivery is not a read receipt, so it stays honest while a request is pending (APP-Q166).
     await pool.query(
@@ -617,7 +612,7 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
     const recipientId = conv.rows[0].buyer_id === req.user.id ? conv.rows[0].seller_id : conv.rows[0].buyer_id;
     const blocked = await pool.query('SELECT 1 FROM blocked_users WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) LIMIT 1', [req.user.id, recipientId]);
     if (blocked.rows.length) return res.status(403).json({ error: 'Messaging is unavailable because one participant blocked the other', code: 'USER_BLOCKED' });
-    touchPresence(req.user.id);
+    await touchPresence(req.user.id);
     // Idempotent retry: if this client already sent this message (outbox flush after reconnect),
     // return the stored row instead of duplicating — WhatsApp's key_id dedupe pattern.
     const validClientId = typeof clientId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId) ? clientId : null;
@@ -659,7 +654,7 @@ router.post('/api/conversations/:id/messages', authRequired, msgLimiter, dobRequ
     const isMuted = !!recipientSettings.rows[0]?.is_muted && (!recipientSettings.rows[0]?.muted_until || new Date(recipientSettings.rows[0].muted_until) > new Date());
     // Keep chat unread state in the Inbox. A push alert is still sent when
     // appropriate, but ordinary messages should not inflate the bell count.
-    if (!isConversationOpen(recipientId, req.params.id) && !isMuted) sendPushNotification(recipientId, 'New Message', `${senderName}: ${preview}`, notifData);
+    if (!(await isConversationOpen(recipientId, req.params.id)) && !isMuted) sendPushNotification(recipientId, 'New Message', `${senderName}: ${preview}`, notifData);
     // Realtime: push to both participants instantly (clients dedupe by id / client_id)
     let reply_to;
     if (validatedReplyToId) {
@@ -739,7 +734,7 @@ router.post('/api/conversations/:id/products', authRequired, msgLimiter, dobRequ
     const senderName = (await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user.id])).rows[0]?.full_name || 'Someone';
     const recipientSettings = await pool.query('SELECT is_muted, muted_until FROM conversation_user_settings WHERE conversation_id = $1 AND user_id = $2', [req.params.id, otherId]);
     const isMuted = !!recipientSettings.rows[0]?.is_muted && (!recipientSettings.rows[0]?.muted_until || new Date(recipientSettings.rows[0].muted_until) > new Date());
-    if (!isConversationOpen(otherId, req.params.id) && !isMuted) sendPushNotification(otherId, 'Listing shared', `${senderName} shared ${p.name}`, { type: 'new_message', conversationId: req.params.id, senderId: req.user.id, senderName });
+    if (!(await isConversationOpen(otherId, req.params.id)) && !isMuted) sendPushNotification(otherId, 'Listing shared', `${senderName} shared ${p.name}`, { type: 'new_message', conversationId: req.params.id, senderId: req.user.id, senderName });
     const payload = { ...message.rows[0], product_data: productData, delivery_status: 'sent', reactions: [] };
     emitToUsers([req.user.id, otherId], { type: 'message_new', conversationId: req.params.id, message: payload });
     res.status(201).json({ message: payload });
@@ -870,7 +865,7 @@ router.post('/api/conversations/:id/typing', authRequired, async (req, res) => {
       [req.params.id, req.user.id]
     );
     if (!convr.rows.length) return res.json({ ok: true });
-    touchPresence(req.user.id);
+    await touchPresence(req.user.id);
     await pool.query(
       `INSERT INTO typing_indicators (conversation_id, user_id, expires_at)
        VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '5 seconds')
@@ -1234,8 +1229,7 @@ router.put('/api/conversations/:id/read', authRequired, async (req, res) => {
     if (!readReceiptAllowed({ requestState: conv.rows[0].request_state })) {
       return res.json({ marked: 0, readReceiptsOff: true, requestPending: true });
     }
-    touchPresence(req.user.id);
-    markConversationActive(req.user.id, req.params.id);
+    await markConversationActive(req.user.id, req.params.id);
     // Read receipts off: this account still marks its own messages read, because
     // its unread badges are its own business — but nothing is sent to the other
     // participant. No delivery receipt, no realtime 'messages_read' tick.

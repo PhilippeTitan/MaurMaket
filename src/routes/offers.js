@@ -14,7 +14,7 @@ async function notifyIfNeeded(userId, conversationId, title, body, data) {
   try {
     const settings = await pool.query('SELECT is_muted, muted_until FROM conversation_user_settings WHERE conversation_id = $1 AND user_id = $2', [conversationId, userId]);
     const muted = !!settings.rows[0]?.is_muted && (!settings.rows[0]?.muted_until || new Date(settings.rows[0].muted_until) > new Date());
-    if (!muted && !isConversationOpen(userId, conversationId)) createNotification(userId, 'new_message', title, body, data);
+    if (!muted && !(await isConversationOpen(userId, conversationId))) createNotification(userId, 'new_message', title, body, data);
   } catch (err) { console.warn('Offer notification skipped:', err?.message || err); }
 }
 
