@@ -1491,54 +1491,6 @@ await step('NatCash phone separation', () => c.query(`
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     `));
 
-    // ── Replication schema (dual-database failover) ──
-    await step('Replication: mirror_outbox', () => c.query(`
-      CREATE TABLE IF NOT EXISTS mirror_outbox (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        operation_id UUID UNIQUE NOT NULL,
-        model TEXT NOT NULL,
-        action TEXT NOT NULL,
-        record_id TEXT NOT NULL,
-        payload JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        source TEXT NOT NULL DEFAULT 'supabase',
-        synced BOOLEAN NOT NULL DEFAULT FALSE,
-        synced_at TIMESTAMPTZ,
-        priority TEXT NOT NULL DEFAULT 'normal'
-      )
-    `));
-    await step('Replication: mirror_outbox indexes', () => c.query(`
-      CREATE INDEX IF NOT EXISTS idx_mirror_outbox_synced ON mirror_outbox(synced, created_at);
-      CREATE INDEX IF NOT EXISTS idx_mirror_outbox_priority ON mirror_outbox(priority, synced);
-    `));
-    await step('Replication: mirror_operations', () => c.query(`
-      CREATE TABLE IF NOT EXISTS mirror_operations (
-        operation_id UUID PRIMARY KEY,
-        source TEXT NOT NULL,
-        processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `));
-    await step('Replication: mirror_operations index', () => c.query(`
-      CREATE INDEX IF NOT EXISTS idx_mirror_operations_source ON mirror_operations(source, processed_at);
-    `));
-    await step('Replication: sync_state', () => c.query(`
-      CREATE TABLE IF NOT EXISTS sync_state (
-        id SERIAL PRIMARY KEY,
-        key TEXT UNIQUE NOT NULL,
-        value TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `));
-    await step('Replication: sync_state seed', () => c.query(`
-      INSERT INTO sync_state (key, value) VALUES
-        ('primary', 'supabase'),
-        ('last_sync_supabase_to_neon', ''),
-        ('last_sync_neon_to_supabase', ''),
-        ('supabase_failures', '0'),
-        ('neon_failures', '0')
-      ON CONFLICT (key) DO NOTHING;
-    `));
-
     // ── Better Auth plugins: schema additions ──
     await step('Auth plugin: username columns', () => c.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT UNIQUE;
@@ -2559,26 +2511,12 @@ export function initApp({ runDbMigrations = false, runDatabaseWorkers = false } 
       }
     }
 
-    // ───── DB Controller: dual-database failover + replication ─────
-    const { getDbController, Replicator, createRaidAdapter } = await import('./src/db/index.js');
+    // ───── DB Controller: authoritative primary + standby diagnostics ─────
+    const { getDbController, createRaidAdapter } = await import('./src/db/index.js');
     const dbController = getDbController();
 
-    // Don't spend startup attempts on an offline backup. When Neon first
-    // passes its health probe, prepare its schema before marking it usable.
-    if (dbController.secondaryPool) {
-      dbController.prepareSecondary = async (secondaryPool) => {
-        console.log(`[MIGRATION] Preparing ${dbController.secondaryName} after recovery...`);
-        const failures = await runMigrations(secondaryPool);
-        if (failures.length > 0) {
-          throw new Error(`${dbController.secondaryName} schema migration failed: ${failures.join(', ')}`);
-        }
-      };
-    }
-
-    // Wire the failover proxy — all pool.query(SELECT) routes through controller
+    // Wire the primary-only proxy — all pool.query(SELECT) routes through controller
     setDbController(dbController);
-
-    const replicator = new Replicator(dbController);
 
     // Wire Better Auth through RAID adapter → DB Controller
     const raidAdapter = createRaidAdapter(dbController);
@@ -2600,17 +2538,15 @@ export function initApp({ runDbMigrations = false, runDatabaseWorkers = false } 
     }
 
     // Vercel Functions can create many warm isolates and may freeze them at
-    // any time. Process timers are not durable workers and starting one here
-    // would create a health-check/replication loop per isolate. Only the
-    // long-lived Render process may own these background loops.
+    // any time. Process timers are not durable workers. Only the long-lived
+    // Render process runs health checks; app-level outbox replication and
+    // automatic secondary schema migrations remain disabled.
     if (runDatabaseWorkers) {
       dbController.startHealthChecks();
-      replicator.start();
     }
 
     // Expose for health endpoint + routes
     app.locals.dbController = dbController;
-    app.locals.replicator = replicator;
 
     console.log(`[DB:Controller] ✅ Database controller ready${runDatabaseWorkers ? ' with background workers' : ' (request-only mode)'}`);
     return app;

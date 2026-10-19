@@ -33,20 +33,13 @@ router.get('/api/health', async (_req, res) => {
   } catch { result.primary = 'down'; }
   result.status = result.primary === 'connected' ? 'ok' : 'error';
 
-  // DB Controller + Replicator status (if available)
-  const replicator = res.req.app?.locals?.replicator;
+  // DB Controller status. Neon connectivity alone is not a promotion signal.
   if (dbController) {
     try {
       const dbStatus = await dbController.getStatus();
       result.dbController = dbStatus;
     } catch { result.dbController = { error: 'unavailable' }; }
   }
-  if (replicator) {
-    try {
-      result.replication = await replicator.getStatus();
-    } catch { result.replication = { error: 'unavailable' }; }
-  }
-
   res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
 

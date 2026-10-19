@@ -8,9 +8,7 @@ const { Pool } = pg;
 const isTestMode = process.env.NODE_ENV === 'test';
 const isVercelFunction = process.env.VERCEL === '1';
 const primaryDatabaseUrl = isTestMode ? process.env.DATABASE_URL : process.env.SUPABASE_DATABASE_URL;
-const neonBackupDatabaseUrl = !isTestMode
-  ? (process.env.NEON_BACKUP_DATABASE_URL || process.env.DATABASE_URL || null)
-  : null;
+const neonBackupDatabaseUrl = !isTestMode ? (process.env.NEON_BACKUP_DATABASE_URL || null) : null;
 
 if (!primaryDatabaseUrl) {
   throw new Error(isTestMode ? 'DATABASE_URL is required in test mode' : 'SUPABASE_DATABASE_URL is required in production');

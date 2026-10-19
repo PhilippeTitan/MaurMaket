@@ -1,8 +1,9 @@
 /**
- * Dual-Database Controller with Circuit Breaker + Outbox Pattern
+ * Primary Database Controller with circuit-breaker diagnostics
  *
  * Drop-in replacement for pg Pool. Same .query() and .connect() API.
- * Supabase remains authoritative; the partial outbox is not a full replica.
+ * Supabase remains authoritative. Neon is diagnostic-only until a complete,
+ * verified replication and promotion procedure exists.
  */
 
 import pg from 'pg';
@@ -114,23 +115,25 @@ function createPool(connectionString, label) {
 export class DatabaseController {
   constructor() {
     this.supabase = createPool(process.env.SUPABASE_DATABASE_URL, 'supabase');
-    this.neon = createPool(process.env.NEON_BACKUP_DATABASE_URL || process.env.DATABASE_URL, 'neon');
+    this.neon = createPool(process.env.NEON_BACKUP_DATABASE_URL, 'neon');
 
     this.supabaseBreaker = new CircuitBreaker('supabase');
     this.neonBreaker = new CircuitBreaker('neon');
     this.secondarySchemaReady = false;
-    this.prepareSecondary = null;
-    this._secondaryPreparePromise = null;
 
     // Primary state
     this._primary = process.env.DATABASE_PRIMARY || 'supabase';
-    this._mode = 'PRIMARY'; // PRIMARY | FAILOVER | RECOVERING
+    this._mode = 'PRIMARY'; // PRIMARY | PRIMARY_UNAVAILABLE
     // A reachable secondary is not necessarily current. Replication is an
     // incomplete application outbox, not a promotable database replica. Keep
     // both read and write promotion hard-disabled until full replication and
     // a tested promotion/failback protocol exist.
     this.secondaryReadsEnabled = false;
     this.secondaryWritesEnabled = false;
+    // The old app-level outbox only captured selected adapter writes and can
+    // persist sensitive row payloads. Do not generate new entries; use a
+    // database-native replication stream when the standby is re-established.
+    this.legacyOutboxEnabled = false;
 
     // Health check interval
     this._healthCheckInterval = parseInt(process.env.HEALTH_CHECK_INTERVAL || '10000', 10);
@@ -169,29 +172,13 @@ export class DatabaseController {
     return this._primary === 'supabase' ? 'neon' : 'supabase';
   }
 
-  get isSecondaryReady() {
-    return !this.prepareSecondary || this.secondarySchemaReady;
-  }
-
-  async _ensureSecondarySchema(pool) {
-    if (pool !== this.secondaryPool || !this.prepareSecondary || this.secondarySchemaReady) return;
-    if (!this._secondaryPreparePromise) {
-      this._secondaryPreparePromise = Promise.resolve()
-        .then(() => this.prepareSecondary(pool))
-        .then(() => {
-          this.secondarySchemaReady = true;
-          console.log(`[DB:Controller] Secondary (${this.secondaryName}) schema is ready`);
-        })
-        .finally(() => { this._secondaryPreparePromise = null; });
-    }
-    await this._secondaryPreparePromise;
-  }
+  get isSecondaryReady() { return this.secondarySchemaReady; }
 
   /**
    * `SELECT 1` probe for the health check. A stale pooled socket (an idle
    * compute that was suspended, a socket a proxy dropped) resets on first use;
    * retry once on a fresh connection so a transient reset does not trip the
-   * breaker or flip the controller into FAILOVER. Genuine outages (refused,
+   * breaker or mark the primary unavailable. Genuine outages (refused,
    * timed out) are not retried and still trip it immediately.
    */
   async _probe(pool) {
@@ -209,7 +196,6 @@ export class DatabaseController {
     if (this.supabase && this.supabaseBreaker.isHealthy) {
       try {
         await this._probe(this.supabase);
-        await this._ensureSecondarySchema(this.supabase);
         this.supabaseBreaker.recordSuccess();
         results.supabase = true;
       } catch (e) {
@@ -221,7 +207,6 @@ export class DatabaseController {
     if (this.neon && this.neonBreaker.isHealthy) {
       try {
         await this._probe(this.neon);
-        await this._ensureSecondarySchema(this.neon);
         this.neonBreaker.recordSuccess();
         results.neon = true;
       } catch (e) {
@@ -233,14 +218,13 @@ export class DatabaseController {
     // Failover logic
     if (this._mode === 'PRIMARY') {
       if (!this.primaryIsHealthy) {
-        console.warn(`[DB:Controller] Primary (${this._primary}) unhealthy — entering FAILOVER`);
-        this._mode = 'FAILOVER';
+        console.warn(`[DB:Controller] Primary (${this._primary}) unhealthy — primary-only service unavailable`);
+        this._mode = 'PRIMARY_UNAVAILABLE';
       }
-    } else if (this._mode === 'FAILOVER') {
+    } else if (this._mode === 'PRIMARY_UNAVAILABLE') {
       if (this.primaryIsHealthy) {
-        console.log(`[DB:Controller] Primary (${this._primary}) recovered — entering RECOVERING`);
-        this._mode = 'RECOVERING';
-        // Reconciler will transition back to PRIMARY
+        console.log(`[DB:Controller] Primary (${this._primary}) recovered — returning to PRIMARY`);
+        this._mode = 'PRIMARY';
       }
     }
 
@@ -268,17 +252,7 @@ export class DatabaseController {
   }
 
   _getWritePool() {
-    if (this._mode === 'FAILOVER') {
-      // Only use secondary if it's actually healthy
-      if (this.secondaryWritesEnabled && this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
-      return null;
-    }
-    if (!this.primaryIsHealthy) {
-      // Primary down — try secondary if healthy
-      if (this.secondaryWritesEnabled && this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
-      return null;
-    }
-    return this.primaryPool;
+    return this.primaryIsHealthy ? this.primaryPool : null;
   }
 
   _getWriteSource(pool = this.primaryPool) {
@@ -357,11 +331,11 @@ export class DatabaseController {
     }
   }
 
-  // ───── Atomic Write with Outbox ─────
+  // ───── Primary-only writes ─────
 
   /**
-   * Execute a write inside a transaction with atomic outbox entry.
-   * The outbox entry is written in the SAME transaction as the actual change.
+   * Execute a write inside a transaction. Legacy outbox compatibility is
+   * hard-disabled; it is not the standby replication strategy.
    *
    * @param {string} model - Table/model name (e.g., 'users', 'sessions')
    * @param {string} action - 'create' | 'update' | 'delete'
@@ -375,7 +349,7 @@ export class DatabaseController {
     if (!pool) throw new Error('[DB:Controller] No healthy database available');
 
     const client = await pool.connect();
-    const operationId = crypto.randomUUID();
+    const operationId = this.legacyOutboxEnabled ? crypto.randomUUID() : null;
     const source = this._getWriteSource(pool);
 
     try {
@@ -384,12 +358,13 @@ export class DatabaseController {
       // Execute the actual write
       const result = await writeFn(client);
 
-      // Insert outbox entry (same transaction = atomic)
-      await client.query(
-        `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [operationId, model, action, String(recordId), JSON.stringify(payload), source, priority]
-      );
+      if (this.legacyOutboxEnabled) {
+        await client.query(
+          `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [operationId, model, action, String(recordId), JSON.stringify(payload), source, priority]
+        );
+      }
 
       await client.query('COMMIT');
       this._breakerForPool(pool).recordSuccess();
@@ -405,9 +380,7 @@ export class DatabaseController {
 
   // ───── Convenience Methods ─────
 
-  /**
-   * Create a record with outbox entry.
-   */
+  /** Create a record on the authoritative primary. */
   async create(model, data) {
     return this.writeWithOutbox(
       { model, action: 'create', recordId: data.id || crypto.randomUUID(), payload: data, priority: this._isHighPriority(model) ? 'high' : 'normal' },
@@ -424,9 +397,7 @@ export class DatabaseController {
     );
   }
 
-  /**
-   * Update a record with outbox entry.
-   */
+  /** Update a record on the authoritative primary. */
   async update(model, id, data) {
     return this.writeWithOutbox(
       { model, action: 'update', recordId: id, payload: data, priority: this._isHighPriority(model) ? 'high' : 'normal' },
@@ -445,9 +416,7 @@ export class DatabaseController {
     );
   }
 
-  /**
-   * Delete a record with outbox entry.
-   */
+  /** Delete a record on the authoritative primary. */
   async delete(model, id) {
     return this.writeWithOutbox(
       { model, action: 'delete', recordId: id, payload: { id }, priority: 'normal' },
@@ -459,8 +428,7 @@ export class DatabaseController {
   }
 
   /**
-   * Delete every row matching a mapped predicate and enqueue one mirror
-   * operation per row in the same transaction.
+   * Delete every row matching a mapped predicate in one transaction.
    */
   async deleteMany(model, where) {
     const pool = this._getWritePool();
@@ -490,12 +458,14 @@ export class DatabaseController {
         `DELETE FROM ${model} WHERE ${conditions.join(' AND ')} RETURNING *`,
         values
       );
-      for (const row of result.rows) {
-        await client.query(
-          `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
-           VALUES ($1, $2, 'delete', $3, $4, $5, $6)`,
-          [crypto.randomUUID(), model, String(row.id), JSON.stringify({ id: row.id }), source, this._isHighPriority(model) ? 'high' : 'normal']
-        );
+      if (this.legacyOutboxEnabled) {
+        for (const row of result.rows) {
+          await client.query(
+            `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
+             VALUES ($1, $2, 'delete', $3, $4, $5, $6)`,
+            [crypto.randomUUID(), model, String(row.id), JSON.stringify({ id: row.id }), source, this._isHighPriority(model) ? 'high' : 'normal']
+          );
+        }
       }
       await client.query('COMMIT');
       this._breakerForPool(pool).recordSuccess();
@@ -517,7 +487,7 @@ export class DatabaseController {
     if (!pool) throw new Error('[DB:Controller] No healthy database available');
 
     const client = await pool.connect();
-    const operationId = crypto.randomUUID();
+    const operationId = this.legacyOutboxEnabled ? crypto.randomUUID() : null;
     const source = this._getWriteSource(pool);
 
     try {
@@ -544,12 +514,13 @@ export class DatabaseController {
         values
       );
 
-      // Outbox entry
-      await client.query(
-        `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
-         VALUES ($1, $2, 'delete', $3, $4, $5, 'high')`,
-        [operationId, model, String(record.id), JSON.stringify(record), source]
-      );
+      if (this.legacyOutboxEnabled) {
+        await client.query(
+          `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
+           VALUES ($1, $2, 'delete', $3, $4, $5, 'high')`,
+          [operationId, model, String(record.id), JSON.stringify(record), source]
+        );
+      }
 
       await client.query('COMMIT');
       this._breakerForPool(pool).recordSuccess();
@@ -564,14 +535,14 @@ export class DatabaseController {
   }
 
   /**
-   * Atomic increment with outbox.
+   * Atomic increment on the authoritative primary.
    */
   async incrementOne(model, where, increments) {
     const pool = this._getWritePool();
     if (!pool) throw new Error('[DB:Controller] No healthy database available');
 
     const client = await pool.connect();
-    const operationId = crypto.randomUUID();
+    const operationId = this.legacyOutboxEnabled ? crypto.randomUUID() : null;
     const source = this._getWriteSource(pool);
 
     try {
@@ -593,7 +564,7 @@ export class DatabaseController {
       );
 
       const record = result.rows[0];
-      if (record) {
+      if (record && this.legacyOutboxEnabled) {
         await client.query(
           `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
            VALUES ($1, $2, 'update', $3, $4, $5, 'high')`,
@@ -631,12 +602,12 @@ export class DatabaseController {
    *   });
    *
    * The client is pinned to ONE database for the entire transaction.
-   * If the primary is down at transaction start, the transaction runs on the secondary.
+   * If the primary is unavailable at transaction start, the transaction fails closed.
    * If the database dies MID-transaction, the transaction ROLLBACKs and throws —
    * it does NOT switch to the other database.
    *
    * @param {function} fn - async (client) => result
-   * @param {object} [opts] - optional outbox entries to include atomically
+   * @param {object} [opts] - legacy outbox metadata (disabled)
    * @param {string} [opts.model] - table name for outbox
    * @param {string} [opts.action] - 'create' | 'update' | 'delete'
    * @param {string} [opts.recordId] - affected record ID
@@ -649,7 +620,7 @@ export class DatabaseController {
     if (!pool) throw new Error('[DB:Controller] No healthy database available for transaction');
 
     const client = await pool.connect();
-    const operationId = opts.model ? crypto.randomUUID() : null;
+    const operationId = this.legacyOutboxEnabled && opts.model ? crypto.randomUUID() : null;
     const source = this._getWriteSource(pool);
 
     try {
@@ -658,7 +629,7 @@ export class DatabaseController {
       const result = await fn(client);
 
       // Atomically insert outbox entry if opts provided
-      if (opts.model && operationId) {
+      if (opts.model && operationId && this.legacyOutboxEnabled) {
         await client.query(
           `INSERT INTO mirror_outbox (operation_id, model, action, record_id, payload, source, priority)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -689,6 +660,7 @@ export class DatabaseController {
       supabaseFailures: this.supabaseBreaker.failures,
       neonFailures: this.neonBreaker.failures,
       secondarySchemaReady: this.isSecondaryReady,
+      legacyOutboxEnabled: this.legacyOutboxEnabled,
       secondaryReadsEnabled: this.secondaryReadsEnabled,
       secondaryWritesEnabled: this.secondaryWritesEnabled,
       standbyPromotionEnabled: this.secondaryReadsEnabled || this.secondaryWritesEnabled,
