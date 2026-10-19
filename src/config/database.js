@@ -6,6 +6,7 @@ dotenv.config();
 const { Pool } = pg;
 
 const isTestMode = process.env.NODE_ENV === 'test';
+const isVercelFunction = process.env.VERCEL === '1';
 const primaryDatabaseUrl = isTestMode ? process.env.DATABASE_URL : process.env.SUPABASE_DATABASE_URL;
 const neonBackupDatabaseUrl = !isTestMode
   ? (process.env.NEON_BACKUP_DATABASE_URL || process.env.DATABASE_URL || null)
@@ -18,7 +19,9 @@ if (!primaryDatabaseUrl) {
 // ───── Raw primary pool (used for writes + transactions) ─────
 const _rawPool = new Pool({
   connectionString: primaryDatabaseUrl,
-  max: isTestMode ? 5 : 15,
+  // A pg.Pool is per warm Vercel isolate, not global to the deployment.
+  // Keep serverless instances small; Supavisor is the shared pool in front.
+  max: isTestMode ? 5 : isVercelFunction ? 1 : 15,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: isTestMode ? 5000 : 15000,
   ssl: primaryDatabaseUrl.includes('localhost') || primaryDatabaseUrl.includes('sslmode=disable') ? false : { rejectUnauthorized: false },

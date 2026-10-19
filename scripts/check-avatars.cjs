@@ -30,9 +30,13 @@ function get(url, token) {
   });
 }
 
+const email = process.env.MAURMAKET_TEST_EMAIL;
+const password = process.env.MAURMAKET_TEST_PASSWORD;
+if (!email || !password) throw new Error("Set MAURMAKET_TEST_EMAIL and MAURMAKET_TEST_PASSWORD in the environment.");
+
 (async () => {
   // Login
-  const login = await post('https://maurmaket.onrender.com/api/auth/login', { email: 'dratomicslicer@gmail.com', password: 'Melmil12345' });
+  const login = await post('https://maurmaket.onrender.com/api/auth/login', { email, password });
   const token = login.token;
   console.log('=== Dratomicslicer ===');
   console.log('avatar_url:', login.user?.avatar_url);

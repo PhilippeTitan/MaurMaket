@@ -22,14 +22,19 @@ router.get('/api/health', async (_req, res) => {
     node: process.version,
     memMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
   };
+  // The failover-aware pool may answer a read from Neon when Supabase is down.
+  // This endpoint is also used by the host watchdog, so it must report whether
+  // the canonical primary is actually writable/reachable, not merely whether
+  // some database answered a read.
+  const dbController = res.req.app?.locals?.dbController;
+  const primaryHealthPool = dbController?.primaryPool || pool;
   try {
-    await Promise.race([pool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
+    await Promise.race([primaryHealthPool.query('SELECT 1'), new Promise((_, re) => setTimeout(() => re(new Error('timeout')), 5000))]);
     result.primary = 'connected';
   } catch { result.primary = 'down'; }
   result.status = result.primary === 'connected' ? 'ok' : 'error';
 
   // DB Controller + Replicator status (if available)
-  const dbController = res.req.app?.locals?.dbController;
   const replicator = res.req.app?.locals?.replicator;
   if (dbController) {
     try {

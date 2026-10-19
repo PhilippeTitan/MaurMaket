@@ -12,6 +12,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const { Pool } = pg;
+const isVercelFunction = process.env.VERCEL === '1';
 
 // ───── Circuit Breaker State ─────
 const BREAKER_THRESHOLD = 3;
@@ -96,7 +97,9 @@ function createPool(connectionString, label) {
   if (!connectionString) return null;
   const pool = new Pool({
     connectionString,
-    max: 10,
+    // Each Vercel warm isolate owns its own pools. Keep them small and let
+    // Supavisor/Neon's pooler absorb deployment-wide connection fan-out.
+    max: isVercelFunction ? 1 : 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10_000,
     ssl: connectionString.includes('localhost') || connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
@@ -122,6 +125,10 @@ export class DatabaseController {
     // Primary state
     this._primary = process.env.DATABASE_PRIMARY || 'supabase';
     this._mode = 'PRIMARY'; // PRIMARY | FAILOVER | RECOVERING
+    // A reachable secondary is not necessarily current. Replication is an
+    // incomplete application outbox, not a promotable database replica, so
+    // secondary writes stay hard-disabled until a real promotion protocol is built.
+    this.secondaryWritesEnabled = false;
 
     // Health check interval
     this._healthCheckInterval = parseInt(process.env.HEALTH_CHECK_INTERVAL || '10000', 10);
@@ -267,12 +274,12 @@ export class DatabaseController {
   _getWritePool() {
     if (this._mode === 'FAILOVER') {
       // Only use secondary if it's actually healthy
-      if (this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
+      if (this.secondaryWritesEnabled && this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
       return null;
     }
     if (!this.primaryIsHealthy) {
       // Primary down — try secondary if healthy
-      if (this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
+      if (this.secondaryWritesEnabled && this.secondaryBreaker.isHealthy && this.isSecondaryReady) return this.secondaryPool;
       return null;
     }
     return this.primaryPool;
@@ -330,7 +337,7 @@ export class DatabaseController {
     // secondary pool; `_secondaryPool` was never initialized.
     const secondary = pool === this.primaryPool ? this.secondaryPool : this.primaryPool;
     const secondaryBreaker = pool === this.primaryPool ? this.secondaryBreaker : this.primaryBreaker;
-    if (secondary && secondary !== pool && secondaryBreaker.isHealthy) {
+    if (secondary && secondary !== pool && secondaryBreaker.isHealthy && this.isSecondaryReady) {
       try {
         const result = await secondary.query(sql, params);
         secondaryBreaker.recordSuccess();
@@ -699,6 +706,8 @@ export class DatabaseController {
       supabaseFailures: this.supabaseBreaker.failures,
       neonFailures: this.neonBreaker.failures,
       secondarySchemaReady: this.isSecondaryReady,
+      secondaryWritesEnabled: this.secondaryWritesEnabled,
+      writesAvailable: this.primaryIsHealthy || (this.secondaryWritesEnabled && this.secondaryBreaker.isHealthy && this.isSecondaryReady),
     };
   }
 

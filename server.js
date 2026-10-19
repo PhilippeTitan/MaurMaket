@@ -2542,7 +2542,7 @@ if (isMain) {
 // Promise-guarded so concurrent serverless invocations initialize exactly once.
 // Does NOT listen, start cron jobs, or attach realtime — callers own that.
 let initAppPromise = null;
-export function initApp({ runDbMigrations = false } = {}) {
+export function initApp({ runDbMigrations = false, runDatabaseWorkers = false } = {}) {
   if (initAppPromise) return initAppPromise;
   initAppPromise = (async () => {
     // Better Auth needs its tables before it can serve requests. Only the
@@ -2560,7 +2560,7 @@ export function initApp({ runDbMigrations = false } = {}) {
     }
 
     // ───── DB Controller: dual-database failover + replication ─────
-    const { getDbController, Replicator, Reconciler, createRaidAdapter } = await import('./src/db/index.js');
+    const { getDbController, Replicator, createRaidAdapter } = await import('./src/db/index.js');
     const dbController = getDbController();
 
     // Don't spend startup attempts on an offline backup. When Neon first
@@ -2579,7 +2579,6 @@ export function initApp({ runDbMigrations = false } = {}) {
     setDbController(dbController);
 
     const replicator = new Replicator(dbController);
-    const reconciler = new Reconciler(dbController);
 
     // Wire Better Auth through RAID adapter → DB Controller
     const raidAdapter = createRaidAdapter(dbController);
@@ -2600,28 +2599,20 @@ export function initApp({ runDbMigrations = false } = {}) {
       console.log('[Auth] Studio dashboard at /api/studio');
     }
 
-    dbController.startHealthChecks();
-    replicator.start();
-
-    // Watch for RECOVERING state → trigger reconciliation
-    const origHealthCheck = dbController.healthCheck.bind(dbController);
-    dbController.healthCheck = async function() {
-      const result = await origHealthCheck();
-      // Neon recovered → clear quota backoff
-      if (this.neonBreaker?.isHealthy) reconciler.resetQuotaBackoff();
-      if (this.mode === 'RECOVERING') {
-        reconciler.reconcile().catch(err => {
-          console.error('[Reconciler] Error:', err.message);
-        });
-      }
-      return result;
-    };
+    // Vercel Functions can create many warm isolates and may freeze them at
+    // any time. Process timers are not durable workers and starting one here
+    // would create a health-check/replication loop per isolate. Only the
+    // long-lived Render process may own these background loops.
+    if (runDatabaseWorkers) {
+      dbController.startHealthChecks();
+      replicator.start();
+    }
 
     // Expose for health endpoint + routes
     app.locals.dbController = dbController;
     app.locals.replicator = replicator;
 
-    console.log('[DB:Controller] ✅ Dual-database failover + replication active');
+    console.log(`[DB:Controller] ✅ Database controller ready${runDatabaseWorkers ? ' with background workers' : ' (request-only mode)'}`);
     return app;
   })();
   return initAppPromise;
@@ -2642,10 +2633,11 @@ if (isMain) {
     });
   };
 
-  // ───── Background Jobs (extracted to src/jobs/index.js) — main process only ─────
-  startJobs();
-
-  initApp({ runDbMigrations: true }).then(() => startServer()).catch(err => {
+  initApp({ runDbMigrations: true, runDatabaseWorkers: true }).then(() => {
+    // Start schedules only after migrations and auth initialization succeed.
+    startJobs();
+    startServer();
+  }).catch(err => {
     console.error('[STARTUP] Database/auth initialization failed; server not started:', err.message);
   });
 
