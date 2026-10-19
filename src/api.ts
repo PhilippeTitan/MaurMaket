@@ -1567,7 +1567,7 @@ export const getTypingStatus = (conversationId: string) =>
 export const getDeliveryStatuses = (conversationId: string) =>
   request(`/conversations/${conversationId}/delivery-status`) as Promise<{ statuses: { id: string; status: 'sent' | 'delivered' | 'read' }[] }>;
 export const getPresence = (userId: string) =>
-  request(`/users/${userId}/presence`) as Promise<{ online: boolean; lastSeen: string | null }>;
+  request(`/users/${userId}/presence`) as Promise<{ online: boolean; hidden?: boolean }>;
 export const getPresenceVisibility = () =>
   request('/users/me/presence-visibility') as Promise<{ visibility: 'everyone' | 'chatted_with' | 'nobody' }>;
 export const setPresenceVisibility = (visibility: 'everyone' | 'chatted_with' | 'nobody') =>
