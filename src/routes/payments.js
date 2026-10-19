@@ -5,6 +5,7 @@ import { authRequired } from '../middleware/auth.js';
 import { logOrderEvent, getCommissionRate, getSellerPaymentAllocations, reserveOrderStock, recordProductCooccurrences, settleSellerDebtPayment, populateSellerOrderSnapshot } from '../utils/helpers.js';
 import { createNotification } from '../utils/notifications.js';
 import { applyStockSideEffects } from '../utils/listingPolicy.js';
+import { PRODUCTION_URL } from '../config/publicUrl.js';
 
 const router = Router();
 
@@ -80,7 +81,7 @@ router.post('/api/payments/create', authRequired, async (req, res) => {
       process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create',
       { method: 'POST', headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: expectedAmount, referenceId,
-          returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}` }),
+          returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${PRODUCTION_URL}/payment/return?order=${orderId}` }),
         signal: AbortSignal.timeout(15000) }
     );
     if (!moncashRes.ok) {

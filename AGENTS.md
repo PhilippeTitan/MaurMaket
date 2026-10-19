@@ -3217,3 +3217,8 @@ These decisions complete the four-question checkout/map follow-up and clarify th
 - The manual `src/db/migrate.js` path now refuses to recreate the legacy outbox schema. Existing outbox tables/history are intentionally not dropped. User-owned `docs/ops/backend-topology.html` reports the Neon branch archived at 2026-10-19 05:16Z and zero replication; this supports treating it as unavailable until reprovisioned.
 - No live DB/provider configuration or data was changed. No tests were run locally; `git diff --check` is the local review gate, with the GitLab pipeline as QA after push.
 - Limitation remains intentional: Supabase outage makes DB-backed operations unavailable. No autonomous database promotion is enabled. Next architecture slice is to reprovision Neon, establish/monitor a complete provider-native replication path (including DDL/sequences), define RPO and promotion/failback, and only then test any automated promotion. Keep Vercel/Render host failover separate from database promotion.
+
+### Session 428 — Vercel-first public return URLs (2026-10-19)
+- Centralized `PRODUCTION_URL` in `src/config/publicUrl.js`, defaulting to `https://maurmaket.vercel.app` and honoring an explicit deployment override.
+- Updated MonCash/MonCashConnect return URLs for checkout, payment sessions, debt settlement, NatCash access, and Business subscriptions, plus legal-page host branding, to use the centralized origin. Removed repeated Render-primary defaults.
+- This is a code default only; verify the actual Vercel and Render `PRODUCTION_URL` environment values before relying on production redirects. No provider dashboard or payment webhook settings were changed.

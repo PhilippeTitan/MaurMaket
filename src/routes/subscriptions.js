@@ -5,6 +5,7 @@ import { authRequired } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { getNatCashAccess } from '../utils/natcashAccess.js';
 import { handleBusinessUpgrade } from '../utils/tierCap.js';
+import { PRODUCTION_URL } from '../config/publicUrl.js';
 
 const router = Router();
 
@@ -42,7 +43,7 @@ router.post('/api/natcash-access/payment', authRequired, sellerRequired, async (
     const payUrl = process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create';
     const providerResponse = await fetch(payUrl, {
       method: 'POST', headers: { Authorization: `Bearer ${process.env.MCC_KEY || ''}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: 500, referenceId, returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?natcashAccess=${encodeURIComponent(referenceId)}` }),
+      body: JSON.stringify({ amount: 500, referenceId, returnUrl: `${PRODUCTION_URL}/payment/return?natcashAccess=${encodeURIComponent(referenceId)}` }),
       signal: AbortSignal.timeout(15000),
     });
     const providerData = await providerResponse.json();
@@ -99,7 +100,7 @@ router.post('/api/subscriptions/create', authRequired, sellerRequired, async (re
     const mccRes = await fetch(payUrl, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return` }),
+      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: `${PRODUCTION_URL}/payment/return` }),
       signal: AbortSignal.timeout(15000),
     });
     const payData = await mccRes.json();
@@ -128,7 +129,7 @@ router.post('/api/subscriptions/renew', authRequired, sellerRequired, async (req
     const mccRes = await fetch(payUrl, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${process.env.MCC_KEY || ''}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return` }),
+      body: JSON.stringify({ amount: 2500, referenceId: orderId, returnUrl: `${PRODUCTION_URL}/payment/return` }),
       signal: AbortSignal.timeout(15000),
     });
     const payData = await mccRes.json();

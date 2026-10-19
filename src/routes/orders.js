@@ -9,6 +9,7 @@ import { getNatCashAccess } from '../utils/natcashAccess.js';
 import { applyStockSideEffects } from '../utils/listingPolicy.js';
 import { releaseCancelledOrderStock } from '../utils/orderStock.js';
 import { calculatePendingCheckoutTotals } from '../utils/pendingCheckoutTotals.js';
+import { PRODUCTION_URL } from '../config/publicUrl.js';
 
 const router = Router();
 
@@ -34,7 +35,7 @@ async function createPendingMonCashPayment(checkout) {
       headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         amount: Math.round(Number(checkout.total_amount)), referenceId,
-        returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?pending=${checkout.id}`,
+        returnUrl: `${PRODUCTION_URL}/payment/return?pending=${checkout.id}`,
       }),
       signal: AbortSignal.timeout(15000),
     }
@@ -1273,7 +1274,7 @@ router.post('/checkout/pending/:id/begin-payment', authRequired, async (req, res
     if (provider === 'natcash') return res.json({ pendingId: pc.id, sellerId, paymentMethod: 'natcash', session });
     const moncashRes = await fetch(process.env.MONCASH_PAY_CREATE_URL || 'https://api.moncashconnect.com/v1/pay-create', {
       method: 'POST', headers: { 'Authorization': `Bearer ${process.env.MCC_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: Math.round(Number(session.amount)), referenceId: session.provider_reference, returnUrl: `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?session=${session.id}` }), signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({ amount: Math.round(Number(session.amount)), referenceId: session.provider_reference, returnUrl: `${PRODUCTION_URL}/payment/return?session=${session.id}` }), signal: AbortSignal.timeout(15000),
     });
     if (!moncashRes.ok) throw new Error('Payment provider error');
     const data = await moncashRes.json();
@@ -3647,7 +3648,7 @@ router.post('/payments/retry/:orderId', authRequired, async (req, res) => {
           body: JSON.stringify({
             amount: expectedAmount,
             referenceId: retryReference,
-            returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${process.env.PRODUCTION_URL || 'https://maurmaket.onrender.com'}/payment/return?order=${orderId}`,
+            returnUrl: returnUrl?.startsWith('https://') ? returnUrl : `${PRODUCTION_URL}/payment/return?order=${orderId}`,
           }),
           signal: AbortSignal.timeout(15000),
         }
