@@ -827,9 +827,6 @@ router.get('/api/conversations/with-offers', authRequired, async (req, res) => {
 });
 
 // Typing indicator
-const typingUsers = new Map();
-function getTypingKey(convId, userId) { return `${convId}:${userId}`; }
-
 // Delivery statuses for the caller's own messages — polled every 5s so the sender's
 // ticks flip live (sent → delivered → read) without reloading the chat.
 router.get('/api/conversations/:id/delivery-status', authRequired, async (req, res) => {
@@ -867,18 +864,24 @@ router.get('/api/conversations/:id/delivery-status', authRequired, async (req, r
 
 router.post('/api/conversations/:id/typing', authRequired, async (req, res) => {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) return res.json({ ok: true });
-  touchPresence(req.user.id);
-  const key = getTypingKey(req.params.id, req.user.id);
-  typingUsers.set(key, Date.now());
-  setTimeout(() => { typingUsers.delete(key); }, 5000);
   try {
-    const convr = await pool.query('SELECT buyer_id, seller_id FROM conversations WHERE id = $1', [req.params.id]);
-    if (convr.rows.length) {
-      const { buyer_id, seller_id } = convr.rows[0];
-      const other = req.user.id === buyer_id ? seller_id : (req.user.id === seller_id ? buyer_id : null);
-      if (other) emitToUsers([other], { type: 'typing', conversationId: req.params.id, userId: req.user.id });
-    }
-  } catch { /* realtime broadcast is best-effort */ }
+    const convr = await pool.query(
+      'SELECT buyer_id, seller_id FROM conversations WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [req.params.id, req.user.id]
+    );
+    if (!convr.rows.length) return res.json({ ok: true });
+    touchPresence(req.user.id);
+    await pool.query(
+      `INSERT INTO typing_indicators (conversation_id, user_id, expires_at)
+       VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '5 seconds')
+       ON CONFLICT (conversation_id, user_id)
+       DO UPDATE SET expires_at = EXCLUDED.expires_at`,
+      [req.params.id, req.user.id]
+    );
+    const { buyer_id, seller_id } = convr.rows[0];
+    const other = req.user.id === buyer_id ? seller_id : buyer_id;
+    emitToUsers([other], { type: 'typing', conversationId: req.params.id, userId: req.user.id });
+  } catch { /* indicator remains best-effort during schema rollout or DB pressure */ }
   res.json({ ok: true });
 });
 
@@ -889,10 +892,12 @@ router.get('/api/conversations/:id/typing', authRequired, async (req, res) => {
     const { buyer_id, seller_id } = convResult.rows[0];
     if (req.user.id !== buyer_id && req.user.id !== seller_id) return res.json({ typing: false });
     const otherUserId = req.user.id === buyer_id ? seller_id : buyer_id;
-    const key = getTypingKey(req.params.id, otherUserId);
-    const lastTyped = typingUsers.get(key);
-    const typing = lastTyped && (Date.now() - lastTyped < 5000);
-    res.json({ typing: !!typing });
+    const result = await pool.query(
+      `SELECT 1 FROM typing_indicators
+       WHERE conversation_id = $1 AND user_id = $2 AND expires_at > CURRENT_TIMESTAMP`,
+      [req.params.id, otherUserId]
+    );
+    res.json({ typing: result.rows.length > 0 });
   } catch (err) {
     console.error('Typing status error:', err);
     res.json({ typing: false });
